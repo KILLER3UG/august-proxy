@@ -175,6 +175,79 @@ def _default_session_title() -> str:
     return f'Chat {stamp} UTC'
 
 
+def is_placeholder_title(title: str | None) -> bool:
+    """True when the title is still a default/empty placeholder."""
+    t = (title or '').strip()
+    if not t:
+        return True
+    if t.lower() in ('new chat', 'new session', 'untitled', 'conversation started.'):
+        return True
+    # Date-stamped defaults: "Chat 2026-07-15 14:30" / "Chat 2026-07-15 14:30 UTC"
+    if t.lower().startswith('chat ') and len(t) >= 15:
+        rest = t[5:].strip()
+        if rest[:4].isdigit() and '-' in rest[:12]:
+            return True
+    return False
+
+
+def derive_title_from_message(text: str, *, max_len: int = 48) -> str:
+    """Build a short sidebar title from the first user message."""
+    cleaned = (text or '').replace('\r\n', '\n').strip()
+    if not cleaned:
+        return ''
+    # Strip accidental role-prefixed dumps
+    import re
+
+    cleaned = re.sub(r'^(user|assistant|system)\s*:\s*', '', cleaned, flags=re.I)
+    first = cleaned.split('\n', 1)[0].strip()
+    first = re.split(r'\s+(?:user|assistant|system)\s*:\s*', first, maxsplit=1, flags=re.I)[0].strip()
+    first = re.sub(r'\s+', ' ', first).strip()
+    # Skip slash commands
+    if re.match(r'^/[a-zA-Z]', first):
+        return ''
+    if len(first) < 2:
+        return ''
+    if len(first) > max_len:
+        first = first[:max_len].rstrip() + '…'
+    return first
+
+
+def rename_workbench_session(session_id: str, title: str) -> WorkbenchSession | None:
+    """Set a session title, persist, and push realtime update to the UI."""
+    sid = (session_id or '').strip()
+    new_title = (title or '').strip()
+    if not sid or not new_title:
+        return None
+    if not _sessions:
+        _load_sessions()
+    session = _sessions.get(sid)
+    if not session:
+        return None
+    session.title = new_title[:120]
+    session.updatedAt = _now()
+    try:
+        save_sessions()
+    except Exception:
+        logger.exception('save_sessions failed after rename %s', sid)
+    try:
+        from app.services.realtime_bus import emit_realtime, emit_invalidate
+
+        emit_realtime(
+            'session.updated',
+            sessionId=sid,
+            title=session.title,
+            messageCount=session.messageCount,
+            provider=session.provider,
+            model=session.model,
+            guardMode=session.guardMode,
+        )
+        emit_invalidate('workbench-session', session_id=sid)
+    except Exception:
+        pass
+    _emit_session_status(sid)
+    return session
+
+
 def migrate_json_sessions_to_sqlite(*, force: bool = False) -> dict[str, object]:
     """One-shot JSON → SQLite import. Idempotent; renames source after success.
 
@@ -400,6 +473,85 @@ def _emit_session_status(session_id: str) -> None:
             cb(event)
         except Exception:
             pass
+    # Instant UI push (approval banner, sidebar pulse, plan gate, etc.)
+    try:
+        from app.services.realtime_bus import emit_realtime, emit_invalidate
+
+        emit_realtime(
+            'session.status',
+            sessionId=session_id,
+            status=session.status,
+            guardMode=session.guardMode,
+            pendingMutations=len(session.pendingMutations) > 0,
+            plan=session.plan is not None,
+            planApproved=session.planApproved,
+            messageCount=session.messageCount,
+            title=session.title,
+            provider=session.provider,
+            model=session.model,
+        )
+        emit_invalidate('session-status', 'workbench-session', session_id=session_id)
+    except Exception:
+        pass
+
+
+def notify_session_deleted(session_id: str) -> None:
+    """Fan out a real-time session-deleted event so the UI can drop the row
+    immediately (tool deletes, API deletes, cascade) without waiting on poll.
+    """
+    if not session_id:
+        return
+    event: dict[str, object] = {
+        'type': 'session_deleted',
+        'sessionId': session_id,
+    }
+    for cb in list(_status_subscribers):
+        try:
+            cb(event)
+        except Exception:
+            pass
+    try:
+        from app.services.brain_event_bus import emitBrainEvent
+
+        emitBrainEvent(
+            category='session',
+            layer='workbench',
+            summary=f'Session deleted: {session_id}',
+            meta={'action': 'deleted', 'sessionId': session_id},
+        )
+    except Exception:
+        pass
+    try:
+        from app.services.realtime_bus import emit_realtime
+
+        emit_realtime('session.deleted', sessionId=session_id)
+    except Exception:
+        pass
+
+
+def notify_session_created(session: WorkbenchSession) -> None:
+    """Push a new session to connected frontends immediately."""
+    if not session or not session.id:
+        return
+    try:
+        from app.services.realtime_bus import emit_realtime
+
+        emit_realtime(
+            'session.created',
+            sessionId=session.id,
+            title=session.title,
+            provider=session.provider,
+            model=session.model,
+            agentId=session.agentId,
+            guardMode=session.guardMode,
+            messageCount=session.messageCount,
+            createdAt=session.createdAt,
+            updatedAt=session.updatedAt,
+            startedAt=session.startedAt,
+            workspacePath=session.workspacePath,
+        )
+    except Exception:
+        pass
 
 
 def create_workbench_session(
@@ -444,6 +596,7 @@ def create_workbench_session(
         except Exception:
             pass
     _emit_session_status(session_id)
+    notify_session_created(session)
     return session
 
 
@@ -482,6 +635,9 @@ def delete_workbench_session(session_id: str) -> bool:
     Always attempts brain SQLite cascade (messages, timeline, …) even when the
     session is not currently loaded in memory — otherwise orphan child rows
     (and FK failures on partial deletes) linger after tool/UI cleanup.
+
+    Emits ``session_deleted`` *as soon as* the in-memory entry is gone so the
+    frontend can animate the row out before the slower SQLite cascade finishes.
     """
     if not session_id:
         return False
@@ -490,6 +646,20 @@ def delete_workbench_session(session_id: str) -> bool:
     session = _sessions.get(session_id)
     found_in_memory = session is not None
     workspace = session.workspacePath if session else ''
+
+    # Drop from RAM + notify UI first (real-time), cascade SQLite after.
+    if session_id in _sessions:
+        del _sessions[session_id]
+        found_in_memory = True
+    if found_in_memory:
+        notify_session_deleted(session_id)
+        try:
+            path = _sessions_path()
+            remaining = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
+            write_json_atomic(path, [s.toDict() for s in remaining], indent=2)
+        except Exception:
+            pass
+
     try:
         from app.services import aug_artifact_service
 
@@ -502,19 +672,12 @@ def delete_workbench_session(session_id: str) -> bool:
 
         # Cascade deletes messages / timeline / usage / … before the session row
         # (messages.session_id FK is NO ACTION — children must go first).
-        result = delete_session_cascade(session_id)
+        # notify=False: we already emitted above when the session was in memory;
+        # cascade will notify if this was a brain-only orphan row.
+        result = delete_session_cascade(session_id, notify=not found_in_memory)
         cascade_ok = bool(result.get('ok'))
     except Exception:
         logger.exception('SQLite session delete failed for %s', session_id)
-    if session_id in _sessions:
-        del _sessions[session_id]
-        found_in_memory = True
-    try:
-        path = _sessions_path()
-        remaining = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
-        write_json_atomic(path, [s.toDict() for s in remaining], indent=2)
-    except Exception:
-        pass
     return found_in_memory or cascade_ok
 
 

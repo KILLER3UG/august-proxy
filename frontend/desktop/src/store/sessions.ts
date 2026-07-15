@@ -159,10 +159,140 @@ export function createSession(folderId: string | null = null, title?: string, wo
   return newSess;
 }
 
+/** True when the title is still a default/empty placeholder. */
+export function isPlaceholderTitle(title: string | null | undefined): boolean {
+  const t = (title || '').trim();
+  if (!t) return true;
+  if (/^(new chat|new session|untitled|conversation started\.?)$/i.test(t)) return true;
+  // Date-stamped defaults: "Chat 2026-07-15 14:30" / "Chat 2026-07-15 14:30 UTC"
+  if (/^chat\s+\d{4}-\d{2}-\d{2}/i.test(t)) return true;
+  return false;
+}
+
+/** Prefer a real title over a placeholder when merging local + backend. */
+export function preferSessionTitle(
+  preferred: string | null | undefined,
+  fallback: string | null | undefined,
+): string {
+  if (preferred && !isPlaceholderTitle(preferred)) return preferred.trim();
+  if (fallback && !isPlaceholderTitle(fallback)) return fallback.trim();
+  return (preferred || fallback || defaultSessionTitle()).trim();
+}
+
+/** True when the session has no real conversation content yet. */
+export function sessionIsEmpty(s: Session): boolean {
+  if (s.isArchived) return false;
+  if ((s.messageCount ?? 0) > 0) return false;
+  for (const id of [s.id, s.workbenchSessionId].filter(Boolean) as string[]) {
+    try {
+      const raw = localStorage.getItem(`chat_messages_${id}`);
+      if (!raw) continue;
+      const msgs = JSON.parse(raw) as Array<{ role?: string }>;
+      if (
+        Array.isArray(msgs) &&
+        msgs.some((m) => m?.role === 'user' || m?.role === 'assistant')
+      ) {
+        return false;
+      }
+    } catch {
+      /* ignore corrupt storage */
+    }
+  }
+  return true;
+}
+
+/**
+ * Find an existing empty chat in the same folder/workspace so "New session"
+ * does not stack blank chats when the user is already on one.
+ */
+export function findReusableEmptySession(opts: {
+  folderId?: string | null;
+  workspacePath?: string | null;
+} = {}): Session | null {
+  const folderId = opts.folderId ?? null;
+  const workspacePath = opts.workspacePath ?? null;
+  const sessions = useSessionsStore.getState().sessions;
+  return (
+    sessions.find((s) => {
+      if (!sessionIsEmpty(s)) return false;
+      if ((s.folderId ?? null) !== folderId) return false;
+      // Match workspace when both sides have a path; empty workspace is reusable.
+      if (workspacePath && s.workspacePath && s.workspacePath !== workspacePath) {
+        return false;
+      }
+      return true;
+    }) ?? null
+  );
+}
+
+/**
+ * Create a session, or reuse an existing empty one (same folder/workspace).
+ * Moves the reused session to the top of the list for visibility.
+ */
+export function getOrCreateEmptySession(
+  folderId: string | null = null,
+  title?: string,
+  workspacePath?: string | null,
+): Session {
+  const existing = findReusableEmptySession({ folderId, workspacePath });
+  if (existing) {
+    // Bump to top so it feels like "new" without stacking blanks.
+    const rest = useSessionsStore
+      .getState()
+      .sessions.filter((s) => s.id !== existing.id);
+    const bumped: Session = {
+      ...existing,
+      startedAt: new Date().toISOString(),
+      title: isPlaceholderTitle(existing.title)
+        ? title ?? defaultSessionTitle()
+        : existing.title,
+    };
+    const updated = [bumped, ...rest];
+    useSessionsStore.setState({ sessions: updated });
+    saveSessionsToStorage(updated);
+    return bumped;
+  }
+  return createSession(folderId, title, workspacePath);
+}
+
 export function renameSession(id: string, newTitle: string) {
-  const updated = useSessionsStore.getState().sessions.map(s => s.id === id ? { ...s, title: newTitle } : s);
+  const title = newTitle.trim();
+  if (!title) return;
+  const sessions = useSessionsStore.getState().sessions;
+  const sess = sessions.find((s) => s.id === id || s.workbenchSessionId === id);
+  const updated = sessions.map((s) =>
+    s.id === id || s.workbenchSessionId === id ? { ...s, title } : s,
+  );
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
+
+  // Persist to workbench SoT so reconcile / other tabs keep the title.
+  const backendId = sess?.workbenchSessionId || (id.startsWith('wb_') ? id : '');
+  if (backendId) {
+    void fetch(`/api/workbench/sessions/${encodeURIComponent(backendId)}/title`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    }).catch(() => {
+      // Best-effort — local title already applied.
+    });
+  }
+}
+
+/** Short sidebar title from the first user message (not a raw dump). */
+export function deriveSessionTitleFromMessage(text: string): string | null {
+  let cleaned = (text || '').replace(/\r\n/g, '\n').trim();
+  if (!cleaned) return null;
+  // Drop accidental role-prefixed transcript dumps saved as a single "user" blob.
+  cleaned = cleaned.replace(/^(user|assistant|system)\s*:\s*/i, '');
+  // Prefer the first meaningful line / sentence.
+  const firstChunk = cleaned.split(/\n+/)[0] || cleaned;
+  cleaned = firstChunk.replace(/\s+/g, ' ').trim();
+  // If it still looks like a multi-turn transcript, take text before the next role marker.
+  cleaned = cleaned.split(/\s+(?:user|assistant|system)\s*:\s*/i)[0]?.trim() || cleaned;
+  if (cleaned.length < 2) return null;
+  if (cleaned.length > 48) cleaned = `${cleaned.slice(0, 48).trim()}…`;
+  return cleaned;
 }
 
 export function updateSessionModel(id: string, model: string, provider: string) {
@@ -188,27 +318,94 @@ export function updateSessionWorkbenchMetadata(
   saveSessionsToStorage(updated);
 }
 
+/** IDs removed optimistically / via tool event — reconcile must not re-add them. */
+const _tombstonedSessionIds = new Map<string, number>();
+const TOMBSTONE_TTL_MS = 120_000;
+
+function _tombstone(id: string): void {
+  if (!id) return;
+  _tombstonedSessionIds.set(id, Date.now() + TOMBSTONE_TTL_MS);
+}
+
+function _isTombstoned(id: string | undefined | null): boolean {
+  if (!id) return false;
+  const exp = _tombstonedSessionIds.get(id);
+  if (exp == null) return false;
+  if (Date.now() > exp) {
+    _tombstonedSessionIds.delete(id);
+    return false;
+  }
+  return true;
+}
+
 /**
  * Purge a session from the backend (workbench SoT + brain SQLite cascade).
- * Best-effort: local UI delete still succeeds if the network is down.
+ * Best-effort + parallel: local UI delete already applied; network must not block it.
  */
 async function purgeBackendSession(ids: string[]): Promise<void> {
   const seen = new Set<string>();
-  for (const raw of ids) {
-    const id = (raw || '').trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    try {
-      await deleteWorkbenchSession(id);
-    } catch {
-      // Workbench may not know this id (local-only UI session) — try manage plane.
+  const unique = ids
+    .map((raw) => (raw || '').trim())
+    .filter((id) => {
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  await Promise.all(
+    unique.map(async (id) => {
       try {
-        await deleteManageSession(id);
+        await deleteWorkbenchSession(id);
       } catch {
-        /* ignore — local delete already applied */
+        try {
+          await deleteManageSession(id);
+        } catch {
+          /* ignore — local delete already applied */
+        }
       }
+    }),
+  );
+}
+
+/**
+ * Drop a session from the sidebar immediately (no network).
+ * Used by optimistic UI deletes and real-time ``session_deleted`` SSE events
+ * from the model’s delete_session tool.
+ * @returns true if a row was removed
+ */
+export function removeSessionLocally(id: string): boolean {
+  if (!id) return false;
+  const sessions = useSessionsStore.getState().sessions;
+  const sess = sessions.find((s) => s.id === id || s.workbenchSessionId === id);
+  if (!sess && !sessions.some((s) => s.id === id || s.workbenchSessionId === id)) {
+    // Still tombstone so a lagging reconcile cannot resurrect a just-deleted id.
+    _tombstone(id);
+    return false;
+  }
+  const dropIds = new Set(
+    [id, sess?.id, sess?.workbenchSessionId].filter(
+      (x): x is string => typeof x === 'string' && x.length > 0,
+    ),
+  );
+  for (const d of dropIds) _tombstone(d);
+
+  const updated = sessions.filter(
+    (s) => !dropIds.has(s.id) && !(s.workbenchSessionId && dropIds.has(s.workbenchSessionId)),
+  );
+  if (updated.length === sessions.length) {
+    _tombstone(id);
+    return false;
+  }
+  useSessionsStore.setState({ sessions: updated });
+  saveSessionsToStorage(updated);
+  for (const lid of dropIds) {
+    try {
+      localStorage.removeItem(`chat_messages_${lid}`);
+      localStorage.removeItem(`august_composer_draft_${lid}`);
+    } catch {
+      /* ignore */
     }
   }
+  return true;
 }
 
 /**
@@ -219,20 +416,11 @@ async function purgeBackendSession(ids: string[]): Promise<void> {
 export function deleteSession(id: string) {
   const sessions = useSessionsStore.getState().sessions;
   const sess = sessions.find((s) => s.id === id || s.workbenchSessionId === id);
-  const updated = sessions.filter(
-    (s) => s.id !== id && s.workbenchSessionId !== id && s.id !== sess?.id,
-  );
-  useSessionsStore.setState({ sessions: updated });
-  saveSessionsToStorage(updated);
-
   const localIds = [id, sess?.id, sess?.workbenchSessionId].filter(
     (x): x is string => typeof x === 'string' && x.length > 0,
   );
-  for (const lid of localIds) {
-    localStorage.removeItem(`chat_messages_${lid}`);
-    localStorage.removeItem(`august_composer_draft_${lid}`);
-  }
-
+  removeSessionLocally(id);
+  // Fire-and-forget — never await on the UI path
   void purgeBackendSession(localIds);
 }
 
@@ -322,7 +510,11 @@ export function clearAllSessions(includeArchived: boolean = true) {
 export async function reconcileSessionsFromBackend(): Promise<void> {
   try {
     const backendSessions = await getWorkbenchSessions();
-    const backendMap = new Map(backendSessions.map(s => [s.id, s]));
+    // Skip ids the user (or a tool) just deleted — cascade may still be mid-flight.
+    const liveBackend = backendSessions.filter(
+      (s) => !_isTombstoned(s.id),
+    );
+    const backendMap = new Map(liveBackend.map((s) => [s.id, s]));
 
     const current = useSessionsStore.getState().sessions;
     const merged: Session[] = [];
@@ -330,6 +522,9 @@ export async function reconcileSessionsFromBackend(): Promise<void> {
     const now = new Date().toISOString();
 
     for (const local of current) {
+      if (_isTombstoned(local.id) || _isTombstoned(local.workbenchSessionId)) {
+        continue;
+      }
       const key = local.workbenchSessionId || local.id;
       const backend = backendMap.get(key) ?? backendMap.get(local.id);
       if (backend) {
@@ -339,7 +534,12 @@ export async function reconcileSessionsFromBackend(): Promise<void> {
           ...local,
           id: backend.id,
           workbenchSessionId: backend.id,
-          title: (backend.title as string | undefined) || local.title,
+          // Never clobber a real local title with a backend placeholder
+          // ("Chat 2026-…", "New Session") — that was wiping auto-titles.
+          title: preferSessionTitle(
+            backend.title as string | undefined,
+            local.title,
+          ),
           startedAt: local.startedAt,
           messageCount: backend.messageCount ?? local.messageCount,
           provider: backend.provider || local.provider,
@@ -350,8 +550,8 @@ export async function reconcileSessionsFromBackend(): Promise<void> {
       // Not in workbench SoT → dropped from sidebar (deleted server-side).
     }
 
-    for (const bs of backendSessions) {
-      if (claimed.has(bs.id)) continue;
+    for (const bs of liveBackend) {
+      if (claimed.has(bs.id) || _isTombstoned(bs.id)) continue;
       merged.push({
         id: bs.id,
         title: (bs.title as string | undefined) || 'New Session',

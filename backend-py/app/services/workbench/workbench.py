@@ -830,6 +830,21 @@ async def _sendWorkbenchMessageStreamImpl(
     _emitSessionStatus(sessionId)
     session.messages.append({'role': 'user', 'content': message})
     session.messageCount += 1
+    # Auto-title placeholder sessions from the first real user message so the
+    # sidebar never stays stuck on "Chat YYYY-MM-DD …" / "New Session".
+    try:
+        from app.services.workbench.sessions import (
+            derive_title_from_message,
+            is_placeholder_title,
+            rename_workbench_session,
+        )
+
+        if is_placeholder_title(session.title):
+            auto_title = derive_title_from_message(message)
+            if auto_title:
+                rename_workbench_session(sessionId, auto_title)
+    except Exception:
+        logger.debug('auto-title failed for %s', sessionId, exc_info=True)
     effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
     resolvedProvider, resolvedModel = _resolveChatLlm(
         model=model or '',

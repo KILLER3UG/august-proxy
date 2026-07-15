@@ -210,13 +210,62 @@ _SESSION_CHILD_TABLES: tuple[str, ...] = (
 )
 
 
-def delete_session_cascade(sessionId: str) -> dict[str, object]:
+def _delete_messages_for_session(conn: object, sid: str) -> int:
+    """Delete messages for a session, surviving partial FTS/index corruption.
+
+    Bulk ``DELETE FROM messages WHERE session_id=?`` can raise
+    ``database disk image is malformed`` when the messages FTS shadow
+    tables are inconsistent. Rebuild FTS, then fall back to per-row
+    deletes so cascade never gets stuck on one bad session.
+    """
+    import sqlite3
+
+    c = conn  # typed loosely; always the brain sqlite connection
+    try:
+        cur = c.execute('DELETE FROM messages WHERE session_id = ?', (sid,))  # type: ignore[union-attr]
+        return int(cur.rowcount or 0)
+    except sqlite3.DatabaseError:
+        # FTS out of sync with base table — rebuild then retry bulk, then by id.
+        try:
+            c.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")  # type: ignore[union-attr]
+        except sqlite3.Error:
+            pass
+        try:
+            cur = c.execute('DELETE FROM messages WHERE session_id = ?', (sid,))  # type: ignore[union-attr]
+            return int(cur.rowcount or 0)
+        except sqlite3.DatabaseError:
+            pass
+        deleted = 0
+        try:
+            ids = [
+                int(r[0])
+                for r in c.execute(  # type: ignore[union-attr]
+                    'SELECT id FROM messages WHERE session_id = ?', (sid,)
+                ).fetchall()
+            ]
+        except sqlite3.DatabaseError:
+            ids = []
+        for mid in ids:
+            try:
+                cur = c.execute('DELETE FROM messages WHERE id = ?', (mid,))  # type: ignore[union-attr]
+                deleted += int(cur.rowcount or 0)
+            except sqlite3.DatabaseError:
+                continue
+        return deleted
+
+
+def delete_session_cascade(
+    sessionId: str, *, notify: bool = True
+) -> dict[str, object]:
     """Delete a session and all dependent rows in one transaction.
 
     Always sweeps child tables even when the parent ``sessions`` row is
     already gone (orphans from prior partial deletes). Returns:
       ``{ok, sessionId, messages, children: {table: n}}``
     ``ok`` is True when a parent row or any child row was removed.
+
+    When ``notify`` is True (default), fans out a real-time session-deleted
+    event so the desktop sidebar can drop the row immediately.
     """
     import sqlite3
 
@@ -228,13 +277,25 @@ def delete_session_cascade(sessionId: str) -> dict[str, object]:
     children: dict[str, int] = {}
     try:
         conn.execute('BEGIN')
+        # Messages first (real FK + optional FTS corruption path).
+        try:
+            msg_n = _delete_messages_for_session(conn, sid)
+            if msg_n:
+                children['messages'] = msg_n
+        except sqlite3.OperationalError:
+            pass
         for table in _SESSION_CHILD_TABLES:
+            if table == 'messages':
+                continue
             try:
                 cur = conn.execute(f'DELETE FROM {table} WHERE session_id = ?', (sid,))
                 if cur.rowcount:
                     children[table] = int(cur.rowcount)
             except sqlite3.OperationalError:
                 # Table may not exist on older / partial brains.
+                pass
+            except sqlite3.DatabaseError:
+                # Non-fatal: continue so parent + other children still clean up.
                 pass
         # Conversation auto-memories keyed by full session id.
         try:
@@ -259,8 +320,16 @@ def delete_session_cascade(sessionId: str) -> dict[str, object]:
         parent_deleted = cur.rowcount > 0
         conn.commit()
         any_child = bool(children)
+        ok = parent_deleted or any_child
+        if ok and notify:
+            try:
+                from app.services.workbench.sessions import notify_session_deleted
+
+                notify_session_deleted(sid)
+            except Exception:
+                pass
         return {
-            'ok': parent_deleted or any_child,
+            'ok': ok,
             'sessionId': sid,
             'messages': children.get('messages', 0),
             'children': children,

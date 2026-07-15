@@ -149,36 +149,178 @@ def unregisterServer(serverId: str) -> bool:
     return True
 
 
+_stderr_tasks: dict[str, asyncio.Task] = {}
+
+
+def _start_stderr_drain(server_id: str, proc: asyncio.subprocess.Process) -> None:
+    """Background-read stderr so the child never blocks on a full pipe."""
+
+    async def _drain() -> None:
+        if not proc.stderr:
+            return
+        try:
+            while True:
+                line = await proc.stderr.readline()
+                if not line:
+                    break
+                text = line.decode('utf-8', errors='replace').rstrip()
+                if text:
+                    logger.debug('mcp[%s] stderr: %s', server_id, text[:500])
+        except Exception:
+            pass
+
+    task = asyncio.create_task(_drain())
+    _stderr_tasks[server_id] = task
+    task.add_done_callback(lambda _t: _stderr_tasks.pop(server_id, None))
+
+
+async def _stdio_write(
+    proc: asyncio.subprocess.Process,
+    message: dict[str, object],
+    *,
+    framing: str = 'ndjson',
+) -> None:
+    """Write one MCP JSON-RPC message on stdio.
+
+    framing:
+      - ``ndjson`` (default): one JSON object per line — what FastMCP /
+        workspace-mcp expect (Content-Length lines are parsed as JSON and fail).
+      - ``content-length``: LSP-style headers for other MCP servers.
+    """
+    if not proc.stdin:
+        raise ConnectionError('MCP process has no stdin')
+    body = json.dumps(message, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    if framing == 'content-length':
+        header = f'Content-Length: {len(body)}\r\n\r\n'.encode('ascii')
+        proc.stdin.write(header + body)
+    else:
+        proc.stdin.write(body + b'\n')
+    await proc.stdin.drain()
+
+
+async def _stdio_read_raw_message(
+    proc: asyncio.subprocess.Process, timeout: float = 30.0
+) -> dict[str, object] | None:
+    """Read one JSON-RPC object from stdio (Content-Length framed or NDJSON)."""
+    if not proc.stdout:
+        return None
+    deadline = asyncio.get_event_loop().time() + timeout
+
+    async def _read_exact(n: int) -> bytes:
+        buf = b''
+        while len(buf) < n:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError()
+            chunk = await asyncio.wait_for(proc.stdout.read(n - len(buf)), timeout=remaining)
+            if not chunk:
+                break
+            buf += chunk
+        return buf
+
+    async def _read_line() -> bytes:
+        remaining = deadline - asyncio.get_event_loop().time()
+        if remaining <= 0:
+            raise asyncio.TimeoutError()
+        return await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+
+    # Detect framing: Content-Length header vs bare JSON line.
+    first = await _read_line()
+    if not first:
+        return None
+    first_stripped = first.strip()
+    if first_stripped.lower().startswith(b'content-length:'):
+        headers = first.decode('utf-8', errors='replace')
+        # Read remaining header lines until blank line
+        while True:
+            line = await _read_line()
+            if not line or line in (b'\r\n', b'\n', b'\r'):
+                break
+            headers += line.decode('utf-8', errors='replace')
+        content_length = 0
+        for hline in headers.splitlines():
+            if hline.lower().startswith('content-length:'):
+                try:
+                    content_length = int(hline.split(':', 1)[1].strip())
+                except ValueError:
+                    content_length = 0
+        if content_length <= 0:
+            return None
+        body = await _read_exact(content_length)
+        try:
+            parsed = json.loads(body.decode('utf-8'))
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    # NDJSON / JSON-line response (some servers mix this with framed requests)
+    try:
+        parsed = json.loads(first_stripped.decode('utf-8'))
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+async def _stdio_rpc(
+    proc: asyncio.subprocess.Process,
+    method: str,
+    params: dict[str, object] | None = None,
+    *,
+    msg_id: object = 1,
+    timeout: float = 30.0,
+    notification: bool = False,
+    framing: str = 'ndjson',
+) -> dict[str, object] | None:
+    """Send a JSON-RPC request/notification and optionally wait for the matching response."""
+    if notification:
+        note: dict[str, object] = {'jsonrpc': '2.0', 'method': method}
+        if params is not None:
+            note['params'] = params
+        await _stdio_write(proc, note, framing=framing)
+        return None
+
+    req: dict[str, object] = {'jsonrpc': '2.0', 'id': msg_id, 'method': method}
+    if params is not None:
+        req['params'] = params
+    await _stdio_write(proc, req, framing=framing)
+
+    deadline = asyncio.get_event_loop().time() + timeout
+    while True:
+        remaining = deadline - asyncio.get_event_loop().time()
+        if remaining <= 0:
+            raise asyncio.TimeoutError(f'MCP RPC timeout waiting for {method}')
+        msg = await _stdio_read_raw_message(proc, timeout=remaining)
+        if msg is None:
+            raise ConnectionError(f'MCP process closed while waiting for {method}')
+        # Skip server notifications / logs until we get our response id.
+        if 'id' in msg and msg.get('id') == msg_id:
+            return msg
+        # Some servers echo without id match on errors — still surface them.
+        if 'error' in msg and msg.get('id') in (msg_id, None):
+            return msg
+
+
 async def _mcp_initialize(proc: asyncio.subprocess.Process) -> bool:
     """Send MCP initialize + notifications/initialized handshake over stdio."""
     if not proc.stdin or not proc.stdout:
         return False
-    init_req = {
-        'jsonrpc': '2.0',
-        'id': 0,
-        'method': 'initialize',
-        'params': {
-            'protocolVersion': '2024-11-05',
-            'capabilities': {},
-            'clientInfo': {'name': 'august-proxy', 'version': '1.0.0'},
-        },
-    }
     try:
-        proc.stdin.write((json.dumps(init_req) + '\n').encode())
-        await proc.stdin.drain()
-        raw = await asyncio.wait_for(proc.stdout.readline(), timeout=10)
-        if not raw:
+        resp = await _stdio_rpc(
+            proc,
+            'initialize',
+            {
+                'protocolVersion': _PROTOCOL_VERSION,
+                'capabilities': {},
+                'clientInfo': {'name': 'august-proxy', 'version': '1.0.0'},
+            },
+            msg_id=0,
+            timeout=20.0,
+        )
+        if not resp or 'error' in resp:
             return False
-        # Best-effort: accept any JSON-RPC response; some servers reply without id match.
-        try:
-            json.loads(raw.decode())
-        except json.JSONDecodeError:
-            return False
-        note = {'jsonrpc': '2.0', 'method': 'notifications/initialized'}
-        proc.stdin.write((json.dumps(note) + '\n').encode())
-        await proc.stdin.drain()
+        await _stdio_rpc(proc, 'notifications/initialized', notification=True)
         return True
-    except (asyncio.TimeoutError, ConnectionError, OSError):
+    except (asyncio.TimeoutError, ConnectionError, OSError, json.JSONDecodeError):
         return False
 
 
@@ -206,6 +348,10 @@ async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | Non
         env.update({str(k): str(v) for k, v in env_cfg.items()})
     args_list = [as_str(a) for a in as_list(server.get('args'))]
     try:
+        # stderr must be drained or the MCP process can block once the pipe
+        # buffer fills (common with FastMCP / uvx logs on Windows).
+        # limit: tools/list payloads for multi-service MCP servers easily
+        # exceed the default 64KiB StreamReader line limit.
         proc = await asyncio.create_subprocess_exec(
             as_str(server['command']),
             *args_list,
@@ -213,8 +359,10 @@ async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | Non
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            limit=8 * 1024 * 1024,
         )
         _processes[serverId] = proc
+        _start_stderr_drain(serverId, proc)
         ok = await _mcp_initialize(proc)
         if not ok:
             # Some servers still work without strict handshake; mark running anyway.
@@ -233,6 +381,9 @@ async def _stopServerProcess(serverId: str) -> None:
     """Stop an MCP server subprocess and clear remote session state."""
     proc = _processes.pop(serverId, None)
     _remote_sessions.pop(serverId, None)
+    drain = _stderr_tasks.pop(serverId, None)
+    if drain and not drain.done():
+        drain.cancel()
     if proc:
         try:
             proc.terminate()
@@ -495,17 +646,23 @@ async def discoverTools(serverId: str) -> list[dict[str, object]]:
     proc = await _startServerProcess(serverId)
     if not proc or not proc.stdin or (not proc.stdout):
         return []
-    request = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}
     try:
-        proc.stdin.write((json.dumps(request) + '\n').encode())
-        await proc.stdin.drain()
-        response = await asyncio.wait_for(proc.stdout.readline(), timeout=10)
-        result = json.loads(response.decode())
-        tools = result.get('result', {}).get('tools', [])
-        _toolsCache[serverId] = tools
-        return tools
-    except (asyncio.TimeoutError, json.JSONDecodeError, ConnectionError) as exc:
-        _servers.get(serverId, {})['error'] = str(exc)
+        result = await _stdio_rpc(proc, 'tools/list', {}, msg_id=1, timeout=30.0)
+        if not result:
+            return []
+        if 'error' in result:
+            err = result.get('error')
+            msg = as_dict(err, {}).get('message') if isinstance(err, dict) else str(err)
+            server['error'] = str(msg)
+            return []
+        tools = as_list(as_dict(result.get('result'), {}).get('tools'), [])
+        typed = [t for t in tools if isinstance(t, dict)]
+        _toolsCache[serverId] = typed  # type: ignore[assignment]
+        server['error'] = ''
+        server['toolCount'] = len(typed)
+        return typed  # type: ignore[return-value]
+    except (asyncio.TimeoutError, json.JSONDecodeError, ConnectionError, OSError) as exc:
+        server['error'] = str(exc)
         return []
 
 
@@ -553,22 +710,30 @@ async def executeTool(serverId: str, toolName: str, args: dict[str, object]) -> 
             f"Error: MCP server '{serverId}' is not running{detail}. "
             'Open Settings → Integrations and Start the server (Node/npx must be on PATH for npx-based installs).'
         )
-    request = {
-        'jsonrpc': '2.0',
-        'id': str(uuid.uuid4()),
-        'method': 'tools/call',
-        'params': {'name': toolName, 'arguments': args},
-    }
     try:
-        proc.stdin.write((json.dumps(request) + '\n').encode())
-        await proc.stdin.drain()
-        response = await asyncio.wait_for(proc.stdout.readline(), timeout=MCP_TIMEOUT_MS / 1000)
-        result = json.loads(response.decode())
+        result = await _stdio_rpc(
+            proc,
+            'tools/call',
+            {'name': toolName, 'arguments': args},
+            msg_id=str(uuid.uuid4()),
+            timeout=MCP_TIMEOUT_MS / 1000,
+        )
+        if not result:
+            return f"Error: empty response from MCP tool '{toolName}'"
         if 'error' in result:
-            return f'Error: {result["error"].get("message", str(result["error"]))}'
-        content = result.get('result', {}).get('content', [])
-        textParts = [c.get('text', '') for c in content if c.get('type') in ('text', 'output_text')]
-        return '\n'.join(textParts) if textParts else json.dumps(result['result'])
+            err = result.get('error')
+            return f'Error: {as_dict(err, {}).get("message", str(err)) if isinstance(err, dict) else err}'
+        content = as_list(as_dict(result.get('result'), {}).get('content'), [])
+        text_parts = [
+            as_str(c.get('text'))
+            for c in content
+            if isinstance(c, dict) and c.get('type') in ('text', 'output_text')
+        ]
+        text_parts = [t for t in text_parts if t]
+        if text_parts:
+            return '\n'.join(text_parts)
+        res_body = result.get('result')
+        return json.dumps(res_body) if res_body is not None else ''
     except asyncio.TimeoutError:
         return f"Error: MCP tool '{toolName}' timed out"
     except json.JSONDecodeError:

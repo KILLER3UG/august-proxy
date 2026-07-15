@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { createPortal } from 'react-dom';
-import { useSessionsStore, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel, updateSessionWorkbenchMetadata, type Session } from '@/store/sessions';
+import { useSessionsStore, setSessionStatus, clearSessionStatus, renameSession, deriveSessionTitleFromMessage, isPlaceholderTitle, updateSessionModel, updateSessionWorkbenchMetadata, type Session } from '@/store/sessions';
+import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import { ToolCallItem as ToolCallItemComp } from '@/components/chat/ToolCallItem';
@@ -385,7 +386,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [input, setInput] = useState(() => loadComposerDraft(sessionId));
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
   const [_runtimeVersion, _setRuntimeVersion] = useState(0);
-  const streaming = chatRuntime.isSessionStreaming(sessionId);
   // Sub-agent prompt disclosures, keyed by the parent toolUse id. The
   // backend emits a `prompt` SSE event only for august__spawn_subagent /
   // august__run_team calls (and only for the sub-agents they spawn); we
@@ -462,6 +462,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
   const [showModelVisibility, setShowModelVisibility] = useState(false);
   const workbenchSession = streamState.workbenchSession;
+  // Backend active-stream map is keyed by workbench SoT id; local turns use the
+  // UI session id. OR both so the AUG indicator stays visible across tab/session switches.
+  const activeChatSessions = useActiveChatStreamsStore((s) => s.active);
+  const workbenchStreamId =
+    workbenchSession?.id ||
+    activeSession?.workbenchSessionId ||
+    (sessionId?.startsWith('wb_') ? sessionId : undefined);
+  const streaming =
+    chatRuntime.isSessionStreaming(sessionId) ||
+    (!!workbenchStreamId && chatRuntime.isSessionStreaming(workbenchStreamId)) ||
+    !!(sessionId && activeChatSessions[sessionId]) ||
+    !!(workbenchStreamId && activeChatSessions[workbenchStreamId]);
   const setWorkbenchSession = (session: WorkbenchSession | null | ((prev: WorkbenchSession | null) => WorkbenchSession | null)) => {
     if (!sessionId) return;
     if (typeof session === 'function') {
@@ -1196,6 +1208,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ensureWorkbenchSession = async () => {
     if (!sessionId) return null;
+    const localTitle = useSessionsStore
+      .getState()
+      .sessions.find((s) => s.id === sessionId || s.workbenchSessionId === sessionId)
+      ?.title;
+
+    const syncTitleToBackend = (wbId: string, backendTitle?: string) => {
+      // If the sidebar already has a real title and the workbench still has a
+      // placeholder, push the good title so it sticks across reloads.
+      if (localTitle && !isPlaceholderTitle(localTitle) && isPlaceholderTitle(backendTitle)) {
+        void fetch(`/api/workbench/sessions/${encodeURIComponent(wbId)}/title`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: localTitle }),
+        }).catch(() => { /* best-effort */ });
+      }
+    };
+
     const existingId = workbenchSession?.id || activeSession?.workbenchSessionId;
     if (existingId) {
       try {
@@ -1206,6 +1235,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           workbenchAgentId: loaded.agentId,
           workbenchProvider: loaded.provider,
         });
+        syncTitleToBackend(loaded.id, loaded.title);
         return loaded;
       } catch {
         // The backend may have been restarted; create a fresh Workbench session below.
@@ -1223,22 +1253,29 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       workbenchAgentId: created.agentId,
       workbenchProvider: created.provider,
     });
+    syncTitleToBackend(created.id, created.title);
     return created;
   };
 
 	  useEffect(() => {
 	    void syncActiveStreams(ensureWorkbenchSession);
-
+	    // Re-attach durable SSE + refresh active-stream map when the user
+	    // returns to the tab or switches sessions so AUG does not go stale.
 	    const handleVisibilityChange = () => {
 	      if (document.visibilityState === 'visible') {
 	        void syncActiveStreams(ensureWorkbenchSession);
 	      }
 	    };
+	    const handleFocus = () => {
+	      void syncActiveStreams(ensureWorkbenchSession);
+	    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
     };
-  }, [ensureWorkbenchSession]);
+  }, [ensureWorkbenchSession, sessionId]);
 
   /**
    * Helper for banner/panel click handlers. Wraps the streaming
@@ -1580,24 +1617,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     const currentMessages = sessionId === loadedSessionId ? messages : loadMessagesForSession(sessionId);
 
-    // Auto-generate title from the first user request. Skip slash commands
-    // and collapse whitespace for a clean single-line title. Also retitle
-    // default "New chat" sessions so the sidebar updates even if a prior
-    // empty/failed turn left a phantom message in localStorage.
-    const activeSess = useSessionsStore.getState().sessions.find((s) => s.id === sessionId);
-    const isDefaultTitle =
+    // Auto-title when the sidebar still has a placeholder title (first real
+    // user message, or after a failed earlier attempt). Backend also auto-titles
+    // on stream start; this keeps local UI instant.
+    const activeSess = useSessionsStore.getState().sessions.find(
+      (s) => s.id === sessionId || s.workbenchSessionId === sessionId,
+    );
+    const needsTitle =
       !activeSess?.title ||
-      /^new chat$/i.test(activeSess.title.trim()) ||
-      /^new session$/i.test(activeSess.title.trim()) ||
-      /^untitled/i.test(activeSess.title.trim()) ||
-      // Date-stamped placeholder titles (backend + frontend)
-      /^chat \d{4}-\d{2}-\d{2}/i.test(activeSess.title.trim());
-    const userTurns = currentMessages.filter((m) => m.role === 'user').length;
-    if (sessionId && (userTurns === 0 || isDefaultTitle)) {
+      /^(new chat|new session|untitled)$/i.test(activeSess.title.trim()) ||
+      /^chat\s+\d{4}-\d{2}-\d{2}/i.test(activeSess.title.trim());
+    if (sessionId && needsTitle) {
       const isCommand = /^\s*\/[a-zA-Z][\w-]*\b/.test(text);
       if (!isCommand) {
-        const cleaned = text.replace(/\s+/g, ' ').trim();
-        const title = cleaned.length > 50 ? cleaned.slice(0, 50).trim() + '…' : cleaned;
+        const title = deriveSessionTitleFromMessage(text);
         if (title) renameSession(sessionId, title);
       }
     }
@@ -2528,7 +2561,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     }}
                     footer={
                       <>
-                        {streaming && messages.length > 0 && <WorkingIndicator />}
+                        {streaming && <WorkingIndicator key={`aug-${sessionId ?? 'none'}`} />}
                         {modelPickerActive && (
                           <ModelPickerCard
                             sessionId={sessionId ?? ''}

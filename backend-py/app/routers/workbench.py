@@ -79,6 +79,37 @@ async def deleteSession(sessionId: str):
     return {'status': 'ok'}
 
 
+@router.patch('/sessions/{session_id}/title')
+async def renameSessionTitle(sessionId: str, request: Request):
+    """Rename a workbench session (sidebar title)."""
+    body = await request.json() if request.headers.get('content-type') else {}
+    title = str(body.get('title') or '').strip()
+    if not title:
+        raise HTTPException(status_code=400, detail='title required')
+    from app.services.workbench.sessions import rename_workbench_session
+
+    session = rename_workbench_session(sessionId, title)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return session.toDict()
+
+
+@router.post('/session/rename')
+async def renameSessionTitlePost(request: Request):
+    """Rename via body { sessionId, title } (tool-friendly)."""
+    body = await request.json() if request.headers.get('content-type') else {}
+    sessionId = str(body.get('sessionId') or '').strip()
+    title = str(body.get('title') or '').strip()
+    if not sessionId or not title:
+        raise HTTPException(status_code=400, detail='sessionId and title required')
+    from app.services.workbench.sessions import rename_workbench_session
+
+    session = rename_workbench_session(sessionId, title)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return session.toDict()
+
+
 @router.post('/sessions/{session_id}/reset')
 async def resetSession(sessionId: str, request: Request):
     """Reset a session (delete and recreate)."""
@@ -143,6 +174,14 @@ async def startChat(request: Request):
     cancelEvent = asyncio.Event()
     _cancelled[sessionId] = cancelEvent
 
+    def _notify_chat_idle() -> None:
+        try:
+            from app.services.realtime_bus import emit_realtime
+
+            emit_realtime('chat.idle', sessionId=sessionId)
+        except Exception:
+            pass
+
     async def safeStream():
         try:
             await wb.sendWorkbenchMessageStream(
@@ -196,11 +235,18 @@ async def startChat(request: Request):
             _cancelled.pop(sessionId, None)
             if _activeStreams.get(sessionId) is task:
                 _activeStreams.pop(sessionId, None)
+            _notify_chat_idle()
 
     task = asyncio.create_task(safeStream())
     _activeStreams[sessionId] = task
     _chatTasks.add(task)
     task.add_done_callback(_chatTasks.discard)
+    try:
+        from app.services.realtime_bus import emit_realtime
+
+        emit_realtime('chat.active', sessionId=sessionId, status='streaming')
+    except Exception:
+        pass
     return {'status': 'started', 'sessionId': sessionId, 'sinceSeq': seq}
 
 
@@ -300,6 +346,13 @@ async def submitPlanRoute(request: Request):
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
     wb.submitPlan(session, planData)
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime('session.updated', sessionId=sessionId, plan=True)
+        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
+    except Exception:
+        pass
     return {'status': 'ok'}
 
 
@@ -308,6 +361,13 @@ async def approvePlan(sessionId: str = Query('')):
     """Approve a pending plan."""
     if not wb.approveWorkbenchPlan(sessionId):
         raise HTTPException(status_code=404, detail='Session not found or no plan pending')
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime('session.updated', sessionId=sessionId, planApproved=True)
+        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
+    except Exception:
+        pass
     return {'status': 'approved'}
 
 
@@ -316,6 +376,13 @@ async def rejectPlan(sessionId: str = Query('')):
     """Reject a pending plan."""
     if not wb.rejectWorkbenchPlan(sessionId):
         raise HTTPException(status_code=404, detail='Session not found')
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime('session.updated', sessionId=sessionId, plan=False)
+        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
+    except Exception:
+        pass
     return {'status': 'rejected'}
 
 
@@ -330,6 +397,12 @@ async def submitTodosRoute(request: Request):
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
     wb.submitTodos(session, todosData, title=title)
+    try:
+        from app.services.realtime_bus import emit_invalidate
+
+        emit_invalidate('workbench-session', session_id=sessionId)
+    except Exception:
+        pass
     return {'status': 'ok', 'todos': session.todos}
 
 
@@ -344,6 +417,12 @@ async def updateTodosRoute(request: Request):
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
     wb.updateTodos(session, todosData, title=title)
+    try:
+        from app.services.realtime_bus import emit_invalidate
+
+        emit_invalidate('workbench-session', session_id=sessionId)
+    except Exception:
+        pass
     return {'status': 'ok', 'todos': session.todos}
 
 
@@ -355,6 +434,12 @@ async def respondMutation(request: Request):
     reject = body.get('reject', False)
     if not wb.consumePendingMutation(token, reject=reject):
         raise HTTPException(status_code=404, detail='Mutation token not found')
+    try:
+        from app.services.realtime_bus import emit_invalidate
+
+        emit_invalidate('session-status', 'workbench-session')
+    except Exception:
+        pass
     return {'status': 'consumed'}
 
 
@@ -404,6 +489,18 @@ async def setGuardMode(request: Request):
     except Exception:
         pass
     save_sessions()
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime(
+            'session.updated',
+            sessionId=sessionId,
+            guardMode=session.guardMode,
+            agentId=session.agentId,
+        )
+        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
+    except Exception:
+        pass
     return session.toDict()
 
 

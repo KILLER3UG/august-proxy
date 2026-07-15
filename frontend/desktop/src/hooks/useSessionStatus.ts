@@ -16,7 +16,8 @@ export type SessionStatus = {
     approved: boolean;
 };
 
-export function useSessionStatus(sessionId: string | null, pollIntervalMs: number = 2000) {
+export function useSessionStatus(sessionId: string | null, pollIntervalMs: number = 12_000) {
+    // Realtime bridge invalidates `session-status` on mutation; poll is a slow safety net.
     return useQuery<SessionStatus | null>({
         queryKey: ['session-status', sessionId],
         queryFn: async () => {
@@ -35,6 +36,6 @@ export function useSessionStatus(sessionId: string | null, pollIntervalMs: numbe
         },
         enabled: !!sessionId,
         refetchInterval: pollIntervalMs,
-        staleTime: 1000,
+        staleTime: 500,
     });
 }

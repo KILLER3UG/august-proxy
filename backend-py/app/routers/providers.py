@@ -134,6 +134,12 @@ async def createProvider(body: ProviderCreate):
     store['providers'] = providers_list
     config_service.saveProvidersStore(store)
     model_service.invalidate_cache()
+    try:
+        from app.services.realtime_bus import emit_invalidate
+
+        emit_invalidate('models', 'providers', 'provider-health')
+    except Exception:
+        pass
     return {**entry, 'apiKeySet': bool(body.api_key)}
 
 
@@ -158,6 +164,12 @@ async def importProviderConfig(body: dict):
     store['providers'] = providers_list
     config_service.saveProvidersStore(store)
     model_service.invalidate_cache()
+    try:
+        from app.services.realtime_bus import emit_invalidate
+
+        emit_invalidate('models', 'providers', 'provider-health')
+    except Exception:
+        pass
     return {**entry, 'apiKeySet': bool(entry.get('apiKey'))}
 
 
@@ -191,6 +203,12 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
                 p['enabled'] = body.enabled
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()
+            try:
+                from app.services.realtime_bus import emit_invalidate
+
+                emit_invalidate('models', 'providers', 'provider-health')
+            except Exception:
+                pass
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
     raise HTTPException(status_code=404, detail='Provider not found')
 
@@ -213,6 +231,12 @@ async def deleteProvider(providerId: str):
         raise HTTPException(status_code=404, detail='Provider not found')
     config_service.saveProvidersStore(store)
     model_service.invalidate_cache()
+    try:
+        from app.services.realtime_bus import emit_invalidate
+
+        emit_invalidate('models', 'providers', 'provider-health')
+    except Exception:
+        pass
     return {'deleted': True}
 
 

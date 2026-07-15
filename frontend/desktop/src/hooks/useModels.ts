@@ -17,7 +17,8 @@ export function useModels() {
     queryFn: () => getAggregatedModels(),
     // Keep chat picker fresh; provider mutations still force refresh via
     // refreshProviderCatalog (refresh=true on the server).
-    refetchInterval: 30_000,
+    // Realtime `invalidate` on provider/catalog changes; poll is a slow safety net.
+    refetchInterval: 120_000,
     staleTime: 5_000,
     refetchOnWindowFocus: true,
   });

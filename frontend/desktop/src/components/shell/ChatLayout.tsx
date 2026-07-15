@@ -7,7 +7,8 @@ import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSessionsStore, createSession, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend } from "@/store/sessions";
+import { useSessionsStore, createSession, getOrCreateEmptySession, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend } from "@/store/sessions";
+import { startRealtimeBridge } from "@/realtime/bridge";
 import { useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
@@ -67,15 +68,25 @@ export function ChatLayout() {
     localStorage.removeItem("august-show-right-sidebar");
   }, []);
 
-  // Reconcile the sidebar session list with the backend brain database so
-  // sessions deleted by the model (via delete_session / delete_folder tools)
-  // are automatically removed from the frontend. Polls every 30 s while the
-  // layout is mounted.
+  // Ensure global realtime bridge is up (idempotent). Reconcile is only a
+  // safety net — live creates/deletes/status arrive via /api/realtime/stream.
   useEffect(() => {
+    startRealtimeBridge();
     void reconcileSessionsFromBackend();
-    const t = setInterval(() => { void reconcileSessionsFromBackend(); }, 30_000);
+    const t = setInterval(() => { void reconcileSessionsFromBackend(); }, 60_000);
     return () => clearInterval(t);
   }, []);
+
+  // Navigate away when the open chat was deleted via realtime.
+  useEffect(() => {
+    if (!sessionId) return;
+    const open = sessions.some(
+      (s) => !s.isArchived && (s.id === sessionId || s.workbenchSessionId === sessionId),
+    );
+    if (open) return;
+    const next = sessions.find((s) => !s.isArchived);
+    if (next) void navigate(`/c/${next.id}`, { replace: true });
+  }, [sessions, sessionId, navigate]);
 
   // Listen for the "open right sidebar" event dispatched by the PlanProposalBanner
   // (and any other in-chat call-to-action) so the drawer opens without the
@@ -203,9 +214,21 @@ export function ChatLayout() {
   }, [location.pathname, sessionId, sessions, navigate, currentWorkspacePath]);
 
   const handleNewSession = (folderId?: string | null) => {
-    const newSess = createSession(folderId ?? null, defaultSessionTitle(), currentWorkspacePath);
+    // Reuse an existing empty chat instead of stacking blanks in the sidebar.
+    const newSess = getOrCreateEmptySession(
+      folderId ?? null,
+      defaultSessionTitle(),
+      currentWorkspacePath,
+    );
     void navigate(`/c/${newSess.id}`);
   };
+
+  // /new slash command + voice "new chat" land here.
+  useEffect(() => {
+    const onNew = () => handleNewSession();
+    window.addEventListener('august:new-session', onNew);
+    return () => window.removeEventListener('august:new-session', onNew);
+  }, [currentWorkspacePath]);
 
   const approvePlan = async () => {
     if (!active?.workbenchSessionId) return;

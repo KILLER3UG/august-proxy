@@ -73,7 +73,11 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
         return f'{{"error": "brain_query: {exc}"}}'
 
 def _purge_session_everywhere(sessionId: str) -> dict[str, object]:
-    """Remove a session from workbench memory + brain SQLite (cascade children)."""
+    """Remove a session from workbench memory + brain SQLite (cascade children).
+
+    Workbench delete emits ``session_deleted`` immediately (UI real-time) then
+    cascades SQLite. A second cascade pass with notify=False sweeps orphans.
+    """
     from app.services import memory_store
 
     wb_ok = False
@@ -84,9 +88,9 @@ def _purge_session_everywhere(sessionId: str) -> dict[str, object]:
     except Exception:
         # Fall through to brain cascade even if workbench module is unavailable.
         pass
-    # Workbench delete already cascades when the session exists in SQLite; run
-    # cascade again for orphan brain rows (id present only in messages/timeline).
-    result = memory_store.delete_session_cascade(sessionId)
+    # Workbench delete already cascaded + notified when present. Second pass
+    # cleans orphans only; suppress duplicate UI events.
+    result = memory_store.delete_session_cascade(sessionId, notify=not wb_ok)
     return {
         'ok': wb_ok or bool(result.get('ok')),
         'messages': int(result.get('messages') or 0),
@@ -113,6 +117,39 @@ async def _deleteSession(sessionId: str) -> str:
         return f'Session {sessionId} not found — it may have already been deleted.'
     except Exception as exc:
         return f'Error deleting session {sessionId}: {exc}'
+
+
+async def _renameSession(sessionId: str = '', title: str = '') -> str:
+    """Rename a chat session so the sidebar shows a clear human title."""
+    from app.services.workbench.sessions import rename_workbench_session, get_workbench_session
+    from app.services.workbench.context import currentSessionId
+
+    sid = (sessionId or '').strip()
+    new_title = (title or '').strip()
+    if not new_title:
+        return 'Error: title is required.'
+    if not sid:
+        # Prefer the session that is currently executing tools.
+        ctx = currentSessionId.get()
+        if ctx and ctx != 'default':
+            sid = ctx
+    if not sid:
+        try:
+            from app.services.workbench import workbench as wb
+
+            sessions = wb.listWorkbenchSessions()
+            if sessions:
+                sid = str(sessions[0].get('id') or '')
+        except Exception:
+            pass
+    if not sid:
+        return 'Error: sessionId is required (no active session found).'
+    session = rename_workbench_session(sid, new_title)
+    if not session:
+        if not get_workbench_session(sid):
+            return f'Session {sid} not found.'
+        return f'Could not rename session {sid}.'
+    return f'Renamed session {sid} → "{session.title}".'
 
 
 async def _deleteFolder(folderId: str) -> str:
@@ -198,6 +235,25 @@ def register() -> None:
                 'limit': {'type': 'integer', 'description': 'Max rows to return (1-100). Default 10.'},
             },
             'required': ['store'],
+        },
+    )
+    tool_registry.register(
+        'rename_session',
+        'Set the human-readable title of a chat session (shown in the sidebar). Use a short 3–8 word title that captures the topic (not the full user message). Pass sessionId when known; for the current chat you may omit it. Call this early after understanding the user goal, or when the user asks to rename.',
+        _renameSession,
+        {
+            'type': 'object',
+            'properties': {
+                'sessionId': {
+                    'type': 'string',
+                    'description': 'Workbench session id (e.g. wb_20260715_143052_a1b2c3). Optional for the active chat.',
+                },
+                'title': {
+                    'type': 'string',
+                    'description': 'Short sidebar title (max ~48 chars).',
+                },
+            },
+            'required': ['title'],
         },
     )
     tool_registry.register(

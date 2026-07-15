@@ -11,7 +11,8 @@
 import { create } from 'zustand';
 import { api } from '@/api/client';
 
-const POLL_INTERVAL_MS = 3000;
+// Fallback only — live chat.active / chat.idle events update this store instantly.
+const POLL_INTERVAL_MS = 15_000;
 
 interface ActiveChatStreamsState {
   active: Record<string, 'streaming'>;

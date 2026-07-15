@@ -1,0 +1,257 @@
+/**
+ * Global realtime bridge — one EventSource for all backend→frontend push.
+ *
+ * Backend: GET /api/realtime/stream
+ * Events are applied immediately to Zustand + React Query so the UI never
+ * waits on multi-second pollers for state that already changed server-side.
+ */
+
+import { queryClient } from '@/query-client';
+import {
+  removeSessionLocally,
+  useSessionsStore,
+  saveSessionsToStorage,
+  setSessionStatus,
+  clearSessionStatus,
+  preferSessionTitle,
+  isPlaceholderTitle,
+  type Session,
+  type SessionStatus,
+} from '@/store/sessions';
+import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
+
+export type RealtimeEvent = {
+  id?: string;
+  type: string;
+  at?: number;
+  sessionId?: string;
+  status?: string;
+  title?: string;
+  provider?: string;
+  model?: string;
+  agentId?: string;
+  guardMode?: string;
+  messageCount?: number;
+  plan?: boolean;
+  planApproved?: boolean;
+  pendingMutations?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  startedAt?: string;
+  workspacePath?: string;
+  queryKeys?: string[];
+  [key: string]: unknown;
+};
+
+let es: EventSource | null = null;
+let started = false;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+function upsertSessionFromEvent(ev: RealtimeEvent): void {
+  const sid = String(ev.sessionId || '');
+  if (!sid) return;
+  const sessions = useSessionsStore.getState().sessions;
+  const idx = sessions.findIndex(
+    (s) => s.id === sid || s.workbenchSessionId === sid,
+  );
+  if (idx >= 0) {
+    const prev = sessions[idx];
+    const incomingTitle = ev.title as string | undefined;
+    // Prefer a real incoming title; never replace a good title with a placeholder.
+    const nextTitle =
+      incomingTitle && !isPlaceholderTitle(incomingTitle)
+        ? incomingTitle
+        : preferSessionTitle(prev.title, incomingTitle);
+    const next: Session = {
+      ...prev,
+      title: nextTitle,
+      provider: (ev.provider as string | undefined) || prev.provider,
+      model: (ev.model as string | undefined) || prev.model,
+      messageCount:
+        typeof ev.messageCount === 'number' ? ev.messageCount : prev.messageCount,
+      workbenchSessionId: prev.workbenchSessionId || sid,
+      workbenchProvider: (ev.provider as string | undefined) || prev.workbenchProvider,
+      workbenchAgentId: (ev.agentId as string | undefined) || prev.workbenchAgentId,
+    };
+    const updated = sessions.slice();
+    updated[idx] = next;
+    useSessionsStore.setState({ sessions: updated });
+    saveSessionsToStorage(updated);
+    return;
+  }
+  // New session from tool / other tab
+  const created: Session = {
+    id: sid,
+    title: (ev.title as string | undefined) || 'New Session',
+    startedAt: (ev.startedAt as string | undefined) || (ev.createdAt as string | undefined) || new Date().toISOString(),
+    messageCount: typeof ev.messageCount === 'number' ? ev.messageCount : 0,
+    lastMessage: 'Conversation started.',
+    provider: (ev.provider as string | undefined) || '',
+    model: (ev.model as string | undefined) || '',
+    workbenchSessionId: sid,
+    workbenchProvider: (ev.provider as string | undefined) || '',
+    workbenchAgentId: (ev.agentId as string | undefined) || '',
+    workspacePath: (ev.workspacePath as string | undefined) || null,
+    isArchived: false,
+  };
+  const updated = [created, ...sessions];
+  useSessionsStore.setState({ sessions: updated });
+  saveSessionsToStorage(updated);
+}
+
+function applySessionStatus(ev: RealtimeEvent): void {
+  const sid = String(ev.sessionId || '');
+  if (!sid) return;
+  const status = String(ev.status || 'idle');
+  // Map workbench status → sidebar SessionStatus
+  const map: Record<string, SessionStatus> = {
+    idle: 'idle',
+    streaming: 'streaming',
+    working: 'working',
+    running: 'working',
+    awaiting: 'awaiting',
+    awaiting_approval: 'awaiting',
+    error: 'error',
+    failed: 'error',
+    done: 'done',
+    completed: 'done',
+  };
+  const mapped = map[status] || (status as SessionStatus);
+  if (mapped === 'idle' || mapped === 'done') {
+    clearSessionStatus(sid);
+  } else {
+    setSessionStatus(sid, mapped);
+  }
+  upsertSessionFromEvent(ev);
+}
+
+function applyInvalidate(ev: RealtimeEvent): void {
+  const keys = Array.isArray(ev.queryKeys) ? ev.queryKeys : [];
+  const sessionId = ev.sessionId ? String(ev.sessionId) : '';
+  for (const key of keys) {
+    if (!key) continue;
+    // Prefer precise keys when session-scoped
+    if (sessionId && (key === 'workbench-session' || key === 'session-status')) {
+      void queryClient.invalidateQueries({ queryKey: [key, sessionId] });
+      void queryClient.invalidateQueries({ queryKey: [key] });
+      continue;
+    }
+    void queryClient.invalidateQueries({ queryKey: [key] });
+  }
+}
+
+function applyChatActive(ev: RealtimeEvent, active: boolean): void {
+  const sid = String(ev.sessionId || '');
+  if (!sid) return;
+  const prev = useActiveChatStreamsStore.getState().active;
+  if (active) {
+    if (prev[sid] === 'streaming') return;
+    useActiveChatStreamsStore.setState({ active: { ...prev, [sid]: 'streaming' } });
+    setSessionStatus(sid, 'streaming');
+  } else {
+    if (!prev[sid]) return;
+    const next = { ...prev };
+    delete next[sid];
+    useActiveChatStreamsStore.setState({ active: next });
+    clearSessionStatus(sid);
+  }
+}
+
+function handleEvent(ev: RealtimeEvent): void {
+  switch (ev.type) {
+    case 'session.deleted':
+      if (ev.sessionId) removeSessionLocally(String(ev.sessionId));
+      break;
+    case 'session.created':
+    case 'session.updated':
+      upsertSessionFromEvent(ev);
+      if (ev.sessionId) {
+        void queryClient.invalidateQueries({
+          queryKey: ['workbench-session', String(ev.sessionId)],
+        });
+      }
+      break;
+    case 'session.status':
+      applySessionStatus(ev);
+      if (ev.sessionId) {
+        void queryClient.invalidateQueries({
+          queryKey: ['session-status', String(ev.sessionId)],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ['workbench-session', String(ev.sessionId)],
+        });
+      }
+      break;
+    case 'chat.active':
+      applyChatActive(ev, true);
+      break;
+    case 'chat.idle':
+      applyChatActive(ev, false);
+      break;
+    case 'invalidate':
+      applyInvalidate(ev);
+      break;
+    case 'keepalive':
+      break;
+    default:
+      // Forward-compatible: if payload carries queryKeys, invalidate them.
+      if (Array.isArray(ev.queryKeys) && ev.queryKeys.length) {
+        applyInvalidate(ev);
+      }
+      break;
+  }
+}
+
+function scheduleReconnect(): void {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    started = false;
+    startRealtimeBridge();
+  }, 1500);
+}
+
+/** Open (or re-open) the global realtime SSE stream. Idempotent. */
+export function startRealtimeBridge(): void {
+  if (typeof window === 'undefined') return;
+  if (started && es && es.readyState !== EventSource.CLOSED) return;
+  started = true;
+  try {
+    es?.close();
+  } catch {
+    /* ignore */
+  }
+  es = new EventSource('/api/realtime/stream');
+  es.onmessage = (msg: MessageEvent) => {
+    try {
+      const data = JSON.parse(String(msg.data)) as RealtimeEvent;
+      if (data && typeof data.type === 'string') handleEvent(data);
+    } catch {
+      /* ignore malformed frames */
+    }
+  };
+  es.onerror = () => {
+    try {
+      es?.close();
+    } catch {
+      /* ignore */
+    }
+    es = null;
+    started = false;
+    scheduleReconnect();
+  };
+}
+
+export function stopRealtimeBridge(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  try {
+    es?.close();
+  } catch {
+    /* ignore */
+  }
+  es = null;
+  started = false;
+}

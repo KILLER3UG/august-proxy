@@ -7,6 +7,7 @@ import {
   findOrCreateSessionForPath,
   createFolder,
   createSession,
+  getOrCreateEmptySession,
   saveSessionsToStorage,
   saveFoldersToStorage,
 } from '../sessions';
@@ -114,5 +115,24 @@ describe('createFolder — manual (no path)', () => {
     findOrCreateSessionForPath('/some/path', 'path');
     expect($folders.get().filter((f) => f.workspacePath === null)).toHaveLength(1);
     expect($folders.get().filter((f) => f.workspacePath === '/some/path')).toHaveLength(1);
+  });
+});
+
+describe('getOrCreateEmptySession — no blank stacking', () => {
+  it('reuses an existing empty session instead of creating another', () => {
+    const first = getOrCreateEmptySession(null, 'Chat A');
+    const second = getOrCreateEmptySession(null, 'Chat B');
+    expect(second.id).toBe(first.id);
+    expect($sessions.get()).toHaveLength(1);
+  });
+
+  it('creates a new session when the only session already has messages', () => {
+    const first = createSession(null, 'Busy');
+    // Simulate used chat
+    $sessions.set([{ ...first, messageCount: 3 }]);
+    saveSessionsToStorage($sessions.get());
+    const second = getOrCreateEmptySession(null, 'Fresh');
+    expect(second.id).not.toBe(first.id);
+    expect($sessions.get()).toHaveLength(2);
   });
 });

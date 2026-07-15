@@ -540,6 +540,9 @@ export function ensureSessionSubscriber(sessionId: string): void {
   // SSE connection dropped (tab switch, throttling), leaving isSessionStreaming
   // false even though the backend is still actively streaming and reconnecting
   // via this subscriber.
+  //
+  // Keep the dummy turn alive for the whole reconnect life-cycle — only
+  // finish it when the subscriber truly ends (terminal event / abort).
   let dummyTurnId: string | null = null;
   if (!chatRuntime.isSessionStreaming(sessionId)) {
     const assistantMsgId = `subscriber-${sessionId}-${Date.now()}`;

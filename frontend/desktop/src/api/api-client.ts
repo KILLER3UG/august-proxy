@@ -524,7 +524,13 @@ export function updateLiveConfig(
 /* ── Brain Activity (v4.3) — realtime feed of brain-internal events ─── */
 export interface BrainEvent {
   id: string;
-  category: 'consolidation' | 'delta_engine' | 'heuristic' | 'review' | 'skill_genesis';
+  category:
+    | 'consolidation'
+    | 'delta_engine'
+    | 'heuristic'
+    | 'review'
+    | 'skill_genesis'
+    | 'session';
   layer: string;
   summary: string;
   meta: Record<string, unknown>;

@@ -812,6 +812,23 @@ export async function deleteWorkbenchSession(sessionId: string): Promise<void> {
   }
 }
 
+/** Rename a workbench session (sidebar title). */
+export async function renameWorkbenchSession(
+  sessionId: string,
+  title: string,
+): Promise<WorkbenchSession> {
+  const res = await fetch(
+    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/title`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    },
+  );
+  if (!res.ok) throw new Error(`renameWorkbenchSession failed: ${res.status}`);
+  return res.json() as Promise<WorkbenchSession>;
+}
+
 export async function listWorkbenchAgents(activeAgentId = 'build'): Promise<WorkbenchAgentRegistry> {
   const res = await fetch(`/api/workbench/agents?active=${encodeURIComponent(activeAgentId)}`);
   if (!res.ok) throw new Error(`listWorkbenchAgents failed: ${res.status}`);

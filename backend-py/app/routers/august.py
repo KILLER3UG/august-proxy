@@ -172,16 +172,11 @@ async def manage_sessions(body: ActionBody):
         ok = wb.deleteWorkbenchSession(body.id)
         return {'ok': ok, 'id': body.id}
     if action == 'rename' and body.id and body.title:
-        s = wb.getWorkbenchSession(body.id)
+        from app.services.workbench.sessions import rename_workbench_session
+
+        s = rename_workbench_session(str(body.id), str(body.title))
         if not s:
             raise HTTPException(404, detail='Session not found')
-        s.title = body.title
-        try:
-            from app.services.workbench.sessions import save_sessions
-
-            save_sessions()
-        except Exception:
-            pass
         return {'ok': True, 'session': s.toDict()}
     return {'ok': True, 'sessions': wb.listWorkbenchSessions()}
 
