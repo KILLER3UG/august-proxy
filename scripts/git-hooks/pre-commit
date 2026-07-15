@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# August Proxy — hardened pre-commit entrypoint (Windows + Device Guard safe).
+#
+# Install (from repo root, PowerShell):
+#   .\scripts\install-git-hooks.ps1
+#
+# Why this exists:
+#   Device Guard / Application Control can block backend-py/.venv/Scripts/python.exe
+#   (os error 4551 / "Permission denied" from Git Bash). The stock pre-commit
+#   installer hard-codes that path, so commits fail even when system Python works.
+#
+# This hook probes interpreters until one can `import pre_commit`, then runs it.
+
+# Preferred interpreter (overwritten by scripts/install-git-hooks.ps1 when present)
+INSTALL_PYTHON='C:/Users/rober/AppData/Local/Programs/Python/Python314/python.exe'
+ARGS=(hook-impl --config=.pre-commit-config.yaml --hook-type=pre-commit)
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# When installed as .git/hooks/pre-commit, HERE is .git/hooks
+ARGS+=(--hook-dir "$HERE" -- "$@")
+
+to_git_path() {
+  local p="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$p" 2>/dev/null || echo "$p"
+  else
+    # C:\foo\bar or C:/foo/bar → /c/foo/bar for Git Bash
+    echo "$p" | sed -e 's#\\#/#g' -e 's#^\([A-Za-z]\):#/\L\1#'
+  fi
+}
+
+try_python() {
+  local py="$1"
+  [ -n "$py" ] || return 1
+  if [ ! -f "$py" ]; then
+    local alt
+    alt="$(to_git_path "$py")"
+    [ -f "$alt" ] && py="$alt"
+  fi
+  [ -f "$py" ] || return 1
+  if "$py" -c "import pre_commit" >/dev/null 2>&1; then
+    exec "$py" -m pre_commit "${ARGS[@]}"
+  fi
+  return 1
+}
+
+# Prefer system / launcher Python over project venv (often blocked by Device Guard).
+CANDIDATES=(
+  "$INSTALL_PYTHON"
+  "C:/Users/rober/AppData/Local/Programs/Python/Python314/python.exe"
+  "${VIRTUAL_ENV}/Scripts/python.exe"
+  "${VIRTUAL_ENV}/bin/python"
+  "C:/Dev/august-proxy/backend-py/.venv/Scripts/python.exe"
+)
+
+for py in "${CANDIDATES[@]}"; do
+  try_python "$py" && exit 0
+done
+
+if command -v pre-commit >/dev/null 2>&1; then
+  exec pre-commit "${ARGS[@]}"
+fi
+
+if command -v py >/dev/null 2>&1; then
+  if py -3 -c "import pre_commit" >/dev/null 2>&1; then
+    exec py -3 -m pre_commit "${ARGS[@]}"
+  fi
+fi
+
+if command -v python >/dev/null 2>&1; then
+  if python -c "import pre_commit" >/dev/null 2>&1; then
+    exec python -m pre_commit "${ARGS[@]}"
+  fi
+fi
+
+echo "pre-commit not available." 1>&2
+echo "backend-py/.venv/Scripts/python.exe may be blocked by Device Guard." 1>&2
+echo "Fix (PowerShell, repo root):" 1>&2
+echo "  py -3 -m pip install pre-commit" 1>&2
+echo "  .\\scripts\\install-git-hooks.ps1" 1>&2
+exit 1

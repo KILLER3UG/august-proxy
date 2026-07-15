@@ -250,6 +250,31 @@ The venv produces `.exe` binaries under `.venv/Scripts/` on Windows. Run
 `.venv\Scripts\pytest.exe` directly, or activate the venv first. Path
 separators in a few data files are normalized to the host OS.
 
+### `git commit` fails: pre-commit `Permission denied` on `.venv\Scripts\python.exe`
+
+**Cause:** Windows Application Control / Device Guard blocks the project venv
+interpreter (`os error 4551`). Stock `pre-commit install` hard-codes that path
+into `.git/hooks/pre-commit`, so every commit dies before ruff runs.
+
+**Fix:**
+
+```powershell
+# From repo root — installs pre-commit on a working system Python if needed,
+# then writes a Device Guard–safe hook with LF endings.
+py -3 -m pip install pre-commit
+.\scripts\install-git-hooks.ps1
+```
+
+Verify:
+
+```powershell
+git hook run pre-commit
+```
+
+Do **not** re-run `pre-commit install` from the blocked venv afterward — it will
+overwrite the hardened hook. Always reinstall via `scripts\install-git-hooks.ps1`
+on affected machines.
+
 ---
 
 ## Desktop (Tauri) backend

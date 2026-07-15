@@ -1,8 +1,15 @@
 # Pre-commit hooks for August Proxy.
-# Install once (from repo root, with backend-py dev deps):
-#   pip install pre-commit
-#   pre-commit install
+# Install once (from repo root):
+#   Windows (recommended — Device Guard safe):
+#     py -3 -m pip install pre-commit
+#     .\scripts\install-git-hooks.ps1
+#   Unix / unblocked venv:
+#     pip install pre-commit
+#     pre-commit install
 # Run all:  pre-commit run --all-files
+#
+# If commits fail with "Permission denied" on backend-py/.venv/Scripts/python.exe,
+# see docs/TROUBLESHOOTING.md (Device Guard) and re-run install-git-hooks.ps1.
 #
 # Naming policy (Phase 0 sign-off): Python identifiers stay camelCase.
 # pep8-naming is intentionally not enabled. Frontend lint stays with ESLint.

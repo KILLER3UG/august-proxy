@@ -63,6 +63,9 @@ pip install -e ".[ml]"           # sentence-transformers + numpy for embeddings
 python -m playwright install chromium   # browser automation
 
 # Optional repo-root git hooks (ruff on backend-py)
+# Prefer the Windows-safe installer (avoids Device Guard blocking .venv python):
+#   PowerShell:  .\scripts\install-git-hooks.ps1
+# Stock alternative (Unix / unblocked venv):
 pre-commit install
 ```
 
