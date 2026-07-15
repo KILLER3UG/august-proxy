@@ -5,12 +5,26 @@ import { useQuery } from '@tanstack/react-query';
 import { Filter, ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
+import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { StatusPill, variantForResult } from '@/components/workspace/StatusPill';
 import { getAuditLog, getObservationUrl, type AuditEntry } from '@/api/api-client';
 import { formatTimeAgo } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
-const CATEGORIES = ['', 'august_api', 'system', 'computer', 'ui', 'general'] as const;
+const CATEGORY_OPTIONS = [
+  { value: '', label: 'all categories' },
+  { value: 'august_api', label: 'august_api' },
+  { value: 'system', label: 'system' },
+  { value: 'computer', label: 'computer' },
+  { value: 'ui', label: 'ui' },
+  { value: 'general', label: 'general' },
+] as const;
+
+const SINCE_OPTIONS = [
+  { value: '1', label: 'last 24h' },
+  { value: '7', label: 'last 7 days' },
+  { value: '30', label: 'last 30 days' },
+] as const;
 
 export function AuditTimeline() {
     const [category, setCategory] = useState<string>('');
@@ -46,14 +60,14 @@ export function AuditTimeline() {
             <Card>
                 <CardContent className="py-3 flex items-center gap-2 flex-wrap text-sm">
                     <Filter className="size-4 text-muted-foreground" />
-                    <select
-                        value={category}
-                        onChange={e => setCategory(e.target.value)}
-                        className="rounded-md border border-white/[0.08] bg-secondary px-2 py-1 text-sm text-foreground"
+                    <SettingsSelect
+                        size="sm"
+                        className="w-40"
                         aria-label="Category filter"
-                    >
-                        {CATEGORIES.map(c => <option key={c} value={c}>{c || 'all categories'}</option>)}
-                    </select>
+                        value={category}
+                        onChange={setCategory}
+                        options={[...CATEGORY_OPTIONS]}
+                    />
                     <input
                         type="text"
                         value={actor}
@@ -61,16 +75,14 @@ export function AuditTimeline() {
                         placeholder="actor (e.g. august)"
                         className="rounded-md border border-white/[0.08] bg-secondary px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground"
                     />
-                    <select
-                        value={String(sinceDays)}
-                        onChange={e => setSinceDays(Number(e.target.value))}
-                        className="rounded-md border border-white/[0.08] bg-secondary px-2 py-1 text-sm text-foreground"
+                    <SettingsSelect
+                        size="sm"
+                        className="w-36"
                         aria-label="Time range"
-                    >
-                        <option value="1">last 24h</option>
-                        <option value="7">last 7 days</option>
-                        <option value="30">last 30 days</option>
-                    </select>
+                        value={String(sinceDays)}
+                        onChange={(v) => setSinceDays(Number(v))}
+                        options={[...SINCE_OPTIONS]}
+                    />
                     <span className="ml-auto text-muted-foreground">{entries.length} entries</span>
                 </CardContent>
             </Card>

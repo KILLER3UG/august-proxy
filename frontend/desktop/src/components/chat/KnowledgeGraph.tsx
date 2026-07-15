@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
-import { Search, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Search, ZoomIn, ZoomOut, RotateCcw, Network } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface GraphEntity {
   id: string;
@@ -23,7 +24,10 @@ interface GraphRelation {
 }
 
 interface GraphSearchResult {
-  stats: { counts: { entities: number; relations: number; observations: number }; entityTypes: Record<string, number> };
+  stats: {
+    counts: { entities: number; relations: number; observations: number };
+    entityTypes: Record<string, number>;
+  };
   search: { entities: GraphEntity[]; relations: GraphRelation[] };
 }
 
@@ -40,6 +44,8 @@ const TYPE_COLORS: Record<string, string> = {
   sessionTemp: '#6366f1',
   path: '#78716c',
   memory: '#f97316',
+  general: '#6b7280',
+  test: '#a78bfa',
 };
 
 function getColor(type: string): string {
@@ -59,23 +65,35 @@ interface Node {
 
 export function KnowledgeGraph({ className }: { className?: string }) {
   const [query, setQuery] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [tick, setTick] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
   const nodesRef = useRef<Map<string, Node>>(new Map());
 
-  const { data, isLoading } = useQuery<GraphSearchResult>({
-    queryKey: ['brain-graph-search', query],
-    queryFn: () => api.get<GraphSearchResult>(`/api/brain/graph?q=${encodeURIComponent(query)}&limit=50`),
-    enabled: query.trim().length > 0,
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(query.trim()), 250);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const { data, isLoading, isFetching } = useQuery<GraphSearchResult>({
+    queryKey: ['brain-graph-search', debouncedQ],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (debouncedQ) params.set('q', debouncedQ);
+      params.set('limit', '50');
+      return api.get<GraphSearchResult>(`/api/brain/graph?${params.toString()}`);
+    },
+    refetchInterval: 30_000,
   });
 
   const nodes = useMemo(() => {
     if (!data?.search?.entities) return [];
-    return data.search.entities.map(e => {
+    return data.search.entities.map((e) => {
       const existing = nodesRef.current.get(e.id);
       return {
         id: e.id,
@@ -92,7 +110,7 @@ export function KnowledgeGraph({ className }: { className?: string }) {
 
   const edges = useMemo(() => {
     if (!data?.search?.relations) return [];
-    return data.search.relations.map(r => ({
+    return data.search.relations.map((r) => ({
       source: r.from,
       target: r.to,
       label: r.type.replace(/_/g, ' '),
@@ -103,14 +121,14 @@ export function KnowledgeGraph({ className }: { className?: string }) {
   useEffect(() => {
     if (nodes.length === 0) return;
 
-    const nodeMap = new Map(nodes.map(n => [n.id, { ...n }]));
+    const nodeMap = new Map(nodes.map((n) => [n.id, { ...n }]));
     nodesRef.current = nodeMap;
 
     let animId: number;
-    const tick = () => {
+    let frames = 0;
+    const tickFn = () => {
       const ns = Array.from(nodeMap.values());
 
-      // Repulsion between nodes
       for (let i = 0; i < ns.length; i++) {
         for (let j = i + 1; j < ns.length; j++) {
           const dx = ns[j].x - ns[i].x;
@@ -126,7 +144,6 @@ export function KnowledgeGraph({ className }: { className?: string }) {
         }
       }
 
-      // Attraction along edges
       for (const edge of edges) {
         const s = nodeMap.get(edge.source);
         const t = nodeMap.get(edge.target);
@@ -143,7 +160,6 @@ export function KnowledgeGraph({ className }: { className?: string }) {
         t.vy -= fy;
       }
 
-      // Center gravity
       for (const n of ns) {
         n.vx += (400 - n.x) * 0.001;
         n.vy += (300 - n.y) * 0.001;
@@ -156,67 +172,108 @@ export function KnowledgeGraph({ className }: { className?: string }) {
       }
 
       nodesRef.current = nodeMap;
-      animId = requestAnimationFrame(tick);
+      frames += 1;
+      // Re-render ~10fps so SVG tracks simulation without thrashing React
+      if (frames % 6 === 0) setTick((t) => t + 1);
+      animId = requestAnimationFrame(tickFn);
     };
 
-    animId = requestAnimationFrame(tick);
+    animId = requestAnimationFrame(tickFn);
     return () => cancelAnimationFrame(animId);
-	  }, [nodes, edges]);
+  }, [nodes, edges]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    setZoom(z => Math.max(0.3, Math.min(3, z - e.deltaY * 0.001)));
+    setZoom((z) => Math.max(0.3, Math.min(3, z - e.deltaY * 0.001)));
   }, []);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.target === svgRef.current) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-    }
-  }, [offset]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target === svgRef.current) {
+        setIsDragging(true);
+        setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+      }
+    },
+    [offset],
+  );
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (isDragging) {
-      setOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-    }
-  }, [isDragging, dragStart]);
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (isDragging) {
+        setOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+      }
+    },
+    [isDragging, dragStart],
+  );
 
   const handleMouseUp = useCallback(() => setIsDragging(false), []);
 
-  const resetView = () => { setZoom(1); setOffset({ x: 0, y: 0 }); };
+  const resetView = () => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+  };
 
-  const selectedEntity = data?.search?.entities?.find(e => e.id === selectedNode);
+  const selectedEntity = data?.search?.entities?.find((e) => e.id === selectedNode);
+  const hasNodes = nodes.length > 0;
+  // suppress unused tick lint by reading it (drives re-render of SVG)
+  void tick;
 
   return (
-    <div className={cn('flex flex-col h-full', className)}>
+    <div className={cn('flex flex-col h-full min-h-[420px]', className)} data-testid="knowledge-graph">
       {/* Search bar */}
       <div className="p-3 border-b border-border/30">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50" />
           <input
             value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search entities (e.g. 'project', 'user', 'tool')..."
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter entities (optional)…"
             className="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/30 rounded-md border-none outline-none text-foreground placeholder:text-muted-foreground/50"
           />
         </div>
+        {data?.stats?.counts && (
+          <p className="mt-1.5 text-[10px] text-muted-foreground font-mono">
+            {data.stats.counts.entities} entities · {data.stats.counts.relations} relations ·{' '}
+            {data.stats.counts.observations} obs
+            {isFetching && !isLoading ? ' · updating…' : ''}
+          </p>
+        )}
       </div>
 
       {/* Graph area */}
-      <div className="flex-1 relative overflow-hidden bg-[#0a0a0f]">
+      <div className="flex-1 relative overflow-hidden bg-[#0a0a0f] min-h-[360px]">
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center z-10">
-            <div className="space-y-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-4 rounded bg-white/5 animate-pulse" style={{ width: 100 + i * 40 }} />
+          <div className="absolute inset-0 z-10 flex flex-col gap-3 p-6">
+            <div className="flex gap-2">
+              <Skeleton className="h-3 w-20 bg-white/5" />
+              <Skeleton className="h-3 w-16 bg-white/5" />
+              <Skeleton className="h-3 w-24 bg-white/5" />
+            </div>
+            <div className="relative flex-1 rounded-lg border border-white/[0.04] bg-white/[0.02]">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton
+                  key={i}
+                  className="absolute size-3 rounded-full bg-white/10"
+                  style={{
+                    left: `${12 + (i % 4) * 22}%`,
+                    top: `${18 + Math.floor(i / 4) * 40}%`,
+                  }}
+                />
               ))}
+              <Skeleton className="absolute left-[20%] top-[35%] h-px w-[30%] bg-white/10" />
+              <Skeleton className="absolute left-[45%] top-[55%] h-px w-[25%] bg-white/10" />
             </div>
           </div>
         )}
 
-        {!query.trim() && (
-          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/40 text-sm">
-            Type a search query to visualize the knowledge graph
+        {!isLoading && !hasNodes && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground/50 text-sm px-6 text-center">
+            <Network className="size-8 opacity-40" />
+            <p>No graph entities yet</p>
+            <p className="text-xs text-muted-foreground/40 max-w-xs">
+              Entities and relations appear as August learns from conversations and tools. Seed data
+              loads automatically when available.
+            </p>
           </div>
         )}
 
@@ -230,7 +287,6 @@ export function KnowledgeGraph({ className }: { className?: string }) {
           onMouseLeave={handleMouseUp}
         >
           <g transform={`translate(${offset.x},${offset.y}) scale(${zoom})`}>
-            {/* Edges */}
             {edges.map((edge, i) => {
               const sourceNode = nodesRef.current.get(edge.source);
               const targetNode = nodesRef.current.get(edge.target);
@@ -242,14 +298,14 @@ export function KnowledgeGraph({ className }: { className?: string }) {
                     y1={sourceNode.y}
                     x2={targetNode.x}
                     y2={targetNode.y}
-                    stroke="rgba(255,255,255,0.08)"
-                    strokeWidth={1}
+                    stroke="rgba(255,255,255,0.12)"
+                    strokeWidth={1.25}
                   />
                   <text
                     x={(sourceNode.x + targetNode.x) / 2}
                     y={(sourceNode.y + targetNode.y) / 2 - 4}
                     textAnchor="middle"
-                    fill="rgba(255,255,255,0.2)"
+                    fill="rgba(255,255,255,0.28)"
                     fontSize={8}
                   >
                     {edge.label}
@@ -258,10 +314,9 @@ export function KnowledgeGraph({ className }: { className?: string }) {
               );
             })}
 
-            {/* Nodes */}
-            {Array.from(nodesRef.current.values()).map(node => {
+            {Array.from(nodesRef.current.values()).map((node) => {
               const isSelected = selectedNode === node.id;
-              const size = 4 + Math.min(node.score, 10) * 1.5;
+              const size = 5 + Math.min(node.score, 10) * 1.5;
               return (
                 <g
                   key={node.id}
@@ -273,16 +328,16 @@ export function KnowledgeGraph({ className }: { className?: string }) {
                     cy={node.y}
                     r={isSelected ? size + 2 : size}
                     fill={getColor(node.type)}
-                    opacity={isSelected ? 1 : 0.7}
-                    stroke={isSelected ? '#fff' : 'none'}
-                    strokeWidth={isSelected ? 1.5 : 0}
+                    opacity={isSelected ? 1 : 0.85}
+                    stroke={isSelected ? '#fff' : 'rgba(255,255,255,0.15)'}
+                    strokeWidth={isSelected ? 1.5 : 0.5}
                   />
                   <text
                     x={node.x}
-                    y={node.y + size + 10}
+                    y={node.y + size + 11}
                     textAnchor="middle"
-                    fill="rgba(255,255,255,0.5)"
-                    fontSize={8}
+                    fill="rgba(255,255,255,0.65)"
+                    fontSize={9}
                     className="pointer-events-none"
                   >
                     {node.label}
@@ -293,31 +348,42 @@ export function KnowledgeGraph({ className }: { className?: string }) {
           </g>
         </svg>
 
-        {/* Controls */}
         <div className="absolute bottom-3 right-3 flex items-center gap-1">
-          <button onClick={() => setZoom(z => Math.min(3, z * 1.3))} className="p-1.5 bg-background/80 rounded hover:bg-background text-muted-foreground hover:text-foreground transition">
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.min(3, z * 1.3))}
+            className="p-1.5 bg-background/80 rounded hover:bg-background text-muted-foreground hover:text-foreground transition"
+          >
             <ZoomIn className="size-3.5" />
           </button>
-          <button onClick={() => setZoom(z => Math.max(0.3, z / 1.3))} className="p-1.5 bg-background/80 rounded hover:bg-background text-muted-foreground hover:text-foreground transition">
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.max(0.3, z / 1.3))}
+            className="p-1.5 bg-background/80 rounded hover:bg-background text-muted-foreground hover:text-foreground transition"
+          >
             <ZoomOut className="size-3.5" />
           </button>
-          <button onClick={resetView} className="p-1.5 bg-background/80 rounded hover:bg-background text-muted-foreground hover:text-foreground transition">
+          <button
+            type="button"
+            onClick={resetView}
+            className="p-1.5 bg-background/80 rounded hover:bg-background text-muted-foreground hover:text-foreground transition"
+          >
             <RotateCcw className="size-3.5" />
           </button>
         </div>
 
-        {/* Legend */}
         <div className="absolute top-3 right-3 bg-background/80 rounded-lg p-2 text-[9px] space-y-1">
-          {Object.entries(TYPE_COLORS).slice(0, 8).map(([type, color]) => (
-            <div key={type} className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
-              <span className="text-muted-foreground">{type.replace(/_/g, ' ')}</span>
-            </div>
-          ))}
+          {Object.entries(TYPE_COLORS)
+            .slice(0, 8)
+            .map(([type, color]) => (
+              <div key={type} className="flex items-center gap-1.5">
+                <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
+                <span className="text-muted-foreground">{type.replace(/_/g, ' ')}</span>
+              </div>
+            ))}
         </div>
       </div>
 
-      {/* Selected node detail */}
       {selectedEntity && (
         <div className="p-3 border-t border-border/30 bg-muted/20">
           <div className="flex items-center justify-between mb-1">
@@ -325,8 +391,10 @@ export function KnowledgeGraph({ className }: { className?: string }) {
             <span className="text-[9px] font-mono text-muted-foreground">{selectedEntity.type}</span>
           </div>
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-            {selectedEntity.confidence && <span>confidence: {Math.round(selectedEntity.confidence * 100)}%</span>}
-            {selectedEntity.score && <span>score: {selectedEntity.score}</span>}
+            {selectedEntity.confidence != null && (
+              <span>confidence: {Math.round(selectedEntity.confidence * 100)}%</span>
+            )}
+            {selectedEntity.score != null && <span>score: {selectedEntity.score}</span>}
           </div>
         </div>
       )}

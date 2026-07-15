@@ -175,14 +175,19 @@ async def _trackRequest(endpoint: str, body: dict[str, object], request: Request
         }
     )
     trafficLogger.captureRequest(reqId, body)
-    trafficLogger.logActivity('request_start', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}')
+    method = request.method if hasattr(request, 'method') else 'POST'
+    path = f'/v1/{endpoint}'
+    trafficLogger.logActivity('request_start', f'{_clientTypeFor(endpoint)} {path} → {model}')
     _emit(
         'proxy_incoming',
         'info',
-        f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}',
+        f'{method} {path} → {model}',
         {
             'model': model,
             'endpoint': endpoint,
+            'method': method,
+            'path': path,
+            'statusCode': None,
             'sessionId': as_str(body.get('sessionId')) or as_str(body.get('session_id')) or '',
         },
     )
@@ -212,7 +217,18 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
         trafficLogger.capture_response(reqId, result)
         trafficLogger.endRequest(reqId, {'error': as_str(result.get('error'))})
         trafficLogger.logActivity('request_error', f'[{reqId}] {result.get("error")}')
-        _emit('error', 'error', f'Proxy request failed: {result.get("error")}', {'reqId': reqId})
+        err_code = _safeInt(result.get('status') or result.get('status_code') or 502) or 502
+        _emit(
+            'error',
+            'error',
+            f'HTTP {err_code} · Proxy request failed: {result.get("error")}',
+            {
+                'reqId': reqId,
+                'statusCode': err_code,
+                'method': 'POST',
+                'path': '/v1/*',
+            },
+        )
         emit_feature_flow(
             feature='proxy',
             stage='error',
@@ -230,15 +246,19 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
         trafficLogger.capture_tokens(reqId, inT, outT)
     trafficLogger.endRequest(reqId, {'usage': usage})
     trafficLogger.logActivity('request_complete', f'[{reqId}] {_clientTypeFor("")} ok ({inT + outT} tok)')
+    model = as_str(result.get('model'), 'unknown')
     _emit(
         'proxy_upstream',
         'info',
-        f'Upstream complete ({inT + outT} tokens)',
+        f'HTTP 200 OK · Upstream complete ({inT + outT} tokens) · {model}',
         {
             'reqId': reqId,
             'inputTokens': inT,
             'outputTokens': outT,
-            'model': as_str(result.get('model'), 'unknown'),
+            'model': model,
+            'statusCode': 200,
+            'method': 'POST',
+            'path': '/v1/*',
         },
     )
     emit_feature_flow(
@@ -247,12 +267,12 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
         summary=f'Upstream complete ({inT + outT} tokens)',
         status='ok',
         trace_id=reqId,
-        meta={'inputTokens': inT, 'outputTokens': outT},
+        meta={'inputTokens': inT, 'outputTokens': outT, 'statusCode': 200},
     )
     emit_feature_flow(
         feature='proxy',
         stage='end',
-        summary='Proxy request complete',
+        summary='Proxy request complete · 200 OK',
         status='ok',
         trace_id=reqId,
     )
@@ -289,6 +309,12 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
         trafficLogger.capture_error(reqId, str(exc)[:500])
         trafficLogger.endRequest(reqId, {'error': str(exc)})
         trafficLogger.logActivity('request_error', f'[{reqId}] stream error: {exc}')
+        _emit(
+            'error',
+            'error',
+            f'HTTP 502 · Stream error: {exc}',
+            {'reqId': reqId, 'statusCode': 502, 'method': 'POST', 'path': '/v1/*'},
+        )
         emit_feature_flow(
             feature='proxy',
             stage='error',
@@ -303,18 +329,31 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
             trafficLogger.capture_tokens(reqId, inT, outT)
         trafficLogger.endRequest(reqId, {'usage': {'input_tokens': inT, 'output_tokens': outT}})
         trafficLogger.logActivity('request_complete', f'[{reqId}] stream ok ({inT + outT} tok)')
+        _emit(
+            'proxy_upstream',
+            'info',
+            f'HTTP 200 OK · Stream complete ({inT + outT} tokens)',
+            {
+                'reqId': reqId,
+                'inputTokens': inT,
+                'outputTokens': outT,
+                'statusCode': 200,
+                'method': 'POST',
+                'path': '/v1/*',
+            },
+        )
         emit_feature_flow(
             feature='proxy',
             stage='stream',
             summary=f'Stream complete ({inT + outT} tokens)',
             status='ok',
             trace_id=reqId,
-            meta={'inputTokens': inT, 'outputTokens': outT},
+            meta={'inputTokens': inT, 'outputTokens': outT, 'statusCode': 200},
         )
         emit_feature_flow(
             feature='proxy',
             stage='end',
-            summary='Proxy stream complete',
+            summary='Proxy stream complete · 200 OK',
             status='ok',
             trace_id=reqId,
         )

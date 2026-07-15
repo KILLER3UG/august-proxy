@@ -67,6 +67,28 @@ class WebSocketLogHandler(logging.Handler):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.reload()
+    # Mirror Google OAuth keys from .env / process env into durable mcpGlobalEnv
+    # so Integrations UI and MCP subprocesses keep them across restarts.
+    try:
+        import os
+
+        from app.services.service_connections import set_mcp_env
+
+        oauth_patch: dict[str, str] = {}
+        for key in (
+            'GOOGLE_OAUTH_CLIENT_ID',
+            'GOOGLE_OAUTH_CLIENT_SECRET',
+            'GOOGLE_OAUTH_REDIRECT_URI',
+            'OAUTHLIB_INSECURE_TRANSPORT',
+        ):
+            val = (os.environ.get(key) or '').strip()
+            if val:
+                oauth_patch[key] = val
+        if oauth_patch:
+            set_mcp_env(oauth_patch, merge=True)
+            logger.info('Loaded Google OAuth env keys into mcpGlobalEnv: %s', sorted(oauth_patch))
+    except Exception as exc:
+        logger.warning('Could not mirror Google OAuth env: %s', exc)
     # Start the thread-safe log-stream hub (WS fan-out + ring buffer).
     from app.services import log_stream
 

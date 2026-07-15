@@ -23,6 +23,13 @@ import {
   getHostAgentHealth,
 } from '@/api/api-client';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
+import { SettingsSelect } from '@/components/settings/SettingsSelect';
+
+const APP_POLICY_OPTIONS = [
+  { value: 'allow', label: 'allow' },
+  { value: 'ask', label: 'ask' },
+  { value: 'deny', label: 'deny' },
+] as const;
 
 interface ComputerRoots {
   allowedRoots: string[];
@@ -280,15 +287,14 @@ export function ComputerAccessSettings() {
               <li key={app} className="flex items-center justify-between text-sm">
                 <code className="text-foreground/80">{app}</code>
                 <div className="flex items-center gap-2">
-                  <select
+                  <SettingsSelect
+                    size="sm"
+                    className="w-24"
+                    aria-label={`Policy for ${app}`}
                     value={policy}
-                    onChange={(e) => changeAppPolicy(app, e.target.value as 'allow' | 'ask' | 'deny')}
-                    className="rounded-md border border-white/[0.08] bg-background/40 px-2 py-0.5 text-xs"
-                  >
-                    <option value="allow">allow</option>
-                    <option value="ask">ask</option>
-                    <option value="deny">deny</option>
-                  </select>
+                    onChange={(v) => changeAppPolicy(app, v as 'allow' | 'ask' | 'deny')}
+                    options={[...APP_POLICY_OPTIONS]}
+                  />
                   <button
                     className="text-xs text-muted-foreground hover:text-foreground"
                     onClick={() => removeApp(app)}
@@ -307,15 +313,14 @@ export function ComputerAccessSettings() {
               placeholder="notepad.exe"
               className="flex-1 rounded-md border border-white/[0.08] bg-background/40 px-3 py-1.5 text-sm"
             />
-            <select
+            <SettingsSelect
+              size="sm"
+              className="w-28"
+              aria-label="New app policy"
               value={newAppPolicy}
-              onChange={e => setNewAppPolicy(e.target.value as 'allow' | 'ask' | 'deny')}
-              className="rounded-md border border-white/[0.08] bg-background/40 px-2 py-1.5 text-sm"
-            >
-              <option value="allow">allow</option>
-              <option value="ask">ask</option>
-              <option value="deny">deny</option>
-            </select>
+              onChange={(v) => setNewAppPolicy(v as 'allow' | 'ask' | 'deny')}
+              options={[...APP_POLICY_OPTIONS]}
+            />
             <button
               className="rounded-md bg-foreground/10 px-3 py-1.5 text-sm hover:bg-foreground/15"
               onClick={addApp}

@@ -16,6 +16,43 @@ def _findProjectRoot() -> Path:
     return here
 
 
+def _load_dotenv_files() -> list[str]:
+    """Load project .env into ``os.environ`` so GOOGLE_OAUTH_* etc. are available.
+
+    Pydantic ``env_file`` only maps declared Settings fields; OAuth secrets are
+    read via ``os.environ`` in service_connections / MCP. Load from project root
+    and backend-py so values survive restarts regardless of process cwd.
+    """
+    loaded: list[str] = []
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return loaded
+    root = _findProjectRoot()
+    candidates = (
+        root / '.env',
+        root / 'backend-py' / '.env',
+        Path.cwd() / '.env',
+    )
+    seen: set[Path] = set()
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved in seen or not path.is_file():
+            continue
+        seen.add(resolved)
+        # Do not override vars already set in the process environment.
+        load_dotenv(path, override=False)
+        loaded.append(str(resolved))
+    return loaded
+
+
+# Side effect at import: durable secrets from .env become process env.
+_DOTENV_LOADED = _load_dotenv_files()
+
+
 def _loadJson(path: Path) -> Dict[str, object]:
     try:
         return json.loads(path.read_text('utf-8'))
@@ -36,6 +73,8 @@ class Settings(BaseSettings):
 
     def reload(self) -> None:
         """Re-read config.json and providers.json from disk."""
+        # Refresh .env → os.environ on reload (e.g. after user edits .env).
+        _load_dotenv_files()
         configPath = self.dataDir / 'config.json'
         providersPath = self.dataDir / 'providers.json'
         self._config = _loadJson(configPath)
@@ -53,7 +92,11 @@ class Settings(BaseSettings):
             self.reload()
         return self._providers
 
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+    model_config = SettingsConfigDict(
+        env_file=str(_findProjectRoot() / '.env'),
+        env_file_encoding='utf-8',
+        extra='ignore',
+    )
 
 
 settings = Settings()

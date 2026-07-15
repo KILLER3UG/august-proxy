@@ -179,10 +179,15 @@ function AccountAction({ item }: { item: IntegrationItem }) {
       const res = await connect.mutateAsync({ kind: 'google' });
       const authUrl = (res as { authUrl?: string }).authUrl || '';
       const message = (res as { message?: string }).message || '';
+      const alreadyConnected = Boolean((res as { connected?: boolean }).connected);
+      if (alreadyConnected) {
+        void qc.invalidateQueries({ queryKey: ['integrations-connections'] });
+        return;
+      }
       if (!authUrl) {
         setError(
           message ||
-            'Google sign-in is not configured. Set GOOGLE_OAUTH_CLIENT_ID / SECRET, or install a workspace-mcp server that provides start_google_auth.',
+            'Google sign-in is not configured. Install “Google Workspace MCP” from Add integrations (paste Client ID + Secret), or set GOOGLE_OAUTH_CLIENT_ID / SECRET in MCP env.',
         );
         return;
       }
@@ -215,13 +220,12 @@ function AccountAction({ item }: { item: IntegrationItem }) {
           setWaiting(false);
           setError('Timed out waiting for Google sign-in.');
         }
-      }, 3000);
+      }, 2500);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to start Google sign-in';
-      // Strip the old confusing "MCP server 'mcp' not running" by rephrasing.
       setError(
         msg.includes("MCP server 'mcp'")
-          ? 'Google sign-in could not reach a workspace MCP server. Configure GOOGLE_OAUTH_CLIENT_ID or install workspace-mcp under Integrations.'
+          ? 'Google sign-in could not reach workspace-mcp. Install Google Workspace MCP from Add integrations, or set GOOGLE_OAUTH_CLIENT_ID / SECRET.'
           : msg,
       );
     } finally {
@@ -268,7 +272,17 @@ function AccountAction({ item }: { item: IntegrationItem }) {
             )}
             {waiting ? 'Waiting for sign-in…' : 'Sign in with Google'}
           </Button>
-          {error && <p className="max-w-xs text-right text-[11px] text-destructive">{error}</p>}
+          {waiting && (
+            <p className="max-w-xs text-right text-[10px] text-muted-foreground">
+              Complete Google consent in your browser. This screen updates automatically when
+              sign-in finishes.
+            </p>
+          )}
+          {error && (
+            <p className="max-w-xs whitespace-pre-wrap text-right text-[11px] text-destructive">
+              {error}
+            </p>
+          )}
         </>
       ) : (
         <TokenConnectForm name={provider} />

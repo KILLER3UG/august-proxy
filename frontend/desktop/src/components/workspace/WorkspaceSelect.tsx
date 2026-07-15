@@ -30,16 +30,17 @@ export const WorkspaceSelect = forwardRef<HTMLSelectElement, Props>(function Wor
           'h-9 w-full appearance-none rounded-md border border-white/[0.08] bg-card px-3 pr-9 text-sm text-foreground outline-none transition',
           'focus:border-primary/60 focus:ring-2 focus:ring-primary/20',
           'disabled:cursor-not-allowed disabled:opacity-50',
+          '[color-scheme:dark]',
           className,
         )}
       >
         {placeholder !== undefined && (
-          <option value="" disabled>
+          <option value="" disabled className="bg-card text-foreground">
             {placeholder}
           </option>
         )}
         {options.map((o) => (
-          <option key={o.value} value={o.value}>
+          <option key={o.value} value={o.value} className="bg-card text-foreground">
             {o.label}
           </option>
         ))}

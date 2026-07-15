@@ -331,30 +331,118 @@ async def brainGuidelines() -> dict[str, object]:
 
 
 @router.get('/graph')
-async def brainGraph() -> dict[str, object]:
-    """Return knowledge graph stats — GraphStats.
+async def brainGraph(
+    q: str = Query('', description='Optional entity search; empty = default neighborhood'),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict[str, object]:
+    """Return knowledge graph stats + searchable subgraph for the UI.
 
-    Aggregates counts from memory items, facts, and vector entries into
-    { stats: { counts, entityTypes, updatedAt } }.
+    Shape::
+        {
+          stats: { counts, entityTypes, updatedAt },
+          search: { entities: [...], relations: [...] }
+        }
+
+    Entities/relations come from graph_memory (SQLite SoT). When ``q`` is
+    empty, returns the most recently updated neighborhood so the Graph tab
+    can render without a search gate.
     """
+    from app.services.memory import graph_memory
+
     counts = {'entities': 0, 'relations': 0, 'observations': 0}
     entityTypes: dict[str, int] = {}
+    entities_out: list[dict[str, object]] = []
+    relations_out: list[dict[str, object]] = []
+
     try:
-        stats = memory_store.get_stats() or {}
-        counts['entities'] = as_int(stats.get('memoryStore') or stats.get('memory_store'), 0)
-        counts['observations'] = as_int(stats.get('facts'), 0)
-        entityTypes['memory'] = counts['entities']
-        entityTypes['fact'] = counts['observations']
+        stats = graph_memory.graphStats()
+        counts = {
+            'entities': as_int(stats.get('entities'), 0),
+            'relations': as_int(stats.get('relations'), 0),
+            'observations': as_int(stats.get('observations'), 0),
+        }
+        entityTypes = graph_memory.entityTypeCounts()
     except Exception:
         pass
+
     try:
-        vcount = vector_db.count()
-        counts['relations'] = int(vcount or 0)
-        if vcount:
-            entityTypes['vector'] = int(vcount)
+        query = (q or '').strip()
+        if query:
+            raw_entities = graph_memory.searchEntities(query)[:limit]
+        else:
+            raw_entities = graph_memory.listEntities(limit)
+
+        # Stable ids from name keys; map for relation endpoints
+        name_to_id: dict[str, str] = {}
+        keys: list[str] = []
+        for e in raw_entities:
+            name = as_str(e.get('name'), '')
+            if not name:
+                continue
+            eid = graph_memory.entityKey(name)
+            name_to_id[name] = eid
+            keys.append(eid)
+            entities_out.append(
+                {
+                    'id': eid,
+                    'type': as_str(e.get('type'), 'general') or 'general',
+                    'name': name,
+                    'score': 1.0,
+                }
+            )
+
+        if keys:
+            raw_rels = graph_memory.listRelationsForKeys(keys, limit=min(200, limit * 4))
+            # Also include endpoint entities missing from the primary set
+            extra_names: set[str] = set()
+            for r in raw_rels:
+                for side in (as_str(r.get('source')), as_str(r.get('target'))):
+                    if side and side not in name_to_id:
+                        extra_names.add(side)
+            for name in extra_names:
+                ent = graph_memory.getEntity(name)
+                if not ent:
+                    continue
+                eid = graph_memory.entityKey(name)
+                name_to_id[name] = eid
+                entities_out.append(
+                    {
+                        'id': eid,
+                        'type': as_str(ent.get('type'), 'general') or 'general',
+                        'name': name,
+                        'score': 0.5,
+                    }
+                )
+
+            for r in raw_rels:
+                src = as_str(r.get('source'))
+                tgt = as_str(r.get('target'))
+                if not src or not tgt:
+                    continue
+                relations_out.append(
+                    {
+                        'id': as_str(r.get('id')) or f'{src}->{tgt}',
+                        'from': name_to_id.get(src) or graph_memory.entityKey(src),
+                        'to': name_to_id.get(tgt) or graph_memory.entityKey(tgt),
+                        'type': as_str(r.get('type'), 'related') or 'related',
+                        'fromName': src,
+                        'toName': tgt,
+                    }
+                )
     except Exception:
         pass
-    return {'stats': {'counts': counts, 'entityTypes': entityTypes, 'updatedAt': str(int(time.time()))}}
+
+    return {
+        'stats': {
+            'counts': counts,
+            'entityTypes': entityTypes,
+            'updatedAt': str(int(time.time())),
+        },
+        'search': {
+            'entities': entities_out,
+            'relations': relations_out,
+        },
+    }
 
 
 @router.get('/diagnostics')

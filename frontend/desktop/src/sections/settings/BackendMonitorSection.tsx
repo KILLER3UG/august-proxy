@@ -22,6 +22,7 @@ import {
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useLogStream, type StreamStatus } from '@/hooks/useLogStream';
 import { useBackendStatus } from '@/hooks/useBackendStatus';
@@ -81,6 +82,45 @@ function formatTime(ts: number): string {
     return d.toLocaleTimeString('en-GB', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
 }
 
+const HTTP_REASON: Record<number, string> = {
+    200: 'OK',
+    201: 'Created',
+    204: 'No Content',
+    400: 'Bad Request',
+    401: 'Unauthorized',
+    403: 'Forbidden',
+    404: 'Not Found',
+    429: 'Too Many',
+    500: 'Error',
+    502: 'Bad Gateway',
+    503: 'Unavailable',
+};
+
+function extractStatusCode(event: LogEvent): number | null {
+    const md = event.metadata as Record<string, unknown> | null;
+    if (md) {
+        const raw = md.statusCode ?? md.status_code ?? md.status;
+        if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+        if (typeof raw === 'string' && /^\d{3}$/.test(raw)) return Number(raw);
+    }
+    const m = event.message.match(/\bHTTP\s+(\d{3})\b/i) || event.message.match(/\b(\d{3})\s+OK\b/i);
+    if (m) return Number(m[1]);
+    return null;
+}
+
+function statusPill(code: number | null): { label: string; cls: string } | null {
+    if (code == null) return null;
+    const reason = HTTP_REASON[code] || '';
+    const label = reason ? `${code} ${reason}` : String(code);
+    if (code >= 200 && code < 300)
+        return { label, cls: 'bg-success/15 text-success border-success/30' };
+    if (code >= 400 && code < 500)
+        return { label, cls: 'bg-warning/15 text-warning border-warning/30' };
+    if (code >= 500)
+        return { label, cls: 'bg-danger/15 text-danger border-danger/30' };
+    return { label, cls: 'bg-muted text-muted-foreground border-border' };
+}
+
 function exportEvents(events: LogEvent[]) {
     const blob = new Blob([JSON.stringify(events, redactForCopy, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -98,6 +138,7 @@ export function BackendMonitorSection() {
     const [search, setSearch] = useState('');
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [autoScroll, setAutoScroll] = useState(true);
+    const [httpOnly, setHttpOnly] = useState(false);
 
     const parentRef = useRef<HTMLDivElement | null>(null);
 
@@ -109,6 +150,15 @@ export function BackendMonitorSection() {
             // by default (styled as `info`) so new emitter categories are
             // never silently hidden.
             if (e.category in KNOWN && !enabled.has(e.category)) return false;
+            if (httpOnly) {
+                const code = extractStatusCode(e);
+                const isProxyHttp =
+                    e.category === 'proxy_incoming' ||
+                    e.category === 'proxy_upstream' ||
+                    e.category === 'error' ||
+                    code != null;
+                if (!isProxyHttp) return false;
+            }
             if (!q) return true;
             if (e.message.toLowerCase().includes(q)) return true;
             if (e.metadata) {
@@ -118,7 +168,7 @@ export function BackendMonitorSection() {
             }
             return false;
         });
-    }, [events, enabled, search]);
+    }, [events, enabled, search, httpOnly]);
 
     const stats = useMemo(() => {
         const errors = visible.filter((e) => e.level === 'error' || e.category === 'security').length;
@@ -268,6 +318,19 @@ export function BackendMonitorSection() {
                             </button>
                         );
                     })}
+                    <button
+                        type="button"
+                        onClick={() => setHttpOnly((v) => !v)}
+                        className={cn(
+                            'rounded-md border px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition',
+                            httpOnly
+                                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                : 'bg-muted/40 text-muted-foreground/50 border-transparent hover:bg-muted',
+                        )}
+                        data-testid="backend-monitor-http-only"
+                    >
+                        HTTP
+                    </button>
                     <div className="relative ml-auto max-w-xs flex-1 min-w-[180px]">
                         <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
                         <input
@@ -284,7 +347,18 @@ export function BackendMonitorSection() {
                     ref={parentRef}
                     className="relative max-h-[60vh] overflow-auto rounded-md border border-border/60 bg-zinc-950/50 font-mono text-[11px]"
                 >
-                    {visible.length === 0 ? (
+                    {status === 'connecting' && events.length === 0 ? (
+                        <div className="space-y-1 p-2" data-testid="backend-monitor-skeleton">
+                            {Array.from({ length: 8 }).map((_, i) => (
+                                <div key={i} className="flex items-center gap-2 px-1 py-1">
+                                    <Skeleton className="h-3 w-24 bg-white/5" />
+                                    <Skeleton className="h-4 w-14 bg-white/5" />
+                                    <Skeleton className="h-4 w-12 bg-white/5" />
+                                    <Skeleton className="h-3 flex-1 bg-white/5" />
+                                </div>
+                            ))}
+                        </div>
+                    ) : visible.length === 0 ? (
                         <SettingsEmptyState
                             icon={Inbox}
                             title={events.length === 0 ? 'Waiting for events…' : 'No events match the current filters'}
@@ -298,6 +372,8 @@ export function BackendMonitorSection() {
                                 const m = metaFor(event.category);
                                 const isExpanded = expanded.has(event.id);
                                 const Icon = m.icon;
+                                const code = extractStatusCode(event);
+                                const pill = statusPill(code);
                                 return (
                                     <div
                                         key={event.id}
@@ -322,6 +398,19 @@ export function BackendMonitorSection() {
                                             <span className={cn('shrink-0 rounded border px-1.5 py-px text-[9px] uppercase tracking-wider w-20 text-center', m.chip)}>
                                                 {m.label}
                                             </span>
+                                            {pill ? (
+                                                <span
+                                                    className={cn(
+                                                        'shrink-0 rounded border px-1.5 py-px text-[9px] font-semibold tracking-wide w-[4.5rem] text-center',
+                                                        pill.cls,
+                                                    )}
+                                                    data-testid="http-status-pill"
+                                                >
+                                                    {pill.label}
+                                                </span>
+                                            ) : (
+                                                <span className="shrink-0 w-[4.5rem]" aria-hidden />
+                                            )}
                                             <Icon className={cn('size-3 shrink-0 mt-0.5', m.row)} />
                                             <span className={cn('flex-1 whitespace-pre-wrap break-all', m.row)}>{event.message}</span>
                                         </button>

@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+
+_GOOGLE_ENV_KEYS = (
+    'GOOGLE_OAUTH_CLIENT_ID',
+    'GOOGLE_OAUTH_CLIENT_SECRET',
+    'GOOGLE_OAUTH_REDIRECT_URI',
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+    'USER_GOOGLE_EMAIL',
+)
 
 
 @pytest.fixture
@@ -18,6 +29,15 @@ async def client(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, 'dataDir', lambda: tmp_path)
     settings.dataDir = tmp_path
     settings._config = {}
+    # Isolate Google OAuth env left by prior tests / set_mcp_env side effects
+    for k in _GOOGLE_ENV_KEYS:
+        monkeypatch.delenv(k, raising=False)
+        os.environ.pop(k, None)
+    # Clear in-memory OAuth state
+    from app.services import service_connections as sc
+
+    sc._oauth_pending.clear()
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as ac:
         yield ac
@@ -61,6 +81,130 @@ async def test_mcp_env_roundtrip(client):
     assert keys['FOO_BAR']['value'] == 'baz'
     assert keys['API_TOKEN']['masked'] is True
     assert 'secret' not in keys['API_TOKEN']['value']
+
+
+@pytest.mark.asyncio
+async def test_mcp_env_merge_keeps_existing_keys(client):
+    await client.post(
+        '/api/mcp-env',
+        json={'env': {'KEEP_ME': 'yes', 'REPLACE_ME': 'old'}},
+    )
+    r = await client.post(
+        '/api/mcp-env',
+        json={
+            'env': {
+                'REPLACE_ME': 'new',
+                'WORKSPACE_HINT': 'cid.apps.googleusercontent.com',
+            },
+            'merge': True,
+        },
+    )
+    assert r.status_code == 200
+    keys = {e['key']: e for e in r.json()['env']}
+    assert keys['KEEP_ME']['value'] == 'yes'
+    assert keys['REPLACE_ME']['value'] == 'new'
+    assert keys['WORKSPACE_HINT']['value'] == 'cid.apps.googleusercontent.com'
+
+
+@pytest.mark.asyncio
+async def test_google_auth_requires_config(client):
+    r = await client.post('/api/service-connections/google/auth', json={'email': ''})
+    assert r.status_code == 200
+    body = r.json()
+    assert not body.get('authUrl')
+    assert 'not configured' in (body.get('message') or '').lower()
+
+
+@pytest.mark.asyncio
+async def test_google_native_auth_url_when_client_id_set(client, monkeypatch):
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'test-client.apps.googleusercontent.com')
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_SECRET', 'test-secret')
+    r = await client.post('/api/service-connections/google/auth', json={'email': 'me@example.com'})
+    assert r.status_code == 200
+    body = r.json()
+    url = body.get('authUrl') or ''
+    assert url.startswith('https://accounts.google.com/o/oauth2/v2/auth')
+    assert 'test-client.apps.googleusercontent.com' in url
+    assert 'state=' in url
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    q = parse_qs(urlparse(url).query)
+    redirect = unquote(q.get('redirect_uri', [''])[0])
+    assert redirect.endswith('/api/service-connections/google/callback')
+
+
+@pytest.mark.asyncio
+async def test_google_callback_exchanges_code(client, monkeypatch):
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'test-client.apps.googleusercontent.com')
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_SECRET', 'test-secret')
+
+    # Seed a pending OAuth state via auth URL
+    auth = await client.post('/api/service-connections/google/auth', json={'email': ''})
+    url = auth.json()['authUrl']
+    from urllib.parse import parse_qs, urlparse
+
+    state = parse_qs(urlparse(url).query)['state'][0]
+
+    class FakeResponse:
+        def __init__(self, status_code: int, payload: dict | str):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = payload if isinstance(payload, str) else str(payload)
+
+        def json(self):
+            assert isinstance(self._payload, dict)
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def post(self, url, data=None, headers=None):
+            assert 'oauth2.googleapis.com/token' in url
+            assert data['code'] == 'auth-code-xyz'
+            assert data['client_secret'] == 'test-secret'
+            return FakeResponse(
+                200,
+                {
+                    'access_token': 'ya29.access',
+                    'refresh_token': '1//refresh',
+                    'token_type': 'Bearer',
+                    'expires_in': 3600,
+                    'scope': 'email profile',
+                },
+            )
+
+        async def get(self, url, headers=None):
+            assert 'userinfo' in url
+            return FakeResponse(200, {'email': 'user@gmail.com'})
+
+    monkeypatch.setattr('app.services.service_connections.httpx.AsyncClient', FakeClient)
+
+    r = await client.get(
+        '/api/service-connections/google/callback',
+        params={'code': 'auth-code-xyz', 'state': state},
+    )
+    assert r.status_code == 200
+    assert 'Connected' in r.text or 'connected' in r.text.lower()
+
+    listed = await client.get('/api/service-connections')
+    google = listed.json()['connections']['google']
+    assert google['connected'] is True
+    assert google.get('account') == 'user@gmail.com'
+
+
+@pytest.mark.asyncio
+async def test_mcp_directory_includes_google_workspace(client):
+    r = await client.get('/api/mcp/directory')
+    assert r.status_code == 200
+    ids = {e['id'] for e in r.json().get('entries', [])}
+    assert 'mcp-google-workspace' in ids
 
 
 @pytest.mark.asyncio

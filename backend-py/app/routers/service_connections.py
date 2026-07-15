@@ -5,6 +5,7 @@
   POST   /api/service-connections/slack
   POST   /api/service-connections/google
   POST   /api/service-connections/google/auth
+  GET    /api/service-connections/google/callback
   DELETE /api/service-connections/{name}
 
   GET/POST /api/mcp-env
@@ -12,7 +13,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from app.models.camel_base import CamelModel
 from app.services import service_connections as sc
 
@@ -38,6 +40,7 @@ class GoogleAuthBody(CamelModel):
 
 class McpEnvBody(CamelModel):
     env: list[dict[str, str]] | dict[str, str] = []
+    merge: bool = False
 
 
 @router.get('/api/service-connections')
@@ -65,6 +68,19 @@ async def post_google_auth(body: GoogleAuthBody):
     return await sc.google_auth_url(body.email)
 
 
+@router.get('/api/service-connections/google/callback')
+async def google_oauth_callback(
+    code: str = Query(default=''),
+    state: str = Query(default=''),
+    error: str = Query(default=''),
+):
+    """Browser redirect target after Google consent — exchanges code and shows HTML."""
+    result = await sc.google_oauth_callback(code=code, state=state, error=error)
+    html = str(result.get('html') or '')
+    status = 200 if result.get('ok') else 400
+    return HTMLResponse(content=html, status_code=status)
+
+
 @router.delete('/api/service-connections/{name}')
 async def delete_connection(name: str):
     try:
@@ -80,4 +96,4 @@ async def get_mcp_env():
 
 @router.post('/api/mcp-env')
 async def post_mcp_env(body: McpEnvBody):
-    return sc.set_mcp_env(body.env)
+    return sc.set_mcp_env(body.env, merge=bool(body.merge))

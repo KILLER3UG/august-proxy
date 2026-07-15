@@ -59,6 +59,13 @@ async def mcpDirectory():
                 'name': 'GitHub MCP',
                 'packageName': '@modelcontextprotocol/server-github',
             },
+            {
+                'id': 'mcp-google-workspace',
+                'name': 'Google Workspace MCP',
+                'packageName': 'workspace-mcp',
+                'command': 'uvx',
+                'args': ['workspace-mcp', '--tool-tier', 'core'],
+            },
         ]
     }
 
@@ -89,7 +96,7 @@ async def createServer(body: MCPServerCreate):
     return server
 
 
-@router.get('/servers/{server_id}')
+@router.get('/servers/{serverId}')
 async def getServer(serverId: str):
     """Get an MCP server by ID."""
     for s in mcp_client.listRegisteredServers():
@@ -98,7 +105,7 @@ async def getServer(serverId: str):
     raise HTTPException(status_code=404, detail='Server not found')
 
 
-@router.delete('/servers/{server_id}')
+@router.delete('/servers/{serverId}')
 async def deleteServer(serverId: str):
     """Remove an MCP server and stop its process if running."""
     if not mcp_client.unregisterServer(serverId):
@@ -118,7 +125,7 @@ def _resolve_server(server_id: str) -> dict[str, object] | None:
     return None
 
 
-@router.post('/servers/{server_id}/start')
+@router.post('/servers/{serverId}/start')
 async def startServer(serverId: str):
     """Start an MCP server subprocess and discover its tools."""
     server = _resolve_server(serverId)
@@ -152,7 +159,7 @@ async def startServer(serverId: str):
     }
 
 
-@router.post('/servers/{server_id}/stop')
+@router.post('/servers/{serverId}/stop')
 async def stopServer(serverId: str):
     """Stop an MCP server subprocess."""
     server = next((s for s in mcp_client.listRegisteredServers() if s.get('id') == serverId), None)

@@ -14,6 +14,18 @@ export type CatalogBrand =
 
 export type CatalogKind = 'account-facet' | 'mcp-extension';
 
+/** Env field collected in the install modal before registering an MCP server. */
+export interface CatalogEnvField {
+  key: string;
+  label: string;
+  secret?: boolean;
+  required?: boolean;
+  placeholder?: string;
+  help?: string;
+  /** Default value pre-filled in the install form (not secrets). */
+  defaultValue?: string;
+}
+
 export interface IntegrationCatalogEntry {
   id: string;
   kind: CatalogKind;
@@ -39,6 +51,11 @@ export interface IntegrationCatalogEntry {
     env?: Record<string, string>;
     transport?: 'stdio' | 'http' | 'sse';
   };
+  /**
+   * When set, the Install button collects these values and merges them into
+   * the MCP server env + global MCP env (so Sign in with Google can work).
+   */
+  requiredEnv?: CatalogEnvField[];
   helpUrl?: string;
   requirements?: string;
 }
@@ -258,6 +275,84 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
     },
     requirements: 'Set GITHUB_PERSONAL_ACCESS_TOKEN in the MCP server environment after install.',
     helpUrl: 'https://github.com/modelcontextprotocol/servers',
+    requiredEnv: [
+      {
+        key: 'GITHUB_PERSONAL_ACCESS_TOKEN',
+        label: 'GitHub personal access token',
+        secret: true,
+        required: true,
+        placeholder: 'ghp_…',
+        help: 'Create a classic or fine-grained PAT with repo access.',
+      },
+    ],
+  },
+  {
+    id: 'mcp-google-workspace',
+    kind: 'mcp-extension',
+    name: 'Google Workspace MCP',
+    tagline: 'Gmail, Calendar, Drive, Docs, Sheets — sign in with Google in the browser.',
+    description:
+      'Installs workspace-mcp so August can use Gmail, Calendar, Drive, and other Google Workspace APIs.\n\n' +
+      'After install: open Gmail / Calendar / Drive (or this card) and click Sign in with Google. ' +
+      'Your browser opens Google consent — same pattern as Claude Desktop’s Google Workspace extension.\n\n' +
+      'You need a free Google Cloud OAuth client (Client ID + Secret) once. Create a Desktop app or Web app ' +
+      'and enable Gmail / Calendar / Drive APIs. Add yourself as a test user while the consent screen is in Testing.',
+    developer: 'workspace-mcp (taylorwilsdon)',
+    categories: ['Email', 'Calendar', 'Files', 'MCP', 'Google'],
+    brand: 'google',
+    verified: true,
+    isNew: true,
+    packageName: 'workspace-mcp',
+    packageVersion: 'latest',
+    tools: [
+      'start_google_auth',
+      'search_gmail_messages',
+      'get_gmail_message_content',
+      'send_gmail_message',
+      'list_calendars',
+      'create_event',
+      'search_drive_files',
+    ],
+    mcp: {
+      command: 'uvx',
+      args: ['workspace-mcp', '--tool-tier', 'core'],
+      transport: 'stdio',
+      env: {
+        GOOGLE_OAUTH_CLIENT_ID: '',
+        GOOGLE_OAUTH_CLIENT_SECRET: '',
+        OAUTHLIB_INSECURE_TRANSPORT: '1',
+      },
+    },
+    requiredEnv: [
+      {
+        key: 'GOOGLE_OAUTH_CLIENT_ID',
+        label: 'Google OAuth client ID',
+        required: true,
+        placeholder: '….apps.googleusercontent.com',
+        help: 'Google Cloud Console → APIs & Services → Credentials → OAuth client ID',
+      },
+      {
+        key: 'GOOGLE_OAUTH_CLIENT_SECRET',
+        label: 'Google OAuth client secret',
+        secret: true,
+        required: true,
+        placeholder: 'GOCSPX-…',
+        help: 'From the same OAuth client. Required for confidential clients.',
+      },
+      {
+        key: 'OAUTHLIB_INSECURE_TRANSPORT',
+        label: 'Allow local HTTP OAuth (dev)',
+        required: false,
+        defaultValue: '1',
+        help: 'Set to 1 so local http://127.0.0.1 callbacks work during development.',
+      },
+    ],
+    requirements:
+      'Python 3.10+ and uv/uvx on PATH (https://github.com/astral-sh/uv). ' +
+      'Google Cloud project with Gmail/Calendar/Drive APIs enabled and an OAuth client. ' +
+      'For August’s built-in Sign in button, also add redirect URI: ' +
+      'http://127.0.0.1:8085/api/service-connections/google/callback',
+    helpUrl: 'https://github.com/taylorwilsdon/google_workspace_mcp',
   },
 ];
 

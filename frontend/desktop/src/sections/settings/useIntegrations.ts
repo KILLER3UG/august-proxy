@@ -270,18 +270,39 @@ export function useIntegrations() {
   }, [enabledIds, mcpQuery.data]);
 
   const addFromCatalog = useMutation({
-    mutationFn: async (entry: IntegrationCatalogEntry) => {
+    mutationFn: async ({
+      entry,
+      envOverrides,
+    }: {
+      entry: IntegrationCatalogEntry;
+      envOverrides?: Record<string, string>;
+    }) => {
       if (entry.kind === 'account-facet') {
         enableIntegrationId(entry.id);
         return { kind: 'facet' as const, id: entry.id };
       }
       // MCP install
       if (!entry.mcp) throw new Error('This extension has no install recipe');
+      const env: Record<string, string> = {
+        ...(entry.mcp.env ?? {}),
+        ...(envOverrides ?? {}),
+      };
+      // Persist OAuth / API secrets to global MCP env so native Sign in + restarts work.
+      const persistKeys = Object.keys(env).filter((k) => env[k]?.trim());
+      if (persistKeys.length > 0) {
+        const patch: Record<string, string> = {};
+        for (const k of persistKeys) patch[k] = env[k]!;
+        try {
+          await api.post('/api/mcp-env', { env: patch, merge: true });
+        } catch {
+          /* non-fatal: server env still carries secrets */
+        }
+      }
       const created = await api.post<{ id: string; name: string }>('/api/mcp/servers', {
         name: entry.name,
         command: entry.mcp.command,
         args: entry.mcp.args,
-        env: entry.mcp.env ?? {},
+        env,
         transport: entry.mcp.transport ?? 'stdio',
         catalogId: entry.id,
       });
@@ -298,10 +319,16 @@ export function useIntegrations() {
         enableIntegrationId(entry.id);
         throw new Error(
           `Installed ${entry.name}, but start failed: ${msg}. ` +
-            'Open the card and click Start after Node/npx is available, or check the command/args.',
+            'Open the card and click Start after uv/uvx or Node is on PATH, or check the command/args.',
         );
       }
       enableIntegrationId(entry.id);
+      // Auto-enable Google account facets when Workspace MCP is installed
+      if (entry.id === 'mcp-google-workspace') {
+        for (const facet of ['google-gmail', 'google-calendar', 'google-drive']) {
+          enableIntegrationId(facet);
+        }
+      }
       return { kind: 'mcp' as const, id: sid };
     },
     onSuccess: () => {
@@ -331,6 +358,49 @@ export function useIntegrations() {
     },
   });
 
+  const createCustomMcp = useMutation({
+    mutationFn: async (payload: {
+      name: string;
+      transport: 'stdio' | 'sse' | 'http';
+      command?: string;
+      args?: string[];
+      url?: string;
+      env?: Record<string, string>;
+      start?: boolean;
+    }) => {
+      const body: Record<string, unknown> = {
+        name: payload.name,
+        transport: payload.transport,
+        env: payload.env ?? {},
+      };
+      if (payload.transport === 'stdio') {
+        body.command = payload.command ?? '';
+        body.args = payload.args ?? [];
+      } else {
+        body.url = payload.url ?? '';
+      }
+      const created = await api.post<{ id: string; name: string }>('/api/mcp/servers', body);
+      const sid = created.id;
+      if (!sid) {
+        throw new Error('Server registered but no id returned');
+      }
+      if (payload.start !== false) {
+        try {
+          await api.post(`/api/mcp/servers/${encodeURIComponent(sid)}/start`, {});
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(
+            `Registered ${payload.name}, but start failed: ${msg}. Open the card and click Start after fixing the command/URL.`,
+          );
+        }
+      }
+      return { id: sid, name: payload.name };
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['integrations-mcp'] });
+    },
+  });
+
   return {
     items,
     accounts,
@@ -340,6 +410,7 @@ export function useIntegrations() {
     isLoading: connsQuery.isLoading && mcpQuery.isLoading,
     addFromCatalog,
     removeInstalled,
+    createCustomMcp,
     refreshEnabled,
     refetch: () => {
       void connsQuery.refetch();

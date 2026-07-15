@@ -63,6 +63,9 @@
   }
 
   .dark {
+    /* Help native form controls (select/option) use dark system chrome on Windows */
+    color-scheme: dark;
+
     /* Surface palette — true-neutral charcoal, three clear tiers */
     --dt-background: #0e0e10;
     --dt-foreground: #ececee;

@@ -37,6 +37,7 @@ export function IntegrationsSection() {
     installedCatalogIds,
     addFromCatalog,
     removeInstalled,
+    createCustomMcp,
   } = useIntegrations();
 
   const selected = useMemo(
@@ -172,14 +173,25 @@ export function IntegrationsSection() {
         open={dirOpen}
         onClose={() => setDirOpen(false)}
         installedIds={installedCatalogIds}
-        busyId={addFromCatalog.isPending ? addFromCatalog.variables?.id ?? null : null}
-        onAdd={async (entry) => {
-          await addFromCatalog.mutateAsync(entry);
+        busyId={
+          addFromCatalog.isPending
+            ? (addFromCatalog.variables?.entry?.id ?? null)
+            : null
+        }
+        customBusy={createCustomMcp.isPending}
+        onAdd={async (entry, envOverrides) => {
+          await addFromCatalog.mutateAsync({ entry, envOverrides });
           toast.success(
             entry.kind === 'mcp-extension'
               ? `Installed ${entry.name}`
               : `Added ${entry.name}`,
           );
+          setDirOpen(false);
+        }}
+        onCreateCustom={async (payload) => {
+          await createCustomMcp.mutateAsync(payload);
+          toast.success(`Created ${payload.name}`);
+          setDirOpen(false);
         }}
       />
     </div>

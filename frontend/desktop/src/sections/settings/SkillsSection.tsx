@@ -28,9 +28,20 @@ import {
   Info,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { api } from '@/api/client';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { cn } from '@/lib/utils';
+
+const SKILL_CATEGORIES = [
+  { value: 'uncategorized', label: 'Uncategorized' },
+  { value: 'development', label: 'Development' },
+  { value: 'testing', label: 'Testing' },
+  { value: 'devops', label: 'DevOps' },
+  { value: 'writing', label: 'Writing' },
+  { value: 'research', label: 'Research' },
+  { value: 'learned', label: 'Learned' },
+] as const;
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 
@@ -331,8 +342,21 @@ export function SkillsSection() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <BookOpen className="size-8 animate-pulse text-muted-foreground" />
+      <div className="px-8 py-6 space-y-6" data-testid="skills-skeleton">
+        <div className="space-y-2">
+          <div className="h-7 w-32 rounded-md bg-muted animate-pulse" />
+          <div className="h-4 w-72 rounded-md bg-muted animate-pulse" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-16 rounded-xl border border-border/60 bg-muted/40 animate-pulse" />
+          ))}
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-[100px] rounded-xl border border-border/60 bg-card animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -591,20 +615,16 @@ export function SkillsSection() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">Category</label>
-                <select
-                  value={form.category}
-                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-2 text-sm text-foreground shadow-none"
-                >
-                  <option value="uncategorized">Uncategorized</option>
-                  <option value="development">Development</option>
-                  <option value="testing">Testing</option>
-                  <option value="devops">DevOps</option>
-                  <option value="writing">Writing</option>
-                  <option value="research">Research</option>
-                  <option value="learned">Learned</option>
-                </select>
+                <label className="text-sm font-medium mb-1 block" htmlFor="skill-category">
+                  Category
+                </label>
+                <SettingsSelect
+                  id="skill-category"
+                  aria-label="Skill category"
+                  value={form.category || 'uncategorized'}
+                  onChange={(category) => setForm((f) => ({ ...f, category }))}
+                  options={[...SKILL_CATEGORIES]}
+                />
               </div>
             </div>
             <div>

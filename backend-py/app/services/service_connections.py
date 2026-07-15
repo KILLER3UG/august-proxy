@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import os
+import secrets
+import time
+import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
+
 from app.json_narrowing import as_dict, as_str
 from app.services.config_service import getConfig, saveConfig
+
+# Pending native OAuth states: state -> {created, email, redirect_uri}
+_oauth_pending: dict[str, dict[str, Any]] = {}
+_OAUTH_STATE_TTL_S = 15 * 60
 
 SERVICE_META: dict[str, dict[str, Any]] = {
     'google': {
@@ -183,13 +192,110 @@ def connect_slack(bot_token: str, team_id: str = '') -> dict[str, Any]:
 
 def connect_google(email: str = '') -> dict[str, Any]:
     sc = _sc()
+    existing = as_dict(sc.get('google')) if sc.get('google') else {}
     sc['google'] = {
-        'email': email.strip() or None,
-        'status': 'connected' if email.strip() else 'disconnected',
+        **existing,
+        'email': email.strip() or existing.get('email') or None,
+        'status': 'connected' if (email.strip() or existing.get('refreshToken') or existing.get('email')) else 'disconnected',
         'updatedAt': _now(),
     }
+    if email.strip() or existing.get('refreshToken') or existing.get('email'):
+        sc['google']['status'] = 'connected'
     _save_sc(sc)
     return {'status': 'ok', 'connection': _google_card(as_dict(sc.get('google')))}
+
+
+def _mcp_global_env_map() -> dict[str, str]:
+    try:
+        cfg = getConfig()
+        raw = as_dict(cfg.get('mcpGlobalEnv')) if cfg.get('mcpGlobalEnv') is not None else {}
+        return {str(k): str(v) for k, v in raw.items() if str(k).strip()}
+    except Exception:
+        return {}
+
+
+def _google_client_id() -> str:
+    return (
+        os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
+        or os.environ.get('GOOGLE_CLIENT_ID')
+        or _mcp_global_env_map().get('GOOGLE_OAUTH_CLIENT_ID')
+        or _mcp_global_env_map().get('GOOGLE_CLIENT_ID')
+        or ''
+    ).strip()
+
+
+def _google_client_secret() -> str:
+    return (
+        os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET')
+        or os.environ.get('GOOGLE_CLIENT_SECRET')
+        or _mcp_global_env_map().get('GOOGLE_OAUTH_CLIENT_SECRET')
+        or _mcp_global_env_map().get('GOOGLE_CLIENT_SECRET')
+        or ''
+    ).strip()
+
+
+def _google_redirect_uri() -> str:
+    explicit = (
+        os.environ.get('GOOGLE_OAUTH_REDIRECT_URI')
+        or _mcp_global_env_map().get('GOOGLE_OAUTH_REDIRECT_URI')
+        or ''
+    ).strip()
+    if explicit:
+        return explicit
+    try:
+        from app.config import settings
+
+        port = int(getattr(settings, 'port', 8085) or 8085)
+    except Exception:
+        port = int(os.environ.get('AUGUST_PROXY_PORT', '8085'))
+    return f'http://127.0.0.1:{port}/api/service-connections/google/callback'
+
+
+def _purge_stale_oauth_states() -> None:
+    now = time.time()
+    dead = [k for k, v in _oauth_pending.items() if now - float(v.get('created', 0)) > _OAUTH_STATE_TTL_S]
+    for k in dead:
+        _oauth_pending.pop(k, None)
+
+
+def _native_google_auth_url(user_email: str = '') -> dict[str, Any] | None:
+    """Build browser OAuth URL with CSRF state. Returns None if client id missing."""
+    client_id = _google_client_id()
+    if not client_id:
+        return None
+    _purge_stale_oauth_states()
+    redirect = _google_redirect_uri()
+    state = secrets.token_urlsafe(24)
+    _oauth_pending[state] = {
+        'created': time.time(),
+        'email': user_email,
+        'redirect_uri': redirect,
+    }
+    scopes = [
+        'openid',
+        'email',
+        'profile',
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/drive.readonly',
+    ]
+    params: dict[str, str] = {
+        'client_id': client_id,
+        'redirect_uri': redirect,
+        'response_type': 'code',
+        'scope': ' '.join(scopes),
+        'access_type': 'offline',
+        'prompt': 'consent',
+        'include_granted_scopes': 'true',
+        'state': state,
+    }
+    if user_email and user_email != 'me':
+        params['login_hint'] = user_email
+    auth_url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode(params)
+    return {
+        'authUrl': auth_url,
+        'message': 'Open Google sign-in in your browser to connect Gmail / Calendar / Drive.',
+    }
 
 
 async def google_auth_url(email: str = '') -> dict[str, Any]:
@@ -223,8 +329,8 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
             for srv in mcp_client.listRegisteredServers():
                 if not isinstance(srv, dict):
                     continue
-                blob = f"{srv.get('id', '')} {srv.get('name', '')} {srv.get('command', '')}".lower()
-                if 'workspace' in blob or 'google' in blob:
+                blob = f"{srv.get('id', '')} {srv.get('name', '')} {srv.get('command', '')} {srv.get('args', '')}".lower()
+                if 'workspace-mcp' in blob or 'workspace_mcp' in blob or 'google workspace' in blob:
                     server_id = as_str(srv.get('id'))
                     break
 
@@ -239,73 +345,187 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
             )
             text = str(result)
             # If the server truly isn't running, fall through to native OAuth
-            if text.startswith("Error: MCP server") and 'not running' in text:
+            if text.startswith('Error: MCP server') and 'not running' in text:
+                pass
+            elif text.startswith('Error:'):
                 pass
             else:
                 import re
 
                 match = re.search(r'https://[^\s"\'<>]+', text)
                 if match:
-                    return {'authUrl': match.group(0), 'message': text}
-                if text and not text.startswith('Error:'):
-                    return {'message': text, 'authUrl': ''}
+                    return {'authUrl': match.group(0), 'message': text, 'via': 'mcp'}
+                lower = text.lower()
+                # Already authenticated — mark connected so the UI updates.
+                if any(
+                    phrase in lower
+                    for phrase in (
+                        'already authenticated',
+                        'already authorized',
+                        'credentials found',
+                        'successfully authenticated',
+                        'authentication successful',
+                    )
+                ):
+                    connect_google(user_email if user_email and user_email != 'me' else '')
+                    return {
+                        'authUrl': '',
+                        'message': text,
+                        'connected': True,
+                        'via': 'mcp',
+                    }
+                if text.strip():
+                    return {'message': text, 'authUrl': '', 'via': 'mcp'}
     except Exception:
         pass
 
-    # 2) Native Google OAuth URL from process env / MCP global env
-    client_id = (
-        os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
-        or os.environ.get('GOOGLE_CLIENT_ID')
-        or ''
-    ).strip()
-    if not client_id:
-        # Also check durable mcpGlobalEnv in config
-        try:
-            cfg = getConfig()
-            env_map = as_dict(cfg.get('mcpGlobalEnv')) if cfg.get('mcpGlobalEnv') is not None else {}
-            client_id = as_str(env_map.get('GOOGLE_OAUTH_CLIENT_ID') or env_map.get('GOOGLE_CLIENT_ID'))
-        except Exception:
-            client_id = ''
-
-    if client_id:
-        import urllib.parse
-
-        redirect = (
-            os.environ.get('GOOGLE_OAUTH_REDIRECT_URI')
-            or 'http://127.0.0.1:8085/api/service-connections/google/callback'
-        ).strip()
-        scopes = [
-            'openid',
-            'email',
-            'profile',
-            'https://www.googleapis.com/auth/gmail.modify',
-            'https://www.googleapis.com/auth/calendar',
-            'https://www.googleapis.com/auth/drive.readonly',
-        ]
-        params = {
-            'client_id': client_id,
-            'redirect_uri': redirect,
-            'response_type': 'code',
-            'scope': ' '.join(scopes),
-            'access_type': 'offline',
-            'prompt': 'consent',
-        }
-        if user_email and user_email != 'me':
-            params['login_hint'] = user_email
-        auth_url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode(params)
-        return {
-            'authUrl': auth_url,
-            'message': 'Open Google sign-in in your browser to connect Gmail / Calendar / Drive.',
-        }
+    # 2) Native Google OAuth (full browser flow with August callback)
+    native = _native_google_auth_url(user_email)
+    if native:
+        return {**native, 'via': 'native'}
 
     return {
         'authUrl': '',
         'message': (
-            'Google sign-in is not configured. Either install and start a workspace-mcp '
-            'server that provides start_google_auth, or set GOOGLE_OAUTH_CLIENT_ID (and '
-            'GOOGLE_OAUTH_CLIENT_SECRET) in Settings → Integrations MCP env / process env.'
+            'Google sign-in is not configured. Install “Google Workspace MCP” from '
+            'Settings → Integrations → Add (paste Client ID + Secret), or set '
+            'GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in MCP env.'
         ),
     }
+
+
+async def google_oauth_callback(code: str = '', state: str = '', error: str = '') -> dict[str, Any]:
+    """Handle Google OAuth redirect: exchange code, store tokens, mark connected."""
+    if error:
+        return {
+            'ok': False,
+            'error': error,
+            'html': _oauth_result_html(False, f'Google returned an error: {error}'),
+        }
+    if not code.strip():
+        return {
+            'ok': False,
+            'error': 'missing_code',
+            'html': _oauth_result_html(False, 'Missing authorization code.'),
+        }
+
+    _purge_stale_oauth_states()
+    pending = _oauth_pending.pop(state, None) if state else None
+    # Allow missing state in dev if only one pending (desktop loopback quirks)
+    if pending is None and len(_oauth_pending) == 1:
+        _, pending = _oauth_pending.popitem()
+    if pending is None and state:
+        # State expired or unknown — still try exchange with default redirect
+        pending = {'redirect_uri': _google_redirect_uri(), 'email': ''}
+
+    client_id = _google_client_id()
+    client_secret = _google_client_secret()
+    if not client_id or not client_secret:
+        return {
+            'ok': False,
+            'error': 'missing_client',
+            'html': _oauth_result_html(
+                False,
+                'GOOGLE_OAUTH_CLIENT_ID / SECRET not configured on the August server.',
+            ),
+        }
+
+    redirect_uri = as_str((pending or {}).get('redirect_uri')) or _google_redirect_uri()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            token_res = await client.post(
+                'https://oauth2.googleapis.com/token',
+                data={
+                    'code': code.strip(),
+                    'client_id': client_id,
+                    'client_secret': client_secret,
+                    'redirect_uri': redirect_uri,
+                    'grant_type': 'authorization_code',
+                },
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            )
+            if token_res.status_code >= 400:
+                detail = token_res.text[:400]
+                return {
+                    'ok': False,
+                    'error': 'token_exchange_failed',
+                    'html': _oauth_result_html(
+                        False,
+                        f'Token exchange failed ({token_res.status_code}). '
+                        f'Check redirect URI matches Google Cloud: {redirect_uri}. {detail}',
+                    ),
+                }
+            tokens = token_res.json()
+            access_token = as_str(tokens.get('access_token'))
+            refresh_token = as_str(tokens.get('refresh_token'))
+            email = as_str((pending or {}).get('email'))
+            if access_token:
+                try:
+                    ui = await client.get(
+                        'https://www.googleapis.com/oauth2/v2/userinfo',
+                        headers={'Authorization': f'Bearer {access_token}'},
+                    )
+                    if ui.status_code < 400:
+                        email = as_str(ui.json().get('email')) or email
+                except Exception:
+                    pass
+    except Exception as exc:
+        return {
+            'ok': False,
+            'error': 'network',
+            'html': _oauth_result_html(False, f'Network error talking to Google: {exc}'),
+        }
+
+    sc = _sc()
+    existing = as_dict(sc.get('google')) if sc.get('google') else {}
+    sc['google'] = {
+        **existing,
+        'email': email or existing.get('email'),
+        'status': 'connected',
+        'accessToken': access_token or existing.get('accessToken'),
+        'refreshToken': refresh_token or existing.get('refreshToken'),
+        'tokenType': as_str(tokens.get('token_type')) or 'Bearer',
+        'expiresIn': tokens.get('expires_in'),
+        'scope': as_str(tokens.get('scope')),
+        'updatedAt': _now(),
+    }
+    _save_sc(sc)
+    # Also export a hint for MCP tools that read env (not the full tokens).
+    if email:
+        os.environ['USER_GOOGLE_EMAIL'] = email
+        try:
+            set_mcp_env({'USER_GOOGLE_EMAIL': email}, merge=True)
+        except Exception:
+            pass
+
+    account = email or 'your Google account'
+    return {
+        'ok': True,
+        'email': email,
+        'connection': _google_card(as_dict(sc.get('google'))),
+        'html': _oauth_result_html(
+            True,
+            f'Connected as {account}. You can close this window and return to August.',
+        ),
+    }
+
+
+def _oauth_result_html(ok: bool, message: str) -> str:
+    title = 'Google connected' if ok else 'Google sign-in failed'
+    color = '#22c55e' if ok else '#ef4444'
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><title>{title}</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; background: #0f0f10; color: #e8e8ea;
+         display: grid; place-items: center; min-height: 100vh; margin: 0; }}
+  .card {{ max-width: 28rem; padding: 2rem; border-radius: 1rem;
+           border: 1px solid #2a2a2e; background: #18181b; text-align: center; }}
+  h1 {{ font-size: 1.15rem; margin: 0 0 0.75rem; color: {color}; }}
+  p {{ font-size: 0.9rem; line-height: 1.5; color: #a1a1aa; margin: 0; }}
+</style></head>
+<body><div class="card"><h1>{title}</h1><p>{message}</p></div>
+<script>try {{ window.opener && window.opener.postMessage({{ type: 'august-google-oauth', ok: {str(ok).lower()} }}, '*'); }} catch (e) {{}}</script>
+</body></html>"""
 
 
 def disconnect(name: str) -> dict[str, Any]:
@@ -336,6 +556,9 @@ _SENSITIVE_KEYS = (
 
 def _is_sensitive(key: str) -> bool:
     upper = key.upper()
+    # Public OAuth client IDs are not secrets ("OAUTH" contains "AUTH").
+    if upper.endswith('CLIENT_ID'):
+        return False
     return any(part in upper for part in _SENSITIVE_KEYS)
 
 
@@ -359,12 +582,25 @@ def get_mcp_env() -> dict[str, Any]:
     return {'env': env_list}
 
 
-def set_mcp_env(env: list[dict[str, Any]] | dict[str, str]) -> dict[str, Any]:
-    merged: dict[str, str] = {}
+def set_mcp_env(
+    env: list[dict[str, Any]] | dict[str, str],
+    *,
+    merge: bool = False,
+) -> dict[str, Any]:
+    """Save MCP global env. When merge=True, update keys without wiping the rest."""
+    cfg = getConfig()
+    existing = as_dict(cfg.get('mcpGlobalEnv')) if cfg.get('mcpGlobalEnv') is not None else {}
+    base: dict[str, str] = {str(k): str(v) for k, v in existing.items()} if merge else {}
     if isinstance(env, dict):
         for k, v in env.items():
-            if str(k).strip():
-                merged[str(k).strip()] = str(v)
+            key = str(k).strip()
+            if not key:
+                continue
+            val = str(v)
+            if merge and not val:
+                base.pop(key, None)
+            else:
+                base[key] = val
     else:
         for item in env:
             if not isinstance(item, dict):
@@ -372,12 +608,15 @@ def set_mcp_env(env: list[dict[str, Any]] | dict[str, str]) -> dict[str, Any]:
             k = as_str(item.get('key')).strip()
             if not k:
                 continue
-            merged[k] = as_str(item.get('value'))
-    cfg = getConfig()
-    cfg['mcpGlobalEnv'] = merged
+            val = as_str(item.get('value'))
+            if merge and not val:
+                base.pop(k, None)
+            else:
+                base[k] = val
+    cfg['mcpGlobalEnv'] = base
     saveConfig(cfg)
     # Export into process env for MCP subprocess inheritance.
-    for k, v in merged.items():
+    for k, v in base.items():
         if v:
             os.environ[k] = v
     return get_mcp_env()

@@ -45,6 +45,11 @@ def _safeKey(value: str) -> str:
     return key or 'unknown'
 
 
+def entityKey(value: str) -> str:
+    """Public stable id for an entity name (UI graph nodes)."""
+    return _safeKey(value)
+
+
 def _conn():
     from app.services.memory_store import _conn as get_conn
     from app.services.memory_schema import create_vector_graph_tables
@@ -387,6 +392,81 @@ def graphStats() -> dict[str, object]:
             'relations': int(conn.execute('SELECT COUNT(*) AS c FROM graph_relations').fetchone()['c']),
             'observations': int(conn.execute('SELECT COUNT(*) AS c FROM graph_observations').fetchone()['c']),
         }
+
+
+def entityTypeCounts() -> dict[str, int]:
+    """Return entity_type → count for dashboard legends."""
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        rows = conn.execute(
+            'SELECT entity_type, COUNT(*) AS c FROM graph_entities GROUP BY entity_type'
+        ).fetchall()
+        out: dict[str, int] = {}
+        for r in rows:
+            out[str(r['entity_type'] or 'general')] = int(r['c'])
+        return out
+
+
+def listEntities(limit: int = 50) -> list[dict[str, object]]:
+    """Most recently updated entities (for default graph neighborhood)."""
+    lim = max(1, min(200, int(limit or 50)))
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        rows = conn.execute(
+            'SELECT * FROM graph_entities ORDER BY updated_at DESC LIMIT ?',
+            (lim,),
+        ).fetchall()
+        return [_entity_row(r) for r in rows]
+
+
+def listRelationsForKeys(name_keys: list[str], limit: int = 200) -> list[dict[str, object]]:
+    """Relations where source or target is in name_keys."""
+    if not name_keys:
+        return []
+    lim = max(1, min(500, int(limit or 200)))
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        placeholders = ','.join('?' for _ in name_keys)
+        rows = conn.execute(
+            f"""
+            SELECT * FROM graph_relations
+            WHERE source_key IN ({placeholders}) OR target_key IN ({placeholders})
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (*name_keys, *name_keys, lim),
+        ).fetchall()
+        key_to_name: dict[str, str] = {}
+        for r in rows:
+            for k in (r['source_key'], r['target_key']):
+                if k not in key_to_name:
+                    er = conn.execute(
+                        'SELECT name FROM graph_entities WHERE name_key = ?', (k,)
+                    ).fetchone()
+                    key_to_name[k] = er['name'] if er else k
+        out: list[dict[str, object]] = []
+        for r in rows:
+            try:
+                meta = json.loads(r['metadata'] or '{}')
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            src_name = key_to_name.get(r['source_key'], r['source_key'])
+            tgt_name = key_to_name.get(r['target_key'], r['target_key'])
+            out.append(
+                {
+                    'id': f"r_{r['id']}",
+                    'source': src_name,
+                    'target': tgt_name,
+                    'type': r['relation_type'],
+                    'metadata': meta,
+                    'createdAt': r['created_at'],
+                    'updatedAt': r['updated_at'],
+                }
+            )
+        return out
 
 
 def _read() -> dict[str, object]:

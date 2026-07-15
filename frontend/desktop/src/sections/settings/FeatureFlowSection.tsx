@@ -11,7 +11,6 @@ import {
   Activity,
   AlertTriangle,
   GitBranch,
-  Loader2,
   Pause,
   Play,
   Radio,
@@ -25,6 +24,8 @@ import {
   type FeatureInventoryItem,
 } from '@/api/api-client';
 import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
+import { FeatureFlowCanvas } from './FeatureFlowCanvas';
 
 const STATUS_DOT: Record<string, string> = {
   running: 'bg-sky-400 animate-pulse',
@@ -32,55 +33,34 @@ const STATUS_DOT: Record<string, string> = {
   error: 'bg-danger animate-pulse',
 };
 
-function stageTone(status: string | undefined): string {
-  if (status === 'error') return 'border-danger/50 bg-danger/15 text-danger shadow-[0_0_12px_rgba(239,68,68,0.35)]';
-  if (status === 'running') return 'border-sky-400/50 bg-sky-500/15 text-sky-200 shadow-[0_0_12px_rgba(56,189,248,0.35)] animate-pulse';
-  if (status === 'ok') return 'border-success/40 bg-success/10 text-success';
-  return 'border-white/[0.08] bg-white/[0.02] text-muted-foreground';
-}
-
-function TraceAnimation({
-  stages,
-  stageStatus,
-}: {
-  stages: string[];
-  stageStatus: Record<string, string>;
-}) {
+function FeatureFlowSkeleton() {
   return (
-    <div
-      className="flex flex-wrap items-center gap-1.5 py-3 px-2 rounded-xl border border-white/[0.06] bg-black/30"
-      data-testid="feature-flow-trace"
-      role="list"
-      aria-label="Feature pipeline stages"
-    >
-      {stages.map((stage, i) => {
-        const st = stageStatus[stage];
-        return (
-          <div key={stage} className="flex items-center gap-1.5" role="listitem">
-            <div
-              className={cn(
-                'min-w-[4.5rem] px-2.5 py-1.5 rounded-md border text-[10px] uppercase tracking-wide font-mono text-center transition-all duration-300',
-                stageTone(st),
-              )}
-              data-stage={stage}
-              data-status={st || 'idle'}
-            >
-              {stage}
-            </div>
-            {i < stages.length - 1 && (
-              <span
-                className={cn(
-                  'h-px w-4 shrink-0 transition-colors',
-                  st === 'ok' || st === 'running' || st === 'error'
-                    ? 'bg-primary/60'
-                    : 'bg-white/10',
-                )}
-                aria-hidden
-              />
-            )}
+    <div className="px-8 py-10 max-w-5xl space-y-8" data-testid="feature-flow-skeleton">
+      <div className="space-y-2">
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-4 w-full max-w-md" />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
+        <div className="space-y-2 rounded-xl border border-white/[0.06] bg-card/40 p-3">
+          <Skeleton className="h-3 w-20 mb-2" />
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full rounded-md" />
+          ))}
+        </div>
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <Skeleton className="h-7 w-16" />
+            <Skeleton className="h-7 w-20" />
+            <Skeleton className="h-7 w-24" />
           </div>
-        );
-      })}
+          <Skeleton className="h-40 w-full rounded-xl" />
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full rounded-md" />
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -152,7 +132,6 @@ export function FeatureFlowSection() {
   const stageStatus = useMemo(() => {
     const map: Record<string, string> = {};
     if (!activeTraceId) return map;
-    // oldest → newest for this trace so later status wins
     const forTrace = [...filtered]
       .filter((e) => e.traceId === activeTraceId)
       .reverse();
@@ -162,17 +141,15 @@ export function FeatureFlowSection() {
     return map;
   }, [filtered, activeTraceId]);
 
+  const pulseKey = filtered[0]?.id;
+
   const errorCount = useMemo(
     () => merged.filter((e) => e.status === 'error').length,
     [merged],
   );
 
   if (invQ.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <FeatureFlowSkeleton />;
   }
 
   return (
@@ -183,13 +160,12 @@ export function FeatureFlowSection() {
           <h1 className="text-2xl font-semibold tracking-tight">Feature Flow</h1>
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Live visualization of backend feature execution — proxy hops, tools, memory, and more.
+          Live 2D visualization of backend feature execution — proxy hops, tools, memory, and more.
           Events stream over SSE from <code className="font-mono text-xs">/api/monitor/events</code>.
         </p>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
-        {/* Feature Inventory Directory */}
         <aside
           className="space-y-2 rounded-xl border border-white/[0.06] bg-card/40 p-3"
           data-testid="feature-inventory-directory"
@@ -230,7 +206,6 @@ export function FeatureFlowSection() {
         </aside>
 
         <div className="space-y-4 min-w-0">
-          {/* Toolbar */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5 text-xs">
               <span
@@ -272,18 +247,20 @@ export function FeatureFlowSection() {
             )}
           </div>
 
-          {/* Animated stage rail for active feature / trace */}
           {activeFeature && (
             <div className="space-y-2">
               <div className="text-xs font-medium text-foreground/80 flex items-center gap-2">
                 <Activity className="size-3.5" />
                 {activeFeature.name} pipeline
               </div>
-              <TraceAnimation stages={activeFeature.stages} stageStatus={stageStatus} />
+              <FeatureFlowCanvas
+                stages={activeFeature.stages}
+                stageStatus={stageStatus}
+                pulseKey={pulseKey}
+              />
             </div>
           )}
 
-          {/* Event feed with error emphasis */}
           {filtered.length === 0 ? (
             <div className="text-xs text-muted-foreground text-center py-14 border border-dashed border-white/[0.06] rounded-lg">
               <Sparkles className="size-4 inline-block mr-2 opacity-40" />
@@ -314,7 +291,12 @@ export function FeatureFlowSection() {
                     <span className="text-muted-foreground/70 font-mono shrink-0 w-[4.5rem]">
                       {new Date(e.at).toLocaleTimeString()}
                     </span>
-                    <span className={cn('size-2 mt-1 rounded-full shrink-0', STATUS_DOT[e.status] || 'bg-muted-foreground')} />
+                    <span
+                      className={cn(
+                        'size-2 mt-1 rounded-full shrink-0',
+                        STATUS_DOT[e.status] || 'bg-muted-foreground',
+                      )}
+                    />
                     <span className="shrink-0 w-20 truncate font-mono text-[10px] uppercase text-muted-foreground">
                       {e.feature}
                     </span>
