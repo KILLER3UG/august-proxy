@@ -100,20 +100,116 @@ def make_review_llm_client(
         return None
 
 
+def _extract_upstream_error_message(event: dict[str, object]) -> str:
+    """Pull a human-readable message from a provider stream/error event."""
+    errObj = event.get('error')
+    if isinstance(errObj, dict):
+        msg = as_str(errObj.get('message') or errObj.get('type') or errObj)
+        if msg:
+            status = event.get('status')
+            return f'[{status}] {msg}' if status else msg
+    if errObj and not isinstance(errObj, dict):
+        msg = as_str(errObj)
+        if msg:
+            status = event.get('status')
+            return f'[{status}] {msg}' if status else msg
+
+    raw_body = as_str(event.get('body') or event.get('message'))
+    if raw_body:
+        try:
+            parsed = json.loads(raw_body)
+            if isinstance(parsed, dict):
+                inner = as_dict(parsed.get('error'))
+                nested = as_str(inner.get('message') or inner.get('type'))
+                if nested:
+                    status = event.get('status') or parsed.get('status')
+                    return f'[{status}] {nested}' if status else nested
+                # OpenCode / Anthropic-style envelope
+                if as_str(parsed.get('type')) == 'error':
+                    nested = as_str(as_dict(parsed.get('error')).get('message'))
+                    if nested:
+                        status = event.get('status')
+                        return f'[{status}] {nested}' if status else nested
+        except Exception:
+            pass
+        status = event.get('status')
+        return f'[{status}] {raw_body}' if status else raw_body
+
+    status = event.get('status')
+    return f'Upstream error (status {status})' if status else 'Upstream provider error'
+
+
 def resolve_workbench_provider(provider_name: str, model_hint: str = '') -> dict[str, object] | None:
-    """Resolve a provider from name or model hint."""
+    """Resolve a provider from name or model hint.
+
+    Prefer user-configured ``providers.json`` entries that have an API key and
+    actually list the requested model — never silently fall back to a built-in
+    template (e.g. Anthropic) that has no credentials.
+    """
     from app.providers import resolver as providerResolver
+    from app.services import provider_credentials
+    from app.services import config_service
 
     if provider_name:
         provider = providerResolver.resolve(provider_name)
         if provider:
             return provider
+        # Case-insensitive custom store by name/id
+        creds = provider_credentials.resolve(provider_name)
+        if creds and creds.get('provider'):
+            return as_dict(creds.get('provider'))
+
     if model_hint:
+        # 1) Custom providers that list this model id and have a key
+        try:
+            store = config_service.getProvidersStore() or {}
+            target = model_hint.lower()
+            for entry in as_list(store.get('providers'), []):
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get('enabled') is False:
+                    continue
+                if not as_str(entry.get('apiKey')):
+                    continue
+                models = as_list(entry.get('models'), [])
+                for m in models:
+                    mid = as_str(m.get('id') if isinstance(m, dict) else m).lower()
+                    if mid == target:
+                        built = providerResolver.resolve(as_str(entry.get('id') or entry.get('name')))
+                        if built:
+                            return built
+                        creds = provider_credentials.resolve(as_str(entry.get('id') or entry.get('name')))
+                        if creds and creds.get('provider'):
+                            return as_dict(creds.get('provider'))
+        except Exception:
+            pass
+        # 2) Generic resolver — but only accept if it has credentials
         provider = providerResolver.resolve(model_hint)
-        if provider:
+        if provider and _provider_has_key(provider):
             return provider
+
+    # Prefer first available provider that actually has a key
+    for p in providerResolver.list_available():
+        if _provider_has_key(p):
+            return p
     providers = providerResolver.list_available()
     return providers[0] if providers else None
+
+
+def _provider_has_key(provider: dict[str, object] | None) -> bool:
+    if not provider:
+        return False
+    if provider.get('api_key') or provider.get('apiKey'):
+        return True
+    try:
+        from app.services import provider_credentials
+
+        creds = provider_credentials.resolve(
+            as_str(provider.get('id') or provider.get('name'))
+        )
+        return bool(creds and creds.get('api_key'))
+    except Exception:
+        return False
 
 
 def resolve_model(provider: dict[str, object] | None, model_hint: str = '') -> str:
@@ -275,59 +371,80 @@ async def call_openai_workbench(
     body['max_tokens'] = 8192
     if tools:
         body['tools'] = tools
+    # Only attach OpenAI-style reasoning_effort when the provider is likely to
+    # understand it (official OpenAI / Codex). Other OpenAI-compatible gateways
+    # (OpenCode Zen, MiniMax, …) often reject or ignore it.
     reasoning = effort_to_openai_reasoning_effort(effort)
-    if reasoning:
+    pname = as_str(provider.get('name') or provider.get('id')).lower()
+    if reasoning and ('openai' in pname or 'codex' in pname or as_str(provider.get('apiMode')) == 'codexResponses'):
         body['reasoning_effort'] = reasoning
-        contentText = ''
-        thinkingText = ''
-        toolCallsAccum: dict[int, dict[str, object]] = {}
-        finishReason: str | None = None
-        usage: dict[str, int] = {}
-        try:
-            async for event in client.chat_completions_stream(body):
-                eventType = event.get('_event_type', '')
-                if eventType not in ('chat.completion.chunk', ''):
-                    pass
-                eventUsage = as_dict(event.get('usage'))
-                if eventUsage:
-                    usage['input_tokens'] = as_int(eventUsage.get('prompt_tokens', 0))
-                    usage['output_tokens'] = as_int(eventUsage.get('completion_tokens', 0))
-                choices = as_list(event.get('choices', []), [])
-                if not choices:
-                    continue
-                choice = as_dict(choices[0])
-                delta = as_dict(choice.get('delta', {}))
-                reasoner = as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning'))
-                if reasoner:
-                    thinkingText += reasoner
-                    if emit:
-                        emit({'type': 'thinking', 'content': reasoner})
-                textDelta = as_str(delta.get('content', ''))
-                if textDelta:
-                    contentText += textDelta
-                    if emit:
-                        emit({'type': 'finalOutput', 'content': textDelta})
-                for rawTc in as_list(delta.get('tool_calls', []), []):
-                    tc = as_dict(rawTc)
-                    idx = as_int(tc.get('index', 0))
-                    if idx not in toolCallsAccum:
-                        fn = as_dict(tc.get('function', {}))
-                        toolCallsAccum[idx] = {
-                            'id': tc.get('id', f'call_{uuid.uuid4().hex[:12]}'),
-                            'type': 'function',
-                            'function': {'name': fn.get('name', ''), 'arguments': fn.get('arguments', '')},
-                        }
-                    else:
-                        fn = as_dict(tc.get('function', {}))
-                        existing = as_dict(toolCallsAccum[idx]['function'])
-                        if fn.get('arguments'):
-                            existing['arguments'] = as_str(existing.get('arguments')) + as_str(fn.get('arguments'))
-                        if fn.get('name'):
-                            existing['name'] = as_str(existing.get('name')) + as_str(fn.get('name'))
-                if choice.get('finish_reason'):
-                    finishReason = as_str(choice.get('finish_reason'))
-        except Exception as exc:
-            return {'error': str(exc)}
+
+    contentText = ''
+    thinkingText = ''
+    toolCallsAccum: dict[int, dict[str, object]] = {}
+    finishReason: str | None = None
+    usage: dict[str, int] = {}
+    try:
+        async for event in client.chat_completions_stream(body):
+            # Surface HTTP/provider errors instead of returning an empty "success".
+            if as_str(event.get('type')) == 'error' or event.get('error') is not None:
+                msg = _extract_upstream_error_message(event)
+                return {'error': msg or 'Upstream provider error'}
+
+            eventType = event.get('_event_type', '')
+            if eventType not in ('chat.completion.chunk', ''):
+                pass
+            eventUsage = as_dict(event.get('usage'))
+            if eventUsage:
+                usage['input_tokens'] = as_int(eventUsage.get('prompt_tokens', 0))
+                usage['output_tokens'] = as_int(eventUsage.get('completion_tokens', 0))
+            choices = as_list(event.get('choices', []), [])
+            if not choices:
+                continue
+            choice = as_dict(choices[0])
+            delta = as_dict(choice.get('delta', {}))
+            reasoner = as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning'))
+            if reasoner:
+                thinkingText += reasoner
+                if emit:
+                    emit({'type': 'thinking', 'content': reasoner})
+            textDelta = as_str(delta.get('content', ''))
+            if textDelta:
+                contentText += textDelta
+                if emit:
+                    emit({'type': 'finalOutput', 'content': textDelta})
+            for rawTc in as_list(delta.get('tool_calls', []), []):
+                tc = as_dict(rawTc)
+                idx = as_int(tc.get('index', 0))
+                if idx not in toolCallsAccum:
+                    fn = as_dict(tc.get('function', {}))
+                    toolCallsAccum[idx] = {
+                        'id': tc.get('id', f'call_{uuid.uuid4().hex[:12]}'),
+                        'type': 'function',
+                        'function': {'name': fn.get('name', ''), 'arguments': fn.get('arguments', '')},
+                    }
+                else:
+                    fn = as_dict(tc.get('function', {}))
+                    existing = as_dict(toolCallsAccum[idx]['function'])
+                    if fn.get('arguments'):
+                        existing['arguments'] = as_str(existing.get('arguments')) + as_str(fn.get('arguments'))
+                    if fn.get('name'):
+                        existing['name'] = as_str(existing.get('name')) + as_str(fn.get('name'))
+            if choice.get('finish_reason'):
+                finishReason = as_str(choice.get('finish_reason'))
+    except Exception as exc:
+        return {'error': str(exc)}
+
+    if not contentText and not toolCallsAccum and not thinkingText:
+        # Defensive: empty success with no tools is almost always an upstream
+        # failure that the stream layer failed to classify.
+        return {
+            'error': (
+                f'Provider returned an empty response for model "{model}". '
+                'Check API key, billing/credits, and that the model id is valid on this provider.'
+            )
+        }
+
     assistantMessage: dict[str, object] = {'role': 'assistant', 'content': contentText}
     toolUses: list[dict[str, object]] = []
     if toolCallsAccum:

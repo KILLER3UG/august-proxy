@@ -844,19 +844,52 @@ async def _sendWorkbenchMessageStreamImpl(
             session.provider = pname
     if emit:
         emit({'type': 'started', 'sessionId': sessionId, 'model': resolvedModel})
+    if not resolvedProvider:
+        if emit:
+            emit(
+                {
+                    'type': 'error',
+                    'message': (
+                        'No model provider is configured with an API key. '
+                        'Open Settings → Model settings, add a provider, then select one of its models.'
+                    ),
+                }
+            )
+            emit({'type': 'done', 'sessionId': sessionId})
+        session.status = 'idle'
+        session.updatedAt = _now()
+        try:
+            saveSessions()
+        except Exception:
+            logger.exception('workbench save_sessions failed after missing provider')
+        _emitSessionStatus(sessionId)
+        return
     if resolvedProvider:
         from app.services import provider_credentials
 
-        creds = provider_credentials.resolve(
-            as_str(resolvedProvider.get('name')) or as_str(resolvedProvider.get('id')) or ''
-        )
-        apiKey = (creds or {}).get('api_key') if creds else None
+        # Prefer key already on the resolved provider dict (custom store),
+        # then credentials lookup by id, then by display name.
+        apiKey = as_str(resolvedProvider.get('api_key') or resolvedProvider.get('apiKey'))
+        if not apiKey:
+            for key in (
+                as_str(resolvedProvider.get('id')),
+                as_str(resolvedProvider.get('name')),
+            ):
+                if not key:
+                    continue
+                creds = provider_credentials.resolve(key)
+                apiKey = as_str((creds or {}).get('api_key')) if creds else ''
+                if apiKey:
+                    break
         if not apiKey:
             if emit:
                 emit(
                     {
                         'type': 'error',
-                        'message': f'API key not configured for {resolvedProvider.get("name", "unknown")}',
+                        'message': (
+                            f'API key not configured for {resolvedProvider.get("name", "unknown")}. '
+                            'Open Settings → Model settings and paste a key for this provider.'
+                        ),
                     }
                 )
             session.status = 'idle'

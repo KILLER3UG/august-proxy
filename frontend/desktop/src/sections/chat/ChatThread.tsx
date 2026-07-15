@@ -421,19 +421,28 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Driven by the useProviderAvailability react-query hook so newly-added
   // providers appear without remounting the chat.
   const { providers: availableProvidersList } = useProviderAvailability();
-  const availableProviders = useMemo(
-    () => new Set(availableProvidersList.filter(p => p.isAvailable).map(p => p.id)),
-    [availableProvidersList]
-  );
+  // Match by id OR name — aggregated models use display name ("Opencode Zen")
+  // while availability list may expose either id or name depending on API.
+  const availableProviderKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const p of availableProvidersList) {
+      if (!p.isAvailable) continue;
+      if (p.id) keys.add(p.id);
+      if (p.name) keys.add(p.name);
+    }
+    return keys;
+  }, [availableProvidersList]);
 
   // Filter to only show models from providers with keys, but always include
   // user-defined alias models (provider === 'Alias'). Normalise optional
   // fields to match the required ModelItem shape.
   const models = useMemo(() => {
     if (aggregatedModels.length === 0) return [];
-    const list = availableProviders.size === 0
+    const list = availableProviderKeys.size === 0
       ? aggregatedModels
-      : aggregatedModels.filter(m => availableProviders.has(m.provider) || m.provider === 'Alias');
+      : aggregatedModels.filter(
+          m => availableProviderKeys.has(m.provider) || m.provider === 'Alias',
+        );
     return list.map(m => ({
       id: m.id,
       name: m.name || m.id,
@@ -443,7 +452,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       supportsReasoning: m.supportsReasoning,
       supportsThinking: m.supportsThinking,
     }));
-  }, [aggregatedModels, availableProviders]);
+  }, [aggregatedModels, availableProviderKeys]);
 
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
   const [showModelVisibility, setShowModelVisibility] = useState(false);
