@@ -77,16 +77,20 @@ export function IntegrationCard({ item, onOpen, onPrimaryAction, busy }: Integra
 
         <span
           role="button"
-          tabIndex={onPrimaryAction ? 0 : -1}
+          tabIndex={0}
           onClick={(e) => {
             e.stopPropagation();
-            onPrimaryAction?.(item);
+            // Prefer the explicit action; fall back to opening detail so
+            // Connect / Manage never silently no-ops in the lobby.
+            if (onPrimaryAction) onPrimaryAction(item);
+            else onOpen(item);
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               e.stopPropagation();
-              onPrimaryAction?.(item);
+              if (onPrimaryAction) onPrimaryAction(item);
+              else onOpen(item);
             }
           }}
           className={cn(

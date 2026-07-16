@@ -17,6 +17,8 @@ import {
 export type ServiceName = 'google' | 'github' | 'slack';
 export type ServiceStatus = 'connected' | 'disconnected' | 'needs_config';
 
+export type GoogleFacet = 'gmail' | 'calendar' | 'drive';
+
 export interface ServiceConnection {
   name: ServiceName;
   label: string;
@@ -25,6 +27,10 @@ export interface ServiceConnection {
   scopes: string[];
   status: ServiceStatus;
   connected: boolean;
+  /** Explicitly connected Google services (gmail/calendar/drive). */
+  connectedFacets?: GoogleFacet[];
+  facets?: Partial<Record<GoogleFacet, { connected?: boolean }>>;
+  grantedScopes?: string[];
   account?: string;
   maskedToken?: string;
   teamId?: string;
@@ -33,6 +39,37 @@ export interface ServiceConnection {
   pkceReady?: boolean;
   redirectUri?: string | null;
   updatedAt?: string;
+}
+
+/** Map catalog id (google-gmail) or short name (gmail) → facet key. */
+export function googleFacetFromCatalogId(id: string | undefined | null): GoogleFacet {
+  const key = (id || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^google-/, '')
+    .replace(/_/g, '-');
+  if (key === 'calendar' || key === 'drive' || key === 'gmail') return key;
+  return 'gmail';
+}
+
+export function isGoogleFacetConnected(
+  conn: ServiceConnection | null | undefined,
+  facet: GoogleFacet,
+): boolean {
+  if (!conn) return false;
+  if (conn.facets?.[facet]?.connected) return true;
+  if (Array.isArray(conn.connectedFacets) && conn.connectedFacets.includes(facet)) {
+    return true;
+  }
+  // Legacy: single google flag with no facet metadata → treat all as connected.
+  if (
+    conn.connected &&
+    (!conn.connectedFacets || conn.connectedFacets.length === 0) &&
+    (!conn.facets || Object.keys(conn.facets).length === 0)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 interface ServiceConnectionsResponse {
@@ -172,7 +209,14 @@ export function useIntegrations() {
       const entry = getCatalogEntry(id);
       if (!entry || entry.kind !== 'account-facet' || !entry.accountProvider) continue;
       const conn = conns[entry.accountProvider] ?? null;
-      const connected = Boolean(conn?.connected);
+      const googleFacet =
+        entry.accountProvider === 'google'
+          ? googleFacetFromCatalogId(entry.id)
+          : null;
+      const connected =
+        entry.accountProvider === 'google' && googleFacet
+          ? isGoogleFacetConnected(conn, googleFacet)
+          : Boolean(conn?.connected);
       out.push({
         id: `facet:${entry.id}`,
         kind: 'account-facet',
@@ -195,6 +239,7 @@ export function useIntegrations() {
           scopes: conn?.scopes,
           packageName: entry.packageName,
           packageVersion: entry.packageVersion,
+          googleFacet,
         },
         source: {
           kind: 'account-facet',
@@ -428,19 +473,32 @@ export function useIntegrations() {
 export function useConnectAccount() {
   const qc = useQueryClient();
   return useMutation<
-    { authUrl?: string; message?: string; status?: string },
+    {
+      authUrl?: string;
+      message?: string;
+      status?: string;
+      connected?: boolean;
+      needsClientId?: boolean;
+      facet?: GoogleFacet;
+    },
     Error,
-    | { kind: 'google'; email?: string }
+    | { kind: 'google'; email?: string; facet?: GoogleFacet | string }
     | { kind: 'github'; token: string }
     | { kind: 'slack'; botToken: string; teamId?: string }
   >({
     mutationFn: async (vars) => {
       switch (vars.kind) {
         case 'google':
-          return api.post<{ authUrl: string; message?: string }>(
-            '/api/service-connections/google/auth',
-            { email: vars.email ?? '' },
-          );
+          return api.post<{
+            authUrl?: string;
+            message?: string;
+            connected?: boolean;
+            needsClientId?: boolean;
+            facet?: GoogleFacet;
+          }>('/api/service-connections/google/auth', {
+            email: vars.email ?? '',
+            facet: googleFacetFromCatalogId(vars.facet ?? 'gmail'),
+          });
         case 'github':
           return api.post<{ status: string }>('/api/service-connections/github', {
             token: vars.token,
@@ -461,8 +519,16 @@ export function useConnectAccount() {
 export function useDisconnectAccount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (name: ServiceName) => {
-      return api.delete(`/api/service-connections/${name}`);
+    mutationFn: async (vars: ServiceName | { name: ServiceName; facet?: GoogleFacet | string }) => {
+      const name = typeof vars === 'string' ? vars : vars.name;
+      const facet =
+        typeof vars === 'string'
+          ? ''
+          : vars.facet
+            ? googleFacetFromCatalogId(vars.facet)
+            : '';
+      const qs = facet ? `?facet=${encodeURIComponent(facet)}` : '';
+      return api.delete(`/api/service-connections/${name}${qs}`);
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['integrations-connections'] });

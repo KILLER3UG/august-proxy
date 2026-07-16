@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { IntegrationLogo } from './IntegrationCard';
 import {
+  googleFacetFromCatalogId,
   type IntegrationItem,
   type McpServer,
   type ServiceName,
@@ -156,6 +157,11 @@ function AccountAction({ item }: { item: IntegrationItem }) {
   const provider =
     item.source.kind === 'account-facet' ? item.source.provider : null;
   const conn = item.source.kind === 'account-facet' ? item.source.conn : null;
+  const facetId =
+    item.source.kind === 'account-facet' ? item.source.facetId : undefined;
+  const googleFacet =
+    provider === 'google' ? googleFacetFromCatalogId(facetId ?? item.catalogId) : null;
+  const facetConnected = Boolean(item.connected);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [waiting, setWaiting] = useState(false);
@@ -180,26 +186,27 @@ function AccountAction({ item }: { item: IntegrationItem }) {
   const hasClientId =
     provider === 'google' && Boolean(conn?.hasClientId || conn?.pkceReady);
   const needsClientId =
-    provider === 'google' && !conn?.connected && !hasClientId;
+    provider === 'google' && !facetConnected && !hasClientId;
 
   const startBrowserOAuth = async () => {
     if (provider !== 'google') return;
     setError(null);
     setPending(true);
     try {
-      const res = await connect.mutateAsync({ kind: 'google' });
-      const authUrl = (res as { authUrl?: string }).authUrl || '';
-      const message = (res as { message?: string }).message || '';
-      const alreadyConnected = Boolean((res as { connected?: boolean }).connected);
-      const needsId = Boolean((res as { needsClientId?: boolean }).needsClientId);
-      if (alreadyConnected) {
+      const res = await connect.mutateAsync({
+        kind: 'google',
+        facet: googleFacet ?? 'gmail',
+      });
+      const authUrl = res.authUrl || '';
+      const message = res.message || '';
+      if (res.connected) {
         void qc.invalidateQueries({ queryKey: ['integrations-connections'] });
         return;
       }
       if (!authUrl) {
         setError(
           message ||
-            (needsId
+            (res.needsClientId
               ? 'Paste a Google OAuth Client ID below (Desktop app — no secret needed), then Sign in.'
               : 'Google sign-in is not configured.'),
         );
@@ -214,18 +221,30 @@ function AccountAction({ item }: { item: IntegrationItem }) {
       }
       setWaiting(true);
       const start = Date.now();
+      const targetFacet = googleFacet ?? 'gmail';
       pollRef.current = setInterval(async () => {
         const data = await qc
           .fetchQuery({
             queryKey: ['integrations-connections'],
             queryFn: () =>
               fetch('/api/service-connections').then((r) => r.json()) as Promise<{
-                connections: Record<string, { connected: boolean }>;
+                connections: Record<
+                  string,
+                  {
+                    connected?: boolean;
+                    connectedFacets?: string[];
+                    facets?: Record<string, { connected?: boolean }>;
+                  }
+                >;
               }>,
             staleTime: 0,
           })
           .catch(() => null);
-        if (data?.connections?.google?.connected) {
+        const g = data?.connections?.google;
+        const done =
+          Boolean(g?.facets?.[targetFacet]?.connected) ||
+          Boolean(g?.connectedFacets?.includes(targetFacet));
+        if (done) {
           if (pollRef.current) clearInterval(pollRef.current);
           setWaiting(false);
           void qc.invalidateQueries({ queryKey: ['integrations-connections'] });
@@ -276,27 +295,37 @@ function AccountAction({ item }: { item: IntegrationItem }) {
     }
   };
 
-  if (conn?.connected) {
+  if (facetConnected) {
+    const serviceLabel =
+      provider === 'google'
+        ? item.name
+        : provider;
     return (
       <div className="flex flex-col items-end gap-2">
         <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
           <CheckCircle2 className="mr-1 size-3" /> Connected
         </Badge>
-        {conn.account && (
+        {conn?.account && (
           <span className="font-mono text-[11px] text-muted-foreground">{conn.account}</span>
         )}
         <Button
           variant="outline"
           size="sm"
-          onClick={() => disconnect.mutate(provider)}
+          onClick={() =>
+            disconnect.mutate(
+              provider === 'google' && googleFacet
+                ? { name: 'google', facet: googleFacet }
+                : provider,
+            )
+          }
           disabled={disconnect.isPending}
         >
           {disconnect.isPending ? <Loader2 className="size-3 animate-spin" /> : <PowerOff className="size-3" />}
-          Disconnect {provider === 'google' ? 'Google' : provider}
+          Disconnect {serviceLabel}
         </Button>
         {provider === 'google' && (
           <p className="max-w-[14rem] text-right text-[10px] text-muted-foreground">
-            Disconnects the shared Google account used by Gmail, Calendar, and Drive.
+            Disconnects {item.name} only. Other Google services stay connected if you enabled them separately.
           </p>
         )}
       </div>
@@ -351,11 +380,11 @@ function AccountAction({ item }: { item: IntegrationItem }) {
                 ) : (
                   <ExternalLink className="size-3" />
                 )}
-                {waiting ? 'Waiting for sign-in…' : 'Sign in with Google'}
+                {waiting ? 'Waiting for sign-in…' : `Sign in with ${item.name}`}
               </Button>
               <p className="max-w-[14rem] text-right text-[10px] text-muted-foreground">
-                One-click browser sign-in (Desktop OAuth + PKCE). Gmail, Calendar, and Drive
-                share this account.
+                One-click browser sign-in (Desktop OAuth + PKCE). Only requests access for{' '}
+                {item.name}.
               </p>
               <details className="max-w-[18rem] text-right text-[10px] text-muted-foreground">
                 <summary className="cursor-pointer hover:text-foreground">

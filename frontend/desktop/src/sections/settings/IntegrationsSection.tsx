@@ -1,6 +1,6 @@
 /* ── Integrations — installed cards + directory “Add” modal ────────── */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Search,
   Plug,
@@ -11,10 +11,15 @@ import {
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { openExternal } from '@/lib/tauri-shell';
 import { IntegrationCard } from './IntegrationCard';
 import { IntegrationDetail } from './IntegrationDetail';
 import { IntegrationDirectoryModal } from './IntegrationDirectoryModal';
-import { useIntegrations, type IntegrationItem } from './useIntegrations';
+import {
+  useConnectAccount,
+  useIntegrations,
+  type IntegrationItem,
+} from './useIntegrations';
 import { cn } from '@/lib/utils';
 
 type Mode = 'catalog' | 'detail';
@@ -29,6 +34,8 @@ export function IntegrationsSection() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [dirOpen, setDirOpen] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const connectAccount = useConnectAccount();
   const {
     items,
     accounts,
@@ -38,11 +45,130 @@ export function IntegrationsSection() {
     addFromCatalog,
     removeInstalled,
     createCustomMcp,
+    refetch,
   } = useIntegrations();
 
   const selected = useMemo(
     () => items.find((i) => i.id === selectedId) ?? null,
     [items, selectedId],
+  );
+
+  const openDetail = useCallback((item: IntegrationItem) => {
+    setSelectedId(item.id);
+    setMode('detail');
+  }, []);
+
+  const handleAccountPrimary = useCallback(
+    async (item: IntegrationItem) => {
+      if (item.source.kind !== 'account-facet') {
+        openDetail(item);
+        return;
+      }
+      // Already connected (or non-Google) → detail for manage / wizards.
+      if (item.connected || item.source.provider !== 'google') {
+        openDetail(item);
+        return;
+      }
+
+      setBusyId(item.id);
+      try {
+        const facet =
+          item.source.kind === 'account-facet'
+            ? item.source.facetId
+            : item.catalogId;
+        const res = await connectAccount.mutateAsync({
+          kind: 'google',
+          facet: facet ?? 'gmail',
+        });
+        const authUrl = res.authUrl || '';
+
+        if (res.connected) {
+          toast.success(`${item.name} is already connected`);
+          refetch();
+          return;
+        }
+        if (!authUrl) {
+          // Needs Client ID paste form — only available in detail.
+          openDetail(item);
+          toast.message(
+            res.message ||
+              (res.needsClientId
+                ? 'Add a Google OAuth Client ID, then Sign in.'
+                : 'Open the integration to finish connecting.'),
+          );
+          return;
+        }
+        const opened = await openExternal(authUrl);
+        if (!opened) {
+          window.open(authUrl, 'august-google-oauth', 'width=520,height=720');
+        }
+        toast.message(`Complete ${item.name} sign-in in your browser`);
+      } catch (e) {
+        openDetail(item);
+        toast.error(e instanceof Error ? e.message : 'Failed to start Google sign-in');
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [connectAccount, openDetail, refetch],
+  );
+
+  const handleMcpPrimary = useCallback(
+    async (item: IntegrationItem) => {
+      if (item.source.kind !== 'mcp') {
+        openDetail(item);
+        return;
+      }
+      const sid = item.source.server.id;
+      if (!sid) {
+        openDetail(item);
+        return;
+      }
+
+      if (item.status === 'error') {
+        setBusyId(item.id);
+        try {
+          await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/stop`, {
+            method: 'POST',
+          }).catch(() => null);
+          await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/start`, {
+            method: 'POST',
+          });
+          toast.success(`Restarted ${item.name}`);
+          refetch();
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : 'Restart failed');
+        } finally {
+          setBusyId(null);
+        }
+        return;
+      }
+
+      if (
+        item.status === 'disabled' ||
+        item.status === 'stopped' ||
+        item.status === 'not_started' ||
+        item.status === 'registered'
+      ) {
+        setBusyId(item.id);
+        try {
+          await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/start`, {
+            method: 'POST',
+          });
+          toast.success(`Started ${item.name}`);
+          refetch();
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : 'Start failed');
+        } finally {
+          setBusyId(null);
+        }
+        return;
+      }
+
+      // Manage / running / starting → open detail
+      openDetail(item);
+    },
+    [openDetail, refetch],
   );
 
   const qLower = q.trim().toLowerCase();
@@ -117,9 +243,10 @@ export function IntegrationsSection() {
                 <IntegrationCard
                   key={a.id}
                   item={a}
-                  onOpen={(it) => {
-                    setSelectedId(it.id);
-                    setMode('detail');
+                  busy={busyId === a.id}
+                  onOpen={openDetail}
+                  onPrimaryAction={(it) => {
+                    void handleAccountPrimary(it);
                   }}
                 />
               ))}
@@ -158,9 +285,10 @@ export function IntegrationsSection() {
                 <IntegrationCard
                   key={s.id}
                   item={s}
-                  onOpen={(it) => {
-                    setSelectedId(it.id);
-                    setMode('detail');
+                  busy={busyId === s.id}
+                  onOpen={openDetail}
+                  onPrimaryAction={(it) => {
+                    void handleMcpPrimary(it);
                   }}
                 />
               ))}

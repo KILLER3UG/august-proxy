@@ -925,7 +925,12 @@ async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
                     'Credentials were synced for MCP — retry the Google tool now '
                     '(do not open a new browser sign-in link).'
                 )
-            result = await sc.google_auth_url(email)
+            facet = ''
+            if isinstance(args, dict):
+                facet = str(
+                    args.get('service_name') or args.get('facet') or 'gmail'
+                ).split(',')[0].strip()
+            result = await sc.google_auth_url(email, facet=facet or 'gmail')
             auth_url = str(result.get('authUrl') or '')
             if result.get('connected'):
                 sc.sync_google_tokens_to_workspace_mcp(email or None)

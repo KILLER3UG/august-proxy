@@ -36,6 +36,8 @@ class GoogleBody(CamelModel):
 
 class GoogleAuthBody(CamelModel):
     email: str = ''
+    # gmail | calendar | drive — limits OAuth scopes to that service.
+    facet: str = 'gmail'
 
 
 class McpEnvBody(CamelModel):
@@ -118,7 +120,7 @@ async def post_google(body: GoogleBody):
 
 @router.post('/api/service-connections/google/auth')
 async def post_google_auth(body: GoogleAuthBody):
-    return await sc.google_auth_url(body.email)
+    return await sc.google_auth_url(body.email, facet=body.facet or 'gmail')
 
 
 @router.get('/api/service-connections/google/callback')
@@ -135,9 +137,12 @@ async def google_oauth_callback(
 
 
 @router.delete('/api/service-connections/{name}')
-async def delete_connection(name: str):
+async def delete_connection(
+    name: str,
+    facet: str = Query(default=''),
+):
     try:
-        return sc.disconnect(name)
+        return sc.disconnect(name, facet=facet)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

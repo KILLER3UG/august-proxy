@@ -21,31 +21,97 @@ from app.services.config_service import getConfig, saveConfig
 _oauth_pending: dict[str, dict[str, Any]] = {}
 _OAUTH_STATE_TTL_S = 15 * 60
 
+# Per-facet OAuth scopes. Identity scopes are always included so we can
+# resolve the Google account; API scopes are limited to the facet the user
+# explicitly connects (Gmail vs Calendar vs Drive).
+_GOOGLE_IDENTITY_SCOPES = ('openid', 'email', 'profile')
+GOOGLE_FACET_API_SCOPES: dict[str, tuple[str, ...]] = {
+    'gmail': ('https://www.googleapis.com/auth/gmail.modify',),
+    'calendar': ('https://www.googleapis.com/auth/calendar',),
+    'drive': ('https://www.googleapis.com/auth/drive.readonly',),
+}
+# Alternate scopes that still count as "this facet is authorized".
+_GOOGLE_FACET_SCOPE_ALIASES: dict[str, tuple[str, ...]] = {
+    'gmail': (
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.compose',
+    ),
+    'calendar': (
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/calendar.readonly',
+        'https://www.googleapis.com/auth/calendar.events',
+    ),
+    'drive': (
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/drive',
+    ),
+}
+
+
+def _normalize_google_facet(facet: str = '') -> str:
+    key = (facet or '').strip().lower().replace('google-', '').replace('_', '-')
+    if key in GOOGLE_FACET_API_SCOPES:
+        return key
+    return 'gmail'
+
+
+def _google_scopes_for_facet(facet: str = '') -> list[str]:
+    key = _normalize_google_facet(facet)
+    return [*_GOOGLE_IDENTITY_SCOPES, *GOOGLE_FACET_API_SCOPES[key]]
+
+
+def _parse_google_scope_string(scope: str) -> list[str]:
+    return [s for s in (scope or '').replace(',', ' ').split() if s]
+
+
+def _google_granted_scopes(raw: dict[str, Any] | None) -> list[str]:
+    return _parse_google_scope_string(as_str((raw or {}).get('scope')))
+
+
+def _facet_authorized_by_scopes(facet: str, granted: list[str]) -> bool:
+    if not granted:
+        return False
+    granted_set = set(granted)
+    aliases = _GOOGLE_FACET_SCOPE_ALIASES.get(_normalize_google_facet(facet), ())
+    return any(s in granted_set for s in aliases)
+
+
+def _google_connected_facets(raw: dict[str, Any] | None) -> list[str]:
+    """Facets the user explicitly connected (or inferred from legacy tokens)."""
+    if not raw:
+        return []
+    stored = raw.get('connectedFacets') or raw.get('connected_facets')
+    if isinstance(stored, list) and stored:
+        out = [_normalize_google_facet(as_str(f)) for f in stored if as_str(f)]
+        return sorted({f for f in out if f in GOOGLE_FACET_API_SCOPES})
+
+    granted = _google_granted_scopes(raw)
+    if granted:
+        return sorted(f for f in GOOGLE_FACET_API_SCOPES if _facet_authorized_by_scopes(f, granted))
+
+    # Legacy connection with no scope metadata — keep previous "all Google" behavior.
+    if as_str(raw.get('status')) == 'connected' or as_str(raw.get('email') or raw.get('account')):
+        return sorted(GOOGLE_FACET_API_SCOPES.keys())
+    return []
+
+
 SERVICE_META: dict[str, dict[str, Any]] = {
     'google': {
-        'label': 'Google Workspace',
-        'description': 'Gmail, Calendar, Drive, Docs, Sheets, Slides, Tasks, Contacts.',
+        'label': 'Google',
+        'description': 'Gmail, Calendar, and Drive — connect only the services you need.',
         'services': [
             'Gmail read',
             'Gmail send',
             'Calendar',
             'Drive',
-            'Docs',
-            'Sheets',
-            'Slides',
-            'Tasks',
-            'Contacts',
         ],
         'scopes': [
             'gmail.read',
             'gmail.send',
             'calendar',
             'drive',
-            'docs',
-            'sheets',
-            'slides',
-            'tasks',
-            'contacts',
         ],
     },
     'github': {
@@ -108,9 +174,15 @@ def _google_card(raw: dict[str, Any] | None) -> dict[str, Any]:
     has_oauth = has_client or bool(
         (raw or {}).get('refreshToken') or (raw or {}).get('tokens')
     )
-    connected = bool(email) or bool((raw or {}).get('status') == 'connected')
+    connected_facets = _google_connected_facets(raw)
+    granted = _google_granted_scopes(raw)
+    connected = bool(connected_facets)
     missing = not has_oauth and not connected
     status = 'connected' if connected else ('needs_config' if missing else 'disconnected')
+    facets = {
+        name: {'connected': name in connected_facets}
+        for name in GOOGLE_FACET_API_SCOPES
+    }
     return {
         'name': 'google',
         'label': meta['label'],
@@ -119,6 +191,9 @@ def _google_card(raw: dict[str, Any] | None) -> dict[str, Any]:
         'scopes': meta['scopes'],
         'status': status,
         'connected': connected,
+        'connectedFacets': connected_facets,
+        'facets': facets,
+        'grantedScopes': granted,
         'account': email or None,
         'email': email or None,
         'displayName': as_str((raw or {}).get('displayName') or (raw or {}).get('name')) or None,
@@ -388,8 +463,11 @@ def _purge_stale_oauth_states() -> None:
         _oauth_pending.pop(k, None)
 
 
-def _native_google_auth_url(user_email: str = '') -> dict[str, Any] | None:
+def _native_google_auth_url(user_email: str = '', facet: str = 'gmail') -> dict[str, Any] | None:
     """Build browser OAuth URL with CSRF state + PKCE.
+
+    Requests only identity + the scopes for ``facet`` (gmail|calendar|drive).
+    ``include_granted_scopes`` keeps previously approved facets when expanding.
 
     Works with:
     - **Desktop / public clients** (client id only + PKCE, no secret)
@@ -398,6 +476,7 @@ def _native_google_auth_url(user_email: str = '') -> dict[str, Any] | None:
     client_id = _google_client_id()
     if not client_id:
         return None
+    facet_key = _normalize_google_facet(facet)
     _purge_stale_oauth_states()
     redirect = _google_redirect_uri()
     state = secrets.token_urlsafe(24)
@@ -408,15 +487,9 @@ def _native_google_auth_url(user_email: str = '') -> dict[str, Any] | None:
         'redirect_uri': redirect,
         'code_verifier': verifier,
         'pkce': True,
+        'facet': facet_key,
     }
-    scopes = [
-        'openid',
-        'email',
-        'profile',
-        'https://www.googleapis.com/auth/gmail.modify',
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/drive.readonly',
-    ]
+    scopes = _google_scopes_for_facet(facet_key)
     params: dict[str, str] = {
         'client_id': client_id,
         'redirect_uri': redirect,
@@ -433,14 +506,18 @@ def _native_google_auth_url(user_email: str = '') -> dict[str, Any] | None:
         params['login_hint'] = user_email
     auth_url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode(params)
     has_secret = bool(_google_client_secret())
+    label = {'gmail': 'Gmail', 'calendar': 'Google Calendar', 'drive': 'Google Drive'}.get(
+        facet_key, 'Google'
+    )
     return {
         'authUrl': auth_url,
         'message': (
-            'Open Google sign-in in your browser to connect Gmail / Calendar / Drive.'
+            f'Open Google sign-in in your browser to connect {label}.'
             + ('' if has_secret else ' Using secure one-click PKCE (no client secret required).')
         ),
         'pkce': True,
         'needsSecret': not has_secret,
+        'facet': facet_key,
     }
 
 
@@ -463,19 +540,31 @@ def _mcp_auth_url_uses_august_callback(auth_url: str) -> bool:
     return redirect.rstrip('/') == ours.rstrip('/') or '/api/service-connections/google/callback' in redirect
 
 
-async def google_auth_url(email: str = '') -> dict[str, Any]:
-    """Start Google OAuth.
+async def google_auth_url(email: str = '', facet: str = 'gmail') -> dict[str, Any]:
+    """Start Google OAuth for a single workspace facet (gmail|calendar|drive).
 
     Prefer August's native PKCE flow whenever a Client ID is configured.
     MCP ``start_google_auth`` URLs that bounce to August's callback cannot
     complete token exchange (Missing code verifier) — never return those.
     """
+    facet_key = _normalize_google_facet(facet)
     sc = _sc()
-    stored_email = as_str(as_dict(sc.get('google')).get('email')) if sc.get('google') else ''
+    raw_google = as_dict(sc.get('google')) if sc.get('google') else {}
+    stored_email = as_str(raw_google.get('email'))
     user_email = email.strip() or stored_email or ''
 
+    # Already authorized for this facet — no need to open another consent screen.
+    if facet_key in _google_connected_facets(raw_google or None):
+        return {
+            'authUrl': '',
+            'connected': True,
+            'facet': facet_key,
+            'message': f'{facet_key} is already connected.',
+            'via': 'native',
+        }
+
     # 1) Native Google OAuth (stores PKCE verifier for our callback)
-    native = _native_google_auth_url(user_email)
+    native = _native_google_auth_url(user_email, facet=facet_key)
     if native:
         return {**native, 'via': 'native'}
 
@@ -503,7 +592,8 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
                     server_id,
                     'start_google_auth',
                     {
-                        'service_name': 'gmail,calendar,drive,docs,sheets,slides,tasks,contacts',
+                        # Prefer the facet being connected; MCP may ignore extras.
+                        'service_name': facet_key,
                         'user_google_email': user_email or 'me',
                     },
                 )
@@ -670,6 +760,25 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
 
     sc = _sc()
     existing = as_dict(sc.get('google')) if sc.get('google') else {}
+    scope_str = as_str(tokens.get('scope')) or as_str(existing.get('scope'))
+    # Merge newly granted scopes with any previously stored ones (incremental auth).
+    merged_scopes = sorted(
+        set(_parse_google_scope_string(as_str(existing.get('scope'))))
+        | set(_parse_google_scope_string(scope_str))
+    )
+    facet_key = _normalize_google_facet(as_str((pending or {}).get('facet')) or 'gmail')
+    # Keep explicitly connected facets (so Disconnect Calendar sticks even if
+    # the refresh token still carries calendar scopes). Only add this consent's facet.
+    stored = existing.get('connectedFacets') or existing.get('connected_facets')
+    if isinstance(stored, list) and stored:
+        connected_facets = {
+            _normalize_google_facet(as_str(f))
+            for f in stored
+            if as_str(f) and _normalize_google_facet(as_str(f)) in GOOGLE_FACET_API_SCOPES
+        }
+    else:
+        connected_facets = set(_google_connected_facets(existing or None))
+    connected_facets.add(facet_key)
     sc['google'] = {
         **existing,
         'email': email or existing.get('email'),
@@ -681,7 +790,8 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
         'refreshToken': refresh_token or existing.get('refreshToken'),
         'tokenType': as_str(tokens.get('token_type')) or 'Bearer',
         'expiresIn': tokens.get('expires_in'),
-        'scope': as_str(tokens.get('scope')),
+        'scope': ' '.join(merged_scopes) if merged_scopes else scope_str,
+        'connectedFacets': sorted(connected_facets),
         'updatedAt': _now(),
     }
     _save_sc(sc)
@@ -791,14 +901,7 @@ def _write_workspace_mcp_credentials(
     # URL-encode like workspace-mcp (quote with safe="@._-")
     safe_email = urllib.parse.quote(email, safe='@._-')
     path = os.path.join(base, f'{safe_email}.json')
-    scope_list = [s for s in scopes.split() if s] if scopes else [
-        'openid',
-        'email',
-        'profile',
-        'https://www.googleapis.com/auth/gmail.modify',
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/drive.readonly',
-    ]
+    scope_list = [s for s in scopes.split() if s] if scopes else _google_scopes_for_facet('gmail')
     payload = {
         'token': access_token or None,
         'refresh_token': refresh_token or None,
@@ -848,9 +951,36 @@ def _oauth_result_html(
 </body></html>"""
 
 
-def disconnect(name: str) -> dict[str, Any]:
+def disconnect_google_facet(facet: str) -> dict[str, Any]:
+    """Disconnect a single Google facet without wiping other connected facets."""
+    facet_key = _normalize_google_facet(facet)
+    sc = _sc()
+    raw = as_dict(sc.get('google')) if sc.get('google') else {}
+    if not raw:
+        return {'status': 'ok', 'connection': _google_card(None), 'facet': facet_key}
+
+    facets = set(_google_connected_facets(raw))
+    facets.discard(facet_key)
+    if not facets:
+        sc.pop('google', None)
+        _save_sc(sc)
+        return {'status': 'ok', 'connection': _google_card(None), 'facet': facet_key}
+
+    raw = {
+        **raw,
+        'connectedFacets': sorted(facets),
+        'updatedAt': _now(),
+    }
+    sc['google'] = raw
+    _save_sc(sc)
+    return {'status': 'ok', 'connection': _google_card(raw), 'facet': facet_key}
+
+
+def disconnect(name: str, facet: str = '') -> dict[str, Any]:
     if name not in SERVICE_META:
         raise ValueError(f'Unknown service: {name}')
+    if name == 'google' and as_str(facet).strip():
+        return disconnect_google_facet(facet)
     sc = _sc()
     sc.pop(name, None)
     _save_sc(sc)

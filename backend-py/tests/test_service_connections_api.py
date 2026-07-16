@@ -135,6 +135,29 @@ async def test_google_native_auth_url_when_client_id_set(client, monkeypatch):
     assert redirect.endswith('/api/service-connections/google/callback')
     assert q.get('code_challenge_method') == ['S256']
     assert q.get('code_challenge')
+    # Default facet is gmail — do not request Calendar/Drive in the same consent.
+    scope = unquote((q.get('scope') or [''])[0])
+    assert 'gmail.modify' in scope
+    assert 'calendar' not in scope
+    assert 'drive' not in scope
+    assert body.get('facet') == 'gmail'
+
+
+@pytest.mark.asyncio
+async def test_google_auth_url_scopes_per_facet(client, monkeypatch):
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'test-client.apps.googleusercontent.com')
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    r = await client.post(
+        '/api/service-connections/google/auth',
+        json={'email': '', 'facet': 'calendar'},
+    )
+    assert r.status_code == 200
+    q = parse_qs(urlparse(r.json()['authUrl']).query)
+    scope = unquote((q.get('scope') or [''])[0])
+    assert 'calendar' in scope
+    assert 'gmail' not in scope
+    assert r.json().get('facet') == 'calendar'
 
 
 @pytest.mark.asyncio
