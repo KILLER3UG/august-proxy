@@ -9,11 +9,13 @@ import { cn } from '@/lib/utils';
 import {
   chipTrigger,
   menuFlyout,
+  menuFlyoutSwap,
   menuItem,
   menuItemHover,
   menuItemStagger,
   menuPanel,
 } from '@/lib/motion';
+import { useFlyoutHover } from '@/hooks/useFlyoutHover';
 import type { ModelItem } from '../model-display';
 import {
   modelDisplayParts,
@@ -33,14 +35,13 @@ const EFFORT_OPTIONS: {
   { value: 'max', label: 'Max', triggerLabel: 'Max' },
 ];
 
-type Flyout = 'effort' | 'models' | null;
-
-const HOVER_OPEN_MS = 125;
-const HOVER_CLOSE_MS = 175;
+type FlyoutKind = 'effort' | 'models';
 
 function shortModelName(model: ModelItem | null): string {
   if (!model) return 'Model';
-  return modelDisplayParts(model.id || model.name || '').name || 'Model';
+  const name = modelDisplayParts(model.id || model.name || '').name || 'Model';
+  // Keep chip label compact so long ids don't blow out the composer layout.
+  return name.length > 28 ? `${name.slice(0, 26)}…` : name;
 }
 
 function ThinkingSwitch({
@@ -103,7 +104,16 @@ export function ModelEffortMenu({
   onThinkingChange: (v: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [flyout, setFlyout] = useState<Flyout>(null);
+  const {
+    flyout,
+    setFlyout,
+    scheduleFlyoutOpen,
+    scheduleFlyoutClose,
+    keepFlyoutOpen,
+    toggleFlyout,
+    resetFlyout,
+    clearAllTimers,
+  } = useFlyoutHover<FlyoutKind>();
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -111,53 +121,6 @@ export function ModelEffortMenu({
   const flyoutRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const hoverOpenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearHoverOpenTimer = useCallback(() => {
-    if (hoverOpenTimer.current) {
-      clearTimeout(hoverOpenTimer.current);
-      hoverOpenTimer.current = null;
-    }
-  }, []);
-
-  const clearHoverCloseTimer = useCallback(() => {
-    if (hoverCloseTimer.current) {
-      clearTimeout(hoverCloseTimer.current);
-      hoverCloseTimer.current = null;
-    }
-  }, []);
-
-  const scheduleFlyoutOpen = useCallback(
-    (next: Flyout) => {
-      if (!next) return;
-      clearHoverCloseTimer();
-      if (flyout === next) return;
-      clearHoverOpenTimer();
-      hoverOpenTimer.current = setTimeout(() => setFlyout(next), HOVER_OPEN_MS);
-    },
-    [flyout, clearHoverCloseTimer, clearHoverOpenTimer],
-  );
-
-  const scheduleFlyoutClose = useCallback(() => {
-    clearHoverOpenTimer();
-    clearHoverCloseTimer();
-    hoverCloseTimer.current = setTimeout(() => setFlyout(null), HOVER_CLOSE_MS);
-  }, [clearHoverOpenTimer, clearHoverCloseTimer]);
-
-  const keepFlyoutOpen = useCallback(() => {
-    clearHoverOpenTimer();
-    clearHoverCloseTimer();
-  }, [clearHoverOpenTimer, clearHoverCloseTimer]);
-
-  const toggleFlyout = useCallback(
-    (next: Flyout) => {
-      clearHoverOpenTimer();
-      clearHoverCloseTimer();
-      setFlyout((f) => (f === next ? null : next));
-    },
-    [clearHoverOpenTimer, clearHoverCloseTimer],
-  );
   const [primaryPos, setPrimaryPos] = useState<{
     top: number;
     left: number;
@@ -172,13 +135,12 @@ export function ModelEffortMenu({
     EFFORT_OPTIONS.find((o) => o.value === effort) || EFFORT_OPTIONS[1];
 
   const closeAll = useCallback(() => {
-    clearHoverOpenTimer();
-    clearHoverCloseTimer();
+    clearAllTimers();
     setOpen(false);
-    setFlyout(null);
+    resetFlyout();
     setSearchQuery('');
     setExpandedProviders(new Set());
-  }, [clearHoverOpenTimer, clearHoverCloseTimer]);
+  }, [clearAllTimers, resetFlyout]);
 
   const computePrimaryPos = useCallback(() => {
     const el = triggerRef.current;
@@ -209,7 +171,7 @@ export function ModelEffortMenu({
     const primary = primaryRef.current;
     if (!primary) return null;
     const r = primary.getBoundingClientRect();
-    const flyoutW = flyout === 'models' ? 300 : 260;
+    const flyoutW = 300;
     const gap = 6;
     let left = r.right + gap;
     if (left + flyoutW > window.innerWidth - 8) {
@@ -246,18 +208,8 @@ export function ModelEffortMenu({
   }, [open, flyout, closeAll]);
 
   useEffect(() => {
-    if (!open) {
-      clearHoverOpenTimer();
-      clearHoverCloseTimer();
-    }
-  }, [open, clearHoverOpenTimer, clearHoverCloseTimer]);
-
-  useEffect(() => {
-    return () => {
-      clearHoverOpenTimer();
-      clearHoverCloseTimer();
-    };
-  }, [clearHoverOpenTimer, clearHoverCloseTimer]);
+    if (!open) resetFlyout();
+  }, [open, resetFlyout]);
 
   useEffect(() => {
     if (!open) {
@@ -288,6 +240,7 @@ export function ModelEffortMenu({
       setFlyoutPos(null);
       return;
     }
+    // Keep prior position while swapping so the shell does not blink off.
     requestAnimationFrame(() => {
       const fp = computeFlyoutPos();
       if (fp) setFlyoutPos(fp);
@@ -452,181 +405,189 @@ export function ModelEffortMenu({
     </AnimatePresence>
   );
 
-  const effortFlyout = (
-    <AnimatePresence>
-      {open && flyout === 'effort' && flyoutPos && (
-        <motion.div
-          ref={flyoutRef}
-          {...menuFlyout}
-          onMouseEnter={keepFlyoutOpen}
-          onMouseLeave={scheduleFlyoutClose}
-          className="fixed z-50 w-[260px] bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
-          style={{ top: flyoutPos.top, left: flyoutPos.left }}
-        >
-          <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
-            Higher effort means more thorough responses. Takes longer and uses
-            more tokens.
-          </div>
-          <motion.div
-            className="py-0.5"
-            variants={menuItemStagger}
-            initial="initial"
-            animate="animate"
-          >
-            {EFFORT_OPTIONS.map((opt) => (
-              <motion.button
-                key={opt.value}
-                type="button"
-                variants={menuItem}
-                {...menuItemHover}
-                onClick={() => {
-                  onEffortChange(opt.value);
-                  setFlyout(null);
-                }}
-                className={cn(
-                  'w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition',
-                  effort === opt.value
-                    ? 'text-primary bg-primary/10 font-medium'
-                    : 'text-foreground/85 hover:bg-muted/40',
-                )}
-              >
-                <span>{opt.label}</span>
-                {effort === opt.value && <Check className="size-3.5 shrink-0" />}
-              </motion.button>
-            ))}
-          </motion.div>
-          <div className="h-px bg-border/50 mx-2" />
-          <div className="px-3 py-2.5 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-foreground">Thinking</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">
-                {thinkingEnabled
-                  ? 'Show extended reasoning for this turn'
-                  : 'Answer directly without extended reasoning'}
-              </div>
-            </div>
-            <ThinkingSwitch
-              checked={thinkingEnabled}
-              onChange={onThinkingChange}
-            />
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
+  // Fixed width avoids layout jump when swapping Effort ↔ Models.
+  const flyoutWidth = 300;
 
-  const modelsFlyout = (
+  const sideFlyout = (
     <AnimatePresence>
-      {open && flyout === 'models' && flyoutPos && (
+      {open && flyout && flyoutPos && (
         <motion.div
           ref={flyoutRef}
-          {...menuFlyout}
+          key="model-side-flyout"
+          initial={menuFlyout.initial}
+          animate={menuFlyout.animate}
+          exit={menuFlyout.exit}
+          transition={menuFlyout.transition}
           onMouseEnter={keepFlyoutOpen}
           onMouseLeave={scheduleFlyoutClose}
-          className="fixed z-50 w-[300px] bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
-          style={{ top: flyoutPos.top, left: flyoutPos.left }}
+          className="fixed z-50 bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
+          style={{
+            top: flyoutPos.top,
+            left: flyoutPos.left,
+            width: flyoutWidth,
+          }}
         >
-          <div className="px-2 pt-2 pb-1">
-            <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
-              <svg
-                className="size-2.5 shrink-0 text-muted-foreground"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                ref={searchRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search…"
-                className="bg-transparent text-sm outline-none w-full placeholder:text-muted-foreground/50 text-foreground py-0.5"
-              />
-            </div>
-          </div>
-          <div
-            ref={listRef}
-            className="max-h-[260px] overflow-y-auto py-0.5"
-          >
-            {loading && grouped.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                Loading models…
-              </div>
-            ) : grouped.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                {searchQuery.trim()
-                  ? `No results for "${searchQuery.trim()}"`
-                  : 'No models loaded'}
-              </div>
-            ) : (
-              grouped.map(({ provider, visible, isExpanded, total, showCollapse }) => (
-                <div key={provider}>
-                  <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold sticky top-0 bg-popover/95 backdrop-blur">
-                    {provider}
+          <AnimatePresence initial={false} mode="wait">
+              {flyout === 'effort' ? (
+                <motion.div key="effort" {...menuFlyoutSwap}>
+                  <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
+                    Higher effort means more thorough responses. Takes longer
+                    and uses more tokens.
                   </div>
-                  {visible.map((m) => {
-                    const { name, tag } = modelDisplayParts(m.id);
-                    const isSelected = selected?.id === m.id;
-                    return (
+                  <div className="py-0.5">
+                    {EFFORT_OPTIONS.map((opt) => (
                       <motion.button
-                        key={m.id}
+                        key={opt.value}
                         type="button"
-                        initial={{ opacity: 0, x: -6 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
-                        whileHover={{ x: 3 }}
-                        whileTap={{ scale: 0.98 }}
+                        {...menuItemHover}
                         onClick={() => {
-                          onSelect(m);
-                          closeAll();
+                          onEffortChange(opt.value);
+                          setFlyout(null);
                         }}
                         className={cn(
-                          'w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition',
-                          isSelected
+                          'w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition',
+                          effort === opt.value
                             ? 'text-primary bg-primary/10 font-medium'
                             : 'text-foreground/85 hover:bg-muted/40',
                         )}
                       >
-                        <span className="truncate flex-1">
-                          {name}
-                          {tag && (
-                            <span className="ml-1.5 text-[10px] text-muted-foreground/50 font-normal">
-                              {tag}
-                            </span>
-                          )}
-                        </span>
-                        {isSelected && <Check className="size-3.5 shrink-0" />}
+                        <span>{opt.label}</span>
+                        {effort === opt.value && (
+                          <Check className="size-3.5 shrink-0" />
+                        )}
                       </motion.button>
-                    );
-                  })}
-                  {showCollapse && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setExpandedProviders((prev) => {
-                          const next = new Set(prev);
-                          if (isExpanded) next.delete(provider);
-                          else next.add(provider);
-                          return next;
-                        });
-                      }}
-                      className="w-full text-left px-3 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/30 transition"
-                    >
-                      {isExpanded
-                        ? 'Show less'
-                        : `Show ${total - 5} more`}
-                    </button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
+                    ))}
+                  </div>
+                  <div className="h-px bg-border/50 mx-2" />
+                  <div className="px-3 py-2.5 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-foreground">
+                        Thinking
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {thinkingEnabled
+                          ? 'Show extended reasoning for this turn'
+                          : 'Answer directly without extended reasoning'}
+                      </div>
+                    </div>
+                    <ThinkingSwitch
+                      checked={thinkingEnabled}
+                      onChange={onThinkingChange}
+                    />
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div key="models" {...menuFlyoutSwap}>
+                  <div className="px-2 pt-2 pb-1">
+                    <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
+                      <svg
+                        className="size-2.5 shrink-0 text-muted-foreground"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="m21 21-4.35-4.35" />
+                      </svg>
+                      <input
+                        ref={searchRef}
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search…"
+                        className="bg-transparent text-sm outline-none w-full placeholder:text-muted-foreground/50 text-foreground py-0.5"
+                      />
+                    </div>
+                  </div>
+                  <div
+                    ref={listRef}
+                    className="max-h-[260px] overflow-y-auto py-0.5"
+                  >
+                    {loading && grouped.length === 0 ? (
+                      <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                        Loading models…
+                      </div>
+                    ) : grouped.length === 0 ? (
+                      <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                        {searchQuery.trim()
+                          ? `No results for "${searchQuery.trim()}"`
+                          : 'No models loaded'}
+                      </div>
+                    ) : (
+                      grouped.map(
+                        ({
+                          provider,
+                          visible,
+                          isExpanded,
+                          total,
+                          showCollapse,
+                        }) => (
+                          <div key={provider}>
+                            <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold sticky top-0 bg-popover/95 backdrop-blur">
+                              {provider}
+                            </div>
+                            {visible.map((m) => {
+                              const { name, tag } = modelDisplayParts(m.id);
+                              const isSelected = selected?.id === m.id;
+                              return (
+                                <motion.button
+                                  key={m.id}
+                                  type="button"
+                                  {...menuItemHover}
+                                  onClick={() => {
+                                    onSelect(m);
+                                    closeAll();
+                                  }}
+                                  className={cn(
+                                    'w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition',
+                                    isSelected
+                                      ? 'text-primary bg-primary/10 font-medium'
+                                      : 'text-foreground/85 hover:bg-muted/40',
+                                  )}
+                                >
+                                  <span className="truncate flex-1">
+                                    {name}
+                                    {tag && (
+                                      <span className="ml-1.5 text-[10px] text-muted-foreground/50 font-normal">
+                                        {tag}
+                                      </span>
+                                    )}
+                                  </span>
+                                  {isSelected && (
+                                    <Check className="size-3.5 shrink-0" />
+                                  )}
+                                </motion.button>
+                              );
+                            })}
+                            {showCollapse && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedProviders((prev) => {
+                                    const next = new Set(prev);
+                                    if (isExpanded) next.delete(provider);
+                                    else next.add(provider);
+                                    return next;
+                                  });
+                                }}
+                                className="w-full text-left px-3 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/30 transition"
+                              >
+                                {isExpanded
+                                  ? 'Show less'
+                                  : `Show ${total - 5} more`}
+                              </button>
+                            )}
+                          </div>
+                        ),
+                      )
+                    )}
+                  </div>
+                </motion.div>
+              )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>
@@ -643,8 +604,8 @@ export function ModelEffortMenu({
           else setOpen(true);
         }}
         className={cn(
-          'relative flex items-center gap-1 text-xs outline-none cursor-pointer shrink-0 h-8',
-          'text-muted-foreground hover:text-foreground transition-all duration-200',
+          'relative inline-flex items-center gap-1 text-xs outline-none cursor-pointer h-8 max-w-[220px]',
+          'text-muted-foreground hover:text-foreground transition-colors duration-200',
           'bg-muted/40 hover:bg-muted/60 rounded-full px-2.5 py-1',
         )}
         title={
@@ -655,7 +616,7 @@ export function ModelEffortMenu({
         aria-expanded={open}
         aria-haspopup="dialog"
       >
-        <span className="truncate max-w-[160px] font-medium text-foreground">
+        <span className="min-w-0 truncate font-medium text-foreground">
           {shortModelName(selected)}
         </span>
         <span className="text-muted-foreground shrink-0">
@@ -672,8 +633,7 @@ export function ModelEffortMenu({
         createPortal(
           <>
             {primaryPanel}
-            {effortFlyout}
-            {modelsFlyout}
+            {sideFlyout}
           </>,
           document.body,
         )}

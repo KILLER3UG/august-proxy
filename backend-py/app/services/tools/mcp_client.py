@@ -900,6 +900,53 @@ async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
     if not parsed:
         return f'Error: Invalid MCP tool name: {name}'
     server_id, tool_name = parsed
+    # workspace-mcp start_google_auth often builds a Google URL that redirects
+    # to August's callback without August's PKCE verifier → invalid_grant.
+    # Always start sign-in through August's native OAuth instead.
+    if tool_name == 'start_google_auth':
+        try:
+            from app.services import service_connections as sc
+
+            email = ''
+            if isinstance(args, dict):
+                email = str(
+                    args.get('user_google_email')
+                    or args.get('email')
+                    or ''
+                ).strip()
+            if email.lower() in ('me', 'user', 'default'):
+                email = ''
+            # If Integrations already has tokens, bridge them for workspace-mcp
+            # and skip a redundant (often broken) browser redirect.
+            synced = sc.sync_google_tokens_to_workspace_mcp(email or None)
+            if synced:
+                return (
+                    f'Google is already connected in August Settings as {synced}. '
+                    'Credentials were synced for MCP — retry the Google tool now '
+                    '(do not open a new browser sign-in link).'
+                )
+            result = await sc.google_auth_url(email)
+            auth_url = str(result.get('authUrl') or '')
+            if result.get('connected'):
+                sc.sync_google_tokens_to_workspace_mcp(email or None)
+                return str(
+                    result.get('message')
+                    or 'Google is already authenticated. Retry the Google tool.'
+                )
+            if auth_url:
+                return (
+                    'Open this August Google sign-in URL in your browser to connect '
+                    '(PKCE-safe; uses Settings → Integrations OAuth client):\n'
+                    f'{auth_url}\n\n'
+                    'After the browser says you are signed in, retry the Google tool.'
+                )
+            msg = str(result.get('message') or '').strip()
+            return msg or (
+                'Google sign-in is not configured. Add GOOGLE_OAUTH_CLIENT_ID '
+                'in Settings → Integrations, then try again.'
+            )
+        except Exception as exc:
+            return f'Error: Could not start August Google sign-in: {exc}'
     return await executeTool(server_id, tool_name, args)
 
 

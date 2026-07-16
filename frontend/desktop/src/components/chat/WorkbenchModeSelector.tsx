@@ -14,11 +14,13 @@ import { cn } from '@/lib/utils';
 import {
   chipTrigger,
   menuFlyout,
+  menuFlyoutSwap,
   menuItem,
   menuItemHover,
   menuItemStagger,
   menuPanel,
 } from '@/lib/motion';
+import { useFlyoutHover } from '@/hooks/useFlyoutHover';
 import {
   WORKBENCH_SANDBOX_MODES,
   getWorkbenchSandboxMode,
@@ -67,10 +69,7 @@ export function applyWorkbenchGuardMode(_mode: WorkbenchGuardMode, message: stri
   return message.trim();
 }
 
-type Flyout = 'agent' | 'reach' | null;
-
-const HOVER_OPEN_MS = 125;
-const HOVER_CLOSE_MS = 175;
+type FlyoutKind = 'agent' | 'reach';
 
 interface WorkbenchModeSelectorProps {
   selectedMode: WorkbenchGuardMode;
@@ -88,12 +87,19 @@ export function WorkbenchModeSelector({
   className,
 }: WorkbenchModeSelectorProps) {
   const [open, setOpen] = useState(false);
-  const [flyout, setFlyout] = useState<Flyout>(null);
+  const {
+    flyout,
+    setFlyout,
+    scheduleFlyoutOpen,
+    scheduleFlyoutClose,
+    keepFlyoutOpen,
+    toggleFlyout,
+    resetFlyout,
+    clearAllTimers,
+  } = useFlyoutHover<FlyoutKind>();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const primaryRef = useRef<HTMLDivElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
-  const hoverOpenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const guard = getWorkbenchGuardMode(selectedMode);
   const sandbox = getWorkbenchSandboxMode(sandboxMode);
@@ -110,57 +116,11 @@ export function WorkbenchModeSelector({
     left: number;
   } | null>(null);
 
-  const clearHoverOpenTimer = useCallback(() => {
-    if (hoverOpenTimer.current) {
-      clearTimeout(hoverOpenTimer.current);
-      hoverOpenTimer.current = null;
-    }
-  }, []);
-
-  const clearHoverCloseTimer = useCallback(() => {
-    if (hoverCloseTimer.current) {
-      clearTimeout(hoverCloseTimer.current);
-      hoverCloseTimer.current = null;
-    }
-  }, []);
-
-  const scheduleFlyoutOpen = useCallback(
-    (next: Flyout) => {
-      if (!next) return;
-      clearHoverCloseTimer();
-      if (flyout === next) return;
-      clearHoverOpenTimer();
-      hoverOpenTimer.current = setTimeout(() => setFlyout(next), HOVER_OPEN_MS);
-    },
-    [flyout, clearHoverCloseTimer, clearHoverOpenTimer],
-  );
-
-  const scheduleFlyoutClose = useCallback(() => {
-    clearHoverOpenTimer();
-    clearHoverCloseTimer();
-    hoverCloseTimer.current = setTimeout(() => setFlyout(null), HOVER_CLOSE_MS);
-  }, [clearHoverOpenTimer, clearHoverCloseTimer]);
-
-  const keepFlyoutOpen = useCallback(() => {
-    clearHoverOpenTimer();
-    clearHoverCloseTimer();
-  }, [clearHoverOpenTimer, clearHoverCloseTimer]);
-
-  const toggleFlyout = useCallback(
-    (next: Flyout) => {
-      clearHoverOpenTimer();
-      clearHoverCloseTimer();
-      setFlyout((f) => (f === next ? null : next));
-    },
-    [clearHoverOpenTimer, clearHoverCloseTimer],
-  );
-
   const closeAll = useCallback(() => {
-    clearHoverOpenTimer();
-    clearHoverCloseTimer();
+    clearAllTimers();
     setOpen(false);
-    setFlyout(null);
-  }, [clearHoverOpenTimer, clearHoverCloseTimer]);
+    resetFlyout();
+  }, [clearAllTimers, resetFlyout]);
 
   const computePrimaryPos = useCallback(() => {
     const el = triggerRef.current;
@@ -228,18 +188,8 @@ export function WorkbenchModeSelector({
   }, [open, flyout, closeAll]);
 
   useEffect(() => {
-    if (!open) {
-      clearHoverOpenTimer();
-      clearHoverCloseTimer();
-    }
-  }, [open, clearHoverOpenTimer, clearHoverCloseTimer]);
-
-  useEffect(() => {
-    return () => {
-      clearHoverOpenTimer();
-      clearHoverCloseTimer();
-    };
-  }, [clearHoverOpenTimer, clearHoverCloseTimer]);
+    if (!open) resetFlyout();
+  }, [open, resetFlyout]);
 
   useEffect(() => {
     if (!open) {
@@ -351,9 +301,9 @@ export function WorkbenchModeSelector({
     </AnimatePresence>
   );
 
-  const agentFlyout = (
+  const sideFlyout = (
     <AnimatePresence>
-      {open && flyout === 'agent' && flyoutPos && (
+      {open && flyout && flyoutPos && (
         <motion.div
           ref={flyoutRef}
           {...menuFlyout}
@@ -361,103 +311,90 @@ export function WorkbenchModeSelector({
           onMouseLeave={scheduleFlyoutClose}
           className="fixed z-50 w-[280px] bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
           style={{ top: flyoutPos.top, left: flyoutPos.left }}
-          data-testid="agent-mode-flyout"
+          data-testid={
+            flyout === 'agent' ? 'agent-mode-flyout' : 'tool-reach-flyout'
+          }
         >
-          <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
-            Should August act? Approvals only — not the same as tool reach.
-          </div>
-          <motion.div
-            className="py-0.5 pb-1"
-            variants={menuItemStagger}
-            initial="initial"
-            animate="animate"
-          >
-            {agentOptions.map((option) => (
-              <motion.button
-                key={option.id}
-                type="button"
-                variants={menuItem}
-                {...menuItemHover}
-                onClick={() => {
-                  onChange(option.id);
-                  setFlyout(null);
-                }}
-                className={cn(
-                  'w-full text-left px-3 py-2 transition',
-                  selectedMode === option.id
-                    ? 'text-primary bg-primary/10'
-                    : 'text-foreground/85 hover:bg-muted/40',
-                )}
-                title={option.description}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{option.label}</span>
-                  {selectedMode === option.id && (
-                    <Check className="size-3.5 shrink-0" />
-                  )}
-                </div>
-                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                  {option.description}
-                </p>
-              </motion.button>
-            ))}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-
-  const reachFlyout = (
-    <AnimatePresence>
-      {open && flyout === 'reach' && flyoutPos && (
-        <motion.div
-          ref={flyoutRef}
-          {...menuFlyout}
-          onMouseEnter={keepFlyoutOpen}
-          onMouseLeave={scheduleFlyoutClose}
-          className="fixed z-50 w-[280px] bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
-          style={{ top: flyoutPos.top, left: flyoutPos.left }}
-          data-testid="tool-reach-flyout"
-        >
-          <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
-            Where shell/files can go. Project only by default.
-          </div>
-          <motion.div
-            className="py-0.5 pb-1"
-            variants={menuItemStagger}
-            initial="initial"
-            animate="animate"
-          >
-            {reachOptions.map((option) => (
-              <motion.button
-                key={option.id}
-                type="button"
-                variants={menuItem}
-                {...menuItemHover}
-                onClick={() => {
-                  onSandboxChange(option.id);
-                  setFlyout(null);
-                }}
-                className={cn(
-                  'w-full text-left px-3 py-2 transition',
-                  sandboxMode === option.id
-                    ? 'text-primary bg-primary/10'
-                    : 'text-foreground/85 hover:bg-muted/40',
-                )}
-                title={option.description}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{option.label}</span>
-                  {sandboxMode === option.id && (
-                    <Check className="size-3.5 shrink-0" />
-                  )}
-                </div>
-                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                  {option.description}
-                </p>
-              </motion.button>
-            ))}
-          </motion.div>
+          <AnimatePresence initial={false} mode="wait">
+              {flyout === 'agent' ? (
+                <motion.div key="agent" {...menuFlyoutSwap}>
+                  <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
+                    Should August act? Approvals only — not the same as tool
+                    reach.
+                  </div>
+                  <div className="py-0.5 pb-1">
+                    {agentOptions.map((option) => (
+                      <motion.button
+                        key={option.id}
+                        type="button"
+                        {...menuItemHover}
+                        onClick={() => {
+                          onChange(option.id);
+                          setFlyout(null);
+                        }}
+                        className={cn(
+                          'w-full text-left px-3 py-2 transition',
+                          selectedMode === option.id
+                            ? 'text-primary bg-primary/10'
+                            : 'text-foreground/85 hover:bg-muted/40',
+                        )}
+                        title={option.description}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium">
+                            {option.label}
+                          </span>
+                          {selectedMode === option.id && (
+                            <Check className="size-3.5 shrink-0" />
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                          {option.description}
+                        </p>
+                      </motion.button>
+                    ))}
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div key="reach" {...menuFlyoutSwap}>
+                  <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
+                    Where shell/files can go. Project only by default.
+                  </div>
+                  <div className="py-0.5 pb-1">
+                    {reachOptions.map((option) => (
+                      <motion.button
+                        key={option.id}
+                        type="button"
+                        {...menuItemHover}
+                        onClick={() => {
+                          onSandboxChange(option.id);
+                          setFlyout(null);
+                        }}
+                        className={cn(
+                          'w-full text-left px-3 py-2 transition',
+                          sandboxMode === option.id
+                            ? 'text-primary bg-primary/10'
+                            : 'text-foreground/85 hover:bg-muted/40',
+                        )}
+                        title={option.description}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium">
+                            {option.label}
+                          </span>
+                          {sandboxMode === option.id && (
+                            <Check className="size-3.5 shrink-0" />
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                          {option.description}
+                        </p>
+                      </motion.button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>
@@ -472,8 +409,8 @@ export function WorkbenchModeSelector({
         onClick={() => {
           if (open) closeAll();
           else {
+            resetFlyout();
             setOpen(true);
-            setFlyout(null);
           }
         }}
         className="h-8 px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted hover:bg-muted/70 text-foreground border border-border/50 inline-flex items-center gap-1 max-w-[200px]"
@@ -495,8 +432,7 @@ export function WorkbenchModeSelector({
         createPortal(
           <>
             {primaryPanel}
-            {agentFlyout}
-            {reachFlyout}
+            {sideFlyout}
           </>,
           document.body,
         )}

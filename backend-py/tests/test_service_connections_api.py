@@ -212,7 +212,7 @@ async def test_google_callback_exchanges_code(client, monkeypatch):
         params={'code': 'auth-code-xyz', 'state': state},
     )
     assert r.status_code == 200
-    assert 'Connected' in r.text or 'connected' in r.text.lower()
+    assert 'signed in' in r.text.lower() or 'connected' in r.text.lower()
 
     listed = await client.get('/api/service-connections')
     google = listed.json()['connections']['google']
@@ -275,7 +275,7 @@ async def test_google_callback_pkce_without_secret(client, monkeypatch):
         params={'code': 'pkce-code', 'state': state},
     )
     assert r.status_code == 200
-    assert 'Connected' in r.text or 'connected' in r.text.lower()
+    assert 'signed in' in r.text.lower() or 'connected' in r.text.lower()
     listed = await client.get('/api/service-connections')
     assert listed.json()['connections']['google']['account'] == 'pkce@gmail.com'
 

@@ -444,22 +444,46 @@ def _native_google_auth_url(user_email: str = '') -> dict[str, Any] | None:
     }
 
 
+def _mcp_auth_url_uses_august_callback(auth_url: str) -> bool:
+    """True when an MCP-built Google URL redirects into August's callback.
+
+    Those URLs carry MCP's own PKCE challenge; August does not have the
+    verifier, so exchanging the code here always fails with missing_code_verifier.
+    """
+    if not auth_url:
+        return False
+    try:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(auth_url).query)
+        redirect = urllib.parse.unquote((q.get('redirect_uri') or [''])[0])
+    except Exception:
+        return False
+    ours = _google_redirect_uri()
+    if not redirect:
+        return False
+    return redirect.rstrip('/') == ours.rstrip('/') or '/api/service-connections/google/callback' in redirect
+
+
 async def google_auth_url(email: str = '') -> dict[str, Any]:
     """Start Google OAuth.
 
-    Prefer a registered workspace-mcp server's ``start_google_auth`` tool.
-    Fall back to a native OAuth URL built from ``GOOGLE_OAUTH_*`` env vars.
-    Never invent a fake success when neither path works.
+    Prefer August's native PKCE flow whenever a Client ID is configured.
+    MCP ``start_google_auth`` URLs that bounce to August's callback cannot
+    complete token exchange (Missing code verifier) — never return those.
     """
     sc = _sc()
     stored_email = as_str(as_dict(sc.get('google')).get('email')) if sc.get('google') else ''
     user_email = email.strip() or stored_email or ''
 
-    # 1) MCP workspace-mcp tool (if that server is registered and running)
+    # 1) Native Google OAuth (stores PKCE verifier for our callback)
+    native = _native_google_auth_url(user_email)
+    if native:
+        return {**native, 'via': 'native'}
+
+    # 2) MCP probe only when native is unavailable (no client id) — and only
+    #    accept "already authenticated" or URLs that do NOT use our callback.
     try:
         from app.services.tools import mcp_client
 
-        # Ensure tools are discovered so we can resolve the correct server id.
         for srv in list(mcp_client.listRegisteredServers()):
             sid = as_str(srv.get('id'))
             if not sid:
@@ -471,7 +495,6 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
 
         server_id = mcp_client.find_server_for_tool('start_google_auth')
         if not server_id:
-            # Common package name / catalog id heuristics
             for srv in mcp_client.listRegisteredServers():
                 if not isinstance(srv, dict):
                     continue
@@ -481,28 +504,32 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
                     break
 
         if server_id:
-            tool_name = f'mcp__{server_id}__start_google_auth'
-            result = await mcp_client.executeMcpToolCall(
-                tool_name,
-                {
-                    'service_name': 'gmail,calendar,drive,docs,sheets,slides,tasks,contacts',
-                    'user_google_email': user_email or 'me',
-                },
+            # Call the underlying MCP tool directly (not executeMcpToolCall),
+            # which intercepts start_google_auth and would recurse to native.
+            text = str(
+                await mcp_client.executeTool(
+                    server_id,
+                    'start_google_auth',
+                    {
+                        'service_name': 'gmail,calendar,drive,docs,sheets,slides,tasks,contacts',
+                        'user_google_email': user_email or 'me',
+                    },
+                )
             )
-            text = str(result)
-            # If the server truly isn't running, fall through to native OAuth
-            if text.startswith('Error: MCP server') and 'not running' in text:
-                pass
-            elif text.startswith('Error:'):
+            if text.startswith('Error:'):
                 pass
             else:
                 import re
 
                 match = re.search(r'https://[^\s"\'<>]+', text)
                 if match:
-                    return {'authUrl': match.group(0), 'message': text, 'via': 'mcp'}
+                    mcp_url = match.group(0)
+                    if _mcp_auth_url_uses_august_callback(mcp_url):
+                        # Would break PKCE — surface config help instead.
+                        pass
+                    else:
+                        return {'authUrl': mcp_url, 'message': text, 'via': 'mcp'}
                 lower = text.lower()
-                # Already authenticated — mark connected so the UI updates.
                 if any(
                     phrase in lower
                     for phrase in (
@@ -520,15 +547,10 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
                         'connected': True,
                         'via': 'mcp',
                     }
-                if text.strip():
+                if text.strip() and not match:
                     return {'message': text, 'authUrl': '', 'via': 'mcp'}
     except Exception:
         pass
-
-    # 2) Native Google OAuth (full browser flow with August callback)
-    native = _native_google_auth_url(user_email)
-    if native:
-        return {**native, 'via': 'native'}
 
     return {
         'authUrl': '',
@@ -563,9 +585,6 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
     # Allow missing state in dev if only one pending (desktop loopback quirks)
     if pending is None and len(_oauth_pending) == 1:
         _, pending = _oauth_pending.popitem()
-    if pending is None and state:
-        # State expired or unknown — still try exchange with default redirect
-        pending = {'redirect_uri': _google_redirect_uri(), 'email': ''}
 
     client_id = _google_client_id()
     client_secret = _google_client_secret()
@@ -579,14 +598,19 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
                 'GOOGLE_OAUTH_CLIENT_ID is not configured on the August server.',
             ),
         }
-    if not client_secret and not code_verifier:
+    # Never invent a pending session without a verifier — Google returns
+    # invalid_grant "Missing code verifier" when the auth URL used PKCE
+    # (August native + most MCP flows) but we omit the verifier here.
+    if not code_verifier:
         return {
             'ok': False,
             'error': 'missing_pkce_or_secret',
             'html': _oauth_result_html(
                 False,
-                'OAuth session expired or missing PKCE verifier. Click Sign in with Google again. '
-                'For Web clients, also set GOOGLE_OAUTH_CLIENT_SECRET.',
+                'OAuth session expired or this sign-in was not started from August. '
+                'Close this window and click Sign in with Google in Settings → Integrations '
+                '(or ask the agent again after signing in there). '
+                'Do not use an MCP auth link that redirects to August — that skips PKCE.',
             ),
         }
 
@@ -673,6 +697,19 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
             set_mcp_env({'USER_GOOGLE_EMAIL': email}, merge=True)
         except Exception:
             pass
+    # Bridge tokens into workspace-mcp's credential store so Google MCP tools
+    # stop forcing a second (broken) browser sign-in after Integrations connect.
+    try:
+        _write_workspace_mcp_credentials(
+            email=email,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=as_str(tokens.get('scope')),
+        )
+    except Exception:
+        pass
 
     account = email or 'your Google account'
     return {
@@ -690,6 +727,96 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
             picture=picture,
         ),
     }
+
+
+def _workspace_mcp_credentials_dir() -> str:
+    explicit = (
+        os.environ.get('WORKSPACE_MCP_CREDENTIALS_DIR')
+        or os.environ.get('GOOGLE_MCP_CREDENTIALS_DIR')
+        or _mcp_global_env_map().get('WORKSPACE_MCP_CREDENTIALS_DIR')
+        or _mcp_global_env_map().get('GOOGLE_MCP_CREDENTIALS_DIR')
+        or ''
+    ).strip()
+    if explicit:
+        return os.path.expanduser(explicit)
+    home = os.path.expanduser('~')
+    if home and home != '~':
+        return os.path.join(home, '.google_workspace_mcp', 'credentials')
+    return os.path.join(os.getcwd(), '.credentials')
+
+
+def sync_google_tokens_to_workspace_mcp(preferred_email: str | None = None) -> str:
+    """If August already has Google tokens, write them for workspace-mcp.
+
+    Returns the email that was synced, or '' if nothing to sync.
+    """
+    sc = _sc()
+    raw = as_dict(sc.get('google')) if sc.get('google') else {}
+    email = (
+        (preferred_email or '').strip()
+        or as_str(raw.get('email'))
+        or as_str(raw.get('account'))
+    )
+    access = as_str(raw.get('accessToken'))
+    refresh = as_str(raw.get('refreshToken'))
+    if not email or not (access or refresh):
+        return ''
+    ok = _write_workspace_mcp_credentials(
+        email=email,
+        access_token=access,
+        refresh_token=refresh,
+        client_id=_google_client_id(),
+        client_secret=_google_client_secret(),
+        scopes=as_str(raw.get('scope')),
+    )
+    if not ok:
+        return ''
+    try:
+        os.environ['USER_GOOGLE_EMAIL'] = email
+        set_mcp_env({'USER_GOOGLE_EMAIL': email}, merge=True)
+    except Exception:
+        pass
+    return email
+
+
+def _write_workspace_mcp_credentials(
+    *,
+    email: str,
+    access_token: str,
+    refresh_token: str,
+    client_id: str,
+    client_secret: str,
+    scopes: str = '',
+) -> bool:
+    """Persist Google tokens in the format workspace-mcp LocalDirectoryCredentialStore reads."""
+    if not email or not (access_token or refresh_token):
+        return False
+    base = _workspace_mcp_credentials_dir()
+    os.makedirs(base, mode=0o700, exist_ok=True)
+    # URL-encode like workspace-mcp (quote with safe="@._-")
+    safe_email = urllib.parse.quote(email, safe='@._-')
+    path = os.path.join(base, f'{safe_email}.json')
+    scope_list = [s for s in scopes.split() if s] if scopes else [
+        'openid',
+        'email',
+        'profile',
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/drive.readonly',
+    ]
+    payload = {
+        'token': access_token or None,
+        'refresh_token': refresh_token or None,
+        'token_uri': 'https://oauth2.googleapis.com/token',
+        'client_id': client_id or None,
+        'client_secret': client_secret or None,
+        'scopes': scope_list,
+        'expiry': None,
+    }
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, indent=2)
+    return True
 
 
 def _oauth_result_html(

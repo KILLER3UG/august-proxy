@@ -109,10 +109,11 @@ export const hoverScale = {
   whileTap:   { scale: 0.96, transition: t.fast },
 };
 
-/* Composer chips (agent mode / model) — light lift on hover. */
+/* Composer chips (agent mode / model) — light lift on hover.
+   Avoid scaleX growth that glitches long truncated labels. */
 export const chipTrigger = {
-  whileHover: { scale: 1.03, y: -1, transition: t.fast },
-  whileTap: { scale: 0.97, transition: t.fast },
+  whileHover: { y: -1, transition: t.fast },
+  whileTap: { scale: 0.98, transition: t.fast },
 };
 
 /* Dropdown / flyout panel enter-exit (settings, agent, model menus). */
@@ -133,6 +134,17 @@ export const menuFlyout = {
   exit: { opacity: 0, x: -6, scale: 0.98 },
   transition: {
     duration: 0.16,
+    ease: easeOut,
+  } satisfies Transition,
+};
+
+/** Crossfade inside a persistent flyout shell when swapping Effort ↔ Models. */
+export const menuFlyoutSwap = {
+  initial: { opacity: 0, x: 6 },
+  animate: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: -4 },
+  transition: {
+    duration: 0.1,
     ease: easeOut,
   } satisfies Transition,
 };
