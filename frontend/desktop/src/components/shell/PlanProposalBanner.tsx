@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Send, X, PencilLine } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { hasPendingWorkbenchPlan } from '@/lib/workbench-plan';
 import type { WorkbenchSession } from '@/types/workbench';
 
 export interface PlanProposalBannerProps {
@@ -48,9 +49,6 @@ export function PlanProposalBanner({
   const [revising, setRevising] = useState(false);
   const [feedback, setFeedback] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const plan = workbenchSession?.plan;
-  const approved = workbenchSession?.approved || !!workbenchSession?.approvedAt;
-
   useEffect(() => {
     if (revising) {
       // Focus the textarea after the animation opens.
@@ -59,7 +57,7 @@ export function PlanProposalBanner({
     }
   }, [revising]);
 
-  if (!plan || approved) return null;
+  if (!hasPendingWorkbenchPlan(workbenchSession)) return null;
 
   const modelLabel = modelName?.trim() || 'The model';
 

@@ -71,6 +71,20 @@ describe('PlanProposalBanner — Revise submit flow', () => {
     expect(onRevise).toHaveBeenCalledWith('add a verification step');
   });
 
+  it('does not render when plan is an empty object', () => {
+    render(
+      <PlanProposalBanner
+        workbenchSession={{ ...baseSession, plan: {} as never }}
+        onOpenPlan={() => {}}
+        onAccept={() => {}}
+        onAcceptAndImplement={() => {}}
+        onReject={() => {}}
+        onRevise={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/proposed a plan/i)).toBeNull();
+  });
+
   it('disables Send while sending is true', () => {
     const onRevise = vi.fn();
     render(

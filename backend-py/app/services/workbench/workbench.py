@@ -345,6 +345,10 @@ def buildSystemPrompt(
     except Exception:
         logger.debug('prompt: cognitive budget failed', exc_info=True)
     sessionDict = {
+        # Ambient identity so tools like delete/rename/brain_query can target
+        # "this chat" without a prior list call.
+        'id': getattr(session, 'id', None) or '',
+        'title': getattr(session, 'title', None) or '',
         'goal': session.goal,
         'plan': session.plan,
         'planApproved': session.planApproved,

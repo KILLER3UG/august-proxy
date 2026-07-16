@@ -273,7 +273,8 @@ def register() -> None:
         'Rename a chat session in the sidebar when the user asks. '
         'Session titles are generated automatically after the first reply — '
         'do NOT call this just to invent a title for a new chat. '
-        'Use a short 3–8 word title. Pass sessionId when known; for the current chat you may omit it.',
+        'Use a short 3–8 word title. Pass sessionId when known; for the current chat '
+        '(see <session> in the system prompt) you may omit it.',
         _renameSession,
         {
             'type': 'object',
@@ -293,6 +294,7 @@ def register() -> None:
     tool_registry.register(
         'delete_session',
         'Delete a single chat session by its session ID (e.g. wb_20260715_143052_a1b2c3). '
+        'The current chat id is in the <session> system-prompt block. '
         'For multiple sessions use delete_sessions (bulk) instead of calling this repeatedly. '
         'Cascades messages and dependent rows. Use brain_query(store=sessions) to list first. '
         'IMPORTANT: Confirm with the user before deleting.',

@@ -11,7 +11,6 @@ import { toast } from 'sonner';
 import {
   setSessionStatus,
   clearSessionStatus,
-  updateSessionWorkbenchMetadata,
 } from '@/store/sessions';
 import {
   approveWorkbenchPlan,
@@ -239,15 +238,18 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
     void (async () => {
       if (!workbenchSession) return;
       try {
-        const updated = await approveWorkbenchPlan(workbenchSession.id);
-        setWorkbenchSession(updated);
-        if (sessionId) {
-          updateSessionWorkbenchMetadata(sessionId, {
-            workbenchSessionId: updated.id,
-            workbenchAgentId: updated.agentId,
-            workbenchProvider: updated.provider,
-          });
-        }
+        // Approve API returns {status}, not a full session — update locally.
+        await approveWorkbenchPlan(workbenchSession.id);
+        setWorkbenchSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                approved: true,
+                planApproved: true,
+                approvedAt: new Date().toISOString(),
+              }
+            : null,
+        );
         // Accepted but do not implement — stream the decision so the model replies.
         await streamPlanTurn((handlers, signal) =>
           streamPlanDecision(workbenchSession.id, 'accept', handlers, signal),
@@ -257,22 +259,24 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
         toast.error('Could not approve Workbench plan', { description: message });
       }
     })();
-  }, [workbenchSession, sessionId, setWorkbenchSession, streamPlanTurn]);
+  }, [workbenchSession, setWorkbenchSession, streamPlanTurn]);
 
   /** Accept plan and switch to Full access so the model may implement. */
   const handlePlanAcceptAndImplement = useCallback(() => {
     void (async () => {
       if (!workbenchSession) return;
       try {
-        const updated = await approveWorkbenchPlan(workbenchSession.id);
-        setWorkbenchSession(updated);
-        if (sessionId) {
-          updateSessionWorkbenchMetadata(sessionId, {
-            workbenchSessionId: updated.id,
-            workbenchAgentId: updated.agentId,
-            workbenchProvider: updated.provider,
-          });
-        }
+        await approveWorkbenchPlan(workbenchSession.id);
+        setWorkbenchSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                approved: true,
+                planApproved: true,
+                approvedAt: new Date().toISOString(),
+              }
+            : null,
+        );
         setWorkbenchMode('full');
         await streamPlanTurn((handlers, signal) =>
           streamPlanDecision(
@@ -289,7 +293,6 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
     })();
   }, [
     workbenchSession,
-    sessionId,
     setWorkbenchSession,
     setWorkbenchMode,
     streamPlanTurn,
@@ -300,8 +303,18 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
     void (async () => {
       if (!workbenchSession) return;
       try {
-        const updated = await rejectWorkbenchPlan(workbenchSession.id);
-        setWorkbenchSession(updated);
+        await rejectWorkbenchPlan(workbenchSession.id);
+        setWorkbenchSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                plan: null,
+                approved: false,
+                planApproved: false,
+                approvedAt: null,
+              }
+            : null,
+        );
         await streamPlanTurn((handlers, signal) =>
           streamPlanDecision(workbenchSession.id, 'reject', handlers, signal),
         );

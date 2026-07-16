@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { hasPendingWorkbenchPlan, isNonEmptyPlan } from '@/lib/workbench-plan';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { WorkbenchSession, WorkbenchTodo } from '@/types/workbench';
 
@@ -14,10 +15,10 @@ export function WorkbenchPlanPanel({
   session: WorkbenchSession | null;
   onApprove: () => Promise<void>;
 }) {
-  if (!session?.plan) return null;
+  if (!isNonEmptyPlan(session?.plan)) return null;
 
-  const plan = session.plan;
-  const approved = session.approved || !!session.approvedAt;
+  const plan = session!.plan!;
+  const approved = !hasPendingWorkbenchPlan(session);
 
   return (
     <Card className="mx-auto max-w-3xl border-warning/40 bg-warning/5">

@@ -34,6 +34,7 @@ import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { playReceiveChime } from '@/lib/chat-chime';
+import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
 import {
   applySubagentEvent,
   makeSubagentEventHandlers,
@@ -59,7 +60,12 @@ export interface MakeStreamHandlersOptions {
 
   setSessionStatus: (sessionId: string, status: 'idle' | 'working' | 'awaiting' | 'error' | 'done') => void;
 
-  setWorkbenchSession: (session: WorkbenchSession | null) => void;
+  setWorkbenchSession: (
+    session:
+      | WorkbenchSession
+      | null
+      | ((prev: WorkbenchSession | null) => WorkbenchSession | null),
+  ) => void;
   setSubagentPrompts: React.Dispatch<React.SetStateAction<Map<string, {
     content: string;
     systemPrompt: string;
@@ -368,9 +374,52 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onSession: (sessionState) => {
-      latestWorkbenchTodos = sessionState.todos ?? [];
-      latestMutationCount = sessionState.mutationCount;
-      setWorkbenchSession(sessionState);
+      const normalized = normalizeWorkbenchSession(sessionState);
+      if (!normalized) return;
+      // Session summaries may only carry a boolean plan flag — merge plan
+      // from the previous snapshot so we never replace a real plan with {}.
+      setWorkbenchSession((prev) => {
+        const next = { ...normalized };
+        if (!isNonEmptyPlan(next.plan) && isNonEmptyPlan(prev?.plan) && !next.approved) {
+          next.plan = prev!.plan;
+        }
+        latestWorkbenchTodos = next.todos ?? [];
+        latestMutationCount = next.mutationCount;
+        return next;
+      });
+      scheduleUpdate();
+    },
+    onPlanProposed: ({ plan }) => {
+      if (!isNonEmptyPlan(plan)) return;
+      setWorkbenchSession((prev) => {
+        if (!prev) {
+          return normalizeWorkbenchSession({
+            id: sessionId,
+            provider: '',
+            agentId: 'plan',
+            agentRole: 'plan',
+            agentMode: 'assistant',
+            approved: false,
+            approvedAt: null,
+            plan,
+            goal: null,
+            lastGoal: null,
+            messageCount: 0,
+            mutationCount: 0,
+            lastMutationAt: null,
+            updatedAt: new Date().toISOString(),
+            todos: [],
+            guardMode: 'plan',
+          });
+        }
+        return {
+          ...prev,
+          plan,
+          approved: false,
+          approvedAt: null,
+          planApproved: false,
+        };
+      });
       scheduleUpdate();
     },
     onBrowserAction: (data) => {

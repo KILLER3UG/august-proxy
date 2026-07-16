@@ -416,26 +416,29 @@ class BaseProviderClient:
         Default implementation uses chat_completions (OpenAI-compatible).
         AnthropicClient and other subclasses override this.
         """
-        if hasattr(self, 'chatCompletions'):
-            messages: list[dict[str, str]] = []
-            if system:
-                messages.append({'role': 'system', 'content': system})
-            messages.append({'role': 'user', 'content': prompt})
-            model = as_str(self.config.get('model'), '')
-            body = {'model': model, 'messages': messages, 'stream': False}
-            try:
-                resp = await self.chat_completions(body)
-            except (AttributeError, TypeError):
-                return ''
-            if resp.status != 200:
-                return ''
-            bodyData = resp.body if isinstance(resp.body, dict) else {}
-            choices = bodyData.get('choices', [])
-            if choices and isinstance(choices, list):
-                msg = choices[0].get('message', {})
-                content = msg.get('content', '')
-                return content if isinstance(content, str) else ''
+        # Prefer a real subclass override of chat_completions (base raises).
+        chat_fn = getattr(type(self), 'chat_completions', None)
+        if chat_fn is None or chat_fn is BaseProviderClient.chat_completions:
             return ''
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({'role': 'system', 'content': system})
+        messages.append({'role': 'user', 'content': prompt})
+        model = as_str(self.config.get('model'), '')
+        body = {'model': model, 'messages': messages, 'stream': False}
+        try:
+            resp = await self.chat_completions(body)
+        except (AttributeError, TypeError, NotImplementedError):
+            return ''
+        if resp.status != 200:
+            return ''
+        bodyData = resp.body if isinstance(resp.body, dict) else {}
+        choices = bodyData.get('choices', [])
+        if choices and isinstance(choices, list):
+            first = choices[0] if isinstance(choices[0], dict) else {}
+            msg = first.get('message', {}) if isinstance(first, dict) else {}
+            content = msg.get('content', '') if isinstance(msg, dict) else ''
+            return content if isinstance(content, str) else ''
         return ''
 
     async def streamSse(
