@@ -1,4 +1,7 @@
 import { Check, X } from 'lucide-react';
+import { SiGoogle } from 'react-icons/si';
+import { useState } from 'react';
+import { toast } from 'sonner';
 import { Backdrop } from '@/components/overlays/Backdrop';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -7,6 +10,7 @@ import {
   switchAccount,
   type AugustAccount,
 } from '@/store/account';
+import { signInWithGoogle } from '@/lib/google-account-signin';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -18,12 +22,26 @@ interface Props {
 export function SwitchAccountModal({ open, onClose, onCreateNew }: Props) {
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   if (!open) return null;
 
   const pick = (account: AugustAccount) => {
     switchAccount(account.id);
     onClose();
+  };
+
+  const handleGoogle = async () => {
+    setGoogleBusy(true);
+    try {
+      const account = await signInWithGoogle();
+      toast.success(`Signed in as ${account.displayName}`);
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Google sign-in failed');
+    } finally {
+      setGoogleBusy(false);
+    }
   };
 
   return (
@@ -38,7 +56,7 @@ export function SwitchAccountModal({ open, onClose, onCreateNew }: Props) {
           <div>
             <h2 className="text-base font-semibold text-foreground">Switch account</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Choose a local profile on this device
+              Choose a profile or sign in with Google
             </p>
           </div>
           <button
@@ -80,12 +98,21 @@ export function SwitchAccountModal({ open, onClose, onCreateNew }: Props) {
           })}
           {accounts.length === 0 && (
             <p className="px-2 py-4 text-sm text-muted-foreground">
-              No accounts yet. Create one to get started.
+              No accounts yet. Sign in with Google to get started.
             </p>
           )}
         </div>
 
-        <footer className="border-t border-border/60 px-5 py-3">
+        <footer className="space-y-2 border-t border-border/60 px-5 py-3">
+          <Button
+            type="button"
+            className="w-full gap-2"
+            disabled={googleBusy}
+            onClick={() => void handleGoogle()}
+          >
+            <SiGoogle className="size-3.5" />
+            {googleBusy ? 'Waiting for Google…' : 'Continue with Google'}
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -95,7 +122,7 @@ export function SwitchAccountModal({ open, onClose, onCreateNew }: Props) {
               onCreateNew();
             }}
           >
-            Create new account
+            Create local account
           </Button>
         </footer>
       </div>

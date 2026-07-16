@@ -13,6 +13,9 @@ export interface AugustAccount {
   avatar: string;
   initials: string;
   status: UserStatus;
+  /** Local manual profile vs Google-linked identity. */
+  provider: 'local' | 'google';
+  googleSub?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,7 +37,11 @@ function loadAccounts(): AugustAccount[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as AugustAccount[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((a) => ({
+      ...a,
+      provider: a.provider ?? (a.googleSub || a.email ? 'google' : 'local'),
+    }));
   } catch {
     return [];
   }
@@ -92,6 +99,8 @@ export type CreateAccountInput = {
   email?: string;
   avatar?: string;
   status?: UserStatus;
+  provider?: 'local' | 'google';
+  googleSub?: string;
 };
 
 export function createAccount(input: CreateAccountInput): AugustAccount {
@@ -105,6 +114,8 @@ export function createAccount(input: CreateAccountInput): AugustAccount {
     avatar: (input.avatar ?? '').trim() || DEFAULT_AVATAR,
     initials: initialsFromName(displayName),
     status: input.status ?? 'online',
+    provider: input.provider ?? 'local',
+    googleSub: input.googleSub,
     createdAt: now,
     updatedAt: now,
   };
@@ -112,6 +123,52 @@ export function createAccount(input: CreateAccountInput): AugustAccount {
   useAccountStore.setState({ accounts, activeAccountId: account.id });
   persist(accounts, account.id);
   return account;
+}
+
+/** Create or switch to an account linked to a Google identity. */
+export function upsertGoogleAccount(profile: {
+  email: string;
+  displayName?: string;
+  picture?: string;
+  googleSub?: string;
+}): AugustAccount {
+  const email = profile.email.trim().toLowerCase();
+  const { accounts } = useAccountStore.getState();
+  const existing =
+    accounts.find(
+      (a) =>
+        (profile.googleSub && a.googleSub === profile.googleSub) ||
+        (a.email && a.email.toLowerCase() === email),
+    ) ?? null;
+
+  const displayName =
+    profile.displayName?.trim() ||
+    existing?.displayName ||
+    email.split('@')[0] ||
+    'Google User';
+  const usernameFromEmail = email.split('@')[0] || 'google';
+
+  if (existing) {
+    const updated = updateAccount(existing.id, {
+      displayName,
+      email,
+      avatar: profile.picture || existing.avatar,
+      provider: 'google',
+      googleSub: profile.googleSub || existing.googleSub,
+      username: existing.username || usernameFromEmail,
+    });
+    switchAccount(existing.id);
+    return updated ?? existing;
+  }
+
+  return createAccount({
+    displayName,
+    email,
+    avatar: profile.picture,
+    username: usernameFromEmail,
+    provider: 'google',
+    googleSub: profile.googleSub,
+  });
 }
 
 export function updateAccount(

@@ -1,7 +1,8 @@
-/* ── Account — local August profiles (no cloud auth yet) ───────────── */
+/* ── Account — local + Google-linked August profiles ───────────────── */
 
 import { useMemo, useState } from 'react';
 import { UserRound, Plus, LogOut, Trash2, Check } from 'lucide-react';
+import { SiGoogle } from 'react-icons/si';
 import { toast } from 'sonner';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +18,7 @@ import {
   deleteAccount,
   type AugustAccount,
 } from '@/store/account';
+import { signInWithGoogle } from '@/lib/google-account-signin';
 import { cn } from '@/lib/utils';
 
 export function AccountSection() {
@@ -32,6 +34,7 @@ export function AccountSection() {
   const [email, setEmail] = useState(active?.email ?? '');
   const [avatar, setAvatar] = useState(active?.avatar ?? '');
   const [creating, setCreating] = useState(accounts.length === 0);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   const syncForm = (account: AugustAccount | null) => {
     setDisplayName(account?.displayName ?? '');
@@ -46,6 +49,23 @@ export function AccountSection() {
     syncForm(next);
     setCreating(false);
     toast.success(`Switched to ${next?.displayName ?? 'account'}`);
+  };
+
+  const handleGoogleSignIn = async () => {
+    setGoogleBusy(true);
+    const toastId = toast.loading('Opening Google sign-in…');
+    try {
+      const account = await signInWithGoogle();
+      syncForm(account);
+      setCreating(false);
+      toast.success(`Signed in as ${account.displayName}`, { id: toastId });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Google sign-in failed', {
+        id: toastId,
+      });
+    } finally {
+      setGoogleBusy(false);
+    }
   };
 
   const handleSave = () => {
@@ -98,16 +118,33 @@ export function AccountSection() {
       <header className="px-6 pt-5 pb-4 shrink-0">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">Account</h2>
         <p className="mt-1 text-sm leading-5 text-muted-foreground">
-          Local August profiles on this device. Cloud sign-in is not required yet —
-          your account stays on this machine.
+          Sign in with Gmail for a real Google-linked account, or create a local profile
+          that stays on this device.
         </p>
       </header>
 
       <div className="flex-1 overflow-auto px-6 pb-6 space-y-4">
         <SettingsCard
           icon={UserRound}
+          title="Sign in with Google"
+          description="Use your Gmail identity for August. This also connects Google Workspace tools when configured."
+          inert
+        >
+          <Button
+            type="button"
+            onClick={() => void handleGoogleSignIn()}
+            disabled={googleBusy}
+            className="gap-2"
+          >
+            <SiGoogle className="size-3.5" />
+            {googleBusy ? 'Waiting for Google…' : 'Continue with Google'}
+          </Button>
+        </SettingsCard>
+
+        <SettingsCard
+          icon={UserRound}
           title="Profiles on this device"
-          description="Switch between local accounts or create a new one."
+          description="Switch between local and Google-linked accounts."
           actions={
             <Badge variant="outline" className="font-mono">
               {accounts.length} profile{accounts.length === 1 ? '' : 's'}
@@ -140,6 +177,11 @@ export function AccountSection() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">
                         {account.displayName}
+                        {account.provider === 'google' && (
+                          <span className="ml-2 text-[10px] font-normal text-muted-foreground">
+                            Google
+                          </span>
+                        )}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {account.username}
@@ -164,7 +206,7 @@ export function AccountSection() {
 
             {accounts.length === 0 && (
               <p className="text-sm text-muted-foreground">
-                No accounts yet. Create one below to personalize the sidebar menu.
+                No accounts yet. Sign in with Google above, or create a local profile below.
               </p>
             )}
 
@@ -182,7 +224,7 @@ export function AccountSection() {
               }}
             >
               <Plus className="size-3.5" />
-              New account
+              New local account
             </Button>
           </div>
         </SettingsCard>

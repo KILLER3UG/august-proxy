@@ -4,9 +4,10 @@
 /* Bottom: Settings                                                        */
 
 import { useState, useEffect, useRef } from "react";
-import { AnimatePresence, LayoutGroup } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { Settings } from "lucide-react";
 import { isTauri } from "@/lib/tauri-detect";
+import { t } from "@/lib/motion";
 import {
   useSessionsStore,
   renameSession,
@@ -51,6 +52,18 @@ const STORAGE = (() => {
     return [];
   }
 })();
+
+const settingsRowMotion = {
+  rest: { x: 0 },
+  hover: { x: 3, transition: t.fast },
+  tap: { scale: 0.98, transition: t.fast },
+};
+
+const settingsIconMotion = {
+  rest: { scale: 1, rotate: 0 },
+  hover: { scale: 1.12, rotate: -18, transition: t.spring },
+  tap: { scale: 0.92, transition: t.fast },
+};
 
 interface Props {
   activeId?: string;
@@ -121,8 +134,10 @@ export function SessionList({
         openSettingsSection("profile-preferences");
         break;
       case "profile":
-      case "create-account":
         openSettingsSection("account");
+        break;
+      case "create-account":
+        setSwitchAccountOpen(true);
         break;
       case "download":
         toast.message("You're already in the August desktop app.");
@@ -510,15 +525,24 @@ export function SessionList({
             contentWidth={sidebarWidth}
             user={dropdownUser}
             trigger={
-              <button
+              <motion.button
                 type="button"
+                initial="rest"
+                whileHover="hover"
+                whileTap="tap"
+                variants={settingsRowMotion}
                 className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-sidebar-foreground/50 hover:bg-white/[0.03] hover:text-sidebar-foreground/75 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 title="Open settings"
                 aria-label="Open settings"
               >
-                <Settings className="size-3.5 opacity-60" />
+                <motion.span
+                  className="inline-flex shrink-0 opacity-60"
+                  variants={settingsIconMotion}
+                >
+                  <Settings className="size-3.5" />
+                </motion.span>
                 <span>Settings</span>
-              </button>
+              </motion.button>
             }
           />
         </div>

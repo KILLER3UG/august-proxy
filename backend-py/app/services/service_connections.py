@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
 import secrets
 import time
@@ -119,6 +120,10 @@ def _google_card(raw: dict[str, Any] | None) -> dict[str, Any]:
         'status': status,
         'connected': connected,
         'account': email or None,
+        'email': email or None,
+        'displayName': as_str((raw or {}).get('displayName') or (raw or {}).get('name')) or None,
+        'picture': as_str((raw or {}).get('picture')) or None,
+        'googleSub': as_str((raw or {}).get('googleSub') or (raw or {}).get('sub')) or None,
         'missingConfig': missing and not connected,
         'hasClientId': has_client,
         'pkceReady': has_client,  # one-click browser sign-in when client id is set
@@ -620,6 +625,9 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
             access_token = as_str(tokens.get('access_token'))
             refresh_token = as_str(tokens.get('refresh_token'))
             email = as_str((pending or {}).get('email'))
+            display_name = ''
+            picture = ''
+            google_sub = ''
             if access_token:
                 try:
                     ui = await client.get(
@@ -627,7 +635,11 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
                         headers={'Authorization': f'Bearer {access_token}'},
                     )
                     if ui.status_code < 400:
-                        email = as_str(ui.json().get('email')) or email
+                        profile = ui.json()
+                        email = as_str(profile.get('email')) or email
+                        display_name = as_str(profile.get('name')) or as_str(profile.get('given_name'))
+                        picture = as_str(profile.get('picture'))
+                        google_sub = as_str(profile.get('id')) or as_str(profile.get('sub'))
                 except Exception:
                     pass
     except Exception as exc:
@@ -642,6 +654,9 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
     sc['google'] = {
         **existing,
         'email': email or existing.get('email'),
+        'displayName': display_name or existing.get('displayName') or existing.get('name'),
+        'picture': picture or existing.get('picture'),
+        'googleSub': google_sub or existing.get('googleSub') or existing.get('sub'),
         'status': 'connected',
         'accessToken': access_token or existing.get('accessToken'),
         'refreshToken': refresh_token or existing.get('refreshToken'),
@@ -663,17 +678,39 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
     return {
         'ok': True,
         'email': email,
+        'displayName': display_name,
+        'picture': picture,
+        'googleSub': google_sub,
         'connection': _google_card(as_dict(sc.get('google'))),
         'html': _oauth_result_html(
             True,
-            f'Connected as {account}. You can close this window and return to August.',
+            f'Signed in as {account}. You can close this window and return to August.',
+            email=email,
+            display_name=display_name,
+            picture=picture,
         ),
     }
 
 
-def _oauth_result_html(ok: bool, message: str) -> str:
-    title = 'Google connected' if ok else 'Google sign-in failed'
+def _oauth_result_html(
+    ok: bool,
+    message: str,
+    *,
+    email: str = '',
+    display_name: str = '',
+    picture: str = '',
+) -> str:
+    title = 'Google signed in' if ok else 'Google sign-in failed'
     color = '#22c55e' if ok else '#ef4444'
+    payload = {
+        'type': 'august-google-oauth',
+        'ok': ok,
+        'email': email or None,
+        'displayName': display_name or None,
+        'picture': picture or None,
+    }
+    # Keep JS object literal simple for the inline script.
+    payload_js = json.dumps(payload)
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><title>{title}</title>
 <style>
@@ -685,7 +722,7 @@ def _oauth_result_html(ok: bool, message: str) -> str:
   p {{ font-size: 0.9rem; line-height: 1.5; color: #a1a1aa; margin: 0; }}
 </style></head>
 <body><div class="card"><h1>{title}</h1><p>{message}</p></div>
-<script>try {{ window.opener && window.opener.postMessage({{ type: 'august-google-oauth', ok: {str(ok).lower()} }}, '*'); }} catch (e) {{}}</script>
+<script>try {{ window.opener && window.opener.postMessage({payload_js}, '*'); }} catch (e) {{}}</script>
 </body></html>"""
 
 
