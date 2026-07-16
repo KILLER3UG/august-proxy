@@ -45,17 +45,40 @@ function isAcceptedVersion(interp) {
         (v.major === MIN_PY.major && v.minor >= MIN_PY.minor);
 }
 
+// Reject interpreters that can't load sqlite3 (common on Windows when Smart App
+// Control / Application Control blocks uv-managed CPython's _sqlite3.pyd).
+function canImportSqlite(interp) {
+    try {
+        execFileSync(interp, ['-c', 'import sqlite3'], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function isUsablePython(interp) {
+    if (!isAcceptedVersion(interp)) return false;
+    if (!canImportSqlite(interp)) {
+        console.warn(`[dev] Skipping Python (sqlite3 blocked / unloadable): ${interp}`);
+        return false;
+    }
+    return true;
+}
+
 function findPython() {
     // 1. Prefer the project's own virtualenv (has the exact backend deps).
     const venvRel = process.platform === 'win32'
         ? ['backend-py', '.venv', 'Scripts', 'python.exe']
         : ['backend-py', '.venv', 'bin', 'python'];
     const venvPath = resolve(root, ...venvRel);
-    if (existsSync(venvPath) && isAcceptedVersion(venvPath)) {
+    if (existsSync(venvPath) && isUsablePython(venvPath)) {
         return venvPath;
     }
 
-    // 2. uv: respects backend-py/.python-version (3.12) and managed interpreters.
+    // 2. uv: respects backend-py/.python-version and managed interpreters.
     const backendDir = resolve(root, 'backend-py');
     if (existsSync(backendDir)) {
         try {
@@ -64,18 +87,18 @@ function findPython() {
                 ['run', '--directory', backendDir, 'python', '-c', 'import sys; print(sys.executable)'],
                 { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
             ).toString().trim();
-            if (uvPy && existsSync(uvPy) && isAcceptedVersion(uvPy)) {
+            if (uvPy && existsSync(uvPy) && isUsablePython(uvPy)) {
                 return uvPy;
             }
         } catch { /* uv not installed or not ready */ }
     }
 
-    // 3. PATH / py launcher — only accept 3.12+.
+    // 3. PATH / py launcher — only accept 3.12+ with a working sqlite3.
     const names = process.platform === 'win32'
         ? ['py.exe', 'python3.exe', 'python.exe']
         : ['python3', 'python'];
     for (const name of names) {
-        if (isAcceptedVersion(name)) return name;
+        if (isUsablePython(name)) return name;
     }
     return null;
 }

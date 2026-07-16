@@ -125,10 +125,14 @@ function MutationCard({
         <FileCode2 className="mt-0.5 size-4 shrink-0 text-warning" />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium truncate" title={path}>
-            {path}
+            {path.startsWith('sandbox:unsandboxed:')
+              ? 'Unsandboxed command'
+              : path}
           </div>
           <div className="text-[11px] text-muted-foreground">
-            {mutation.toolName || 'tool'} · pre-apply review
+            {path.startsWith('sandbox:unsandboxed:')
+              ? 'Sandbox escape · Once / This chat / Always'
+              : `${mutation.toolName || 'tool'} · pre-apply review`}
           </div>
         </div>
       </div>

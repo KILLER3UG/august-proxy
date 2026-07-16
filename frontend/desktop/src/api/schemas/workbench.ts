@@ -94,6 +94,12 @@ const WorkbenchSessionSchema = z.object({
   updatedAt: z.string(),
   todos: z.array(z.unknown()),
   guardMode: z.enum(['plan', 'full', 'ask']),
+  sandboxMode: z
+    .enum(['read-only', 'workspace-write', 'danger-full-access'])
+    .or(z.string())
+    .optional(),
+  sandboxNetwork: z.boolean().optional(),
+  workspacePath: z.string().optional(),
 });
 
 export const WorkbenchSessionEventSchema = WorkbenchBaseSchema.extend({

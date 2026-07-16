@@ -45,6 +45,9 @@ class WorkbenchSession:
     model: str = ''
     agentId: str = ''
     guardMode: str = 'full'
+    # Codex-like sandbox axis (orthogonal to Plan/Ask/Full).
+    sandboxMode: str = 'workspace-write'
+    sandboxNetwork: bool = False
     createdAt: str = ''
     updatedAt: str = ''
     startedAt: str = ''
@@ -83,6 +86,8 @@ class WorkbenchSession:
             'model': self.model,
             'agentId': self.agentId,
             'guardMode': self.guardMode,
+            'sandboxMode': self.sandboxMode,
+            'sandboxNetwork': self.sandboxNetwork,
             'createdAt': self.createdAt,
             'updatedAt': self.updatedAt,
             'startedAt': self.startedAt,
@@ -114,6 +119,8 @@ class WorkbenchSession:
             model=as_str(d.get('model', '')),
             agentId=as_str(d.get('agentId', '')),
             guardMode=as_str(d.get('guardMode', 'full')),
+            sandboxMode=as_str(d.get('sandboxMode', 'workspace-write') or 'workspace-write'),
+            sandboxNetwork=as_bool(d.get('sandboxNetwork', False)),
             createdAt=as_str(d.get('createdAt', '')),
             updatedAt=as_str(d.get('updatedAt', '')),
             startedAt=as_str(d.get('startedAt', '')),
@@ -466,6 +473,8 @@ def _emit_session_status(session_id: str) -> None:
         'sessionId': session_id,
         'status': session.status,
         'guardMode': session.guardMode,
+        'sandboxMode': getattr(session, 'sandboxMode', 'workspace-write'),
+        'sandboxNetwork': bool(getattr(session, 'sandboxNetwork', False)),
         'pendingMutations': len(session.pendingMutations) > 0,
     }
     for cb in _status_subscribers:
@@ -482,6 +491,8 @@ def _emit_session_status(session_id: str) -> None:
             sessionId=session_id,
             status=session.status,
             guardMode=session.guardMode,
+            sandboxMode=getattr(session, 'sandboxMode', 'workspace-write'),
+            sandboxNetwork=bool(getattr(session, 'sandboxNetwork', False)),
             pendingMutations=len(session.pendingMutations) > 0,
             plan=session.plan is not None,
             planApproved=session.planApproved,
@@ -560,6 +571,9 @@ def create_workbench_session(
     guardMode: str = '',
     task: str = '',
     goal: str = '',
+    workspacePath: str = '',
+    sandboxMode: str = '',
+    sandboxNetwork: bool | None = None,
 ) -> WorkbenchSession:
     """Create a new workbench session.
 
@@ -572,12 +586,17 @@ def create_workbench_session(
     _ = task  # accepted for signature parity with prior API
     session_id = _new_session_id('wb')
     now = _now()
+    from app.services.sandbox import DEFAULT_SANDBOX_MODE, normalize_sandbox_mode
+
     session = WorkbenchSession(
         id=session_id,
         title=_default_session_title(),
         provider=provider,
         agentId=agentId,
         guardMode=normalizeGuardMode(guardMode or 'full'),
+        sandboxMode=normalize_sandbox_mode(sandboxMode or DEFAULT_SANDBOX_MODE),
+        sandboxNetwork=bool(sandboxNetwork) if sandboxNetwork is not None else False,
+        workspacePath=str(workspacePath or ''),
         goal=goal,
         createdAt=now,
         updatedAt=now,
@@ -901,6 +920,8 @@ def get_workbench_session_status(session_id: str) -> dict[str, object] | None:
         'sessionId': session_id,
         'status': session.status,
         'guardMode': session.guardMode,
+        'sandboxMode': getattr(session, 'sandboxMode', 'workspace-write') or 'workspace-write',
+        'sandboxNetwork': bool(getattr(session, 'sandboxNetwork', False)),
         # Flat fields used by ApprovalBanner / useSessionStatus (last pending)
         'pendingToken': as_str(pm_dict.get('token')) or None,
         'pendingTool': as_str(pm_dict.get('toolName')) or None,

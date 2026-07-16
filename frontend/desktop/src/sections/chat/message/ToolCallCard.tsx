@@ -101,6 +101,14 @@ export function ToolCallCard({
           </span>
           {tool.status === 'done' && <span className="text-primary/80 text-[12px]">done</span>}
           {tool.status === 'error' && <span className="text-destructive text-[12px]">error</span>}
+          {isCommand && typeof tool.result === 'string' && tool.result.includes('[sandbox:') && (
+            <span
+              className="text-[10px] uppercase tracking-wide text-muted-foreground/80 border border-border/50 rounded px-1"
+              title={tool.result.includes('|unsandboxed]') ? 'Ran outside sandbox (approved)' : 'Ran inside sandbox'}
+            >
+              {tool.result.includes('|unsandboxed]') ? 'unsandboxed' : 'sandboxed'}
+            </span>
+          )}
         </span>
       </DisclosureRow>
       {(() => {

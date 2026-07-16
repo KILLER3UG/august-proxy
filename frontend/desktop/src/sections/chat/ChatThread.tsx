@@ -364,7 +364,25 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const existingId = workbenchSession?.id || activeSession?.workbenchSessionId;
     if (existingId) {
       try {
-        const loaded = await getWorkbenchSession(existingId);
+        let loaded = await getWorkbenchSession(existingId);
+        // Keep sandbox workspace root in sync with the UI folder session.
+        const uiWs = activeSession?.workspacePath || '';
+        if (uiWs && !loaded.workspacePath) {
+          try {
+            const res = await fetch('/api/workbench/sandbox-mode', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: loaded.id,
+                workspacePath: uiWs,
+                sandboxMode: loaded.sandboxMode || 'workspace-write',
+              }),
+            });
+            if (res.ok) loaded = (await res.json()) as typeof loaded;
+          } catch {
+            /* best-effort */
+          }
+        }
         setWorkbenchSession(loaded);
         updateSessionWorkbenchMetadata(sessionId, {
           workbenchSessionId: loaded.id,
@@ -378,10 +396,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
     }
 
+    let sandboxMode = 'workspace-write';
+    let sandboxNetwork: boolean | undefined;
+    try {
+      sandboxMode = localStorage.getItem('august_last_sandbox_mode') || 'workspace-write';
+      if (sandboxMode === 'workspace-write' && localStorage.getItem('august_sandbox_network_default') === '1') {
+        sandboxNetwork = true;
+      }
+    } catch {
+      /* ignore */
+    }
     const created = await createWorkbenchSession({
       provider: modelForRequest?.provider,
       agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
       guardMode: workbenchMode,
+      workspacePath: activeSession?.workspacePath || undefined,
+      sandboxMode,
+      sandboxNetwork,
     });
     setWorkbenchSession(created);
     updateSessionWorkbenchMetadata(sessionId, {

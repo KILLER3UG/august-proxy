@@ -21,7 +21,7 @@ import json
 import logging
 import uuid
 from typing import Callable, cast
-from app.json_narrowing import as_str, as_dict, as_list, as_int
+from app.json_narrowing import as_str, as_dict, as_list, as_int, as_bool
 from app.type_aliases import JsonValue
 from app.services.workbench import sessions as _sessions_mod
 from app.services.workbench.sessions import (
@@ -1673,8 +1673,19 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
 def _mutation_grant_key(toolName: str, args: dict[str, object] | None) -> str:
     """Stable key for once/session/always grants (tool + primary path)."""
     args = args or {}
+    # Sandbox escape grants use a fingerprint path so Once/This chat/Always work.
+    path = as_str(args.get('path'))
+    if path.startswith('sandbox:unsandboxed:') or as_bool(args.get('sandboxEscape')):
+        if path.startswith('sandbox:unsandboxed:'):
+            return f'{toolName}:{path}'
+        try:
+            from app.services.sandbox import unsandboxed_grant_key
+
+            return f'{toolName}:{unsandboxed_grant_key(as_str(args.get("command")))}'
+        except Exception:
+            return f'{toolName}:sandbox:unsandboxed:*'
     path = (
-        as_str(args.get('path'))
+        path
         or as_str(args.get('file_path'))
         or as_str(args.get('filePath'))
         or as_str(args.get('file'))
@@ -1877,6 +1888,28 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
     Returns None if allowed, or a string reason if blocked.
     In ask mode, creates a pending mutation for the ApprovalBanner UI.
     """
+    # Codex read-only sandbox: block mutating file tools. Shell still goes through
+    # run_command soft/OS preflight (which denies redirects / mutating prefixes).
+    sandbox_mode = (getattr(session, 'sandboxMode', None) or 'workspace-write').strip().lower()
+    if sandbox_mode in ('read-only', 'readonly', 'read'):
+        name = (toolName or '').lower()
+        if name in {
+            'write_file',
+            'edit_file',
+            'create_file',
+            'str_replace',
+            'str_replace_editor',
+            'apply_patch',
+            'patch_file',
+            'delete_file',
+            'remove_file',
+            'move_file',
+            'rename_file',
+        }:
+            return (
+                f"Tool '{toolName}' is blocked by read-only sandbox. "
+                'Switch sandbox mode to Workspace or Full access to make changes.'
+            )
     if session.guardMode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
         return (
             f"Tool '{toolName}' is destructive and cannot run in plan mode. "

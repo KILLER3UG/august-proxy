@@ -9,6 +9,7 @@ import type {
   WorkbenchBtwResult,
   WorkbenchEventHandlers,
   WorkbenchGuardMode,
+  WorkbenchSandboxMode,
 } from '@/types/workbench';
 import type { FileAttachment } from '@/types/chat';
 import { workbenchClient } from './workbench/WorkbenchClient';
@@ -17,6 +18,9 @@ export interface CreateWorkbenchSessionParams {
   provider?: string;
   agentId?: string;
   guardMode?: WorkbenchGuardMode;
+  workspacePath?: string;
+  sandboxMode?: WorkbenchSandboxMode | string;
+  sandboxNetwork?: boolean;
 }
 
 export async function setWorkbenchGuardMode(
@@ -24,6 +28,14 @@ export async function setWorkbenchGuardMode(
   guardMode: WorkbenchGuardMode
 ): Promise<WorkbenchSession> {
   return workbenchClient.setGuardMode(sessionId, guardMode);
+}
+
+export async function setWorkbenchSandboxMode(
+  sessionId: string,
+  sandboxMode: WorkbenchSandboxMode | string,
+  sandboxNetwork?: boolean,
+): Promise<WorkbenchSession> {
+  return workbenchClient.setSandboxMode(sessionId, sandboxMode, sandboxNetwork);
 }
 
 export async function confirmWorkbenchMutation(

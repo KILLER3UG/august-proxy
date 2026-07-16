@@ -31,6 +31,9 @@ async def createSession(request: Request):
         guardMode=body.get('guardMode', ''),
         task=body.get('task', ''),
         goal=body.get('goal', ''),
+        workspacePath=body.get('workspacePath', '') or body.get('workspace_path', ''),
+        sandboxMode=body.get('sandboxMode', '') or body.get('sandbox_mode', ''),
+        sandboxNetwork=body.get('sandboxNetwork') if 'sandboxNetwork' in body else body.get('sandbox_network'),
     )
     return session.toDict()
 
@@ -66,7 +69,12 @@ async def createSessionDirect(request: Request):
     """Create a new workbench session."""
     body = await request.json() if request.headers.get('content-type') else {}
     session = wb.createWorkbenchSession(
-        provider=body.get('provider', ''), agentId=body.get('agentId', ''), guardMode=body.get('guardMode', '')
+        provider=body.get('provider', ''),
+        agentId=body.get('agentId', ''),
+        guardMode=body.get('guardMode', ''),
+        workspacePath=body.get('workspacePath', '') or body.get('workspace_path', ''),
+        sandboxMode=body.get('sandboxMode', '') or body.get('sandbox_mode', ''),
+        sandboxNetwork=body.get('sandboxNetwork') if 'sandboxNetwork' in body else body.get('sandbox_network'),
     )
     return session.toDict()
 
@@ -1125,6 +1133,40 @@ async def workbenchDoctor():
             }
         )
 
+    # 5) Agent sandbox backend capability (Codex-like)
+    try:
+        from app.services.sandbox import active_backend, DEFAULT_SANDBOX_MODE
+
+        backend = active_backend()
+        detail_map = {
+            'windows-appcontainer': 'Windows AppContainer isolation',
+            'seatbelt': 'macOS Seatbelt (sandbox-exec)',
+            'landlock': 'Linux Landlock',
+            'bwrap': 'Linux bubblewrap',
+            'soft': 'Soft policy (cwd + network/path guards) — not OS isolation',
+        }
+        checks.append(
+            {
+                'id': 'sandbox',
+                'label': 'Agent sandbox',
+                'ok': True,
+                'detail': f'{detail_map.get(backend, backend)} · default {DEFAULT_SANDBOX_MODE}',
+                'backend': backend,
+                'optional': True,
+            }
+        )
+        ok_count += 1
+    except Exception as exc:
+        checks.append(
+            {
+                'id': 'sandbox',
+                'label': 'Agent sandbox',
+                'ok': False,
+                'detail': str(exc),
+                'optional': True,
+            }
+        )
+
     required = [c for c in checks if not c.get('optional')]
     all_required_ok = all(bool(c.get('ok')) for c in required)
     return {
@@ -1258,6 +1300,62 @@ async def setGuardMode(request: Request):
     except Exception:
         pass
     return session.toDict()
+
+
+async def _apply_sandbox_body(sessionId: str, body: dict) -> dict[str, object]:
+    from datetime import datetime, timezone
+    from app.services.sandbox import normalize_sandbox_mode
+    from app.services.workbench.sessions import save_sessions
+
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    if 'sandboxMode' in body and body.get('sandboxMode') is not None:
+        session.sandboxMode = normalize_sandbox_mode(str(body.get('sandboxMode')))
+    if 'sandboxNetwork' in body:
+        session.sandboxNetwork = bool(body.get('sandboxNetwork'))
+    if 'workspacePath' in body or 'workspace_path' in body:
+        session.workspacePath = str(body.get('workspacePath') or body.get('workspace_path') or '')
+    if session.sandboxMode == 'danger-full-access':
+        session.sandboxNetwork = True
+    session.updatedAt = datetime.now(timezone.utc).isoformat()
+    save_sessions()
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+        from app.services.workbench.sessions import _emit_session_status
+
+        emit_realtime(
+            'session.updated',
+            sessionId=sessionId,
+            sandboxMode=session.sandboxMode,
+            sandboxNetwork=session.sandboxNetwork,
+        )
+        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
+        _emit_session_status(sessionId)
+    except Exception:
+        pass
+    return session.toDict()
+
+
+@router.post('/sandbox-mode')
+async def setSandboxMode(request: Request):
+    """Update Codex-like sandbox mode on a workbench session.
+
+    Body: { sessionId, sandboxMode?, sandboxNetwork? }
+    Modes: read-only | workspace-write | danger-full-access
+    """
+    body = await request.json()
+    sessionId = str(body.get('sessionId') or '')
+    return await _apply_sandbox_body(sessionId, body if isinstance(body, dict) else {})
+
+
+@router.patch('/sessions/{session_id}/sandbox')
+async def patchSessionSandbox(session_id: str, request: Request):
+    """REST alias: PATCH sandbox fields on a session."""
+    body = await request.json()
+    if not isinstance(body, dict):
+        body = {}
+    return await _apply_sandbox_body(session_id, body)
 
 
 @router.post('/btw')

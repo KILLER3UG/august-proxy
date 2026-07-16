@@ -1,10 +1,17 @@
-"""File and shell tool handlers + registration."""
+"""File and shell tool handlers + registration (workspace-bound + sandboxed shell)."""
 
 from __future__ import annotations
+
 import asyncio
-import os
 from pathlib import Path
+
 from app.services import tool_registry
+from app.services.sandbox import (
+    bind_path,
+    policy_from_session,
+    run_sandboxed,
+    unsandboxed_grant_key,
+)
 
 _MAXFileSize = 10 * 1024 * 1024
 _MAXSearchResults = 100
@@ -48,12 +55,43 @@ _ALLOWEDCommandPrefixes = [
     'cd',
     '.',
     './',
+    'pytest',
+    'uv',
+    'make',
+    'go',
+    'deno',
+    'bun',
+    'bash',
+    'zsh',
+    'sh',
+    'pwsh',
+    'powershell',
+    'cmd',
 ]
 
 
+def _session():
+    try:
+        from app.services.workbench.context import currentSessionId
+        from app.services.workbench.sessions import get_workbench_session
+
+        return get_workbench_session(currentSessionId.get())
+    except Exception:
+        return None
+
+
+def _workspace() -> str:
+    session = _session()
+    if session is None:
+        return ''
+    return str(getattr(session, 'workspacePath', '') or '')
+
+
 async def _readFile(path: str) -> str:
-    """Read a file from the filesystem."""
-    filePath = Path(path).resolve()
+    """Read a file from the filesystem (workspace-bound when session has a root)."""
+    filePath, err = bind_path(path, _workspace(), for_write=False)
+    if err or filePath is None:
+        return err or f'Error: Invalid path: {path}'
     if not filePath.exists():
         return f'Error: File not found: {path}'
     if not filePath.is_file():
@@ -72,8 +110,16 @@ async def _readFile(path: str) -> str:
 
 
 async def _writeFile(path: str, content: str) -> str:
-    """Write content to a file."""
-    filePath = Path(path).resolve()
+    """Write content to a file (workspace-bound)."""
+    session = _session()
+    mode = (getattr(session, 'sandboxMode', None) or 'workspace-write') if session else 'workspace-write'
+    if str(mode).lower() in ('read-only', 'readonly', 'read'):
+        return (
+            'Error: Sandbox is read-only. Switch to Workspace or Full access before writing files.'
+        )
+    filePath, err = bind_path(path, _workspace(), for_write=True)
+    if err or filePath is None:
+        return err or f'Error: Invalid path: {path}'
     try:
         filePath.parent.mkdir(parents=True, exist_ok=True)
         import aiofiles
@@ -86,8 +132,10 @@ async def _writeFile(path: str, content: str) -> str:
 
 
 async def _listDirectory(path: str) -> str:
-    """List files and directories."""
-    dirPath = Path(path).resolve()
+    """List files and directories (workspace-bound)."""
+    dirPath, err = bind_path(path, _workspace(), for_write=False)
+    if err or dirPath is None:
+        return err or f'Error: Invalid path: {path}'
     if not dirPath.exists():
         return f'Error: Path not found: {path}'
     if not dirPath.is_dir():
@@ -104,8 +152,13 @@ async def _listDirectory(path: str) -> str:
 
 
 async def _searchFiles(query: str, path: str = '.') -> str:
-    """Search file contents using ripgrep or fallback grep."""
-    searchPath = Path(path).resolve()
+    """Search file contents using ripgrep or fallback grep (workspace-bound)."""
+    ws = _workspace()
+    if path in ('', '.', None):
+        path = ws or '.'
+    searchPath, err = bind_path(str(path), ws, for_write=False)
+    if err or searchPath is None:
+        return err or f'Error: Invalid path: {path}'
     if not searchPath.exists():
         return f'Error: Path not found: {path}'
     try:
@@ -132,8 +185,8 @@ async def _searchFiles(query: str, path: str = '.') -> str:
         return await _pySearchFiles(query, searchPath)
     except asyncio.TimeoutError:
         return 'Error: Search timed out'
-    except Exception as exc:
-        return f'Error searching files: {exc}'
+    except Exception:
+        return await _pySearchFiles(query, searchPath)
 
 
 async def _pySearchFiles(query: str, searchPath: Path) -> str:
@@ -160,42 +213,90 @@ async def _pySearchFiles(query: str, searchPath: Path) -> str:
         return f'Error during search: {exc}'
 
 
+def _queue_sandbox_escape(session: object, command: str, denial: str) -> None:
+    """Create an ApprovalBanner pending mutation for unsandboxed retry."""
+    try:
+        from app.services.workbench.sessions import save_sessions
+        from app.services.workbench.workbench import (
+            _emitSessionStatus,
+            _mutation_preview,
+            createPendingMutation,
+        )
+
+        grant_path = unsandboxed_grant_key(command)
+        args = {
+            'command': command,
+            'sandboxEscape': True,
+            'path': grant_path,
+            'denialReason': denial,
+        }
+        # Avoid duplicate pending cards for the same fingerprint
+        pending = getattr(session, 'pendingMutations', None) or []
+        for pm in pending:
+            if not isinstance(pm, dict):
+                continue
+            if pm.get('toolName') == 'run_command' and (pm.get('args') or {}).get('path') == grant_path:
+                return
+        mutation = createPendingMutation(session, 'run_command', args)  # type: ignore[arg-type]
+        if mutation is not None:
+            mutation['preview'] = (
+                f'Unsandboxed run requested.\nBlocked reason: {denial}\n\n'
+                + _mutation_preview('run_command', args)
+            )
+            mutation['grantKey'] = f'run_command:{grant_path}'
+            mutation['kind'] = 'sandbox_escape'
+            session.status = 'awaiting_approval'  # type: ignore[attr-defined]
+            save_sessions()
+            _emitSessionStatus(session.id)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
 async def _runCommand(command: str) -> str:
-    """Run a shell command with safety checks."""
+    """Run a shell command inside the Codex-like sandbox."""
     firstWord = command.strip().split()[0].lower() if command.strip() else ''
+    if firstWord.endswith('.exe'):
+        firstWord = firstWord[:-4]
     if firstWord not in _ALLOWEDCommandPrefixes and (not command.startswith('./')):
         return f"Error: Command '{firstWord}' is not in the allowed list."
     dangerous = ['rm -rf /', 'rm -rf ~', ':(){ :|:& };:', 'dd if=', '> /dev/', 'mkfs.']
     for pattern in dangerous:
         if pattern in command:
             return f'Error: Command contains dangerous pattern: {pattern}'
-    try:
-        proc = await asyncio.create_subprocess_shell(
-            command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=os.getcwd()
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_MAXCommandTimeout)
-        resultParts = []
-        if stdout:
-            resultParts.append(stdout.decode('utf-8', errors='replace'))
-        if stderr:
-            resultParts.append(f'STDERR:\n{stderr.decode("utf-8", errors="replace")}')
-        if proc.returncode != 0:
-            resultParts.append(f'Exit code: {proc.returncode}')
-            if not resultParts:
-                resultParts.append(f'Command failed with exit code {proc.returncode}')
-        return '\n'.join(resultParts) if resultParts else '(no output)'
-    except asyncio.TimeoutError:
-        return f'Error: Command timed out after {_MAXCommandTimeout}s'
-    except Exception as exc:
-        return f'Error executing command: {exc}'
 
+    session = _session()
+    allow_unsandboxed = False
+    if session is not None:
+        try:
+            from app.services.workbench.workbench import has_tool_grant
+
+            escape_args = {
+                'command': command,
+                'sandboxEscape': True,
+                'path': unsandboxed_grant_key(command),
+            }
+            allow_unsandboxed = has_tool_grant(session, 'run_command', escape_args)
+        except Exception:
+            allow_unsandboxed = False
+
+    policy = policy_from_session(
+        sandbox_mode=getattr(session, 'sandboxMode', None) if session else None,
+        workspace_path=_workspace(),
+        sandbox_network=bool(getattr(session, 'sandboxNetwork', False)) if session else False,
+        allow_unsandboxed=allow_unsandboxed,
+    )
+
+    result = await run_sandboxed(command, policy, timeout=float(_MAXCommandTimeout))
+    if result.denial_reason and session is not None and not allow_unsandboxed:
+        _queue_sandbox_escape(session, command, result.denial_reason)
+    return result.as_tool_text()
 
 
 def register() -> None:
     """Register file and shell tools."""
     tool_registry.register(
         'read_file',
-        'Read a file from the filesystem. Path must be absolute. Max file size ~10 MB.',
+        'Read a file from the filesystem. Path must be absolute (or relative to workspace). Max ~10 MB. Sandboxed to the session workspace when set.',
         _readFile,
         {
             'type': 'object',
@@ -205,7 +306,7 @@ def register() -> None:
     )
     tool_registry.register(
         'write_file',
-        'Write content to a file, overwriting any existing content. Creates parent directories if needed.',
+        'Write content to a file, overwriting any existing content. Creates parent directories if needed. Sandboxed to the session workspace.',
         _writeFile,
         {
             'type': 'object',
@@ -218,7 +319,7 @@ def register() -> None:
     )
     tool_registry.register(
         'list_directory',
-        'List files and directories in a given path (absolute). Output shows dir/file prefix, size, and name.',
+        'List files and directories in a given path (absolute). Output shows dir/file prefix, size, and name. Sandboxed to workspace.',
         _listDirectory,
         {
             'type': 'object',
@@ -228,20 +329,20 @@ def register() -> None:
     )
     tool_registry.register(
         'search_files',
-        'Search file contents using ripgrep or fallback grep. Case-insensitive. Path defaults to current directory.',
+        'Search file contents using ripgrep or fallback grep. Case-insensitive. Path defaults to workspace.',
         _searchFiles,
         {
             'type': 'object',
             'properties': {
                 'query': {'type': 'string', 'description': 'The text to search for.'},
-                'path': {'type': 'string', 'description': 'Directory to search in (default: current).'},
+                'path': {'type': 'string', 'description': 'Directory to search in (default: workspace).'},
             },
             'required': ['query'],
         },
     )
     tool_registry.register(
         'run_command',
-        'Run a shell command. Allowed commands: git, python, npm, node, npx, ls, cat, less, head, tail, wc, echo, mkdir, cp, mv, rm, rmdir, chmod, curl, wget, jq, sed, awk, grep, sort, uniq, date, whoami, pwd, cd, source, export, which, make, cargo, pip, deno, bun, go, rustc, clang, gcc, bash, zsh, sh. Timeout 300s.',
+        'Run a shell command inside the session sandbox (workspace-write by default, network off). Allowed prefixes include git, python, npm, node, pytest, uv, … Timeout 300s.',
         _runCommand,
         {
             'type': 'object',

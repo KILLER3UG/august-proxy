@@ -42,6 +42,7 @@ import { UiDesignerSection } from './UiDesignerSection';
 import { ToolGrantsSection } from './ToolGrantsSection';
 import { KanbanSection } from './KanbanSection';
 import { PythonSandboxSection } from './PythonSandboxSection';
+import { AgentSandboxSection } from './AgentSandboxSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -137,6 +138,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'tool-grants': ToolGrantsWrapper,
   'agent-board': KanbanWrapper,
   'python-sandbox': PythonSandboxWrapper,
+  'agent-sandbox': AgentSandboxWrapper,
 };
 
 function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
@@ -163,6 +165,7 @@ function PlansWrapper() { return <PlansSection />; }
 function ToolGrantsWrapper() { return <ToolGrantsSection />; }
 function KanbanWrapper() { return <KanbanSection />; }
 function PythonSandboxWrapper() { return <PythonSandboxSection />; }
+function AgentSandboxWrapper() { return <AgentSandboxSection />; }
 
 /** Placeholder for sections not yet wired. With all 10 entries now
  *  mapped, this only renders for genuinely-unknown :section params. */

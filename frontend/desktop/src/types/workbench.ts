@@ -31,6 +31,7 @@ export interface WorkbenchGoal {
 }
 
 export type WorkbenchGuardMode = 'plan' | 'full' | 'ask';
+export type WorkbenchSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 
 export interface WorkbenchSession {
   id: string;
@@ -52,6 +53,10 @@ export interface WorkbenchSession {
   updatedAt: string;
   todos: WorkbenchTodo[];
   guardMode: WorkbenchGuardMode;
+  /** Codex-like sandbox axis (orthogonal to guardMode). */
+  sandboxMode?: WorkbenchSandboxMode | string;
+  sandboxNetwork?: boolean;
+  workspacePath?: string;
 }
 
 export interface WorkbenchAgent {

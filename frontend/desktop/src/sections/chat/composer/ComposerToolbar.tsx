@@ -4,12 +4,17 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { Mic, Send, Square } from 'lucide-react';
 import { updateSessionModel } from '@/store/sessions';
-import { setWorkbenchGuardMode } from '@/api/workbench';
+import { setWorkbenchGuardMode, setWorkbenchSandboxMode } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import {
-  WORKBENCH_GUARD_MODES,
+  WorkbenchModeSelector,
   type WorkbenchGuardMode,
 } from '@/components/chat/WorkbenchModeSelector';
+import {
+  WORKBENCH_SANDBOX_MODES,
+  normalizeSandboxMode,
+  type WorkbenchSandboxMode,
+} from '@/components/chat/SandboxModeSelector';
 import { ProjectRulesBadge } from '@/components/chat/ProjectRulesBadge';
 import { ContextRing, type ContextBreakdown } from '../ChatComposer';
 import type { ModelItem } from '../model-display';
@@ -135,11 +140,40 @@ export function ComposerToolbar({
     }
   };
 
-  const modeOptions = Object.values(WORKBENCH_GUARD_MODES);
+  const sandboxMode = normalizeSandboxMode(workbenchSession?.sandboxMode);
+  const handleSandboxChange = (mode: WorkbenchSandboxMode) => {
+    localStorage.setItem('august_last_sandbox_mode', mode);
+    let network: boolean | undefined;
+    try {
+      if (mode === 'workspace-write' && localStorage.getItem('august_sandbox_network_default') === '1') {
+        network = true;
+      }
+    } catch {
+      /* ignore */
+    }
+    if (workbenchSession) {
+      setWorkbenchSession({
+        ...workbenchSession,
+        sandboxMode: mode,
+        sandboxNetwork: mode === 'danger-full-access' ? true : network ?? workbenchSession.sandboxNetwork,
+      });
+    }
+    if (workbenchSession?.id) {
+      void setWorkbenchSandboxMode(workbenchSession.id, mode, network)
+        .then((updated) => {
+          if (updated) setWorkbenchSession(updated as typeof workbenchSession);
+        })
+        .catch((error) => {
+          console.warn('[ChatThread] Failed to persist sandbox mode:', error);
+        });
+    }
+  };
+
+  const sandboxOptions = Object.values(WORKBENCH_SANDBOX_MODES);
 
   return (
     <div className="flex items-center justify-between gap-1.5 px-2 pb-2 pt-0.5">
-      <div className="flex items-center gap-0.5 min-w-0">
+      <div className="flex items-center gap-1 min-w-0">
         <ComposerActionsMenu
           open={actionsOpen}
           pos={actionsPos}
@@ -152,22 +186,30 @@ export function ComposerToolbar({
             <>
               <div className="px-0.5 pb-0.5">
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold mb-1 px-1.5">
-                  Make changes
+                  Tool reach
                 </div>
-                {modeOptions.map((option) => (
+                <p className="px-1.5 pb-1.5 text-[10px] leading-snug text-muted-foreground">
+                  Not the same as agent mode. Agent mode asks “should August act?” — tool reach
+                  limits <span className="text-foreground/80">where</span> shell/files can go
+                  (project only by default).
+                </p>
+                {sandboxOptions.map((option) => (
                   <button
                     key={option.id}
                     type="button"
-                    onClick={() => handleModeChange(option.id)}
+                    onClick={() => handleSandboxChange(option.id)}
                     className={cn(
                       'w-full text-left px-2 py-1.5 rounded-md text-xs transition',
-                      workbenchMode === option.id
+                      sandboxMode === option.id
                         ? 'bg-primary/10 text-primary'
                         : 'hover:bg-muted text-foreground',
                     )}
                     title={option.description}
                   >
                     <span className="font-medium">{option.label}</span>
+                    <span className="block text-[10px] text-muted-foreground mt-0.5 leading-snug">
+                      {option.description}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -195,6 +237,7 @@ export function ComposerToolbar({
             </>
           }
         />
+        <WorkbenchModeSelector selectedMode={workbenchMode} onChange={handleModeChange} />
       </div>
 
       <div className="flex items-center gap-1 shrink-0">

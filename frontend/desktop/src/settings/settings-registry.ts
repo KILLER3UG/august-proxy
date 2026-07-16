@@ -42,6 +42,7 @@ import {
   Plug,
   Radio,
   Search as SearchIcon,
+  Shield,
   ShieldCheck,
   SlidersHorizontal,
   TerminalSquare,
@@ -292,13 +293,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['kanban'],
   },
   {
+    id: 'agent-sandbox',
+    label: 'Tool Reach',
+    description:
+      'Where shell/files can go (project only by default). Separate from agent mode approvals.',
+    icon: Shield,
+    category: 'tools',
+    tier: 'basic',
+    keywords: ['sandbox', 'seatbelt', 'landlock', 'appcontainer', 'isolation', 'workspace-write', 'reach'],
+    legacyAliases: ['codex-sandbox', 'agent-sandbox'],
+  },
+  {
     id: 'python-sandbox',
     label: 'Python Sandbox',
     description: 'Safe Python cell with no network, banned imports, and timeout.',
     icon: Code2,
     category: 'tools',
     tier: 'advanced',
-    keywords: ['python', 'sandbox', 'cell', 'exec'],
+    keywords: ['python', 'cell', 'exec'],
     legacyAliases: ['sandbox'],
   },
 

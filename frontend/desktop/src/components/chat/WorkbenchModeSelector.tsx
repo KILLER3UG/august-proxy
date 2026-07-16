@@ -28,19 +28,22 @@ export const WORKBENCH_GUARD_MODES = {
   plan: {
     id: 'plan',
     label: 'Plan only',
-    description: 'Don’t change files yet — August investigates, then shows a plan for you to approve.',
+    description:
+      'Agent mode: don’t change files yet — August investigates, then shows a plan for you to approve.',
     agentId: 'plan' as const,
   },
   ask: {
     id: 'ask',
     label: 'Ask before changes',
-    description: 'August asks you before changing files or running risky commands.',
+    description:
+      'Agent mode: August asks you before changing files or running risky commands. (Separate from tool reach / sandbox.)',
     agentId: 'build' as const,
   },
   full: {
     id: 'full',
     label: 'Make changes',
-    description: 'August can edit files and run tools as it works. You can still Stop anytime.',
+    description:
+      'Agent mode: August can edit and run tools without asking each time. You can still Stop anytime.',
     agentId: 'build' as const,
   },
 } as const satisfies Record<WorkbenchGuardMode, WorkbenchGuardModeConfig>;
@@ -69,7 +72,7 @@ export function WorkbenchModeSelector({ selectedMode, onChange, className }: Wor
   // Position in viewport coordinates for the portaled panel. Computed from
   // the trigger's rect whenever the dropdown opens or the page scrolls /
   // resizes while it's open.
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   useEffect(() => {
     if (!open) return;
     const compute = () => {
@@ -77,10 +80,16 @@ export function WorkbenchModeSelector({ selectedMode, onChange, className }: Wor
       const panel = panelRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      const panelHeight = panel?.offsetHeight || 160;
+      const panelHeight = panel?.offsetHeight || 200;
+      const panelWidth = panel?.offsetWidth || 256;
       const top = Math.max(8, r.top - panelHeight - 4);
-      const right = Math.max(8, window.innerWidth - r.right);
-      setPos({ top, right });
+      // Prefer aligning to the trigger’s left so the menu stays near the chip
+      // when it sits on the left side of the composer.
+      let left = r.left;
+      if (left + panelWidth > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - panelWidth - 8);
+      }
+      setPos({ top, left });
     };
     requestAnimationFrame(compute);
     window.addEventListener('scroll', compute, true);
@@ -114,10 +123,17 @@ export function WorkbenchModeSelector({ selectedMode, onChange, className }: Wor
   const panelContent = open && pos && (
     <div
       ref={panelRef}
-      className="fixed z-50 w-56 bg-card border border-border rounded-xl shadow-2xl p-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
-      style={{ top: pos.top, right: pos.right }}
+      className="fixed z-50 w-64 bg-card border border-border rounded-xl shadow-2xl p-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
+      style={{ top: pos.top, left: pos.left }}
       role="listbox"
+      data-testid="agent-mode-menu"
     >
+      <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
+        Agent mode
+      </div>
+      <p className="px-2 pb-1.5 text-[10px] leading-snug text-muted-foreground">
+        Should August act? Approvals only — not the same as tool reach (sandbox).
+      </p>
       {options.map((option) => (
         <button
           key={option.id}
@@ -147,10 +163,12 @@ export function WorkbenchModeSelector({ selectedMode, onChange, className }: Wor
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="h-8 px-2 py-1 rounded-md text-[11px] bg-muted hover:bg-muted/70 text-foreground border border-border/50 capitalize"
+        className="h-8 px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted hover:bg-muted/70 text-foreground border border-border/50"
         title={guard.description}
+        aria-label={`Agent mode: ${guard.label}`}
         aria-expanded={open}
         aria-haspopup="listbox"
+        data-testid="agent-mode-chip"
       >
         {guard.label}
       </button>

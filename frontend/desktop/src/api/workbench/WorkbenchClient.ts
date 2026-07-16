@@ -16,6 +16,9 @@ export type CreateSessionParams = {
   provider?: string;
   agentId?: string;
   guardMode?: WorkbenchGuardMode;
+  workspacePath?: string;
+  sandboxMode?: string;
+  sandboxNetwork?: boolean;
 };
 
 export type QueuedUserMessage = {
@@ -70,6 +73,9 @@ export class WorkbenchClient {
         provider: params.provider || '',
         agentId: params.agentId || 'build',
         guardMode: params.guardMode,
+        workspacePath: params.workspacePath || '',
+        sandboxMode: params.sandboxMode || '',
+        sandboxNetwork: params.sandboxNetwork,
       }),
     );
   }
@@ -94,6 +100,21 @@ export class WorkbenchClient {
     return wbFetch<WorkbenchSession>(
       '/api/workbench/guard-mode',
       jsonInit('POST', { sessionId, guardMode }),
+    );
+  }
+
+  async setSandboxMode(
+    sessionId: string,
+    sandboxMode: string,
+    sandboxNetwork?: boolean,
+    workspacePath?: string,
+  ): Promise<WorkbenchSession> {
+    const body: Record<string, unknown> = { sessionId, sandboxMode };
+    if (sandboxNetwork !== undefined) body.sandboxNetwork = sandboxNetwork;
+    if (workspacePath !== undefined) body.workspacePath = workspacePath;
+    return wbFetch<WorkbenchSession>(
+      '/api/workbench/sandbox-mode',
+      jsonInit('POST', body),
     );
   }
 

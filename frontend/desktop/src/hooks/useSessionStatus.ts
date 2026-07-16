@@ -25,6 +25,8 @@ export type SessionStatus = {
     pendingCreatedAt: number | string | null;
     updatedAt: string | null;
     guardMode: 'plan' | 'ask' | 'full' | string;
+    sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access' | string;
+    sandboxNetwork?: boolean;
     approved: boolean;
     pendingMutation?: PendingMutationItem | null;
     /** Full batch for multi-file pre-apply cards */
