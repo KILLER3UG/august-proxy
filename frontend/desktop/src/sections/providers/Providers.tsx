@@ -350,10 +350,10 @@ export function Providers() {
                         {saveMsg.text}
                       </p>
                     )}
-                    {healthLoaded && healthByProvider[p.id] && (
+                    {healthLoaded && healthByProvider.get(p.id) && (
                       <p className="text-[11px] text-muted-foreground flex items-center gap-1">
                         <ShieldCheck className="size-3" />
-                        Health: {String(healthByProvider[p.id]?.status ?? 'unknown')}
+                        Health: {String(healthByProvider.get(p.id)?.status ?? 'unknown')}
                       </p>
                     )}
                     {p.signupUrl && (

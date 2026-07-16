@@ -11,8 +11,15 @@ import {
 } from '@/api/api-client';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 
+type LiveTextFieldKey =
+  | 'sttProvider'
+  | 'sttModel'
+  | 'ttsProvider'
+  | 'ttsModel'
+  | 'ttsVoice';
+
 interface Field {
-  key: keyof LiveConfig;
+  key: LiveTextFieldKey;
   label: string;
   hint: string;
   inputType: 'select' | 'text';
