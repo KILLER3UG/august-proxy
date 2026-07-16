@@ -62,6 +62,39 @@ def test_reject_clears_pending():
     assert len(s.pendingMutations) == 0
 
 
+def test_multi_pending_keeps_awaiting_after_one_approve():
+    """Approving one of several mutations must not hide the rest of the stack."""
+    s = create_workbench_session(guardMode='ask')
+    s.guardMode = 'ask'
+    wb._checkToolGuard(s, 'write_file', {'path': '/tmp/a.txt', 'content': 'a'})
+    wb._checkToolGuard(s, 'write_file', {'path': '/tmp/b.txt', 'content': 'b'})
+    wb._checkToolGuard(s, 'write_file', {'path': '/tmp/c.txt', 'content': 'c'})
+    assert len(s.pendingMutations) == 3
+    assert s.status == 'awaiting_approval'
+    first = s.pendingMutations[0]['token']
+    result = wb.consumePendingMutation(first, reject=False, scope='once')
+    assert result is not None
+    assert result['status'] == 'approved'
+    assert result.get('remainingPending') == 2
+    assert len(s.pendingMutations) == 2
+    assert s.status == 'awaiting_approval'
+    # Clear the rest
+    while s.pendingMutations:
+        tok = s.pendingMutations[0]['token']
+        wb.consumePendingMutation(tok, reject=True)
+    assert s.status == 'idle'
+
+
+def test_submit_clarify_merges_stacked_questions():
+    s = create_workbench_session()
+    wb.submitClarify(s, {'question': 'First?', 'choices': ['A', 'B']})
+    wb.submitClarify(s, {'question': 'Second?', 'choices': ['C']})
+    qs = (s.clarify or {}).get('questions') or []
+    assert len(qs) == 2
+    assert qs[0]['question'] == 'First?'
+    assert qs[1]['question'] == 'Second?'
+
+
 def test_approve_returns_args_for_pre_apply():
     s = create_workbench_session(guardMode='ask')
     s.guardMode = 'ask'

@@ -119,6 +119,66 @@ async def _deleteSession(sessionId: str) -> str:
         return f'Error deleting session {sessionId}: {exc}'
 
 
+def _coerce_session_ids(sessionIds: object = None, sessionId: str = '') -> list[str]:
+    """Accept sessionIds array, JSON string, comma-separated, or a single sessionId."""
+    ids: list[str] = []
+    if isinstance(sessionIds, list):
+        ids = [str(x).strip() for x in sessionIds if str(x).strip()]
+    elif isinstance(sessionIds, str) and sessionIds.strip():
+        raw = sessionIds.strip()
+        if raw.startswith('['):
+            try:
+                import json
+
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    ids = [str(x).strip() for x in parsed if str(x).strip()]
+            except Exception:
+                ids = []
+        if not ids:
+            ids = [p.strip() for p in raw.replace('\n', ',').split(',') if p.strip()]
+    if not ids and (sessionId or '').strip():
+        ids = [sessionId.strip()]
+    # Dedupe, preserve order
+    seen: set[str] = set()
+    out: list[str] = []
+    for sid in ids:
+        if sid in seen:
+            continue
+        seen.add(sid)
+        out.append(sid)
+    return out
+
+
+async def _deleteSessions(sessionIds: object = None, sessionId: str = '') -> str:
+    """Bulk-delete chat sessions. Prefer this over many delete_session calls."""
+    ids = _coerce_session_ids(sessionIds, sessionId)
+    if not ids:
+        return 'Error: sessionIds is required (array of session IDs to delete).'
+    deleted: list[str] = []
+    missing: list[str] = []
+    errors: list[str] = []
+    msg_total = 0
+    for sid in ids:
+        try:
+            result = _purge_session_everywhere(sid)
+            if result.get('ok'):
+                deleted.append(sid)
+                msg_total += int(result.get('messages') or 0)
+            else:
+                missing.append(sid)
+        except Exception as exc:
+            errors.append(f'{sid}: {exc}')
+    parts = [f'Deleted {len(deleted)}/{len(ids)} session(s) (+ {msg_total} message(s)).']
+    if deleted:
+        parts.append('Deleted: ' + ', '.join(deleted[:40]) + ('…' if len(deleted) > 40 else ''))
+    if missing:
+        parts.append('Not found: ' + ', '.join(missing[:20]))
+    if errors:
+        parts.append('Errors: ' + '; '.join(errors[:10]))
+    return ' '.join(parts)
+
+
 async def _renameSession(sessionId: str = '', title: str = '') -> str:
     """Rename a chat session so the sidebar shows a clear human title."""
     from app.services.workbench.sessions import rename_workbench_session, get_workbench_session
@@ -261,12 +321,39 @@ def register() -> None:
     )
     tool_registry.register(
         'delete_session',
-        'Delete a chat session by its session ID (e.g. wb_20260715_143052_a1b2c3). Cascades: messages, timeline entries, usage, topics, and other dependent rows are deleted first so foreign keys cannot block the delete. Use brain_query(store=sessions) to list sessions first. IMPORTANT: Before calling this tool, list the sessions, present to the user exactly which session(s) you intend to delete, and wait for explicit user confirmation ("yes", "go ahead", "delete it") before proceeding. Never delete without confirmation.',
+        'Delete a single chat session by its session ID (e.g. wb_20260715_143052_a1b2c3). '
+        'For multiple sessions use delete_sessions (bulk) instead of calling this repeatedly. '
+        'Cascades messages and dependent rows. Use brain_query(store=sessions) to list first. '
+        'IMPORTANT: Confirm with the user before deleting.',
         _deleteSession,
         {
             'type': 'object',
             'properties': {'sessionId': {'type': 'string', 'description': 'The session ID to delete.'}},
             'required': ['sessionId'],
+        },
+    )
+    tool_registry.register(
+        'delete_sessions',
+        'Bulk-delete multiple chat sessions in one call. Pass sessionIds as an array of IDs '
+        '(e.g. from brain_query(store=sessions)). Prefer this over many delete_session calls. '
+        'Cascades messages and dependent rows for each ID. '
+        'IMPORTANT: List the exact sessions to the user and wait for explicit confirmation '
+        'before calling. Never bulk-delete without confirmation.',
+        _deleteSessions,
+        {
+            'type': 'object',
+            'properties': {
+                'sessionIds': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': 'Session IDs to delete (e.g. ["wb_…", "wb_…"]).',
+                },
+                'sessionId': {
+                    'type': 'string',
+                    'description': 'Optional single ID fallback if sessionIds is omitted.',
+                },
+            },
+            'required': ['sessionIds'],
         },
     )
     tool_registry.register(

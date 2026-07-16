@@ -239,7 +239,10 @@ export function MutationDiffCards({
     return [];
   }, [status]);
 
-  if (status?.status !== 'awaiting_approval' || items.length === 0) return null;
+  // Show whenever there are pending tokens — do not require status ===
+  // awaiting_approval, or a brief idle flicker after approving one of many
+  // will hide the rest of the stack.
+  if (items.length === 0) return null;
 
   // Single non-file mutation: keep one card; multi-file batches get a header.
   // Width/centering is owned by the chat footer (composer slot).

@@ -558,23 +558,28 @@ async def respondMutation(request: Request):
             except Exception:
                 pass
 
+    remaining = int(result.get('remainingPending') or 0)
+    next_status = 'awaiting_approval' if remaining > 0 else 'idle'
     try:
         from app.services.realtime_bus import emit_invalidate, emit_realtime
 
         emit_realtime(
             'session.updated',
             sessionId=session_id,
-            status='idle',
+            status=next_status,
             mutation=result.get('status'),
             executed=bool(result.get('executed')),
+            remainingPending=remaining,
         )
         emit_invalidate('session-status', 'workbench-session', session_id=session_id)
     except Exception:
         pass
 
-    # After accept (+ execute), continue so the model sees the real result.
+    # After accept (+ execute), continue so the model sees the real result —
+    # but only once the whole approval stack is cleared. Continuing mid-stack
+    # hides remaining MutationDiffCards.
     # On reject, optionally notify so the model does not assume the change landed.
-    if do_continue and session_id:
+    if do_continue and session_id and remaining <= 0:
         existing = _activeStreams.get(session_id)
         if existing and not existing.done():
             # Stream still running — grant/result will apply on next iteration if any.

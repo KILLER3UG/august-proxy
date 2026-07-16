@@ -1973,30 +1973,65 @@ def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> 
     a question with up to 5 numbered choices plus a free-text "Something
     else" input, then feeds the user's answer back into the model as a
     queued user message.
+
+    Multiple ``ask_clarify`` / ``submit_clarify`` calls in one turn append
+    questions instead of overwriting — same class of bug as multi-approvals
+    only showing the first card.
     """
     MAX_CLARIFY_CHOICES = 5
     if not isinstance(clarifyData, dict):
         clarifyData = {}
-    questions = clarifyData.get('questions')
-    if isinstance(questions, list) and questions:
-        normalized: list[dict[str, object]] = []
-        for q in questions:
-            if not isinstance(q, dict):
-                continue
-            item: dict[str, object] = {'question': str(q.get('question', ''))}
-            rawChoices = q.get('choices') or []
-            if isinstance(rawChoices, list):
-                item['choices'] = [str(c) for c in rawChoices[:MAX_CLARIFY_CHOICES]]
-            normalized.append(item)
-        payload: dict[str, object] = {'questions': normalized}
-    else:
+
+    def _normalize_questions(raw: object) -> list[dict[str, object]]:
+        out: list[dict[str, object]] = []
+        if isinstance(raw, list) and raw:
+            for q in raw:
+                if not isinstance(q, dict):
+                    continue
+                item: dict[str, object] = {'question': str(q.get('question', ''))}
+                raw_choices = q.get('choices') or []
+                if isinstance(raw_choices, list):
+                    item['choices'] = [str(c) for c in raw_choices[:MAX_CLARIFY_CHOICES]]
+                out.append(item)
+            return out
+        return []
+
+    incoming = _normalize_questions(clarifyData.get('questions'))
+    if not incoming:
         question = clarifyData.get('question') or ''
-        rawChoices = clarifyData.get('choices') or []
-        choices = [str(c) for c in rawChoices[:MAX_CLARIFY_CHOICES]] if isinstance(rawChoices, list) else []
-        payload = {'question': str(question), 'choices': choices}
-    contextSummary = clarifyData.get('contextSummary')
-    if contextSummary:
-        payload['contextSummary'] = str(contextSummary)
+        raw_choices = clarifyData.get('choices') or []
+        choices = (
+            [str(c) for c in raw_choices[:MAX_CLARIFY_CHOICES]]
+            if isinstance(raw_choices, list)
+            else []
+        )
+        if str(question).strip() or choices:
+            incoming = [{'question': str(question), 'choices': choices}]
+
+    # Merge with any unanswered questions already on the session.
+    existing_raw = as_dict(session.clarify) if session.clarify is not None else {}
+    existing = _normalize_questions(existing_raw.get('questions'))
+    if not existing and (existing_raw.get('question') or existing_raw.get('choices')):
+        existing = [
+            {
+                'question': str(existing_raw.get('question') or ''),
+                'choices': (
+                    [str(c) for c in (existing_raw.get('choices') or [])[:MAX_CLARIFY_CHOICES]]
+                    if isinstance(existing_raw.get('choices'), list)
+                    else []
+                ),
+            }
+        ]
+
+    merged = existing + incoming
+    # Always prefer the multi-question shape so stacked clarify calls render
+    # as a pager instead of silently replacing the previous question.
+    payload: dict[str, object] = (
+        {'questions': merged} if merged else {'question': '', 'choices': []}
+    )
+    context_summary = clarifyData.get('contextSummary') or existing_raw.get('contextSummary')
+    if context_summary:
+        payload['contextSummary'] = str(context_summary)
     session.clarify = payload
     session.updatedAt = _now()
     _emitSessionStatus(session.id)
@@ -2125,8 +2160,13 @@ def consumePendingMutation(
             args = as_dict(pm.get('args')) if pm.get('args') is not None else {}
             preview = as_str(pm.get('preview'))
             session.pendingMutations.pop(i)
+            # Keep awaiting_approval while more mutations remain — otherwise the
+            # UI hides the rest of the stack after the first Accept/Reject.
+            still_pending = any(
+                isinstance(m, dict) and m.get('token') for m in session.pendingMutations
+            )
+            session.status = 'awaiting_approval' if still_pending else 'idle'
             if reject:
-                session.status = 'idle'
                 saveSessions()
                 _emitSessionStatus(session.id)
                 return {
@@ -2135,9 +2175,9 @@ def consumePendingMutation(
                     'toolName': tool_name,
                     'args': args,
                     'preview': preview,
+                    'remainingPending': len(session.pendingMutations),
                 }
             add_tool_grant(session, tool_name, args, scope=scope)
-            session.status = 'idle'
             saveSessions()
             _emitSessionStatus(session.id)
             return {
@@ -2148,6 +2188,7 @@ def consumePendingMutation(
                 'preview': preview,
                 'scope': (scope or 'once').strip().lower(),
                 'grantKey': _mutation_grant_key(tool_name, args),
+                'remainingPending': len(session.pendingMutations),
             }
     return None
 
@@ -2258,6 +2299,9 @@ def listProxyCapabilities() -> dict[str, object]:
             'update_state',
             'write_scratchpad',
             'delete_memory',
+            'delete_session',
+            'delete_sessions',
+            'delete_folder',
             'submit_plan',
             'approve_plan',
             'reject_plan',

@@ -215,11 +215,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Command / mutation pre-apply — replaces the composer until Accept/Reject.
   const workbenchSessionId = workbenchSession?.id ?? null;
   const { data: sessionStatus } = useSessionStatus(workbenchSessionId, 2000);
+  // Keep the approval banner up whenever tokens remain — do not require
+  // status === awaiting_approval alone (multi-approve used to clear status
+  // after the first Accept and hide the rest of the stack).
   const approvalPending =
     !!workbenchSessionId &&
-    sessionStatus?.status === 'awaiting_approval' &&
-    (!!sessionStatus.pendingToken ||
-      (Array.isArray(sessionStatus.pendingMutations) &&
+    (!!sessionStatus?.pendingToken ||
+      (Array.isArray(sessionStatus?.pendingMutations) &&
         sessionStatus.pendingMutations.some((m) => !!m?.token)));
 
   const [effort, setEffort] = useState<'low' | 'medium' | 'high' | 'max'>(() => {

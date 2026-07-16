@@ -88,13 +88,25 @@ export function useLiveSession(): UseLiveSession {
   }, []);
 
   const approve = useCallback((id: string) => {
-    setPendingMutations((prev) => prev.filter((m) => m.id !== id));
-    setState((s) => (s === 'awaiting-approval' ? 'thinking' : s));
+    setPendingMutations((prev) => {
+      const next = prev.filter((m) => m.id !== id);
+      setState((s) => {
+        if (s !== 'awaiting-approval') return s;
+        return next.length > 0 ? 'awaiting-approval' : 'thinking';
+      });
+      return next;
+    });
   }, []);
 
   const deny = useCallback((id: string) => {
-    setPendingMutations((prev) => prev.filter((m) => m.id !== id));
-    setState((s) => (s === 'awaiting-approval' ? 'thinking' : s));
+    setPendingMutations((prev) => {
+      const next = prev.filter((m) => m.id !== id);
+      setState((s) => {
+        if (s !== 'awaiting-approval') return s;
+        return next.length > 0 ? 'awaiting-approval' : 'thinking';
+      });
+      return next;
+    });
   }, []);
 
   const reset = useCallback(() => stop(), [stop]);

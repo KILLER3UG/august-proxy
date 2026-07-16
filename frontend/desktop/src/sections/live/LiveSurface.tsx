@@ -148,13 +148,23 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
             </button>
           )}
 
-          {session.pendingMutations[0] && (
-            <LiveApprovalCard
-              mutation={session.pendingMutations[0]}
-              onApprove={session.approve}
-              onDeny={session.deny}
-              onVoiceConfirm={session.approve}
-            />
+          {session.pendingMutations.length > 0 && (
+            <div className="flex w-full max-w-lg flex-col gap-2">
+              {session.pendingMutations.length > 1 && (
+                <p className="text-center text-xs text-warning">
+                  {session.pendingMutations.length} changes need approval
+                </p>
+              )}
+              {session.pendingMutations.map((mutation) => (
+                <LiveApprovalCard
+                  key={mutation.id}
+                  mutation={mutation}
+                  onApprove={session.approve}
+                  onDeny={session.deny}
+                  onVoiceConfirm={session.approve}
+                />
+              ))}
+            </div>
           )}
         </main>
       </div>
