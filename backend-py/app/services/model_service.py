@@ -19,6 +19,7 @@ import httpx
 from app.config import settings
 from app.json_narrowing import as_str, as_list, as_dict, as_int
 from app.providers.clients import getClient
+from app.services.workbench.providers import supports_thinking
 
 _modelCache: list[dict[str, object]] | None = None
 _modelCacheAt: float = 0
@@ -202,11 +203,21 @@ async def _aggregateModels() -> list[dict[str, object]]:
                 continue
             for m_raw in as_list(entry.get('models'), []):
                 m = as_dict(m_raw)
-                import re
-
                 mid = as_str(m['id'])
-                reasoning = m.get('reasoning', False) or bool(
-                    re.search('\\b(o1|o3|reasoner|thinking|reasoning)\\b', mid, re.IGNORECASE)
+                # `supports_thinking` is the same capability check the request
+                # path uses to decide whether to attach Anthropic-style
+                # extended-thinking params — it reads the provider's
+                # `modelProfiles` (exact id, longest-prefix, or wildcard `*`
+                # claims). Falling back to a bare id-keyword regex (below)
+                # left every reasoning-capable model whose id doesn't literally
+                # contain "o1"/"o3"/"reasoner"/"thinking"/"reasoning" (e.g.
+                # `claude-sonnet-4-7`, most Anthropic/OpenAI models configured
+                # via `modelProfiles`) reported as non-reasoning, which
+                # permanently disabled the Thinking toggle in the UI for them.
+                reasoning = (
+                    bool(m.get('reasoning', False))
+                    or supports_thinking(entry, mid)
+                    or bool(re.search('\\b(o1|o3|reasoner|thinking|reasoning)\\b', mid, re.IGNORECASE))
                 )
                 allModels.append(
                     {

@@ -22,6 +22,10 @@ const SUBAGENT_TOOL_NAMES = new Set([
   'august__spawn_subagent',
   'august_spawn_subagent',
   'workbench_spawn_subagent',
+  // Registered bare (no `august__`/`workbench_` prefix) in
+  // `agent_tools.py` / `spawn_subagents_tool.py`.
+  'spawn_subagent',
+  'spawn_subagents',
   'invoke_subagent',
   'august__run_team',
   'workbench_run_team',
@@ -58,14 +62,14 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
   const output = tool.summary ?? '';
 
   return (
-    <div className="mt-1.5 w-full max-w-2xl rounded-lg border border-white/[0.05] bg-white/[0.015] px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[11px] leading-5 min-w-0">
-        <span className="font-semibold text-info">{role}</span>
-        <span className="text-muted-foreground/60 shrink-0">agent</span>
+    <div className="mt-1.5 w-full max-w-2xl">
+      <div className="flex items-center gap-1.5 text-[12px] leading-5 min-w-0">
+        <span className="text-info/80">SubAgent</span>
+        <span className="text-foreground font-semibold">{role}</span>
         {prompt && (
           <>
             <span className="text-muted-foreground/40 shrink-0">·</span>
-            <span className="min-w-0 flex-1 truncate text-muted-foreground/80" title={prompt}>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground/70" title={prompt}>
               {prompt}
             </span>
           </>
@@ -74,7 +78,7 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
 
       <div className="mt-2 space-y-2">
         {prompt && (
-          <div className="rounded-md border border-white/[0.05] bg-white/[0.02] px-2.5 py-2">
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto">
             <div className="mb-1 text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/55">
               Prompt
             </div>
@@ -85,7 +89,7 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
         )}
 
         {output && (
-          <div className="rounded-md border border-white/[0.05] bg-white/[0.02] px-2.5 py-2">
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto">
             <div className="mb-1 text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/55">
               Subagent output
             </div>

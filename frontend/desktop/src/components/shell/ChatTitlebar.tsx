@@ -60,9 +60,18 @@ export function ChatTitlebar({
   useEffect(() => {
     if (!overflowOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
-        setOverflowOpen(false);
-      }
+      const target = e.target as Node;
+      if (overflowRef.current && overflowRef.current.contains(target)) return;
+      // The Brain popup (BrainIndicator, rendered inside this menu) is
+      // portaled to `document.body` so its `position: fixed` escapes
+      // transformed ancestors — meaning it lives OUTSIDE `overflowRef`'s
+      // DOM subtree even though it's logically inside this dropdown.
+      // Without this check, any click inside the popup (switching tabs,
+      // dragging, resizing) reads as an "outside click" here, closes this
+      // menu, and unmounts BrainIndicator — silently yanking the popup
+      // away mid-interaction.
+      if (target instanceof Element && target.closest('[data-brain-popup-root]')) return;
+      setOverflowOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOverflowOpen(false);

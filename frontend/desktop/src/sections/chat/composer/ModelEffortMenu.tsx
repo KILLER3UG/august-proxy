@@ -94,7 +94,6 @@ export function ModelEffortMenu({
   thinkingEnabled: boolean;
   onThinkingChange: (v: boolean) => void;
 }) {
-  void _models;
   const [open, setOpen] = useState(false);
   const [flyout, setFlyout] = useState<Flyout>(null);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
@@ -161,8 +160,21 @@ export function ModelEffortMenu({
     left: number;
   } | null>(null);
 
+  // `selected` can come from session/localStorage restore (see
+  // `modelFromSession`/`loadLastModel` in model-display.ts), which stamps
+  // `supportsThinking`/`supportsReasoning` from a narrower client-side
+  // guess made before the real catalog loaded. Once the authoritative
+  // aggregated list (`_models`) arrives, prefer its flags for the same
+  // model id so the switch reflects what the backend will actually honor
+  // instead of staying stuck on a stale/incomplete guess.
+  const catalogMatch =
+    _models.find((m) => m.id === selected?.id && m.provider === selected?.provider) ||
+    _models.find((m) => m.id === selected?.id);
   const supportsThinking = !!(
-    selected?.supportsThinking || selected?.supportsReasoning
+    catalogMatch?.supportsThinking ||
+    catalogMatch?.supportsReasoning ||
+    selected?.supportsThinking ||
+    selected?.supportsReasoning
   );
   const effortOpt =
     EFFORT_OPTIONS.find((o) => o.value === effort) || EFFORT_OPTIONS[1];

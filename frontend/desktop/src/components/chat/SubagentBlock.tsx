@@ -8,16 +8,21 @@
  * through the same reducer used for the parent assistant message (thinking,
  * final_output, toolCall, tool_result, command).
  *
- * Structural layout:
- *   ┌─────────────────────────────────────────┐
- *   │ Sub-agent [header]    [Completed] 1.2s │
- *   │   Task: …                                │
- *   │   Tool call 1                            │
- *   │   Tool call 2                            │
- *   │   ┌─────────────────────────────────┐    │
- *   │   │ Final summary text in a box…   │    │
- *   │   └─────────────────────────────────┘    │
- *   └─────────────────────────────────────────┘
+ * Structural layout (matches Cursor's own sub-agent card):
+ *   🤖 SubAgent Explore · Audit git state, branches…      [Completed] 1.2s ⌄
+ *     ┌─────────────────────────────────┐
+ *     │ PROMPT                          │  (own scroll)
+ *     │ …task text…                     │
+ *     └─────────────────────────────────┘
+ *     Tool call 1
+ *     Tool call 2
+ *     ┌─────────────────────────────────┐
+ *     │ SUBAGENT OUTPUT                 │  (own scroll)
+ *     │ …final summary…                 │
+ *     └─────────────────────────────────┘
+ * The header itself is unbordered/flat; only the Prompt and Subagent
+ * output sections get their own rounded, bordered, independently
+ * scrollable boxes — long prompts don't push the output out of view.
  *
  * The outer left rail (`border-l-2`) is owned by ChatThread's wrapper
  * (which already provides the `ml-3` indent that aligns this block with
@@ -25,7 +30,7 @@
  */
 
 import { useState, useEffect, useMemo, type ReactNode, type ReactElement } from 'react';
-import { ChevronDown, ChevronRight, Loader2, CheckCircle2, AlertCircle, StopCircle } from 'lucide-react';
+import { Bot, ChevronDown, Loader2, CheckCircle2, AlertCircle, StopCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MessageBlock } from '@/types/chat';
 import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
@@ -49,6 +54,10 @@ const SUBAGENT_TOOL_NAMES = new Set([
   'august__spawn_subagent',
   'august_spawn_subagent',
   'workbench_spawn_subagent',
+  // Registered bare (no `august__`/`workbench_` prefix) in
+  // `agent_tools.py` / `spawn_subagents_tool.py`.
+  'spawn_subagent',
+  'spawn_subagents',
   'invoke_subagent',
   'august__run_team',
   'workbench_run_team',
@@ -171,44 +180,48 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
         type="button"
         onClick={() => setExpanded((v) => !v)}
         className={cn(
-          'group flex w-full items-center gap-2 rounded-lg border border-white/[0.05] bg-white/[0.015] px-2.5 py-1.5 text-left',
-          'hover:bg-white/[0.04] transition-colors',
+          'group flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left',
+          'hover:bg-white/[0.03] transition-colors',
         )}
         aria-expanded={expanded}
       >
-        {expanded ? (
-          <ChevronDown className="size-3 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="size-3 text-muted-foreground shrink-0" />
+        <Bot className="size-3.5 text-muted-foreground/60 shrink-0" />
+        <span className="min-w-0 flex-1 text-[12px] leading-5 truncate">
+          <span className="text-info/80">SubAgent</span>
+          <span className="text-foreground font-semibold"> {friendlyRole}</span>
+          {collapsedSummary && (
+            <span className="text-muted-foreground/70"> · {collapsedSummary}</span>
+          )}
+        </span>
+        {state.status !== 'completed' && (
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 shrink-0',
+              'text-[9px] font-medium tracking-wide',
+              STATUS_CLASS[state.status],
+            )}
+          >
+            <StatusIcon status={state.status} />
+            {STATUS_LABEL[state.status]}
+          </span>
         )}
-        <span className="min-w-0 flex-1 text-[11px] text-foreground">
-          <span className="font-semibold">{friendlyRole}</span>
-          <span className="text-muted-foreground/70"> agent</span>
-          {!expanded && collapsedSummary && (
-            <span className="text-muted-foreground/80"> · {collapsedSummary}</span>
-          )}
-        </span>
-        <span
-          className={cn(
-            'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 shrink-0',
-            'text-[9px] font-medium tracking-wide',
-            STATUS_CLASS[state.status],
-          )}
-        >
-          <StatusIcon status={state.status} />
-          {STATUS_LABEL[state.status]}
-        </span>
         {elapsed > 0 && (
           <span className="tool-row-meta tabular-nums text-muted-foreground/60 shrink-0">
             {elapsed.toFixed(1)}s
           </span>
         )}
+        <ChevronDown
+          className={cn(
+            'size-3 text-muted-foreground/60 shrink-0 transition-transform duration-150',
+            !expanded && '-rotate-90',
+          )}
+        />
       </button>
 
       {expanded && (
-        <div className="mt-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] px-2.5 py-2 max-h-72 overflow-y-auto space-y-2">
+        <div className="mt-1 ml-5 space-y-2">
           {state.task && (
-            <div className="rounded-md border border-white/[0.05] bg-white/[0.02] px-2.5 py-2">
+            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto">
               <div className="mb-1 text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/55">
                 Prompt
               </div>
@@ -233,7 +246,7 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
               ))}
               {finalOutput && (
                 <div
-                  className="rounded-md border border-white/[0.05] bg-white/[0.02] px-2.5 py-2"
+                  className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto"
                   data-slot="subagent-final-output"
                 >
                   <div className="mb-1 text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/55">

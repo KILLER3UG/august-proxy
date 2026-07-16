@@ -399,6 +399,13 @@ export function getToolLabel(
     clean === 'august__spawn_subagent' ||
     clean === 'workbench_spawn_subagent' ||
     clean === 'august_spawn_subagent' ||
+    // `spawn_subagent`/`spawn_subagents` are registered bare (no
+    // `august__`/`workbench_` prefix) in `agent_tools.py` /
+    // `spawn_subagents_tool.py` — without these the fallback label
+    // generator kicked in and produced the raw, ungrammatical
+    // "Spawn Subagent" instead of "Delegating"/"Delegated".
+    clean === 'spawn_subagent' ||
+    clean === 'spawn_subagents' ||
     clean === 'invoke_subagent'
   ) {
     const verb = isRunning ? 'Delegating' : 'Delegated';
