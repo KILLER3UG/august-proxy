@@ -6,13 +6,13 @@ import {
   X,
   PanelLeft,
   PanelLeftClose,
-  Settings,
   GitBranch,
   Download,
   Minimize2,
   MoreHorizontal,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { gitApi } from "@/api/git";
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
@@ -20,6 +20,11 @@ import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
 import { BrainIndicator } from "./BrainIndicator";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
+import {
+  UserDropdown,
+  type UserDropdownAction,
+  type UserStatus,
+} from "@/components/ui/user-dropdown";
 import type { Session } from "@/store/sessions";
 import type { RightDrawerSectionId } from "./RightDrawerState";
 
@@ -40,10 +45,47 @@ export function ChatTitlebar({
   onSelectRightDrawerSection,
   onSettings,
 }: ChatTitlebarProps) {
+  const navigate = useNavigate();
   const [speaking, setSpeaking] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const [userStatus, setUserStatus] = useState<UserStatus>("online");
   const overflowRef = useRef<HTMLDivElement>(null);
+
+  const openSettingsSection = (section?: string) => {
+    sessionStorage.setItem("pre-settings-path", window.location.pathname);
+    if (section) {
+      void navigate(`/settings/${section}`);
+      return;
+    }
+    onSettings();
+  };
+
+  const handleUserAction = (action: UserDropdownAction) => {
+    switch (action) {
+      case "settings":
+        openSettingsSection();
+        break;
+      case "appearance":
+      case "profile":
+      case "notifications":
+        openSettingsSection("profile-preferences");
+        break;
+      case "download":
+        toast.message("You're already in the August desktop app.");
+        break;
+      case "whats-new":
+      case "help":
+      case "upgrade":
+      case "referrals":
+      case "switch":
+      case "logout":
+        toast.message("Coming soon");
+        break;
+      default:
+        break;
+    }
+  };
   const [updateAvailable, setUpdateAvailable] = useState<{
     version: string;
   } | null>(null);
@@ -215,13 +257,21 @@ export function ChatTitlebar({
       </div>
 
       <div className="flex items-center gap-0.5">
-        <button
-          onClick={onSettings}
-          className="p-1.5 hover:bg-accent rounded-md text-muted-foreground/60 hover:text-foreground transition"
-          title="Open settings"
-        >
-          <Settings className="size-3.5" />
-        </button>
+        <div className="px-0.5">
+          <UserDropdown
+            selectedStatus={userStatus}
+            onStatusChange={(status) => setUserStatus(status as UserStatus)}
+            onAction={handleUserAction}
+            user={{
+              name: "August User",
+              username: "@august",
+              avatar:
+                "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=96&h=96&fit=crop&crop=face",
+              initials: "AU",
+              status: userStatus,
+            }}
+          />
+        </div>
 
         <RightDrawerDropdown drawerOpen={rightDrawerOpen} onSelect={onSelectRightDrawerSection} />
 
