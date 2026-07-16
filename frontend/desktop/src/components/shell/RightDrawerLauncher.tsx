@@ -78,13 +78,13 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="size-12 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground hover:text-foreground transition"
+        className="size-11 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground/60 hover:text-foreground transition"
         title={drawerOpen ? 'Workbench sections' : 'Open Workbench'}
       >
         {drawerOpen ? (
-          <PanelRightClose className="size-4" />
+          <PanelRightClose className="size-3.5" />
         ) : (
-          <PanelRight className="size-4" />
+          <PanelRight className="size-3.5" />
         )}
       </button>
 

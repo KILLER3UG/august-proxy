@@ -98,8 +98,8 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
   const [expanded, setExpanded] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(expandKey);
-      return saved == null ? true : saved === '1';
-    } catch { /* silent */ return true; }
+      return saved === '1';
+    } catch { /* silent */ return false; }
   });
   useEffect(() => {
     try { localStorage.setItem(expandKey, expanded ? '1' : '0'); } catch { /* silent */ }
@@ -141,13 +141,27 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
     };
   }, [state.blocks]);
 
+  const collapsedSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (state.task) {
+      const task = state.task.trim();
+      parts.push(task.length > 72 ? `${task.slice(0, 69).trimEnd()}…` : task);
+    } else if (bodyBlocks.length > 0 || finalOutput) {
+      parts.push(
+        bodyBlocks.length > 0
+          ? `${bodyBlocks.length} step${bodyBlocks.length === 1 ? '' : 's'}`
+          : 'Completed',
+      );
+    } else if (state.status === 'running') {
+      parts.push('Working…');
+    }
+    return parts.join(' · ');
+  }, [state.task, state.status, bodyBlocks.length, finalOutput]);
+
   return (
     <div
       className={cn(
-        // No `ml-3` here — the parent ChatThread wrapper already indents us
-        // by `ml-3`, which keeps us aligned with the sibling PromptDisclosure
-        // chip. We only own the rail itself.
-        'mt-2 pl-3 border-l-2 border-border/60',
+        'mt-1.5 max-w-2xl',
         'transition-colors',
       )}
       data-subagent-id={state.jobId}
@@ -157,8 +171,8 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
         type="button"
         onClick={() => setExpanded((v) => !v)}
         className={cn(
-          'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left',
-          'hover:bg-muted/40 transition-colors',
+          'group flex w-full items-center gap-2 rounded-lg border border-white/[0.05] bg-white/[0.015] px-2.5 py-1.5 text-left',
+          'hover:bg-white/[0.04] transition-colors',
         )}
         aria-expanded={expanded}
       >
@@ -167,14 +181,16 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
         ) : (
           <ChevronRight className="size-3 text-muted-foreground shrink-0" />
         )}
-        <span className="text-[11px] text-foreground">
+        <span className="min-w-0 flex-1 text-[11px] text-foreground">
           <span className="font-semibold">{friendlyRole}</span>
           <span className="text-muted-foreground/70"> agent</span>
+          {!expanded && collapsedSummary && (
+            <span className="text-muted-foreground/80"> · {collapsedSummary}</span>
+          )}
         </span>
-        <span className="flex-1" />
         <span
           className={cn(
-            'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5',
+            'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 shrink-0',
             'text-[9px] font-medium tracking-wide',
             STATUS_CLASS[state.status],
           )}
@@ -183,20 +199,24 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
           {STATUS_LABEL[state.status]}
         </span>
         {elapsed > 0 && (
-          <span className="tool-row-meta tabular-nums text-muted-foreground/60">
+          <span className="tool-row-meta tabular-nums text-muted-foreground/60 shrink-0">
             {elapsed.toFixed(1)}s
           </span>
         )}
       </button>
 
-      {state.task && (
-        <div className="mt-1 ml-6 text-[11px] text-muted-foreground line-clamp-2 italic">
-          {state.task}
-        </div>
-      )}
-
       {expanded && (
-        <div className="mt-1 ml-6 space-y-2">
+        <div className="mt-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] px-2.5 py-2 max-h-72 overflow-y-auto space-y-2">
+          {state.task && (
+            <div className="rounded-md border border-white/[0.05] bg-white/[0.02] px-2.5 py-2">
+              <div className="mb-1 text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/55">
+                Prompt
+              </div>
+              <div className="min-w-0 text-sm text-foreground/90 chat-message-text">
+                <Markdown content={state.task} variant="assistant" />
+              </div>
+            </div>
+          )}
           {state.blocks.length === 0 ? (
             <div className="text-[11px] text-muted-foreground/60 italic py-1">
               {state.status === 'running' ? `${friendlyRole} is starting…` : 'No output recorded.'}
@@ -213,10 +233,15 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
               ))}
               {finalOutput && (
                 <div
-                  className="rounded-md border border-border/40 bg-card/50 px-3 py-2 text-[12px] text-foreground/90 chat-message-text"
+                  className="rounded-md border border-white/[0.05] bg-white/[0.02] px-2.5 py-2"
                   data-slot="subagent-final-output"
                 >
-                  <Markdown content={finalOutput.content || ''} />
+                  <div className="mb-1 text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/55">
+                    Subagent output
+                  </div>
+                  <div className="min-w-0 text-sm text-foreground/90 chat-message-text">
+                    <Markdown content={finalOutput.content || ''} />
+                  </div>
                 </div>
               )}
             </>
@@ -247,7 +272,7 @@ function SubagentInnerBlock({
   if (block.type === 'thinking') {
     return (
       <ThinkingDisclosure pending={false}>
-        <div className="pl-3 border-l border-foreground/15 py-1 chat-thought-text text-[11px]">
+        <div className="pl-3 chat-rail py-1 chat-thought-text text-[11px]">
           <Markdown content={block.content || ''} />
         </div>
       </ThinkingDisclosure>
@@ -310,7 +335,7 @@ function SubagentInnerBlock({
           </div>
         )}
         {subagentContainers.length > 0 && (
-          <div className="ml-3 pl-3 border-l border-foreground/15 flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             {subagentContainers.map((s) => (
               <SubagentBlock
                 key={s.jobId}

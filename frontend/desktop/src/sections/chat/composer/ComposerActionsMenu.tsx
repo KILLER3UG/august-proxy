@@ -1,6 +1,7 @@
 /* ── Composer actions (+) ──────────────────────────────────────────────── */
-/* Plus-button menu: attach file, open @-mention picker, start voice input. */
+/* Plus-button menu: attach, mention, voice, Make Changes, context / cost. */
 
+import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Paperclip, Mic, AtSign, Plus } from 'lucide-react';
 import { ToolBtn } from '../ComposerControls';
@@ -14,6 +15,7 @@ export function ComposerActionsMenu({
   onAttach,
   onMention,
   onVoice,
+  extras,
 }: {
   open: boolean;
   pos: AnchorPos | null;
@@ -22,13 +24,15 @@ export function ComposerActionsMenu({
   onAttach: () => void;
   onMention: () => void;
   onVoice: () => void;
+  /** Make Changes / context / cost — rendered below primary actions. */
+  extras?: ReactNode;
 }) {
   return (
     <div className="relative">
       <ToolBtn
         Icon={Plus}
         label="Composer actions"
-        className="h-8 w-8"
+        className="h-8 w-8 rounded-full"
         buttonRef={triggerRef}
         onClick={onToggle}
       />
@@ -43,7 +47,7 @@ export function ComposerActionsMenu({
               left: pos.left,
               transform: 'translateY(-100%)',
             }}
-            className="z-50 w-44 bg-card border border-border rounded-xl shadow-2xl p-1.5"
+            className="z-50 w-56 bg-card border border-border rounded-xl shadow-2xl p-1.5"
           >
             <button
               type="button"
@@ -69,6 +73,12 @@ export function ComposerActionsMenu({
               <span>Voice input</span>
               <Mic className="size-3.5 text-muted-foreground" />
             </button>
+            {extras && (
+              <>
+                <div className="my-1 h-px bg-border/50" />
+                <div className="px-1 py-1 space-y-1.5">{extras}</div>
+              </>
+            )}
           </div>,
           document.body,
         )}

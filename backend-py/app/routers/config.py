@@ -74,14 +74,9 @@ class ProviderDetailsUpdate(CamelModel):
 
 @router.get('/provider-details')
 async def providerDetails(provider: str = ''):
-    """Return resolver-derived details for a provider (custom entry or template).
-
-    Used by the provider settings UI to show description, auth type, env
-    readiness, signup link, and any config overrides (api key / base url).
-    """
+    """Return details for a user-configured provider (providers.json)."""
     import os
     from app.providers import resolver as providerResolver
-    from app.providers.template_loader import get_templates, get_template
 
     store = config_service.getProvidersStore()
     entry = None
@@ -90,27 +85,15 @@ async def providerDetails(provider: str = ''):
         if e.get('id') == provider or e.get('name') == provider:
             entry = e
             break
-    if entry:
-        pd = providerResolver._customEntryToProviderDict(entry)
-        configOverrides = {
-            'apiKey': entry.get('apiKey', ''),
-            'baseUrl': entry.get('baseUrl', ''),
-        }
-        isAvailable = bool(entry.get('enabled')) and bool(entry.get('apiKey'))
-        providerId = entry.get('id', provider)
-    else:
-        tmpl = get_template(provider)
-        if not tmpl:
-            for t in get_templates():
-                if t.get('id') == provider or t.get('name') == provider:
-                    tmpl = t
-                    break
-        if not tmpl:
-            raise HTTPException(status_code=404, detail='Provider not found')
-        pd = providerResolver._templateToProviderDict(tmpl)
-        configOverrides = {}
-        isAvailable = False
-        providerId = tmpl.get('id', provider)
+    if not entry:
+        raise HTTPException(status_code=404, detail='Provider not found')
+    pd = providerResolver.entry_to_provider_dict(entry)
+    configOverrides = {
+        'apiKey': entry.get('apiKey', ''),
+        'baseUrl': entry.get('baseUrl', ''),
+    }
+    isAvailable = bool(entry.get('enabled')) and bool(entry.get('apiKey'))
+    providerId = entry.get('id', provider)
     envVars = as_list(pd.get('envVars'), [])
     envStatus = {as_str(v): bool(os.getenv(as_str(v))) for v in envVars}
     cfg = config_service.getConfig()
@@ -128,7 +111,7 @@ async def providerDetails(provider: str = ''):
         'defaultModel': pd.get('defaultModel', ''),
         'signupUrl': pd.get('signupUrl', ''),
         'supportsHealthCheck': pd.get('supportsHealthCheck', False),
-        'isActive': active == providerId,
+        'isActive': active == providerId or active == entry.get('name'),
         'configOverrides': configOverrides,
     }
 
@@ -360,24 +343,20 @@ async def getLiveConfig():
     """
     from app.services import live_config_service
 
-    return live_config_service.getLiveConfig()
+    return live_config_service.getLiveConfigWithStatus()
 
 
 @router.put('/live')
 async def putLiveConfig(body: dict[str, object]):
-    """v4.2: Update Live config (partial).
-
-    Body may contain any subset of {sttProvider, sttModel, ttsProvider,
-    ttsModel, ttsVoice}. Each field is a string; empty values mean
-    "browser default."
-    """
+    """v4.2: Update Live config (partial). Response includes readiness flags."""
     from fastapi import HTTPException
     from app.services import live_config_service
 
-    ok, err, cfg = live_config_service.updateLiveConfig(body)
+    clean = {k: v for k, v in body.items() if k in live_config_service.FIELDS}
+    ok, err, _cfg = live_config_service.updateLiveConfig(clean)
     if not ok:
         raise HTTPException(status_code=400, detail={'code': 'validation', 'message': err})
-    return cfg
+    return live_config_service.getLiveConfigWithStatus()
 
 
 def _resolve_gateway_key() -> tuple[str | None, str | None]:

@@ -81,6 +81,8 @@ export interface UseChatSendOptions {
   modelForRequest: ModelItem | null;
   workbenchMode: WorkbenchGuardMode;
   effort: EffortLevel;
+  /** When false, skip requesting extended thinking / reasoning for this turn. */
+  thinkingEnabled: boolean;
   ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   setShowToolsDropdown: (open: boolean) => void;
   setShowCommandsDropdown: (open: boolean) => void;
@@ -114,6 +116,7 @@ export function useChatSend(opts: UseChatSendOptions) {
     modelForRequest,
     workbenchMode,
     effort,
+    thinkingEnabled,
     ensureWorkbenchSession,
     setShowToolsDropdown,
     setShowCommandsDropdown,
@@ -175,11 +178,15 @@ export function useChatSend(opts: UseChatSendOptions) {
         return;
       }
 
+      const supportsThinking = !!(
+        modelForRequest.supportsThinking || modelForRequest.supportsReasoning
+      );
       const result = await startChatStream(turnSessionId, {
         message: applyWorkbenchGuardMode(workbenchMode, latestText),
         chatHistory,
         workbenchMode,
         effort,
+        thinkingEnabled: supportsThinking && thinkingEnabled,
         model: modelForRequest.id,
         // Always pass the provider that owns this model (name or id). Without
         // it, free claude-like ids can resolve to bare Anthropic with no key.
@@ -200,6 +207,7 @@ export function useChatSend(opts: UseChatSendOptions) {
       modelForRequest,
       workbenchMode,
       effort,
+      thinkingEnabled,
       ensureWorkbenchSession,
     ],
   );

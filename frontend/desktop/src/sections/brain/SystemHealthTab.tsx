@@ -17,7 +17,7 @@ const DOT_COLOR: Record<string, string> = {
 };
 
 export function SystemHealthTab() {
-  const { data, error } = useSystemHealth();
+  const { data, error, isFetching, dataUpdatedAt } = useSystemHealth();
 
   if (error) {
     return <div className="p-4 text-danger">Error loading health: {error.message}</div>;
@@ -34,6 +34,15 @@ export function SystemHealthTab() {
 
   return (
     <div className="space-y-2">
+      <div className="flex items-center gap-1.5 px-4 text-xs">
+        <span
+          className={`size-2 rounded-full ${isFetching ? 'bg-success animate-pulse' : 'bg-muted-foreground'}`}
+          aria-hidden
+        />
+        <span className="text-muted-foreground">
+          {isFetching ? 'Refreshing…' : dataUpdatedAt ? `Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : 'Auto-refreshes every 5s'}
+        </span>
+      </div>
       <div className="grid grid-cols-12 gap-3 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
         <span className="col-span-4">Phase / Layer</span>
         <span className="col-span-2">Flag</span>

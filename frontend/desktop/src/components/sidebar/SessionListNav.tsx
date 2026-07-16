@@ -21,58 +21,53 @@ export function SessionListNav({
   onSelectLast,
   onNavigate,
 }: SessionListNavProps) {
+  const quietRow =
+    "w-full flex items-center gap-2 rounded-md px-2 py-1 text-left text-[12.5px] text-sidebar-foreground/50 hover:bg-white/[0.03] hover:text-sidebar-foreground/75 transition-colors";
+
   return (
     <>
-      {/* New session, continue last, skills, artifacts */}
-      <div className="py-2.5 px-2 flex flex-col gap-0.5">
+      <div className="pt-2 pb-0.5 px-2 flex flex-col">
         <button
           onClick={onNew}
-          className="w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition"
+          className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-sidebar-foreground/80 hover:bg-white/[0.04] hover:text-sidebar-foreground transition-colors"
         >
-          <span className="flex items-center gap-2">
-            <Plus className="size-3.5" /> New session
-          </span>
-          <kbd className="text-[10px] text-muted-foreground font-mono bg-muted/20 px-1 py-0.5 rounded border border-border/20">
-            ctrl N
-          </kbd>
+          <Plus className="size-3.5 opacity-70" />
+          <span>New chat</span>
         </button>
         {lastSession && (
           <button
             type="button"
             onClick={onSelectLast}
-            className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition flex items-center gap-2"
+            className={quietRow}
             title={lastSession.title}
             data-testid="continue-last-session"
           >
-            <MessageSquare className="size-3.5" /> Continue last
-            <span className="ml-auto truncate max-w-[7rem] text-[10px] text-muted-foreground">
-              {lastSession.title}
-            </span>
+            <MessageSquare className="size-3.5 opacity-60" />
+            <span className="truncate">Continue last</span>
           </button>
         )}
         <button
           onClick={() => onNavigate("/settings?tab=mcp")}
-          className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition flex items-center gap-2"
+          className={quietRow}
         >
-          <Wrench className="size-3.5" /> Skills & Tools
+          <Wrench className="size-3.5 opacity-60" /> Skills & Tools
         </button>
         <button
           onClick={() => onNavigate("/settings?tab=overview")}
-          className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition flex items-center gap-2"
+          className={quietRow}
         >
-          <Package className="size-3.5" /> Artifacts
+          <Package className="size-3.5 opacity-60" /> Artifacts
         </button>
       </div>
 
-      {/* Filter sessions by title */}
-      <div className="px-2 py-2">
+      <div className="px-2 py-1.5">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-sidebar-foreground/30" />
           <input
             value={filter}
             onChange={(e) => onFilterChange(e.target.value)}
-            placeholder="Search sessions..."
-            className="w-full pl-8 pr-2 py-1 text-xs bg-white/5 rounded-md border border-transparent focus:border-white/10 focus:bg-white/10 outline-none transition text-sidebar-foreground placeholder:text-muted-foreground"
+            placeholder="Search chats…"
+            className="w-full pl-7 pr-2 py-1 text-[12px] bg-transparent rounded-md outline-none transition text-sidebar-foreground/80 placeholder:text-sidebar-foreground/30 hover:bg-white/[0.02] focus:bg-white/[0.03]"
           />
         </div>
       </div>

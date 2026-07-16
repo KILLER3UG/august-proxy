@@ -115,20 +115,18 @@ def _find(alias: str) -> AliasDict | None:
 
 
 def _providerNames() -> set[str]:
-    """All known provider names + aliases (templates and custom)."""
+    """Provider names/ids from providers.json."""
     names: set[str] = set()
     try:
-        from app.providers.template_loader import get_templates
-
-        for t in get_templates():
-            names.add(as_str(t.get('name'), ''))
-            for a in as_list(t.get('aliases'), []):
-                names.add(as_str(a))
         from app.services import config_service
 
         store = config_service.getProvidersStore()
         for entry in as_list(store.get('providers'), []):
-            names.add(as_str(as_dict(entry).get('name'), ''))
+            e = as_dict(entry)
+            names.add(as_str(e.get('name'), ''))
+            names.add(as_str(e.get('id'), ''))
+            for a in as_list(e.get('aliases'), []):
+                names.add(as_str(a))
     except Exception:
         pass
     names.discard('')
@@ -136,15 +134,13 @@ def _providerNames() -> set[str]:
 
 
 def validateTarget(target_provider: str, target_model: str) -> tuple[bool, str]:
-    """Validate that provider (strict) and model (loose) are plausible.
+    """Validate alias targets (non-empty provider + model).
 
-    Returns ``(ok, message)``. An unknown provider is a hard error; an
-    unknown model is a soft warning (it may still be valid upstream).
+    Unknown provider names are allowed — there is no built-in template
+    catalog; users configure providers themselves.
     """
     if not target_provider:
         return (False, 'target_provider is required')
-    if target_provider not in _providerNames():
-        return (False, f"Unknown provider '{target_provider}'")
     if not target_model:
         return (False, 'target_model is required')
     return (True, '')

@@ -233,12 +233,6 @@ export function MessageBubble({
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
-      {!isUser && message.clarify && !message.clarify.answer && onClarifyAnswer && (
-        <ClarifyTool
-          payload={message.clarify}
-          onSubmit={onClarifyAnswer}
-        />
-      )}
       {/* todos are rendered in the layout-level Workbench sidebar */}
       {isUser ? (
         <UserMessageBubble
@@ -280,6 +274,15 @@ export function MessageBubble({
           onSpeak={handleSpeak}
           onCopy={() => { void handleCopy(); }}
           onRegen={() => { void handleRegenClick(); }}
+        />
+      )}
+      {/* Rendered after the assistant's final output (not above it) so the
+       * question reads as a continuation of what the model just said, and
+       * disappears the moment `message.clarify.answer` is set below. */}
+      {!isUser && message.clarify && !message.clarify.answer && onClarifyAnswer && (
+        <ClarifyTool
+          payload={message.clarify}
+          onSubmit={onClarifyAnswer}
         />
       )}
     </div>

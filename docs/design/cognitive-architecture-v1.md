@@ -1,4 +1,8 @@
-# Cognitive Architecture v1 — August Proxy
+# Cognitive Architecture v1
+
+> **Historical design note.** Implementation has evolved; see
+> [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and runtime code under
+> `backend-py/app/services/` for current behavior. — August Proxy
 
 > A self-correcting, stateful, cognitive loop for the agentic workbench.
 >

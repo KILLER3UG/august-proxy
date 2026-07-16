@@ -1,94 +1,65 @@
 """
-Resolve a provider by name or model ID, with fallback logic.
+Resolve a provider by name or model ID from **user-configured** providers only.
 
-Replaces the old ``builtin.py`` + ``registry.py`` approach with
-``provider_templates.json`` (static templates) + ``providers.json``
-(user-configured custom entries).
-
-Port of backend/providers/provider-resolver.js + model-resolver.js (enhanced).
+Source of truth: ``data/providers.json`` (via config_service). There is no
+built-in template catalog — users define name, base URL, API format, and key.
 """
 
 from __future__ import annotations
 from typing import Optional
-from app.json_narrowing import as_str, as_dict, as_list
+
+from app.json_narrowing import as_str, as_list
 from app.config import settings
 from app.providers import aliases
-from app.providers.template_loader import get_templates, get_template
 
 
-def _templateToProviderDict(template: dict[str, object]) -> dict[str, object]:
-    """Convert a template dict into a provider dict shaped like the old registry
-    format so downstream consumers (model_resolver, route_resolver, workbench)
-    continue to work unchanged.
-
-    Key mappings (template → legacy field):
-      displayName → display_name
-      baseUrl     → base_url
-      apiFormat   → api_mode
-      authType    → auth_type
-      defaultModel → default_model
-      defaultMaxTokens → default_max_tokens
-      signupUrl   → signup_url
-      supportsHealthCheck → supports_health_check
-      fallbackModels → fallback_models
-      defaultHeaders → default_headers
-      modelProfiles → model_profiles
-    """
+def entry_to_provider_dict(entry: dict[str, object]) -> dict[str, object]:
+    """Build a provider dict from a ``providers.json`` entry."""
     return {
-        'name': template.get('name', ''),
-        'id': template.get('id', ''),
-        'displayName': template.get('displayName', template.get('name', '')),
-        'description': template.get('description', ''),
-        'aliases': template.get('aliases', []),
-        'baseUrl': template.get('baseUrl', ''),
-        'apiMode': template.get('apiFormat', 'openaiChat'),
-        'envVars': template.get('envVars', []),
-        'authType': template.get('authType', 'api_key'),
-        'defaultModel': template.get('defaultModel', ''),
-        'defaultMaxTokens': template.get('defaultMaxTokens', 4096),
-        'defaultHeaders': template.get('defaultHeaders', {}),
-        'signupUrl': template.get('signupUrl', ''),
-        'supportsHealthCheck': template.get('supportsHealthCheck', False),
-        'fallbackModels': template.get('fallbackModels', []),
-        'modelProfiles': template.get('modelProfiles', {}),
+        'name': entry.get('name', ''),
+        'id': entry.get('id', ''),
+        'displayName': entry.get('displayName', entry.get('name', '')),
+        'description': entry.get('description', ''),
+        'aliases': entry.get('aliases', []),
+        'baseUrl': entry.get('baseUrl', ''),
+        'apiMode': entry.get('apiFormat', 'openaiChat'),
+        'api_key': entry.get('apiKey', ''),
+        'is_custom': True,
+        'envVars': entry.get('envVars', []),
+        'authType': entry.get('authType', 'api_key'),
+        'defaultModel': entry.get('defaultModel', ''),
+        'defaultMaxTokens': entry.get('defaultMaxTokens', 4096),
+        'defaultHeaders': entry.get('defaultHeaders', {}),
+        'signupUrl': entry.get('signupUrl', ''),
+        'supportsHealthCheck': entry.get('supportsHealthCheck', False),
+        'fallbackModels': entry.get('fallbackModels', []),
+        'modelProfiles': entry.get('modelProfiles', {}),
+        'enabled': bool(entry.get('enabled', True)),
+        'models': entry.get('models', []),
     }
 
 
-def _customEntryToProviderDict(entry: dict[str, object]) -> dict[str, object]:
-    """Build a provider dict from a ``providers.json`` custom entry.
+# Back-compat for older call sites
+_customEntryToProviderDict = entry_to_provider_dict
 
-    Merges template metadata (model_profiles, default_headers, env_vars)
-    when a matching template id exists and the entry does not override it.
-    """
-    templateId = str(entry.get('template', '')) or str(entry.get('id', ''))
-    tmpl = get_template(templateId) if templateId else None
-    base = _templateToProviderDict(tmpl) if tmpl else {}
-    base.update(
-        {
-            'name': entry.get('name', base.get('name', '')),
-            'id': entry.get('id', base.get('id', '')),
-            'displayName': entry.get('displayName', entry.get('name', base.get('displayName', ''))),
-            'description': entry.get('description', base.get('description', '')),
-            'baseUrl': entry.get('baseUrl', base.get('baseUrl', '')),
-            'apiMode': entry.get('apiFormat', base.get('apiMode', 'openaiChat')),
-            'api_key': entry.get('apiKey', ''),
-            'is_custom': True,
-            'defaultModel': entry.get('defaultModel', base.get('defaultModel', '')),
-            'defaultMaxTokens': entry.get('defaultMaxTokens', base.get('defaultMaxTokens', 4096)),
-            'defaultHeaders': entry.get('defaultHeaders', base.get('defaultHeaders', {})),
-            'signupUrl': entry.get('signupUrl', base.get('signupUrl', '')),
-            'supportsHealthCheck': entry.get('supportsHealthCheck', base.get('supportsHealthCheck', False)),
-            'fallbackModels': entry.get('fallbackModels', base.get('fallbackModels', [])),
-            'modelProfiles': entry.get('modelProfiles', base.get('modelProfiles', {})),
-        }
-    )
-    return base
+
+def _iter_store_entries() -> list[dict[str, object]]:
+    try:
+        from app.services import config_service
+
+        store = config_service.getProvidersStore()
+    except Exception:
+        return []
+    out: list[dict[str, object]] = []
+    for raw in as_list(store.get('providers'), []):
+        if isinstance(raw, dict):
+            out.append(raw)
+    return out
 
 
 def _hasApiKey(provider: dict[str, object]) -> bool:
-    """Check if a provider has credentials configured."""
-    if provider.get('is_custom'):
-        return bool(provider.get('api_key'))
+    if provider.get('api_key') or provider.get('apiKey'):
+        return True
     from app.providers.clients import getClient
 
     client = getClient(provider)
@@ -98,91 +69,98 @@ def _hasApiKey(provider: dict[str, object]) -> bool:
 
 
 def resolve(name: str) -> Optional[dict[str, object]]:
-    """Find a provider by name, alias, or model ID.
-
-    Resolution order:
-    0. Custom ``providers.json`` store (authoritative for user-added providers)
-    1. Normalize via aliases map
-    2. Template exact name match (via id or name)
-    3. Template aliases list match
-    4. Config.json modelAliases targetProvider
-    5. Model profile key match (prefers provider with API key)
-    6. Prefix-based name match (prefers provider with API key)
-    7. Model profile key match (any provider)
-    8. Prefix-based name match (any provider)
-    """
+    """Find a configured provider by id, name, alias, or model-alias target."""
     if not name:
         providers = list_available()
         return providers[0] if providers else None
-    nameStr = str(name)
-    from app.services import provider_credentials
 
-    customEntry = provider_credentials._customEntry(nameStr)
-    if customEntry and customEntry.get('enabled') and customEntry.get('apiKey'):
-        return _customEntryToProviderDict(customEntry)
-    canonical = aliases.normalize(nameStr)
-    tmpl = get_template(canonical)
-    if tmpl:
-        return _templateToProviderDict(tmpl)
-    allTemplates = get_templates()
-    allProviders = [_templateToProviderDict(t) for t in allTemplates]
-    for p in allProviders:
-        if as_str(p.get('name'), '').lower() == nameStr.lower():
-            return p
-    for p in allProviders:
-        pAliases = p.get('aliases', [])
-        if isinstance(pAliases, list):
-            if nameStr.lower() in [a.lower() for a in pAliases]:
-                return p
-    aliasesCfg = settings.config.get('modelAliases', [])
-    if isinstance(aliasesCfg, list):
-        for aliasEntry in aliasesCfg:
-            if aliasEntry.get('alias', '').lower() == nameStr.lower():
-                target_provider = aliasEntry.get('targetProvider', '')
-                if target_provider:
-                    for p in allProviders:
-                        if as_str(p.get('name'), '').lower() == target_provider.lower():
-                            return p
-                        if target_provider.lower() in [as_str(a).lower() for a in as_list(p.get('aliases'), [])]:
-                            return p
-    for p in allProviders:
-        profiles = as_dict(p.get('modelProfiles'), {})
-        if nameStr in profiles and _hasApiKey(p):
-            return p
-    for p in allProviders:
-        pname = as_str(p.get('name'), '').lower().split()[0]
-        if nameStr.lower().startswith(pname) and _hasApiKey(p):
-            return p
-    for p in allProviders:
-        profiles = as_dict(p.get('modelProfiles'), {})
-        if nameStr in profiles:
-            return p
-        for profileKey in profiles:
-            if profileKey != '*' and nameStr.lower().startswith(profileKey.lower()):
-                return p
-    for p in allProviders:
-        pname = as_str(p.get('name'), '').lower().split()[0]
-        if nameStr.lower().startswith(pname):
-            return p
+    name_str = str(name)
+    name_l = name_str.lower()
+    entries = _iter_store_entries()
+
+    def _match_entry(target: str) -> Optional[dict[str, object]]:
+        t = target.lower()
+        id_hit: Optional[dict[str, object]] = None
+        name_hit: Optional[dict[str, object]] = None
+        for e in entries:
+            if not e.get('enabled', True):
+                continue
+            if as_str(e.get('id')).lower() == t and id_hit is None:
+                id_hit = e
+            if as_str(e.get('name')).lower() == t and name_hit is None:
+                name_hit = e
+        hit = id_hit or name_hit
+        return entry_to_provider_dict(hit) if hit else None
+
+    hit = _match_entry(name_str)
+    if hit:
+        return hit
+
+    canonical = aliases.normalize(name_str)
+    if canonical != name_str:
+        hit = _match_entry(canonical)
+        if hit:
+            return hit
+
+    for e in entries:
+        if not e.get('enabled', True):
+            continue
+        for a in as_list(e.get('aliases'), []):
+            if as_str(a).lower() == name_l:
+                return entry_to_provider_dict(e)
+
+    aliases_cfg = settings.config.get('modelAliases', [])
+    if isinstance(aliases_cfg, list):
+        for alias_entry in aliases_cfg:
+            if not isinstance(alias_entry, dict):
+                continue
+            if as_str(alias_entry.get('alias')).lower() == name_l:
+                target = as_str(alias_entry.get('targetProvider'))
+                if target:
+                    hit = _match_entry(target)
+                    if hit:
+                        return hit
+
+    keyed: list[dict[str, object]] = []
+    any_match: list[dict[str, object]] = []
+    for e in entries:
+        if not e.get('enabled', True):
+            continue
+        p = entry_to_provider_dict(e)
+        models = as_list(e.get('models'), [])
+        model_ids = {as_str(m.get('id') if isinstance(m, dict) else m).lower() for m in models}
+        if name_l in model_ids:
+            if _hasApiKey(p):
+                keyed.append(p)
+            else:
+                any_match.append(p)
+    if keyed:
+        return keyed[0]
+    if any_match:
+        return any_match[0]
     return None
 
 
 def list_available() -> list[dict[str, object]]:
-    """Return all available providers — templates + custom store entries."""
-    templates = get_templates()
-    providers = [_templateToProviderDict(t) for t in templates]
-    try:
-        from app.services import config_service
-
-        store = config_service.getProvidersStore()
-    except Exception:
-        store = {}
-    for entry in as_list(store.get('providers'), []):
-        if not isinstance(entry, dict):
+    """Enabled providers from providers.json that have an API key."""
+    out: list[dict[str, object]] = []
+    for e in _iter_store_entries():
+        if not e.get('enabled', True):
             continue
-        if entry.get('enabled') and entry.get('apiKey'):
-            providers.append(_customEntryToProviderDict(entry))
-    return providers
+        if not e.get('apiKey'):
+            continue
+        out.append(entry_to_provider_dict(e))
+    return out
+
+
+def list_all_configured() -> list[dict[str, object]]:
+    """All enabled providers (with or without key)."""
+    out: list[dict[str, object]] = []
+    for e in _iter_store_entries():
+        if not e.get('enabled', True):
+            continue
+        out.append(entry_to_provider_dict(e))
+    return out
 
 
 _hasApiKey = _hasApiKey

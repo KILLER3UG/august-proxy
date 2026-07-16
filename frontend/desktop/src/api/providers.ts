@@ -2,7 +2,8 @@
 
 import { api } from './client';
 
-export type ApiFormat = 'openai-chat' | 'anthropic' | 'openai-responses';
+/** Wire formats accepted by the backend provider store. */
+export type ApiFormat = 'openaiChat' | 'anthropicMessages' | 'openaiResponses' | 'openai-chat' | 'anthropic' | 'openai-responses';
 
 export interface ProviderModel {
   id: string;
@@ -63,40 +64,6 @@ export interface ConnectModelResult {
   httpStatus?: number;
 }
 
-/** Model profile from a provider template. */
-export interface ModelProfile {
-  supportsReasoning?: boolean;
-  supportsThinking?: boolean;
-  combinedBudget?: boolean;
-  contextWindow?: number;
-  maxOutputTokens?: number;
-  temperature?: number;
-  topP?: number;
-  topK?: number;
-  thinkingReserve?: number;
-  safetyBuffer?: number;
-}
-
-/** A provider template definition (from provider_templates.json). */
-export interface ProviderTemplate {
-  id: string;
-  name: string;
-  displayName: string;
-  description: string;
-  baseUrl: string;
-  apiFormat: ApiFormat;
-  authType: string;
-  envVars: string[];
-  defaultModel: string;
-  defaultMaxTokens: number;
-  signupUrl: string;
-  supportsHealthCheck: boolean;
-  aliases: string[];
-  fallbackModels: string[];
-  defaultHeaders: Record<string, string>;
-  modelProfiles: Record<string, ModelProfile>;
-}
-
 function p(path: string) {
   return `/api/providers${path}`;
 }
@@ -126,8 +93,6 @@ export const providersApi = {
     api.post<ConnectModelResult>(
       p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}/test`),
     ),
-  /** Get all provider templates (static definitions from provider_templates.json). */
-  templates: () => api.get<ProviderTemplate[]>(`${p('')}/templates`),
   /** Import a provider config from a JSON blob. */
   importConfig: (config: Record<string, unknown>) =>
     api.post<Provider>(`${p('')}/import-config`, config),

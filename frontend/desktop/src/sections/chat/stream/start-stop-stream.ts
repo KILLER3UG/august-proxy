@@ -34,6 +34,8 @@ export async function startChatStream(
     chatHistory: ChatMessage[];
     workbenchMode: WorkbenchMode;
     effort: EffortLevel;
+    /** When false, skip extended thinking / reasoning for this turn. */
+    thinkingEnabled?: boolean;
     model: string | undefined;
     modelProvider: string | undefined;
     provider?: string;
@@ -97,6 +99,7 @@ export async function startChatStream(
       agentId: params.agentId,
       guardMode: params.guardMode as WorkbenchMode | undefined,
       effort: params.effort,
+      thinkingEnabled: params.thinkingEnabled,
       model: params.model,
       modelProvider: params.modelProvider,
     }, handlers, abortController.signal);

@@ -6,8 +6,7 @@ Uses camelCase throughout matching the frontend convention.
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from app.models.config import ProviderConfig, ProviderCreate, ProviderUpdate, ModelCreate, ModelUpdate
-from app.providers.template_loader import get_templates, get_template
-from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_list, as_str
 from app.services import config_service
 from app.services import model_service
 
@@ -62,8 +61,8 @@ async def listProviders():
 
 @router.get('/templates')
 async def listTemplates():
-    """Return all provider templates (static definitions from provider_templates.json)."""
-    return get_templates()
+    """Deprecated: templates removed. Always returns ``[]`` for back-compat."""
+    return []
 
 
 @router.post('')
@@ -74,46 +73,13 @@ async def createProvider(body: ProviderCreate):
     store = config_service.getProvidersStore()
     if 'providers' not in store:
         store['providers'] = []
-    baseUrl = body.base_url
-    apiFormat = body.api_format
-    models: list[dict] = []
-    if body.template:
-        tmpl = get_template(body.template)
-        if tmpl:
-            if not baseUrl:
-                baseUrl = as_str(tmpl.get('baseUrl', ''))
-            if not apiFormat or apiFormat == 'openaiChat':
-                apiFormat = as_str(tmpl.get('apiFormat', 'openaiChat'))
-            profiles = as_dict(tmpl.get('modelProfiles', {}))
-            # If we have specific model profiles, use them
-            for key, val in profiles.items():
-                if key != '*':
-                    profile = as_dict(val)
-                    models.append(
-                        {
-                            'id': key,
-                            'name': key,
-                            'contextWindow': as_int(profile.get('contextWindow', 128000)),
-                            'reasoning': as_bool(profile.get('supportsReasoning', False)),
-                            'free': False,
-                            'source': 'template',
-                        }
-                    )
-            # If we only have a wildcard profile or no models were added, add the default model
-            if not models and '*' in profiles:
-                default_model = as_str(tmpl.get('defaultModel', ''))
-                if default_model:
-                    wildcard_profile = as_dict(profiles['*'])
-                    models.append(
-                        {
-                            'id': default_model,
-                            'name': default_model,
-                            'contextWindow': as_int(wildcard_profile.get('contextWindow', 128000)),
-                            'reasoning': as_bool(wildcard_profile.get('supportsReasoning', False)),
-                            'free': False,
-                            'source': 'template',
-                        }
-                    )
+    baseUrl = (body.base_url or '').strip()
+    apiFormat = body.api_format or 'openaiChat'
+    if not baseUrl:
+        raise HTTPException(
+            status_code=400,
+            detail='baseUrl is required — configure the provider endpoint yourself (no built-in templates).',
+        )
     slug = body.name.lower().replace(' ', '-')[:40]
     rand = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]
     providerId = f'{slug}-{rand}'
@@ -125,7 +91,7 @@ async def createProvider(body: ProviderCreate):
         'apiKey': body.api_key,
         'enabled': body.enabled,
         'autoFetch': False,
-        'models': models,
+        'models': [],
     }
     providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):

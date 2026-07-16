@@ -1,6 +1,6 @@
 /**
- * LiveSTT — browser Web Speech when available; server ProviderSTT when
- * Live STT provider is configured; otherwise clear error (no silent stub).
+ * LiveSTT — browser Web Speech when available; server ProviderSTT only when
+ * Live STT provider is configured and ready; otherwise clear error (no silent 501).
  */
 
 import { WebSpeechSTT } from './webSpeechSTT';
@@ -14,12 +14,25 @@ export interface LiveSTT {
   onError(callback: (err: Error) => void): () => void;
 }
 
+export interface LiveSTTFactoryOpts {
+  /** Prefer server STT even when browser speech exists. */
+  preferServer?: boolean;
+  /** True when Settings Live STT provider is set and has an API key. */
+  serverConfigured?: boolean;
+}
+
 class UnavailableSTT implements LiveSTT {
   private errCbs: Array<(err: Error) => void> = [];
+  private message: string;
+
+  constructor(message?: string) {
+    this.message =
+      message ??
+      'Speech recognition unavailable. Enable browser Web Speech or configure a Live STT provider (with API key) in Settings → Live.';
+  }
+
   async start(): Promise<void> {
-    const err = new Error(
-      'Speech recognition unavailable. Enable browser Web Speech or configure a Live STT provider in Settings.',
-    );
+    const err = new Error(this.message);
     for (const cb of this.errCbs) cb(err);
   }
   async stop(): Promise<void> {}
@@ -46,14 +59,29 @@ function hasBrowserSpeech(): boolean {
   return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
 }
 
-/** Prefer browser; use server ProviderSTT when preferServer or no browser speech. */
-export function liveSTTFactory(opts?: { preferServer?: boolean }): LiveSTT {
-  if (!opts?.preferServer && hasBrowserSpeech()) {
-    return new WebSpeechSTT();
-  }
-  // Server path when configured (ProviderSTT → /api/live/stt/upload)
-  if (opts?.preferServer || !hasBrowserSpeech()) {
+/**
+ * Prefer browser Web Speech unless server is preferred and configured.
+ * Never return ProviderSTT when server STT is not ready (avoids silent 501).
+ */
+export function liveSTTFactory(opts?: LiveSTTFactoryOpts): LiveSTT {
+  const serverConfigured = Boolean(opts?.serverConfigured);
+  const preferServer = Boolean(opts?.preferServer);
+
+  if (preferServer && serverConfigured) {
     return new ProviderSTT();
   }
-  return new UnavailableSTT();
+  if (!preferServer && hasBrowserSpeech()) {
+    return new WebSpeechSTT();
+  }
+  if (serverConfigured) {
+    return new ProviderSTT();
+  }
+  if (hasBrowserSpeech()) {
+    return new WebSpeechSTT();
+  }
+  return new UnavailableSTT(
+    preferServer
+      ? 'Server STT is not ready. Set a Live STT provider with an API key in Settings, or use browser speech.'
+      : undefined,
+  );
 }

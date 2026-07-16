@@ -83,7 +83,7 @@ export function ThinkingDisclosure({
 
   return (
     <div
-      className="text-sm text-muted-foreground"
+      className="text-[12.5px] text-muted-foreground/70"
       data-slot="thinking-disclosure"
     >
       <DisclosureRow
@@ -94,8 +94,10 @@ export function ThinkingDisclosure({
           {icon}
           <span
             className={cn(
-              'text-sm font-medium leading-5',
-              pending ? 'text-foreground/80 shimmer thinking-content-generating' : 'text-muted-foreground'
+              'text-[12.5px] font-normal leading-5',
+              pending
+                ? 'text-muted-foreground/85 shimmer thinking-content-generating'
+                : 'text-muted-foreground/55',
             )}
           >
             <span className={cn('thinking-text', pending && 'animating')}>
@@ -120,9 +122,9 @@ export function ThinkingDisclosure({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
-              'mt-0.5 w-full min-w-0 max-w-full overflow-y-auto wrap-anywhere pb-1 max-h-40 thinking-scroll'
+              'mt-0.5 w-full min-w-0 max-w-full overflow-y-auto wrap-anywhere pb-1 max-h-36 thinking-scroll text-muted-foreground/65',
             )}
             ref={scrollRef}
           >

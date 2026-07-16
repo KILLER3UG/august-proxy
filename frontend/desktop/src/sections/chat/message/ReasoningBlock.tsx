@@ -70,7 +70,7 @@ export function ReasoningBlock({
             {parts.map((part, i) => (
               <div
                 key={i}
-                className="pl-3 border-l border-foreground/15 py-1 thought-content chat-thought-text"
+                className="pl-3 chat-rail py-1 thought-content chat-thought-text"
               >
                 <Markdown content={part} />
               </div>

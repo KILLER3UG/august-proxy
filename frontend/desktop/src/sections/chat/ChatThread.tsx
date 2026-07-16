@@ -222,6 +222,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
     return 'medium';
   });
+  // Session-local: default on; reset to on when switching onto a thinking-capable model.
+  const [thinkingEnabled, setThinkingEnabled] = useState(true);
+
+  // Reset thinking toggle when navigating to a different chat session.
+  useEffect(() => {
+    setThinkingEnabled(true);
+  }, [sessionId]);
 
   const queuedMessages = useQueuedMessagesStore(
     (s) => s.bySession[sessionId ?? ''] ?? EMPTY_QUEUED_MESSAGES,
@@ -403,6 +410,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     modelForRequest,
     workbenchMode,
     effort,
+    thinkingEnabled,
     ensureWorkbenchSession,
     setShowToolsDropdown: dropdownClosers.setShowToolsDropdown,
     setShowCommandsDropdown: dropdownClosers.setShowCommandsDropdown,
@@ -504,6 +512,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       /* silent */
     }
   }, [effort]);
+
+  // When the selected model gains thinking support, default the toggle on.
+  const supportsThinking = !!(
+    selectedModel?.supportsThinking || selectedModel?.supportsReasoning
+  );
+  const prevSupportsThinkingRef = useRef(supportsThinking);
+  useEffect(() => {
+    if (supportsThinking && !prevSupportsThinkingRef.current) {
+      setThinkingEnabled(true);
+    }
+    prevSupportsThinkingRef.current = supportsThinking;
+  }, [supportsThinking]);
 
   useEffect(() => {
     try {
@@ -696,6 +716,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       onEditModels={() => setShowModelVisibility(true)}
       effort={effort}
       setEffort={setEffort}
+      thinkingEnabled={thinkingEnabled}
+      setThinkingEnabled={setThinkingEnabled}
       voiceActive={voiceActive}
       startVoiceInput={startVoiceInput}
       dropdownApiRef={composerDropdownRef}

@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from app.json_narrowing import as_str, as_dict, as_list
+from app.json_narrowing import as_dict, as_list
 
 # Canonical API formats understood by the proxy. Kept in sync with the
 # provider templates (openaiChat / anthropicMessages) plus the OpenAI
@@ -87,7 +87,6 @@ async def setupProvider(
     api_format = _normalize_format(apiFormat)
 
     from app.services import config_service, model_service
-    from app.providers.template_loader import get_templates
 
     store = config_service.getProvidersStore()
     if 'providers' not in store:
@@ -117,40 +116,18 @@ async def setupProvider(
                 )
         return _err(f"Provider '{providerId}' not found.", providerId=providerId)
 
-    # ── Create a new provider ──
+    # ── Create a new provider (user-configured; no templates) ──
     display_name = name or suggestedName
     slug = display_name.lower().replace(' ', '-')[:40] or 'provider'
     rand = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]
     new_id = f'{slug}-{rand}'
 
-    # Apply template defaults when the chosen name matches a known template.
-    resolved_url = baseUrl
-    models: list[dict] = []
-    for rawTmpl in get_templates():
-        tmpl = as_dict(rawTmpl)
-        tmpl_name = (as_str(tmpl.get('name'), '') or '').lower()
-        tmpl_id = (as_str(tmpl.get('id'), '') or '').lower()
-        if tmpl_name == display_name.lower() or tmpl_id == display_name.lower():
-            if not resolved_url:
-                resolved_url = as_str(tmpl.get('baseUrl'), '')
-            if api_format == 'openaiChat':
-                api_format = as_str(tmpl.get('apiFormat'), api_format)
-            profiles = as_dict(tmpl.get('modelProfiles'), {})
-            for key in profiles:
-                if key == '*':
-                    continue
-                prof = as_dict(profiles.get(key), {})
-                models.append(
-                    {
-                        'id': key,
-                        'name': key,
-                        'contextWindow': prof.get('contextWindow', 128000),
-                        'reasoning': prof.get('supportsReasoning', False),
-                        'free': False,
-                        'source': 'template',
-                    }
-                )
-            break
+    resolved_url = (baseUrl or '').strip()
+    if not resolved_url:
+        return _err(
+            "baseUrl is required. Look up the provider's API base URL "
+            '(e.g. https://api.openai.com/v1) and pass it to setup_provider.'
+        )
 
     entry = {
         'id': new_id,
@@ -160,7 +137,7 @@ async def setupProvider(
         'apiKey': apiKey or '',
         'enabled': True,
         'autoFetch': False,
-        'models': models,
+        'models': [],
     }
     as_list(store['providers']).append(entry)
     config_service.saveProvidersStore(store)

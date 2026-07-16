@@ -1,8 +1,14 @@
 # Unified Connectivity & Memory Implementation Plan
 
-> **Status:** Active — partially implemented (see § Progress snapshot)  
+> **Historical implementation plan** (2026-07-14). Much of this shipped into
+> runtime code; for **current** session/memory/MCP/Live SoT see
+> [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and
+> [`../CONFIGURATION.md`](../CONFIGURATION.md). Do not treat unchecked boxes
+> here as the only product backlog without re-verifying against the repo.
+>
+> **Status (at write time):** Active — partially implemented (see § Progress snapshot)  
 > **Created:** 2026-07-14  
-> **Last updated:** 2026-07-14  
+> **Last updated:** 2026-07-15 (historical banner)  
 > **Standard:** Every deliverable is a **long-term fix** (see §0.1). Temporary bridges need a sunset.  
 > **Purpose:** Single trackable plan for connectivity, sessions, memory, MCP/Live, and honest UI.  
 > **How to use:** Check boxes as work ships. IDs below (S1, M1, G1, …) are **plan-internal only** — do **not** put them in git commit messages; use plain English instead.

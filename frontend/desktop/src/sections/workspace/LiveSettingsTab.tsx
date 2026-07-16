@@ -128,6 +128,9 @@ export function LiveSettingsTab() {
     );
   }
 
+  const sttReady = Boolean(initial.sttReady);
+  const ttsReady = Boolean(initial.ttsReady);
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
@@ -137,6 +140,41 @@ export function LiveSettingsTab() {
             Browser speech works with no config. Pick an OpenAI-compatible
             provider (with API key) for real server Whisper STT and TTS.
           </p>
+          <div
+            className="mt-2 flex flex-wrap gap-2 text-[11px]"
+            data-testid="live-readiness-badges"
+          >
+            <span
+              className={`rounded-full px-2 py-0.5 border ${
+                sttReady
+                  ? 'border-emerald-500/40 text-emerald-400'
+                  : 'border-white/10 text-muted-foreground'
+              }`}
+            >
+              STT: {sttReady ? 'server ready' : 'browser default'}
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 border ${
+                ttsReady
+                  ? 'border-emerald-500/40 text-emerald-400'
+                  : 'border-white/10 text-muted-foreground'
+              }`}
+            >
+              TTS: {ttsReady ? 'server ready' : 'browser default'}
+            </span>
+          </div>
+          {Boolean(active.sttProvider) && !sttReady && editCfg === null && (
+            <p className="text-xs text-amber-400/90 mt-2" data-testid="live-stt-not-ready">
+              STT provider is set but has no usable API key — Live will keep using
+              browser speech (or error if the browser has no Web Speech).
+            </p>
+          )}
+          {Boolean(active.ttsProvider) && !ttsReady && editCfg === null && (
+            <p className="text-xs text-amber-400/90 mt-2" data-testid="live-tts-not-ready">
+              TTS provider is set but has no usable API key — Live will keep using
+              browser speechSynthesis.
+            </p>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -186,6 +224,7 @@ export function LiveSettingsTab() {
             type="button"
             disabled={!dirty || saving}
             onClick={() => void handleSave()}
+            data-testid="live-save"
             className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save'}
@@ -193,6 +232,7 @@ export function LiveSettingsTab() {
           <button
             type="button"
             onClick={handleReset}
+            data-testid="live-reset"
             className="text-xs px-3 py-1.5 rounded border border-border"
           >
             Reset to browser defaults

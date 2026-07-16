@@ -3,9 +3,6 @@
 import { useState } from "react";
 import {
   Plus,
-  MessageSquare,
-  Folder as FolderIcon,
-  FolderOpen,
   FolderPlus,
   ChevronRight,
   Edit3,
@@ -14,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Folder } from "@/store/sessions";
 
-/** Section header for PINNED / SESSIONS with optional folder create actions. */
+/** Section header for PINNED / RECENTS with optional folder create actions. */
 export function Section({
   title,
   count,
@@ -32,20 +29,22 @@ export function Section({
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5 px-2">
-        <div className="flex items-center gap-1.5">
-          <h3 className="text-[11px] uppercase tracking-caps text-muted-foreground/75 font-semibold">
+      <div className="flex items-center justify-between mb-1 px-2">
+        <div className="flex items-center gap-1">
+          <h3 className="text-[11px] text-sidebar-foreground/40 font-normal">
             {title}
           </h3>
-          <span className="text-xs text-muted-foreground/50 font-mono">
-            ({count})
-          </span>
+          {count > 0 && (
+            <span className="text-[10px] text-sidebar-foreground/25 tabular-nums">
+              {count}
+            </span>
+          )}
         </div>
-        {title === "SESSIONS" && onNewFolder && onUploadFolder && (
-          <div className="flex items-center gap-1">
+        {(title === "Sessions" || title === "Recents") && onNewFolder && onUploadFolder && (
+          <div className="flex items-center gap-0.5">
             <button
               onClick={onUploadFolder}
-              className="text-muted-foreground/50 hover:text-foreground p-0.5 rounded transition hover:bg-white/5"
+              className="text-sidebar-foreground/30 hover:text-sidebar-foreground/55 p-0.5 rounded transition-colors hover:bg-white/[0.03]"
               title="Open Workspace Folder"
             >
               <FolderPlus className="size-3" />
@@ -55,7 +54,7 @@ export function Section({
                 e.stopPropagation();
                 onNewFolder();
               }}
-              className="text-muted-foreground/50 hover:text-foreground p-0.5 rounded transition hover:bg-white/5"
+              className="text-sidebar-foreground/30 hover:text-sidebar-foreground/55 p-0.5 rounded transition-colors hover:bg-white/[0.03]"
               title="Create Sidebar Folder"
             >
               <Plus className="size-3" />
@@ -63,8 +62,8 @@ export function Section({
           </div>
         )}
       </div>
-      {count === 0 && title === "PINNED" ? (
-        <p className="px-2 py-1 text-xs text-muted-foreground/40 italic">
+      {count === 0 && title === "Pinned" ? (
+        <p className="px-2 py-0.5 text-[11px] text-sidebar-foreground/30">
           {empty ?? "No items"}
         </p>
       ) : (
@@ -100,68 +99,55 @@ export function FolderHeader({
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="flex items-center justify-between py-1 px-1.5 rounded-md hover:bg-white/5 cursor-pointer group text-sidebar-foreground/80 font-medium"
+      className="flex items-center justify-between py-0.5 px-2 rounded-md hover:bg-white/[0.03] cursor-pointer group text-sidebar-foreground/55"
       onClick={onToggleCollapse}
     >
-      <div className="flex items-center gap-1.5 min-w-0">
+      <div className="flex items-center gap-1 min-w-0">
         <span
           className={cn(
-            "size-1 rounded-full shrink-0 transition-colors",
-            folder.isCollapsed ? "bg-muted-foreground/40" : "bg-primary",
-          )}
-        />
-        {folder.isCollapsed ? (
-          <FolderIcon className="size-3.5 text-muted-foreground/70 shrink-0" />
-        ) : (
-          <FolderOpen className="size-3.5 text-muted-foreground/70 shrink-0" />
-        )}
-        <span className="truncate text-sm font-semibold text-foreground/85">
-          {folder.name}
-        </span>
-        <span className="text-xs text-muted-foreground/50 font-mono">
-          ({count})
-        </span>
-      </div>
-      <div
-        className="flex items-center gap-0.5 shrink-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {isHovered && (
-          <>
-            <button
-              onClick={onNewSession}
-              className="p-0.5 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground"
-              title={`New session in ${folder.name}`}
-            >
-              <Plus className="size-2.5" />
-            </button>
-            <button
-              onClick={onRename}
-              className="p-0.5 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground"
-              title="Rename Folder"
-            >
-              <Edit3 className="size-2.5" />
-            </button>
-            <button
-              onClick={onDelete}
-              className="p-0.5 hover:bg-white/10 rounded text-destructive hover:text-destructive-foreground"
-              title="Delete Folder"
-            >
-              <Trash2 className="size-2.5" />
-            </button>
-          </>
-        )}
-        <span
-          className={cn(
-            "size-3.5 flex items-center justify-center rounded transition-all duration-150",
-            folder.isCollapsed
-              ? "rotate-0 text-muted-foreground/60"
-              : "rotate-90 text-muted-foreground/60",
-            !isHovered && "opacity-60",
+            "flex items-center justify-center shrink-0 transition-transform duration-150 text-sidebar-foreground/35",
+            folder.isCollapsed ? "rotate-0" : "rotate-90",
           )}
         >
           <ChevronRight className="size-3" />
         </span>
+        <span className="truncate text-[12.5px] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
+          {folder.name}
+        </span>
+        {count > 0 && (
+          <span className="text-[10px] text-sidebar-foreground/25 tabular-nums shrink-0">
+            {count}
+          </span>
+        )}
+      </div>
+      <div
+        className={cn(
+          "flex items-center gap-0.5 shrink-0 transition-opacity",
+          isHovered ? "opacity-100" : "opacity-0",
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onNewSession}
+          className="p-0.5 hover:bg-white/[0.06] rounded text-sidebar-foreground/40 hover:text-sidebar-foreground/70"
+          title={`New session in ${folder.name}`}
+        >
+          <Plus className="size-2.5" />
+        </button>
+        <button
+          onClick={onRename}
+          className="p-0.5 hover:bg-white/[0.06] rounded text-sidebar-foreground/40 hover:text-sidebar-foreground/70"
+          title="Rename Folder"
+        >
+          <Edit3 className="size-2.5" />
+        </button>
+        <button
+          onClick={onDelete}
+          className="p-0.5 hover:bg-white/[0.06] rounded text-destructive/70 hover:text-destructive"
+          title="Delete Folder"
+        >
+          <Trash2 className="size-2.5" />
+        </button>
       </div>
     </div>
   );
@@ -179,35 +165,27 @@ export function UncategorizedHeader({
 }) {
   return (
     <div
-      className="flex items-center justify-between py-1 px-1.5 rounded-md hover:bg-white/5 cursor-pointer group text-sidebar-foreground/80 font-medium"
+      className="flex items-center justify-between py-0.5 px-2 rounded-md hover:bg-white/[0.03] cursor-pointer group text-sidebar-foreground/55"
       onClick={onToggleCollapse}
     >
-      <div className="flex items-center gap-1.5 min-w-0">
+      <div className="flex items-center gap-1 min-w-0">
         <span
           className={cn(
-            "size-1 rounded-full shrink-0 transition-colors",
-            isCollapsed ? "bg-muted-foreground/40" : "bg-primary",
+            "flex items-center justify-center shrink-0 transition-transform duration-150 text-sidebar-foreground/35",
+            isCollapsed ? "rotate-0" : "rotate-90",
           )}
-        />
-        <MessageSquare className="size-3.5 text-muted-foreground/70 shrink-0" />
-        <span className="truncate text-sm font-semibold text-foreground/85">
-          Other Chats
+        >
+          <ChevronRight className="size-3" />
         </span>
-        <span className="text-xs text-muted-foreground/50 font-mono">
-          ({count})
+        <span className="truncate text-[12.5px] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
+          Other chats
         </span>
-      </div>
-      <span
-        className={cn(
-          "size-3.5 flex items-center justify-center rounded transition-all duration-150 shrink-0",
-          isCollapsed
-            ? "rotate-0 text-muted-foreground/60"
-            : "rotate-90 text-muted-foreground/60",
-          "opacity-60 group-hover:opacity-100",
+        {count > 0 && (
+          <span className="text-[10px] text-sidebar-foreground/25 tabular-nums shrink-0">
+            {count}
+          </span>
         )}
-      >
-        <ChevronRight className="size-3" />
-      </span>
+      </div>
     </div>
   );
 }

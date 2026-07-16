@@ -3,7 +3,6 @@
 
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
-import { queueWorkbenchMessage } from '@/api/workbench';
 import type { ChatMessage } from '@/types/chat';
 import { persistMessages } from '../message-storage';
 
@@ -121,16 +120,30 @@ export function useChatMessageActions({
 
   const handleClarifyAnswer = useCallback(
     (msgId: string, answer: string) => {
-      if (sessionId) {
-        void queueWorkbenchMessage(sessionId, answer);
-      }
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === msgId ? { ...msg, clarify: { ...(msg.clarify ?? {}), answer } } : msg,
-        ),
+      // The backend tool loop already broke out of the turn when it proposed
+      // this question (`clarifySubmittedThisRound` — see workbench.py), so
+      // the session is sitting idle, not mid-stream. Queuing the answer via
+      // `queueWorkbenchMessage` (a mid-response steer primitive) therefore
+      // did nothing until the user happened to send another message — the
+      // model just looked like it had stopped forever. Answering needs to
+      // behave like a normal user turn: mark the question answered (so the
+      // banner disappears) and kick off a fresh generate with the answer as
+      // the next user message, exactly like pressing Send would.
+      const stamped = messages.map((msg) =>
+        msg.id === msgId ? { ...msg, clarify: { ...(msg.clarify ?? {}), answer } } : msg,
       );
+      const userMsg: ChatMessage = {
+        id: `m${Date.now()}`,
+        role: 'user',
+        content: answer,
+        timestamp: new Date().toISOString(),
+      };
+      const nextMessages = [...stamped, userMsg];
+      setMessages(nextMessages);
+      persistMessages(sessionId, nextMessages);
+      void generateAIResponse(nextMessages);
     },
-    [sessionId, setMessages],
+    [sessionId, messages, setMessages, generateAIResponse],
   );
 
   return {

@@ -910,6 +910,7 @@ async def sendWorkbenchMessageStream(
     model: str = '',
     modelProvider: str = '',
     guardMode: str = '',
+    thinking_enabled: bool = True,
     emit: Callable[[dict[str, object]], None] | None = None,
     signal: asyncio.Event | None = None,
 ) -> None:
@@ -952,6 +953,7 @@ async def sendWorkbenchMessageStream(
             model=model,
             modelProvider=modelProvider,
             guardMode=guardMode,
+            thinking_enabled=thinking_enabled,
             emit=emit,
             signal=signal,
             trace=trace,
@@ -973,6 +975,7 @@ async def _sendWorkbenchMessageStreamImpl(
     model: str = '',
     modelProvider: str = '',
     guardMode: str = '',
+    thinking_enabled: bool = True,
     emit: Callable[[dict[str, object]], None] | None = None,
     signal: asyncio.Event | None = None,
     trace: object | None = None,
@@ -1190,6 +1193,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     effectiveEffort,
                     provider=resolvedProvider,
                     emit=emit,
+                    thinking_enabled=thinking_enabled,
                 )
             elif isOpenai:
                 response = await _callOpenaiWorkbench(
@@ -1200,6 +1204,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     effectiveEffort,
                     provider=resolvedProvider,
                     emit=emit,
+                    thinking_enabled=thinking_enabled,
                 )
             else:
                 response = {'error': f'Unknown provider format for {resolvedProvider}'}

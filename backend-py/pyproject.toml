@@ -46,6 +46,12 @@ desktop = [
 pty = [
     "pywinpty>=2.0.0; sys_platform == 'win32'",
 ]
+gateway = [
+    # Platform bot adapters (Telegram uses httpx already in core deps).
+    # Install with: uv sync --extra gateway   or   pip install -e ".[gateway]"
+    "discord.py>=2.3.0",
+    "slack_sdk>=3.27.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["app"]

@@ -118,7 +118,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
 ] as const;
 
 /**
- * The 18 sections of the Settings left rail.
+ * The sections of the Settings left rail (see docs/settings-audit.md).
  *
  * Every section's `id` is immutable for legacy-alias support. To rename
  * a section, change the `label` and re-export the old label as an

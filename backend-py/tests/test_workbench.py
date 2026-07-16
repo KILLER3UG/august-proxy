@@ -431,6 +431,80 @@ class TestAnthropicWorkbenchStreaming:
         assert result['thinking'] == ''
         assert not any((b.get('type') == 'thinking' for b in result['content']))
 
+
+class TestOpenaiWorkbenchThinkingToggle:
+    """Regression: some OpenAI-compatible providers (DeepSeek-R1-style
+    "always reasoning" models via OpenCode Zen, etc.) stream
+    `reasoning_content` deltas unconditionally — the `reasoning_effort`
+    request param is only a hint many of them ignore. Before the fix,
+    `call_openai_workbench` captured/emitted those deltas regardless of the
+    user's Thinking toggle, so turning it off had no visible effect."""
+
+    @staticmethod
+    def _fake_client(reasoning_content: str):
+        class _FakeClient:
+            def resolveApiKey(self):
+                return 'test-key'
+
+            async def chat_completions_stream(self, body):
+                yield {
+                    'choices': [
+                        {'index': 0, 'delta': {'reasoning_content': reasoning_content}},
+                    ]
+                }
+                yield {
+                    'choices': [
+                        {'index': 0, 'delta': {'content': 'Hello world'}, 'finish_reason': 'stop'},
+                    ]
+                }
+
+        return _FakeClient()
+
+    async def testReasoningDroppedWhenThinkingDisabled(self, monkeypatch):
+        from app.services.workbench.providers import call_openai_workbench
+
+        import app.providers.clients as clients
+
+        monkeypatch.setattr(clients, 'getClient', lambda provider: self._fake_client('secret reasoning trace'))
+        emitted: list[dict] = []
+        provider = {'name': 'opencode-zen', 'model_profiles': {'*': {}}}
+        result = await call_openai_workbench(
+            [{'role': 'user', 'content': 'hi'}],
+            'You are helpful.',
+            'deepseek-r1',
+            [],
+            'medium',
+            provider=provider,
+            emit=emitted.append,
+            thinking_enabled=False,
+        )
+        assert result is not None
+        assert result['text'] == 'Hello world'
+        assert result['thinking'] == ''
+        assert not any((e.get('type') == 'thinking' for e in emitted))
+
+    async def testReasoningKeptWhenThinkingEnabled(self, monkeypatch):
+        from app.services.workbench.providers import call_openai_workbench
+
+        import app.providers.clients as clients
+
+        monkeypatch.setattr(clients, 'getClient', lambda provider: self._fake_client('visible reasoning trace'))
+        emitted: list[dict] = []
+        provider = {'name': 'opencode-zen', 'model_profiles': {'*': {}}}
+        result = await call_openai_workbench(
+            [{'role': 'user', 'content': 'hi'}],
+            'You are helpful.',
+            'deepseek-r1',
+            [],
+            'medium',
+            provider=provider,
+            emit=emitted.append,
+            thinking_enabled=True,
+        )
+        assert result is not None
+        assert result['thinking'] == 'visible reasoning trace'
+        assert any((e.get('type') == 'thinking' for e in emitted))
+
     async def testWorkbenchRecordsContextTokensAsFinalSubcallInput(self, monkeypatch):
         """The gauge ground truth: record_usage must be called with
         context_tokens = the input_tokens of the FINAL provider sub-call in

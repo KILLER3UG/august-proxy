@@ -7,7 +7,7 @@ import { useLearningData } from '@/hooks/useLearningData';
 import { api } from '@/api/client';
 
 export function LearningTab() {
-  const { data, error } = useLearningData();
+  const { data, error, isFetching, dataUpdatedAt } = useLearningData();
   const qc = useQueryClient();
 
   const invalidate = () => {
@@ -63,6 +63,16 @@ export function LearningTab() {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
+      <div className="flex items-center gap-1.5 text-xs md:col-span-2">
+        <span
+          className={`size-2 rounded-full ${isFetching ? 'bg-success animate-pulse' : 'bg-muted-foreground'}`}
+          aria-hidden
+        />
+        <span className="text-muted-foreground">
+          {isFetching ? 'Refreshing…' : dataUpdatedAt ? `Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : 'Auto-refreshes every 30s'}
+        </span>
+      </div>
+
       {/* Learned heuristics */}
       <Card className="p-4 space-y-3 md:col-span-2">
         <div className="flex items-center justify-between">

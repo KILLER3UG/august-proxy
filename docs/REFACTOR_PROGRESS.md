@@ -1,14 +1,15 @@
 # Refactor Progress Tracker — August Proxy
 
-> **Live tracker for the multi-session refactor of August Proxy.** Updated at
-> the end of every session. This file is the authority for refactor-status
-> questions. Stale archaeology audits were removed from `docs/`.
+> **Closed program tracker** for the multi-session refactor of August Proxy.
+> Phase 8 is signed off. For **current product how-to**, use
+> [`DOCUMENTATION.md`](./DOCUMENTATION.md) and the primary guides
+> (SETUP / ARCHITECTURE / API_REFERENCE / CONFIGURATION). For known residual
+> product gaps from the 2026-07-15 doc audit, see [`GAPS_AND_BUGS.md`](./GAPS_AND_BUGS.md).
 >
-> **Full pasteable handoff prompt for a new chat/model:**
+> Historical handoff prompt:
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
-> (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **Phase 8 SIGNED OFF** (full refactor program complete)
+**Last updated:** 2026-07-15 — doc audit cross-link; **Phase 8 SIGNED OFF** (2026-07-14)
 **Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
 pytest **748** · vitest **547** · Phase 7 gate · indexes `ALL_SIX_PRESENT` · isolation autouse

@@ -1,6 +1,6 @@
 /* ── ChatThreadComposer ───────────────────────────────────────────────── */
-/* Message box: attachments, @skills/tools, /commands, queue pills, mode,   */
-/* model/effort, context ring, send / mid-run steer, stop.                 */
+/* Floating pill message box: attachments, @skills/tools, /commands,       */
+/* model/effort menu, send / mid-run steer, stop.                          */
 
 import { useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { cn } from '@/lib/utils';
@@ -73,6 +73,8 @@ export interface ChatThreadComposerProps {
   onEditModels: () => void;
   effort: EffortLevel;
   setEffort: Dispatch<SetStateAction<EffortLevel>>;
+  thinkingEnabled: boolean;
+  setThinkingEnabled: Dispatch<SetStateAction<boolean>>;
   voiceActive: boolean;
   startVoiceInput: () => void;
   /** Optional: parent registers send-path popover closers. */
@@ -121,6 +123,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     onEditModels,
     effort,
     setEffort,
+    thinkingEnabled,
+    setThinkingEnabled,
     voiceActive,
     startVoiceInput,
     dropdownApiRef,
@@ -142,7 +146,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
   });
 
   return (
-    <div className="relative" ref={popovers.composerRootRef}>
+    <div className="relative pb-3" ref={popovers.composerRootRef}>
       <input
         type="file"
         ref={fileInputRef}
@@ -197,12 +201,13 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
       <div
         className={cn(
-          'w-full min-w-0 rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary overflow-visible',
-          'border-border',
+          'w-full min-w-0 rounded-3xl border bg-card/95 backdrop-blur-sm shadow-lg transition',
+          'focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary/60',
+          'border-border/70 overflow-visible',
         )}
       >
         {messages.length === 0 && (
-          <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border/50">
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40">
             <WorkspaceSelector
               sessionId={sessionId}
               onWorkspaceChange={(ws) => {
@@ -242,12 +247,12 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
               onPaste={handleComposerPaste}
               placeholder={
                 streaming
-                  ? 'Add a direction while August works… (applied after the next tool step)'
-                  : 'Enter message… (use / for commands)'
+                  ? 'Add a direction while August works…'
+                  : 'Write a message...'
               }
               rows={1}
-              className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground"
-              style={{ minHeight: '64px', maxHeight: '360px' }}
+              className="w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm outline-none placeholder:text-muted-foreground/70"
+              style={{ minHeight: '52px', maxHeight: '360px' }}
             />
 
             {showPreview && input.trim() && (
@@ -295,6 +300,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           onEditModels={onEditModels}
           effort={effort}
           setEffort={setEffort}
+          thinkingEnabled={thinkingEnabled}
+          setThinkingEnabled={setThinkingEnabled}
           actionsOpen={popovers.showComposerActionsDropdown}
           actionsPos={popovers.composerActionsPos}
           actionsTriggerRef={popovers.composerActionsTriggerRef}

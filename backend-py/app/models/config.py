@@ -37,14 +37,13 @@ class ProviderConfig(ExtraAllowBaseModel):
 
 
 class ProviderCreate(ExtraAllowBaseModel):
-    """Request body for creating a new provider."""
+    """Request body for creating a new provider (user-configured only)."""
 
     name: str
     base_url: str = ''
     api_format: str = 'openaiChat'
     api_key: str = ''
     enabled: bool = True
-    template: str | None = None
 
 
 class ProviderUpdate(ExtraAllowBaseModel):

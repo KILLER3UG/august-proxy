@@ -277,10 +277,35 @@ def extract_thinking(content_blocks: list[dict[str, object]]) -> str:
 
 
 def supports_thinking(provider: dict[str, object], model: str) -> bool:
-    """Check if a provider/model supports Anthropic-style thinking."""
+    """Check if a provider/model supports Anthropic-style extended thinking.
+
+    Exact and non-wildcard prefix profiles win. A wildcard ``*`` claim alone
+    only enables thinking for **Claude** model ids.
+    """
     profiles = as_dict(provider.get('modelProfiles', {}))
-    profile = as_dict(profiles.get(model) or profiles.get('*') or {})
-    return as_bool(profile.get('supportsThinking')) or as_bool(profile.get('supportsReasoning'))
+    model_l = (model or '').lower()
+
+    if model in profiles:
+        profile = as_dict(profiles.get(model) or {})
+        return as_bool(profile.get('supportsThinking')) or as_bool(profile.get('supportsReasoning'))
+
+    best_key = ''
+    best_profile: dict[str, object] = {}
+    for key, val in profiles.items():
+        if key == '*' or not isinstance(key, str):
+            continue
+        if model_l.startswith(str(key).lower()) and len(str(key)) > len(best_key):
+            best_key = str(key)
+            best_profile = as_dict(val)
+    if best_key:
+        return as_bool(best_profile.get('supportsThinking')) or as_bool(
+            best_profile.get('supportsReasoning')
+        )
+
+    star = as_dict(profiles.get('*') or {})
+    if not (as_bool(star.get('supportsThinking')) or as_bool(star.get('supportsReasoning'))):
+        return False
+    return 'claude' in model_l
 
 
 async def call_anthropic_workbench(
@@ -291,6 +316,7 @@ async def call_anthropic_workbench(
     effort: str,
     provider: dict[str, object] | None = None,
     emit: Callable[[dict[str, object]], None] | None = None,
+    thinking_enabled: bool = True,
 ) -> dict[str, object]:
     """Call an Anthropic-format model with progressive streaming.
 
@@ -320,9 +346,10 @@ async def call_anthropic_workbench(
     body['messages'] = anthropicMessages
     if tools:
         body['tools'] = tools
-    thinkingBudget = effort_to_thinking_budget(effort)
-    if thinkingBudget > 0 and supports_thinking(provider, model):
-        body['thinking'] = {'type': 'enabled', 'budget_tokens': thinkingBudget}
+    if thinking_enabled:
+        thinkingBudget = effort_to_thinking_budget(effort)
+        if thinkingBudget > 0 and supports_thinking(provider, model):
+            body['thinking'] = {'type': 'enabled', 'budget_tokens': thinkingBudget}
     agg = AnthropicWorkbenchStreamAggregator(emit=emit)
     try:
         async for event in client.messages_stream(body):
@@ -342,6 +369,7 @@ async def call_openai_workbench(
     effort: str,
     provider: dict[str, object] | None = None,
     emit: Callable[[dict[str, object]], None] | None = None,
+    thinking_enabled: bool = True,
 ) -> dict[str, object]:
     """Call an OpenAI-format model with progressive streaming.
 
@@ -374,10 +402,15 @@ async def call_openai_workbench(
     # Only attach OpenAI-style reasoning_effort when the provider is likely to
     # understand it (official OpenAI / Codex). Other OpenAI-compatible gateways
     # (OpenCode Zen, MiniMax, …) often reject or ignore it.
-    reasoning = effort_to_openai_reasoning_effort(effort)
-    pname = as_str(provider.get('name') or provider.get('id')).lower()
-    if reasoning and ('openai' in pname or 'codex' in pname or as_str(provider.get('apiMode')) == 'codexResponses'):
-        body['reasoning_effort'] = reasoning
+    if thinking_enabled:
+        reasoning = effort_to_openai_reasoning_effort(effort)
+        pname = as_str(provider.get('name') or provider.get('id')).lower()
+        if reasoning and (
+            'openai' in pname
+            or 'codex' in pname
+            or as_str(provider.get('apiMode')) == 'codexResponses'
+        ):
+            body['reasoning_effort'] = reasoning
 
     contentText = ''
     thinkingText = ''
@@ -403,7 +436,19 @@ async def call_openai_workbench(
                 continue
             choice = as_dict(choices[0])
             delta = as_dict(choice.get('delta', {}))
-            reasoner = as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning'))
+            # Some OpenAI-compatible providers (DeepSeek-R1-style "always
+            # reasoning" models via OpenCode Zen, etc.) stream reasoning
+            # tokens unconditionally — `reasoning_effort` is a hint they
+            # often ignore entirely. When the user has switched the
+            # Thinking toggle off, drop these deltas instead of
+            # accumulating/emitting them so the UI has nothing to render
+            # and the model effectively "skips" thinking from the user's
+            # perspective.
+            reasoner = (
+                (as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning')))
+                if thinking_enabled
+                else ''
+            )
             if reasoner:
                 thinkingText += reasoner
                 if emit:

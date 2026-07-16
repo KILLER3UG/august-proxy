@@ -1,7 +1,7 @@
-/* ── Session list — the actual sidebar from the screenshot ─────────── */
-/* Top:   New session (⌘N) + Skills & Tools + Artifacts                      */
-/* Middle: search, PINNED, SESSIONS (count)                                */
-/* Bottom: ⌂ + ⚙ ⏵ ⟳ + status                                  */
+/* ── Session list — Claude-like recents-first sidebar ──────────────── */
+/* Top:   New chat + quieter Continue / Skills / Artifacts                 */
+/* Middle: search, PINNED, RECENTS                                         */
+/* Bottom: Settings                                                        */
 
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, LayoutGroup } from "framer-motion";
@@ -284,10 +284,10 @@ export function SessionList({
           onNavigate={onNavigate}
         />
 
-        {/* Scrollable sessions area */}
-        <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-4">
+        {/* Scrollable sessions area — Recents-first */}
+        <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2.5">
           <Section
-            title="PINNED"
+            title="Pinned"
             count={pinned.length}
             empty="Shift-click a chat to pin"
           >
@@ -309,12 +309,12 @@ export function SessionList({
           </Section>
 
           <Section
-            title="SESSIONS"
+            title="Recents"
             count={others.length}
             onNewFolder={handleCreateFolder}
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
           >
-            <div className="space-y-2.5">
+            <div className="space-y-1.5">
               {/* Collapsible folders and their sessions */}
               {folders.map((folder) => {
                 const folderSessions = others.filter(
@@ -339,7 +339,7 @@ export function SessionList({
                     />
 
                     {!isCollapsed && (
-                      <div className="pl-2.5 ml-3.5 space-y-0.5">
+                      <div className="pl-1 ml-4 space-y-px">
                         <AnimatePresence initial={false} mode="popLayout">
                           {folderSessions.map((s) => (
                             <SessionRow
@@ -377,7 +377,7 @@ export function SessionList({
                     />
 
                     {!uncategorizedCollapsed && (
-                      <div className="pl-2.5 ml-3.5 space-y-0.5">
+                      <div className="pl-1 ml-4 space-y-px">
                         <AnimatePresence initial={false} mode="popLayout">
                           {uncategorizedSessions.map((s) => (
                             <SessionRow
@@ -406,12 +406,12 @@ export function SessionList({
         </div>
 
         {/* Settings at bottom */}
-        <div className="px-2 pb-2 pt-1 border-t border-border/20">
+        <div className="px-2 pb-2 pt-1.5 border-t border-sidebar-border/40">
           <button
             onClick={() => onNavigate("/settings")}
-            className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition"
+            className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-sidebar-foreground/50 hover:bg-white/[0.03] hover:text-sidebar-foreground/75 transition-colors"
           >
-            <Settings className="size-3.5" />
+            <Settings className="size-3.5 opacity-60" />
             <span>Settings</span>
           </button>
         </div>

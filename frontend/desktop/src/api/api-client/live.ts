@@ -10,6 +10,13 @@ export interface LiveConfig {
   ttsProvider: string;
   ttsModel: string;
   ttsVoice: string;
+  /** Server Whisper STT is usable (provider selected + API key). */
+  sttReady?: boolean;
+  /** Server TTS is usable (provider selected + API key). */
+  ttsReady?: boolean;
+  sttMode?: 'server' | 'browser' | string;
+  ttsMode?: 'server' | 'browser' | string;
+  note?: string;
 }
 
 export function getLiveConfig(): Promise<LiveConfig> {

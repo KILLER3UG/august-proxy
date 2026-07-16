@@ -46,7 +46,7 @@ export function UserMessageBubble({
 }) {
   return (
     <>
-      <div className="group rounded-xl border border-border/60 bg-card px-3.5 py-2 max-w-[80%] ml-auto shadow-xs hover:border-border/90 hover:shadow-soft transition-[border-color,box-shadow] duration-150">
+      <div className="group rounded-2xl bg-muted/35 px-3.5 py-2 max-w-[80%] ml-auto border border-transparent hover:bg-muted/45 transition-colors duration-150">
         {/* Mid-response queued messages get a small "Queued" badge
             so the conversation flow makes it clear that the
             message arrived while the model was already working
@@ -108,7 +108,7 @@ export function UserMessageBubble({
             )}
             <Markdown content={message.content} />
             {!userMsgExpanded && message.content.length > LONG_MSG_THRESHOLD && (
-              <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card to-transparent pointer-events-none" />
+              <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-[hsl(var(--muted)/0.9)] to-transparent pointer-events-none" />
             )}
           </div>
         )}

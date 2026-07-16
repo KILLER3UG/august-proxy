@@ -1,24 +1,24 @@
 /* ── Composer toolbar ──────────────────────────────────────────────────── */
-/* Mode selector, context ring, model/effort pickers, send / steer / stop. */
+/* Slim pill controls: + menu, model/effort, voice, send / steer / stop.   */
 
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { Send, StopCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Mic, Send, Square } from 'lucide-react';
 import { updateSessionModel } from '@/store/sessions';
 import { setWorkbenchGuardMode } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import {
-  WorkbenchModeSelector,
+  WORKBENCH_GUARD_MODES,
   type WorkbenchGuardMode,
 } from '@/components/chat/WorkbenchModeSelector';
 import { ProjectRulesBadge } from '@/components/chat/ProjectRulesBadge';
-import { ModelDropdown, EffortDropdown } from '../ComposerControls';
 import { ContextRing, type ContextBreakdown } from '../ChatComposer';
 import type { ModelItem } from '../model-display';
 import type { SessionUsageState } from '../hooks/useChatUsage';
 import type { EffortLevel } from '../hooks/useChatSend';
 import { ComposerActionsMenu } from './ComposerActionsMenu';
+import { ModelEffortMenu } from './ModelEffortMenu';
 import type { AnchorPos } from './useComposerPopovers';
+import { cn } from '@/lib/utils';
 
 export function ComposerToolbar({
   sessionId,
@@ -50,6 +50,8 @@ export function ComposerToolbar({
   onEditModels,
   effort,
   setEffort,
+  thinkingEnabled,
+  setThinkingEnabled,
   actionsOpen,
   actionsPos,
   actionsTriggerRef,
@@ -93,6 +95,8 @@ export function ComposerToolbar({
   onEditModels: () => void;
   effort: EffortLevel;
   setEffort: Dispatch<SetStateAction<EffortLevel>>;
+  thinkingEnabled: boolean;
+  setThinkingEnabled: Dispatch<SetStateAction<boolean>>;
   actionsOpen: boolean;
   actionsPos: AnchorPos | null;
   actionsTriggerRef: React.RefObject<HTMLButtonElement | null>;
@@ -107,9 +111,35 @@ export function ComposerToolbar({
     !attachmentsReading &&
     (input.trim().length > 0 || attachmentsCount > 0);
 
+  const handleModeChange = (mode: WorkbenchGuardMode) => {
+    setWorkbenchMode(mode);
+    localStorage.setItem('august_last_workbench_guard_mode', mode);
+    if (mode === 'full' && workbenchSession) {
+      setWorkbenchSession({
+        ...workbenchSession,
+        plan: null,
+        approved: false,
+        approvedAt: null,
+        guardMode: 'full',
+        agentId: 'build',
+      });
+    }
+    if (workbenchSession?.id) {
+      void setWorkbenchGuardMode(workbenchSession.id, mode)
+        .then((updated) => {
+          if (updated) setWorkbenchSession(updated as typeof workbenchSession);
+        })
+        .catch((error) => {
+          console.warn('[ChatThread] Failed to persist guard mode:', error);
+        });
+    }
+  };
+
+  const modeOptions = Object.values(WORKBENCH_GUARD_MODES);
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1.5 pb-1.5">
-      <div className="flex items-center gap-1.5">
+    <div className="flex items-center justify-between gap-1.5 px-2 pb-2 pt-0.5">
+      <div className="flex items-center gap-0.5 min-w-0">
         <ComposerActionsMenu
           open={actionsOpen}
           pos={actionsPos}
@@ -118,57 +148,57 @@ export function ComposerToolbar({
           onAttach={onAttach}
           onMention={onMention}
           onVoice={onVoice}
-        />
-
-        <WorkbenchModeSelector
-          selectedMode={workbenchMode}
-          onChange={(mode) => {
-            setWorkbenchMode(mode);
-            localStorage.setItem('august_last_workbench_guard_mode', mode);
-            // Full Access: clear local plan so approval chrome never blocks the composer.
-            if (mode === 'full' && workbenchSession) {
-              setWorkbenchSession({
-                ...workbenchSession,
-                plan: null,
-                approved: false,
-                approvedAt: null,
-                guardMode: 'full',
-                agentId: 'build',
-              });
-            }
-            if (workbenchSession?.id) {
-              void setWorkbenchGuardMode(workbenchSession.id, mode)
-                .then((updated) => {
-                  if (updated) setWorkbenchSession(updated as typeof workbenchSession);
-                })
-                .catch((error) => {
-                  console.warn('[ChatThread] Failed to persist guard mode:', error);
-                });
-            }
-          }}
+          extras={
+            <>
+              <div className="px-0.5 pb-0.5">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold mb-1 px-1.5">
+                  Make changes
+                </div>
+                {modeOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => handleModeChange(option.id)}
+                    className={cn(
+                      'w-full text-left px-2 py-1.5 rounded-md text-xs transition',
+                      workbenchMode === option.id
+                        ? 'bg-primary/10 text-primary'
+                        : 'hover:bg-muted text-foreground',
+                    )}
+                    title={option.description}
+                  >
+                    <span className="font-medium">{option.label}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 px-1.5 flex-wrap pt-0.5">
+                <ContextRing
+                  pct={pct}
+                  estTokens={estTokens}
+                  maxContext={maxContext}
+                  modelName={modelForRequest?.name}
+                  size={18}
+                  breakdown={contextBreakdown}
+                  serverTokens={sessionUsage}
+                />
+                {sessionUsage && (sessionUsage.totalCost ?? 0) > 0 && (
+                  <span
+                    className="text-[10px] tabular-nums text-muted-foreground font-mono"
+                    title="Estimated session cost"
+                    data-testid="session-cost-chip"
+                  >
+                    ${sessionUsage.totalCost!.toFixed(4)}
+                  </span>
+                )}
+                <ProjectRulesBadge workspacePath={workspacePath} />
+              </div>
+            </>
+          }
         />
       </div>
-      <div className="flex items-center gap-2">
-        <ProjectRulesBadge workspacePath={workspacePath} />
-        <ContextRing
-          pct={pct}
-          estTokens={estTokens}
-          maxContext={maxContext}
-          modelName={modelForRequest?.name}
-          size={18}
-          breakdown={contextBreakdown}
-          serverTokens={sessionUsage}
-        />
-        {sessionUsage && (sessionUsage.totalCost ?? 0) > 0 && (
-          <span
-            className="text-[10px] tabular-nums text-muted-foreground font-mono"
-            title="Estimated session cost"
-            data-testid="session-cost-chip"
-          >
-            ${sessionUsage.totalCost!.toFixed(4)}
-          </span>
-        )}
-        <ModelDropdown
+
+      <div className="flex items-center gap-1 shrink-0">
+        <ModelEffortMenu
           models={models}
           visibleModels={visibleModels}
           loading={modelsLoading}
@@ -177,8 +207,11 @@ export function ComposerToolbar({
             void onRefreshModels();
           }}
           onEditModels={onEditModels}
+          effort={effort}
+          onEffortChange={setEffort}
+          thinkingEnabled={thinkingEnabled}
+          onThinkingChange={setThinkingEnabled}
           onSelect={(m) => {
-            if (!m) return;
             setSelectedModel(m);
             userSelectedRef.current = m.id;
             try {
@@ -189,40 +222,63 @@ export function ComposerToolbar({
             if (sessionId) updateSessionModel(sessionId, m.id, m.provider);
           }}
         />
-        <EffortDropdown value={effort} onChange={setEffort} />
+
+        <button
+          type="button"
+          onClick={onVoice}
+          className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition"
+          title="Voice input"
+          aria-label="Voice input"
+        >
+          <Mic className="size-3.5" />
+        </button>
 
         {streaming ? (
           <>
-            <Button
+            <button
+              type="button"
               onClick={() => {
                 void send();
               }}
               disabled={!canSend}
-              size="sm"
-              variant="secondary"
               title="Steer mid-run — applies after the current tool step without stopping"
+              className={cn(
+                'h-8 px-2.5 rounded-full text-xs font-medium flex items-center gap-1 transition',
+                'bg-secondary text-secondary-foreground hover:bg-secondary/80',
+                'disabled:opacity-40 disabled:pointer-events-none',
+              )}
             >
               <Send className="size-3" />
-              Add direction
-            </Button>
-            <Button onClick={stop} size="sm" variant="outline">
-              <StopCircle className="size-3" /> Stop
-            </Button>
+              Steer
+            </button>
+            <button
+              type="button"
+              onClick={stop}
+              title="Stop"
+              aria-label="Stop"
+              className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 text-foreground border border-border/40 transition"
+            >
+              <Square className="size-3 fill-current" />
+            </button>
           </>
         ) : (
-          <Button
+          <button
+            type="button"
             onClick={() => {
               void send();
             }}
             disabled={!canSend}
-            size="sm"
+            title="Send (Enter)"
+            aria-label="Send"
+            className={cn(
+              'h-8 w-8 rounded-full flex items-center justify-center transition',
+              canSend
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : 'bg-muted text-muted-foreground opacity-50 pointer-events-none',
+            )}
           >
-            <Send className="size-3" />
-            Send
-            <kbd className="ml-1 rounded bg-muted/20 border border-border/20 px-1 text-[10px] font-mono">
-              ↵
-            </kbd>
-          </Button>
+            <Send className="size-3.5" />
+          </button>
         )}
       </div>
     </div>

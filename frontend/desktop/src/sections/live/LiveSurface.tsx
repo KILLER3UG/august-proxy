@@ -7,6 +7,7 @@ import { LiveToolRail } from './LiveToolRail';
 import { LiveApprovalCard } from './LiveApprovalCard';
 import { LiveControls } from './LiveControls';
 import { liveClient } from '@/api/liveClient';
+import { getLiveConfig } from '@/api/api-client';
 import { liveSTTFactory } from '@/api/speech/liveSTT';
 import { liveTTSFactory } from '@/api/speech/liveTTS';
 import type { LiveSTT } from '@/api/speech/liveSTT';
@@ -52,8 +53,18 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
   const startListening = async () => {
     if (session.state !== 'idle') return;
     sessionIdRef.current = sessionIdRef.current || (await liveClient.startSession());
-    const stt = liveSTTFactory();
-    const tts = liveTTSFactory();
+    // Prefer browser speech; only use server STT/TTS when Settings mark them ready.
+    let sttReady = false;
+    let ttsReady = false;
+    try {
+      const liveCfg = await getLiveConfig();
+      sttReady = Boolean(liveCfg.sttReady);
+      ttsReady = Boolean(liveCfg.ttsReady);
+    } catch {
+      /* browser defaults */
+    }
+    const stt = liveSTTFactory({ serverConfigured: sttReady });
+    const tts = liveTTSFactory({ serverConfigured: ttsReady });
     sttRef.current = stt;
     ttsRef.current = tts;
 

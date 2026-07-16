@@ -151,6 +151,8 @@ async def startChat(request: Request):
     provider = body.get('provider', '')
     agentId = body.get('agentId', '')
     effort = body.get('effort', '')
+    thinking_raw = body.get('thinkingEnabled', True)
+    thinking_enabled = thinking_raw if isinstance(thinking_raw, bool) else True
     model = body.get('model', '')
     modelProvider = body.get('modelProvider', '')
     guardMode = body.get('guardMode', '')
@@ -190,6 +192,7 @@ async def startChat(request: Request):
                 provider=provider,
                 agentId=agentId,
                 effort=effort,
+                thinking_enabled=thinking_enabled,
                 model=model,
                 modelProvider=modelProvider,
                 guardMode=guardMode,

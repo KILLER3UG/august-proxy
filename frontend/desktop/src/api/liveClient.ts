@@ -8,6 +8,20 @@
 
 const API_BASE = '/api/live';
 
+async function readErrorDetail(resp: Response): Promise<string> {
+  try {
+    const j = (await resp.json()) as { detail?: unknown; error?: unknown };
+    if (typeof j.detail === 'string') return j.detail;
+    if (j.detail && typeof j.detail === 'object' && 'message' in j.detail) {
+      return String((j.detail as { message: unknown }).message);
+    }
+    if (typeof j.error === 'string') return j.error;
+  } catch {
+    /* ignore */
+  }
+  return `${resp.status} ${resp.statusText}`;
+}
+
 async function jsonRequest<T>(path: string, body: unknown): Promise<T | null> {
   try {
     const resp = await fetch(`${API_BASE}${path}`, {
@@ -15,6 +29,7 @@ async function jsonRequest<T>(path: string, body: unknown): Promise<T | null> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    // Session/turn callers expect null on failure; STT uses its own path that throws.
     if (!resp.ok) return null;
     return (await resp.json()) as T;
   } catch {
@@ -47,23 +62,31 @@ export const liveClient = {
   async transcribe(audio: Blob): Promise<{ transcript: string; partial: boolean }> {
     const form = new FormData();
     form.append('audio', audio, 'audio.webm');
-    try {
-      // Real server STT accepts multipart at /stt/upload
-      const resp = await fetch(`${API_BASE}/stt/upload`, { method: 'POST', body: form });
-      if (!resp.ok) {
-        // Fallback: base64 JSON body
-        const buf = await audio.arrayBuffer();
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-        const j = await jsonRequest<{ transcript?: string }>('/stt', {
-          audioBase64: b64,
-          format: 'webm',
-        });
-        return { transcript: j?.transcript ?? '', partial: false };
-      }
+    // Real server STT accepts multipart at /stt/upload
+    const resp = await fetch(`${API_BASE}/stt/upload`, { method: 'POST', body: form });
+    if (resp.ok) {
       return (await resp.json()) as { transcript: string; partial: boolean };
-    } catch {
-      return { transcript: '', partial: false };
     }
+    if (resp.status === 501) {
+      const detail = await readErrorDetail(resp);
+      throw new Error(
+        detail ||
+          'Server STT is not configured. Use browser speech or set a Live STT provider with an API key.',
+      );
+    }
+    // Fallback: base64 JSON body (some proxies strip multipart)
+    const buf = await audio.arrayBuffer();
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const j = await jsonRequest<{ transcript?: string }>('/stt', {
+      audioBase64: b64,
+      format: 'webm',
+    });
+    if (!j) {
+      throw new Error(
+        `Server STT failed (${resp.status}). Check Live STT provider/model and API key in Settings.`,
+      );
+    }
+    return { transcript: j.transcript ?? '', partial: false };
   },
 
   async synthesize(text: string, voice: string): Promise<{ audio: string | null; format: string }> {

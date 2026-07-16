@@ -218,7 +218,8 @@
 
 /* ── Custom UI styling overrides ── */
 
-/* 1. Ensure scrollbars in sidebar/main are dark and never white */
+/* 1. Ensure scrollbars in sidebar/main are dark and never white — kept
+   deliberately faint so the thumb reads as a hint, not a bright bar. */
 ::-webkit-scrollbar {
   width: 6px !important;
   height: 6px !important;
@@ -227,17 +228,17 @@
   background: transparent !important;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.035) !important;
   border-radius: 9999px !important;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22) !important;
+  background: rgba(255, 255, 255, 0.09) !important;
 }
 
 .model-dropdown-list {
   overflow-x: hidden !important;
   scrollbar-width: thin !important;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent !important;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent !important;
 }
 
 /* ── v4 §16.3: Chat transcript draggable scrollbar ── */
@@ -245,24 +246,35 @@
 .chat-scroll::-webkit-scrollbar { width: 10px; }
 .chat-scroll::-webkit-scrollbar-track { background: transparent; }
 .chat-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--dt-muted-foreground) 35%, transparent);
+  background: color-mix(in srgb, var(--dt-muted-foreground) 10%, transparent);
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: padding-box;
   min-height: 40px;
 }
 .chat-scroll::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent);
+  background: color-mix(in srgb, var(--dt-muted-foreground) 20%, transparent);
   background-clip: padding-box;
 }
 
 /* ── v4 §16.2: Thin scrollbar for thinking/reasoning blocks ── */
-.thinking-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
+.thinking-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.07) transparent; }
 .thinking-scroll::-webkit-scrollbar { width: 4px; }
 .thinking-scroll::-webkit-scrollbar-track { background: transparent; }
 .thinking-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.07);
   border-radius: 4px;
+}
+
+/* Shared faint left "rail" used by nested chat blocks (thinking, tool
+   progress, sub-agent bodies) instead of the brighter `border-l` +
+   `border-*` utilities, which the guard below forces to the opaque
+   `--dt-border` color — too visible for a purely decorative indent line. */
+.chat-rail {
+  border-left: 1px solid hsl(var(--foreground) / 0.06);
+}
+.chat-rail-2 {
+  border-left: 2px solid hsl(var(--foreground) / 0.06);
 }
 
 /* ── v4 §16.1: KaTeX math sizing ── */
@@ -292,12 +304,12 @@
 }
 
 .model-dropdown-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
   border-radius: 9999px !important;
 }
 
 .model-dropdown-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28) !important;
+  background: rgba(255, 255, 255, 0.18) !important;
 }
 
 .model-dropdown-list::-webkit-scrollbar-button,
@@ -445,8 +457,9 @@ input::placeholder {
 
 .session-list-title {
   font-size: 0.8125rem;
-  line-height: 1.4;
+  line-height: 1.35;
   letter-spacing: -0.005em;
+  font-weight: 400;
 }
 
 /* Long session / status titles: horizontal marquee when overflow */
@@ -572,33 +585,38 @@ input::placeholder {
   gap: 6px;
 }
 
-/* Tool activity summary (collapsed multi-tool card) */
+/* Tool activity summary (collapsed multi-tool card) — quieter, less card-like */
 .tool-summary {
-  margin: 2px 0;
-  border-radius: 6px;
+  margin: 1px 0;
+  border-radius: 4px;
+  background: transparent;
 }
-.tool-summary[data-expanded="true"],
-.tool-summary[data-live="true"] {
-  background: hsl(var(--foreground) / 0.03);
+.tool-summary[data-expanded="true"] {
+  background: hsl(var(--foreground) / 0.02);
+}
+.tool-summary[data-attention="error"],
+.tool-summary[data-attention="warning"] {
+  background: hsl(var(--foreground) / 0.025);
 }
 .tool-summary-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  min-height: 28px;
-  padding: 4px 8px;
+  min-height: 24px;
+  padding: 2px 4px;
   font-size: 11px;
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--muted-foreground) / 0.75);
   cursor: pointer;
   user-select: none;
   border: none;
   background: transparent;
   text-align: left;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 .tool-summary-header:hover {
-  background: hsl(var(--foreground) / 0.05);
+  background: hsl(var(--foreground) / 0.035);
+  color: hsl(var(--muted-foreground) / 0.95);
 }
 .tool-summary-header:focus-visible {
   outline: 2px solid hsl(var(--ring));
@@ -625,21 +643,21 @@ input::placeholder {
   color: hsl(var(--destructive) / 0.9);
 }
 .tool-summary-divider {
-  border-top: 1px solid hsl(var(--foreground) / 0.08);
-  margin: 0 4px;
+  border-top: 1px solid hsl(var(--foreground) / 0.05);
+  margin: 0 2px;
 }
 .tool-summary-rows {
-  padding: 2px 0 4px;
+  padding: 1px 0 2px;
 }
 .tool-summary-row {
   display: flex;
   align-items: flex-start;
   gap: 6px;
   width: 100%;
-  min-height: 28px;
-  padding: 4px 10px;
+  min-height: 24px;
+  padding: 3px 6px;
   font-size: 11px;
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--muted-foreground) / 0.85);
   cursor: pointer;
   border: none;
   background: transparent;
@@ -647,7 +665,7 @@ input::placeholder {
   border-radius: 4px;
 }
 .tool-summary-row:hover {
-  background: hsl(var(--foreground) / 0.05);
+  background: hsl(var(--foreground) / 0.035);
 }
 .tool-summary-row:focus-visible {
   outline: 2px solid hsl(var(--ring));
@@ -660,8 +678,8 @@ input::placeholder {
   background: hsl(var(--warning, 45 93% 47%) / 0.08);
 }
 .tool-summary-row-label {
-  font-weight: 500;
-  color: hsl(var(--foreground) / 0.75);
+  font-weight: 450;
+  color: hsl(var(--foreground) / 0.62);
   max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -696,9 +714,9 @@ input::placeholder {
   padding-left: 4px;
 }
 .tool-summary-body {
-  margin: 0 8px 4px 18px;
-  padding: 4px 0 4px 10px;
-  border-left: 1px solid hsl(var(--foreground) / 0.1);
+  margin: 0 6px 2px 16px;
+  padding: 2px 0 2px 8px;
+  border-left: 1px solid hsl(var(--foreground) / 0.045);
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -709,6 +727,24 @@ input::placeholder {
   font-size: 0.9375rem;
   line-height: 1.65;
   overflow-wrap: break-word;
+}
+
+/* Assistant prose: matches the sidebar/base UI sans stack so chat text and
+   session list share one font; code/pre/katex keep mono stacks below */
+.markdown-content--assistant {
+  font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.98rem;
+  line-height: 1.7;
+  letter-spacing: 0;
+}
+.markdown-content--assistant code,
+.markdown-content--assistant pre,
+.markdown-content--assistant pre code,
+.markdown-content--assistant .katex,
+.markdown-content--assistant .katex-error,
+.markdown-content--assistant .math-fallback {
+  font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace !important;
+  letter-spacing: 0;
 }
 
 .markdown-token {

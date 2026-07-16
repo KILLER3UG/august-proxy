@@ -1,31 +1,28 @@
-"""Provider and config endpoint tests."""
+"""Provider endpoint tests — user-configured providers only (no templates)."""
 
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 
 
-async def testTemplatesEndpointReturnsTemplates():
-    """Templates endpoint returns the full list of provider templates."""
+async def test_templates_endpoint_returns_empty():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.get('/api/providers/templates')
         assert resp.status_code == 200
-        data = resp.json()
-        assert isinstance(data, list)
-        assert len(data) > 0
-        tmpl = data[0]
-        assert 'id' in tmpl
-        assert 'name' in tmpl
-        assert 'baseUrl' in tmpl
-        assert 'apiFormat' in tmpl
-        assert 'modelProfiles' in tmpl
-        ids = {t['id'] for t in data}
-        assert 'anthropic' in ids
-        assert 'openai' in ids
-        assert 'openai-compatible' in ids
+        assert resp.json() == []
 
 
-async def testCreateProvider():
+async def test_create_provider_requires_base_url():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url='http://test') as client:
+        resp = await client.post(
+            '/api/providers',
+            json={'name': 'No URL', 'apiFormat': 'openaiChat', 'apiKey': 'sk-test', 'enabled': True},
+        )
+        assert resp.status_code == 400
+
+
+async def test_create_provider():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.post(
@@ -42,28 +39,10 @@ async def testCreateProvider():
         data = resp.json()
         assert data['name'] == 'Test Provider'
         assert data['apiKeySet'] is True
+        assert data['baseUrl'] == 'https://test.api.com/v1'
 
 
-async def testCreateProviderWithTemplate():
-    """Creating a provider with a template id pre-fills baseUrl and models."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url='http://test') as client:
-        resp = await client.post(
-            '/api/providers',
-            json={'name': 'My Anthropic', 'template': 'anthropic', 'apiKey': 'sk-ant-test123', 'enabled': True},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data['name'] == 'My Anthropic'
-        assert 'api.anthropic.com' in data['baseUrl']
-        assert data['apiFormat'] == 'anthropicMessages'
-        assert len(data['models']) > 0
-        modelIds = {m['id'] for m in data['models']}
-        assert 'claude-sonnet-4-7' in modelIds or 'claude-opus-4' in modelIds
-
-
-async def testActiveProviderReturnsEmptyWhenNoneConfigured(isolatedData):
-    """With no providers configured, activeProvider returns empty list."""
+async def test_active_provider_returns_empty_when_none_configured(isolatedData):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.get('/api/config/activeProvider')
@@ -71,24 +50,3 @@ async def testActiveProviderReturnsEmptyWhenNoneConfigured(isolatedData):
         data = resp.json()
         assert 'providers' in data
         assert len(data['providers']) == 0
-
-
-async def testImportProviderConfig():
-    """Importing a provider config works."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url='http://test') as client:
-        resp = await client.post(
-            '/api/providers/import-config',
-            json={
-                'name': 'Imported Provider',
-                'baseUrl': 'https://imported.api.com/v1',
-                'apiFormat': 'openaiChat',
-                'apiKey': 'sk-imported',
-                'models': [{'id': 'model-1', 'name': 'Model 1'}],
-            },
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data['name'] == 'Imported Provider'
-        assert data['apiKeySet'] is True
-        assert len(data['models']) == 1

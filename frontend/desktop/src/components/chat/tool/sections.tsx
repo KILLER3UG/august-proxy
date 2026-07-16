@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, CheckCircle2, Code2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Markdown } from '@/sections/chat/ChatMarkdown';
 import {
   formatToolResult,
   formatToolError,
@@ -17,24 +18,35 @@ export function Section({
   tone?: 'error';
 }) {
   return (
-    <div className="flex gap-3 mt-1.5">
-      <span
-        className={`text-[10px] shrink-0 w-16 pt-0.5 ${
-          tone === 'error' ? 'text-destructive' : 'text-muted-foreground/60'
-        }`}
+    <div className="mt-1.5 max-w-full">
+      <div
+        className={cn(
+          'rounded-md border px-2.5 py-1.5',
+          tone === 'error'
+            ? 'border-destructive/30 bg-destructive/10'
+            : 'border-white/[0.05] bg-white/[0.02]',
+        )}
       >
-        {label}
-      </span>
-      <div className="flex-1 min-w-0 text-muted-foreground">{children}</div>
+        <div
+          className={cn(
+            'mb-0.5 text-[10px] uppercase tracking-widest font-semibold',
+            tone === 'error' ? 'text-destructive' : 'text-muted-foreground/60',
+          )}
+        >
+          {label}
+        </div>
+        <div className="min-w-0 text-muted-foreground">{children}</div>
+      </div>
     </div>
   );
 }
 
 /**
- * Render a section that defaults to a friendly summary line, with a small
- * "Show raw" chevron that reveals the underlying JSON in a `<pre>` block.
+ * Render a section as a friendly summary line inside its own bordered container.
  * `format` is one of `formatToolContext` / `formatToolResult`; if it returns
- * null we fall back to rendering the raw text verbatim.
+ * null we fall back to rendering the raw text verbatim. Summary text is
+ * rendered through the chat Markdown renderer so bold/lists/code match the
+ * chat area.
  *
  * The optional `kind` on the formatted result drives a small status icon
  * (`✅` for success, default for neutral) so success/error states are
@@ -55,44 +67,33 @@ export function FormattedSection({
 }) {
   const formatted = format(toolName, raw);
   const summary = formatted?.summary ?? raw;
-  const showRawToggle = !!formatted && formatted.summary !== formatted.raw;
-  const [showRaw, setShowRaw] = useState(false);
 
   const isSuccess = formatted?.kind === 'success';
-  const summaryClass = isSuccess
-    ? 'text-success'
-    : 'text-foreground/90';
 
   return (
-    <div className="flex gap-3 mt-1.5">
-      <span
-        className={`text-[10px] shrink-0 w-16 pt-0.5 ${
-          tone === 'error' ? 'text-destructive' : 'text-muted-foreground/60'
-        }`}
+    <div className="mt-1.5 max-w-full">
+      <div
+        className={cn(
+          'rounded-md border px-2.5 py-1.5',
+          isSuccess ? 'border-success/25 bg-success/5' : 'border-white/[0.05] bg-white/[0.02]',
+        )}
       >
-        {label}
-      </span>
-      <div className="flex-1 min-w-0 text-muted-foreground">
-        <span className={cn('inline-flex items-baseline gap-1.5 whitespace-pre-wrap break-words', summaryClass)}>
-          {isSuccess && <CheckCircle2 className="inline-block size-3 shrink-0 self-center text-success" />}
-          <span>{summary}</span>
-        </span>
-        {showRawToggle && (
-          <button
-            type="button"
-            onClick={() => setShowRaw(v => !v)}
-            className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors align-baseline"
-            title={showRaw ? 'Hide raw JSON' : 'Show raw JSON'}
-          >
-            <Code2 className="size-2.5" />
-            {showRaw ? 'Hide raw' : 'Show raw'}
-          </button>
-        )}
-        {showRaw && showRawToggle && (
-          <pre className="mt-1 max-h-60 overflow-auto rounded-md border border-white/[0.06] bg-black/30 px-2 py-1.5 text-[11px] leading-relaxed font-mono whitespace-pre-wrap wrap-break-word text-muted-foreground/85">
-            {tryPrettyJson(raw)}
-          </pre>
-        )}
+        <div
+          className={cn(
+            'mb-0.5 flex items-center gap-1 text-[10px] uppercase tracking-widest font-semibold',
+            tone === 'error'
+              ? 'text-destructive'
+              : isSuccess
+                ? 'text-success'
+                : 'text-muted-foreground/60',
+          )}
+        >
+          {isSuccess && <CheckCircle2 className="size-3 shrink-0" />}
+          {label}
+        </div>
+        <div className="min-w-0 text-sm text-foreground/90 chat-message-text">
+          <Markdown content={summary} variant="assistant" />
+        </div>
       </div>
     </div>
   );
@@ -110,7 +111,9 @@ export function FormattedResultSection({ toolName, raw }: { toolName: string; ra
   if (!formatted) {
     return (
       <Section label="result">
-        <span className="text-foreground/90 whitespace-pre-wrap break-words">{raw}</span>
+        <div className="text-sm text-foreground/90">
+          <Markdown content={raw} variant="assistant" />
+        </div>
       </Section>
     );
   }

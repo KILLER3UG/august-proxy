@@ -26,8 +26,21 @@ export class ProviderSTT implements LiveSTT {
     this.mediaRecorder.stop();
     const blob = new Blob(this.chunks, { type: 'audio/webm' });
     this.chunks = [];
-    const result = await liveClient.transcribe(blob);
-    if (result.transcript) this.finalListeners.forEach((cb) => cb(result.transcript));
+    try {
+      const result = await liveClient.transcribe(blob);
+      if (result.transcript) {
+        this.finalListeners.forEach((cb) => cb(result.transcript));
+      } else {
+        const err = new Error(
+          'Server STT returned an empty transcript. Check Live STT provider/model and API key in Settings.',
+        );
+        this.errorListeners.forEach((cb) => cb(err));
+      }
+    } catch (err) {
+      this.errorListeners.forEach((cb) =>
+        cb(err instanceof Error ? err : new Error(String(err))),
+      );
+    }
   }
 
   onPartial(callback: (text: string) => void): () => void {

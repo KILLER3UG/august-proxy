@@ -126,6 +126,20 @@ function EndpointRow({
   );
 }
 
+interface GatewayPlatformStatus {
+  platform: string;
+  available: boolean;
+  reason: string;
+  running: boolean;
+}
+
+interface GatewayStatusResponse {
+  enabled: boolean;
+  adapters: { platform: string; connected: boolean }[];
+  platforms?: GatewayPlatformStatus[];
+  installHint?: string;
+}
+
 export function SystemHealthSection() {
   const g = useGatewayStore((s) => s.gateway);
   const { data, isLoading } = useQuery({
@@ -138,6 +152,11 @@ export function SystemHealthSection() {
     queryFn: () => getHostAgentStatus(),
     refetchInterval: 5_000,
   });
+  const { data: gwStatus } = useQuery({
+    queryKey: ['gateway-status'],
+    queryFn: () => api.get<GatewayStatusResponse>('/api/gateway/status'),
+    refetchInterval: 10_000,
+  });
 
   if (isLoading) return <PageLoader label="Checking health…" />;
 
@@ -149,6 +168,7 @@ export function SystemHealthSection() {
   const memPct = data?.memory && data.memory.total > 0
     ? Math.round((data.memory.used / data.memory.total) * 100)
     : null;
+  const platforms = gwStatus?.platforms ?? [];
 
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col overflow-auto">
@@ -255,6 +275,56 @@ export function SystemHealthSection() {
         >
           <p className="text-xs text-muted-foreground">OpenAI API reachability.</p>
         </StatCard>
+      </div>
+
+      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3" data-testid="platform-gateways-card">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Plug className="size-4 text-muted-foreground" />
+            <span className="text-sm font-semibold">Platform gateways</span>
+          </div>
+          <Badge variant={gwStatus?.enabled ? 'success' : 'secondary'}>
+            {gwStatus?.enabled ? 'runner on' : 'runner off'}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Telegram / Slack / Discord bot adapters. Optional SDKs must be installed for Slack and Discord.
+        </p>
+        {platforms.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Status unavailable.</p>
+        ) : (
+          <ul className="space-y-2">
+            {platforms.map((p) => (
+              <li
+                key={p.platform}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2"
+                data-testid={`gateway-platform-${p.platform}`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium capitalize">{p.platform}</p>
+                  {!p.available && p.reason ? (
+                    <p className="text-[11px] text-amber-400/90 break-words">{p.reason}</p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      {p.running ? 'Adapter running' : 'SDK available, not running'}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Badge variant={p.available ? 'success' : 'secondary'}>
+                    {p.available ? 'SDK ok' : 'SDK missing'}
+                  </Badge>
+                  {p.running && <Badge variant="success">running</Badge>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {gwStatus?.installHint && platforms.some((p) => !p.available) && (
+          <code className="block text-[11px] font-mono text-muted-foreground bg-black/30 rounded-md px-3 py-2">
+            {gwStatus.installHint}
+          </code>
+        )}
       </div>
 
       <p className="text-[9px] text-muted-foreground font-mono">

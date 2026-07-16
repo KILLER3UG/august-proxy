@@ -15,6 +15,8 @@ export interface StreamWorkbenchChatParams {
   agentId?: string;
   guardMode?: WorkbenchGuardMode;
   effort?: 'low' | 'medium' | 'high' | 'max';
+  /** When false, skip extended thinking / reasoning for this turn. */
+  thinkingEnabled?: boolean;
   model?: string;
   /** Selected provider id for the model — helps the backend route when the
    *  model id is ambiguous across providers. */
@@ -45,6 +47,7 @@ export async function streamWorkbenchChat(
       agentId: params.agentId,
       guardMode: params.guardMode,
       effort: params.effort,
+      thinkingEnabled: params.thinkingEnabled,
       model: params.model,
       modelProvider: params.modelProvider,
     }),

@@ -1,7 +1,8 @@
 /* PopupContents — rendered via createPortal(document.body) so
  * position: fixed escapes any transformed ancestor (e.g. framer-motion
  * <motion.div> in ChatLayout). */
-import { Brain, X, Activity, Heart, Sparkles } from 'lucide-react';
+import { Brain, X, Activity, Heart, Sparkles, AlertCircle } from 'lucide-react';
+import { Component, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { LearningTab } from '@/sections/brain/LearningTab';
 import { SystemHealthTab } from '@/sections/brain/SystemHealthTab';
@@ -9,6 +10,39 @@ import { BrainActivityTab } from '@/sections/brain/BrainActivityTab';
 import type { PopupState, TabKey } from './popupGeometry';
 import type { ResizeEdge } from './usePopupResize';
 import { ResizeHandles } from './ResizeHandles';
+
+/**
+ * Local guard around each tab's content. Without this, a render error
+ * thrown inside a tab (e.g. an unexpected API shape while loading
+ * Learning/Health data) has no boundary between the titlebar-mounted
+ * `BrainIndicator` and the app root, so it unmounts far more than the
+ * popup — it can take the whole shell down. Catching it here means a
+ * bad tab shows an inline error instead of the popup silently vanishing.
+ */
+class TabErrorBoundary extends Component<{ tab: TabKey; children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('[BrainPopup] tab render error:', error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
+          <AlertCircle className="size-5 text-destructive" />
+          <p className="text-xs">Couldn't load this tab.</p>
+          <p className="text-[10px] max-w-xs">{this.state.error.message}</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export interface BrainPopupProps {
   geom: PopupState;
@@ -106,9 +140,11 @@ export function BrainPopup({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
-        {tab === 'activity' && <BrainActivityTab />}
-        {tab === 'learning' && <LearningTab />}
-        {tab === 'health' && <SystemHealthTab />}
+        <TabErrorBoundary key={tab} tab={tab}>
+          {tab === 'activity' && <BrainActivityTab />}
+          {tab === 'learning' && <LearningTab />}
+          {tab === 'health' && <SystemHealthTab />}
+        </TabErrorBoundary>
       </div>
 
       <ResizeHandles

@@ -228,7 +228,14 @@ marked.use({
   extensions: [mathInlineExtension, mathBlockExtension],
 });
 
-export function Markdown({ content }: { content: string }) {
+export function Markdown({
+  content,
+  variant = 'default',
+}: {
+  content: string;
+  /** Assistant body may use a quieter serif; code/pre stay monospace via CSS. */
+  variant?: 'default' | 'assistant';
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   const html = useMemo(() => {
@@ -275,7 +282,11 @@ export function Markdown({ content }: { content: string }) {
   return (
     <div
       ref={ref}
-      className="markdown-content"
+      className={
+        variant === 'assistant'
+          ? 'markdown-content markdown-content--assistant'
+          : 'markdown-content'
+      }
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

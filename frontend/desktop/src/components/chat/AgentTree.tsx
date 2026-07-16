@@ -99,7 +99,7 @@ function TreeNode({
         <Icon className={cn('h-3.5 w-3.5 flex-none', node.status === 'running' && 'animate-spin')} />
       </div>
       {open && hasChildren && (
-        <div className="ml-3 border-l border-border/40 pl-2 space-y-0.5">
+        <div className="ml-3 chat-rail pl-2 space-y-0.5">
           {childIds.map((cid) => (
             <TreeNode
               key={cid}

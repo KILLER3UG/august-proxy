@@ -243,7 +243,7 @@ export function AssistantBlockTimeline({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.12, ease: 'easeOut' }}
-        className="chat-streaming-block ml-3 pl-3 border-l-2 border-foreground/15 space-y-1.5"
+        className="chat-streaming-block ml-3 pl-3 chat-rail-2 space-y-1.5"
       >
         <ToolSummary
           thoughtCount={showThoughtOnTools ? thoughtCount : 0}
@@ -348,7 +348,7 @@ export function AssistantBlockTimeline({
             'chat-message-text text-foreground/90 space-y-3 max-w-none',
             isFinalStreaming && 'streaming-markdown-content',
           )}>
-            <Markdown content={block.content} />
+            <Markdown content={block.content} variant="assistant" />
           </div>
         </motion.div>
       );

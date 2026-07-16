@@ -4,37 +4,44 @@ August Proxy is a multi-provider AI gateway and agentic workbench. It presents a
 OpenAI-compatible Chat Completions API **and** an Anthropic-compatible Messages
 API from a single local endpoint, routes each request to a configurable upstream
 provider, and ships a full agentic layer on top: a streaming workbench chat loop,
-managed tools, persistent memory, a skill system with a curator, sub-agents,
-browser automation, and platform gateways (Telegram, Slack, Discord).
+managed tools, persistent memory (brain), skills, sub-agents, browser automation,
+desktop automation, platform gateways, and a Tauri desktop + Expo mobile UI.
 
-It is the successor to an earlier Node.js HTTP bridge. The server is now written
-in **Python 3.13** (FastAPI) and lives in [`backend-py/`](backend-py); the
-dashboard is a **React + Vite + TypeScript** SPA whose compiled output is served
-from [`web-dist/`](web-dist).
+It is the successor to an earlier Node.js HTTP bridge. The server is written in
+**Python 3.12+** (FastAPI) under [`backend-py/`](backend-py). The primary UI is a
+**React + Vite + TypeScript** SPA in [`frontend/desktop/`](frontend/desktop)
+(Tauri shell optional); compiled output is served from [`web-dist/`](web-dist).
+A companion Expo app lives in [`frontend/mobile/`](frontend/mobile).
 
 ---
 
 ## Highlights
 
-- **Dual API surface** — `POST /v1/chat/completions` (OpenAI) and `POST /v1/messages`
-  (Anthropic) with automatic bidirectional format translation and SSE streaming.
-- **30+ built-in providers** — Anthropic, OpenAI, Gemini, Bedrock, OpenRouter,
-  Kilo, Opencode, MiniMax, DeepSeek, xAI, and many more, plus custom OpenAI-
-  compatible providers added from the UI.
-- **Model aliases** — friendly names (e.g. `sonnet`, `claude-sonnet-4-6`) that
-  map to a concrete provider + model, with full CRUD, validation, and audit log.
-- **Workbench** — a streaming chat engine with a multi-round tool loop, effort /
-  thinking-budget resolution, plan-mode approval gate, context compression, and
-  fire-and-forget background review / self-evolution.
-- **Managed tools** — file ops, shell, web search/fetch, browser automation
-  (Playwright), memory, MCP, skills, sub-agents, and self-configuration tools.
-- **Memory & learning** — core memory KV, semantic memory, vector search, a
-  skill curator with lifecycle management (stale → archive), and an interval-
-  gated LLM background review that authors skills from conversations.
-- **Platform gateways** — expose the workbench agent over Telegram, Slack, and
-  Discord with a two-guard concurrency model (one in-flight turn per session).
-- **Observability** — activity log, request tracking, usage stats, and a config
-  audit log recording every alias / fallback / agent change.
+- **Dual API surface** — `POST /v1/chat/completions` (OpenAI), `POST /v1/messages`
+  (Anthropic), plus `POST /v1/responses` (OpenAI Responses-style SSE synthesis)
+  with bidirectional format translation and streaming.
+- **User-configured providers** — add any Anthropic- or OpenAI-compatible
+  gateway yourself (name, base URL, format, API key) in Settings or
+  `data/providers.json`. Model aliases map friendly names to provider + model.
+- **Workbench** — streaming chat with multi-round tool loop, effort / thinking
+  budgets, plan-mode approval gate, todos, checkpoints, context compression,
+  message queue / steer, worktrees, and fire-and-forget background review /
+  self-evolution.
+- **Managed tools** — file ops, shell/PTY terminal, web search/fetch, browser
+  (Playwright), desktop automation, memory, MCP, skills, sub-agents, and
+  self-configuration tools.
+- **Brain & learning** — SQLite-backed core/semantic/vector/graph memory, skill
+  curator lifecycle, cognitive fleet config, consolidation daemons, heuristics,
+  and a Brain dashboard (status, search, graph, diagnostics, activity stream).
+- **Live / voice** — browser speech (product default) plus optional server STT/TTS
+  over OpenAI-compatible providers; Live session API under `/api/live`.
+- **Platform gateways** — Telegram, Slack, and Discord adapters with one in-flight
+  turn per session and control commands (`/stop`, `/new`, `/approve`, …).
+- **Integrations** — MCP servers (`mcp-servers.json`), Google OAuth service
+  connections, cron jobs, automations, exam flow, git helpers, security /
+  observability surfaces.
+- **Desktop app** — Tauri shell launches the Python backend, Backend Monitor over
+  WebSocket log stream, auto-update settings.
 
 ---
 
@@ -42,23 +49,26 @@ from [`web-dist/`](web-dist).
 
 ```text
 august-proxy/
-├── backend-py/            # FastAPI server (Python 3.13)
+├── backend-py/              # FastAPI server (Python ≥ 3.12)
 │   ├── app/
-│   │   ├── main.py        # FastAPI app, lifespan, router registration
-│   │   ├── config.py      # Settings: config.json + providers.json + .env
-│   │   ├── adapters/      # Anthropic & OpenAI message/SSE translation
-│   │   ├── providers/     # Built-in provider definitions + clients + resolver
-│   │   ├── routers/       # /api/* and /v1/* HTTP routes
-│   │   └── services/      # workbench, gateway, memory, skills, tools, browser
-│   ├── tests/             # pytest suite (asyncio)
+│   │   ├── main.py          # FastAPI app, lifespan, router registration
+│   │   ├── config.py        # Settings: config.json + providers.json + .env
+│   │   ├── adapters/        # Anthropic & OpenAI message/SSE translation
+│   │   ├── providers/       # Templates, clients, resolvers
+│   │   ├── routers/         # /api/* and /v1/* HTTP routes
+│   │   └── services/        # workbench, gateway, memory, skills, tools, …
+│   ├── tests/               # pytest suite (isolatedData autouse)
 │   └── pyproject.toml
-├── frontend-src/         # React + Vite + TypeScript dashboard source (if present)
-├── web-dist/              # Compiled SPA served by the backend
-├── data/                  # Persistent state: config.json, providers.json, DBs, logs
-├── skills/                # Bundled SKILL.md packs
-├── docs/                  # Project documentation
-├── Dockerfile             # Production image
-└── docker-compose.yml     # Container orchestration
+├── frontend/
+│   ├── desktop/             # React + Vite SPA + Tauri (src-tauri)
+│   └── mobile/              # Expo companion app
+├── web-dist/                # Compiled SPA served by the backend
+├── data/                    # Persistent state: config, providers, brain DB, logs
+├── skills/                  # Bundled SKILL.md packs
+├── docs/                    # Project documentation
+├── scripts/                 # Dev, install, release helpers
+├── Dockerfile
+└── docker-compose.yml
 ```
 
 ---
@@ -67,8 +77,8 @@ august-proxy/
 
 ### Prerequisites
 
-- Python **3.13+** (or Docker — see below)
-- An API key for at least one provider (Anthropic, OpenAI, OpenRouter, Kilo, …)
+- Python **3.12+** (or Docker — see below)
+- An API key for at least one provider (Anthropic, OpenAI, or any OpenAI-compatible endpoint)
 
 ### Run with Docker
 
@@ -77,26 +87,36 @@ cp .env.example .env          # then edit .env and add your API keys
 docker compose up --build -d
 ```
 
-The dashboard is served at **http://localhost:8085**.
+The dashboard is served at **http://localhost:8085** (host and container both use port `8085`).
 
 ### Run locally (development)
 
 ```bash
 cd backend-py
-python -m venv .venv
+# Recommended
+uv sync --group dev
+uv run uvicorn app.main:app --reload --port 8085
+
+# Or classic venv
+# python -m venv .venv
 # Windows:  .venv\Scripts\activate
 # macOS/Linux: source .venv/bin/activate
-pip install -e ".[dev]"
-uvicorn app.main:app --reload --port 8085
+# pip install -e ".[dev]"
+# uvicorn app.main:app --reload --port 8085
 ```
 
-For the dashboard, build the frontend (`npm install && npm run build` from the
-frontend source) so its output lands in `web-dist/`, or run the Vite dev server
-in parallel and proxy `/api` to `:8085`.
+Frontend:
+
+```bash
+npm install
+npm run dev:web          # Vite only, proxy /api → :8085
+# or full desktop shell:
+npm run dev:desktop      # Tauri + backend
+```
+
+Build the SPA into `web-dist/` with `npm run build:web` so the backend can serve it at `/`.
 
 ### Point a client at the proxy
-
-Any OpenAI- or Anthropic-compatible client works:
 
 ```bash
 # Claude Code / Anthropic clients
@@ -113,17 +133,19 @@ codex
 
 ## Configuration
 
-Configuration lives in `data/` and is split across three files:
+Configuration lives in `data/` and is split across these files:
 
 | File | Purpose |
 |------|---------|
-| `data/config.json` | Provider API keys, model aliases, active provider, sub-agent fallback, auxiliary review config, security allowlists |
-| `data/providers.json` | User-added custom providers (name, base URL, API format, fetched model lists) |
-| `.env` | API keys and runtime env vars (loaded by Docker Compose and Pydantic Settings) |
+| `data/config.json` | Provider API keys, model aliases, active provider, sub-agent fallback, cognitive/auxiliary config, security, gateway |
+| `data/providers.json` | User-added providers (name, base URL, API format, models) |
+| `data/mcp-servers.json` | MCP server definitions |
+| `data/august_brain.sqlite` | Brain / sessions / memory / audit (source of truth) |
+| `.env` | API keys and runtime env vars (Docker Compose + Pydantic Settings) |
 
-API keys are resolved per-provider in this order: `config.json → {provider}.apiKey`,
-then the provider's declared `env_vars`, then standard env-var patterns. See
-[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the full reference.
+API keys are resolved per-provider: `config.json → {provider}.apiKey`, then the
+provider's declared env vars, then standard `{NAME}_API_KEY` patterns. See
+[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
 
 ---
 
@@ -131,26 +153,31 @@ then the provider's declared `env_vars`, then standard env-var patterns. See
 
 | Document | Audience | Contents |
 |----------|----------|----------|
-| [`docs/SETUP.md`](docs/SETUP.md) | All users | Installation, first-run, pointing clients at the proxy |
-| [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Operators | `config.json` / `providers.json` / `.env` reference |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Developers | Request flow, adapters, workbench, memory, gateway |
-| [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) | Integrators | HTTP endpoints, request/response shapes |
-| [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Contributors | Dev setup, tests, project conventions |
+| [`docs/SETUP.md`](docs/SETUP.md) | All users | Installation, first-run, clients, desktop |
+| [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Operators | Config / providers / env reference |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Developers | Request flow, workbench, brain, gateway |
+| [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) | Integrators | HTTP endpoints and SSE conventions |
+| [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Contributors | Dev setup, tests, extension points |
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | All users | Common issues and fixes |
+| [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md) | Everyone | Full doc index (including historical) |
+| [`docs/GAPS_AND_BUGS.md`](docs/GAPS_AND_BUGS.md) | Maintainers | Known gaps found during doc audit |
 
 ---
 
 ## Development
 
 ```bash
+# Backend
 cd backend-py
-pytest                         # run the test suite
-pytest tests/test_workbench.py # run a single file
-ruff check app tests           # lint (if installed)
+uv run pytest -q
+# or from repo root:
+npm run test:backend
+npm run test:frontend
+npm run test              # both
 ```
 
-The test suite is async (`asyncio_mode = "auto"`). See
-[`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) for conventions.
+The test suite uses `asyncio_mode = "auto"` and **autouse** `isolatedData` so
+tests never touch live `data/`. See [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md).
 
 ---
 

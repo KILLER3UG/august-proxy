@@ -109,7 +109,7 @@ export function ToolCallCard({
         const overflow = Math.max(0, total - visible.length);
         if (visible.length === 0) return null;
         return (
-          <div className="ml-3 mt-0.5 mb-1 space-y-0.5 border-l border-border/30 pl-2" aria-label="Tool progress" data-tool-progress>
+          <div className="ml-3 mt-0.5 mb-1 space-y-0.5 chat-rail pl-2" aria-label="Tool progress" data-tool-progress>
             {visible.map((entry) => (
               <div key={entry.path} className="flex items-center gap-1.5 text-[11.5px] truncate" title={entry.path}>
                 <span className="w-2.5 shrink-0 inline-flex justify-center">
@@ -139,12 +139,12 @@ export function ToolCallCard({
       {open && hasBody && (
         <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
           {tool.args && (
-            <pre className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-muted-foreground/70 break-words leading-relaxed border-l border-border/30 ml-2.5">
+            <pre className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-muted-foreground/70 break-words leading-relaxed chat-rail ml-2.5">
               {tool.args}
             </pre>
           )}
           {tool.result && (
-            <div className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-foreground/80 break-words leading-relaxed border-l border-border/30 ml-2.5">
+            <div className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-foreground/80 break-words leading-relaxed chat-rail ml-2.5">
               {tool.result}
             </div>
           )}
