@@ -403,19 +403,15 @@ input::placeholder {
 }
 
 .streaming-markdown-content > :last-child {
-  animation: markdown-stream-in 140ms ease-out both;
+  animation: markdown-stream-in 90ms ease-out both;
 }
 
 @keyframes markdown-stream-in {
   from {
-    opacity: 0;
-    filter: blur(0.2px);
-    transform: translateY(-1px);
+    opacity: 0.72;
   }
   to {
     opacity: 1;
-    filter: blur(0);
-    transform: translateY(0);
   }
 }
 

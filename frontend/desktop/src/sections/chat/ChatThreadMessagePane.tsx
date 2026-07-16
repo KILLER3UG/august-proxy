@@ -73,7 +73,6 @@ export function ChatThreadMessagePane({
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto chat-scroll"
-        style={{ overflowAnchor: 'none' }}
       >
         <VirtualizedMessageList
           messages={messages}
@@ -157,22 +156,28 @@ export function ChatThreadMessagePane({
         </div>
       </div>
 
-      {/* AUG — anchored above the composer, outside message enter animations. */}
-      <AnimatePresence initial={false}>
-        {streaming && (
-          <motion.div
-            key={`aug-${sessionId ?? 'none'}`}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="mx-auto w-full max-w-3xl px-4 pt-1 shrink-0"
-            data-testid="aug-working-indicator"
-          >
-            <WorkingIndicator />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* AUG — anchored above the composer; fixed-height slot avoids viewport resize. */}
+      <div
+        className="mx-auto w-full max-w-3xl px-4 shrink-0"
+        style={{ height: streaming ? 36 : 0 }}
+        aria-hidden={!streaming}
+      >
+        <AnimatePresence initial={false}>
+          {streaming && (
+            <motion.div
+              key={`aug-${sessionId ?? 'none'}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+              className="pt-1"
+              data-testid="aug-working-indicator"
+            >
+              <WorkingIndicator />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Plan banner replaces the composer while a plan awaits a decision. */}
       <motion.div

@@ -385,9 +385,12 @@ export function AssistantBlockTimeline({
         </motion.div>
       )}
       {(() => {
-        // Settled turn with final answer: one ActivitySummary for all
-        // prior work, then the final prose outside.
-        if (hasFinalOutput) {
+        // Pack into ActivitySummary only after the turn settles. While the
+        // last message is still streaming, keep the live timeline so thinking
+        // / tools don't suddenly collapse when final prose starts.
+        const packActivity =
+          hasFinalOutput && !(isLast && streaming);
+        if (packActivity) {
           const hasActivity =
             totalThoughts + totalTools > 0 ||
             activityUnits.some((u) => u.kind !== 'single');

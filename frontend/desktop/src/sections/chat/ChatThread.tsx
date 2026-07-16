@@ -246,7 +246,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
   const [scrolledFromTop, setScrolledFromTop] = useState(false);
+  /** True while the user is near the bottom — gates stick-to-bottom during stream. */
+  const pinnedToBottomRef = useRef(true);
+  const scrollRafRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
+
+  const NEAR_BOTTOM_PX = 80;
 
   const composerDropdownRef = useRef<ComposerDropdownApi | null>(null);
   const dropdownClosers = useMemo(
@@ -261,36 +266,52 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     [],
   );
 
-  const scrollToBottomSmooth = useCallback(() => {
+  const getScrollTarget = useCallback(() => {
     const el = scrollRef.current;
-    if (!el) return;
-    const scrollable = el.closest('.overflow-y-auto');
-    const target = scrollable ?? el;
-    target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
+    if (!el) return null;
+    return (el.closest('.overflow-y-auto') as HTMLElement | null) ?? el;
   }, []);
 
+  const scrollToBottomSmooth = useCallback(() => {
+    const target = getScrollTarget();
+    if (!target) return;
+    pinnedToBottomRef.current = true;
+    setScrolledFromBottom(false);
+    target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
+  }, [getScrollTarget]);
+
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const scrollable = el.closest('.overflow-y-auto') ?? el;
+    const scrollable = getScrollTarget();
+    if (!scrollable) return;
     const check = () => {
-      const atBottom =
-        scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight < 1;
-      setScrolledFromBottom(!atBottom);
+      const distanceFromBottom =
+        scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight;
+      const nearBottom = distanceFromBottom < NEAR_BOTTOM_PX;
+      pinnedToBottomRef.current = nearBottom;
+      setScrolledFromBottom(!nearBottom);
       setScrolledFromTop(scrollable.scrollTop > SCROLL_TO_TOP_THRESHOLD);
     };
     check();
     scrollable.addEventListener('scroll', check, { passive: true });
     return () => scrollable.removeEventListener('scroll', check);
-  }, [messages]);
+  }, [messages, getScrollTarget]);
 
   const scrollToBottomImmediate = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const scrollable = el.closest('.overflow-y-auto');
-    const target = scrollable ?? el;
+    const target = getScrollTarget();
+    if (!target) return;
     target.scrollTop = target.scrollHeight;
-  }, []);
+  }, [getScrollTarget]);
+
+  /** Coalesce stick-to-bottom to one scroll per frame while streaming. */
+  const scheduleScrollToBottom = useCallback(() => {
+    if (!pinnedToBottomRef.current) return;
+    if (scrollRafRef.current !== null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      if (!pinnedToBottomRef.current) return;
+      scrollToBottomImmediate();
+    });
+  }, [scrollToBottomImmediate]);
 
   const isTurnVisible = (turnSessionId: string | null) =>
     mountedRef.current && visibleSessionId === turnSessionId;
@@ -510,10 +531,37 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     generateAIResponse,
   });
 
+  // Session switch / first load: always land at bottom once messages are ready.
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
+    pinnedToBottomRef.current = true;
     scrollToBottomImmediate();
-  }, [sessionId, loadedSessionId, messages, streaming, scrollToBottomImmediate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on session load
+  }, [sessionId, loadedSessionId]);
+
+  // New turn starting: re-pin so the reply is visible even if the user had scrolled up.
+  const wasStreamingRef = useRef(false);
+  useLayoutEffect(() => {
+    if (streaming && !wasStreamingRef.current) {
+      pinnedToBottomRef.current = true;
+      setScrolledFromBottom(false);
+      scrollToBottomImmediate();
+    }
+    wasStreamingRef.current = streaming;
+  }, [streaming, scrollToBottomImmediate]);
+
+  // While content grows (streaming or new messages), stick to bottom only if
+  // the user hasn't scrolled up — one rAF-coalesced snap per frame.
+  useLayoutEffect(() => {
+    if (!sessionId || loadedSessionId !== sessionId) return;
+    scheduleScrollToBottom();
+    return () => {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, [sessionId, loadedSessionId, messages, streaming, scheduleScrollToBottom]);
 
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));

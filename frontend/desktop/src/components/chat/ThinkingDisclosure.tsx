@@ -119,10 +119,14 @@ export function ThinkingDisclosure({
         {open && (
           <motion.div
             key="thinking-content"
-            initial={{ opacity: 0, height: 0 }}
+            initial={pending ? false : { opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            exit={pending ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={
+              pending
+                ? { duration: 0.1, ease: 'easeOut' }
+                : { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
+            }
             className={cn(
               'mt-0.5 w-full min-w-0 max-w-full overflow-y-auto wrap-anywhere pb-1 max-h-36 thinking-scroll text-muted-foreground/65',
             )}
