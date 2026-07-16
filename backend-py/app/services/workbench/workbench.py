@@ -168,6 +168,25 @@ def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> b
     # Session/UI metadata renames are not workspace mutations — do not gate them.
     if name in {'rename_session', 'renamesession'}:
         return False
+    # Meta bulk tool: gate by the nested operation, not the name "bulk".
+    if name == 'bulk':
+        op = as_str((args or {}).get('operation')).lower().replace('-', '_')
+        mutating_ops = {
+            'write_files',
+            'write_file',
+            'write',
+            'delete_sessions',
+            'delete_session',
+            'rename_sessions',
+            'rename_session',
+            'kill_daemons',
+            'kill_daemon',
+        }
+        return op in mutating_ops or any(
+            m in op for m in ('write', 'delete', 'rename', 'kill')
+        )
+    if name in {'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons'}:
+        return True
     destructiveMarkers = (
         'write',
         'edit',
@@ -181,6 +200,7 @@ def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> b
         'shell',
         'patch',
         'rename',
+        'kill_daemon',
     )
     return any((marker in name for marker in destructiveMarkers))
 
@@ -392,6 +412,7 @@ def buildSystemPrompt(
     if skillsExtra:
         extraParts.append(skillsExtra)
     extraParts.append(_seg_cache.CLARIFY_BLOCK)
+    extraParts.append(_seg_cache.BULK_BLOCK)
     if extraParts:
         return base + '\n\n' + '\n\n'.join(extraParts)
     return base
@@ -1672,6 +1693,38 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
         currentSessionId.reset(token)
 
 
+def _bulk_paths_from_args(args: dict[str, object]) -> list[str]:
+    """Collect path-like identifiers from bulk tool args for grants/previews."""
+    paths: list[str] = []
+    for key in ('paths', 'sessionIds', 'daemonIds', 'urls', 'names'):
+        raw = args.get(key)
+        if isinstance(raw, list):
+            paths.extend(str(x).strip() for x in raw if str(x).strip())
+    files = args.get('files') or args.get('renames') or args.get('items')
+    if isinstance(files, list):
+        for entry in files:
+            if not isinstance(entry, dict):
+                continue
+            p = (
+                as_str(entry.get('path'))
+                or as_str(entry.get('sessionId'))
+                or as_str(entry.get('filePath'))
+                or as_str(entry.get('url'))
+                or as_str(entry.get('name'))
+            )
+            if p:
+                paths.append(p)
+    # Deduplicate, keep order
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in paths:
+        if p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return out
+
+
 def _mutation_grant_key(toolName: str, args: dict[str, object] | None) -> str:
     """Stable key for once/session/always grants (tool + primary path)."""
     args = args or {}
@@ -1686,6 +1739,11 @@ def _mutation_grant_key(toolName: str, args: dict[str, object] | None) -> str:
             return f'{toolName}:{unsandboxed_grant_key(as_str(args.get("command")))}'
         except Exception:
             return f'{toolName}:sandbox:unsandboxed:*'
+    bulk_paths = _bulk_paths_from_args(args)
+    if bulk_paths:
+        # Grant is scoped to this exact set of targets (sorted for stability).
+        joined = ','.join(sorted(bulk_paths)[:40])
+        return f'{toolName}:{joined}'
     path = (
         path
         or as_str(args.get('file_path'))
@@ -1701,6 +1759,18 @@ def _mutation_preview(toolName: str, args: dict[str, object] | None) -> str:
     """Short human preview for the approval UI (file content snippet, command, …)."""
     args = args or {}
     name = toolName.lower()
+    op = as_str(args.get('operation')).lower()
+    bulk_paths = _bulk_paths_from_args(args)
+    if bulk_paths and (
+        name in {'bulk', 'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons'}
+        or op in {'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons'}
+        or 'write_files' in name
+        or 'delete_sessions' in name
+    ):
+        label = op or name
+        listing = '\n'.join(f'• {p}' for p in bulk_paths[:25])
+        more = f'\n…and {len(bulk_paths) - 25} more' if len(bulk_paths) > 25 else ''
+        return f'Bulk {label} ({len(bulk_paths)} item(s)):\n{listing}{more}'
     path = (
         as_str(args.get('path'))
         or as_str(args.get('file_path'))
@@ -2302,6 +2372,10 @@ def listProxyCapabilities() -> dict[str, object]:
             'delete_session',
             'delete_sessions',
             'delete_folder',
+            'write_files',
+            'rename_sessions',
+            'kill_daemons',
+            'bulk',
             'submit_plan',
             'approve_plan',
             'reject_plan',

@@ -19,6 +19,7 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         'list_agents',
         'list_daemons',
         'read_file',
+        'read_files',
         'search_files',
         'memory_search',
         'fact_search',
@@ -26,6 +27,8 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         'brain_query',
         'web_search',
         'web_fetch',
+        'web_fetch_many',
+        'load_skills',
         'get_workbench_activity',
         'list_proxy_capabilities',
     }

@@ -11,6 +11,7 @@ def register_all() -> None:
     """Register all built-in tool groups (and external self-config/provider tools)."""
     from app.services.tool_registrations import (
         agent_tools,
+        bulk_tools,
         desktop_tools,
         file_tools,
         memory_tools,
@@ -27,5 +28,6 @@ def register_all() -> None:
     system_tools.register()
     agent_tools.register()
     skill_tools.register()
+    bulk_tools.register()
     self_config_tools.register()
     provider_setup_tool.register()

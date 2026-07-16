@@ -35,6 +35,17 @@ CLARIFY_BLOCK = (
     'This applies in every guard mode, including plan mode.'
 )
 
+BULK_BLOCK = (
+    '## Bulk tools (prefer over N single calls)\n'
+    'When the same operation applies to many items, use a bulk tool instead of repeating '
+    'the single-item tool. Options:\n'
+    '- `bulk` with `operation` = read_files | write_files | delete_sessions | rename_sessions | '
+    'kill_daemons | fetch_urls | load_skills (pass the matching array field)\n'
+    '- Or named tools: `read_files`, `write_files`, `delete_sessions`, `rename_sessions`, '
+    '`kill_daemons`, `web_fetch_many`, `load_skills`\n'
+    'Cap is 40 items per call. Confirm with the user before bulk deletes/writes.'
+)
+
 
 def enabled() -> bool:
     v = os.environ.get('AUGUST_P1_PROMPT_CACHE', '1').strip().lower()

@@ -119,40 +119,11 @@ async def _deleteSession(sessionId: str) -> str:
         return f'Error deleting session {sessionId}: {exc}'
 
 
-def _coerce_session_ids(sessionIds: object = None, sessionId: str = '') -> list[str]:
-    """Accept sessionIds array, JSON string, comma-separated, or a single sessionId."""
-    ids: list[str] = []
-    if isinstance(sessionIds, list):
-        ids = [str(x).strip() for x in sessionIds if str(x).strip()]
-    elif isinstance(sessionIds, str) and sessionIds.strip():
-        raw = sessionIds.strip()
-        if raw.startswith('['):
-            try:
-                import json
-
-                parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    ids = [str(x).strip() for x in parsed if str(x).strip()]
-            except Exception:
-                ids = []
-        if not ids:
-            ids = [p.strip() for p in raw.replace('\n', ',').split(',') if p.strip()]
-    if not ids and (sessionId or '').strip():
-        ids = [sessionId.strip()]
-    # Dedupe, preserve order
-    seen: set[str] = set()
-    out: list[str] = []
-    for sid in ids:
-        if sid in seen:
-            continue
-        seen.add(sid)
-        out.append(sid)
-    return out
-
-
 async def _deleteSessions(sessionIds: object = None, sessionId: str = '') -> str:
-    """Bulk-delete chat sessions. Prefer this over many delete_session calls."""
-    ids = _coerce_session_ids(sessionIds, sessionId)
+    """Bulk-delete chat sessions. Prefer over many delete_session calls."""
+    from app.services.tool_registrations.bulk_helpers import coerce_str_list, format_bulk_report
+
+    ids = coerce_str_list(sessionIds, single=sessionId)
     if not ids:
         return 'Error: sessionIds is required (array of session IDs to delete).'
     deleted: list[str] = []
@@ -169,14 +140,14 @@ async def _deleteSessions(sessionIds: object = None, sessionId: str = '') -> str
                 missing.append(sid)
         except Exception as exc:
             errors.append(f'{sid}: {exc}')
-    parts = [f'Deleted {len(deleted)}/{len(ids)} session(s) (+ {msg_total} message(s)).']
-    if deleted:
-        parts.append('Deleted: ' + ', '.join(deleted[:40]) + ('…' if len(deleted) > 40 else ''))
-    if missing:
-        parts.append('Not found: ' + ', '.join(missing[:20]))
-    if errors:
-        parts.append('Errors: ' + '; '.join(errors[:10]))
-    return ' '.join(parts)
+    return format_bulk_report(
+        label='delete_sessions',
+        total=len(ids),
+        ok_ids=deleted,
+        missing=missing,
+        errors=errors,
+        extra=f'(+ {msg_total} message(s))',
+    )
 
 
 async def _renameSession(sessionId: str = '', title: str = '') -> str:
