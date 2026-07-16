@@ -43,6 +43,7 @@ import { ToolGrantsSection } from './ToolGrantsSection';
 import { KanbanSection } from './KanbanSection';
 import { PythonSandboxSection } from './PythonSandboxSection';
 import { AgentSandboxSection } from './AgentSandboxSection';
+import { AccountSection } from './AccountSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -116,6 +117,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
   'brain-orchestrator': BrainWrapper,
+  account: AccountWrapper,
   'profile-preferences': GeneralWrapper,
   'ui-designer': UiDesignerWrapper,
   'system-health': SystemHealthWrapper,
@@ -152,6 +154,7 @@ function MemoryWrapper() { return <WorkspaceMemorySection />; }
 function InspectorWrapper() { return <WorkspaceInspectorSection />; }
 function ModelsWrapper() { return <WorkspaceModelsSection />; }
 function BrainWrapper() { return <BrainSettings />; }
+function AccountWrapper() { return <AccountSection />; }
 function GeneralWrapper() { return <WorkspaceGeneralSection />; }
 function UiDesignerWrapper() { return <UiDesignerSection />; }
 function SystemHealthWrapper() { return <SystemHealthSection />; }

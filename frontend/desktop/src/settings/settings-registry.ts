@@ -47,6 +47,7 @@ import {
   SlidersHorizontal,
   TerminalSquare,
   Palette,
+  UserRound,
 } from 'lucide-react';
 
 /** Visibility tier for the rail. `basic` items are always shown; the
@@ -145,6 +146,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['health'],
   },
   {
+    id: 'account',
+    label: 'Account',
+    description: 'Local August profiles on this device — create, switch, and edit your account.',
+    icon: UserRound,
+    category: 'general',
+    tier: 'basic',
+    keywords: ['account', 'login', 'sign up', 'display name', 'avatar', 'sign out'],
+    legacyAliases: ['accounts', 'user'],
+  },
+  {
     id: 'profile-preferences',
     label: 'Profile & Preferences',
     description: 'Theme, appearance, text size, presets, keyboard shortcuts, and onboarding.',
@@ -221,7 +232,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'connection',
       'service',
       'oauth',
-      'account',
       'google',
       'gmail',
       'calendar',

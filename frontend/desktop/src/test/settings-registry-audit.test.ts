@@ -136,6 +136,9 @@ describe('legacy alias resolution', () => {
     ['audit',           'observability'],
     ['rollback',        'observability'],
     ['observations',    'observability'],
+    // account aliases
+    ['accounts',        'account'],
+    ['user',            'account'],
     // profile-preferences aliases
     ['appearance',      'profile-preferences'],
     ['theme',           'profile-preferences'],

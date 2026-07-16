@@ -1,5 +1,5 @@
 /* ── Session list — Claude-like recents-first sidebar ──────────────── */
-/* Top:   New chat + quieter Continue / Skills / Artifacts                 */
+/* Top:   New chat + quieter Skills / Artifacts                            */
 /* Middle: search, PINNED, RECENTS                                         */
 /* Bottom: Settings                                                        */
 
@@ -23,8 +23,15 @@ import {
 } from "@/store/sessions";
 import { useWorkspacesStore } from "@/store/workspaces";
 import { useActiveChatStreamsStore, startChatActiveStreamsPoller } from "@/store/chat-active-streams";
+import {
+  useAccountStore,
+  GUEST_ACCOUNT_VIEW,
+  logoutAccount,
+  setAccountStatus,
+} from "@/store/account";
 import { toast } from "sonner";
 import { api } from "@/api/client";
+import { openExternal } from "@/lib/tauri-shell";
 import { SessionListNav } from "./SessionListNav";
 import { SessionRow } from "./SessionRow";
 import { Section, FolderHeader, UncategorizedHeader } from "./FolderTree";
@@ -33,6 +40,8 @@ import {
   type UserDropdownAction,
   type UserStatus,
 } from "@/components/ui/user-dropdown";
+import { WhatsNewModal } from "@/components/overlays/WhatsNewModal";
+import { SwitchAccountModal } from "@/components/overlays/SwitchAccountModal";
 
 const SESSIONS_KEY = "august-pinned-sessions";
 const STORAGE = (() => {
@@ -64,12 +73,28 @@ export function SessionList({
 }: Props) {
   const [filter, setFilter] = useState("");
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set(STORAGE));
-  const [userStatus, setUserStatus] = useState<UserStatus>("online");
   const [sidebarWidth, setSidebarWidth] = useState(256);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [switchAccountOpen, setSwitchAccountOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const [uncategorizedCollapsed, setUncategorizedCollapsed] = useState(
     () => localStorage.getItem("august-uncategorized-collapsed") === "1",
   );
+
+  const accounts = useAccountStore((s) => s.accounts);
+  const activeAccountId = useAccountStore((s) => s.activeAccountId);
+  const activeAccount =
+    accounts.find((a) => a.id === activeAccountId) ?? null;
+  const signedIn = activeAccount != null;
+  const dropdownUser = activeAccount
+    ? {
+        name: activeAccount.displayName,
+        username: activeAccount.username,
+        avatar: activeAccount.avatar,
+        initials: activeAccount.initials,
+        status: activeAccount.status,
+      }
+    : GUEST_ACCOUNT_VIEW;
 
   useEffect(() => {
     const el = rootRef.current;
@@ -92,20 +117,32 @@ export function SessionList({
         openSettingsSection();
         break;
       case "appearance":
-      case "profile":
       case "notifications":
         openSettingsSection("profile-preferences");
+        break;
+      case "profile":
+      case "create-account":
+        openSettingsSection("account");
         break;
       case "download":
         toast.message("You're already in the August desktop app.");
         break;
       case "whats-new":
+        setWhatsNewOpen(true);
+        break;
       case "help":
-      case "upgrade":
-      case "referrals":
+        void openExternal("https://github.com/KILLER3UG/august-proxy#readme");
+        break;
       case "switch":
+        if (accounts.length === 0) {
+          openSettingsSection("account");
+        } else {
+          setSwitchAccountOpen(true);
+        }
+        break;
       case "logout":
-        toast.message("Coming soon");
+        logoutAccount();
+        toast.message("Signed out of local account");
         break;
       default:
         break;
@@ -327,9 +364,7 @@ export function SessionList({
         <SessionListNav
           filter={filter}
           onFilterChange={setFilter}
-          lastSession={workspaceFiltered[0]}
           onNew={onNew}
-          onSelectLast={() => onSelect(workspaceFiltered[0])}
           onNavigate={onNavigate}
         />
 
@@ -457,21 +492,23 @@ export function SessionList({
         {/* Settings at bottom — dropdown width tracks the live sidebar width */}
         <div className="px-2 pb-2 pt-1.5 border-t border-sidebar-border/40">
           <UserDropdown
-            selectedStatus={userStatus}
-            onStatusChange={(status) => setUserStatus(status as UserStatus)}
+            selectedStatus={dropdownUser.status}
+            onStatusChange={(status) => {
+              if (signedIn) setAccountStatus(status as UserStatus);
+            }}
             onAction={handleUserAction}
+            signedIn={signedIn}
+            accounts={accounts.map((a) => ({
+              id: a.id,
+              name: a.displayName,
+              avatar: a.avatar,
+              initials: a.initials,
+            }))}
             align="start"
             side="top"
             alignOffset={-8}
             contentWidth={sidebarWidth}
-            user={{
-              name: "August User",
-              username: "@august",
-              avatar:
-                "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=96&h=96&fit=crop&crop=face",
-              initials: "AU",
-              status: userStatus,
-            }}
+            user={dropdownUser}
             trigger={
               <button
                 type="button"
@@ -486,6 +523,13 @@ export function SessionList({
           />
         </div>
       </div>
+
+      <WhatsNewModal open={whatsNewOpen} onClose={() => setWhatsNewOpen(false)} />
+      <SwitchAccountModal
+        open={switchAccountOpen}
+        onClose={() => setSwitchAccountOpen(false)}
+        onCreateNew={() => openSettingsSection("account")}
+      />
     </div>
   );
 }

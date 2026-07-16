@@ -25,13 +25,12 @@ export type UserDropdownAction =
   | 'appearance'
   | 'settings'
   | 'notifications'
-  | 'upgrade'
-  | 'referrals'
   | 'download'
   | 'whats-new'
   | 'help'
   | 'switch'
-  | 'logout';
+  | 'logout'
+  | 'create-account';
 
 export interface UserDropdownUser {
   name: string;
@@ -67,9 +66,7 @@ interface StatusMenuItem {
 const MENU_ITEMS: {
   status: StatusMenuItem[];
   profile: MenuItemBase[];
-  premium: MenuItemBase[];
   support: MenuItemBase[];
-  account: MenuItemBase[];
 } = {
   status: [
     { value: 'focus', icon: 'solar:emoji-funny-circle-line-duotone', label: 'Focus' },
@@ -81,23 +78,12 @@ const MENU_ITEMS: {
     { icon: 'solar:settings-line-duotone', label: 'Settings', action: 'settings' },
     { icon: 'solar:bell-line-duotone', label: 'Notifications', action: 'notifications' },
   ],
-  premium: [
-    {
-      icon: 'solar:star-bold',
-      label: 'Upgrade to Pro',
-      action: 'upgrade',
-      iconClass: 'text-amber-600',
-      badge: { text: '20% off', className: 'bg-amber-600 text-white text-[11px]' },
-    },
-    { icon: 'solar:gift-line-duotone', label: 'Referrals', action: 'referrals' },
-  ],
   support: [
     { icon: 'solar:download-line-duotone', label: 'Download app', action: 'download' },
     {
       icon: 'solar:letter-unread-line-duotone',
       label: "What's new?",
       action: 'whats-new',
-      rightIcon: 'solar:square-top-down-line-duotone',
     },
     {
       icon: 'solar:question-circle-line-duotone',
@@ -106,23 +92,14 @@ const MENU_ITEMS: {
       rightIcon: 'solar:square-top-down-line-duotone',
     },
   ],
-  account: [
-    {
-      icon: 'solar:users-group-rounded-bold-duotone',
-      label: 'Switch account',
-      action: 'switch',
-      showAvatar: false,
-    },
-    { icon: 'solar:logout-2-bold-duotone', label: 'Log out', action: 'logout' },
-  ],
 };
 
 const DEFAULT_USER: UserDropdownUser = {
-  name: 'August User',
-  username: '@august',
+  name: 'Guest',
+  username: '@guest',
   avatar:
     'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=96&h=96&fit=crop&crop=face',
-  initials: 'AU',
+  initials: 'G',
   status: 'online',
 };
 
@@ -131,15 +108,14 @@ export interface UserDropdownProps {
   onAction?: (action: UserDropdownAction) => void;
   onStatusChange?: (status: string) => void;
   selectedStatus?: string;
-  promoDiscount?: string;
+  /** When false, show Create account instead of Switch / Log out. */
+  signedIn?: boolean;
   accounts?: UserDropdownAccount[];
   /** Custom trigger (e.g. settings row). Defaults to avatar button. */
   trigger?: ReactNode;
   align?: 'start' | 'center' | 'end';
   side?: 'top' | 'right' | 'bottom' | 'left';
-  /** Match trigger width (useful for sidebar). Overrides default fixed width. */
   matchTriggerWidth?: boolean;
-  /** Explicit content width in px (e.g. live sidebar width). */
   contentWidth?: number;
   contentClassName?: string;
   alignOffset?: number;
@@ -153,7 +129,7 @@ export function UserDropdown({
   onAction = () => {},
   onStatusChange = () => {},
   selectedStatus = 'online',
-  promoDiscount = '20% off',
+  signedIn = false,
   accounts: _accounts = [],
   trigger,
   align = 'end',
@@ -166,6 +142,24 @@ export function UserDropdown({
   className,
   triggerClassName,
 }: UserDropdownProps) {
+  const accountItems: MenuItemBase[] = signedIn
+    ? [
+        {
+          icon: 'solar:users-group-rounded-bold-duotone',
+          label: 'Switch account',
+          action: 'switch',
+          showAvatar: false,
+        },
+        { icon: 'solar:logout-2-bold-duotone', label: 'Log out', action: 'logout' },
+      ]
+    : [
+        {
+          icon: 'solar:user-plus-bold-duotone',
+          label: 'Create account',
+          action: 'create-account',
+        },
+      ];
+
   const renderMenuItem = (item: MenuItemBase, index: number) => (
     <DropdownMenuItem
       key={index}
@@ -182,11 +176,7 @@ export function UserDropdown({
         />
         {item.label}
       </span>
-      {item.badge && (
-        <Badge className={item.badge.className}>
-          {promoDiscount || item.badge.text}
-        </Badge>
-      )}
+      {item.badge && <Badge className={item.badge.className}>{item.badge.text}</Badge>}
       {item.rightIcon && (
         <Icon
           icon={item.rightIcon}
@@ -320,14 +310,11 @@ export function UserDropdown({
           <DropdownMenuGroup>{MENU_ITEMS.profile.map(renderMenuItem)}</DropdownMenuGroup>
 
           <DropdownMenuSeparator />
-          <DropdownMenuGroup>{MENU_ITEMS.premium.map(renderMenuItem)}</DropdownMenuGroup>
-
-          <DropdownMenuSeparator />
           <DropdownMenuGroup>{MENU_ITEMS.support.map(renderMenuItem)}</DropdownMenuGroup>
         </section>
 
         <section className="mt-1 rounded-2xl p-1">
-          <DropdownMenuGroup>{MENU_ITEMS.account.map(renderMenuItem)}</DropdownMenuGroup>
+          <DropdownMenuGroup>{accountItems.map(renderMenuItem)}</DropdownMenuGroup>
         </section>
       </DropdownMenuContent>
     </DropdownMenu>

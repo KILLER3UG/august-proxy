@@ -234,6 +234,7 @@ from app.routers import automations as automationsRoutes  # noqa: E402
 from app.routers import preview as previewRoutes  # noqa: E402
 from app.routers import security as securityRoutes  # noqa: E402
 from app.routers import realtime as realtimeRoutes  # noqa: E402
+from app.routers import whats_new as whatsNewRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
 app.include_router(providersRoutes.router)
@@ -275,6 +276,7 @@ app.include_router(automationsRoutes.router)
 app.include_router(previewRoutes.router)
 app.include_router(securityRoutes.router)
 app.include_router(realtimeRoutes.router)
+app.include_router(whatsNewRoutes.router)
 _WEBDist = settings.webDist
 if _WEBDist.is_dir():
     app.mount('/assets', StaticFiles(directory=str(_WEBDist / 'assets')), name='assets')
