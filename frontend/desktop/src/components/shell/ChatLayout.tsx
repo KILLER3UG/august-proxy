@@ -336,10 +336,6 @@ export function ChatLayout() {
             sidebarCollapsed={collapsed}
             rightDrawerOpen={showRightSidebar}
             onToggleSidebar={() => setCollapsed((c) => !c)}
-            onSettings={() => {
-              sessionStorage.setItem("pre-settings-path", location.pathname);
-              void navigate("/settings");
-            }}
             onSelectRightDrawerSection={openWorkbenchSidebar}
           />
           {!isSettings && (

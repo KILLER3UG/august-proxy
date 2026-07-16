@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -132,6 +133,17 @@ export interface UserDropdownProps {
   selectedStatus?: string;
   promoDiscount?: string;
   accounts?: UserDropdownAccount[];
+  /** Custom trigger (e.g. settings row). Defaults to avatar button. */
+  trigger?: ReactNode;
+  align?: 'start' | 'center' | 'end';
+  side?: 'top' | 'right' | 'bottom' | 'left';
+  /** Match trigger width (useful for sidebar). Overrides default fixed width. */
+  matchTriggerWidth?: boolean;
+  /** Explicit content width in px (e.g. live sidebar width). */
+  contentWidth?: number;
+  contentClassName?: string;
+  alignOffset?: number;
+  sideOffset?: number;
   className?: string;
   triggerClassName?: string;
 }
@@ -143,6 +155,14 @@ export function UserDropdown({
   selectedStatus = 'online',
   promoDiscount = '20% off',
   accounts: _accounts = [],
+  trigger,
+  align = 'end',
+  side = 'bottom',
+  matchTriggerWidth = false,
+  contentWidth,
+  contentClassName,
+  alignOffset,
+  sideOffset,
   className,
   triggerClassName,
 }: UserDropdownProps) {
@@ -196,33 +216,48 @@ export function UserDropdown({
     return colors[status.toLowerCase()] || colors.online;
   };
 
+  const defaultTrigger = (
+    <button
+      type="button"
+      className={cn(
+        'rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+        className,
+      )}
+      title="Account menu"
+      aria-label="Open account menu"
+    >
+      <Avatar
+        className={cn(
+          'size-7 cursor-pointer border border-white dark:border-gray-700',
+          triggerClassName,
+        )}
+      >
+        <AvatarImage src={user.avatar} alt={user.name} />
+        <AvatarFallback className="text-[10px]">{user.initials}</AvatarFallback>
+      </Avatar>
+    </button>
+  );
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-            className,
-          )}
-          title="Account menu"
-          aria-label="Open account menu"
-        >
-          <Avatar
-            className={cn(
-              'size-7 cursor-pointer border border-white dark:border-gray-700',
-              triggerClassName,
-            )}
-          >
-            <AvatarImage src={user.avatar} alt={user.name} />
-            <AvatarFallback className="text-[10px]">{user.initials}</AvatarFallback>
-          </Avatar>
-        </button>
+        {trigger ?? defaultTrigger}
       </DropdownMenuTrigger>
 
       <DropdownMenuContent
-        className="no-scrollbar w-[310px] rounded-2xl bg-gray-50 p-0 dark:bg-black/90"
-        align="end"
+        className={cn(
+          'no-scrollbar rounded-2xl bg-gray-50 p-0 dark:bg-black/90',
+          contentWidth == null &&
+            (matchTriggerWidth
+              ? 'w-[var(--radix-dropdown-menu-trigger-width)]'
+              : 'w-[310px]'),
+          contentClassName,
+        )}
+        style={contentWidth != null ? { width: contentWidth } : undefined}
+        align={align}
+        side={side}
+        alignOffset={alignOffset}
+        sideOffset={sideOffset}
       >
         <section className="rounded-2xl border border-gray-200 bg-white p-1 shadow backdrop-blur-lg dark:border-gray-700/20 dark:bg-gray-100/10">
           <div className="flex items-center p-2">

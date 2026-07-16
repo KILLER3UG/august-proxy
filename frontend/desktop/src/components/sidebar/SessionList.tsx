@@ -28,6 +28,11 @@ import { api } from "@/api/client";
 import { SessionListNav } from "./SessionListNav";
 import { SessionRow } from "./SessionRow";
 import { Section, FolderHeader, UncategorizedHeader } from "./FolderTree";
+import {
+  UserDropdown,
+  type UserDropdownAction,
+  type UserStatus,
+} from "@/components/ui/user-dropdown";
 
 const SESSIONS_KEY = "august-pinned-sessions";
 const STORAGE = (() => {
@@ -59,9 +64,53 @@ export function SessionList({
 }: Props) {
   const [filter, setFilter] = useState("");
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set(STORAGE));
+  const [userStatus, setUserStatus] = useState<UserStatus>("online");
+  const [sidebarWidth, setSidebarWidth] = useState(256);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [uncategorizedCollapsed, setUncategorizedCollapsed] = useState(
     () => localStorage.getItem("august-uncategorized-collapsed") === "1",
   );
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const sync = () => setSidebarWidth(Math.round(el.getBoundingClientRect().width));
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const openSettingsSection = (section?: string) => {
+    sessionStorage.setItem("pre-settings-path", window.location.pathname);
+    onNavigate(section ? `/settings/${section}` : "/settings");
+  };
+
+  const handleUserAction = (action: UserDropdownAction) => {
+    switch (action) {
+      case "settings":
+        openSettingsSection();
+        break;
+      case "appearance":
+      case "profile":
+      case "notifications":
+        openSettingsSection("profile-preferences");
+        break;
+      case "download":
+        toast.message("You're already in the August desktop app.");
+        break;
+      case "whats-new":
+      case "help":
+      case "upgrade":
+      case "referrals":
+      case "switch":
+      case "logout":
+        toast.message("Coming soon");
+        break;
+      default:
+        break;
+    }
+  };
 
   const sessions = useSessionsStore((s) => s.sessions);
   const folders = useSessionsStore((s) => s.folders);
@@ -265,7 +314,7 @@ export function SessionList({
   });
 
   return (
-    <div className="flex h-full text-sm relative select-none bg-sidebar">
+    <div ref={rootRef} className="flex h-full text-sm relative select-none bg-sidebar">
       <input
         ref={dirInputRef}
         type="file"
@@ -405,15 +454,36 @@ export function SessionList({
           </Section>
         </div>
 
-        {/* Settings at bottom */}
+        {/* Settings at bottom — dropdown width tracks the live sidebar width */}
         <div className="px-2 pb-2 pt-1.5 border-t border-sidebar-border/40">
-          <button
-            onClick={() => onNavigate("/settings")}
-            className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-sidebar-foreground/50 hover:bg-white/[0.03] hover:text-sidebar-foreground/75 transition-colors"
-          >
-            <Settings className="size-3.5 opacity-60" />
-            <span>Settings</span>
-          </button>
+          <UserDropdown
+            selectedStatus={userStatus}
+            onStatusChange={(status) => setUserStatus(status as UserStatus)}
+            onAction={handleUserAction}
+            align="start"
+            side="top"
+            alignOffset={-8}
+            contentWidth={sidebarWidth}
+            user={{
+              name: "August User",
+              username: "@august",
+              avatar:
+                "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=96&h=96&fit=crop&crop=face",
+              initials: "AU",
+              status: userStatus,
+            }}
+            trigger={
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-sidebar-foreground/50 hover:bg-white/[0.03] hover:text-sidebar-foreground/75 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                title="Open settings"
+                aria-label="Open settings"
+              >
+                <Settings className="size-3.5 opacity-60" />
+                <span>Settings</span>
+              </button>
+            }
+          />
         </div>
       </div>
     </div>
