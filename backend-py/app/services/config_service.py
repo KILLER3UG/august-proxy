@@ -56,11 +56,17 @@ def getProvidersAsModels() -> list[ProviderConfig]:
         models: list[ModelConfig] = []
         for m in models_raw:
             if isinstance(m, dict):
+                raw_cw = m.get('contextWindow')
+                context_window = (
+                    as_int(raw_cw)
+                    if isinstance(raw_cw, (int, float)) and not isinstance(raw_cw, bool) and as_int(raw_cw) > 0
+                    else None
+                )
                 models.append(
                     ModelConfig(
                         id=str(m.get('id', '')),
                         name=str(m.get('name', '')),
-                        context_window=as_int(m.get('contextWindow'), 128000),
+                        context_window=context_window,
                         reasoning=bool(m.get('reasoning', False)),
                         free=bool(m.get('free', False)),
                         source=str(m.get('source', 'manual')),

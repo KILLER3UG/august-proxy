@@ -1,9 +1,9 @@
 /* Single model row inside a provider's model list.
- * Supports inline edit of display name / context / reasoning, connection
- * probe via connectModel, and remove — results surface as status badges.
+ * Supports inline context-window edit (next to the connection probe), display
+ * name / reasoning via pencil edit, and remove — results surface as badges.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import {
   Pencil,
@@ -40,16 +40,25 @@ export function ModelRow({
     content?: string;
   }>(null);
 
+  useEffect(() => {
+    setName(model.name ?? model.id);
+    setContextWindow(model.contextWindow?.toString() ?? '');
+    setReasoning(!!model.reasoning);
+  }, [model.id, model.name, model.contextWindow, model.reasoning]);
+
   const update = useMutation({
-    mutationFn: () => providersApi.updateModel(providerId, model.id, {
-      name,
-      contextWindow: contextWindow ? Number(contextWindow) : undefined,
-      reasoning,
-    }),
+    mutationFn: (body: {
+      name?: string;
+      contextWindow?: number | null;
+      reasoning?: boolean;
+    }) => providersApi.updateModel(providerId, model.id, body),
     onSuccess: () => {
       setEditing(false);
       onChanged();
       toast.success('Saved');
+    },
+    onError: (e: unknown) => {
+      toast.error(e instanceof Error ? e.message : 'Failed to save');
     },
   });
   const remove = useMutation({
@@ -83,7 +92,18 @@ export function ModelRow({
     },
   });
 
-  const ctx = fmtContextWindow(model.contextWindow);
+  const saveContextWindow = () => {
+    const trimmed = contextWindow.trim();
+    const next = trimmed ? Number(trimmed) : null;
+    if (trimmed && (!Number.isFinite(next) || (next as number) <= 0)) {
+      toast.error('Context window must be a positive number');
+      setContextWindow(model.contextWindow?.toString() ?? '');
+      return;
+    }
+    const prev = model.contextWindow ?? null;
+    if (next === prev) return;
+    update.mutate({ contextWindow: next });
+  };
 
   if (editing) {
     return (
@@ -99,7 +119,7 @@ export function ModelRow({
           <span className="text-xs font-mono text-muted-foreground truncate">{model.id}</span>
         </div>
         <div className="border-t border-border/30 pt-2 space-y-2">
-          <div className="grid grid-cols-[1fr_120px] gap-2">
+          <div className="grid grid-cols-[1fr_140px] gap-2">
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -109,8 +129,9 @@ export function ModelRow({
             <Input
               value={contextWindow}
               onChange={(e) => setContextWindow(e.target.value)}
-              placeholder="context window"
+              placeholder="Context window"
               type="number"
+              min={1}
               aria-label="Context window"
             />
           </div>
@@ -119,7 +140,17 @@ export function ModelRow({
             Supports reasoning
           </label>
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => update.mutate()} disabled={update.isPending}>
+            <Button
+              size="sm"
+              onClick={() =>
+                update.mutate({
+                  name,
+                  contextWindow: contextWindow.trim() ? Number(contextWindow) : null,
+                  reasoning,
+                })
+              }
+              disabled={update.isPending}
+            >
               {update.isPending ? 'Saving…' : 'Save changes'}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
@@ -131,9 +162,11 @@ export function ModelRow({
     );
   }
 
+  const ctxLabel = fmtContextWindow(model.contextWindow);
+
   return (
     <div className="px-3 py-2.5 text-sm">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           <span className="font-medium truncate">{model.name || model.id}</span>
         </div>
@@ -148,16 +181,28 @@ export function ModelRow({
         >
           {model.source}
         </span>
-        {ctx && (
-          <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-            {ctx}
-          </span>
-        )}
-        {model.reasoning && (
-          <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-mono text-warning">
-            reasoning
-          </span>
-        )}
+        <label className="flex items-center gap-1 shrink-0" title="Context window (tokens)">
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">ctx</span>
+          <Input
+            value={contextWindow}
+            onChange={(e) => setContextWindow(e.target.value)}
+            onBlur={saveContextWindow}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              }
+            }}
+            placeholder="e.g. 200000"
+            type="number"
+            min={1}
+            aria-label="Context window"
+            disabled={update.isPending}
+            className="h-7 w-[7.5rem] px-2 text-[11px] font-mono"
+          />
+          {ctxLabel && (
+            <span className="text-[10px] font-mono text-muted-foreground w-8">{ctxLabel}</span>
+          )}
+        </label>
         <button
           onClick={() => connect.mutate()}
           disabled={connect.isPending}

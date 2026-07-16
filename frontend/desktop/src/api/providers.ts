@@ -45,7 +45,7 @@ export type ProviderUpdate = Partial<Omit<ProviderCreate, 'id'>>;
 export interface ModelCreate {
   id: string;
   name?: string;
-  contextWindow?: number;
+  contextWindow?: number | null;
   reasoning?: boolean;
   free?: boolean;
 }

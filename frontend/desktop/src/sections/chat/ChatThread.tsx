@@ -614,7 +614,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             id: activeModelId,
             name: activeModelId,
             provider: activeProvider,
-            contextWindow: 128000,
             supportsReasoning: isLikelyReasoningModel(activeModelId),
             supportsThinking: isLikelyReasoningModel(activeModelId),
           };
@@ -700,7 +699,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (sessionId) void stopChatStream(sessionId);
   };
 
-  const maxContext = modelForRequest?.contextWindow || 128000;
+  const maxContext = modelForRequest?.contextWindow && modelForRequest.contextWindow > 0
+    ? modelForRequest.contextWindow
+    : 0;
   const toolCountForBreakdown = workbenchToolCount ?? 30;
   const toolTokenEstimate = workbenchToolTokens;
   const serverContextTokens = sessionUsage?.contextTokens ?? 0;
@@ -714,7 +715,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     Math.ceil((input.length + messages.reduce((s, m) => s + m.content.length, 0)) / 4) +
     toolOverhead;
   const estTokens = hasServerTruth ? serverContextTokens : fallbackEstimate;
-  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
+  const pct = maxContext > 0 ? Math.min(100, Math.round((estTokens / maxContext) * 100)) : 0;
 
   const contextBreakdown: ContextBreakdown = useMemo(
     () =>
@@ -877,7 +878,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           />
         )}
         <div className="flex-grow flex flex-col min-h-0 relative">
-          <AnimatePresence initial={false} mode="wait">
+          <AnimatePresence initial={false}>
             {messages.length === 0 ? (
               <ChatEmptyState workspacePath={activeSession?.workspacePath}>
                 {planPending ? planBanner : composer}

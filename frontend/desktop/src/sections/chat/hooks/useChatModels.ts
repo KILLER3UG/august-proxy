@@ -43,7 +43,7 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
       id: m.id,
       name: m.name || m.id,
       provider: m.provider,
-      contextWindow: m.contextWindow || 128000,
+      contextWindow: m.contextWindow && m.contextWindow > 0 ? m.contextWindow : undefined,
       isFree: m.isFree,
       supportsReasoning: m.supportsReasoning,
       supportsThinking: m.supportsThinking,

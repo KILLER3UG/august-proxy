@@ -40,27 +40,27 @@ def invalidate_cache() -> None:
 
 _STATICModelLists: dict[str, list[dict[str, object]]] = {
     'Anthropic': [
-        {'id': 'claude-sonnet-4-7', 'contextWindow': 200000},
-        {'id': 'claude-sonnet-4-6', 'contextWindow': 200000},
-        {'id': 'claude-opus-4-7', 'contextWindow': 200000},
-        {'id': 'claude-opus-4-6', 'contextWindow': 200000},
-        {'id': 'claude-haiku-4-5', 'contextWindow': 200000},
+        {'id': 'claude-sonnet-4-7'},
+        {'id': 'claude-sonnet-4-6'},
+        {'id': 'claude-opus-4-7'},
+        {'id': 'claude-opus-4-6'},
+        {'id': 'claude-haiku-4-5'},
     ],
     'OpenAI API': [
-        {'id': 'gpt-4o', 'contextWindow': 128000},
-        {'id': 'gpt-4o-mini', 'contextWindow': 128000},
-        {'id': 'o1', 'contextWindow': 200000},
-        {'id': 'o3', 'contextWindow': 200000},
+        {'id': 'gpt-4o'},
+        {'id': 'gpt-4o-mini'},
+        {'id': 'o1'},
+        {'id': 'o3'},
     ],
     'Google AI Studio': [
-        {'id': 'gemini-2.0-flash', 'contextWindow': 1048576},
-        {'id': 'gemini-2.0-pro', 'contextWindow': 1048576},
-        {'id': 'gemini-1.5-pro', 'contextWindow': 1048576},
+        {'id': 'gemini-2.0-flash'},
+        {'id': 'gemini-2.0-pro'},
+        {'id': 'gemini-1.5-pro'},
     ],
     'DeepSeek': [
-        {'id': 'deepseek-v4', 'contextWindow': 131072},
-        {'id': 'deepseek-v4-flash', 'contextWindow': 131072},
-        {'id': 'deepseek-reasoner', 'contextWindow': 131072},
+        {'id': 'deepseek-v4'},
+        {'id': 'deepseek-v4-flash'},
+        {'id': 'deepseek-reasoner'},
     ],
 }
 
@@ -74,8 +74,10 @@ def _deriveModelsUrl(baseUrl: str) -> str | None:
     return f'{base}/models' if base else None
 
 
-def _getContextWindow(modelId: str, provider: dict[str, object] | None = None, fallback: int | None = None) -> int:
-    """Resolve context window from provider profile or inference."""
+def _getContextWindow(
+    modelId: str, provider: dict[str, object] | None = None, fallback: object = None
+) -> int | None:
+    """Resolve context window from provider profile, upstream value, or None if unset."""
     if provider:
         profiles = as_dict(provider.get('modelProfiles'), {})
         for key in [modelId] + [k for k in profiles if modelId.startswith(k)]:
@@ -85,7 +87,18 @@ def _getContextWindow(modelId: str, provider: dict[str, object] | None = None, f
         wildcard = as_dict(profiles.get('*'), {})
         if isinstance(wildcard, dict) and wildcard.get('contextWindow'):
             return as_int(wildcard['contextWindow'])
-    return fallback or 128000
+    if isinstance(fallback, (int, float)) and not isinstance(fallback, bool):
+        n = int(fallback)
+        return n if n > 0 else None
+    return None
+
+
+def _optional_context_window(raw: object) -> int | None:
+    """Read a stored contextWindow only when explicitly set to a positive int."""
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        n = int(raw)
+        return n if n > 0 else None
+    return None
 
 
 def _isFreeModelId(modelId: str) -> bool:
@@ -177,7 +190,7 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float = 5.
             'id': m['id'],
             'name': m['id'],
             'provider': providerName,
-            'contextWindow': as_int(m.get('contextWindow'), 128000),
+            'contextWindow': _optional_context_window(m.get('contextWindow')),
         }
         for m in static
     ]
@@ -224,7 +237,7 @@ async def _aggregateModels() -> list[dict[str, object]]:
                         'id': mid,
                         'name': as_str(m.get('name'), mid),
                         'provider': entry['name'],
-                        'contextWindow': as_int(m.get('contextWindow'), 128000),
+                        'contextWindow': _optional_context_window(m.get('contextWindow')),
                         'supportsReasoning': reasoning,
                         'supportsThinking': reasoning,
                         'isFree': m.get('free', False) or _isFreeModelId(mid),

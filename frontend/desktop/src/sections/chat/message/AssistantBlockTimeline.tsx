@@ -1,4 +1,3 @@
-import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
   ToolCallItemBody,
@@ -145,12 +144,8 @@ export function AssistantBlockTimeline({
       .some((u) => u.kind === 'thinking_group');
 
     return (
-      <motion.div
+      <div
         key={`thinking_group_${unit.entries[0]?.index ?? 0}`}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.12, ease: 'easeOut' }}
         className="chat-streaming-block"
       >
         <ReasoningBlock
@@ -163,7 +158,7 @@ export function AssistantBlockTimeline({
           }
           thoughtCount={n}
         />
-      </motion.div>
+      </div>
     );
   };
 
@@ -237,12 +232,8 @@ export function AssistantBlockTimeline({
     const showThoughtOnTools = !opts?.forceIdle;
 
     return (
-      <motion.div
+      <div
         key={`tool_group_${unit.entries[0]?.index ?? 0}`}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.12, ease: 'easeOut' }}
         className="chat-streaming-block ml-3 pl-3 chat-rail-2 space-y-1.5"
       >
         <ToolSummary
@@ -304,7 +295,7 @@ export function AssistantBlockTimeline({
             );
           }}
         />
-      </motion.div>
+      </div>
     );
   };
 
@@ -316,41 +307,27 @@ export function AssistantBlockTimeline({
     const key = block.id || `${block.type}_${index}`;
     if (block.type === 'thinking') {
       return (
-        <motion.div
-          key={key}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.12, ease: 'easeOut' }}
-          className="chat-streaming-block"
-        >
+        <div key={key} className="chat-streaming-block">
           <ReasoningBlock
             text={block.content || ''}
             isGenerating={!!(isLast && streaming && index === displayBlocks.length - 1)}
             duration={message.thinkingDuration}
           />
-        </motion.div>
+        </div>
       );
     }
     if (block.type === 'finalOutput') {
       if (!block.content) return null;
       const isFinalStreaming = !!(isLast && streaming);
       return (
-        <motion.div
-          key={key}
-          initial={isFinalStreaming ? false : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.12, ease: 'easeOut' }}
-          className="chat-streaming-block"
-        >
+        <div key={key} className="chat-streaming-block">
           <div className={cn(
             'chat-message-text text-foreground/90 space-y-3 max-w-none',
             isFinalStreaming && 'streaming-markdown-content',
           )}>
             <Markdown content={block.content} variant="assistant" live={isFinalStreaming} />
           </div>
-        </motion.div>
+        </div>
       );
     }
     return null;
@@ -371,25 +348,22 @@ export function AssistantBlockTimeline({
     });
 
   return (
-    <AnimatePresence initial={false}>
+    <>
       {showPendingThinking && (
-        <motion.div
-          key="pending-thinking"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.12, ease: 'easeOut' }}
-          className="chat-streaming-block"
-        >
+        <div key="pending-thinking" className="chat-streaming-block">
           <ReasoningBlock text="" isGenerating />
-        </motion.div>
+        </div>
       )}
       {(() => {
         // Pack into ActivitySummary only after the turn settles. While the
         // last message is still streaming, keep the live timeline so thinking
         // / tools don't suddenly collapse when final prose starts.
+        // Final prose always renders via `afterUnits` / trailing units with a
+        // stable key so settle does not remount the answer (that caused a
+        // black opacity blink).
         const packActivity =
           hasFinalOutput && !(isLast && streaming);
+
         if (packActivity) {
           const hasActivity =
             totalThoughts + totalTools > 0 ||
@@ -397,14 +371,7 @@ export function AssistantBlockTimeline({
           return (
             <>
               {hasActivity && (
-                <motion.div
-                  key="activity-pack"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.12, ease: 'easeOut' }}
-                  className="chat-streaming-block"
-                >
+                <div key="activity-pack" className="chat-streaming-block">
                   <ActivitySummary
                     thoughtCount={totalThoughts}
                     toolsCount={totalTools}
@@ -415,16 +382,27 @@ export function AssistantBlockTimeline({
                   >
                     {renderUnitList(activityUnits, { forceIdle: true })}
                   </ActivitySummary>
-                </motion.div>
+                </div>
               )}
               {renderUnitList(afterUnits)}
             </>
           );
         }
 
-        // Live / no final yet: stream normal multi-section timeline.
+        if (hasFinalOutput) {
+          // Live stream with final text: show activity expanded, then final
+          // with the same afterUnits path used after settle.
+          return (
+            <>
+              {renderUnitList(activityUnits)}
+              {renderUnitList(afterUnits)}
+            </>
+          );
+        }
+
+        // No final yet: stream normal multi-section timeline.
         return renderUnitList(units);
       })()}
-    </AnimatePresence>
+    </>
   );
 }

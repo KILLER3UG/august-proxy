@@ -14,7 +14,8 @@ class ModelConfig(ExtraAllowBaseModel):
 
     id: str
     name: str = ''
-    context_window: int = 128000
+    # User-configured; no assumed default — unset until set in provider settings.
+    context_window: int | None = None
     reasoning: bool = False
     free: bool = False
     source: str = 'manual'

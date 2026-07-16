@@ -273,7 +273,7 @@ async def refreshModels(providerId: str):
                     {
                         'id': mid,
                         'name': mid,
-                        'contextWindow': 128000,
+                        # Leave unset — user configures context window in provider settings.
                         'reasoning': False,
                         'free': ':free' in mid or '-free' in mid,
                         'source': 'fetched',
@@ -302,16 +302,16 @@ async def addModel(providerId: str, body: ModelCreate):
             continue
         if as_str(p.get('id', '')) == providerId:
             p_models = as_list(p.setdefault('models', []))
-            p_models.append(
-                {
-                    'id': body.id,
-                    'name': body.name or body.id,
-                    'contextWindow': body.context_window or 128000,
-                    'reasoning': body.reasoning or False,
-                    'free': body.free or False,
-                    'source': 'manual',
-                }
-            )
+            entry: dict = {
+                'id': body.id,
+                'name': body.name or body.id,
+                'reasoning': body.reasoning or False,
+                'free': body.free or False,
+                'source': 'manual',
+            }
+            if body.context_window is not None and body.context_window > 0:
+                entry['contextWindow'] = body.context_window
+            p_models.append(entry)
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
@@ -334,8 +334,13 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                 if as_str(m.get('id', '')) == modelId:
                     if body.name is not None:
                         m['name'] = body.name
-                    if body.context_window is not None:
-                        m['contextWindow'] = body.context_window
+                    dumped = body.model_dump(exclude_unset=True)
+                    if 'context_window' in dumped:
+                        cw = dumped['context_window']
+                        if cw is None or (isinstance(cw, int) and cw <= 0):
+                            m.pop('contextWindow', None)
+                        else:
+                            m['contextWindow'] = cw
                     if body.reasoning is not None:
                         m['reasoning'] = body.reasoning
                     if body.free is not None:

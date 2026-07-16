@@ -7,7 +7,7 @@ describe('AUG working indicator visibility', () => {
     const path = resolve(__dirname, '../sections/chat/ChatThreadMessagePane.tsx');
     const src = readFileSync(path, 'utf8');
     // Composer-anchored indicator driven by `streaming`, not buried in the list footer
-    expect(src).toMatch(/streaming\s*&&/);
+    expect(src).toMatch(/streaming\s*(\&\&|\?)/);
     expect(src).toMatch(/WorkingIndicator/);
     expect(src).toMatch(/aug-working-indicator/);
     // Must sit outside VirtualizedMessageList footer so message enter anims can't hide it

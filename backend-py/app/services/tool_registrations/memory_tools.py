@@ -239,7 +239,10 @@ def register() -> None:
     )
     tool_registry.register(
         'rename_session',
-        'Set the human-readable title of a chat session (shown in the sidebar). Use a short 3–8 word title that captures the topic (not the full user message). Pass sessionId when known; for the current chat you may omit it. Call this early after understanding the user goal, or when the user asks to rename.',
+        'Rename a chat session in the sidebar when the user asks. '
+        'Session titles are generated automatically after the first reply — '
+        'do NOT call this just to invent a title for a new chat. '
+        'Use a short 3–8 word title. Pass sessionId when known; for the current chat you may omit it.',
         _renameSession,
         {
             'type': 'object',

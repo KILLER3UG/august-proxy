@@ -165,6 +165,9 @@ def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> b
     }
     if name in destructive:
         return True
+    # Session/UI metadata renames are not workspace mutations — do not gate them.
+    if name in {'rename_session', 'renamesession'}:
+        return False
     destructiveMarkers = (
         'write',
         'edit',

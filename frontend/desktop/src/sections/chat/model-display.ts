@@ -5,7 +5,8 @@ export interface ModelItem {
   id: string;
   name: string;
   provider: string;
-  contextWindow: number;
+  /** Tokens; unset until configured on the model in provider settings. */
+  contextWindow?: number;
   isFree?: boolean;
   supportsReasoning?: boolean;
   supportsThinking?: boolean;
@@ -74,7 +75,6 @@ export function modelFromSession(
     id: session.model,
     name: session.model,
     provider: session.provider || '',
-    contextWindow: 128000,
     supportsReasoning: isLikelyReasoningModel(session.model),
     supportsThinking: isLikelyReasoningModel(session.model),
   };
@@ -115,7 +115,7 @@ export function getModelDisplayName(id: string): string {
 }
 
 export function formatContextWindow(num?: number): string {
-  if (!num) return '128k';
+  if (!num) return '—';
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(0)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(0)}k`;
   return String(num);

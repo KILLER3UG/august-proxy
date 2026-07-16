@@ -62,14 +62,7 @@ export function ChatThreadMessagePane({
   const shouldAnimateEnter = useMessageEnterAnimation(messages, sessionId);
 
   return (
-    <motion.div
-      key="thread-scroll-view"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      className="flex-1 flex flex-col min-h-0 relative"
-    >
+    <div className="flex-1 flex flex-col min-h-0 relative">
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto chat-scroll"
@@ -156,38 +149,22 @@ export function ChatThreadMessagePane({
         </div>
       </div>
 
-      {/* AUG — anchored above the composer; fixed-height slot avoids viewport resize. */}
+      {/* AUG — anchored above the composer; no exit fade (avoids black blink on settle). */}
       <div
         className="mx-auto w-full max-w-3xl px-4 shrink-0"
-        style={{ height: streaming ? 36 : 0 }}
         aria-hidden={!streaming}
       >
-        <AnimatePresence initial={false}>
-          {streaming && (
-            <motion.div
-              key={`aug-${sessionId ?? 'none'}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-              className="pt-1"
-              data-testid="aug-working-indicator"
-            >
-              <WorkingIndicator />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {streaming ? (
+          <div className="pt-1" data-testid="aug-working-indicator">
+            <WorkingIndicator />
+          </div>
+        ) : null}
       </div>
 
       {/* Plan banner replaces the composer while a plan awaits a decision. */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="shrink-0 z-10 w-full bg-background py-3"
-      >
+      <div className="shrink-0 z-10 w-full bg-background py-3">
         {footerSlot}
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 }

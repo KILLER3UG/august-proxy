@@ -10,7 +10,7 @@ interface ModelItem {
   id: string;
   name: string;
   provider: string;
-  contextWindow: number;
+  contextWindow?: number;
   isFree?: boolean;
   supportsReasoning?: boolean;
   supportsThinking?: boolean;

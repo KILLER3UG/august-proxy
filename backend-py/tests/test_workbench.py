@@ -208,6 +208,7 @@ class TestPlanModeGuard:
             'fact_search',
             'list_skills',
             'load_skill',
+            'rename_session',
         ):
             assert isPlanModeBlocked(name) is False, name
         for name in ('mcp__github__search', 'spawn_subagent', 'analyze_code', 'fetch_logs', 'get_status'):
@@ -223,8 +224,22 @@ class TestPlanModeGuard:
             'apply_patch',
             'install',
             'StrReplaceEditTool',
+            'rename_file',
         ):
             assert isPlanModeBlocked(name) is True, name
+
+    def testRenameSessionDoesNotRequireApproval(self):
+        """Sidebar title renames are metadata, not workspace mutations."""
+        from app.services.workbench.workbench import _checkToolGuard
+
+        assert isPlanModeBlocked('rename_session') is False
+        ask = createWorkbenchSession(guardMode='ask')
+        assert _checkToolGuard(ask, 'rename_session', {'title': 'Fix login bug'}) is None
+        plan = createWorkbenchSession(guardMode='plan')
+        assert _checkToolGuard(plan, 'rename_session', {'title': 'Fix login bug'}) is None
+        # File renames remain gated
+        assert isPlanModeBlocked('rename_file') is True
+        assert _checkToolGuard(ask, 'rename_file', {'path': 'a', 'newPath': 'b'}) is not None
 
     def testBlockedMessageGuidesModelToSubmitPlan(self):
         """When the model tries a destructive tool in plan mode, the guard
