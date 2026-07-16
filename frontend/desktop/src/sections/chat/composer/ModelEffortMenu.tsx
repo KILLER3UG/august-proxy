@@ -70,7 +70,6 @@ function ThinkingSwitch({
 }
 
 export function ModelEffortMenu({
-  models: _models,
   visibleModels,
   loading,
   selected,
@@ -82,6 +81,7 @@ export function ModelEffortMenu({
   thinkingEnabled,
   onThinkingChange,
 }: {
+  /** Full catalog (kept for call-site compatibility; flyout uses `visibleModels`). */
   models: ModelItem[];
   visibleModels: ModelItem[];
   loading?: boolean;
@@ -160,22 +160,6 @@ export function ModelEffortMenu({
     left: number;
   } | null>(null);
 
-  // `selected` can come from session/localStorage restore (see
-  // `modelFromSession`/`loadLastModel` in model-display.ts), which stamps
-  // `supportsThinking`/`supportsReasoning` from a narrower client-side
-  // guess made before the real catalog loaded. Once the authoritative
-  // aggregated list (`_models`) arrives, prefer its flags for the same
-  // model id so the switch reflects what the backend will actually honor
-  // instead of staying stuck on a stale/incomplete guess.
-  const catalogMatch =
-    _models.find((m) => m.id === selected?.id && m.provider === selected?.provider) ||
-    _models.find((m) => m.id === selected?.id);
-  const supportsThinking = !!(
-    catalogMatch?.supportsThinking ||
-    catalogMatch?.supportsReasoning ||
-    selected?.supportsThinking ||
-    selected?.supportsReasoning
-  );
   const effortOpt =
     EFFORT_OPTIONS.find((o) => o.value === effort) || EFFORT_OPTIONS[1];
 
@@ -492,23 +476,17 @@ export function ModelEffortMenu({
             ))}
           </div>
           <div className="h-px bg-border/50 mx-2" />
-          <div
-            className={cn(
-              'px-3 py-2.5 flex items-center justify-between gap-3',
-              !supportsThinking && 'opacity-60',
-            )}
-          >
+          <div className="px-3 py-2.5 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-sm font-medium text-foreground">Thinking</div>
               <div className="text-[11px] text-muted-foreground mt-0.5">
-                {supportsThinking
+                {thinkingEnabled
                   ? 'Show extended reasoning for this turn'
-                  : 'Not available for this model'}
+                  : 'Answer directly without extended reasoning'}
               </div>
             </div>
             <ThinkingSwitch
-              checked={thinkingEnabled && supportsThinking}
-              disabled={!supportsThinking}
+              checked={thinkingEnabled}
               onChange={onThinkingChange}
             />
           </div>

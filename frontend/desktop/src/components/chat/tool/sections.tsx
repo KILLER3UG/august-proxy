@@ -8,6 +8,10 @@ import {
   type FormattedContext,
 } from '@/lib/tool-context-format';
 
+/** Shared scroll shell for long tool result panes (search hits, list_skills, etc.). */
+const RESULT_SCROLL =
+  'min-h-0 max-h-52 overflow-y-auto overscroll-contain';
+
 export function Section({
   label,
   children,
@@ -35,7 +39,9 @@ export function Section({
         >
           {label}
         </div>
-        <div className="min-w-0 text-muted-foreground">{children}</div>
+        <div className={cn('min-w-0 text-muted-foreground', RESULT_SCROLL)}>
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -91,7 +97,12 @@ export function FormattedSection({
           {isSuccess && <CheckCircle2 className="size-3 shrink-0" />}
           {label}
         </div>
-        <div className="min-w-0 text-sm text-foreground/90 chat-message-text">
+        <div
+          className={cn(
+            'min-w-0 text-sm text-foreground/90 chat-message-text',
+            RESULT_SCROLL,
+          )}
+        >
           <Markdown content={summary} variant="assistant" />
         </div>
       </div>

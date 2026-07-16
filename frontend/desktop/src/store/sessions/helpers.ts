@@ -151,7 +151,8 @@ export function sessionIsEmpty(s: Session): boolean {
   return true;
 }
 
-/** Short sidebar title from the first user message (not a raw dump). */
+/** Fallback sidebar title from the first user message (truncated, not a raw dump).
+ *  Prefer the backend LLM title generated after the first assistant reply. */
 export function deriveSessionTitleFromMessage(text: string): string | null {
   let cleaned = (text || '').replace(/\r\n/g, '\n').trim();
   if (!cleaned) return null;

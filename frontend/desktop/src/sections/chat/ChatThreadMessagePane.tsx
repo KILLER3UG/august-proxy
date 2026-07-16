@@ -6,6 +6,7 @@ import type { ReactNode, RefObject } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { messagePop, userMessagePop } from '@/lib/motion';
 import { ScrollToTopButton } from '@/components/chat/ScrollToTopButton';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { MessageBubble } from './MessageBubble';
@@ -14,6 +15,7 @@ import { VirtualizedMessageList } from './VirtualizedMessageList';
 import type { ChatMessage } from '@/types/chat';
 import type { SubagentPromptMap } from './hooks/useSessionStream';
 import type { SubagentBlockState } from './chat-stream-manager';
+import { useMessageEnterAnimation } from './hooks/useMessageEnterAnimation';
 
 export function ChatThreadMessagePane({
   sessionId,
@@ -57,6 +59,8 @@ export function ChatThreadMessagePane({
   /** Composer or plan banner under the list. */
   footerSlot: ReactNode;
 }) {
+  const shouldAnimateEnter = useMessageEnterAnimation(messages, sessionId);
+
   return (
     <motion.div
       key="thread-scroll-view"
@@ -77,13 +81,26 @@ export function ChatThreadMessagePane({
           renderMessage={(m, realIndex) => {
             const isReverting =
               revertingIndex !== null && realIndex > revertingIndex;
+            // Only animate user bubbles — assistant placeholders must appear
+            // immediately so the AUG working indicator stays visible.
+            const animateIn = m.role === 'user' && shouldAnimateEnter(m.id);
+            const pop = m.role === 'user' ? userMessagePop : messagePop;
             return (
-              <div
-                className={cn(
-                  'transition-all duration-300 transform',
+              <motion.div
+                initial={animateIn ? pop.initial : false}
+                animate={
                   isReverting
-                    ? 'opacity-0 -translate-y-4 pointer-events-none'
-                    : 'opacity-100 translate-y-0',
+                    ? { opacity: 0, y: -12, scale: 0.98 }
+                    : pop.animate
+                }
+                transition={
+                  isReverting
+                    ? { duration: 0.22, ease: [0.16, 1, 0.3, 1] }
+                    : pop.transition
+                }
+                style={{ transformOrigin: m.role === 'user' ? 'right bottom' : 'left bottom' }}
+                className={cn(
+                  isReverting && 'pointer-events-none',
                 )}
               >
                 <MessageBubble
@@ -102,22 +119,17 @@ export function ChatThreadMessagePane({
                   subagentPrompts={subagentPrompts}
                   subagentBlocks={subagentBlocks}
                 />
-              </div>
+              </motion.div>
             );
           }}
           footer={
-            <>
-              {streaming && (
-                <WorkingIndicator key={`aug-${sessionId ?? 'none'}`} />
-              )}
-              {modelPickerActive && (
-                <ModelPickerCard
-                  sessionId={sessionId ?? ''}
-                  onDismiss={onDismissModelPicker}
-                  context={{ currentModelId: selectedModelId }}
-                />
-              )}
-            </>
+            modelPickerActive ? (
+              <ModelPickerCard
+                sessionId={sessionId ?? ''}
+                onDismiss={onDismissModelPicker}
+                context={{ currentModelId: selectedModelId }}
+              />
+            ) : null
           }
         />
 
@@ -144,6 +156,23 @@ export function ChatThreadMessagePane({
           </AnimatePresence>
         </div>
       </div>
+
+      {/* AUG — anchored above the composer, outside message enter animations. */}
+      <AnimatePresence initial={false}>
+        {streaming && (
+          <motion.div
+            key={`aug-${sessionId ?? 'none'}`}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="mx-auto w-full max-w-3xl px-4 pt-1 shrink-0"
+            data-testid="aug-working-indicator"
+          >
+            <WorkingIndicator />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Plan banner replaces the composer while a plan awaits a decision. */}
       <motion.div

@@ -356,7 +356,9 @@ export function ToolSummary({
                           animate={{ opacity: 1, height: 'auto' }}
                           exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
                           transition={rowTransition}
-                          className="overflow-hidden"
+                          // Clip during height anim, but don't trap nested scroll panes
+                          // (search results / list_skills max-h containers).
+                          className="overflow-x-hidden"
                         >
                           <div className="tool-summary-body">
                             {renderToolBody(entry.toolEntry)}

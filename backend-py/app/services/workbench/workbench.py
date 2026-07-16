@@ -1000,21 +1000,8 @@ async def _sendWorkbenchMessageStreamImpl(
     _emitSessionStatus(sessionId)
     session.messages.append({'role': 'user', 'content': message})
     session.messageCount += 1
-    # Auto-title placeholder sessions from the first real user message so the
-    # sidebar never stays stuck on "Chat YYYY-MM-DD …" / "New Session".
-    try:
-        from app.services.workbench.sessions import (
-            derive_title_from_message,
-            is_placeholder_title,
-            rename_workbench_session,
-        )
-
-        if is_placeholder_title(session.title):
-            auto_title = derive_title_from_message(message)
-            if auto_title:
-                rename_workbench_session(sessionId, auto_title)
-    except Exception:
-        logger.debug('auto-title failed for %s', sessionId, exc_info=True)
+    # Title is generated after the first assistant reply (see schedule_auto_title
+    # below) — do not stamp the raw first user message into the sidebar.
     effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
     resolvedProvider, resolvedModel = _resolveChatLlm(
         model=model or '',
@@ -1583,6 +1570,18 @@ async def _sendWorkbenchMessageStreamImpl(
         )
     except Exception:
         pass
+    # LLM sidebar title after the first exchange (placeholder titles only).
+    try:
+        from app.services.workbench.title_generator import schedule_auto_title_after_turn
+
+        schedule_auto_title_after_turn(
+            sessionId,
+            list(currentMessages),
+            provider=resolvedProvider,
+            model=resolvedModel or '',
+        )
+    except Exception:
+        logger.debug('schedule auto-title failed for %s', sessionId, exc_info=True)
 
 
 def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]], model: str = '') -> None:

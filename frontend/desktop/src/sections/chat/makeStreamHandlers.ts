@@ -33,6 +33,7 @@ import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
 import { pushBrowserAction } from '@/lib/browser-store';
+import { playReceiveChime } from '@/lib/chat-chime';
 import {
   applySubagentEvent,
   makeSubagentEventHandlers,
@@ -209,6 +210,8 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     if (status === 'done' || status === 'error') {
       if (isTurnVisible(sessionId)) setSessionStatus(sessionId, status === 'done' ? 'done' : 'error');
     }
+    // Receive chime when the reply finishes (matches gradient-chat-input).
+    if (status === 'done') playReceiveChime();
     finishTurn(turn, status);
 
   };

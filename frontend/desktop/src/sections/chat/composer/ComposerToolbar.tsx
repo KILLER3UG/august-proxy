@@ -11,7 +11,6 @@ import {
   type WorkbenchGuardMode,
 } from '@/components/chat/WorkbenchModeSelector';
 import {
-  WORKBENCH_SANDBOX_MODES,
   normalizeSandboxMode,
   type WorkbenchSandboxMode,
 } from '@/components/chat/SandboxModeSelector';
@@ -169,8 +168,6 @@ export function ComposerToolbar({
     }
   };
 
-  const sandboxOptions = Object.values(WORKBENCH_SANDBOX_MODES);
-
   return (
     <div className="flex items-center justify-between gap-1.5 px-2 pb-2 pt-0.5">
       <div className="flex items-center gap-1 min-w-0">
@@ -183,61 +180,35 @@ export function ComposerToolbar({
           onMention={onMention}
           onVoice={onVoice}
           extras={
-            <>
-              <div className="px-0.5 pb-0.5">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold mb-1 px-1.5">
-                  Tool reach
-                </div>
-                <p className="px-1.5 pb-1.5 text-[10px] leading-snug text-muted-foreground">
-                  Not the same as agent mode. Agent mode asks “should August act?” — tool reach
-                  limits <span className="text-foreground/80">where</span> shell/files can go
-                  (project only by default).
-                </p>
-                {sandboxOptions.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => handleSandboxChange(option.id)}
-                    className={cn(
-                      'w-full text-left px-2 py-1.5 rounded-md text-xs transition',
-                      sandboxMode === option.id
-                        ? 'bg-primary/10 text-primary'
-                        : 'hover:bg-muted text-foreground',
-                    )}
-                    title={option.description}
-                  >
-                    <span className="font-medium">{option.label}</span>
-                    <span className="block text-[10px] text-muted-foreground mt-0.5 leading-snug">
-                      {option.description}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 px-1.5 flex-wrap pt-0.5">
-                <ContextRing
-                  pct={pct}
-                  estTokens={estTokens}
-                  maxContext={maxContext}
-                  modelName={modelForRequest?.name}
-                  size={18}
-                  breakdown={contextBreakdown}
-                  serverTokens={sessionUsage}
-                />
-                {sessionUsage && (sessionUsage.totalCost ?? 0) > 0 && (
-                  <span
-                    className="text-[10px] tabular-nums text-muted-foreground font-mono"
-                    title="Estimated session cost"
-                    data-testid="session-cost-chip"
-                  >
-                    ${sessionUsage.totalCost!.toFixed(4)}
-                  </span>
-                )}
-                <ProjectRulesBadge workspacePath={workspacePath} />
-              </div>
-            </>
+            <div className="flex items-center gap-2 px-1.5 flex-wrap pt-0.5">
+              <ContextRing
+                pct={pct}
+                estTokens={estTokens}
+                maxContext={maxContext}
+                modelName={modelForRequest?.name}
+                size={18}
+                breakdown={contextBreakdown}
+                serverTokens={sessionUsage}
+              />
+              {sessionUsage && (sessionUsage.totalCost ?? 0) > 0 && (
+                <span
+                  className="text-[10px] tabular-nums text-muted-foreground font-mono"
+                  title="Estimated session cost"
+                  data-testid="session-cost-chip"
+                >
+                  ${sessionUsage.totalCost!.toFixed(4)}
+                </span>
+              )}
+              <ProjectRulesBadge workspacePath={workspacePath} />
+            </div>
           }
         />
-        <WorkbenchModeSelector selectedMode={workbenchMode} onChange={handleModeChange} />
+        <WorkbenchModeSelector
+          selectedMode={workbenchMode}
+          onChange={handleModeChange}
+          sandboxMode={sandboxMode}
+          onSandboxChange={handleSandboxChange}
+        />
       </div>
 
       <div className="flex items-center gap-1 shrink-0">

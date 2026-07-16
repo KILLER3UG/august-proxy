@@ -73,6 +73,30 @@ export const pop: Variants = {
   exit:    { opacity: 0, scale: 0.96, transition: t.fast },
 };
 
+/* Chat bubble enter — smooth rise + fade (user send / assistant land). */
+export const messagePop = {
+  initial: { opacity: 0, y: 14, scale: 0.97 },
+  animate: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, y: -6, scale: 0.98 },
+  transition: {
+    opacity: { duration: 0.32, ease: easeOut },
+    y: { type: 'spring', stiffness: 260, damping: 28, mass: 0.85 },
+    scale: { type: 'spring', stiffness: 280, damping: 30, mass: 0.85 },
+  } satisfies Transition,
+};
+
+/** Slightly softer path used for the user’s own bubble. */
+export const userMessagePop = {
+  initial: { opacity: 0, y: 18, scale: 0.96 },
+  animate: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, y: -4, scale: 0.98 },
+  transition: {
+    opacity: { duration: 0.38, ease: easeOut },
+    y: { type: 'spring', stiffness: 220, damping: 26, mass: 0.95 },
+    scale: { type: 'spring', stiffness: 240, damping: 28, mass: 0.95 },
+  } satisfies Transition,
+};
+
 /* ── Hover / tap micro-interactions ────────────────────────────────── */
 
 export const hoverLift = {

@@ -719,7 +719,9 @@ input::placeholder {
   border-left: 1px solid hsl(var(--foreground) / 0.045);
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  /* Keep horizontal clip, but allow nested result panes (search / list_skills) to scroll. */
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 /* ── Markdown Content Styling ────────────────────────────────────── */

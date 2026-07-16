@@ -141,7 +141,7 @@ function SearchResultsCard({ hits }: { hits: SearchHit[] }) {
         <FileSearch className="size-3 shrink-0 opacity-70" />
         <span className="min-w-0 flex-1 truncate">{summary}</span>
       </div>
-      <div className="mt-1 max-w-2xl rounded-lg border border-white/[0.05] bg-white/[0.02] px-2.5 py-2 max-h-52 overflow-y-auto">
+      <div className="mt-1 max-w-2xl min-h-0 max-h-52 overflow-y-auto overscroll-contain rounded-lg border border-white/[0.05] bg-white/[0.02] px-2.5 py-2">
         <ol className="m-0 grid list-none gap-2.5 p-0">
           {hits.map((hit, i) => (
             <li key={i} className="grid min-w-0 gap-1">
@@ -204,7 +204,7 @@ export function ToolCallItemBody({
   const isSubagent = isSubagentToolName(tool.name);
 
   return (
-    <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
+    <div className="mt-0.5 w-full min-w-0 max-w-full overflow-x-hidden wrap-anywhere pb-1">
       {isSubagent ? (
         <SubagentToolBody tool={tool} />
       ) : (

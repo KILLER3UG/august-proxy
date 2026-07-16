@@ -145,14 +145,14 @@ export function ToolCallCard({
         );
       })()}
       {open && hasBody && (
-        <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
+        <div className="mt-0.5 w-full min-w-0 max-w-full overflow-x-hidden wrap-anywhere pb-1">
           {tool.args && (
-            <pre className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-muted-foreground/70 break-words leading-relaxed chat-rail ml-2.5">
+            <pre className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-muted-foreground/70 break-words leading-relaxed chat-rail ml-2.5 max-h-52 overflow-y-auto overscroll-contain">
               {tool.args}
             </pre>
           )}
           {tool.result && (
-            <div className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-foreground/80 break-words leading-relaxed chat-rail ml-2.5">
+            <div className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-foreground/80 break-words leading-relaxed chat-rail ml-2.5 max-h-52 overflow-y-auto overscroll-contain min-h-0">
               {tool.result}
             </div>
           )}
