@@ -231,10 +231,13 @@ marked.use({
 export function Markdown({
   content,
   variant = 'default',
+  live = false,
 }: {
   content: string;
   /** Assistant body may use a quieter serif; code/pre stay monospace via CSS. */
   variant?: 'default' | 'assistant';
+  /** When true (active stream), skip highlight.js so code DOM isn't rewritten every flush. */
+  live?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -265,19 +268,23 @@ export function Markdown({
     return () => el.removeEventListener('click', handleClick);
   }, []);
 
-  // Prism-like highlighting for code blocks via highlight.js (already loaded)
+  // Highlight settled code only — live streams replace innerHTML every flush,
+  // and re-running highlight.js on fresh nodes makes glyphs jitter.
   useEffect(() => {
+    if (live) return;
     const el = ref.current;
     if (!el) return;
-    // Highlight all code blocks
     const blocks = el.querySelectorAll<HTMLElement>('pre code[class*="language-"]');
     const hljs = window.hljs;
-    if (blocks.length > 0 && hljs) {
-      blocks.forEach((block) => {
-        try { hljs.highlightElement(block); } catch { /* silent */ }
-      });
-    }
-  }, [html]);
+    if (blocks.length === 0 || !hljs) return;
+    blocks.forEach((block) => {
+      try {
+        hljs.highlightElement(block);
+      } catch {
+        /* silent */
+      }
+    });
+  }, [html, live]);
 
   return (
     <div

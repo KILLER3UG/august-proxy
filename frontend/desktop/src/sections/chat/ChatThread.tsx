@@ -248,7 +248,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [scrolledFromTop, setScrolledFromTop] = useState(false);
   /** True while the user is near the bottom — gates stick-to-bottom during stream. */
   const pinnedToBottomRef = useRef(true);
-  const scrollRafRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
 
   const NEAR_BOTTOM_PX = 80;
@@ -269,6 +268,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const getScrollTarget = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return null;
+    // scrollRef is already the overflow container; keep closest as a fallback.
     return (el.closest('.overflow-y-auto') as HTMLElement | null) ?? el;
   }, []);
 
@@ -280,6 +280,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
   }, [getScrollTarget]);
 
+  const scrollToBottomImmediate = useCallback(() => {
+    const target = getScrollTarget();
+    if (!target) return;
+    // Assign before paint so growth + scroll land in the same frame (no bounce).
+    target.scrollTop = target.scrollHeight;
+  }, [getScrollTarget]);
+
+  // Track pin state from user scrolls only — do not rebind on every stream flush.
   useEffect(() => {
     const scrollable = getScrollTarget();
     if (!scrollable) return;
@@ -294,24 +302,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     check();
     scrollable.addEventListener('scroll', check, { passive: true });
     return () => scrollable.removeEventListener('scroll', check);
-  }, [messages, getScrollTarget]);
-
-  const scrollToBottomImmediate = useCallback(() => {
-    const target = getScrollTarget();
-    if (!target) return;
-    target.scrollTop = target.scrollHeight;
-  }, [getScrollTarget]);
-
-  /** Coalesce stick-to-bottom to one scroll per frame while streaming. */
-  const scheduleScrollToBottom = useCallback(() => {
-    if (!pinnedToBottomRef.current) return;
-    if (scrollRafRef.current !== null) return;
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = null;
-      if (!pinnedToBottomRef.current) return;
-      scrollToBottomImmediate();
-    });
-  }, [scrollToBottomImmediate]);
+  }, [sessionId, getScrollTarget]);
 
   const isTurnVisible = (turnSessionId: string | null) =>
     mountedRef.current && visibleSessionId === turnSessionId;
@@ -550,18 +541,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     wasStreamingRef.current = streaming;
   }, [streaming, scrollToBottomImmediate]);
 
-  // While content grows (streaming or new messages), stick to bottom only if
-  // the user hasn't scrolled up — one rAF-coalesced snap per frame.
+  // Stick to bottom synchronously in layout (before paint). rAF would scroll
+  // after paint and make streaming text bounce / "fight" downward.
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
-    scheduleScrollToBottom();
-    return () => {
-      if (scrollRafRef.current !== null) {
-        cancelAnimationFrame(scrollRafRef.current);
-        scrollRafRef.current = null;
-      }
-    };
-  }, [sessionId, loadedSessionId, messages, streaming, scheduleScrollToBottom]);
+    if (!pinnedToBottomRef.current) return;
+    scrollToBottomImmediate();
+  }, [sessionId, loadedSessionId, messages, streaming, scrollToBottomImmediate]);
 
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));

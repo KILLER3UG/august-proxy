@@ -16,8 +16,8 @@ export function WorkingIndicator({ className }: WorkingIndicatorProps) {
         <motion.span
           key={char}
           className="text-lg font-bold text-primary inline-block"
-          initial={{ opacity: 0.35, y: 2 }}
-          animate={{ opacity: [0.35, 1, 1, 0.35], y: [2, 0, 0, 2] }}
+          initial={{ opacity: 0.35 }}
+          animate={{ opacity: [0.35, 1, 1, 0.35] }}
           transition={{
             duration: 1.8,
             repeat: Infinity,

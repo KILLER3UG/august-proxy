@@ -391,29 +391,14 @@ input::placeholder {
   opacity: 0;
 }
 
-.chat-streaming-block {
-  will-change: opacity;
-  contain: layout;
-}
-
 .streaming-markdown-content {
   font-variant-ligatures: none;
   font-synthesis-weight: none;
-  text-rendering: geometricPrecision;
+  text-rendering: optimizeSpeed;
 }
 
-.streaming-markdown-content > :last-child {
-  animation: markdown-stream-in 90ms ease-out both;
-}
-
-@keyframes markdown-stream-in {
-  from {
-    opacity: 0.72;
-  }
-  to {
-    opacity: 1;
-  }
-}
+/* No enter animation while streaming — last-child keyframes restart on every
+   markdown innerHTML replace and make glyphs look like they bounce downward. */
 
 .thought-content {
   opacity: 0.72;

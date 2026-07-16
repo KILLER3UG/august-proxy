@@ -338,7 +338,7 @@ export function AssistantBlockTimeline({
       return (
         <motion.div
           key={key}
-          initial={{ opacity: 0 }}
+          initial={isFinalStreaming ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.12, ease: 'easeOut' }}
@@ -348,7 +348,7 @@ export function AssistantBlockTimeline({
             'chat-message-text text-foreground/90 space-y-3 max-w-none',
             isFinalStreaming && 'streaming-markdown-content',
           )}>
-            <Markdown content={block.content} variant="assistant" />
+            <Markdown content={block.content} variant="assistant" live={isFinalStreaming} />
           </div>
         </motion.div>
       );

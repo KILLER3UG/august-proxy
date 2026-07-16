@@ -1,11 +1,10 @@
-/* ── TeamAgentsStrip — active sub-agents + isolation + cancel-all ──── */
+/* ── TeamAgentsStrip — active sub-agents + cancel-all ──── */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bot, Loader2, GitBranch, Shield, X, ScrollText } from 'lucide-react';
+import { Bot, Loader2, Shield, X, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   listWorkbenchSessionAgents,
-  setIsolateSubagents,
   cancelAllSessionAgents,
   terminateSessionAgent,
   type SessionAgentRow,
@@ -28,20 +27,6 @@ export function TeamAgentsStrip({
     refetchInterval: 4_000,
   });
 
-  const isolate = useMutation({
-    mutationFn: (enabled: boolean) => setIsolateSubagents(workbenchSessionId!, enabled),
-    onSuccess: (data) => {
-      void qc.invalidateQueries({ queryKey: ['session-agents', workbenchSessionId] });
-      toast.success(
-        data.isolateSubagents
-          ? 'Sub-agents will use separate git worktrees when possible'
-          : 'Sub-agents share the main workspace',
-      );
-    },
-    onError: (e: unknown) =>
-      toast.error(`Could not update isolation: ${e instanceof Error ? e.message : String(e)}`),
-  });
-
   const cancelAll = useMutation({
     mutationFn: () => cancelAllSessionAgents(workbenchSessionId!),
     onSuccess: (data) => {
@@ -59,42 +44,13 @@ export function TeamAgentsStrip({
   const agents = (q.data?.agents ?? []).filter(
     (a) => a.status === 'pending' || a.status === 'running',
   );
-  const isolateOn = q.data?.meta?.isolateSubagents !== false;
   const lastCk = q.data?.meta?.lastCheckpointLabel;
   const lastCkId = q.data?.meta?.lastCheckpointId as string | undefined;
 
   // Rough cost signal: elapsed seconds as proxy when real cost isn't on the row
   const totalElapsed = agents.reduce((sum, a) => sum + (a.elapsed ?? 0), 0);
 
-  if (agents.length === 0 && !lastCk) {
-    return (
-      <div
-        className={cn(
-          'flex items-center gap-2 border-b border-border/50 bg-muted/10 px-3 py-1 text-[11px] text-muted-foreground',
-          className,
-        )}
-      >
-        <button
-          type="button"
-          onClick={() => isolate.mutate(!isolateOn)}
-          className={cn(
-            'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 transition',
-            isolateOn
-              ? 'border-primary/40 bg-primary/10 text-primary'
-              : 'border-border/60 hover:bg-muted/40',
-          )}
-          title={
-            isolateOn
-              ? 'Files stay separate — parallel agents use git worktrees (cleaned up when done)'
-              : 'Agents share the main workspace'
-          }
-        >
-          <GitBranch className="size-3" />
-          {isolateOn ? 'Isolated · files stay separate' : 'Share workspace'}
-        </button>
-      </div>
-    );
-  }
+  if (agents.length === 0 && !lastCk) return null;
 
   return (
     <div
@@ -104,25 +60,6 @@ export function TeamAgentsStrip({
       )}
       data-testid="team-agents-strip"
     >
-      <button
-        type="button"
-        onClick={() => isolate.mutate(!isolateOn)}
-        className={cn(
-          'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 transition',
-          isolateOn
-            ? 'border-primary/40 bg-primary/10 text-primary'
-            : 'border-border/60 hover:bg-muted/40 text-muted-foreground',
-        )}
-        title={
-          isolateOn
-            ? 'Files stay separate — each agent uses its own worktree (cleaned up when done)'
-            : 'Agents share the main workspace'
-        }
-      >
-        <GitBranch className="size-3" />
-        {isolateOn ? 'Isolated · files stay separate' : 'Share workspace'}
-      </button>
-
       {agents.length > 0 && (
         <>
           <span className="text-muted-foreground font-medium">
