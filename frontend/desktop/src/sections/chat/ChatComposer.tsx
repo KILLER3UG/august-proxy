@@ -16,7 +16,7 @@ interface ModelItem {
   id: string;
   name: string;
   provider: string;
-  contextWindow?: number;
+  contextWindow: number;
   isFree?: boolean;
   supportsReasoning?: boolean;
   supportsThinking?: boolean;
@@ -393,10 +393,7 @@ function ModelDropdown({
               <div className="font-medium">{m.name}</div>
               <div className="text-[10px] text-muted-foreground flex items-center justify-between">
                 <span>
-                  {m.provider}
-                  {m.contextWindow
-                    ? ` · ${m.contextWindow.toLocaleString()} ctx`
-                    : ''}
+                  {m.provider} · {m.contextWindow.toLocaleString()} ctx
                 </span>
                 <span className="flex gap-1">
                   {m.isFree && <span className="text-success">free</span>}

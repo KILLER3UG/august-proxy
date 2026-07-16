@@ -273,7 +273,7 @@ async def refreshModels(providerId: str):
                     {
                         'id': mid,
                         'name': mid,
-                        # Leave unset — user configures context window in provider settings.
+                        'contextWindow': 128000,
                         'reasoning': False,
                         'free': ':free' in mid or '-free' in mid,
                         'source': 'fetched',
@@ -305,12 +305,11 @@ async def addModel(providerId: str, body: ModelCreate):
             entry: dict = {
                 'id': body.id,
                 'name': body.name or body.id,
+                'contextWindow': body.context_window if body.context_window and body.context_window > 0 else 128000,
                 'reasoning': body.reasoning or False,
                 'free': body.free or False,
                 'source': 'manual',
             }
-            if body.context_window is not None and body.context_window > 0:
-                entry['contextWindow'] = body.context_window
             p_models.append(entry)
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()
@@ -338,7 +337,7 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                     if 'context_window' in dumped:
                         cw = dumped['context_window']
                         if cw is None or (isinstance(cw, int) and cw <= 0):
-                            m.pop('contextWindow', None)
+                            m['contextWindow'] = 128000
                         else:
                             m['contextWindow'] = cw
                     if body.reasoning is not None:

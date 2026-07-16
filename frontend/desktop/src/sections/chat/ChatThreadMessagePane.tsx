@@ -67,6 +67,9 @@ export function ChatThreadMessagePane({
         ref={scrollRef}
         className="flex-1 overflow-y-auto chat-scroll"
       >
+        {/* overflow-anchor:none on content + sentinel below keeps stick-to-bottom
+            smooth while the model reply grows (avoids per-token JS scroll snaps). */}
+        <div className="chat-scroll-content">
         <VirtualizedMessageList
           messages={messages}
           scrollParentRef={scrollRef}
@@ -124,8 +127,8 @@ export function ChatThreadMessagePane({
             ) : null
           }
         />
-
-        <div className="sticky bottom-4 z-30 flex flex-col gap-2 items-end pointer-events-none">
+        </div>
+        <div className="chat-scroll-chrome sticky bottom-4 z-30 flex flex-col gap-2 items-end pointer-events-none">
           <ScrollToTopButton
             scrollParentRef={scrollRef}
             visible={scrolledFromTop}
@@ -147,6 +150,8 @@ export function ChatThreadMessagePane({
             )}
           </AnimatePresence>
         </div>
+        {/* Last in flow so the browser anchors here as the transcript grows. */}
+        <div className="chat-scroll-anchor" aria-hidden />
       </div>
 
       {/* AUG — anchored above the composer; no exit fade (avoids black blink on settle). */}
@@ -161,7 +166,7 @@ export function ChatThreadMessagePane({
         ) : null}
       </div>
 
-      {/* Plan banner replaces the composer while a plan awaits a decision. */}
+      {/* Plan / approval banners replace the composer until the user decides. */}
       <div className="shrink-0 z-10 w-full bg-background py-3">
         {footerSlot}
       </div>

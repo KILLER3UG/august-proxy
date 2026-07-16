@@ -109,6 +109,56 @@ export const hoverScale = {
   whileTap:   { scale: 0.96, transition: t.fast },
 };
 
+/* Composer chips (agent mode / model) — light lift on hover. */
+export const chipTrigger = {
+  whileHover: { scale: 1.03, y: -1, transition: t.fast },
+  whileTap: { scale: 0.97, transition: t.fast },
+};
+
+/* Dropdown / flyout panel enter-exit (settings, agent, model menus). */
+export const menuPanel = {
+  initial: { opacity: 0, y: 8, scale: 0.96 },
+  animate: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, y: 6, scale: 0.97 },
+  transition: {
+    duration: 0.18,
+    ease: easeOut,
+  } satisfies Transition,
+};
+
+/* Side flyouts (effort / models / agent options) slide from the left edge. */
+export const menuFlyout = {
+  initial: { opacity: 0, x: -8, scale: 0.97 },
+  animate: { opacity: 1, x: 0, scale: 1 },
+  exit: { opacity: 0, x: -6, scale: 0.98 },
+  transition: {
+    duration: 0.16,
+    ease: easeOut,
+  } satisfies Transition,
+};
+
+/* Stagger menu rows when a panel opens. */
+export const menuItemStagger: Variants = {
+  initial: {},
+  animate: {
+    transition: { staggerChildren: 0.035, delayChildren: 0.045 },
+  },
+};
+
+export const menuItem: Variants = {
+  initial: { opacity: 0, x: -8 },
+  animate: {
+    opacity: 1,
+    x: 0,
+    transition: t.fast,
+  },
+};
+
+export const menuItemHover = {
+  whileHover: { x: 3, transition: t.fast },
+  whileTap: { scale: 0.98, transition: t.fast },
+};
+
 /* Active-row indicator (the subtle background pill on a focused nav item). */
 export const activeLayout = {
   layoutId: 'active-session-pill',

@@ -13,9 +13,16 @@ type Props = {
   sessionId: string | null;
   pollIntervalMs?: number;
   onStatusChange?: (status: SessionStatus | null) => void;
+  /** Backend started a continuation turn — reattach chat SSE from this seq. */
+  onContinued?: (sinceSeq: number) => void;
 };
 
-export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChange }: Props) {
+export function ApprovalBanner({
+  sessionId,
+  pollIntervalMs = 2000,
+  onStatusChange,
+  onContinued,
+}: Props) {
   const { data: status } = useSessionStatus(sessionId, pollIntervalMs);
 
   useEffect(() => {
@@ -26,7 +33,11 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
 
   return (
     <div data-testid="approval-banner">
-      <MutationDiffCards sessionId={sessionId} status={status} />
+      <MutationDiffCards
+        sessionId={sessionId}
+        status={status}
+        onContinued={onContinued}
+      />
     </div>
   );
 }

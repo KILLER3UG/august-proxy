@@ -1,4 +1,4 @@
-/* MarqueeTitle — scrolls long titles when they overflow the container. */
+/* MarqueeTitle — scrolls long titles on hover when they overflow. */
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -12,8 +12,8 @@ export interface MarqueeTitleProps {
 }
 
 /**
- * Renders `text` truncated when it fits; when overflow is detected, the
- * title smoothly marquee-scrolls so the full string is readable.
+ * Renders `text` truncated when it fits. When the text overflows, hovering
+ * the title starts a smooth marquee so the full string is readable.
  */
 export function MarqueeTitle({
   text,
@@ -48,7 +48,7 @@ export function MarqueeTitle({
   return (
     <div
       ref={outerRef}
-      className={cn('min-w-0 overflow-hidden', className)}
+      className={cn('group/marquee min-w-0 overflow-hidden', className)}
       title={title ?? text}
       data-testid={testId}
       data-overflow={overflow ? 'true' : 'false'}

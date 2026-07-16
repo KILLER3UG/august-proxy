@@ -6,7 +6,6 @@ import { confirmWorkbenchMutation } from '@/api/workbench';
 import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
 import { formatToolContext } from '@/lib/tool-context-format';
 import { ProviderSetupWidget } from '@/components/chat/ProviderSetupWidget';
-import { PermissionToast } from '@/components/overlays/PermissionToast';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
 import { extractDiffData, extractFilename, extractAgentId } from './extractors';
@@ -300,53 +299,41 @@ export function ToolCallItemBody({
         <FormattedErrorSection toolName={tool.name} raw={tool.error} />
       )}
 
-      {tool.pendingApproval && approvalStatus !== 'confirmed' && (
+      {/* Session-level ApprovalBanner (composer slot) owns token decisions.
+          Only show legacy inline Approve when there is no confirmation token. */}
+      {tool.pendingApproval &&
+        approvalStatus !== 'confirmed' &&
+        !tool.pendingApproval.confirmationToken && (
         <div className="mt-2">
-          {tool.pendingApproval.confirmationToken ? (
-            /* Claude-style grant toast on the tool card (Once / This chat / Always). */
-            <PermissionToast
-              sessionId={(tool as { sessionId?: string }).sessionId || ''}
-              token={tool.pendingApproval.confirmationToken}
-              toolName={tool.name}
-              path={extractFilename(tool.context) ?? undefined}
-              summary={
-                tool.pendingApproval.message ||
-                tool.pendingApproval.detail ||
-                `Allow ${tool.name}?`
-              }
-              onDecided={() => setApprovalStatus('confirmed')}
-            />
-          ) : (
-            <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/10 p-2">
-              <div className="text-xs text-foreground/90">
-                {tool.pendingApproval.message ||
-                  'This change needs approval before it can run.'}
-              </div>
-              {tool.pendingApproval.detail && (
-                <div className="text-[11px] font-mono text-muted-foreground wrap-anywhere">
-                  {tool.pendingApproval.detail}
-                </div>
-              )}
-              <button
-                type="button"
-                disabled={approvalStatus !== 'idle'}
-                className="h-7 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
-                onClick={() => {
-                  const token = tool.pendingApproval?.confirmationToken;
-                  if (!token) return;
-                  setApprovalStatus('confirming');
-                  void confirmWorkbenchMutation(token, {
-                    onDone: () => setApprovalStatus('confirmed'),
-                    onError: ({ message }) => {
-                      tool.error = message;
-                    },
-                  });
-                }}
-              >
-                {approvalStatus === 'confirming' ? 'Approving…' : 'Approve'}
-              </button>
+          <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/10 p-2">
+            <div className="text-xs text-foreground/90">
+              {tool.pendingApproval.message ||
+                'This change needs approval before it can run.'}
             </div>
-          )}
+            {tool.pendingApproval.detail && (
+              <div className="text-[11px] font-mono text-muted-foreground wrap-anywhere">
+                {tool.pendingApproval.detail}
+              </div>
+            )}
+            <button
+              type="button"
+              disabled={approvalStatus !== 'idle'}
+              className="h-7 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
+              onClick={() => {
+                const token = tool.pendingApproval?.confirmationToken;
+                if (!token) return;
+                setApprovalStatus('confirming');
+                void confirmWorkbenchMutation(token, {
+                  onDone: () => setApprovalStatus('confirmed'),
+                  onError: ({ message }) => {
+                    tool.error = message;
+                  },
+                });
+              }}
+            >
+              {approvalStatus === 'confirming' ? 'Approving…' : 'Approve'}
+            </button>
+          </div>
         </div>
       )}
     </div>

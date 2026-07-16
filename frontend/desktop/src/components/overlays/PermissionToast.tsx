@@ -22,6 +22,8 @@ type Props = {
   compact?: boolean;
   className?: string;
   onDecided?: (reject: boolean, scope: GrantScope) => void;
+  /** Reattach chat SSE after backend continues the turn. */
+  onContinued?: (sinceSeq: number) => void;
 };
 
 async function postDecision(
@@ -33,6 +35,7 @@ async function postDecision(
   return api.post<{
     status?: string;
     continued?: boolean;
+    sinceSeq?: number;
     executed?: boolean;
     message?: string;
   }>('/api/workbench/confirm-mutation', {
@@ -53,6 +56,7 @@ export function PermissionToast({
   compact = true,
   className,
   onDecided,
+  onContinued,
 }: Props) {
   const [deciding, setDeciding] = useState<string | null>(null);
   const qc = useQueryClient();
@@ -77,6 +81,9 @@ export function PermissionToast({
             ? `Accepted (${scopeLabel}) — applied`
             : `Accepted (${scopeLabel})`,
         );
+      }
+      if (res?.continued && Number.isFinite(res.sinceSeq)) {
+        onContinued?.(res.sinceSeq as number);
       }
     } catch (e) {
       toast.error(`${reject ? 'Reject' : 'Accept'} failed: ${(e as Error).message}`);

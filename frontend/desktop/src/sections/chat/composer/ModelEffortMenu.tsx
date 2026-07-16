@@ -6,6 +6,14 @@ import { createPortal } from 'react-dom';
 import { Check, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import {
+  chipTrigger,
+  menuFlyout,
+  menuItem,
+  menuItemHover,
+  menuItemStagger,
+  menuPanel,
+} from '@/lib/motion';
 import type { ModelItem } from '../model-display';
 import {
   modelDisplayParts,
@@ -327,19 +335,12 @@ export function ModelEffortMenu({
     };
   });
 
-  const panelMotion = {
-    initial: { opacity: 0, y: 6, scale: 0.97 },
-    animate: { opacity: 1, y: 0, scale: 1 },
-    exit: { opacity: 0, y: 6, scale: 0.97 },
-    transition: { duration: 0.15, ease: [0.16, 1, 0.3, 1] as const },
-  };
-
   const primaryPanel = (
     <AnimatePresence>
       {open && primaryPos && (
         <motion.div
           ref={primaryRef}
-          {...panelMotion}
+          {...menuPanel}
           className="fixed z-50 bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-bottom"
           style={{
             top: primaryPos.top,
@@ -347,93 +348,105 @@ export function ModelEffortMenu({
             width: primaryPos.width,
           }}
         >
-          <button
-            type="button"
-            className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 hover:bg-muted/40 transition"
-            onClick={() => setFlyout(null)}
+          <motion.div
+            variants={menuItemStagger}
+            initial="initial"
+            animate="animate"
           >
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium text-foreground truncate">
-                {shortModelName(selected)}
+            <motion.button
+              type="button"
+              variants={menuItem}
+              {...menuItemHover}
+              className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 hover:bg-muted/40 transition"
+              onClick={() => setFlyout(null)}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-foreground truncate">
+                  {shortModelName(selected)}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                  {selected
+                    ? `${selected.provider} · ${formatContextWindow(selected.contextWindow)}`
+                    : 'Select a model'}
+                </div>
               </div>
-              <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                {selected
-                  ? `${selected.provider} · ${formatContextWindow(selected.contextWindow)}`
-                  : 'Select a model'}
-              </div>
-            </div>
-            {selected && <Check className="size-4 text-primary shrink-0 mt-0.5" />}
-          </button>
+              {selected && <Check className="size-4 text-primary shrink-0 mt-0.5" />}
+            </motion.button>
 
-          <div className="h-px bg-border/50 mx-2" />
+            <div className="h-px bg-border/50 mx-2" />
 
-          <button
-            type="button"
-            onClick={() => toggleFlyout('effort')}
-            onMouseEnter={() => scheduleFlyoutOpen('effort')}
-            onMouseLeave={scheduleFlyoutClose}
-            className={cn(
-              'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
-              flyout === 'effort' && 'bg-muted/30',
+            <motion.button
+              type="button"
+              variants={menuItem}
+              {...menuItemHover}
+              onClick={() => toggleFlyout('effort')}
+              onMouseEnter={() => scheduleFlyoutOpen('effort')}
+              onMouseLeave={scheduleFlyoutClose}
+              className={cn(
+                'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
+                flyout === 'effort' && 'bg-muted/30',
+              )}
+            >
+              <span className="text-sm text-foreground">Effort</span>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                {effortOpt.triggerLabel}
+                <ChevronRight className="size-3.5 opacity-60" />
+              </span>
+            </motion.button>
+
+            <motion.button
+              type="button"
+              variants={menuItem}
+              {...menuItemHover}
+              onClick={() => toggleFlyout('models')}
+              onMouseEnter={() => scheduleFlyoutOpen('models')}
+              onMouseLeave={scheduleFlyoutClose}
+              className={cn(
+                'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
+                flyout === 'models' && 'bg-muted/30',
+              )}
+            >
+              <span className="text-sm text-foreground">More models</span>
+              <ChevronRight className="size-3.5 text-muted-foreground opacity-60" />
+            </motion.button>
+
+            {(onEditModels || onRefresh) && (
+              <>
+                <div className="h-px bg-border/50 mx-2" />
+                <motion.div variants={menuItem} className="px-2 py-1.5 flex items-center gap-2">
+                  {onEditModels && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onEditModels();
+                        closeAll();
+                      }}
+                      className="text-[11px] text-muted-foreground hover:text-foreground transition px-1.5 py-1 rounded-md hover:bg-muted/40"
+                    >
+                      Edit models
+                    </button>
+                  )}
+                  {onRefresh && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void onRefresh();
+                      }}
+                      disabled={loading}
+                      className={cn(
+                        'ml-auto p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 transition',
+                        loading && 'animate-spin',
+                      )}
+                      title="Refresh models"
+                    >
+                      <RefreshCw className="size-3" />
+                    </button>
+                  )}
+                </motion.div>
+              </>
             )}
-          >
-            <span className="text-sm text-foreground">Effort</span>
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              {effortOpt.triggerLabel}
-              <ChevronRight className="size-3.5 opacity-60" />
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleFlyout('models')}
-            onMouseEnter={() => scheduleFlyoutOpen('models')}
-            onMouseLeave={scheduleFlyoutClose}
-            className={cn(
-              'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
-              flyout === 'models' && 'bg-muted/30',
-            )}
-          >
-            <span className="text-sm text-foreground">More models</span>
-            <ChevronRight className="size-3.5 text-muted-foreground opacity-60" />
-          </button>
-
-          {(onEditModels || onRefresh) && (
-            <>
-              <div className="h-px bg-border/50 mx-2" />
-              <div className="px-2 py-1.5 flex items-center gap-2">
-                {onEditModels && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onEditModels();
-                      closeAll();
-                    }}
-                    className="text-[11px] text-muted-foreground hover:text-foreground transition px-1.5 py-1 rounded-md hover:bg-muted/40"
-                  >
-                    Edit models
-                  </button>
-                )}
-                {onRefresh && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void onRefresh();
-                    }}
-                    disabled={loading}
-                    className={cn(
-                      'ml-auto p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 transition',
-                      loading && 'animate-spin',
-                    )}
-                    title="Refresh models"
-                  >
-                    <RefreshCw className="size-3" />
-                  </button>
-                )}
-              </div>
-            </>
-          )}
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -444,7 +457,7 @@ export function ModelEffortMenu({
       {open && flyout === 'effort' && flyoutPos && (
         <motion.div
           ref={flyoutRef}
-          {...panelMotion}
+          {...menuFlyout}
           onMouseEnter={keepFlyoutOpen}
           onMouseLeave={scheduleFlyoutClose}
           className="fixed z-50 w-[260px] bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
@@ -454,11 +467,18 @@ export function ModelEffortMenu({
             Higher effort means more thorough responses. Takes longer and uses
             more tokens.
           </div>
-          <div className="py-0.5">
+          <motion.div
+            className="py-0.5"
+            variants={menuItemStagger}
+            initial="initial"
+            animate="animate"
+          >
             {EFFORT_OPTIONS.map((opt) => (
-              <button
+              <motion.button
                 key={opt.value}
                 type="button"
+                variants={menuItem}
+                {...menuItemHover}
                 onClick={() => {
                   onEffortChange(opt.value);
                   setFlyout(null);
@@ -472,9 +492,9 @@ export function ModelEffortMenu({
               >
                 <span>{opt.label}</span>
                 {effort === opt.value && <Check className="size-3.5 shrink-0" />}
-              </button>
+              </motion.button>
             ))}
-          </div>
+          </motion.div>
           <div className="h-px bg-border/50 mx-2" />
           <div className="px-3 py-2.5 flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -500,7 +520,7 @@ export function ModelEffortMenu({
       {open && flyout === 'models' && flyoutPos && (
         <motion.div
           ref={flyoutRef}
-          {...panelMotion}
+          {...menuFlyout}
           onMouseEnter={keepFlyoutOpen}
           onMouseLeave={scheduleFlyoutClose}
           className="fixed z-50 w-[300px] bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
@@ -554,9 +574,14 @@ export function ModelEffortMenu({
                     const { name, tag } = modelDisplayParts(m.id);
                     const isSelected = selected?.id === m.id;
                     return (
-                      <button
+                      <motion.button
                         key={m.id}
                         type="button"
+                        initial={{ opacity: 0, x: -6 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                        whileHover={{ x: 3 }}
+                        whileTap={{ scale: 0.98 }}
                         onClick={() => {
                           onSelect(m);
                           closeAll();
@@ -577,7 +602,7 @@ export function ModelEffortMenu({
                           )}
                         </span>
                         {isSelected && <Check className="size-3.5 shrink-0" />}
-                      </button>
+                      </motion.button>
                     );
                   })}
                   {showCollapse && (
@@ -609,9 +634,10 @@ export function ModelEffortMenu({
 
   return (
     <>
-      <button
+      <motion.button
         ref={triggerRef}
         type="button"
+        {...chipTrigger}
         onClick={() => {
           if (open) closeAll();
           else setOpen(true);
@@ -641,7 +667,7 @@ export function ModelEffortMenu({
             open && 'rotate-180',
           )}
         />
-      </button>
+      </motion.button>
       {typeof document !== 'undefined' &&
         createPortal(
           <>

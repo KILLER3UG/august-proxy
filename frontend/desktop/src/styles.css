@@ -246,6 +246,63 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(128, 128, 136, 0.22) transparent;
 }
+
+/* Growing transcript content must not steal the scroll anchor; the sentinel
+   at the bottom of the pane keeps the viewport glued while replies stream. */
+.chat-scroll-content,
+.chat-scroll-chrome {
+  overflow-anchor: none;
+}
+.chat-scroll-anchor {
+  overflow-anchor: auto;
+  height: 1px;
+  width: 100%;
+  pointer-events: none;
+}
+
+/* AUG working indicator — CSS so it keeps moving during heavy stream rerenders */
+@keyframes augLetterBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+@keyframes augCaretBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+.aug-letter {
+  display: inline-block;
+  animation: augLetterBounce 0.9s ease-in-out infinite;
+}
+.aug-letter:nth-child(2) {
+  animation-delay: 0.14s;
+}
+.aug-letter:nth-child(3) {
+  animation-delay: 0.28s;
+}
+.aug-caret {
+  display: inline-block;
+  animation: augCaretBlink 0.7s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aug-letter,
+  .aug-caret {
+    animation: none;
+    opacity: 0.85;
+    transform: none;
+  }
+}
 .chat-scroll::-webkit-scrollbar {
   width: 6px !important;
 }
@@ -463,12 +520,16 @@ input::placeholder {
 }
 
 .marquee-title-scroll {
-  animation: marqueeTitleScroll 8s ease-in-out infinite;
+  /* Only animate while hovered — idle titles stay truncated. */
   padding-right: 1.5rem;
 }
 
+.group\/marquee:hover > .marquee-title-scroll {
+  animation: marqueeTitleScroll 8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .marquee-title-scroll {
+  .group\/marquee:hover > .marquee-title-scroll {
     animation: none;
   }
 }
@@ -562,6 +623,20 @@ input::placeholder {
   flex: 1;
   min-width: 0;
   letter-spacing: 0.02em;
+}
+.activity-summary-prose {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-style: italic;
+  color: hsl(var(--muted-foreground) / 0.78);
+  line-height: 1.35;
+}
+.activity-summary-duration {
+  opacity: 0.7;
+  font-style: normal;
+  white-space: nowrap;
 }
 .activity-summary-sep {
   opacity: 0.55;
@@ -1044,4 +1119,21 @@ input::placeholder {
   100% {
     background-position: -200% 0;
   }
+}
+
+/* Settings dropdown — staggered enter only; hover uses framer-motion
+ * (same rowMotion / icon springs as New chat & Skills & Tools). */
+@keyframes august-menu-item-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.august-menu-panel[data-state='open'] .august-menu-item {
+  animation: august-menu-item-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }

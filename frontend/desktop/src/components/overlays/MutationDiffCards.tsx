@@ -17,6 +17,15 @@ type Props = {
   sessionId: string;
   status: SessionStatus | null | undefined;
   className?: string;
+  /** Reattach chat SSE after backend continues the turn. */
+  onContinued?: (sinceSeq: number) => void;
+};
+
+type DecisionResult = {
+  status?: string;
+  executed?: boolean;
+  continued?: boolean;
+  sinceSeq?: number;
 };
 
 function pathFromMutation(m: PendingMutationItem): string {
@@ -76,7 +85,7 @@ async function postDecision(
   reject: boolean,
   scope: GrantScope = 'once',
 ) {
-  return api.post<{ status?: string; executed?: boolean; continued?: boolean }>(
+  return api.post<DecisionResult>(
     '/api/workbench/confirm-mutation',
     { sessionId, token, reject, scope, continue: true },
   );
@@ -85,9 +94,11 @@ async function postDecision(
 function MutationCard({
   sessionId,
   mutation,
+  onContinued,
 }: {
   sessionId: string;
   mutation: PendingMutationItem;
+  onContinued?: (sinceSeq: number) => void;
 }) {
   const [deciding, setDeciding] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
@@ -108,6 +119,10 @@ function MutationCard({
         toast.success(
           res?.executed ? `Applied ${path}` : `Accepted ${path}`,
         );
+      }
+      // Backend already kicked off the continuation — attach the live stream.
+      if (res?.continued && Number.isFinite(res.sinceSeq)) {
+        onContinued?.(res.sinceSeq as number);
       }
     } catch (e) {
       toast.error(`Decision failed: ${(e as Error).message}`);
@@ -156,6 +171,7 @@ function MutationCard({
             path={path}
             summary={`${mutation.toolName || 'tool'} → ${path}`}
             onDecided={() => setShowToast(false)}
+            onContinued={onContinued}
           />
         </div>
       ) : (
@@ -198,7 +214,12 @@ function MutationCard({
   );
 }
 
-export function MutationDiffCards({ sessionId, status, className }: Props) {
+export function MutationDiffCards({
+  sessionId,
+  status,
+  className,
+  onContinued,
+}: Props) {
   const items = useMemo(() => {
     if (!status) return [];
     if (Array.isArray(status.pendingMutations) && status.pendingMutations.length > 0) {
@@ -220,10 +241,11 @@ export function MutationDiffCards({ sessionId, status, className }: Props) {
 
   if (status?.status !== 'awaiting_approval' || items.length === 0) return null;
 
-  // Single non-file mutation: keep one card; multi-file batches get a header
+  // Single non-file mutation: keep one card; multi-file batches get a header.
+  // Width/centering is owned by the chat footer (composer slot).
   return (
     <div
-      className={cn('mx-auto my-2 flex w-full max-w-3xl flex-col gap-2', className)}
+      className={cn('flex w-full flex-col gap-2', className)}
       data-testid="mutation-diff-cards"
     >
       {items.length > 1 && (
@@ -235,7 +257,12 @@ export function MutationDiffCards({ sessionId, status, className }: Props) {
         </div>
       )}
       {items.map((m) => (
-        <MutationCard key={m.token} sessionId={sessionId} mutation={m} />
+        <MutationCard
+          key={m.token}
+          sessionId={sessionId}
+          mutation={m}
+          onContinued={onContinued}
+        />
       ))}
     </div>
   );

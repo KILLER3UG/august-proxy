@@ -1,9 +1,12 @@
-import { motion } from 'framer-motion';
-
 interface WorkingIndicatorProps {
   className?: string;
 }
 
+function cn(...classes: (string | undefined | null | false)[]) {
+  return classes.filter(Boolean).join(' ');
+}
+
+/** Bouncing AUG letters above the composer while a turn is streaming. */
 export function WorkingIndicator({ className }: WorkingIndicatorProps) {
   return (
     <div
@@ -11,35 +14,17 @@ export function WorkingIndicator({ className }: WorkingIndicatorProps) {
       role="status"
       aria-live="polite"
       aria-label="August is working"
+      data-aug-indicator
     >
-      {['A', 'U', 'G'].map((char, i) => (
-        <motion.span
+      {['A', 'U', 'G'].map((char) => (
+        <span
           key={char}
-          className="text-lg font-bold text-primary inline-block"
-          initial={{ opacity: 0.35 }}
-          animate={{ opacity: [0.35, 1, 1, 0.35] }}
-          transition={{
-            duration: 1.8,
-            repeat: Infinity,
-            ease: 'easeInOut',
-            delay: i * 0.25,
-            times: [0, 0.15, 0.7, 1],
-          }}
+          className="aug-letter text-lg font-bold text-primary"
         >
           {char}
-        </motion.span>
+        </span>
       ))}
-      <motion.span
-        className="text-lg font-bold text-primary/50 inline-block"
-        animate={{ opacity: [1, 0.15, 1] }}
-        transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-      >
-        |
-      </motion.span>
+      <span className="aug-caret text-lg font-bold text-primary/60">|</span>
     </div>
   );
-}
-
-function cn(...classes: (string | undefined | null | false)[]) {
-  return classes.filter(Boolean).join(' ');
 }

@@ -1,7 +1,7 @@
 /**
  * ActivitySummary — one collapsed line for an entire pre-final turn of work.
  *
- * Collapsed:  Thought (3) · Viewed (7) · Ran (1) · Used (1)  ⌄
+ * Collapsed:  prose gist (or Thought · Viewed · Ran counts)  ⌄
  * Expanded:   full normal timeline (thinking, tool groups, commands) as children
  *
  * Used only after final output exists so the chat is not a stack of sections.
@@ -25,6 +25,13 @@ export interface ActivitySummaryCounts {
 export interface ActivitySummaryProps extends ActivitySummaryCounts {
   /** Full normal timeline rendered when expanded. */
   children: ReactNode;
+  /**
+   * Optional prose one-liner (from thinking). When set, it is the primary
+   * collapsed label — matching Claude-style “summary above the answer”.
+   */
+  summary?: string | null;
+  /** Optional “Thought for 2.7s” style meta when settled. */
+  durationLabel?: string | null;
   /** Start expanded (default false — settled answers stay dense). */
   defaultOpen?: boolean;
   className?: string;
@@ -76,6 +83,8 @@ export function ActivitySummary({
   ranCount = 0,
   usedCount = 0,
   children,
+  summary,
+  durationLabel,
   defaultOpen = false,
   className,
 }: ActivitySummaryProps) {
@@ -88,8 +97,10 @@ export function ActivitySummary({
     ranCount,
     usedCount,
   });
+  const prose = summary?.trim() || '';
+  const hasProse = prose.length > 0;
 
-  if (segments.length === 0) return null;
+  if (!hasProse && segments.length === 0) return null;
 
   return (
     <div
@@ -104,17 +115,29 @@ export function ActivitySummary({
         aria-expanded={open}
       >
         <span className="activity-summary-counts">
-          {segments.map((s, i) => (
-            <span key={s.key}>
-              {i > 0 && (
-                <span className="activity-summary-sep" aria-hidden>
-                  {' '}
-                  ·{' '}
-                </span>
-              )}
-              {s.text}
+          {hasProse ? (
+            <span className="activity-summary-prose" title={prose}>
+              {prose}
             </span>
-          ))}
+          ) : (
+            segments.map((s, i) => (
+              <span key={s.key}>
+                {i > 0 && (
+                  <span className="activity-summary-sep" aria-hidden>
+                    {' '}
+                    ·{' '}
+                  </span>
+                )}
+                {s.text}
+              </span>
+            ))
+          )}
+          {durationLabel ? (
+            <span className="activity-summary-duration" aria-hidden>
+              {hasProse || segments.length > 0 ? ' · ' : ''}
+              {durationLabel}
+            </span>
+          ) : null}
         </span>
         <ChevronDown
           className={cn(

@@ -31,7 +31,9 @@ export function ModelRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(model.name ?? model.id);
-  const [contextWindow, setContextWindow] = useState(model.contextWindow?.toString() ?? '');
+  const [contextWindow, setContextWindow] = useState(
+    (model.contextWindow ?? 128000).toString(),
+  );
   const [reasoning, setReasoning] = useState(!!model.reasoning);
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
@@ -42,7 +44,7 @@ export function ModelRow({
 
   useEffect(() => {
     setName(model.name ?? model.id);
-    setContextWindow(model.contextWindow?.toString() ?? '');
+    setContextWindow((model.contextWindow ?? 128000).toString());
     setReasoning(!!model.reasoning);
   }, [model.id, model.name, model.contextWindow, model.reasoning]);
 
@@ -94,14 +96,17 @@ export function ModelRow({
 
   const saveContextWindow = () => {
     const trimmed = contextWindow.trim();
-    const next = trimmed ? Number(trimmed) : null;
-    if (trimmed && (!Number.isFinite(next) || (next as number) <= 0)) {
+    const next = trimmed ? Number(trimmed) : 128000;
+    if (!Number.isFinite(next) || next <= 0) {
       toast.error('Context window must be a positive number');
-      setContextWindow(model.contextWindow?.toString() ?? '');
+      setContextWindow((model.contextWindow ?? 128000).toString());
       return;
     }
-    const prev = model.contextWindow ?? null;
-    if (next === prev) return;
+    const prev = model.contextWindow ?? 128000;
+    if (next === prev) {
+      setContextWindow(String(next));
+      return;
+    }
     update.mutate({ contextWindow: next });
   };
 
@@ -145,7 +150,9 @@ export function ModelRow({
               onClick={() =>
                 update.mutate({
                   name,
-                  contextWindow: contextWindow.trim() ? Number(contextWindow) : null,
+                  contextWindow: contextWindow.trim()
+                    ? Number(contextWindow)
+                    : 128000,
                   reasoning,
                 })
               }
@@ -192,7 +199,7 @@ export function ModelRow({
                 e.currentTarget.blur();
               }
             }}
-            placeholder="e.g. 200000"
+            placeholder="128000"
             type="number"
             min={1}
             aria-label="Context window"

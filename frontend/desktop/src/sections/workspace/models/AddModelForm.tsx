@@ -22,7 +22,7 @@ export function AddModelForm({
 }) {
   const [id, setId] = useState('');
   const [name, setName] = useState('');
-  const [contextWindow, setContextWindow] = useState('');
+  const [contextWindow, setContextWindow] = useState('128000');
   const [reasoning, setReasoning] = useState(false);
 
   const create = useMutation({
@@ -30,7 +30,7 @@ export function AddModelForm({
       providersApi.addModel(providerId, {
         id,
         name: name || undefined,
-        contextWindow: contextWindow ? Number(contextWindow) : undefined,
+        contextWindow: contextWindow ? Number(contextWindow) : 128000,
         reasoning,
       }),
     onSuccess: () => {

@@ -152,9 +152,7 @@ export function ContextRing({
           <div className="flex items-center justify-between text-[12.5px] mb-1.5">
             <span className="font-medium text-[#e0e0e0]">Session Context</span>
             <span className="font-mono tabular-nums text-muted-foreground text-[11.5px]">
-              {maxContext > 0
-                ? `${formatTokens(estTokens)} / ${formatTokens(maxContext)} tokens used (${clamped}%)`
-                : `${formatTokens(estTokens)} tokens · set context window in Model Providers`}
+              {formatTokens(estTokens)} / {formatTokens(maxContext)} tokens used ({clamped}%)
             </span>
           </div>
           <div className="h-1 rounded-full overflow-hidden mb-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>

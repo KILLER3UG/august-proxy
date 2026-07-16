@@ -312,11 +312,32 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
     })();
   }, [workbenchSession, setWorkbenchSession, streamPlanTurn]);
 
+  /**
+   * After Accept/Reject on the mutation banner, the backend already started a
+   * continuation turn and returned `sinceSeq`. Reattach SSE so the chat
+   * keeps streaming instead of looking finished/stopped.
+   */
+  const handleMutationContinued = useCallback(
+    async (sinceSeq: number) => {
+      if (!sessionId || !Number.isFinite(sinceSeq)) return;
+      const wbId = workbenchSession?.id;
+      if (!wbId) return;
+      try {
+        await streamPlanTurn(async () => ({ sinceSeq }), undefined, wbId);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        toast.error('Could not continue after approval', { description: message });
+      }
+    },
+    [sessionId, workbenchSession?.id, streamPlanTurn],
+  );
+
   return {
     streamPlanTurn,
     handlePlanRevision,
     handlePlanAccept,
     handlePlanAcceptAndImplement,
     handlePlanReject,
+    handleMutationContinued,
   };
 }

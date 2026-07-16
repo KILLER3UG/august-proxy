@@ -76,8 +76,8 @@ def _deriveModelsUrl(baseUrl: str) -> str | None:
 
 def _getContextWindow(
     modelId: str, provider: dict[str, object] | None = None, fallback: object = None
-) -> int | None:
-    """Resolve context window from provider profile, upstream value, or None if unset."""
+) -> int:
+    """Resolve context window from provider profile, upstream value, or 128k default."""
     if provider:
         profiles = as_dict(provider.get('modelProfiles'), {})
         for key in [modelId] + [k for k in profiles if modelId.startswith(k)]:
@@ -89,16 +89,18 @@ def _getContextWindow(
             return as_int(wildcard['contextWindow'])
     if isinstance(fallback, (int, float)) and not isinstance(fallback, bool):
         n = int(fallback)
-        return n if n > 0 else None
-    return None
+        if n > 0:
+            return n
+    return 128000
 
 
-def _optional_context_window(raw: object) -> int | None:
-    """Read a stored contextWindow only when explicitly set to a positive int."""
+def _resolve_context_window(raw: object) -> int:
+    """Stored contextWindow, or 128k when unset."""
     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
         n = int(raw)
-        return n if n > 0 else None
-    return None
+        if n > 0:
+            return n
+    return 128000
 
 
 def _isFreeModelId(modelId: str) -> bool:
@@ -190,7 +192,7 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float = 5.
             'id': m['id'],
             'name': m['id'],
             'provider': providerName,
-            'contextWindow': _optional_context_window(m.get('contextWindow')),
+            'contextWindow': _resolve_context_window(m.get('contextWindow')),
         }
         for m in static
     ]
@@ -237,7 +239,7 @@ async def _aggregateModels() -> list[dict[str, object]]:
                         'id': mid,
                         'name': as_str(m.get('name'), mid),
                         'provider': entry['name'],
-                        'contextWindow': _optional_context_window(m.get('contextWindow')),
+                        'contextWindow': _resolve_context_window(m.get('contextWindow')),
                         'supportsReasoning': reasoning,
                         'supportsThinking': reasoning,
                         'isFree': m.get('free', False) or _isFreeModelId(mid),

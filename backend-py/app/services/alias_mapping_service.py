@@ -296,8 +296,7 @@ def get_alias_models_for_v1_models() -> list[dict[str, object]]:
 
     Returns:
         A list of dicts with keys ``id``, ``name``, ``provider``,
-        ``ownedBy``, ``isAlias``. Context window is omitted — configure it on
-        the underlying provider model.
+        ``contextWindow`` (default 128k), ``ownedBy``, ``isAlias``.
     """
     result: list[dict[str, object]] = []
     try:
@@ -314,6 +313,7 @@ def get_alias_models_for_v1_models() -> list[dict[str, object]]:
                         'id': aliasName,
                         'name': entry.get('displayAlias') or aliasName,
                         'provider': entry.get('targetProvider', 'unknown'),
+                        'contextWindow': 128000,
                         'ownedBy': entry.get('targetProvider', 'unknown'),
                         'isAlias': True,
                     }
@@ -328,6 +328,7 @@ def get_alias_models_for_v1_models() -> list[dict[str, object]]:
                     'id': aliasName,
                     'name': aliasName,
                     'provider': 'builtin',
+                    'contextWindow': 128000,
                     'ownedBy': 'builtin',
                     'isAlias': True,
                 }

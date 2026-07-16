@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 
 /* ── Chat thread ─────────────────────────────────────────────────────── */
-/* Main chat view: message list, plan banner, and composer wiring.       */
+/* Main chat view: message list, plan/approval footer, composer wiring.  */
 /* Tool calls render as inline cards. Right rail optional.                 */
 
 import {
@@ -26,6 +26,7 @@ import { AnimatePresence } from 'framer-motion';
 import { SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
 import { ModelVisibilityModal } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
+import { useSessionStatus } from '@/hooks/useSessionStatus';
 import { CollaborationInsights } from '@/components/chat/CollaborationInsights';
 import { ExamHost } from '@/sections/exam/ExamHost';
 import { useQueryClient } from '@tanstack/react-query';
@@ -210,6 +211,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     !!workbenchSession?.plan &&
     !workbenchSession?.approved &&
     !workbenchSession?.approvedAt;
+
+  // Command / mutation pre-apply — replaces the composer until Accept/Reject.
+  const workbenchSessionId = workbenchSession?.id ?? null;
+  const { data: sessionStatus } = useSessionStatus(workbenchSessionId, 2000);
+  const approvalPending =
+    !!workbenchSessionId &&
+    sessionStatus?.status === 'awaiting_approval' &&
+    (!!sessionStatus.pendingToken ||
+      (Array.isArray(sessionStatus.pendingMutations) &&
+        sessionStatus.pendingMutations.some((m) => !!m?.token)));
 
   const [effort, setEffort] = useState<'low' | 'medium' | 'high' | 'max'>(() => {
     try {
@@ -479,6 +490,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     handlePlanAccept,
     handlePlanAcceptAndImplement,
     handlePlanReject,
+    handleMutationContinued,
   } = usePlanTurn({
     sessionId,
     loadedSessionId,
@@ -541,13 +553,22 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     wasStreamingRef.current = streaming;
   }, [streaming, scrollToBottomImmediate]);
 
-  // Stick to bottom synchronously in layout (before paint). rAF would scroll
-  // after paint and make streaming text bounce / "fight" downward.
+  // Stick to bottom while pinned. During streaming, CSS overflow-anchor on
+  // the transcript sentinel tracks growth continuously — per-token scrollTop
+  // snaps were what made long replies feel choppy. JS only recovers if
+  // anchoring slipped (large reflow / virtualizer), or settles when idle.
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
     if (!pinnedToBottomRef.current) return;
-    scrollToBottomImmediate();
-  }, [sessionId, loadedSessionId, messages, streaming, scrollToBottomImmediate]);
+    const target = getScrollTarget();
+    if (!target) return;
+    const dist =
+      target.scrollHeight - target.scrollTop - target.clientHeight;
+    const threshold = streaming ? 80 : 4;
+    if (dist > threshold) {
+      target.scrollTop = target.scrollHeight;
+    }
+  }, [sessionId, loadedSessionId, messages, streaming, getScrollTarget]);
 
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));
@@ -614,6 +635,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             id: activeModelId,
             name: activeModelId,
             provider: activeProvider,
+            contextWindow: 128000,
             supportsReasoning: isLikelyReasoningModel(activeModelId),
             supportsThinking: isLikelyReasoningModel(activeModelId),
           };
@@ -701,7 +723,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const maxContext = modelForRequest?.contextWindow && modelForRequest.contextWindow > 0
     ? modelForRequest.contextWindow
-    : 0;
+    : 128000;
   const toolCountForBreakdown = workbenchToolCount ?? 30;
   const toolTokenEstimate = workbenchToolTokens;
   const serverContextTokens = sessionUsage?.contextTokens ?? 0;
@@ -715,7 +737,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     Math.ceil((input.length + messages.reduce((s, m) => s + m.content.length, 0)) / 4) +
     toolOverhead;
   const estTokens = hasServerTruth ? serverContextTokens : fallbackEstimate;
-  const pct = maxContext > 0 ? Math.min(100, Math.round((estTokens / maxContext) * 100)) : 0;
+  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
   const contextBreakdown: ContextBreakdown = useMemo(
     () =>
@@ -806,12 +828,33 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     />
   );
 
+  const approvalBanner = (
+    <div className="mx-auto w-full max-w-3xl px-4">
+      <ApprovalBanner
+        sessionId={workbenchSessionId}
+        onContinued={(sinceSeq) => {
+          void handleMutationContinued(sinceSeq);
+        }}
+      />
+    </div>
+  );
+
+  const composerSlot = (
+    <div className="mx-auto w-full max-w-3xl px-4">{composer}</div>
+  );
+
+  /** Plan > approval > composer — only one occupies the input slot. */
+  const inputSlot = planPending
+    ? planBanner
+    : approvalPending
+      ? approvalBanner
+      : composerSlot;
+
   return (
     <div className="flex h-full min-h-0 relative w-full">
       <ChatCheckpoints messages={messages} scrollRef={scrollRef} />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
-        <ApprovalBanner sessionId={workbenchSession?.id ?? null} />
-        <SavePointBanner workbenchSessionId={workbenchSession?.id ?? null} />
+        <SavePointBanner workbenchSessionId={workbenchSessionId} />
         <CollaborationInsights />
         {examActive && (
           <ExamHost
@@ -881,7 +924,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           <AnimatePresence initial={false}>
             {messages.length === 0 ? (
               <ChatEmptyState workspacePath={activeSession?.workspacePath}>
-                {planPending ? planBanner : composer}
+                {planPending
+                  ? planBanner
+                  : approvalPending
+                    ? (
+                      <ApprovalBanner
+                        sessionId={workbenchSessionId}
+                        onContinued={(sinceSeq) => {
+                          void handleMutationContinued(sinceSeq);
+                        }}
+                      />
+                    )
+                    : composer}
               </ChatEmptyState>
             ) : (
               <ChatThreadMessagePane
@@ -903,13 +957,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onEdit={handleEdit}
                 onRegenerate={handleRegenerate}
                 onClarifyAnswer={handleClarifyAnswer}
-                footerSlot={
-                  planPending ? (
-                    planBanner
-                  ) : (
-                    <div className="mx-auto w-full max-w-3xl px-4">{composer}</div>
-                  )
-                }
+                footerSlot={inputSlot}
               />
             )}
           </AnimatePresence>

@@ -14,8 +14,8 @@ class ModelConfig(ExtraAllowBaseModel):
 
     id: str
     name: str = ''
-    # User-configured; no assumed default — unset until set in provider settings.
-    context_window: int | None = None
+    # Default 128k; users can override in Model Providers.
+    context_window: int = 128000
     reasoning: bool = False
     free: bool = False
     source: str = 'manual'

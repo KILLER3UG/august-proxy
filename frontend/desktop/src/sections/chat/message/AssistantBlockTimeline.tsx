@@ -12,6 +12,7 @@ import { Markdown } from '../ChatMarkdown';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { SubagentBlockState } from '../chat-stream-manager';
 import { ReasoningBlock } from './ReasoningBlock';
+import { buildProcessSummaryLine } from '@/lib/process-summary';
 
 type DisplayBlock = MessageBlock;
 
@@ -21,6 +22,33 @@ type RenderUnit =
   | { kind: 'single'; block: DisplayBlock; index: number }
   | { kind: 'tool_group'; entries: Array<{ block: ToolEntry; index: number }> }
   | { kind: 'thinking_group'; entries: ThinkingEntry[] };
+
+function isFinalOutputUnit(unit: RenderUnit): boolean {
+  return (
+    unit.kind === 'single' &&
+    unit.block.type === 'finalOutput' &&
+    !!(unit.block.content && String(unit.block.content).trim())
+  );
+}
+
+/** Split timeline into process (thinking/tools) vs final answer units. */
+function splitActivityAndFinal(units: RenderUnit[]): {
+  activityUnits: RenderUnit[];
+  finalUnits: RenderUnit[];
+  hasFinalOutput: boolean;
+} {
+  const activityUnits: RenderUnit[] = [];
+  const finalUnits: RenderUnit[] = [];
+  for (const unit of units) {
+    if (isFinalOutputUnit(unit)) finalUnits.push(unit);
+    else activityUnits.push(unit);
+  }
+  return {
+    activityUnits,
+    finalUnits,
+    hasFinalOutput: finalUnits.length > 0,
+  };
+}
 
 export type SubagentPromptEntry = {
   content: string;
@@ -90,19 +118,10 @@ export function AssistantBlockTimeline({
     }
   }
 
-  const firstFinalUnitIdx = units.findIndex(
-    (u) =>
-      u.kind === 'single' &&
-      u.block.type === 'finalOutput' &&
-      !!(u.block.content && String(u.block.content).trim()),
-  );
-  const hasFinalOutput = firstFinalUnitIdx >= 0;
-  const activityUnits = hasFinalOutput
-    ? units.slice(0, firstFinalUnitIdx)
-    : units;
-  const afterUnits = hasFinalOutput
-    ? units.slice(firstFinalUnitIdx)
-    : [];
+  // Pack ALL thinking/tools into the summary — not only units before the
+  // first final block (interleaved think→answer→think used to leak process).
+  const { activityUnits, finalUnits: afterUnits, hasFinalOutput } =
+    splitActivityAndFinal(units);
 
   // Aggregate counts across the whole pre-final activity for the
   // single collapsed header.
@@ -112,9 +131,16 @@ export function AssistantBlockTimeline({
   let totalRan = 0;
   let totalUsed = 0;
   let totalTools = 0;
+  const thinkingParts: string[] = [];
   for (const u of activityUnits) {
     if (u.kind === 'thinking_group') {
       totalThoughts += u.entries.length;
+      for (const e of u.entries) {
+        if (e.block.content?.trim()) thinkingParts.push(e.block.content);
+      }
+    } else if (u.kind === 'single' && u.block.type === 'thinking') {
+      totalThoughts += 1;
+      if (u.block.content?.trim()) thinkingParts.push(u.block.content);
     } else if (u.kind === 'tool_group') {
       for (const { block } of u.entries) {
         totalTools++;
@@ -126,6 +152,15 @@ export function AssistantBlockTimeline({
       }
     }
   }
+  const processSummary = buildProcessSummaryLine(thinkingParts);
+  const durationLabel =
+    typeof message.thinkingDuration === 'number' && message.thinkingDuration > 0
+      ? `Thought for ${
+          message.thinkingDuration >= 10
+            ? `${Math.round(message.thinkingDuration)}s`
+            : `${message.thinkingDuration.toFixed(1)}s`
+        }`
+      : null;
 
   const renderThinkingGroup = (
     unit: Extract<RenderUnit, { kind: 'thinking_group' }>,
@@ -367,7 +402,8 @@ export function AssistantBlockTimeline({
         if (packActivity) {
           const hasActivity =
             totalThoughts + totalTools > 0 ||
-            activityUnits.some((u) => u.kind !== 'single');
+            !!processSummary ||
+            activityUnits.length > 0;
           return (
             <>
               {hasActivity && (
@@ -379,6 +415,12 @@ export function AssistantBlockTimeline({
                     editedCount={totalEdited}
                     ranCount={totalRan}
                     usedCount={totalUsed}
+                    summary={processSummary}
+                    durationLabel={
+                      // Prefer prose alone (screenshot style); keep duration
+                      // only when we fall back to count segments.
+                      processSummary ? null : durationLabel
+                    }
                   >
                     {renderUnitList(activityUnits, { forceIdle: true })}
                   </ActivitySummary>
