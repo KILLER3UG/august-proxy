@@ -11,6 +11,7 @@ import {
   restartBackend,
   type UserModelAlias,
 } from '@/api/api-client';
+import { PageLoader } from '@/components/PageLoader';
 import { EmptyState } from './modelsShared';
 
 /** Editable user-defined model aliases with save and backend restart. */
@@ -90,7 +91,7 @@ export function UserAliasesTab() {
     }
   }
 
-  if (aliasesLoading) return <div className="text-sm text-muted-foreground p-6">Loading…</div>;
+  if (aliasesLoading) return <PageLoader label="Loading aliases…" className="py-2" />;
 
   return (
     <div className="space-y-3 h-full flex flex-col">

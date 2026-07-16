@@ -1,5 +1,6 @@
 /* v3 — System Health tab: per-phase status board */
-import { Clock, Heart } from 'lucide-react';
+import { Heart } from 'lucide-react';
+import { PageLoader } from '@/components/PageLoader';
 import { useSystemHealth } from '@/hooks/useSystemHealth';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -23,11 +24,7 @@ export function SystemHealthTab() {
     return <div className="p-4 text-danger">Error loading health: {error.message}</div>;
   }
   if (!data) {
-    return (
-      <div className="p-8 text-center text-muted-foreground flex items-center justify-center gap-2">
-        <Clock className="size-4 animate-spin" /> Loading…
-      </div>
-    );
+    return <PageLoader label="Loading system health…" className="py-4" />;
   }
 
   const allHealthy = data.phases.every((p) => p.status === 'on & healthy' || p.status === 'off');

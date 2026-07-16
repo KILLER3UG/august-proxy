@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
-import { Check, Loader2, Brain, Inbox } from 'lucide-react';
+import { Check, Loader2, Inbox } from 'lucide-react';
 import { formatTimeAgo } from '@/lib/utils';
 import { getRequestDetails, type RequestDetailEntry, type Period } from '@/api/api-client';
+import { PageLoader } from '@/components/PageLoader';
 
 /**
  * Thinking traces are not a standalone endpoint — they ride along on each
@@ -169,24 +170,24 @@ function StepIcon({ status }: { status: 'done' | 'active' }) {
 }
 
 function EmptyThinking({ isLoading }: { isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="p-4">
+          <PageLoader label="Loading thinking traces…" className="px-2 py-4" />
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card className="border-dashed">
       <CardContent className="p-10 grid place-items-center text-center">
-        {isLoading ? (
-          <>
-            <Brain className="size-8 text-muted-foreground/40 mb-3" />
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          </>
-        ) : (
-          <>
-            <Inbox className="size-8 text-muted-foreground/40 mb-3" />
-            <p className="text-sm font-medium">No thinking traces available</p>
-            <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-              Extended thinking traces appear here when a provider returns them.
-              Send a message that uses a reasoning model to populate this view.
-            </p>
-          </>
-        )}
+        <Inbox className="size-8 text-muted-foreground/40 mb-3" />
+        <p className="text-sm font-medium">No thinking traces available</p>
+        <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+          Extended thinking traces appear here when a provider returns them.
+          Send a message that uses a reasoning model to populate this view.
+        </p>
       </CardContent>
     </Card>
   );

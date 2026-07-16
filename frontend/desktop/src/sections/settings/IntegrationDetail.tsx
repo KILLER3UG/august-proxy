@@ -238,8 +238,8 @@ function AccountAction({ item }: { item: IntegrationItem }) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to start Google sign-in';
       setError(
-        msg.includes("MCP server 'mcp'")
-          ? 'Google sign-in could not reach workspace-mcp. Set GOOGLE_OAUTH_CLIENT_ID and try native Sign in, or install Google Workspace MCP.'
+        msg.includes("MCP server 'mcp'") || msg.toLowerCase().includes('unknown tool')
+          ? 'Google sign-in needs a Client ID. Paste GOOGLE_OAUTH_CLIENT_ID below (Desktop app), then Sign in.'
           : msg,
       );
     } finally {

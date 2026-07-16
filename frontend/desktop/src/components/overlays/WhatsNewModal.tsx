@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, GitCommitHorizontal, Package, RefreshCw, X } from 'lucide-react';
 import { api } from '@/api/client';
 import { Backdrop } from '@/components/overlays/Backdrop';
+import { PageLoader } from '@/components/PageLoader';
 import { formatTimeAgo } from '@/lib/utils';
 import { openExternal } from '@/lib/tauri-shell';
 
@@ -97,7 +98,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 space-y-5">
           {query.isLoading && (
-            <p className="text-sm text-muted-foreground">Loading recent updates…</p>
+            <PageLoader label="Loading recent updates…" className="px-0 py-2" />
           )}
           {query.isError && (
             <p className="text-sm text-destructive">

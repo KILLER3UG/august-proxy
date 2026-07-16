@@ -1,8 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { WifiOff, AlertTriangle, Loader2 } from 'lucide-react';
+import { WifiOff, AlertTriangle } from 'lucide-react';
 import { useGatewayStore } from '@/store/gateway';
 import { Backdrop } from './Backdrop';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export function ProxyStatusOverlay() {
   const state = useGatewayStore((s) => s.gateway);
@@ -12,10 +13,18 @@ export function ProxyStatusOverlay() {
   if (state.status === 'connecting') {
     return (
       <Backdrop>
-        <div className="w-[min(90vw,420px)] rounded-lg border border-border bg-card p-6 text-center">
-          <Loader2 className="size-8 mx-auto mb-3 text-muted-foreground animate-spin" />
-          <h2 className="text-sm font-semibold">Connecting to proxy…</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Waiting for <code className="font-mono">/health</code></p>
+        <div
+          className="w-[min(90vw,420px)] rounded-lg border border-border bg-card p-6 space-y-3"
+          role="status"
+          aria-label="Connecting to proxy"
+        >
+          <Skeleton className="h-5 w-44 mx-auto" />
+          <Skeleton className="h-3 w-56 mx-auto" />
+          <div className="space-y-2 pt-2">
+            <Skeleton className="h-8 w-full rounded-md" />
+            <Skeleton className="h-8 w-full rounded-md" />
+          </div>
+          <p className="sr-only">Connecting to proxy… Waiting for /health</p>
         </div>
       </Backdrop>
     );

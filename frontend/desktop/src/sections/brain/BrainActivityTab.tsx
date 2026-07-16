@@ -1,8 +1,9 @@
 /* v4.3 — Brain Activity tab: live feed of brain events with chip filters + pause. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Pause, Play, Sparkles } from 'lucide-react';
+import { Pause, Play, Sparkles } from 'lucide-react';
 import { getBrainEvents, openBrainEventStream, type BrainEvent } from '@/api/api-client';
+import { PageLoader } from '@/components/PageLoader';
 
 const CATEGORIES: Array<{ key: BrainEvent['category'] | 'all'; label: string; color: string }> = [
   { key: 'all',          label: 'All',           color: 'text-foreground' },
@@ -73,11 +74,7 @@ export function BrainActivityTab() {
   }, [merged, activeChip]);
 
   if (eventsQ.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <PageLoader label="Loading brain activity…" className="py-4" />;
   }
 
   return (

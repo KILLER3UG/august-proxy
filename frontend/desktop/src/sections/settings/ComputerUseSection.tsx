@@ -13,6 +13,7 @@ import {
   Keyboard,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { PageLoader } from '@/components/PageLoader';
 import { useComputerUseHealth, useComputerUseConfig } from '@/hooks/useComputerUse';
 import type { HealthCheck, HealthReport, ComputerUseConfig } from '@/hooks/useComputerUse';
 
@@ -28,11 +29,7 @@ export function ComputerUseSection() {
   };
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <RefreshCw className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <PageLoader label="Loading computer use…" variant="card" className="h-full" />;
   }
 
   return (

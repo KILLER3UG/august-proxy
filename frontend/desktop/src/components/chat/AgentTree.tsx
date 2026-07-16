@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { ChevronRight, ChevronDown, Bot, Loader2, Check, AlertTriangle, StopCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { PageLoader } from '@/components/PageLoader';
 import { useAgentTree } from '@/hooks/useAgentTree';
 import type { AgentNode } from '@/hooks/useAgentTree';
 
@@ -30,7 +31,7 @@ export function AgentTree({ rootId, maxDepth = 4, onSelect }: Props) {
   const { data: tree, isLoading } = useAgentTree(rootId, maxDepth);
 
   if (!rootId) return null;
-  if (isLoading && !tree) return <div className="text-xs text-muted-foreground p-3">Loading agent tree…</div>;
+  if (isLoading && !tree) return <PageLoader label="Loading agent tree…" className="px-1 py-2" />;
   if (!tree) return <div className="text-xs text-muted-foreground p-3">No agent tree available.</div>;
 
   return (

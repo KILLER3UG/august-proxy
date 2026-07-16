@@ -14,6 +14,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { api } from '@/api/client';
+import { PageLoader } from '@/components/PageLoader';
 import { getCurrentWorkspace } from '@/store/workspaces';
 
 interface AugArtifact {
@@ -97,7 +98,7 @@ export function PlansSection() {
       {error && <p className="text-xs text-rose-400">{error}</p>}
 
       {loading ? (
-        <p className="text-sm text-zinc-500">Loading…</p>
+        <PageLoader label="Loading plans…" className="px-0 py-2" />
       ) : artifacts.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-zinc-700 py-12 text-zinc-500">
           <ClipboardList size={28} />

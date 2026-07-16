@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { ArrowRightLeft } from 'lucide-react';
 import { getModelAliases, type ModelAlias } from '@/api/api-client';
+import { PageLoader } from '@/components/PageLoader';
 import { EmptyState } from './modelsShared';
 
 /** Read-only built-in model alias resolution table. */
@@ -11,7 +12,7 @@ export function AliasesTab() {
     queryFn: () => getModelAliases(),
   });
   const aliases = data?.aliases ?? [];
-  if (isLoading) return <div className="text-sm text-muted-foreground p-6">Loading…</div>;
+  if (isLoading) return <PageLoader label="Loading aliases…" className="py-2" />;
   if (aliases.length === 0) return <EmptyState label="No model aliases defined" />;
   return (
     <Card className="overflow-auto">

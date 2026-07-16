@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
+import { PageLoader } from '@/components/PageLoader';
 import { StatusPill, variantForAppPolicy } from '@/components/workspace/StatusPill';
 import { getObservations, getObservationUrl, type PostObservation } from '@/api/api-client';
 import { formatTimeAgo } from '@/lib/utils';
@@ -25,7 +26,7 @@ export function ObservationGallery() {
     return (
         <div className="space-y-4">
             {query.isLoading ? (
-                <SettingsEmptyState title="Loading…" description="Fetching post-observation screenshots." />
+                <PageLoader label="Loading observations…" variant="card" className="py-2" />
             ) : items.length === 0 ? (
                 <SettingsEmptyState
                     title="No observations yet"

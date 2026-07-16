@@ -1,5 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { PageLoader } from '@/components/PageLoader';
 import type { BrainDiagnostics } from './memoryTypes';
 
 /** Preview of the assembled brain system prompt. */
@@ -16,7 +17,7 @@ export function MemoryPromptTab({
     <Card>
       <CardContent className="p-4">
         {!prompt ? (
-          <p className="text-sm text-muted-foreground text-center py-4">Loading system prompt...</p>
+          <PageLoader label="Loading system prompt…" className="px-0 py-2" />
         ) : (
           <>
             <div className="flex items-center justify-between mb-2">

@@ -1,8 +1,9 @@
 /* Cognitive operator panel — boot layers, consolidation, fleet link, sync. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Settings2, RefreshCw, Play, Loader2 } from 'lucide-react';
+import { Settings2, RefreshCw, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
+import { PageLoader } from '@/components/PageLoader';
 import { api } from '@/api/client';
 
 interface CognitiveTree {
@@ -108,11 +109,7 @@ export function CognitiveOpsTab() {
   });
 
   if (cognitiveQ.isLoading) {
-    return (
-      <div className="p-8 text-center text-muted-foreground flex items-center justify-center gap-2">
-        <Loader2 className="size-4 animate-spin" /> Loading cognitive config…
-      </div>
-    );
+    return <PageLoader label="Loading cognitive config…" variant="card" className="py-4" />;
   }
 
   const boot = cognitiveQ.data?.boot ?? {};

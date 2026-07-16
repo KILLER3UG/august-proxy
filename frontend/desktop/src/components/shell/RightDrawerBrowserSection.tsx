@@ -5,8 +5,9 @@
 /* lib/browser-store (Zustand).                                                */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MousePointerClick, Globe, Loader2, Inbox, RotateCcw } from 'lucide-react';
+import { MousePointerClick, Globe, Inbox, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useBrowserDrawerStore, clearBrowserDrawer, screenshotUrl } from '@/lib/browser-store';
 
@@ -129,12 +130,13 @@ export function RightDrawerBrowserSection() {
               )}
             </>
           ) : (
-            <div className="flex flex-col items-center text-center text-muted-foreground/60 px-4">
+            <div className="flex flex-col items-center text-center text-muted-foreground/60 px-4 w-full">
               {latest ? (
-                <>
-                  <Loader2 className="size-5 animate-spin" />
-                  <div className="mt-2 text-[11px]">Capturing screenshot…</div>
-                </>
+                <div className="w-full max-w-xs space-y-2" role="status" aria-label="Capturing screenshot">
+                  <Skeleton className="h-28 w-full rounded-md" />
+                  <Skeleton className="h-3 w-32 mx-auto" />
+                  <p className="sr-only">Capturing screenshot…</p>
+                </div>
               ) : (
                 <>
                   <Inbox className="size-5" />

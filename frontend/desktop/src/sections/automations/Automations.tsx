@@ -4,9 +4,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/StatusPill';
-import { Play, Trash2, ShieldAlert, Clock, Inbox, Loader2 } from 'lucide-react';
+import { Play, Trash2, ShieldAlert, Clock, Inbox } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAutomations, runAutomation, deleteAutomation, type AutomationJob } from '@/api/api-client';
+import { PageLoader } from '@/components/PageLoader';
 
 export function Automations() {
   const qc = useQueryClient();
@@ -56,9 +57,7 @@ export function Automations() {
       />
 
       {isLoading ? (
-        <div className="grid place-items-center py-10">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
-        </div>
+        <PageLoader label="Loading automations…" className="py-4" />
       ) : jobs.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="p-10 grid place-items-center text-center text-muted-foreground">

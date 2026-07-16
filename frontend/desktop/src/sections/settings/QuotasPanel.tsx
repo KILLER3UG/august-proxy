@@ -7,6 +7,7 @@ import { quotaApi, type ModelQuota } from '@/api/quota';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
+import { PageLoader } from '@/components/PageLoader';
 import { Gauge, Inbox } from 'lucide-react';
 
 function formatQuotaNumber(n: number): string {
@@ -57,7 +58,7 @@ export function QuotasPanel() {
   });
 
   if (all.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading quota…</div>;
+    return <PageLoader label="Loading quota…" className="px-0 py-2" />;
   }
   const data = all.data?.results || [];
   if (data.length === 0) {

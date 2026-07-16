@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Download, Loader2, Store } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageLoader } from '@/components/PageLoader';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 
@@ -76,9 +77,7 @@ export function SkillsHubPanel({ installedNames, onInstalled }: Props) {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" /> Loading hub…
-        </div>
+        <PageLoader label="Loading hub…" variant="card" className="px-0 py-2" />
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
           {entries.map((e) => {

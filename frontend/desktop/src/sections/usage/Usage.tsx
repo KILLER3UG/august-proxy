@@ -188,11 +188,7 @@ export function Usage() {
   });
 
   if (stats.isLoading || heatmap.isLoading || byModel.isLoading) {
-    return (
-      <div className="p-6">
-        <PageLoader />
-      </div>
-    );
+    return <PageLoader label="Loading usage…" variant="card" />;
   }
 
   const s = stats.data;

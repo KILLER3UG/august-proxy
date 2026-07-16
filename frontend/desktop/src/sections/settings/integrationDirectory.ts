@@ -305,7 +305,8 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
     packageName: 'workspace-mcp',
     packageVersion: 'latest',
     tools: [
-      'start_google_auth',
+      // Auth is native August OAuth (Settings → Sign in with Google), not MCP.
+      // start_google_auth only exists in workspace-mcp --tool-tier complete.
       'search_gmail_messages',
       'get_gmail_message_content',
       'send_gmail_message',

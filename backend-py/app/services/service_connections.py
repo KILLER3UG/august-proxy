@@ -480,7 +480,8 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
         return {**native, 'via': 'native'}
 
     # 2) MCP probe only when native is unavailable (no client id) — and only
-    #    accept "already authenticated" or URLs that do NOT use our callback.
+    #    if workspace-mcp actually exposes start_google_auth (complete tier).
+    #    Core-tier installs omit that tool; never call a missing tool.
     try:
         from app.services.tools import mcp_client
 
@@ -494,15 +495,6 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
                 pass
 
         server_id = mcp_client.find_server_for_tool('start_google_auth')
-        if not server_id:
-            for srv in mcp_client.listRegisteredServers():
-                if not isinstance(srv, dict):
-                    continue
-                blob = f"{srv.get('id', '')} {srv.get('name', '')} {srv.get('command', '')} {srv.get('args', '')}".lower()
-                if 'workspace-mcp' in blob or 'workspace_mcp' in blob or 'google workspace' in blob:
-                    server_id = as_str(srv.get('id'))
-                    break
-
         if server_id:
             # Call the underlying MCP tool directly (not executeMcpToolCall),
             # which intercepts start_google_auth and would recurse to native.
@@ -516,7 +508,13 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
                     },
                 )
             )
-            if text.startswith('Error:'):
+            lower = text.lower()
+            # FastMCP may return "Unknown tool" as content (no Error: prefix).
+            if (
+                text.startswith('Error:')
+                or 'unknown tool' in lower
+                or 'tool not found' in lower
+            ):
                 pass
             else:
                 import re
@@ -529,7 +527,6 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
                         pass
                     else:
                         return {'authUrl': mcp_url, 'message': text, 'via': 'mcp'}
-                lower = text.lower()
                 if any(
                     phrase in lower
                     for phrase in (
@@ -547,8 +544,6 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
                         'connected': True,
                         'via': 'mcp',
                     }
-                if text.strip() and not match:
-                    return {'message': text, 'authUrl': '', 'via': 'mcp'}
     except Exception:
         pass
 

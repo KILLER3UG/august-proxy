@@ -951,20 +951,17 @@ async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
 
 
 def find_server_for_tool(tool_name: str) -> str | None:
-    """Return a registered server id that has ``tool_name`` in its tools cache."""
+    """Return a registered server id that has ``tool_name`` in its tools cache.
+
+    Only matches discovered tools — never guess by server package name.
+    workspace-mcp installs with ``--tool-tier core`` omit tools like
+    ``start_google_auth`` (complete tier only); a name heuristic would
+    call a missing tool and surface ``Unknown tool``.
+    """
     for sid, tools in _toolsCache.items():
         for t in tools:
             if isinstance(t, dict) and as_str(t.get('name')) == tool_name:
                 return sid
-    # Fallback: name/id heuristic (workspace-mcp package)
-    for sid, srv in _servers.items():
-        if not isinstance(srv, dict):
-            continue
-        blob = f"{srv.get('id', '')} {srv.get('name', '')} {srv.get('command', '')} {' '.join(as_list(srv.get('args')))}".lower()
-        if tool_name.replace('_', '-') in blob or 'workspace' in blob and 'google' in tool_name:
-            return sid
-        if 'workspace-mcp' in blob or 'workspace_mcp' in blob:
-            return sid
     return None
 
 

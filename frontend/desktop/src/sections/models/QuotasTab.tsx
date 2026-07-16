@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { quotaApi, type ModelQuota } from '@/api/quota';
+import { PageLoader } from '@/components/PageLoader';
 import { EmptyState, formatQuotaNumber } from './modelsShared';
 
 function QuotaRow({ q }: { q: ModelQuota }) {
@@ -44,7 +45,7 @@ export function QuotasTab() {
     refetchInterval: 30_000,
   });
 
-  if (all.isLoading) return <div className="text-sm text-muted-foreground">Loading quota…</div>;
+  if (all.isLoading) return <PageLoader label="Loading quota…" className="px-0 py-2" />;
   const data = all.data?.results || [];
 
   if (data.length === 0) {

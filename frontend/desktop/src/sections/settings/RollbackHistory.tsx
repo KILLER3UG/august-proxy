@@ -6,6 +6,7 @@ import { Undo2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
+import { PageLoader } from '@/components/PageLoader';
 import { StatusPill, variantForRollbackStatus } from '@/components/workspace/StatusPill';
 import { getRollbackList, getRollbackSummary, undoAugustRollback, type RollbackEntry } from '@/api/api-client';
 import { formatTimeAgo } from '@/lib/utils';
@@ -64,7 +65,7 @@ export function RollbackHistory() {
 
             {/* List */}
             {list.isLoading ? (
-                <SettingsEmptyState title="Loading…" description="Fetching rollbacks." />
+                <PageLoader label="Loading rollbacks…" className="py-2" />
             ) : items.length === 0 ? (
                 <SettingsEmptyState title="No rollbacks" description="Mutating tools create rollbacks automatically." />
             ) : (

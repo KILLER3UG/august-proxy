@@ -14,6 +14,7 @@ import {
   approveTerminalRequest,
   type TerminalSession,
 } from '@/api/api-client';
+import { PageLoader } from '@/components/PageLoader';
 
 /**
  * Approval-aware terminal. Per the migration plan, this ships after Workbench
@@ -167,7 +168,7 @@ export function Terminal() {
           ) : (
             <div className="flex-1 grid place-items-center text-muted-foreground text-sm">
               {isLoading ? (
-                <Loader2 className="size-5 animate-spin" />
+                <PageLoader label="Loading sessions…" className="w-full max-w-md" />
               ) : (
                 <div className="text-center">
                   <Inbox className="size-8 text-muted-foreground/40 mx-auto mb-2" />

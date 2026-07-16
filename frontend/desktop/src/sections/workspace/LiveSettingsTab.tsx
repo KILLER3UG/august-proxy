@@ -1,9 +1,9 @@
 /* Live settings: browser default or real OpenAI-compatible STT/TTS providers. */
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
+import { PageLoader } from '@/components/PageLoader';
 import {
   getLiveConfig,
   updateLiveConfig,
@@ -121,11 +121,7 @@ export function LiveSettingsTab() {
   };
 
   if (liveQ.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <PageLoader label="Loading live settings…" variant="form" className="py-4 max-w-2xl" />;
   }
 
   const sttReady = Boolean(initial.sttReady);

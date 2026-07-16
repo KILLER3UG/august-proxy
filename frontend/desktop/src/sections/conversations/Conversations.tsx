@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Search, MessageSquare, Inbox } from 'lucide-react';
 import { formatTimeAgo, cn } from '@/lib/utils';
 import { getConversations, type ConversationsResponse, type RequestEntry } from '@/api/api-client';
+import { PageLoader } from '@/components/PageLoader';
 
 interface ConversationItem {
   reqId: string;
@@ -100,9 +101,7 @@ export function Conversations() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {isLoading && (
-            <p className="text-center text-xs text-muted-foreground py-6">Loading…</p>
-          )}
+          {isLoading && <PageLoader label="Loading conversations…" className="px-1 py-2" />}
           {!isLoading && visible.length === 0 && (
             <p className="text-center text-xs text-muted-foreground py-6">
               {filter ? `No conversations match "${filter}"` : 'No conversations captured yet'}

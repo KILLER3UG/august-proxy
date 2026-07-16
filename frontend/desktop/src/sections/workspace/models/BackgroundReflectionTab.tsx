@@ -5,7 +5,6 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   getAggregatedModels,
@@ -17,6 +16,7 @@ import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceToggle } from '@/components/workspace/WorkspaceToggle';
 import { Button } from '@/components/ui/button';
 import { ModelPickerDropdown } from '@/components/overlays/ModelPickerDropdown';
+import { PageLoader } from '@/components/PageLoader';
 import { uniqueAggregatedModels } from './modelSettingsShared';
 
 const DEFAULT_BG_CONFIG: ReviewBackgroundConfig = {
@@ -65,11 +65,7 @@ export function BackgroundReflectionTab() {
   };
 
   if (bgQ.isLoading || modelsQ.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <PageLoader label="Loading background settings…" variant="form" className="py-4 max-w-2xl" />;
   }
 
   const noModels = availableModels.length === 0;

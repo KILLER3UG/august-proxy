@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Activity, AlertTriangle, Camera, History, ShieldCheck, Wifi, type LucideIcon } from 'lucide-react';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
+import { PageLoader } from '@/components/PageLoader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusPill, variantForHostStatus, variantForAppPolicy } from '@/components/workspace/StatusPill';
 import { WorkspaceDonut, modelColor, type DonutSlice } from '@/components/workspace/WorkspaceDonut';
@@ -33,7 +34,7 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
     const userAliases = useQuery({ queryKey: ['models', 'userAliases'], queryFn: () => getUserModelAliases(), refetchInterval: refetchMs });
 
     if (overview.isLoading || usage.isLoading) {
-        return <SettingsEmptyState title="Loading…" description="Fetching the at-a-glance view." />;
+        return <PageLoader label="Loading observability…" variant="card" className="py-2" />;
     }
 
     const o = overview.data;

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Filter, ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
+import { PageLoader } from '@/components/PageLoader';
 import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { StatusPill, variantForResult } from '@/components/workspace/StatusPill';
 import { getAuditLog, getObservationUrl, type AuditEntry } from '@/api/api-client';
@@ -89,7 +90,7 @@ export function AuditTimeline() {
 
             {/* Timeline */}
             {query.isLoading ? (
-                <SettingsEmptyState title="Loading…" description="Fetching audit entries." />
+                <PageLoader label="Loading audit entries…" className="py-2" />
             ) : entries.length === 0 ? (
                 <SettingsEmptyState title="No entries match" description="Try widening the filters." />
             ) : (

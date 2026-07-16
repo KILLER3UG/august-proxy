@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FolderLock, Loader2, ShieldOff, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageLoader } from '@/components/PageLoader';
 import { toast } from 'sonner';
 
 type Grant = { key: string; tool: string; path: string };
@@ -65,9 +66,7 @@ export function ToolGrantsSection() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading grants…
-        </div>
+        <PageLoader label="Loading grants…" className="px-0 py-2" />
       ) : rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-white/[0.08] p-6 text-sm text-muted-foreground">
           No always-grants yet. Approve a mutating tool with “Always here” while in Ask mode.

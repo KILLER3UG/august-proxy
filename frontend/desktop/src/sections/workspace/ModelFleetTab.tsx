@@ -3,10 +3,10 @@
    `auxiliary.model_fleet` slice of config.json via /api/config/model-fleet. */
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { ModelPickerDropdown } from '@/components/overlays/ModelPickerDropdown';
+import { PageLoader } from '@/components/PageLoader';
 import {
   getModelFleet,
   updateModelFleet,
@@ -101,11 +101,7 @@ export function ModelFleetTab() {
   };
 
   if (fleetQ.isLoading || modelsQ.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <PageLoader label="Loading model fleet…" variant="form" className="py-4 max-w-2xl" />;
   }
 
   return (

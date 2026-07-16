@@ -3,6 +3,7 @@ import { Sparkles, Brain, Clock, Zap, ListChecks, Trash2, Check, X, Play } from 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
+import { PageLoader } from '@/components/PageLoader';
 import { useLearningData } from '@/hooks/useLearningData';
 import { api } from '@/api/client';
 
@@ -54,11 +55,7 @@ export function LearningTab() {
     return <div className="p-4 text-danger">Error loading brain data: {error.message}</div>;
   }
   if (!data) {
-    return (
-      <div className="p-8 text-center text-muted-foreground flex items-center justify-center gap-2">
-        <Clock className="size-4 animate-spin" /> Loading…
-      </div>
-    );
+    return <PageLoader label="Loading learning data…" variant="card" className="py-4" />;
   }
 
   return (
