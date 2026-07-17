@@ -17,7 +17,7 @@ export function WorkbenchPlanPanel({
 }) {
   if (!isNonEmptyPlan(session?.plan)) return null;
 
-  const plan = session!.plan!;
+  const plan = session.plan;
   const approved = !hasPendingWorkbenchPlan(session);
 
   return (

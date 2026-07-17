@@ -381,7 +381,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       setWorkbenchSession((prev) => {
         const next = { ...normalized };
         if (!isNonEmptyPlan(next.plan) && isNonEmptyPlan(prev?.plan) && !next.approved) {
-          next.plan = prev!.plan;
+          next.plan = prev.plan;
         }
         latestWorkbenchTodos = next.todos ?? [];
         latestMutationCount = next.mutationCount;

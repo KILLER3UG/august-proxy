@@ -8,7 +8,7 @@ export function isNonEmptyPlan(plan: unknown): plan is WorkbenchPlan {
     !!plan &&
     typeof plan === 'object' &&
     !Array.isArray(plan) &&
-    Object.keys(plan as object).length > 0
+    Object.keys(plan).length > 0
   );
 }
 
@@ -37,12 +37,12 @@ export function normalizeWorkbenchSession(
   const s = raw as Record<string, unknown>;
   if (typeof s.id !== 'string' || !s.id) return null;
   const planApproved = Boolean(s.planApproved ?? s.approved);
-  const plan = isNonEmptyPlan(s.plan) ? (s.plan as WorkbenchPlan) : null;
+  const plan = isNonEmptyPlan(s.plan) ? (s.plan) : null;
   return {
     ...(s as unknown as WorkbenchSession),
     plan,
     approved: planApproved,
     approvedAt: (typeof s.approvedAt === 'string' ? s.approvedAt : null) ?? null,
     planApproved,
-  } as WorkbenchSession & { planApproved?: boolean };
+  };
 }
