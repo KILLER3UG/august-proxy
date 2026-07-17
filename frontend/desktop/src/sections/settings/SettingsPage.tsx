@@ -44,6 +44,7 @@ import { KanbanSection } from './KanbanSection';
 import { PythonSandboxSection } from './PythonSandboxSection';
 import { AgentSandboxSection } from './AgentSandboxSection';
 import { AccountSection } from './AccountSection';
+import { UpdateSection } from './UpdateSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -141,6 +142,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'agent-board': KanbanWrapper,
   'python-sandbox': PythonSandboxWrapper,
   'agent-sandbox': AgentSandboxWrapper,
+  'app-updates': AppUpdatesWrapper,
 };
 
 function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
@@ -148,6 +150,7 @@ function ObservabilitySectionWrapper() { return <ObservabilitySection />; }
 function BackendMonitorWrapper() { return <BackendMonitorSection />; }
 function FeatureFlowWrapper() { return <FeatureFlowSection />; }
 function ExternalAccessWrapper() { return <ExternalAccessSection />; }
+function AppUpdatesWrapper() { return <UpdateSection />; }
 
 function UsageWrapper() { return <WorkspaceUsageSection />; }
 function MemoryWrapper() { return <WorkspaceMemorySection />; }

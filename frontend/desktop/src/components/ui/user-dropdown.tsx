@@ -32,7 +32,8 @@ export type UserDropdownAction =
   | 'help'
   | 'switch'
   | 'logout'
-  | 'create-account';
+  | 'create-account'
+  | 'update';
 
 export interface UserDropdownUser {
   name: string;
@@ -121,6 +122,11 @@ const ICON_MOTION: Partial<Record<UserDropdownAction | 'status', Variants>> = {
     hover: { scale: 1.15, rotate: 90, transition: t.spring },
     tap: { scale: 0.9, rotate: 90, transition: t.fast },
   },
+  update: {
+    rest: { scale: 1, y: 0 },
+    hover: { scale: 1.12, y: -2, transition: t.spring },
+    tap: { scale: 0.92, y: 0, transition: t.fast },
+  },
   status: {
     rest: { scale: 1, rotate: 0 },
     hover: { scale: 1.15, rotate: 12, transition: t.spring },
@@ -190,6 +196,8 @@ export interface UserDropdownProps {
   sideOffset?: number;
   className?: string;
   triggerClassName?: string;
+  /** When set, shows an update notice in the menu (Notifications badge + row). */
+  updateAvailable?: { version: string } | null;
 }
 
 export function UserDropdown({
@@ -209,7 +217,40 @@ export function UserDropdown({
   sideOffset,
   className,
   triggerClassName,
+  updateAvailable = null,
 }: UserDropdownProps) {
+  const profileItems: MenuItemBase[] = MENU_ITEMS.profile.map((item) => {
+    if (item.action === 'notifications' && updateAvailable) {
+      return {
+        ...item,
+        badge: {
+          text: 'Update',
+          className:
+            'rounded-sm border-0 bg-amber-500/20 text-amber-400 text-[10px] px-1.5 py-0',
+        },
+      };
+    }
+    return item;
+  });
+
+  const supportItems: MenuItemBase[] = [
+    ...(updateAvailable
+      ? [
+          {
+            icon: 'solar:refresh-circle-line-duotone',
+            label: `Update to v${updateAvailable.version}`,
+            action: 'update' as const,
+            badge: {
+              text: 'New',
+              className:
+                'rounded-sm border-0 bg-amber-500/20 text-amber-400 text-[10px] px-1.5 py-0',
+            },
+          },
+        ]
+      : []),
+    ...MENU_ITEMS.support,
+  ];
+
   const accountItems: MenuItemBase[] = signedIn
     ? [
         {
@@ -418,16 +459,16 @@ export function UserDropdown({
           </DropdownMenuGroup>
 
           <DropdownMenuSeparator />
-          <DropdownMenuGroup>{MENU_ITEMS.profile.map(renderMenuItem)}</DropdownMenuGroup>
+          <DropdownMenuGroup>{profileItems.map(renderMenuItem)}</DropdownMenuGroup>
 
           <DropdownMenuSeparator />
-          <DropdownMenuGroup>{MENU_ITEMS.support.map(renderMenuItem)}</DropdownMenuGroup>
+          <DropdownMenuGroup>{supportItems.map(renderMenuItem)}</DropdownMenuGroup>
         </section>
 
         <section className="mt-1 rounded-2xl p-1">
           <DropdownMenuGroup>
             {accountItems.map((item, index) =>
-              renderMenuItem(item, MENU_ITEMS.profile.length + MENU_ITEMS.support.length + index),
+              renderMenuItem(item, profileItems.length + supportItems.length + index),
             )}
           </DropdownMenuGroup>
         </section>

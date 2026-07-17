@@ -9,6 +9,7 @@ import {
   type Workspace,
 } from '@/store/workspaces';
 import { isTauri } from '@/lib/tauri-detect';
+import { openFolderViaTauri } from '@/api/folder';
 
 interface WorkspaceSelectorProps {
   sessionId: string | null;
@@ -24,7 +25,6 @@ export function WorkspaceSelector({ sessionId: _sessionId, onWorkspaceChange }: 
 
   const currentWorkspace = workspaces.find(w => w.id === currentWorkspaceId) ?? null;
 
-  // Close on click outside
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -36,7 +36,6 @@ export function WorkspaceSelector({ sessionId: _sessionId, onWorkspaceChange }: 
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -53,35 +52,21 @@ export function WorkspaceSelector({ sessionId: _sessionId, onWorkspaceChange }: 
   };
 
   const handleOpenFolder = async () => {
-    let path: string | null = null;
-
     if (isTauri) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        path = await invoke<string | null>('select_directory');
-      } catch (err) {
-        console.error('[WorkspaceSelector] Tauri directory picker failed:', err);
-      }
-    } else {
-      // Use the hidden directory input to open the native OS folder picker.
-      // showDirectoryPicker() only returns the folder name, not the absolute
-      // path, so we use <input type="file" webkitdirectory> instead — Chrome's
-      // File.path exposes the full filesystem path the backend needs.
-      dirInputRef.current?.click();
-      return; // path will be set by the input's change handler
-    }
-
-    if (path) {
-      const ws = addWorkspace(path);
+      const result = await openFolderViaTauri();
+      if (result.cancelled || !result.path) return;
+      const ws = addWorkspace(result.path);
       setOpen(false);
       onWorkspaceChange?.(ws);
+      return;
     }
+
+    dirInputRef.current?.click();
   };
 
   const handleDirPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Chrome exposes the full path on File.path; fall back to extracting from webkitRelativePath
     const fullPath = file.path
       || file.webkitRelativePath.slice(0, file.webkitRelativePath.indexOf('/'));
     if (fullPath) {
@@ -89,7 +74,6 @@ export function WorkspaceSelector({ sessionId: _sessionId, onWorkspaceChange }: 
       setOpen(false);
       onWorkspaceChange?.(ws);
     }
-    // Reset so the same directory can be re-selected
     e.target.value = '';
   };
 

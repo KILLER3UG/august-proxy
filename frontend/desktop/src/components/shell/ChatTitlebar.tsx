@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { gitApi } from "@/api/git";
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
+import { useAppUpdate } from "@/hooks/useAppUpdate";
 import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
 import { BrainIndicator } from "./BrainIndicator";
@@ -41,10 +42,8 @@ export function ChatTitlebar({
   const [isMaximized, setIsMaximized] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const overflowRef = useRef<HTMLDivElement>(null);
-  const [updateAvailable, setUpdateAvailable] = useState<{
-    version: string;
-  } | null>(null);
-  const [updating, setUpdating] = useState(false);
+  const { available: updateAvailable, installing: updating, install: handleInstallUpdate } =
+    useAppUpdate();
 
   const branch = useQuery({
     queryKey: ['git', 'branch', session?.id],
@@ -117,38 +116,6 @@ export function ChatTitlebar({
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().close();
     } catch { /* silent */ }
-  };
-
-  // ── Auto-update check (Tauri only) ──
-  useEffect(() => {
-    if (!isTauri) return;
-    void (async () => {
-      try {
-        const { check } = await import("@tauri-apps/plugin-updater");
-        const update = await check();
-        if (update) {
-          setUpdateAvailable({ version: update.version });
-        }
-      } catch {
-        // Silently ignore — update check is best-effort
-      }
-    })();
-  }, /* eslint-disable-line react-hooks/exhaustive-deps */ []);
-
-  const handleInstallUpdate = async () => {
-    if (!isTauri || !updateAvailable) return;
-    setUpdating(true);
-    try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
-      if (update) {
-        await update.downloadAndInstall();
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      toast.error(message || "Failed to install update");
-      setUpdating(false);
-    }
   };
 
   const speakLatest = () => {

@@ -17,13 +17,13 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .tooltip("August Proxy")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {
-                if let Some(w) = app.getWebviewWindow("main") {
+                if let Some(w) = app.get_webview_window("main") {
                     let _ = w.show();
                     let _ = w.set_focus();
                 }
             }
             "hide" => {
-                if let Some(w) = app.getWebviewWindow("main") {
+                if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
                 }
             }
@@ -35,11 +35,11 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
-                buttonState: MouseButtonState::Up,
+                button_state: MouseButtonState::Up,
                 ..
             } = event
             {
-                if let Some(w) = tray.app_handle().getWebviewWindow("main") {
+                if let Some(w) = tray.app_handle().get_webview_window("main") {
                     let _ = w.show();
                     let _ = w.set_focus();
                 }

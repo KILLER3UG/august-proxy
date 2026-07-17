@@ -115,10 +115,14 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
 
     if (isTauri) {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        selectedPath = await invoke<string | null>('select_directory');
+        const { openFolderViaTauri } = await import('@/api/folder');
+        const result = await openFolderViaTauri();
+        if (result.cancelled || !result.path) return;
+        selectedPath = result.path;
       } catch (err) {
         console.error('Failed to open Tauri directory dialog:', err);
+        toast.error('Could not open folder picker');
+        return;
       }
     } else {
       dirInputRef.current?.click();

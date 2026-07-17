@@ -48,6 +48,7 @@ import {
   TerminalSquare,
   Palette,
   UserRound,
+  ArrowUpCircle,
 } from 'lucide-react';
 
 /** Visibility tier for the rail. `basic` items are always shown; the
@@ -184,6 +185,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'basic',
     keywords: ['conversation', 'history', 'archive', 'session', 'chat'],
     legacyAliases: ['archive', 'conversations', 'chat-history', 'session-history'],
+  },
+  {
+    id: 'app-updates',
+    label: 'Updates',
+    description: 'Check for desktop app releases from GitHub and install updates.',
+    icon: ArrowUpCircle,
+    category: 'general',
+    tier: 'basic',
+    keywords: ['update', 'release', 'version', 'download app', 'upgrade', 'changelog'],
+    legacyAliases: ['updates', 'updater', 'version', 'about'],
   },
 
   /* ── Intelligence ────────────────────────────────────────────── */

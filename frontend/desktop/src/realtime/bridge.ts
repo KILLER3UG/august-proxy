@@ -247,30 +247,35 @@ export function startRealtimeBridge(): void {
   if (typeof window === 'undefined') return;
   if (started && es && es.readyState !== EventSource.CLOSED) return;
   started = true;
-  try {
-    es?.close();
-  } catch {
-    /* ignore */
-  }
-  es = new EventSource('/api/realtime/stream');
-  es.onmessage = (msg: MessageEvent) => {
-    try {
-      const data = JSON.parse(String(msg.data)) as RealtimeEvent;
-      if (data && typeof data.type === 'string') handleEvent(data);
-    } catch {
-      /* ignore malformed frames */
-    }
-  };
-  es.onerror = () => {
+  void (async () => {
+    const { whenReady } = await import('@/api/client');
+    const base = (await whenReady()) ?? '';
     try {
       es?.close();
     } catch {
       /* ignore */
     }
-    es = null;
-    started = false;
-    scheduleReconnect();
-  };
+    // In Tauri, relative /api hits the asset origin — use the proxy base.
+    es = new EventSource(`${base}/api/realtime/stream`);
+    es.onmessage = (msg: MessageEvent) => {
+      try {
+        const data = JSON.parse(String(msg.data)) as RealtimeEvent;
+        if (data && typeof data.type === 'string') handleEvent(data);
+      } catch {
+        /* ignore malformed frames */
+      }
+    };
+    es.onerror = () => {
+      try {
+        es?.close();
+      } catch {
+        /* ignore */
+      }
+      es = null;
+      started = false;
+      scheduleReconnect();
+    };
+  })();
 }
 
 export function stopRealtimeBridge(): void {

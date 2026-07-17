@@ -14,6 +14,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 const DEFAULT_PROXY_PORT: u16 = 8085;
 
 pub struct BackendProcess(pub Mutex<Option<Child>>, pub Mutex<Option<String>>);
@@ -83,13 +86,25 @@ fn resolvePython(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
-    let candidates = vec![
+    let mut candidates: Vec<Option<PathBuf>> = vec![
         app.path()
             .resolve("backend-py/app/main.py", tauri::path::BaseDirectory::Resource)
             .ok(),
         env::current_dir().ok().map(|cwd| cwd.join("backend-py/app/main.py")),
         env::current_dir().ok().map(|cwd| cwd.join("../backend-py/app/main.py")),
     ];
+
+    // Walk up from the executable so release builds find the repo checkout
+    // (e.g. …/src-tauri/target/release/august-desktop.exe → …/august-proxy/backend-py).
+    if let Ok(exe) = env::current_exe() {
+        let mut dir = exe.parent().map(|p| p.to_path_buf());
+        for _ in 0..10 {
+            let Some(d) = dir else { break };
+            candidates.push(Some(d.join("backend-py/app/main.py")));
+            dir = d.parent().map(|p| p.to_path_buf());
+        }
+    }
+
     candidates.into_iter().flatten().find(|path| path.is_file())
 }
 
@@ -117,12 +132,12 @@ fn resolveNode(app: &AppHandle) -> Option<PathBuf> {
     }
 
     if let Ok(binariesDir) = app.path().resolve("binaries", tauri::path::BaseDirectory::Resource) {
-        if let Ok(entries) = std::fs::readDir(binariesDir) {
+        if let Ok(entries) = std::fs::read_dir(binariesDir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_file() {
-                    if let Some(name) = path.fileName().and_then(|n| n.toStr()) {
-                        if name.startsWith("node-") {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with("node-") {
                             candidates.push(Some(path));
                         }
                     }
@@ -161,12 +176,12 @@ fn resolveNodeBackend(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn projectRootFor(entry: &Path) -> Option<PathBuf> {
-    entry.parent()?.parent().map(Path::toPathBuf)
+    entry.parent()?.parent().map(Path::to_path_buf)
 }
 
 fn appDataDir(app: &AppHandle) -> PathBuf {
     app.path()
-        .appDataDir()
+        .app_data_dir()
         .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
         .join("data")
 }
@@ -178,7 +193,7 @@ fn killChild(child: &mut Child) {
 
 /// Record the most recent backend spawn error so the UI can surface it.
 fn setLastError(app: &AppHandle, msg: String) {
-    if let Some(state) = app.tryState::<BackendProcess>() {
+    if let Some(state) = app.try_state::<BackendProcess>() {
         if let Ok(mut guard) = state.1.lock() {
             *guard = Some(msg);
         }
@@ -225,10 +240,14 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
     // Try Python backend first
     if let Some(python) = resolvePython(app) {
         if let Some(pyEntry) = resolvePythonBackend(app) {
-            let Some(projectRoot) = projectRootFor(&pyEntry) else {
+            let Some(backendPyRoot) = projectRootFor(&pyEntry) else {
                 log::error!("[backend] could not resolve project root for {}", pyEntry.display());
                 return false;
             };
+            let repoRoot = backendPyRoot
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| backendPyRoot.clone());
 
             let dataDir = appDataDir(app);
             log::info!(
@@ -253,12 +272,12 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                 .arg(proxyPort().to_string())
                 .arg("--host")
                 .arg("127.0.0.1")
-                .current_dir(&projectRoot)
+                .current_dir(&backendPyRoot)
                 .env("AUGUST_PROXY_PORT", proxyPort().to_string())
-                .env("AUGUST_PROXY_ROOT", projectRoot)
+                .env("AUGUST_PROXY_ROOT", &repoRoot)
                 .env("AUGUST_DATA_DIR", dataDir)
                 .env("AUGUST_PROXY_DESKTOP", "1")
-                .stdout(Stdio::from(logFile.tryClone().unwrap_or_else(|_| {
+                .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
                     File::create(devNullPath()).expect("failed to open null")
                 })))
                 .stderr(Stdio::from(logFile))
@@ -266,12 +285,12 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
 
             match child {
                 Ok(c) => {
-                    if app.tryState::<BackendProcess>().is_none() {
-                        app.manage(BackendProcess(Mutex::new(Some(c)), Mutex::new(None)));
-                    } else if let Some(state) = app.tryState::<BackendProcess>() {
+                    if let Some(state) = app.try_state::<BackendProcess>() {
                         if let Ok(mut guard) = state.0.lock() {
                             *guard = Some(c);
                         }
+                    } else {
+                        app.manage(BackendProcess(Mutex::new(Some(c)), Mutex::new(None)));
                     }
                     log::info!("[backend] python proxy spawned — waiting for /api/health");
                     // Do not return success on spawn alone: cold start can take seconds
@@ -340,7 +359,7 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
         .env("AUGUST_PROXY_ROOT", projectRoot)
         .env("AUGUST_DATA_DIR", dataDir)
         .env("AUGUST_PROXY_DESKTOP", "1")
-        .stdout(Stdio::from(logFile.tryClone().unwrap_or_else(|_| {
+        .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
             File::create(devNullPath()).expect("failed to open null")
         })))
         .stderr(Stdio::from(logFile))
@@ -348,12 +367,12 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
 
     match child {
         Ok(c) => {
-            if app.tryState::<BackendProcess>().is_none() {
-                app.manage(BackendProcess(Mutex::new(Some(c)), Mutex::new(None)));
-            } else if let Some(state) = app.tryState::<BackendProcess>() {
+            if let Some(state) = app.try_state::<BackendProcess>() {
                 if let Ok(mut guard) = state.0.lock() {
                     *guard = Some(c);
                 }
+            } else {
+                app.manage(BackendProcess(Mutex::new(Some(c)), Mutex::new(None)));
             }
             log::info!("[backend] node proxy spawned (fallback) — waiting for /api/health");
             if waitUntilProxyUp(Duration::from_secs(20)) {
@@ -392,10 +411,10 @@ impl Drop for BackendProcess {
 // ── Tauri commands callable from the webview ─────────────────────────────
 
 #[tauri::command]
-pub async fn proxyStatus() -> String {
+pub async fn proxy_status() -> String {
     let port = proxyPort();
     let url = format!("http://127.0.0.1:{}/api/health", port);
-    let result = tokio::task::spawnBlocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         reqwest::blocking::Client::new()
             .get(&url)
             .timeout(Duration::from_millis(400))
@@ -413,7 +432,7 @@ pub async fn proxyStatus() -> String {
 }
 
 #[tauri::command]
-pub fn restartProxy(app: AppHandle, state: State<'_, BackendProcess>) -> String {
+pub fn restart_proxy(app: AppHandle, state: State<'_, BackendProcess>) -> String {
     if let Ok(mut guard) = state.0.lock() {
         if let Some(mut c) = guard.take() {
             killChild(&mut c);
@@ -428,15 +447,23 @@ pub fn restartProxy(app: AppHandle, state: State<'_, BackendProcess>) -> String 
 }
 
 #[tauri::command]
-pub fn selectDirectory() -> Option<String> {
-    rfd::FileDialog::new()
-        .pick_folder()
+pub fn select_directory(app: AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    // Use the dialog plugin (not raw rfd) so the picker is parented to the
+    // Tauri window. Plain rfd::FileDialog often fails to appear on Windows
+    // when invoked from a command worker thread.
+    app.dialog()
+        .file()
+        .set_title("Select workspace folder")
+        .blocking_pick_folder()
+        .and_then(|p| p.into_path().ok())
         .map(|path| path.to_string_lossy().to_string().replace('\\', "/"))
 }
 
 #[tauri::command]
 pub fn backend_last_error(app: AppHandle) -> Option<String> {
-    if let Some(state) = app.tryState::<BackendProcess>() {
+    if let Some(state) = app.try_state::<BackendProcess>() {
         if let Ok(guard) = state.1.lock() {
             return guard.clone();
         }
@@ -460,18 +487,25 @@ fn versionStampPath(app: &AppHandle) -> Option<PathBuf> {
 /// `"error: ..."`. The pip install runs as a **detached, non-blocking**
 /// child (with `CREATE_NO_WINDOW` on Windows) so the UI never freezes.
 #[tauri::command]
-pub async fn syncBackendDeps(app: AppHandle) -> String {
+pub async fn sync_backend_deps(app: AppHandle) -> String {
     let Some(backendMain) = resolvePythonBackend(&app) else {
         return "error: backend-py not found".into();
     };
-    let Some(backendRoot) = projectRootFor(&backendMain) else {
+    // backend-py/app/main.py → backend-py
+    let Some(backendPyRoot) = projectRootFor(&backendMain) else {
         return "error: cannot resolve backend root".into();
     };
-    // Pick the venv pip (or `python -m pip`) to install into.
+    // Repo root is the parent of backend-py (used for AUGUST_PROXY_ROOT).
+    let repoRoot = backendPyRoot
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| backendPyRoot.clone());
+
+    // Pick the venv interpreter inside backend-py/.venv.
     let venvPy = if cfg!(windows) {
-        backendRoot.join("backend-py/.venv/Scripts/python.exe")
+        backendPyRoot.join(".venv/Scripts/python.exe")
     } else {
-        backendRoot.join("backend-py/.venv/bin/python")
+        backendPyRoot.join(".venv/bin/python")
     };
     let pip = if venvPy.exists() {
         venvPy
@@ -499,24 +533,24 @@ pub async fn syncBackendDeps(app: AppHandle) -> String {
     let log_file = File::create(&log_path).unwrap_or_else(|_| File::create(devNullPath()).expect("null"));
 
     let mut cmd = Command::new(&pip);
-    cmd.arg("-m").arg("pip").arg("install").arg("-e").arg("backend-py");
+    cmd.arg("-m").arg("pip").arg("install").arg("-e").arg(".");
     if cfg!(windows) {
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    cmd.current_dir(&backendRoot)
-        .env("AUGUST_PROXY_ROOT", &backendRoot)
+    cmd.current_dir(&backendPyRoot)
+        .env("AUGUST_PROXY_ROOT", &repoRoot)
         .stdout(Stdio::from(log_file.try_clone().unwrap_or_else(|_| File::create(devNullPath()).expect("null"))))
         .stderr(Stdio::from(log_file));
 
     match cmd.spawn() {
-        Ok(mut child) => {
+        Ok(child) => {
             // Detach: we don't await — poll-free background install.
             let _ = child.id();
             std::mem::forget(child);
             // Best-effort: write the new stamp now so we don't re-trigger
             // immediately; a failed install is caught on next launch.
             if let Some(p) = stamp {
-                let _ = std::fs::create_dir_all(p.parent().unwrap_or(&backendRoot));
+                let _ = std::fs::create_dir_all(p.parent().unwrap_or(&backendPyRoot));
                 let _ = std::fs::write(p, &app_version);
             }
             "syncing".into()

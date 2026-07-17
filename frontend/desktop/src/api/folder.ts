@@ -17,6 +17,7 @@ export interface FolderPickResult {
  */
 export async function openFolderViaTauri(): Promise<FolderPickResult> {
   if (isTauri) {
+    // Prefer the dialog plugin (parented to the app window).
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
@@ -26,11 +27,27 @@ export async function openFolderViaTauri(): Promise<FolderPickResult> {
       });
       if (selected && typeof selected === 'string') {
         const name = selected.split(/[/\\]/).filter(Boolean).pop() || 'workspace';
-        return { path: selected, name, cancelled: false };
+        return { path: selected.replace(/\\/g, '/'), name, cancelled: false };
+      }
+      // User cancelled
+      if (selected === null) {
+        return { path: null, name: null, cancelled: true };
+      }
+    } catch (err) {
+      console.warn('Tauri dialog plugin failed, trying select_directory command:', err);
+    }
+
+    // Fallback: Rust command (also uses dialog plugin on the backend now)
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const selected = await invoke<string | null>('select_directory');
+      if (selected) {
+        const name = selected.split(/[/\\]/).filter(Boolean).pop() || 'workspace';
+        return { path: selected.replace(/\\/g, '/'), name, cancelled: false };
       }
       return { path: null, name: null, cancelled: true };
     } catch (err) {
-      console.warn('Tauri dialog failed, falling back to browser picker:', err);
+      console.warn('select_directory failed, falling back to browser picker:', err);
     }
   }
 
@@ -43,7 +60,6 @@ export async function openFolderViaTauri(): Promise<FolderPickResult> {
     input.addEventListener('change', () => {
       const file = input.files?.[0];
       if (file) {
-        // Get the directory path from the file's webkitRelativePath
         const path = file.webkitRelativePath;
         const dirPath = path.substring(0, path.length - file.name.length);
         const fullPath = file.path || dirPath;

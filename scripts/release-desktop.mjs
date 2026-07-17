@@ -190,24 +190,104 @@ async function stageBackend() {
     await copyDir(nodeModules, join(out, 'node_modules'));
 }
 
+async function syncPackageVersions(nextVersion) {
+    // Root package.json
+    const pkg = JSON.parse(await readFile(packageJsonPath, 'utf8'));
+    pkg.version = nextVersion;
+    await writeFile(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+
+    // Desktop package.json
+    const desktopPkgPath = resolve(root, 'frontend/desktop/package.json');
+    if (existsSync(desktopPkgPath)) {
+        const desktopPkg = JSON.parse(await readFile(desktopPkgPath, 'utf8'));
+        desktopPkg.version = nextVersion;
+        await writeFile(desktopPkgPath, `${JSON.stringify(desktopPkg, null, 2)}\n`);
+    }
+
+    // Tauri config (source of truth for updater version compare)
+    const tauriConfPath = resolve(root, 'frontend/desktop/src-tauri/tauri.conf.json');
+    if (existsSync(tauriConfPath)) {
+        const conf = JSON.parse(await readFile(tauriConfPath, 'utf8'));
+        conf.version = nextVersion;
+        await writeFile(tauriConfPath, `${JSON.stringify(conf, null, 2)}\n`);
+    }
+
+    // Cargo.toml crate version
+    const cargoPath = resolve(root, 'frontend/desktop/src-tauri/Cargo.toml');
+    if (existsSync(cargoPath)) {
+        let cargo = await readFile(cargoPath, 'utf8');
+        cargo = cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${nextVersion}"`);
+        await writeFile(cargoPath, cargo);
+    }
+
+    console.log(`[release] synced package versions to ${nextVersion}`);
+}
+
+function findLatestJson(tauriBundleDir) {
+    const candidates = [
+        join(tauriBundleDir, 'latest.json'),
+        join(tauriBundleDir, 'nsis', 'latest.json'),
+        join(tauriBundleDir, 'msi', 'latest.json'),
+    ];
+    for (const p of candidates) {
+        if (existsSync(p)) return p;
+    }
+    // Walk one level for any latest.json Tauri may have written.
+    try {
+        for (const name of readdirSync(tauriBundleDir)) {
+            const nested = join(tauriBundleDir, name, 'latest.json');
+            if (existsSync(nested)) return nested;
+        }
+    } catch { /* ignore */ }
+    return null;
+}
+
+async function prepareTauriUpdaterManifest(nextVersion) {
+    const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
+    const found = findLatestJson(tauriBundleDir);
+    if (!found) {
+        console.warn('[release] latest.json not found — updater notices will not work until createUpdaterArtifacts + signing keys are configured');
+        return null;
+    }
+
+    const latest = JSON.parse(await readFile(found, 'utf8'));
+    latest.version = nextVersion;
+
+    const nsisDir = join(tauriBundleDir, 'nsis');
+    const msiDir = join(tauriBundleDir, 'msi');
+    let windowsUrl = null;
+    if (existsSync(nsisDir)) {
+        const exe = readdirSync(nsisDir).find((f) => f.endsWith('-setup.exe'));
+        if (exe) windowsUrl = publicUrl(exe);
+    }
+    if (!windowsUrl && existsSync(msiDir)) {
+        const msi = readdirSync(msiDir).find((f) => f.endsWith('.msi'));
+        if (msi) windowsUrl = publicUrl(msi);
+    }
+
+    if (windowsUrl && latest.platforms) {
+        for (const key of Object.keys(latest.platforms)) {
+            if (key.startsWith('windows')) {
+                latest.platforms[key].url = windowsUrl;
+            }
+        }
+    }
+
+    const out = join(releaseDir, 'latest.json');
+    await writeFile(out, `${JSON.stringify(latest, null, 2)}\n`);
+    console.log(`[release] wrote updater manifest ${out}`);
+    return out;
+}
+
 async function buildTauriApp() {
     if (!buildTauri) return;
     run('npm', ['run', 'tauri', '-w', 'frontend/desktop', 'build']);
-
-    const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
-    const latest = join(tauriBundleDir, 'latest.json');
-    if (existsSync(latest)) {
-        await copyFile(latest, join(releaseDir, 'latest.json'));
-        console.log(`[release] copied ${latest}`);
-    }
+    await prepareTauriUpdaterManifest(version);
 }
 
 async function main() {
-    if (bump) {
-        const pkg = JSON.parse(await readFile(packageJsonPath, 'utf8'));
-        pkg.version = version;
-        await writeFile(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
-        console.log(`[release] bumped package version to ${version}`);
+    if (bump || args.has('--version') || [...args].some((a) => a.startsWith('--version='))) {
+        await syncPackageVersions(version);
     }
 
     await mkdir(releaseDir, { recursive: true });
@@ -257,7 +337,7 @@ async function main() {
         const tauriLatest = join(releaseDir, 'latest.json');
         if (existsSync(tauriLatest)) ghArgs.push(tauriLatest);
 
-        // Also upload the Tauri native installers so users can download them directly
+        // Also upload the Tauri native installers (+ .sig updater artifacts)
         const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
         const msiDir = join(tauriBundleDir, 'msi');
         const nsisDir = join(tauriBundleDir, 'nsis');
@@ -269,6 +349,7 @@ async function main() {
         }
 
         run('gh', ghArgs);
+        console.log(`[release] published GitHub release v${version} (includes latest.json for in-app update notices)`);
     }
 }
 

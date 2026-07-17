@@ -16,6 +16,8 @@
 mod backend;
 mod tray;
 
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -25,7 +27,14 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // 1) Try to start (or reuse) the Node backend at :8085
+            // Always register supervisor state so restart_proxy can run even
+            // when the first spawn attempt fails (missing venv, etc.).
+            app.manage(backend::BackendProcess(
+                std::sync::Mutex::new(None),
+                std::sync::Mutex::new(None),
+            ));
+
+            // 1) Try to start (or reuse) the Python backend at :8085
             backend::ensureRunning(app.handle());
 
             // 2) Install the system tray (Show / Hide / Quit)
@@ -41,11 +50,11 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            backend::restartProxy,
-            backend::proxyStatus,
-            backend::selectDirectory,
+            backend::restart_proxy,
+            backend::proxy_status,
+            backend::select_directory,
             backend::backend_last_error,
-            backend::syncBackendDeps,
+            backend::sync_backend_deps,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

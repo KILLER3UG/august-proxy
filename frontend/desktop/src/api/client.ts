@@ -5,24 +5,72 @@ import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '@/lib/tauri-detect';
 
 let baseUrl: string | null = null;
+let fetchPatched = false;
+
+function rewriteApiUrl(url: string): string {
+  if (!baseUrl) return url;
+  if (url.startsWith('/api') || url.startsWith('/v1')) {
+    return `${baseUrl}${url}`;
+  }
+  try {
+    const parsed = new URL(url, typeof window !== 'undefined' ? window.location.origin : baseUrl);
+    if (
+      typeof window !== 'undefined' &&
+      parsed.origin === window.location.origin &&
+      (parsed.pathname.startsWith('/api') || parsed.pathname.startsWith('/v1'))
+    ) {
+      return `${baseUrl}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch {
+    /* keep original */
+  }
+  return url;
+}
+
+/** In the Tauri webview, relative `/api` hits the asset origin (HTML), not
+ *  the Python proxy. Rewrite those requests once we know the backend port. */
+function installFetchPatch(): void {
+  if (fetchPatched || typeof window === 'undefined' || !baseUrl) return;
+  fetchPatched = true;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (typeof input === 'string') {
+      return originalFetch(rewriteApiUrl(input), init);
+    }
+    if (input instanceof URL) {
+      return originalFetch(rewriteApiUrl(input.toString()), init);
+    }
+    if (input instanceof Request) {
+      const next = rewriteApiUrl(input.url);
+      if (next !== input.url) {
+        return originalFetch(new Request(next, input), init);
+      }
+    }
+    return originalFetch(input, init);
+  };
+}
 
 async function initBaseUrl(): Promise<void> {
   try {
     if (isTauri) {
-      // Retry with backoff in case the Node backend hasn't finished starting yet.
-      // The backend starts the HTTP listener in the same tick, but the Tauri
-      // WebView can load the SPA before the health check succeeds.
-      for (let i = 0; i < 6; i++) {
+      // Retry with backoff in case the Python backend hasn't finished starting yet.
+      for (let i = 0; i < 10; i++) {
         const status: string = await invoke<string>('proxy_status');
         if (status.startsWith('ok:')) {
           baseUrl = `http://127.0.0.1:${status.split(':')[1]}`;
+          installFetchPatch();
           return;
         }
-        // Linear backoff: 200ms, 400ms, 600ms, … — ~4.2 s total before giving up
-        await new Promise(r => setTimeout(r, 200 * (i + 1)));
+        // Linear backoff: 200ms, 400ms, … — ~11 s total before giving up
+        await new Promise((r) => setTimeout(r, 200 * (i + 1)));
       }
+      // Last resort: assume the default port so raw `/api` calls don't hit HTML.
+      baseUrl = 'http://127.0.0.1:8085';
+      installFetchPatch();
     }
-  } catch { /* not in Tauri production mode — dev proxy handles routing */ }
+  } catch {
+    /* not in Tauri production mode — Vite / same-origin proxy handles routing */
+  }
 }
 
 const ready = initBaseUrl();
@@ -57,7 +105,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const data = (await res.json()) as { error?: { code?: string; message?: string } };
       code = data?.error?.code ?? code;
       message = data?.error?.message ?? message;
-    } catch { /* keep defaults */ }
+    } catch {
+      /* keep defaults */
+    }
     throw new ApiError(res.status, code, message);
   }
   if (res.status === 204) return undefined as T;
@@ -65,9 +115,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  get:    <T>(path: string)                 => request<T>(path),
-  post:   <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST',   body: body !== undefined ? JSON.stringify(body) : undefined }),
-  put:    <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT',    body: body !== undefined ? JSON.stringify(body) : undefined }),
-  patch:  <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH',  body: body !== undefined ? JSON.stringify(body) : undefined }),
-  delete: <T>(path: string)                 => request<T>(path, { method: 'DELETE' }),
+  get: <T>(path: string) => request<T>(path),
+  post: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'POST', body: body !== undefined ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'PUT', body: body !== undefined ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
+  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };

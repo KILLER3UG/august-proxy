@@ -6,8 +6,10 @@
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { Settings } from "lucide-react";
+import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
 import { isTauri } from "@/lib/tauri-detect";
 import { t } from "@/lib/motion";
+import { useAppUpdate } from "@/hooks/useAppUpdate";
 import {
   useSessionsStore,
   renameSession,
@@ -99,6 +101,7 @@ export function SessionList({
   const activeAccount =
     accounts.find((a) => a.id === activeAccountId) ?? null;
   const signedIn = activeAccount != null;
+  const { available: updateAvailable } = useAppUpdate();
   const dropdownUser = activeAccount
     ? {
         name: activeAccount.displayName,
@@ -130,8 +133,13 @@ export function SessionList({
         openSettingsSection();
         break;
       case "appearance":
-      case "notifications":
         openSettingsSection("profile-preferences");
+        break;
+      case "notifications":
+        openSettingsSection(updateAvailable ? "app-updates" : "profile-preferences");
+        break;
+      case "update":
+        openSettingsSection("app-updates");
         break;
       case "profile":
         openSettingsSection("account");
@@ -222,10 +230,13 @@ export function SessionList({
 
     if (isTauri) {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        selectedPath = await invoke<string | null>("select_directory");
+        const result = await openFolderViaTauri();
+        if (result.cancelled || !result.path) return;
+        selectedPath = result.path;
       } catch (err) {
         console.error("Failed to open Tauri directory dialog:", err);
+        toast.error("Could not open folder picker");
+        return;
       }
     } else {
       dirInputRef.current?.click();
@@ -238,7 +249,10 @@ export function SessionList({
 
     // Normalize Windows backslashes
     const normalizedPath = selectedPath.replace(/\\/g, "/");
-    const folderName = normalizedPath.split("/").pop() || "workspace";
+    const folderName =
+      folderNameFromPath(normalizedPath) ||
+      normalizedPath.split("/").pop() ||
+      "workspace";
 
     const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
 
@@ -524,6 +538,7 @@ export function SessionList({
             alignOffset={-8}
             contentWidth={sidebarWidth}
             user={dropdownUser}
+            updateAvailable={updateAvailable}
             trigger={
               <motion.button
                 type="button"
@@ -532,7 +547,11 @@ export function SessionList({
                 whileTap="tap"
                 variants={settingsRowMotion}
                 className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-sidebar-foreground/50 hover:bg-white/[0.03] hover:text-sidebar-foreground/75 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                title="Open settings"
+                title={
+                  updateAvailable
+                    ? `Update available: v${updateAvailable.version}`
+                    : "Open settings"
+                }
                 aria-label="Open settings"
               >
                 <motion.span
@@ -541,7 +560,12 @@ export function SessionList({
                 >
                   <Settings className="size-3.5" />
                 </motion.span>
-                <span>Settings</span>
+                <span className="flex-1">Settings</span>
+                {updateAvailable && (
+                  <span className="rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                    Update
+                  </span>
+                )}
               </motion.button>
             }
           />
