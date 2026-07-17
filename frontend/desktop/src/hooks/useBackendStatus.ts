@@ -69,10 +69,9 @@ export function useBackendStatus() {
                 setStatus((s) => ({ ...s, sync: 'error', syncError: res.slice(6) }));
             } else if (res === 'needs_setup') {
                 setStatus((s) => ({ ...s, sync: 'needs_setup' }));
-            } else if (res === 'syncing') {
-                setStatus((s) => ({ ...s, sync: 'syncing' }));
-                // The sync is detached; re-check shortly after.
-                setTimeout(() => { void refresh(); }, 4000);
+            } else if (res === 'syncing' || res === 'synced') {
+                setStatus((s) => ({ ...s, sync: res === 'synced' ? 'up-to-date' : 'syncing' }));
+                setTimeout(() => { void refresh(); }, res === 'synced' ? 500 : 4000);
             } else {
                 setStatus((s) => ({ ...s, sync: 'up-to-date' }));
             }

@@ -536,7 +536,12 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
         log::error!("{msg}");
         setLastError(app, msg.clone());
         setSetupPhase(app, "error", Some(msg));
-        // Continue — maybe a repo checkout .venv is available for dev.
+        // Packaged installs must not silently fall through — the UI gate
+        // needs a hard error so the user can Retry.
+        if bundledStamp(app).is_some() {
+            return false;
+        }
+        // Dev checkout without a stamp: keep trying system/repo Python.
     }
 
     // Try Python backend first
@@ -632,12 +637,18 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
 
     // Fallback: Node.js backend
     let Some(node) = resolveNode(app) else {
-        log::error!("[backend] could not find `node` on PATH or in bundled resources");
+        let msg = "[backend] could not find Python or Node backend runtime".to_string();
+        log::error!("{msg}");
+        setLastError(app, msg.clone());
+        setSetupPhase(app, "error", Some(msg));
         return false;
     };
 
     let Some(entry) = resolveNodeBackend(app) else {
-        log::error!("[backend] could not resolve backend/index.js");
+        let msg = "[backend] could not resolve backend/index.js".to_string();
+        log::error!("{msg}");
+        setLastError(app, msg.clone());
+        setSetupPhase(app, "error", Some(msg));
         return false;
     };
 
@@ -691,18 +702,20 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                 true
             } else {
                 log::error!("[backend] node proxy spawned but /api/health not ready");
-                setLastError(
-                    app,
-                    format!(
-                        "[backend] node proxy not healthy on :{} after spawn",
-                        proxyPort()
-                    ),
+                let msg = format!(
+                    "[backend] node proxy not healthy on :{} after spawn",
+                    proxyPort()
                 );
+                setLastError(app, msg.clone());
+                setSetupPhase(app, "error", Some(msg));
                 false
             }
         }
         Err(e) => {
-            log::error!("[backend] spawn failed: {e}");
+            let msg = format!("[backend] node spawn failed: {e}");
+            log::error!("{msg}");
+            setLastError(app, msg.clone());
+            setSetupPhase(app, "error", Some(msg));
             false
         }
     }
@@ -802,97 +815,104 @@ fn versionStampPath(app: &AppHandle) -> Option<PathBuf> {
         .map(|p| p.join("data").join("backend-version.txt"))
 }
 
-/// Sync backend Python deps when the app version changed.
+/// Sync / bootstrap backend deps, then ensure the proxy is running.
 ///
-/// Returns `"up-to-date"` | `"synced"` | `"syncing"` | `"needs_setup"` |
-/// `"error: ..."`. The pip install runs as a **detached, non-blocking**
-/// child (with `CREATE_NO_WINDOW` on Windows) so the UI never freezes.
+/// Packaged installs: blocking AppData bootstrap from bundled wheels, then
+/// uvicorn. Dev: editable pip install when the app version stamp changed.
+///
+/// Returns `"up-to-date"` | `"synced"` | `"needs_setup"` | `"error: ..."`.
 #[tauri::command]
 pub async fn sync_backend_deps(app: AppHandle) -> String {
-    // Prefer materializing the bundled runtime (installed builds).
-    if let Err(e) = bootstrapBundledBackend(&app) {
-        return format!("error: {e}");
-    }
+    let app2 = app.clone();
+    match tokio::task::spawn_blocking(move || {
+        setSetupPhase(&app2, "starting", Some("Preparing backend…".into()));
+        if let Err(e) = bootstrapBundledBackend(&app2) {
+            let msg = format!("bootstrap failed: {e}");
+            setLastError(&app2, msg.clone());
+            setSetupPhase(&app2, "error", Some(msg.clone()));
+            return format!("error: {msg}");
+        }
 
-    let Some(backendMain) = resolvePythonBackend(&app) else {
-        return "error: backend-py not found — reinstall August or run from a repo with backend-py/".into();
-    };
-    // backend-py/app/main.py → backend-py
-    let Some(backendPyRoot) = projectRootFor(&backendMain) else {
-        return "error: cannot resolve backend root".into();
-    };
-    // Repo / runtime root is the parent of backend-py.
-    let repoRoot = backendPyRoot
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| backendPyRoot.clone());
+        // Packaged runtime: bootstrap already installed wheels; just start.
+        if bundledStamp(&app2).is_some() {
+            if ensureRunning(&app2) {
+                if let Some(p) = versionStampPath(&app2) {
+                    let _ = std::fs::create_dir_all(p.parent().unwrap_or(Path::new(".")));
+                    let _ = std::fs::write(p, app2.package_info().version.to_string());
+                }
+                return "up-to-date".into();
+            }
+            let err = app2
+                .try_state::<BackendProcess>()
+                .and_then(|s| s.1.lock().ok().and_then(|g| g.clone()))
+                .unwrap_or_else(|| "backend failed to start".into());
+            return format!("error: {err}");
+        }
 
-    // Pick the venv interpreter inside backend-py/.venv.
-    let venvPy = if cfg!(windows) {
-        backendPyRoot.join(".venv/Scripts/python.exe")
-    } else {
-        backendPyRoot.join(".venv/bin/python")
-    };
-    let pip = if venvPy.exists() {
-        venvPy
-    } else {
-        // No venv yet — cannot safely install. Signal first-run setup.
-        return "needs_setup".into();
-    };
+        let Some(backendMain) = resolvePythonBackend(&app2) else {
+            return "error: backend-py not found — reinstall August or run from a repo with backend-py/".into();
+        };
+        let Some(backendPyRoot) = projectRootFor(&backendMain) else {
+            return "error: cannot resolve backend root".into();
+        };
+        let repoRoot = backendPyRoot
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| backendPyRoot.clone());
 
-    let app_version = app.package_info().version.to_string();
-    let stamp = versionStampPath(&app);
-    let current = stamp
-        .as_ref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
+        let venvPy = if cfg!(windows) {
+            backendPyRoot.join(".venv/Scripts/python.exe")
+        } else {
+            backendPyRoot.join(".venv/bin/python")
+        };
+        if !venvPy.exists() {
+            return "needs_setup".into();
+        }
 
-    if current == app_version {
-        return "up-to-date".into();
-    }
+        let app_version = app2.package_info().version.to_string();
+        let stamp = versionStampPath(&app2);
+        let current = stamp
+            .as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
 
-    // Spawn detached pip install into the venv.
-    let data_dir = appDataDir(&app);
-    let _ = std::fs::create_dir_all(data_dir.join("logs"));
-    let log_path = data_dir.join("logs").join("pip-sync.log");
-    let log_file = File::create(&log_path).unwrap_or_else(|_| File::create(devNullPath()).expect("null"));
-
-    let mut cmd = Command::new(&pip);
-    cmd.arg("-m").arg("pip").arg("install");
-    if let Some(wheels) = bundledWheelsDir(&app) {
-        // Offline install from packaged wheels (release builds).
-        cmd.arg("--no-index")
-            .arg("--find-links")
-            .arg(wheels)
-            .arg("august-proxy");
-    } else {
-        // Dev: editable install from source.
-        cmd.arg("-e").arg(".");
-    }
-    if cfg!(windows) {
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    cmd.current_dir(&backendPyRoot)
-        .env("AUGUST_PROXY_ROOT", &repoRoot)
-        .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
-        .env("PIP_DISABLE_PIP_VERSION_CHECK", "1")
-        .stdout(Stdio::from(log_file.try_clone().unwrap_or_else(|_| File::create(devNullPath()).expect("null"))))
-        .stderr(Stdio::from(log_file));
-
-    match cmd.spawn() {
-        Ok(child) => {
-            // Detach: we don't await — poll-free background install.
-            let _ = child.id();
-            std::mem::forget(child);
-            // Best-effort: write the new stamp now so we don't re-trigger
-            // immediately; a failed install is caught on next launch.
+        if current != app_version {
+            setSetupPhase(
+                &app2,
+                "installing",
+                Some("Updating Python dependencies…".into()),
+            );
+            let data_dir = appDataDir(&app2);
+            let _ = std::fs::create_dir_all(data_dir.join("logs"));
+            let log_path = data_dir.join("logs").join("pip-sync.log");
+            if let Err(e) = runPythonSilent(
+                &venvPy,
+                &["-m", "pip", "install", "-e", "."],
+                &backendPyRoot,
+                &log_path,
+            ) {
+                let msg = format!("pip install failed: {e}");
+                setLastError(&app2, msg.clone());
+                setSetupPhase(&app2, "error", Some(msg.clone()));
+                return format!("error: {msg}");
+            }
+            let _ = repoRoot; // keep env-compatible layout
             if let Some(p) = stamp {
                 let _ = std::fs::create_dir_all(p.parent().unwrap_or(&backendPyRoot));
                 let _ = std::fs::write(p, &app_version);
             }
-            "syncing".into()
         }
-        Err(e) => format!("error: pip spawn failed: {e}"),
+
+        if ensureRunning(&app2) {
+            "synced".into()
+        } else {
+            "error: backend failed to start after sync".into()
+        }
+    })
+    .await
+    {
+        Ok(s) => s,
+        Err(e) => format!("error: sync task failed: {e}"),
     }
 }

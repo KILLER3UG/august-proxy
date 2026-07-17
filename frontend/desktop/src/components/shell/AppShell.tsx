@@ -3,7 +3,6 @@ import { useEffect } from 'react';
 import { Titlebar } from './Titlebar';
 import { Statusbar } from './Statusbar';
 import { CommandPalette } from '@/components/overlays/CommandPalette';
-import { ProxyStatusOverlay } from '@/components/overlays/ProxyStatusOverlay';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { toggleCommandPalette } from '@/store/command-palette';
 
@@ -32,7 +31,7 @@ export function AppShell() {
       </div>
       <Statusbar />
       <CommandPalette />
-      <ProxyStatusOverlay />
+      {/* Proxy overlay lives in App via BackendBootstrapGate — AppShell is unused. */}
     </div>
   );
 }

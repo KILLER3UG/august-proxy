@@ -34,7 +34,10 @@ pub fn run() {
                 std::sync::Mutex::new(None),
             ));
             app.manage(backend::BackendSetupStatus(std::sync::Mutex::new(
-                backend::SetupPhase::default(),
+                backend::SetupPhase {
+                    phase: "starting".into(),
+                    detail: Some("Starting backend…".into()),
+                },
             )));
 
             // Start the backend off the UI thread so the webview can show a

@@ -3,10 +3,11 @@ import { ChatLayout } from '@/components/shell/ChatLayout';
 import { ALL_ROUTES, SECTION_ROUTES, SETTINGS_PAGE_ELEMENT } from '@/routes';
 import { CommandPalette } from '@/components/overlays/CommandPalette';
 import { ProviderOnboardingModal } from '@/components/overlays/ProviderOnboardingModal';
+import { BackendBootstrapGate } from '@/components/overlays/BackendBootstrapGate';
 
 export default function App() {
   return (
-    <>
+    <BackendBootstrapGate>
       <Routes>
         <Route element={<ChatLayout />}>
           {SECTION_ROUTES.map((route) => (
@@ -26,6 +27,6 @@ export default function App() {
       </Routes>
       <CommandPalette />
       <ProviderOnboardingModal />
-    </>
+    </BackendBootstrapGate>
   );
 }
