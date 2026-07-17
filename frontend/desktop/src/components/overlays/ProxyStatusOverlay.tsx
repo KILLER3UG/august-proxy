@@ -76,7 +76,12 @@ export function ProxyStatusOverlay() {
     );
   }
 
-  const message = state.status === 'error' ? state.message : state.reason ?? 'Connection refused';
+  const message =
+    state.status === 'error'
+      ? state.message
+      : state.status === 'closed'
+        ? state.reason ?? 'Connection refused'
+        : 'Connection refused';
   const Icon = state.status === 'error' ? AlertTriangle : WifiOff;
   return (
     <Backdrop>

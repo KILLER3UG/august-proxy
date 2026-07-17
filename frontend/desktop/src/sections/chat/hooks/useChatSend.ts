@@ -40,7 +40,6 @@ import {
 } from '../message-storage';
 import type { ModelItem } from '../model-display';
 import { ChatSendService } from '../services/ChatSendService';
-import { ChatAttachmentService } from '../services/ChatAttachmentService';
 import { playSendChime } from '@/lib/chat-chime';
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
