@@ -42,9 +42,11 @@ pub fn run() {
 
             // Start the backend off the UI thread so the webview can show a
             // setup overlay while first-launch bootstrap / uvicorn warm-up runs.
+            // Then keep a watchdog that restarts if the process dies.
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 backend::ensureRunning(&handle);
+                backend::watchBackend(&handle);
             });
 
             // 2) Install the system tray (Show / Hide / Quit)

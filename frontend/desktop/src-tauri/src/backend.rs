@@ -207,10 +207,7 @@ fn runPythonSilent(python: &Path, args: &[&str], cwd: &Path, log_path: &Path) ->
             File::create(devNullPath()).expect("failed to open null")
         })))
         .stderr(Stdio::from(log_file));
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
+    applyNoWindow(&mut cmd);
     let status = cmd
         .status()
         .map_err(|e| format!("{} {} failed to start: {e}", python.display(), args.join(" ")))?;
@@ -481,6 +478,68 @@ fn killChild(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Hide console windows for long-lived backend processes on Windows.
+/// `python.exe` / `node.exe` are console subsystem binaries — without this,
+/// each spawn allocates a visible terminal even when stdio is redirected.
+fn applyNoWindow(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let _ = cmd;
+}
+
+/// Drop a stored Child that has already exited so we can respawn cleanly.
+fn reclaimDeadChild(app: &AppHandle) {
+    let Some(state) = app.try_state::<BackendProcess>() else {
+        return;
+    };
+    let Ok(mut guard) = state.0.lock() else {
+        return;
+    };
+    let dead = match guard.as_mut() {
+        Some(c) => match c.try_wait() {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(_) => true,
+        },
+        None => false,
+    };
+    if dead {
+        let _ = guard.take();
+    }
+}
+
+/// Kill any Child we still hold (e.g. before a forced respawn).
+fn killStoredChild(app: &AppHandle) {
+    let Some(state) = app.try_state::<BackendProcess>() else {
+        return;
+    };
+    if let Ok(mut guard) = state.0.lock() {
+        if let Some(mut c) = guard.take() {
+            killChild(&mut c);
+        }
+    };
+}
+
+fn storeChild(app: &AppHandle, child: Child) {
+    if let Some(state) = app.try_state::<BackendProcess>() {
+        if let Ok(mut guard) = state.0.lock() {
+            // Replace any prior handle — caller should have killed it first.
+            if let Some(mut old) = guard.take() {
+                killChild(&mut old);
+            }
+            *guard = Some(child);
+            return;
+        }
+    }
+    app.manage(BackendProcess(Mutex::new(Some(child)), Mutex::new(None)));
+}
+
+/// Serialize ensureRunning so the setup thread and sync_backend_deps cannot
+/// both spawn uvicorn (which produced two console windows on Windows).
+static ENSURE_LOCK: Mutex<()> = Mutex::new(());
+
 /// Record the most recent backend spawn error so the UI can surface it.
 fn setLastError(app: &AppHandle, msg: String) {
     if let Some(state) = app.try_state::<BackendProcess>() {
@@ -522,11 +581,23 @@ fn waitUntilProxyUp(timeout: Duration) -> bool {
 
 /// Try to bring up the backend. Tries Python first, falls back to Node.js.
 pub fn ensureRunning(app: &AppHandle) -> bool {
+    let _lock = ENSURE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    ensureRunningLocked(app)
+}
+
+fn ensureRunningLocked(app: &AppHandle) -> bool {
+    reclaimDeadChild(app);
+
     if isProxyUp() {
         log::info!("[backend] proxy already up on :{}", proxyPort());
         setSetupPhase(app, "ready", Some("Backend ready".into()));
         return true;
     }
+
+    // Stale child still running but not answering health — replace it.
+    killStoredChild(app);
 
     setSetupPhase(app, "starting", Some("Looking for backend…".into()));
 
@@ -576,8 +647,8 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                 File::create(devNullPath()).expect("failed to open null")
             });
 
-            let child = Command::new(python)
-                .arg("-m")
+            let mut cmd = Command::new(&python);
+            cmd.arg("-m")
                 .arg("uvicorn")
                 .arg("app.main:app")
                 .arg("--port")
@@ -593,18 +664,12 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                 .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
                     File::create(devNullPath()).expect("failed to open null")
                 })))
-                .stderr(Stdio::from(logFile))
-                .spawn();
+                .stderr(Stdio::from(logFile));
+            applyNoWindow(&mut cmd);
 
-            match child {
+            match cmd.spawn() {
                 Ok(c) => {
-                    if let Some(state) = app.try_state::<BackendProcess>() {
-                        if let Ok(mut guard) = state.0.lock() {
-                            *guard = Some(c);
-                        }
-                    } else {
-                        app.manage(BackendProcess(Mutex::new(Some(c)), Mutex::new(None)));
-                    }
+                    storeChild(app, c);
                     log::info!("[backend] python proxy spawned — waiting for /api/health");
                     // Do not return success on spawn alone: cold start can take seconds
                     // (import + schema). Poll health so the webview does not thrash.
@@ -624,6 +689,8 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                             logPath.display()
                         ),
                     );
+                    // Kill the hung/unhealthy python child before Node fallback.
+                    killStoredChild(app);
                     // Fall through to Node fallback only if Python never answered.
                 }
                 Err(e) => {
@@ -673,8 +740,8 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
         File::create(devNullPath()).expect("failed to open null")
     });
 
-    let child = Command::new(node)
-        .arg(&entry)
+    let mut cmd = Command::new(&node);
+    cmd.arg(&entry)
         .current_dir(&projectRoot)
         .env("AUGUST_PROXY_PORT", proxyPort().to_string())
         .env("AUGUST_PROXY_ROOT", projectRoot)
@@ -683,18 +750,12 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
         .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
             File::create(devNullPath()).expect("failed to open null")
         })))
-        .stderr(Stdio::from(logFile))
-        .spawn();
+        .stderr(Stdio::from(logFile));
+    applyNoWindow(&mut cmd);
 
-    match child {
+    match cmd.spawn() {
         Ok(c) => {
-            if let Some(state) = app.try_state::<BackendProcess>() {
-                if let Ok(mut guard) = state.0.lock() {
-                    *guard = Some(c);
-                }
-            } else {
-                app.manage(BackendProcess(Mutex::new(Some(c)), Mutex::new(None)));
-            }
+            storeChild(app, c);
             log::info!("[backend] node proxy spawned (fallback) — waiting for /api/health");
             if waitUntilProxyUp(Duration::from_secs(20)) {
                 log::info!("[backend] node proxy healthy on :{}", proxyPort());
@@ -717,6 +778,43 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
             setLastError(app, msg.clone());
             setSetupPhase(app, "error", Some(msg));
             false
+        }
+    }
+}
+
+/// Background supervisor: if /api/health goes down (or the child exits),
+/// restart the backend automatically so the desktop app self-heals.
+pub fn watchBackend(app: &AppHandle) {
+    let mut backoff = Duration::from_secs(3);
+    loop {
+        std::thread::sleep(backoff);
+        reclaimDeadChild(app);
+        if isProxyUp() {
+            backoff = Duration::from_secs(3);
+            continue;
+        }
+
+        // Avoid thrashing while the user is mid-bootstrap (copy/pip).
+        if let Some(state) = app.try_state::<BackendSetupStatus>() {
+            if let Ok(guard) = state.0.lock() {
+                let phase = guard.phase.as_str();
+                if matches!(phase, "copying" | "creating_venv" | "installing") {
+                    continue;
+                }
+            }
+        }
+
+        log::warn!("[backend] proxy down — restarting");
+        setSetupPhase(app, "starting", Some("Restarting backend…".into()));
+        killStoredChild(app);
+        if ensureRunning(app) {
+            backoff = Duration::from_secs(3);
+        } else {
+            backoff = (backoff.saturating_mul(2)).min(Duration::from_secs(30));
+            log::warn!(
+                "[backend] restart failed — next attempt in {}s",
+                backoff.as_secs()
+            );
         }
     }
 }

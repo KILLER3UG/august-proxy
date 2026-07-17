@@ -8,6 +8,7 @@ import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage, FileAttachment } from '@/types/chat';
 import type { WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
+import { WorkspaceBranchChip } from '@/components/workspace/WorkspaceBranchChip';
 import { QueuePills } from './QueuePills';
 import type { QueuedUserMessage } from './queue-store';
 import { type ContextBreakdown } from './ChatComposer';
@@ -223,6 +224,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                 });
               }}
             />
+            <WorkspaceBranchChip sessionId={sessionId} />
           </div>
         )}
 

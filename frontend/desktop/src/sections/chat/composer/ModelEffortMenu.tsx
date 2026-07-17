@@ -126,9 +126,6 @@ export function ModelEffortMenu({
     left: number;
     width: number;
   } | null>(null);
-  const showEffort = !!(
-    selected?.supportsReasoning || selected?.supportsThinking
-  );
   const [flyoutPos, setFlyoutPos] = useState<{
     top: number;
     left: number;

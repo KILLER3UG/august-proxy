@@ -50,18 +50,19 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
     return () => window.clearInterval(id);
   }, [poll]);
 
-  // If the supervisor thread hasn't produced a healthy proxy yet, kick a
-  // blocking sync/bootstrap once so phases update and errors surface here.
+  // If the supervisor hasn't become healthy after a longer wait, ask it to
+  // restart once. Do NOT call sync_backend_deps here — that raced with the
+  // Rust startup thread and spawned a second visible console on Windows.
   useEffect(() => {
     if (!isTauri) return;
     let cancelled = false;
     void (async () => {
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 8_000));
       if (cancelled) return;
       try {
         const status = await invoke<string>('proxy_status');
         if (status.startsWith('ok:')) return;
-        await invoke<string>('sync_backend_deps');
+        await invoke<string>('restart_proxy');
       } catch {
         /* shown via last_error / setup phase */
       }

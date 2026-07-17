@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { invoke } from '@tauri-apps/api/core';
 import { WifiOff, AlertTriangle, CircleX } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useGatewayStore } from '@/store/gateway';
@@ -14,6 +15,7 @@ export function ProxyStatusOverlay() {
   const qc = useQueryClient();
   const { status: setup } = useBackendSetup();
   const [showReadyFlash, setShowReadyFlash] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     if (setup.phase !== 'ready') return;
@@ -21,6 +23,22 @@ export function ProxyStatusOverlay() {
     const t = window.setTimeout(() => setShowReadyFlash(false), 1100);
     return () => window.clearTimeout(t);
   }, [setup.phase]);
+
+  const onRetry = async () => {
+    setRetrying(true);
+    try {
+      if (isTauri) {
+        try {
+          await invoke<string>('restart_proxy');
+        } catch {
+          /* fall through to query invalidate */
+        }
+      }
+      void qc.invalidateQueries();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   if (state.status === 'open' && !showReadyFlash) return null;
 
@@ -69,7 +87,9 @@ export function ProxyStatusOverlay() {
             {setup.detail || 'Could not prepare the Python runtime.'}
           </p>
           <div className="mt-4 flex justify-center gap-2">
-            <Button onClick={() => { void qc.invalidateQueries(); }}>Retry</Button>
+            <Button disabled={retrying} onClick={() => { void onRetry(); }}>
+              {retrying ? 'Retrying…' : 'Retry'}
+            </Button>
           </div>
         </motion.div>
       </Backdrop>
@@ -97,7 +117,9 @@ export function ProxyStatusOverlay() {
           <Button variant="outline" onClick={() => window.open('http://localhost:8085/', '_blank')}>
             Open in browser
           </Button>
-          <Button onClick={() => { void qc.invalidateQueries(); }}>Retry</Button>
+          <Button disabled={retrying} onClick={() => { void onRetry(); }}>
+            {retrying ? 'Retrying…' : 'Retry'}
+          </Button>
         </div>
       </motion.div>
     </Backdrop>

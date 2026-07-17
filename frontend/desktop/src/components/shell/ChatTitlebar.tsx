@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
 import { BrainIndicator } from "./BrainIndicator";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
+import { WorkspaceBranchChip } from "@/components/workspace/WorkspaceBranchChip";
 import type { Session } from "@/store/sessions";
 import type { RightDrawerSectionId } from "./RightDrawerState";
 
@@ -175,6 +176,13 @@ export function ChatTitlebar({
               className="w-full"
             />
           </h1>
+          {session?.workspacePath ? (
+            <WorkspaceBranchChip
+              sessionId={session.id}
+              className="shrink-0"
+              menuPlacement="down"
+            />
+          ) : null}
         </div>
       </div>
 
