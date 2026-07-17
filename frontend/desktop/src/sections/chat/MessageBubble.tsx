@@ -15,6 +15,7 @@ import { ToolCallCard } from './message/ToolCallCard';
 import { SubagentApprovalInline } from './message/SubagentApprovalInline';
 import { UserMessageBubble } from './message/UserMessageBubble';
 import { AssistantMessageContent } from './message/AssistantMessageContent';
+import { ChatAttachmentService } from './services/ChatAttachmentService';
 
 export { ReasoningBlock } from './message/ReasoningBlock';
 export { ToolCallCard, ToolBlock } from './message/ToolCallCard';
@@ -83,7 +84,7 @@ export function MessageBubble({
   const showPendingThinking = !isUser && isLast && streaming && !showRaw && displayBlocks.length === 0;
 
   const startEdit = () => {
-    setEditText(message.content);
+    setEditText(ChatAttachmentService.displayText(message.content, message.attachments));
     setEditing(true);
   };
 

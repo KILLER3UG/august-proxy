@@ -103,6 +103,7 @@ export class ChatAttachmentService {
         name: file.name || (result.type === 'image' ? 'pasted-image.png' : pending.name),
         content: result.content,
         dataUrl: result.dataUrl,
+        thumbnailUrl: result.thumbnailUrl,
         type: result.type,
         truncated: result.truncated,
         status: 'ready',
@@ -184,6 +185,30 @@ export class ChatAttachmentService {
     const attach = this.formatForPrompt(attachments);
     if (!attach) return body;
     return body ? `${body}${attach}` : attach.trim();
+  }
+
+  /**
+   * Strip attachment prompt sections from stored message content so the bubble
+   * can show file cards instead of the raw model dump (legacy messages).
+   */
+  static stripPromptSections(content: string): string {
+    if (!content) return '';
+    let out = content;
+    // 📄 **name** + fenced body
+    out = out.replace(/\n*\n---\n\n📄 \*\*[^*]+\*\*\n```[\s\S]*?```/g, '');
+    // 📄 **name** + bracketed placeholder (images / unsupported)
+    out = out.replace(/\n*\n---\n\n📄 \*\*[^*]+\*\*\n\[[^\]]*\]/g, '');
+    // Orphan leading --- separators left behind
+    out = out.replace(/^\s*---\s*/g, '');
+    return out.trim();
+  }
+
+  /** Display text for a user bubble: typed text only when attachments exist. */
+  static displayText(content: string, attachments?: FileAttachment[]): string {
+    if (attachments && attachments.length > 0) {
+      return this.stripPromptSections(content);
+    }
+    return content;
   }
 
   /** Revoke any blob: preview URLs held by attachments. */

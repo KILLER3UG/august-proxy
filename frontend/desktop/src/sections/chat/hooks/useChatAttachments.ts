@@ -67,6 +67,7 @@ export function useChatAttachments() {
             name: done.name,
             content: done.content,
             dataUrl: done.dataUrl,
+            thumbnailUrl: done.thumbnailUrl,
             type: done.type,
             truncated: done.truncated,
             status: done.status,

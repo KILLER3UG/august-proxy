@@ -87,8 +87,9 @@ function UploadProgressRing({
 function AttachmentThumb({ file }: { file: FileAttachment }) {
   const status = file.status ?? 'ready';
   const progress = file.progress ?? 0;
-  const previewSrc = file.dataUrl || file.previewUrl;
-  const isImage = file.type === 'image' && !!previewSrc;
+  const previewSrc = file.thumbnailUrl || file.dataUrl || file.previewUrl;
+  const isImage = file.type === 'image' && !!(file.dataUrl || file.previewUrl);
+  const isDocThumb = !!file.thumbnailUrl && !isImage;
   const fileIcon = getFileIcon(file.name);
   const IconComponent = fileIcon.Icon;
 
@@ -127,6 +128,19 @@ function AttachmentThumb({ file }: { file: FileAttachment }) {
           src={previewSrc}
           alt={file.name}
           className="size-full object-cover"
+          draggable={false}
+        />
+      </div>
+    );
+  }
+
+  if (isDocThumb && previewSrc) {
+    return (
+      <div className="relative size-11 shrink-0 overflow-hidden rounded-lg border border-border/60 bg-white">
+        <img
+          src={previewSrc}
+          alt={file.name}
+          className="size-full object-cover object-top"
           draggable={false}
         />
       </div>

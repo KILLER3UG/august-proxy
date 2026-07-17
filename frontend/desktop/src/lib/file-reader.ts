@@ -18,6 +18,8 @@ export interface FileReadResult {
   content?: string;
   /** Base64 data URL (for image files). */
   dataUrl?: string;
+  /** First-page thumbnail data URL (PDFs); UI preview only. */
+  thumbnailUrl?: string;
   /** MIME type of the original file. */
   mimeType: string;
   /** True if content was truncated to stay within limits. */
@@ -120,10 +122,36 @@ function truncate(text: string, maxChars: number): { content: string; truncated:
 }
 
 // ── PDF extraction ──────────────────────────────────────────────────────────
+async function renderPdfThumbnail(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pdf: { getPage: (n: number) => Promise<any> },
+): Promise<string | undefined> {
+  if (typeof document === 'undefined') return undefined;
+  try {
+    const page = await pdf.getPage(1);
+    // Target ~160px-wide card; scale from PDF default viewport.
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(2, 160 / Math.max(base.width, 1));
+    const viewport = page.getViewport({ scale: Math.max(scale, 0.5) });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return undefined;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas.toDataURL('image/jpeg', 0.82);
+  } catch (err) {
+    console.warn('[file-reader] PDF thumbnail failed:', err);
+    return undefined;
+  }
+}
+
 async function extractPdfText(
   file: File,
   onProgress?: FileReadProgress,
-): Promise<{ content: string; truncated: boolean }> {
+): Promise<{ content: string; truncated: boolean; thumbnailUrl?: string }> {
   // Dynamic import so the heavy pdf.js library is only loaded when needed
   const pdfjsLib = await import('pdfjs-dist');
 
@@ -133,6 +161,8 @@ async function extractPdfText(
   const arrayBuffer = await readFileAsArrayBuffer(file, onProgress);
   onProgress?.(75);
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const thumbnailUrl = await renderPdfThumbnail(pdf);
+  onProgress?.(78);
   const maxPages = Math.min(pdf.numPages, 50);
   const textParts: string[] = [];
 
@@ -144,12 +174,13 @@ async function extractPdfText(
       return typeof str === 'string' ? str : '';
     }).join(' ');
     textParts.push(`--- Page ${i} ---\n${pageText}`);
-    onProgress?.(scaleProgress(i, maxPages, 75, 98));
+    onProgress?.(scaleProgress(i, maxPages, 78, 98));
   }
 
   const fullText = textParts.join('\n\n');
   onProgress?.(100);
-  return truncate(fullText, TEXT_MAX_CHARS);
+  const truncated = truncate(fullText, TEXT_MAX_CHARS);
+  return { ...truncated, thumbnailUrl };
 }
 
 // ── DOCX extraction ─────────────────────────────────────────────────────────
@@ -222,8 +253,8 @@ export async function readFileContent(
   // ── PDF ─────────────────────────────────────────────────────────────
   if (ext === 'pdf' || mimeType === 'application/pdf') {
     try {
-      const { content, truncated } = await extractPdfText(file, onProgress);
-      return { type: 'text', content, mimeType, truncated };
+      const { content, truncated, thumbnailUrl } = await extractPdfText(file, onProgress);
+      return { type: 'text', content, mimeType, truncated, thumbnailUrl };
     } catch (err) {
       console.warn('[file-reader] PDF extraction failed:', err);
       return { type: 'unsupported', mimeType };

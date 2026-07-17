@@ -462,7 +462,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     setInput,
     attachments,
     clearAttachments,
-    composeText,
     messages,
     setMessages,
     streaming,

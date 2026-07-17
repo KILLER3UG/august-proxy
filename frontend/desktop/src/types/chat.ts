@@ -74,6 +74,8 @@ export interface FileAttachment {
   dataUrl?: string;
   /** Local object-URL preview shown while reading (revoked when done/removed). */
   previewUrl?: string;
+  /** First-page / document thumbnail for UI cards (PDF etc.). Not sent as vision. */
+  thumbnailUrl?: string;
   /** Whether the file content was successfully extracted. */
   type: 'text' | 'image' | 'unsupported';
   /** True if content was truncated due to size limits. */

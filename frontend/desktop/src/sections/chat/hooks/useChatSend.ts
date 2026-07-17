@@ -40,6 +40,7 @@ import {
 } from '../message-storage';
 import type { ModelItem } from '../model-display';
 import { ChatSendService } from '../services/ChatSendService';
+import { ChatAttachmentService } from '../services/ChatAttachmentService';
 import { playSendChime } from '@/lib/chat-chime';
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
@@ -53,6 +54,7 @@ function persistAttachment(a: FileAttachment): FileAttachment {
     path: a.path,
     content: a.content,
     dataUrl: a.dataUrl,
+    thumbnailUrl: a.thumbnailUrl,
     type: a.type,
     truncated: a.truncated,
     status: 'ready',
@@ -66,8 +68,6 @@ export interface UseChatSendOptions {
   setInput: Dispatch<SetStateAction<string>>;
   attachments: FileAttachment[];
   clearAttachments: () => void;
-  /** Composer text + attachment sections (from useChatAttachments). */
-  composeText: (text: string) => string;
   messages: ChatMessage[];
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   streaming: boolean;
@@ -102,7 +102,6 @@ export function useChatSend(opts: UseChatSendOptions) {
     setInput,
     attachments,
     clearAttachments,
-    composeText,
     messages,
     setMessages,
     streaming,
@@ -159,7 +158,12 @@ export function useChatSend(opts: UseChatSendOptions) {
       // Sending the full transcript as one blob every time bloated context and
       // could make the model/provider look "stuck" or fail silently on large chats.
       const lastUser = [...chatHistory].reverse().find((m) => m.role === 'user');
-      const latestText = (lastUser?.content ?? '').trim();
+      // Compose attachment prompt at send time so message.content stays
+      // display-friendly (typed text only) while the model still gets file text.
+      const latestText = ChatAttachmentService.composeUserText(
+        lastUser?.content ?? '',
+        lastUser?.attachments ?? [],
+      ).trim();
       if (!latestText) {
         toast.error('Nothing to send');
         return;
@@ -265,8 +269,11 @@ export function useChatSend(opts: UseChatSendOptions) {
       }
 
       const readyAttachments = ChatAttachmentService.readyOnly(attachments);
-      const text = composeText(textOverride ?? input);
-      if (!text && readyAttachments.length === 0) return;
+      // Keep bubble content as the typed text only; compose attachment dump
+      // later when calling the model (see generateAIResponse).
+      const typed = (textOverride ?? input).trim();
+      if (!typed && readyAttachments.length === 0) return;
+      const text = typed;
 
       // Local slash command dispatch — handle purely client-side commands
       // before sending to the backend. The workbench backend intercepts
@@ -401,7 +408,6 @@ export function useChatSend(opts: UseChatSendOptions) {
     [
       sessionId,
       loadedSessionId,
-      composeText,
       input,
       attachments,
       messages,
