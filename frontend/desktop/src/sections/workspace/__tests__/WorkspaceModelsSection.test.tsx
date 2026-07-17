@@ -62,7 +62,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
 vi.mock('@/lib/provider-catalog', () => ({
-  refreshProviderCatalog: vi.fn(async () => undefined),
+  refreshProviderCatalog: vi.fn(() => Promise.resolve(undefined)),
   PROVIDER_CATALOG_QUERY_KEYS: [],
 }));
 

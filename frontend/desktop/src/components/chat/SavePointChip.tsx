@@ -32,8 +32,8 @@ export function SavePointBanner({
         .then((data) => {
           if (cancelled) return;
           setMeta({
-            lastCheckpointId: data.meta?.lastCheckpointId as string | undefined,
-            lastCheckpointLabel: data.meta?.lastCheckpointLabel as string | undefined,
+            lastCheckpointId: data.meta?.lastCheckpointId,
+            lastCheckpointLabel: data.meta?.lastCheckpointLabel,
           });
         })
         .catch(() => {

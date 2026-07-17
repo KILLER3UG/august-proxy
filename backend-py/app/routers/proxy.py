@@ -116,7 +116,7 @@ def _maybe_inject_aug_into_body(body: dict[str, object], endpoint: str) -> dict[
                 out['system'] = [{'type': 'text', 'text': block}]
         else:
             # OpenAI chat: inject/append system message
-            messages = list(out.get('messages') or []) if isinstance(out.get('messages'), list) else []
+            messages = as_list(out.get('messages'), [])
             if messages and isinstance(messages[0], dict) and messages[0].get('role') == 'system':
                 first = dict(messages[0])
                 content = first.get('content')

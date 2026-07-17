@@ -107,10 +107,7 @@ def get_cognitive() -> dict[str, object]:
     interval = 86400.0
     raw_interval = cognitive.get('consolidation_interval_s') or cognitive.get('consolidationIntervalS')
     if raw_interval is not None:
-        try:
-            interval = max(60.0, float(raw_interval))
-        except (TypeError, ValueError):
-            pass
+        interval = max(60.0, as_float(raw_interval, interval))
     env_interval = os.environ.get('AUGUST_CONSOLIDATION_INTERVAL_S')
     if env_interval:
         try:
@@ -166,7 +163,7 @@ def ensure_defaults() -> dict[str, object]:
         dirty = True
     elif legacy_layers:
         # Merge any remaining layer flags into boot once, then drop legacy key.
-        boot_src: dict[str, object] = {}
+        boot_src_existing: dict[str, object] = {}
         for old, new in (
             ('scheduler', 'cron_scheduler'),
             ('cron_scheduler', 'cron_scheduler'),
@@ -178,12 +175,12 @@ def ensure_defaults() -> dict[str, object]:
             ('env_watcher', 'environment_watcher'),
         ):
             if old in legacy_layers:
-                boot_src[new] = legacy_layers[old]
-        if boot_src:
+                boot_src_existing[new] = legacy_layers[old]
+        if boot_src_existing:
             cognitive['boot'] = _merge_bool_map(
                 DEFAULT_BOOT,
                 as_dict(cognitive.get('boot'), {}),
-                boot_src,
+                boot_src_existing,
             )
             dirty = True
 
@@ -206,7 +203,11 @@ def ensure_defaults() -> dict[str, object]:
         cognitive['fleet'] = fleet
         dirty = True
     elif legacy_fleet:
-        fleet = {**dict(FLEET_DEFAULTS), **as_dict(cognitive.get('fleet'), {})}
+        existing_fleet = as_dict(cognitive.get('fleet'), {})
+        fleet = dict(FLEET_DEFAULTS)
+        for role in FLEET_ROLES:
+            if role in existing_fleet and isinstance(existing_fleet[role], str):
+                fleet[role] = str(existing_fleet[role])
         for role in FLEET_ROLES:
             if role in legacy_fleet and isinstance(legacy_fleet[role], str):
                 fleet[role] = str(legacy_fleet[role])

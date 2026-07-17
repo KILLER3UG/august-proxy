@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
+from app.json_narrowing import as_int
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,7 +49,7 @@ def apply_sql_batch(statements: list[tuple[str, tuple[object, ...]]]) -> int:
             n += 1
         return n
 
-    return int(run_in_transaction(_do) or 0)
+    return as_int(run_in_transaction(_do), 0)
 
 
 def save_kv(key: str, value: object) -> None:

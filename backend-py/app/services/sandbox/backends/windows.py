@@ -101,7 +101,7 @@ async def _try_appcontainer_spawn(
         userenv = ctypes.WinDLL('userenv')
         derive = userenv.DeriveAppContainerSidFromAppContainerName
         derive.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p)]
-        derive.restype = wintypes.HRESULT
+        derive.restype = wintypes.HRESULT  # type: ignore[attr-defined]
         sid = ctypes.c_void_p()
         hr = derive(_PROFILE_NAME, ctypes.byref(sid))
         if hr != 0:
@@ -115,7 +115,7 @@ async def _try_appcontainer_spawn(
                 wintypes.DWORD,
                 ctypes.POINTER(ctypes.c_void_p),
             ]
-            create.restype = wintypes.HRESULT
+            create.restype = wintypes.HRESULT  # type: ignore[attr-defined]
             sid2 = ctypes.c_void_p()
             hr = create(_PROFILE_NAME, 'August', 'August agent sandbox', None, 0, ctypes.byref(sid2))
             if hr not in (0, -2147024713):  # success or already exists

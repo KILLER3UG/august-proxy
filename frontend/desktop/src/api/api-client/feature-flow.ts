@@ -7,7 +7,7 @@ export interface FeatureFlowEvent {
   traceId: string;
   feature: string;
   stage: string;
-  status: 'running' | 'ok' | 'error' | string;
+  status: 'running' | 'ok' | 'error';
   summary: string;
   error: string | null;
   durationMs: number | null;

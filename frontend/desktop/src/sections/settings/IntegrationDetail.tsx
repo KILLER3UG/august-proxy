@@ -222,7 +222,8 @@ function AccountAction({ item }: { item: IntegrationItem }) {
       setWaiting(true);
       const start = Date.now();
       const targetFacet = googleFacet ?? 'gmail';
-      pollRef.current = setInterval(async () => {
+      pollRef.current = setInterval(() => {
+        void (async () => {
         const data = await qc
           .fetchQuery({
             queryKey: ['integrations-connections'],
@@ -253,6 +254,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
           setWaiting(false);
           setError('Timed out waiting for Google sign-in.');
         }
+        })();
       }, 2500);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to start Google sign-in';
@@ -489,11 +491,11 @@ function McpAction({ item }: { item: IntegrationItem }) {
   if (server.status === 'running') {
     return (
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={restart} disabled={busy}>
+        <Button variant="outline" size="sm" onClick={() => { void restart(); }} disabled={busy}>
           {busy ? <Loader2 className="size-3 animate-spin" /> : <RotateCw className="size-3" />}
           Restart
         </Button>
-        <Button variant="outline" size="sm" onClick={stop} disabled={busy}>
+        <Button variant="outline" size="sm" onClick={() => { void stop(); }} disabled={busy}>
           <PowerOff className="size-3" /> Stop
         </Button>
       </div>
@@ -501,7 +503,7 @@ function McpAction({ item }: { item: IntegrationItem }) {
   }
 
   return (
-    <Button size="sm" onClick={start} disabled={busy}>
+    <Button size="sm" onClick={() => { void start(); }} disabled={busy}>
       {busy ? <Loader2 className="size-3 animate-spin" /> : <Plug className="size-3" />}
       Start
     </Button>

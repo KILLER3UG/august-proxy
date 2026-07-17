@@ -50,7 +50,7 @@ def _cleanup_agent_worktree(session: object, workspace: str, worktree_path: str)
         meta2 = as_dict(getattr(session, 'metadata', None)) if getattr(session, 'metadata', None) else {}
         active = [
             a
-            for a in list(meta2.get('activeAgentWorktrees') or [])
+            for a in as_list(meta2.get('activeAgentWorktrees'), [])
             if not (isinstance(a, dict) and str(a.get('path')) == worktree_path)
         ]
         meta2['activeAgentWorktrees'] = active
@@ -149,7 +149,7 @@ async def executeSubAgent(
                 # Persist active worktree path for UI badge / cleanup
                 try:
                     meta = dict(meta)
-                    active = list(meta.get('activeAgentWorktrees') or [])
+                    active = list(as_list(meta.get('activeAgentWorktrees'), []))
                     active.append(
                         {
                             'agentId': resolvedAgentId,
@@ -158,7 +158,7 @@ async def executeSubAgent(
                     )
                     meta['activeAgentWorktrees'] = active
                     meta['isolateSubagents'] = True
-                    session.metadata = meta
+                    setattr(session, 'metadata', meta)
                 except Exception:
                     pass
         except Exception:

@@ -203,7 +203,7 @@ async def workspace_files(path: str = Query('.', alias='path')):
 async def overview(range: str = Query('day')):
     """Dashboard overview cards (requests / activity / errors / cost)."""
     from app.services.logger import get_stats, getActivityLog
-    from app.json_narrowing import as_int
+    from app.json_narrowing import as_float, as_int
 
     period = 'today' if range in ('day', 'today') else 'all'
     try:
@@ -218,9 +218,9 @@ async def overview(range: str = Query('day')):
         stats = {}
     requests = as_int(stats.get('totalRequests') or stats.get('completedRequests'), 0)
     errors = as_int(stats.get('errorRequests') or stats.get('errors'), 0)
-    cost_in = float(stats.get('estimatedInputCost') or stats.get('inputCost') or 0)
-    cost_out = float(stats.get('estimatedOutputCost') or stats.get('outputCost') or 0)
-    cost_total = float(stats.get('estimatedTotalCost') or cost_in + cost_out)
+    cost_in = as_float(stats.get('estimatedInputCost') or stats.get('inputCost'), 0.0)
+    cost_out = as_float(stats.get('estimatedOutputCost') or stats.get('outputCost'), 0.0)
+    cost_total = as_float(stats.get('estimatedTotalCost'), cost_in + cost_out)
     return {
         'requests': requests,
         'activity': len(activity) if isinstance(activity, list) else 0,

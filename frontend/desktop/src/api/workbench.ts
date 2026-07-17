@@ -19,7 +19,7 @@ export interface CreateWorkbenchSessionParams {
   agentId?: string;
   guardMode?: WorkbenchGuardMode;
   workspacePath?: string;
-  sandboxMode?: WorkbenchSandboxMode | string;
+  sandboxMode?: WorkbenchSandboxMode;
   sandboxNetwork?: boolean;
 }
 
@@ -32,7 +32,7 @@ export async function setWorkbenchGuardMode(
 
 export async function setWorkbenchSandboxMode(
   sessionId: string,
-  sandboxMode: WorkbenchSandboxMode | string,
+  sandboxMode: WorkbenchSandboxMode,
   sandboxNetwork?: boolean,
 ): Promise<WorkbenchSession> {
   return workbenchClient.setSandboxMode(sessionId, sandboxMode, sandboxNetwork);

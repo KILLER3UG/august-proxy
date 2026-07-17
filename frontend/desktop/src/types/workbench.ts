@@ -54,7 +54,7 @@ export interface WorkbenchSession {
   todos: WorkbenchTodo[];
   guardMode: WorkbenchGuardMode;
   /** Codex-like sandbox axis (orthogonal to guardMode). */
-  sandboxMode?: WorkbenchSandboxMode | string;
+  sandboxMode?: WorkbenchSandboxMode;
   sandboxNetwork?: boolean;
   workspacePath?: string;
 }

@@ -49,13 +49,14 @@ def stats() -> dict[str, object]:
 
 def _mcp_signature() -> str:
     try:
+        from app.json_narrowing import as_dict
         from app.services.tools.mcp_client import getMcpToolDefinitionsSync
 
         defs = getMcpToolDefinitionsSync()
         names: list[str] = []
         for raw in defs:
             if raw.get('type') == 'function':
-                names.append(str((raw.get('function') or {}).get('name', '')))
+                names.append(str(as_dict(raw.get('function'), {}).get('name', '')))
             else:
                 names.append(str(raw.get('name', '')))
         return ','.join(sorted(n for n in names if n))

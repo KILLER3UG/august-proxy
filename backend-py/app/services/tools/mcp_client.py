@@ -202,7 +202,8 @@ async def _stdio_read_raw_message(
     proc: asyncio.subprocess.Process, timeout: float = 30.0
 ) -> dict[str, object] | None:
     """Read one JSON-RPC object from stdio (Content-Length framed or NDJSON)."""
-    if not proc.stdout:
+    stdout = proc.stdout
+    if not stdout:
         return None
     deadline = asyncio.get_event_loop().time() + timeout
 
@@ -212,7 +213,7 @@ async def _stdio_read_raw_message(
             remaining = deadline - asyncio.get_event_loop().time()
             if remaining <= 0:
                 raise asyncio.TimeoutError()
-            chunk = await asyncio.wait_for(proc.stdout.read(n - len(buf)), timeout=remaining)
+            chunk = await asyncio.wait_for(stdout.read(n - len(buf)), timeout=remaining)
             if not chunk:
                 break
             buf += chunk
@@ -222,7 +223,7 @@ async def _stdio_read_raw_message(
         remaining = deadline - asyncio.get_event_loop().time()
         if remaining <= 0:
             raise asyncio.TimeoutError()
-        return await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+        return await asyncio.wait_for(stdout.readline(), timeout=remaining)
 
     # Detect framing: Content-Length header vs bare JSON line.
     first = await _read_line()

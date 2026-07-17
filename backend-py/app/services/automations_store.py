@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Final
 
 from app.atomic_write import write_json_atomic
-from app.json_narrowing import as_bool, as_dict, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_float, as_list, as_str
 from app.lib.paths import dataPath
 
 _FILE = 'automations.json'
@@ -146,7 +146,7 @@ def _run_shell(job: dict[str, object]) -> None:
         shell=True,
         capture_output=True,
         text=True,
-        timeout=float(job.get('timeoutMs') or 60000) / 1000.0,
+        timeout=as_float(job.get('timeoutMs'), 60000.0) / 1000.0,
         cwd=as_str(job.get('cwd')) or None,
     )
     job['lastExitCode'] = completed.returncode
@@ -171,7 +171,7 @@ def _run_http(job: dict[str, object]) -> None:
     if data is not None:
         req.add_header('Content-Type', as_str(job.get('contentType'), 'application/json'))
     try:
-        with urllib.request.urlopen(req, timeout=float(job.get('timeoutMs') or 30000) / 1000.0) as resp:
+        with urllib.request.urlopen(req, timeout=as_float(job.get('timeoutMs'), 30000.0) / 1000.0) as resp:
             raw = resp.read().decode('utf-8', errors='replace')[:4000]
             job['lastExitCode'] = int(resp.status)
             job['lastOutput'] = raw

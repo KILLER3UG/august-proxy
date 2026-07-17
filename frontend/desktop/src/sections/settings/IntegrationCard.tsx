@@ -173,7 +173,7 @@ export function IntegrationLogo({
       letter: letter || '?',
       bg: bg || 'bg-muted/50',
       fg: fg || 'text-foreground',
-    } as IntegrationLogoSpec);
+    });
   return <BrandLogo logo={resolved} size={size} />;
 }
 

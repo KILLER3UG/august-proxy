@@ -108,12 +108,12 @@ async def usage_stats(range: str = Query('30d')):
             days.add(ts.date().isoformat())
         model = as_str(e.get('model') or 'unknown') or 'unknown'
         model_tokens[model] += tok
-    fav = None
+    fav_model: str | None = None
     fav_share = 0.0
     if model_tokens:
         fav = max(model_tokens.items(), key=lambda kv: kv[1])
         fav_share = (fav[1] / total_tokens) if total_tokens else 0.0
-        fav = fav[0]
+        fav_model = fav[0]
     return {
         'range': '7d' if _range_days(range) == 7 else '30d',
         'totalTokens': total_tokens,
@@ -121,7 +121,7 @@ async def usage_stats(range: str = Query('30d')):
         'messages': len(events),
         'activeDays': len(days),
         'currentStreak': 0,
-        'favoriteModel': fav,
+        'favoriteModel': fav_model,
         'favoriteModelShare': fav_share,
         'at': datetime.now(timezone.utc).isoformat(),
     }

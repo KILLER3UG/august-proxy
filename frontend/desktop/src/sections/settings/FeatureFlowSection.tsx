@@ -66,7 +66,7 @@ function FeatureFlowSkeleton() {
 }
 
 export function FeatureFlowSection() {
-  const [selectedFeature, setSelectedFeature] = useState<string | 'all'>('all');
+  const [selectedFeature, setSelectedFeature] = useState<string>('all');
   const [paused, setPaused] = useState(false);
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [liveEvents, setLiveEvents] = useState<FeatureFlowEvent[]>([]);

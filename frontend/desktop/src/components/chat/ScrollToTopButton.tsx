@@ -25,8 +25,8 @@ export function ScrollToTopButton({
     if (visibleOverride !== undefined) return;
     const el =
       scrollParentRef?.current ??
-      (document.querySelector('.chat-scroll.overflow-y-auto') as HTMLElement | null) ??
-      (document.querySelector('.overflow-y-auto.chat-scroll') as HTMLElement | null);
+      (document.querySelector('.chat-scroll.overflow-y-auto')) ??
+      (document.querySelector('.overflow-y-auto.chat-scroll'));
     if (!el) return;
 
     const check = () => setInternalVisible(el.scrollTop > SHOW_AFTER_PX);
@@ -38,9 +38,9 @@ export function ScrollToTopButton({
   const scrollToTop = () => {
     const el =
       scrollParentRef?.current ??
-      (document.querySelector('.chat-scroll') as HTMLElement | null);
+      (document.querySelector('.chat-scroll'));
     if (!el) return;
-    const target = (el.closest('.overflow-y-auto') as HTMLElement | null) ?? el;
+    const target = (el.closest('.overflow-y-auto')) ?? el;
     target.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

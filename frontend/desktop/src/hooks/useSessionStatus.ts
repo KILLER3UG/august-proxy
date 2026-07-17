@@ -16,7 +16,7 @@ export type PendingMutationItem = {
 
 export type SessionStatus = {
     sessionId: string;
-    status: 'idle' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled' | string;
+    status: 'idle' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
     pendingTool: string | null;
     pendingToken: string | null;
     pendingArgs: Record<string, unknown> | null;
@@ -24,8 +24,8 @@ export type SessionStatus = {
     pendingPath?: string | null;
     pendingCreatedAt: number | string | null;
     updatedAt: string | null;
-    guardMode: 'plan' | 'ask' | 'full' | string;
-    sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access' | string;
+    guardMode: 'plan' | 'ask' | 'full';
+    sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
     sandboxNetwork?: boolean;
     approved: boolean;
     pendingMutation?: PendingMutationItem | null;

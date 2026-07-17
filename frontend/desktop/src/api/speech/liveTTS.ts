@@ -13,13 +13,14 @@ export interface LiveTTSFactoryOpts {
 }
 
 class UnavailableTTS implements LiveTTS {
-  async speak(_text: string, _voice?: string): Promise<void> {
+  speak(_text: string, _voice?: string): Promise<void> {
     // Silent no-op with console warning — TTS failure should not block Live.
     if (typeof console !== 'undefined') {
       console.warn(
         '[LiveTTS] Speech synthesis unavailable. Enable browser speechSynthesis or configure a Live TTS provider with an API key.',
       );
     }
+    return Promise.resolve();
   }
   cancel(): void {}
 }

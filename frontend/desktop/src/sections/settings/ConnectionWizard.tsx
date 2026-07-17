@@ -122,7 +122,7 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
 
   return (
     <form
-      onSubmit={submit}
+      onSubmit={(e) => { void submit(e); }}
       className="w-full max-w-md space-y-3 rounded-xl border border-white/[0.08] bg-black/20 p-3"
       data-testid={`${provider}-connection-wizard`}
     >

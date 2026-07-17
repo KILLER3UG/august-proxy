@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable
-from app.json_narrowing import as_str
+from app.json_narrowing import as_dict, as_str
 from app.atomic_write import write_json_atomic
 
 log = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ class SessionBridge:
                 for blob in list_workbench_blobs() or []:
                     if not isinstance(blob, dict):
                         continue
-                    meta = blob.get('metadata') if isinstance(blob.get('metadata'), dict) else {}
+                    meta = as_dict(blob.get('metadata'), {})
                     if meta.get('gatewayKey') == sessionKey or blob.get('gatewayKey') == sessionKey:
                         sid = as_str(blob.get('id'), '')
                         if sid:
@@ -116,11 +116,11 @@ class SessionBridge:
             session = self._sessionFactory(provider=self._provider, agentId=self._agentId, guardMode=self._guardMode)
             sid = getattr(session, 'id', None) or str(session)
             try:
-                meta = getattr(session, 'metadata', None)
-                if not isinstance(meta, dict):
-                    meta = {}
-                    session.metadata = meta  # type: ignore[attr-defined]
-                meta['gatewayKey'] = sessionKey
+                session_meta = getattr(session, 'metadata', None)
+                if not isinstance(session_meta, dict):
+                    session_meta = {}
+                    session.metadata = session_meta  # type: ignore[attr-defined]
+                session_meta['gatewayKey'] = sessionKey
                 from app.services.workbench.sessions import save_sessions
 
                 save_sessions()

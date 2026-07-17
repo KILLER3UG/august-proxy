@@ -41,6 +41,14 @@ export interface ServiceConnection {
   updatedAt?: string;
 }
 
+/** Safely stringify an unknown value, avoiding the default `[object Object]`
+ *  coercion for non-primitive values. */
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value)
+    : fallback;
+}
+
 /** Map catalog id (google-gmail) or short name (gmail) → facet key. */
 export function googleFacetFromCatalogId(id: string | undefined | null): GoogleFacet {
   const key = (id || '')
@@ -169,26 +177,26 @@ export function useIntegrations() {
       const data = await api.get<{ servers?: Array<Record<string, unknown>> }>('/api/mcp/servers');
       const raw = data.servers ?? [];
       return raw.map((s): McpServer => {
-        const name = String(s['name'] ?? s['id'] ?? 'mcp');
+        const name = asString(s['name'], asString(s['id'], 'mcp'));
         const toolsRaw = Array.isArray(s['tools']) ? s['tools'] : [];
         const tools = toolsRaw.map((t) =>
-          typeof t === 'string' ? t : String((t as { name?: string })?.name ?? t),
+          typeof t === 'string' ? t : asString((t as { name?: string })?.name, asString(t)),
         );
-        const stRaw = String(s['status'] ?? 'stopped');
+        const stRaw = asString(s['status'], 'stopped');
         return {
-          id: s['id'] != null ? String(s['id']) : undefined,
+          id: s['id'] != null ? asString(s['id']) : undefined,
           name,
           status: stRaw as McpServer['status'],
           toolCount: Number(s['toolCount'] ?? s['tool_count'] ?? tools.length ?? 0),
           enabled: s['enabled'] !== false,
-          command: s['command'] != null ? String(s['command']) : undefined,
-          url: s['url'] != null ? String(s['url']) : undefined,
+          command: s['command'] != null ? asString(s['command']) : undefined,
+          url: s['url'] != null ? asString(s['url']) : undefined,
           args: Array.isArray(s['args']) ? (s['args'] as string[]) : undefined,
           env: (s['env'] as Record<string, string> | undefined) ?? undefined,
-          error: s['error'] != null ? String(s['error']) : null,
+          error: s['error'] != null ? asString(s['error']) : null,
           tools,
-          source: s['source'] != null ? String(s['source']) : undefined,
-          catalogId: s['catalogId'] != null ? String(s['catalogId']) : undefined,
+          source: s['source'] != null ? asString(s['source']) : undefined,
+          catalogId: s['catalogId'] != null ? asString(s['catalogId']) : undefined,
         };
       });
     },
@@ -482,7 +490,7 @@ export function useConnectAccount() {
       facet?: GoogleFacet;
     },
     Error,
-    | { kind: 'google'; email?: string; facet?: GoogleFacet | string }
+    | { kind: 'google'; email?: string; facet?: GoogleFacet }
     | { kind: 'github'; token: string }
     | { kind: 'slack'; botToken: string; teamId?: string }
   >({
@@ -519,7 +527,7 @@ export function useConnectAccount() {
 export function useDisconnectAccount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: ServiceName | { name: ServiceName; facet?: GoogleFacet | string }) => {
+    mutationFn: async (vars: ServiceName | { name: ServiceName; facet?: GoogleFacet }) => {
       const name = typeof vars === 'string' ? vars : vars.name;
       const facet =
         typeof vars === 'string'

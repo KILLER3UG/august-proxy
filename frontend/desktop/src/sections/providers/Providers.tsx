@@ -350,12 +350,19 @@ export function Providers() {
                         {saveMsg.text}
                       </p>
                     )}
-                    {healthLoaded && healthByProvider[p.id] && (
-                      <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                        <ShieldCheck className="size-3" />
-                        Health: {String(healthByProvider[p.id]?.status ?? 'unknown')}
-                      </p>
-                    )}
+                    {(() => {
+                      const health = healthByProvider.get(p.id);
+                      if (!healthLoaded || !health) return null;
+                      const label = health.online
+                        ? `online${health.latencyMs != null ? ` (${health.latencyMs}ms)` : ''}`
+                        : health.error || 'offline';
+                      return (
+                        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <ShieldCheck className="size-3" />
+                          Health: {label}
+                        </p>
+                      );
+                    })()}
                     {p.signupUrl && (
                       <a href={p.signupUrl} target="_blank" rel="noreferrer" className="text-[11px] text-primary inline-flex items-center gap-1">
                         Get API key <ArrowUpRight className="size-3" />
