@@ -17,6 +17,9 @@ const DEFAULT_WIDTH = 256;
 const MIN_WIDTH = 150;
 const MAX_VIEWPORT_FRACTION = 0.4;
 
+const PANEL_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+const PANEL_MS = 0.32;
+
 function loadStoredWidth(): number {
   if (typeof window === "undefined") return DEFAULT_WIDTH;
   const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -87,49 +90,49 @@ export function SessionSidebar({
     window.addEventListener("touchend", onUp);
   };
 
-  const asideStyle: CSSProperties = { width };
+  const innerStyle: CSSProperties = { width };
 
   return (
-    <>
-      <AnimatePresence initial={false}>
-        {!collapsed && (
-          <motion.aside
-            key="sidebar"
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: isDragging ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="relative shrink-0 bg-sidebar text-sidebar-foreground flex flex-col overflow-hidden"
-            style={asideStyle}
-          >
-            <div className="w-full flex-1 overflow-hidden">
-              <SessionList
-                activeId={activeId}
-                collapsed={collapsed}
-                onToggleCollapsed={onToggleCollapsed}
-                onSelect={(s) => onNavigate(`/c/${s.id}`)}
-                onNew={onNew}
-                onNewInFolder={onNewInFolder}
-                onNavigate={onNavigate}
-              />
-            </div>
-
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize session sidebar"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                startResize(e.clientX);
-              }}
-              onTouchStart={(e) => {
-                if (e.touches.length) startResize(e.touches[0].clientX);
-              }}
-              className={`absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? "bg-primary/50" : "bg-transparent"}`}
+    <AnimatePresence initial={false}>
+      {!collapsed && (
+        <motion.aside
+          key="sidebar"
+          initial={{ width: 0, opacity: 0, x: -16 }}
+          animate={{ width, opacity: 1, x: 0 }}
+          exit={{ width: 0, opacity: 0, x: -12 }}
+          transition={{
+            duration: isDragging ? 0 : PANEL_MS,
+            ease: PANEL_EASE,
+          }}
+          className="relative shrink-0 bg-sidebar text-sidebar-foreground flex flex-col overflow-hidden"
+        >
+          <div className="h-full flex-1 overflow-hidden" style={innerStyle}>
+            <SessionList
+              activeId={activeId}
+              collapsed={collapsed}
+              onToggleCollapsed={onToggleCollapsed}
+              onSelect={(s) => onNavigate(`/c/${s.id}`)}
+              onNew={onNew}
+              onNewInFolder={onNewInFolder}
+              onNavigate={onNavigate}
             />
-          </motion.aside>
-        )}
-      </AnimatePresence>
-    </>
+          </div>
+
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize session sidebar"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              startResize(e.clientX);
+            }}
+            onTouchStart={(e) => {
+              if (e.touches.length) startResize(e.touches[0].clientX);
+            }}
+            className={`absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? "bg-primary/50" : "bg-transparent"}`}
+          />
+        </motion.aside>
+      )}
+    </AnimatePresence>
   );
 }

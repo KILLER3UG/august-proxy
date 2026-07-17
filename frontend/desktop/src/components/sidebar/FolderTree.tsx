@@ -40,7 +40,7 @@ export function Section({
             </span>
           )}
         </div>
-        {(title === "Sessions" || title === "Recents") && onNewFolder && onUploadFolder && (
+        {(title === "Sessions" || title === "Recents" || title === "Repositories") && onNewFolder && onUploadFolder && (
           <div className="flex items-center gap-0.5">
             <button
               onClick={onUploadFolder}

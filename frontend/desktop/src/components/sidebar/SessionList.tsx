@@ -1,6 +1,6 @@
-/* ── Session list — Claude-like recents-first sidebar ──────────────── */
-/* Top:   New chat + quieter Skills / Artifacts                            */
-/* Middle: search, PINNED, RECENTS                                         */
+/* ── Session list — Cursor-like sidebar ─────────────────────────────── */
+/* Top:   Collapse · New chat · Automations · Skills · Artifacts           */
+/* Middle: Pinned + Repositories (folders / sessions)                      */
 /* Bottom: Settings                                                        */
 
 import { useState, useEffect, useRef } from "react";
@@ -44,6 +44,7 @@ import {
   type UserStatus,
 } from "@/components/ui/user-dropdown";
 import { WhatsNewModal } from "@/components/overlays/WhatsNewModal";
+import { NotificationsPanel } from "@/components/overlays/NotificationsPanel";
 import { SwitchAccountModal } from "@/components/overlays/SwitchAccountModal";
 
 const SESSIONS_KEY = "august-pinned-sessions";
@@ -80,16 +81,16 @@ interface Props {
 export function SessionList({
   activeId,
   collapsed: _collapsed,
-  onToggleCollapsed: _onToggleCollapsed,
+  onToggleCollapsed,
   onSelect,
   onNew,
   onNewInFolder,
   onNavigate,
 }: Props) {
-  const [filter, setFilter] = useState("");
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set(STORAGE));
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [switchAccountOpen, setSwitchAccountOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const [uncategorizedCollapsed, setUncategorizedCollapsed] = useState(
@@ -136,7 +137,7 @@ export function SessionList({
         openSettingsSection("profile-preferences");
         break;
       case "notifications":
-        openSettingsSection(updateAvailable ? "app-updates" : "profile-preferences");
+        setNotificationsOpen(true);
         break;
       case "update":
         openSettingsSection("app-updates");
@@ -307,11 +308,7 @@ export function SessionList({
     e.target.value = '';
   };
 
-  const visible = sessions.filter(
-    (s) =>
-      !s.isArchived &&
-      (!filter || s.title.toLowerCase().includes(filter.toLowerCase())),
-  );
+  const visible = sessions.filter((s) => !s.isArchived);
 
   // Get current workspace path for filtering
   const currentWorkspacePath = currentWorkspaceId
@@ -391,10 +388,9 @@ export function SessionList({
       />
       <div className="flex-1 flex flex-col min-w-0 text-sm">
         <SessionListNav
-          filter={filter}
-          onFilterChange={setFilter}
           onNew={onNew}
           onNavigate={onNavigate}
+          onToggleCollapsed={onToggleCollapsed}
         />
 
         {/* Scrollable sessions area — Recents-first */}
@@ -422,7 +418,7 @@ export function SessionList({
           </Section>
 
           <Section
-            title="Recents"
+            title="Repositories"
             count={others.length}
             onNewFolder={handleCreateFolder}
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
@@ -573,6 +569,10 @@ export function SessionList({
       </div>
 
       <WhatsNewModal open={whatsNewOpen} onClose={() => setWhatsNewOpen(false)} />
+      <NotificationsPanel
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+      />
       <SwitchAccountModal
         open={switchAccountOpen}
         onClose={() => setSwitchAccountOpen(false)}

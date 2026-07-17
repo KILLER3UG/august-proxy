@@ -1,6 +1,6 @@
 /* ── RightDrawer ─ multi-section Workbench sidebar ────────────────── */
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Columns, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,10 @@ const BASE_WIDTH_KEY = 'august-right-drawer-width-base';
 const WIDE_WIDTH_KEY = 'august-right-drawer-width-wide';
 const MIN_WIDTH = 200;
 const MAX_VIEWPORT_FRACTION = 0.8;
+
+/** Shared panel open/close — matches session sidebar feel. */
+const PANEL_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+const PANEL_MS = 0.32;
 
 function loadStoredWidth(key: string, fallback: number): number {
   if (typeof window === 'undefined') return fallback;
@@ -114,89 +118,91 @@ export function RightDrawer({
     window.addEventListener('touchend', onUp);
   };
 
-  if (!open) return null;
-
-  const asideStyle: CSSProperties = { width };
-
+  // Keep AnimatePresence mounted so exit width/opacity can play.
   return (
     <AnimatePresence initial={false}>
-      <motion.aside
-        key="workbench-sidebar"
-        initial={{ width: 0, opacity: 0 }}
-        animate={{ width, opacity: 1 }}
-        exit={{ width: 0, opacity: 0 }}
-        transition={{ duration: isDragging ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="relative shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
-        style={asideStyle}
-        aria-label="Workbench sidebar"
-      >
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize workbench sidebar"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            startResize(e.clientX);
+      {open && (
+        <motion.aside
+          key="workbench-sidebar"
+          initial={{ width: 0, opacity: 0, x: 24 }}
+          animate={{ width, opacity: 1, x: 0 }}
+          exit={{ width: 0, opacity: 0, x: 16 }}
+          transition={{
+            duration: isDragging ? 0 : PANEL_MS,
+            ease: PANEL_EASE,
           }}
-          onTouchStart={(e) => {
-            if (e.touches.length) startResize(e.touches[0].clientX);
-          }}
-          className={`absolute top-0 left-0 z-20 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? 'bg-primary/50' : 'bg-transparent'}`}
-        />
+          className="relative shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
+          aria-label="Workbench sidebar"
+        >
+          {/* Inner shell keeps content at target width while the outer panel animates. */}
+          <div className="flex h-full min-h-0 flex-col" style={{ width }}>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize workbench sidebar"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                startResize(e.clientX);
+              }}
+              onTouchStart={(e) => {
+                if (e.touches.length) startResize(e.touches[0].clientX);
+              }}
+              className={`absolute top-0 left-0 z-20 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? 'bg-primary/50' : 'bg-transparent'}`}
+            />
 
-        <div className="flex h-full min-h-0 flex-col">
-          <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <Columns className="size-3 text-muted-foreground/60 shrink-0" />
-              <span className="truncate text-sm font-semibold text-foreground">Workbench</span>
-              {sections.length > 0 && (
-                <span className="ml-1 inline-flex items-center justify-center rounded-md bg-white/5 px-1.5 py-0.5 text-xs font-semibold text-muted-foreground/80">
-                  {sections.length}
-                </span>
-              )}
+            <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <Columns className="size-3 text-muted-foreground/60 shrink-0" />
+                <span className="truncate text-sm font-semibold text-foreground">Workbench</span>
+                {sections.length > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center rounded-md bg-white/5 px-1.5 py-0.5 text-xs font-semibold text-muted-foreground/80">
+                    {sections.length}
+                  </span>
+                )}
+              </div>
+
+              <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close Workbench sidebar">
+                <X className="size-3.5" />
+              </Button>
             </div>
 
-            <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close Workbench sidebar">
-              <X className="size-3.5" />
-            </Button>
+            <div className="min-h-0 flex-1 overflow-hidden p-2">
+              {sections.length === 0 && <NoSectionSelected />}
+
+              {sections.length === 1 && (
+                <DrawerSectionCard
+                  sectionId={sections[0]}
+                  ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
+                />
+              )}
+
+              {sections.length === 2 && (
+                <div className="flex h-full flex-col gap-2">
+                  {sections.map((sectionId) => (
+                    <DrawerSectionCard
+                      key={sectionId}
+                      sectionId={sectionId}
+                      ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {sections.length >= 3 && (
+                <div className="grid h-full grid-cols-2 gap-2">
+                  {sections.map((sectionId) => (
+                    <DrawerSectionCard
+                      key={sectionId}
+                      sectionId={sectionId}
+                      ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-
-          <div className="min-h-0 flex-1 overflow-hidden p-2">
-            {sections.length === 0 && <NoSectionSelected />}
-
-            {sections.length === 1 && (
-              <DrawerSectionCard
-                sectionId={sections[0]}
-                ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
-              />
-            )}
-
-            {sections.length === 2 && (
-              <div className="flex h-full flex-col gap-2">
-                {sections.map((sectionId) => (
-                  <DrawerSectionCard
-                    key={sectionId}
-                    sectionId={sectionId}
-                    ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
-                  />
-                ))}
-              </div>
-            )}
-
-            {sections.length >= 3 && (
-              <div className="grid h-full grid-cols-2 gap-2">
-                {sections.map((sectionId) => (
-                  <DrawerSectionCard
-                    key={sectionId}
-                    sectionId={sectionId}
-                    ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </motion.aside>
+        </motion.aside>
+      )}
     </AnimatePresence>
   );
 }

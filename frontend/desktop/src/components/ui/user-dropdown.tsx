@@ -1,5 +1,21 @@
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode, SVGProps } from 'react';
 import { motion, type Variants } from 'framer-motion';
+import {
+  Bell,
+  CircleHelp,
+  Download,
+  ExternalLink,
+  LogOut,
+  Moon,
+  RefreshCw,
+  Settings,
+  Smile,
+  Sun,
+  UserCircle,
+  UserPlus,
+  Users,
+  Mail,
+} from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -18,7 +34,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { t } from '@/lib/motion';
 import { cn } from '@/lib/utils';
-import { Icon } from '@iconify/react';
+import { BrainIndicator } from '@/components/shell/BrainIndicator';
 
 export type UserStatus = 'online' | 'focus' | 'offline' | 'busy';
 
@@ -50,19 +66,21 @@ export interface UserDropdownAccount {
   initials?: string;
 }
 
+type LucideIcon = ComponentType<SVGProps<SVGSVGElement> & { className?: string }>;
+
 interface MenuItemBase {
-  icon: string;
+  Icon: LucideIcon;
   label: string;
   action: UserDropdownAction;
   iconClass?: string;
   badge?: { text: string; className: string };
-  rightIcon?: string;
+  RightIcon?: LucideIcon;
   showAvatar?: boolean;
 }
 
 interface StatusMenuItem {
   value: string;
-  icon: string;
+  Icon: LucideIcon;
   label: string;
 }
 
@@ -140,28 +158,19 @@ const MENU_ITEMS: {
   support: MenuItemBase[];
 } = {
   status: [
-    { value: 'focus', icon: 'solar:emoji-funny-circle-line-duotone', label: 'Focus' },
-    { value: 'offline', icon: 'solar:moon-sleep-line-duotone', label: 'Appear Offline' },
+    { value: 'focus', Icon: Smile, label: 'Focus' },
+    { value: 'offline', Icon: Moon, label: 'Appear Offline' },
   ],
   profile: [
-    { icon: 'solar:user-circle-line-duotone', label: 'Your profile', action: 'profile' },
-    { icon: 'solar:sun-line-duotone', label: 'Appearance', action: 'appearance' },
-    { icon: 'solar:settings-line-duotone', label: 'Settings', action: 'settings' },
-    { icon: 'solar:bell-line-duotone', label: 'Notifications', action: 'notifications' },
+    { Icon: UserCircle, label: 'Your profile', action: 'profile' },
+    { Icon: Sun, label: 'Appearance', action: 'appearance' },
+    { Icon: Settings, label: 'Settings', action: 'settings' },
+    { Icon: Bell, label: 'Notifications', action: 'notifications' },
   ],
   support: [
-    { icon: 'solar:download-line-duotone', label: 'Download app', action: 'download' },
-    {
-      icon: 'solar:letter-unread-line-duotone',
-      label: "What's new?",
-      action: 'whats-new',
-    },
-    {
-      icon: 'solar:question-circle-line-duotone',
-      label: 'Get help?',
-      action: 'help',
-      rightIcon: 'solar:square-top-down-line-duotone',
-    },
+    { Icon: Download, label: 'Download app', action: 'download' },
+    { Icon: Mail, label: "What's new?", action: 'whats-new' },
+    { Icon: CircleHelp, label: 'Get help?', action: 'help', RightIcon: ExternalLink },
   ],
 };
 
@@ -176,6 +185,8 @@ const DEFAULT_USER: UserDropdownUser = {
 
 const itemButtonClass =
   'w-full flex items-center gap-1.5 rounded-lg p-2 text-sm outline-none cursor-pointer select-none';
+
+const iconClass = 'size-4 shrink-0 text-muted-foreground';
 
 export interface UserDropdownProps {
   user?: UserDropdownUser;
@@ -237,7 +248,7 @@ export function UserDropdown({
     ...(updateAvailable
       ? [
           {
-            icon: 'solar:refresh-circle-line-duotone',
+            Icon: RefreshCw,
             label: `Update to v${updateAvailable.version}`,
             action: 'update' as const,
             badge: {
@@ -254,16 +265,16 @@ export function UserDropdown({
   const accountItems: MenuItemBase[] = signedIn
     ? [
         {
-          icon: 'solar:users-group-rounded-bold-duotone',
+          Icon: Users,
           label: 'Switch account',
           action: 'switch',
           showAvatar: false,
         },
-        { icon: 'solar:logout-2-bold-duotone', label: 'Log out', action: 'logout' },
+        { Icon: LogOut, label: 'Log out', action: 'logout' },
       ]
     : [
         {
-          icon: 'solar:user-plus-bold-duotone',
+          Icon: UserPlus,
           label: 'Create account',
           action: 'create-account',
         },
@@ -271,9 +282,11 @@ export function UserDropdown({
 
   const renderMenuItem = (item: MenuItemBase, index: number) => {
     const iconMotion = ICON_MOTION[item.action] ?? defaultIconMotion;
+    const ItemIcon = item.Icon;
+    const ItemRightIcon = item.RightIcon;
     return (
       <DropdownMenuItem
-        key={index}
+        key={`${item.action}-${index}`}
         asChild
         className="august-menu-item p-0 focus:bg-transparent"
         style={{ animationDelay: `${40 + index * 35}ms` }}
@@ -287,26 +300,18 @@ export function UserDropdown({
           variants={rowMotion}
           className={cn(
             itemButtonClass,
-            item.badge || item.showAvatar || item.rightIcon ? 'justify-between' : '',
+            item.badge || item.showAvatar || item.RightIcon ? 'justify-between' : '',
             'data-[highlighted]:bg-accent/70',
           )}
         >
           <span className="flex items-center gap-1.5 font-medium">
             <motion.span className="inline-flex shrink-0" variants={iconMotion}>
-              <Icon
-                icon={item.icon}
-                className={`size-5 ${item.iconClass || 'text-gray-500 dark:text-gray-400'}`}
-              />
+              <ItemIcon className={cn(iconClass, item.iconClass)} />
             </motion.span>
             {item.label}
           </span>
           {item.badge && <Badge className={item.badge.className}>{item.badge.text}</Badge>}
-          {item.rightIcon && (
-            <Icon
-              icon={item.rightIcon}
-              className="size-4 text-gray-500 dark:text-gray-400"
-            />
-          )}
+          {ItemRightIcon && <ItemRightIcon className="size-3.5 shrink-0 text-muted-foreground" />}
           {item.showAvatar && (
             <Avatar className="size-6 cursor-pointer border border-white shadow dark:border-gray-700">
               <AvatarImage src={user.avatar} alt={user.name} />
@@ -355,7 +360,7 @@ export function UserDropdown({
   );
 
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         {trigger ?? defaultTrigger}
       </DropdownMenuTrigger>
@@ -375,6 +380,22 @@ export function UserDropdown({
         side={side}
         alignOffset={alignOffset}
         sideOffset={sideOffset}
+        onPointerDownOutside={(e) => {
+          if (
+            e.target instanceof Element &&
+            e.target.closest('[data-brain-popup-root]')
+          ) {
+            e.preventDefault();
+          }
+        }}
+        onFocusOutside={(e) => {
+          if (
+            e.target instanceof Element &&
+            e.target.closest('[data-brain-popup-root]')
+          ) {
+            e.preventDefault();
+          }
+        }}
       >
         <section className="rounded-2xl border border-gray-200 bg-white p-1 shadow backdrop-blur-lg dark:border-gray-700/20 dark:bg-gray-100/10">
           <div
@@ -407,7 +428,7 @@ export function UserDropdown({
                 style={{ animationDelay: '55ms' }}
               >
                 <motion.span
-                  className="flex w-full items-center gap-1.5 p-2 font-medium text-gray-500 dark:text-gray-400"
+                  className="flex w-full items-center gap-1.5 p-2 font-medium text-muted-foreground"
                   initial="rest"
                   whileHover="hover"
                   whileTap="tap"
@@ -417,10 +438,7 @@ export function UserDropdown({
                     className="inline-flex shrink-0"
                     variants={ICON_MOTION.status}
                   >
-                    <Icon
-                      icon="solar:smile-circle-line-duotone"
-                      className="size-5 text-gray-500 dark:text-gray-400"
-                    />
+                    <Smile className={iconClass} />
                   </motion.span>
                   Update status
                 </motion.span>
@@ -431,27 +449,27 @@ export function UserDropdown({
                     value={selectedStatus}
                     onValueChange={onStatusChange}
                   >
-                    {MENU_ITEMS.status.map((status, index) => (
-                      <DropdownMenuRadioItem
-                        className="august-menu-item gap-2 rounded-lg"
-                        style={{ animationDelay: `${30 + index * 35}ms` }}
-                        key={index}
-                        value={status.value}
-                      >
-                        <motion.span
-                          className="inline-flex shrink-0"
-                          initial="rest"
-                          whileHover="hover"
-                          variants={defaultIconMotion}
+                    {MENU_ITEMS.status.map((status, index) => {
+                      const StatusIcon = status.Icon;
+                      return (
+                        <DropdownMenuRadioItem
+                          className="august-menu-item gap-2 rounded-lg"
+                          style={{ animationDelay: `${30 + index * 35}ms` }}
+                          key={status.value}
+                          value={status.value}
                         >
-                          <Icon
-                            icon={status.icon}
-                            className="size-5 text-gray-500 dark:text-gray-400"
-                          />
-                        </motion.span>
-                        {status.label}
-                      </DropdownMenuRadioItem>
-                    ))}
+                          <motion.span
+                            className="inline-flex shrink-0"
+                            initial="rest"
+                            whileHover="hover"
+                            variants={defaultIconMotion}
+                          >
+                            <StatusIcon className={iconClass} />
+                          </motion.span>
+                          {status.label}
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
                   </DropdownMenuRadioGroup>
                 </DropdownMenuSubContent>
               </DropdownMenuPortal>
@@ -460,6 +478,20 @@ export function UserDropdown({
 
           <DropdownMenuSeparator />
           <DropdownMenuGroup>{profileItems.map(renderMenuItem)}</DropdownMenuGroup>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              className="august-menu-item p-0 focus:bg-transparent"
+              style={{ animationDelay: '160ms' }}
+              onSelect={(e) => e.preventDefault()}
+            >
+              <div className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5">
+                <span className="text-sm font-medium text-foreground">Brain</span>
+                <BrainIndicator />
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
 
           <DropdownMenuSeparator />
           <DropdownMenuGroup>{supportItems.map(renderMenuItem)}</DropdownMenuGroup>

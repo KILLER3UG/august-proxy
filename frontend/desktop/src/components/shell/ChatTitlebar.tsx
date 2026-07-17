@@ -4,21 +4,14 @@ import {
   Minus,
   Square,
   X,
-  PanelLeft,
   PanelLeftClose,
-  GitBranch,
-  Download,
   Minimize2,
   MoreHorizontal,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { gitApi } from "@/api/git";
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
-import { useAppUpdate } from "@/hooks/useAppUpdate";
 import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
-import { BrainIndicator } from "./BrainIndicator";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import { WorkspaceBranchChip } from "@/components/workspace/WorkspaceBranchChip";
 import type { Session } from "@/store/sessions";
@@ -43,31 +36,12 @@ export function ChatTitlebar({
   const [isMaximized, setIsMaximized] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const overflowRef = useRef<HTMLDivElement>(null);
-  const { available: updateAvailable, installing: updating, install: handleInstallUpdate } =
-    useAppUpdate();
-
-  const branch = useQuery({
-    queryKey: ['git', 'branch', session?.id],
-    queryFn: () => gitApi.branch(session?.id),
-    refetchInterval: 30_000,
-    retry: false,
-  });
-  const currentBranch = branch.data?.current;
 
   useEffect(() => {
     if (!overflowOpen) return;
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (overflowRef.current && overflowRef.current.contains(target)) return;
-      // The Brain popup (BrainIndicator, rendered inside this menu) is
-      // portaled to `document.body` so its `position: fixed` escapes
-      // transformed ancestors — meaning it lives OUTSIDE `overflowRef`'s
-      // DOM subtree even though it's logically inside this dropdown.
-      // Without this check, any click inside the popup (switching tabs,
-      // dragging, resizing) reads as an "outside click" here, closes this
-      // menu, and unmounts BrainIndicator — silently yanking the popup
-      // away mid-interaction.
-      if (target instanceof Element && target.closest('[data-brain-popup-root]')) return;
       setOverflowOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -142,33 +116,22 @@ export function ChatTitlebar({
   return (
     <header data-tauri-drag-region className="h-11 bg-background flex items-center justify-between shrink-0 select-none border-b border-border/20">
       <div className="flex items-center min-w-0">
-        <button
-          onClick={onToggleSidebar}
-          className="size-11 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground/70 hover:text-foreground transition"
-          title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-        >
-          {sidebarCollapsed ? (
-            <PanelLeftClose className="size-3.5" />
-          ) : (
-            <PanelLeft className="size-3.5" />
-          )}
-        </button>
-
-        {updateAvailable && (
+        {/* Expand only — collapse control lives in the sidebar header. */}
+        {sidebarCollapsed && (
           <button
-            onClick={() => { void handleInstallUpdate(); }}
-            disabled={updating}
-            className="flex items-center gap-1.5 px-2 py-0.5 mx-1 text-[11px] font-medium
-              bg-amber-500/15 text-amber-400 hover:bg-amber-500/25
-              rounded-md transition disabled:opacity-50"
-            title={`Update to v${updateAvailable.version}`}
+            onClick={onToggleSidebar}
+            className="size-11 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground/70 hover:text-foreground transition"
+            title="Show sidebar"
+            aria-label="Show sidebar"
           >
-            <Download className="size-3" />
-            {updating ? "Updating…" : `v${updateAvailable.version}`}
+            <PanelLeftClose className="size-3.5" />
           </button>
         )}
 
-        <div className="flex items-center gap-1.5 px-1.5 min-w-0 max-w-[min(48vw,32rem)]">
+        <div className={cn(
+          "flex items-center gap-1.5 min-w-0 max-w-[min(48vw,32rem)]",
+          sidebarCollapsed ? "px-1.5" : "pl-3 pr-1.5",
+        )}>
           <h1 className="text-[13px] font-medium text-foreground/90 min-w-0 flex-1">
             <MarqueeTitle
               text={session?.title ?? "New chat"}
@@ -189,7 +152,6 @@ export function ChatTitlebar({
       <div className="flex items-center gap-0.5">
         <RightDrawerDropdown drawerOpen={rightDrawerOpen} onSelect={onSelectRightDrawerSection} />
 
-        {/* Secondary actions: branch, brain, TTS */}
         <div ref={overflowRef} className="relative">
           <button
             type="button"
@@ -212,18 +174,6 @@ export function ChatTitlebar({
               role="menu"
               className="absolute top-full mt-1 right-0 z-50 min-w-[200px] rounded-lg border border-border/50 bg-popover shadow-xl py-1 origin-top-right"
             >
-              {currentBranch && (
-                <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-muted-foreground font-mono border-b border-border/30 mb-0.5">
-                  <GitBranch size={11} className="shrink-0 opacity-70" />
-                  <span className="truncate" title={currentBranch}>{currentBranch}</span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 px-2 py-1">
-                <span className="text-[12px] text-muted-foreground pl-1 flex-1">Brain</span>
-                <BrainIndicator />
-              </div>
-
               <button
                 type="button"
                 role="menuitem"
@@ -261,11 +211,11 @@ export function ChatTitlebar({
             className="w-[42px] h-[28px] flex items-center justify-center text-muted-foreground/70 hover:bg-white/10 transition-colors"
             aria-label={isMaximized ? "Restore" : "Maximize"}
           >
-            {isMaximized ? <Minimize2 className="size-3" /> : <Square className="size-2.5" />}
+            {isMaximized ? <Minimize2 className="size-3" /> : <Square className="size-3" />}
           </button>
           <button
             onClick={() => { void handleClose(); }}
-            className="w-[42px] h-[28px] flex items-center justify-center text-muted-foreground/70 hover:bg-red-500 hover:text-white transition-colors"
+            className="w-[46px] h-[28px] flex items-center justify-center text-muted-foreground/70 hover:bg-red-500 hover:text-white transition-colors"
             aria-label="Close"
           >
             <X className="size-3.5" />
