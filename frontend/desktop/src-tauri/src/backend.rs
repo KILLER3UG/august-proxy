@@ -94,10 +94,31 @@ fn isStoreStub(path: &Path) -> bool {
 }
 
 fn resolveResource(app: &AppHandle, rel: &str) -> Option<PathBuf> {
-    app.path()
-        .resolve(rel, tauri::path::BaseDirectory::Resource)
-        .ok()
-        .filter(|p| p.exists())
+    // Tauri preserves the path relative to src-tauri/ from bundle.resources.
+    // We stage under `resources/…`, so prefer that prefix; also try the bare
+    // relative path for older layouts / alternate configs.
+    let candidates = [format!("resources/{rel}"), rel.to_string()];
+    for c in &candidates {
+        if let Ok(p) = app.path().resolve(c, tauri::path::BaseDirectory::Resource) {
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    // Last resort: join against the resource directory itself.
+    if let Ok(dir) = app.path().resource_dir() {
+        for c in &candidates {
+            let p = dir.join(c);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        let bare = dir.join(rel);
+        if bare.exists() {
+            return Some(bare);
+        }
+    }
+    None
 }
 
 /// Writable AppData tree used for the installed (bundled) backend runtime.
@@ -208,10 +229,22 @@ fn runPythonSilent(python: &Path, args: &[&str], cwd: &Path, log_path: &Path) ->
 /// create a venv with the portable Python, install offline from wheels.
 fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
     let Some(stamp) = bundledStamp(app) else {
-        return Ok(()); // Dev / unpackaged: nothing to bootstrap
+        // No stamp → unpackaged / dev checkout. Prefer silent skip unless
+        // other backend pieces are present without a stamp (broken install).
+        if resolveResource(app, "backend-py/app/main.py").is_some()
+            || resolveResource(app, "python/python.exe").is_some()
+        {
+            return Err(
+                "bundled backend resources found but backend-runtime.stamp is missing"
+                    .into(),
+            );
+        }
+        return Ok(());
     };
     let Some(bundled_main) = resolveResource(app, "backend-py/app/main.py") else {
-        return Ok(());
+        return Err(format!(
+            "bundled backend-py missing (stamp={stamp}) — reinstall the desktop app"
+        ));
     };
     let Some(bundled_py_root) = projectRootFor(&bundled_main) else {
         return Err("bundled backend-py root missing".into());
@@ -778,14 +811,11 @@ fn versionStampPath(app: &AppHandle) -> Option<PathBuf> {
 pub async fn sync_backend_deps(app: AppHandle) -> String {
     // Prefer materializing the bundled runtime (installed builds).
     if let Err(e) = bootstrapBundledBackend(&app) {
-        // If we have a bundled stamp, bootstrap failure is fatal for sync.
-        if bundledStamp(&app).is_some() {
-            return format!("error: bootstrap failed: {e}");
-        }
+        return format!("error: {e}");
     }
 
     let Some(backendMain) = resolvePythonBackend(&app) else {
-        return "error: backend-py not found".into();
+        return "error: backend-py not found — reinstall August or run from a repo with backend-py/".into();
     };
     // backend-py/app/main.py → backend-py
     let Some(backendPyRoot) = projectRootFor(&backendMain) else {

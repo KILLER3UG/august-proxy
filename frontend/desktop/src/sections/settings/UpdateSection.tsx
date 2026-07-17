@@ -8,7 +8,7 @@ import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { isTauri } from '@/lib/tauri-detect';
 
 export function UpdateSection() {
-  const { available, checking, installing, refresh, install } = useAppUpdate();
+  const { available, checking, installing, progress, formatBytes, refresh, install } = useAppUpdate();
   const { status: backend, sync, isTauri: backendTauri } = useBackendStatus();
   const [currentVersion, setCurrentVersion] = useState<string>('…');
   const [manualChecked, setManualChecked] = useState(false);
@@ -113,7 +113,13 @@ export function UpdateSection() {
                 </div>
                 <Button size="sm" disabled={installing} onClick={() => { void install(); }}>
                   <Download className="size-3.5 mr-1.5" />
-                  {installing ? 'Installing…' : 'Install'}
+                  {installing
+                    ? progress.phase === 'installing'
+                      ? 'Installing…'
+                      : progress.percent != null
+                        ? `Downloading ${progress.percent}%`
+                        : 'Downloading…'
+                    : 'Install'}
                 </Button>
               </div>
             </div>
@@ -121,12 +127,61 @@ export function UpdateSection() {
 
           {installing && (
             <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5">
-              <div className="flex items-center gap-3">
-                <RefreshCw className="size-5 text-muted-foreground animate-spin shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-foreground">Downloading update…</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    The app will restart after installation.
+              <div className="flex items-start gap-3">
+                <RefreshCw className="mt-0.5 size-5 shrink-0 animate-spin text-muted-foreground" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {progress.phase === 'installing'
+                          ? 'Installing update…'
+                          : 'Downloading update…'}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {progress.phase === 'installing'
+                          ? 'Almost done — the app will restart shortly.'
+                          : 'The app will restart after installation.'}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                      {progress.phase === 'installing'
+                        ? '100%'
+                        : progress.percent != null
+                          ? `${progress.percent}%`
+                          : '…'}
+                    </span>
+                  </div>
+
+                  <div
+                    className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={progress.percent ?? undefined}
+                    aria-label="Update download progress"
+                  >
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-150 ease-out"
+                      style={{
+                        width:
+                          progress.phase === 'installing'
+                            ? '100%'
+                            : progress.percent != null
+                              ? `${progress.percent}%`
+                              : '15%',
+                        ...(progress.percent == null && progress.phase === 'downloading'
+                          ? { animation: 'pulse 1.2s ease-in-out infinite' }
+                          : undefined),
+                      }}
+                    />
+                  </div>
+
+                  <p className="text-[11px] tabular-nums text-muted-foreground">
+                    {progress.totalBytes != null && progress.totalBytes > 0
+                      ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
+                      : progress.downloadedBytes > 0
+                        ? `${formatBytes(progress.downloadedBytes)} downloaded`
+                        : 'Starting download…'}
                   </p>
                 </div>
               </div>

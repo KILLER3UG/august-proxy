@@ -11,6 +11,27 @@ export interface AppUpdateInfo {
   date?: string;
 }
 
+export interface AppUpdateProgress {
+  /** 0–100 while downloading; null when size is unknown. */
+  percent: number | null;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  phase: 'idle' | 'downloading' | 'installing';
+}
+
+const IDLE_PROGRESS: AppUpdateProgress = {
+  percent: null,
+  downloadedBytes: 0,
+  totalBytes: null,
+  phase: 'idle',
+};
+
+function formatBytes(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+  return `${n} B`;
+}
+
 async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
   if (!isTauri) return null;
   const { check } = await import('@tauri-apps/plugin-updater');
@@ -26,6 +47,7 @@ async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
 export function useAppUpdate() {
   const queryClient = useQueryClient();
   const [installing, setInstalling] = useState(false);
+  const [progress, setProgress] = useState<AppUpdateProgress>(IDLE_PROGRESS);
 
   const query = useQuery({
     queryKey: ['app-update'],
@@ -39,6 +61,12 @@ export function useAppUpdate() {
   const install = useCallback(async () => {
     if (!isTauri || !query.data) return;
     setInstalling(true);
+    setProgress({
+      percent: 0,
+      downloadedBytes: 0,
+      totalBytes: null,
+      phase: 'downloading',
+    });
     try {
       const { check } = await import('@tauri-apps/plugin-updater');
       const update = await check();
@@ -47,7 +75,54 @@ export function useAppUpdate() {
         void queryClient.invalidateQueries({ queryKey: ['app-update'] });
         return;
       }
-      await update.downloadAndInstall();
+
+      let downloaded = 0;
+      let contentLength: number | null = null;
+
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case 'Started': {
+            contentLength =
+              typeof event.data.contentLength === 'number' && event.data.contentLength > 0
+                ? event.data.contentLength
+                : null;
+            downloaded = 0;
+            setProgress({
+              percent: contentLength ? 0 : null,
+              downloadedBytes: 0,
+              totalBytes: contentLength,
+              phase: 'downloading',
+            });
+            break;
+          }
+          case 'Progress': {
+            downloaded += event.data.chunkLength;
+            const percent =
+              contentLength && contentLength > 0
+                ? Math.min(100, Math.round((downloaded / contentLength) * 100))
+                : null;
+            setProgress({
+              percent,
+              downloadedBytes: downloaded,
+              totalBytes: contentLength,
+              phase: 'downloading',
+            });
+            break;
+          }
+          case 'Finished': {
+            setProgress({
+              percent: 100,
+              downloadedBytes: contentLength ?? downloaded,
+              totalBytes: contentLength ?? downloaded,
+              phase: 'installing',
+            });
+            break;
+          }
+          default:
+            break;
+        }
+      });
+
       try {
         const { relaunch } = await import('@tauri-apps/plugin-process');
         await relaunch();
@@ -59,6 +134,7 @@ export function useAppUpdate() {
       toast.error(message || 'Failed to install update');
     } finally {
       setInstalling(false);
+      setProgress(IDLE_PROGRESS);
     }
   }, [query.data, queryClient]);
 
@@ -67,6 +143,8 @@ export function useAppUpdate() {
     available: query.data ?? null,
     checking: query.isFetching,
     installing,
+    progress,
+    formatBytes,
     refresh: () => queryClient.invalidateQueries({ queryKey: ['app-update'] }),
     install,
   };
