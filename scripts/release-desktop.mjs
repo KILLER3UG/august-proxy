@@ -19,7 +19,7 @@
 // The generated manifest is intended for the custom sidecar updater in
 // backend/services/desktop/asset-updater.js.
 
-import { mkdir, writeFile, readFile, copyFile, rm } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { existsSync, createReadStream, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -140,6 +140,12 @@ try {
 }
 
 async function zipBackend(outputFile) {
+    // Legacy Node sidecar zip — only when the old `backend/` tree still exists.
+    // Current desktop releases ship the Tauri installers + Python tree separately.
+    if (!existsSync(backendDir)) {
+        console.log('[release] skipping legacy Node backend zip (backend/ not present)');
+        return false;
+    }
     await mkdir(dirname(outputFile), { recursive: true });
     await rm(outputFile, { force: true });
     if (process.platform === 'win32') {
@@ -160,7 +166,9 @@ function Add-Directory(\$source, \$prefix) {
 }
 try {
     Add-Directory \$backend 'backend'
-    Add-Directory \$nodeModules 'backend/node_modules'
+    if (Test-Path -LiteralPath \$nodeModules) {
+        Add-Directory \$nodeModules 'backend/node_modules'
+    }
 } finally {
     \$zip.Dispose()
 }
@@ -172,6 +180,7 @@ try {
     } else {
         run('tar', ['-a', '-cf', outputFile, '-C', root, 'backend', 'node_modules']);
     }
+    return true;
 }
 
 function publicUrl(filename) {
@@ -180,14 +189,6 @@ function publicUrl(filename) {
 
 async function buildWeb() {
     run('npm', ['run', 'build:web']);
-}
-
-async function stageBackend() {
-    const out = join(stagingDir, 'backend');
-    await rm(out, { recursive: true, force: true });
-    await mkdir(out, { recursive: true });
-    await copyDir(backendDir, out, name => !['data', 'node_modules', '.cache'].includes(name));
-    await copyDir(nodeModules, join(out, 'node_modules'));
 }
 
 async function syncPackageVersions(nextVersion) {
@@ -232,7 +233,6 @@ function findLatestJson(tauriBundleDir) {
     for (const p of candidates) {
         if (existsSync(p)) return p;
     }
-    // Walk one level for any latest.json Tauri may have written.
     try {
         for (const name of readdirSync(tauriBundleDir)) {
             const nested = join(tauriBundleDir, name, 'latest.json');
@@ -242,12 +242,54 @@ function findLatestJson(tauriBundleDir) {
     return null;
 }
 
+async function buildLatestJsonFromSignatures(tauriBundleDir, nextVersion) {
+    const nsisDir = join(tauriBundleDir, 'nsis');
+    const msiDir = join(tauriBundleDir, 'msi');
+
+    let artifact = null;
+    let sigPath = null;
+    if (existsSync(nsisDir)) {
+        const exe = readdirSync(nsisDir).find((f) => f.endsWith('-setup.exe'));
+        if (exe && existsSync(join(nsisDir, `${exe}.sig`))) {
+            artifact = exe;
+            sigPath = join(nsisDir, `${exe}.sig`);
+        }
+    }
+    if (!artifact && existsSync(msiDir)) {
+        const msi = readdirSync(msiDir).find((f) => f.endsWith('.msi'));
+        if (msi && existsSync(join(msiDir, `${msi}.sig`))) {
+            artifact = msi;
+            sigPath = join(msiDir, `${msi}.sig`);
+        }
+    }
+    if (!artifact || !sigPath) {
+        console.warn('[release] no signed NSIS/MSI updater artifacts found');
+        return null;
+    }
+
+    const signature = (await readFile(sigPath, 'utf8')).trim();
+    const latest = {
+        version: nextVersion,
+        notes: `August desktop ${nextVersion}`,
+        pub_date: new Date().toISOString(),
+        platforms: {
+            'windows-x86_64': {
+                signature,
+                url: publicUrl(artifact),
+            },
+        },
+    };
+    const out = join(releaseDir, 'latest.json');
+    await writeFile(out, `${JSON.stringify(latest, null, 2)}\n`);
+    console.log(`[release] generated updater manifest ${out} → ${artifact}`);
+    return out;
+}
+
 async function prepareTauriUpdaterManifest(nextVersion) {
     const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
     const found = findLatestJson(tauriBundleDir);
     if (!found) {
-        console.warn('[release] latest.json not found — updater notices will not work until createUpdaterArtifacts + signing keys are configured');
-        return null;
+        return buildLatestJsonFromSignatures(tauriBundleDir, nextVersion);
     }
 
     const latest = JSON.parse(await readFile(found, 'utf8'));
@@ -297,13 +339,11 @@ async function main() {
 
     await buildWeb();
     await buildTauriApp();
-    await zipBackend(backendZip);
+    const didBackendZip = await zipBackend(backendZip);
 
     await zipFolder(webDist, webZip);
 
     const webSha = await sha256(webZip);
-    const backendSha = await sha256(backendZip);
-
     const manifest = {
         version,
         web: {
@@ -311,18 +351,20 @@ async function main() {
             sha256: webSha,
             path: 'web'
         },
-        backend: {
-            url: publicUrl(`backend-${version}.zip`),
-            sha256: backendSha,
-            path: 'backend'
-        }
     };
+    if (didBackendZip && existsSync(backendZip)) {
+        manifest.backend = {
+            url: publicUrl(`backend-${version}.zip`),
+            sha256: await sha256(backendZip),
+            path: 'backend'
+        };
+    }
 
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
     console.log(`[release] version ${version}`);
     console.log(`[release] web ${webZip}`);
-    console.log(`[release] backend ${backendZip}`);
+    if (didBackendZip) console.log(`[release] backend ${backendZip}`);
     console.log(`[release] manifest ${manifestPath}`);
 
     if (publish) {
@@ -330,26 +372,38 @@ async function main() {
         const notes = `August desktop release ${version}`;
         // When shell: true is active (Windows, extensionless commands), cmd.exe
         // splits unquoted spaces into separate arguments, so we quote them.
-        const ghArgs = ['release', 'create', `v${version}`, '--title', `"${title}"`, '--notes', `"${notes}"`];
-        if (existsSync(webZip)) ghArgs.push(webZip);
-        if (existsSync(backendZip)) ghArgs.push(backendZip);
-        if (existsSync(manifestPath)) ghArgs.push(manifestPath);
+        const tag = `v${version}`;
+        const assets = [];
+        if (existsSync(webZip)) assets.push(webZip);
+        if (didBackendZip && existsSync(backendZip)) assets.push(backendZip);
+        if (existsSync(manifestPath)) assets.push(manifestPath);
         const tauriLatest = join(releaseDir, 'latest.json');
-        if (existsSync(tauriLatest)) ghArgs.push(tauriLatest);
+        if (existsSync(tauriLatest)) assets.push(tauriLatest);
 
-        // Also upload the Tauri native installers (+ .sig updater artifacts)
         const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
         const msiDir = join(tauriBundleDir, 'msi');
         const nsisDir = join(tauriBundleDir, 'nsis');
         if (existsSync(msiDir)) {
-            for (const f of readdirSync(msiDir)) ghArgs.push(join(msiDir, f));
+            for (const f of readdirSync(msiDir)) assets.push(join(msiDir, f));
         }
         if (existsSync(nsisDir)) {
-            for (const f of readdirSync(nsisDir)) ghArgs.push(join(nsisDir, f));
+            for (const f of readdirSync(nsisDir)) assets.push(join(nsisDir, f));
         }
 
-        run('gh', ghArgs);
-        console.log(`[release] published GitHub release v${version} (includes latest.json for in-app update notices)`);
+        // Create release if missing; otherwise upload/replace assets on the existing tag.
+        const view = spawnSync('gh', ['release', 'view', tag], {
+            cwd: root,
+            encoding: 'utf8',
+            shell: process.platform === 'win32',
+        });
+        if (view.status === 0) {
+            console.log(`[release] release ${tag} exists — uploading assets`);
+            run('gh', ['release', 'upload', tag, '--clobber', ...assets]);
+        } else {
+            const ghArgs = ['release', 'create', tag, '--title', `"${title}"`, '--notes', `"${notes}"`, ...assets];
+            run('gh', ghArgs);
+        }
+        console.log(`[release] published GitHub release ${tag} (includes latest.json for in-app update notices)`);
     }
 }
 
