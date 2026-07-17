@@ -43,6 +43,8 @@ function statusBadgeClass(status: StepStatus): string {
 
 const STEP_DETAILS: Record<string, string> = {
   copying: 'Copying portable Python and backend sources into AppData.',
+  // Wire value from Rust SetupPhase — keep snake_case to match backend.
+  // eslint-disable-next-line camelcase -- Rust phase id
   creating_venv: 'Creating a private virtual environment for the runtime.',
   installing: 'Installing packages offline from bundled wheels.',
   starting: 'Launching uvicorn and waiting for /api/health.',

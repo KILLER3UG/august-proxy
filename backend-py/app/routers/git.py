@@ -126,11 +126,6 @@ def _apply_numstat(files: list[dict[str, object]], numstat: str) -> tuple[int, i
             by_path[path]['removed'] = removed
         else:
             files.append({'path': path, 'status': 'M', 'added': added, 'removed': removed})
-    # If porcelain was empty but numstat had rows, totals still count.
-    if total_added == 0 and total_removed == 0:
-        for f in files:
-            total_added += int(f.get('added') or 0)
-            total_removed += int(f.get('removed') or 0)
     return total_added, total_removed
 
 

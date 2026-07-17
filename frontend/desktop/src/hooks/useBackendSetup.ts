@@ -17,11 +17,16 @@ export type BackendSetupPhaseId =
   | 'error';
 
 export interface BackendSetupPhase {
-  phase: BackendSetupPhaseId | string;
+  phase: BackendSetupPhaseId;
   detail: string | null;
 }
 
 const INITIAL: BackendSetupPhase = { phase: 'idle', detail: null };
+
+function asPhase(value: string | undefined | null): BackendSetupPhaseId {
+  const phase = (value || 'idle') as BackendSetupPhaseId;
+  return phase;
+}
 
 export function useBackendSetup() {
   const [status, setStatus] = useState<BackendSetupPhase>(INITIAL);
@@ -32,7 +37,7 @@ export function useBackendSetup() {
     try {
       const next = await invoke<BackendSetupPhase>('backend_setup_status');
       setStatus({
-        phase: next.phase || 'idle',
+        phase: asPhase(next.phase),
         detail: next.detail ?? null,
       });
     } catch {
@@ -49,7 +54,7 @@ export function useBackendSetup() {
     let unlisten: (() => void) | undefined;
     void listen<BackendSetupPhase>('backend-setup', (event) => {
       setStatus({
-        phase: event.payload.phase || 'idle',
+        phase: asPhase(event.payload.phase),
         detail: event.payload.detail ?? null,
       });
     }).then((fn) => {
