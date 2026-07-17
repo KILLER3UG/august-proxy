@@ -21,6 +21,7 @@ import { useNavigate } from 'react-router-dom';
 import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
 import { useSettingsAdvancedPreference } from '@/hooks/useSettingsAdvancedPreference';
+import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { cn } from '@/lib/utils';
 import {
   SETTINGS_SECTIONS,
@@ -61,6 +62,7 @@ export function WorkspaceShell({
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const { showAdvanced, toggle: toggleAdvanced } = useSettingsAdvancedPreference();
+  const { available: updateAvailable } = useAppUpdate();
 
   // Resolve each section's category label, icon, tier, description, and
   // keywords. Falls back to the raw `category` string if a section isn't
@@ -162,6 +164,11 @@ export function WorkspaceShell({
                       icon={s.icon}
                       label={s.label}
                       active={active === s.id}
+                      badge={
+                        s.id === 'app-updates' && updateAvailable
+                          ? 'New'
+                          : null
+                      }
                       onSelect={() => {
                         if (s.id === active) return;
                         setQuery('');

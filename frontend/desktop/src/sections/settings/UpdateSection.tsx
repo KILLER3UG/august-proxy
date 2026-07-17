@@ -1,17 +1,17 @@
 /* ── Updates & Version — check for new releases and install them ── */
 
 import { useEffect, useState } from 'react';
-import { RotateCw, Download, CheckCircle, AlertTriangle, RefreshCw, Database } from 'lucide-react';
+import { Download, CheckCircle, AlertTriangle, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
 import { useBackendStatus } from '@/hooks/useBackendStatus';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { isTauri } from '@/lib/tauri-detect';
 
 export function UpdateSection() {
-  const { available, checking, installing, progress, formatBytes, refresh, install } = useAppUpdate();
+  const { available, checking, installing, progress, formatBytes, install } = useAppUpdate();
   const { status: backend, sync, isTauri: backendTauri } = useBackendStatus();
   const [currentVersion, setCurrentVersion] = useState<string>('…');
-  const [manualChecked, setManualChecked] = useState(false);
 
   useEffect(() => {
     if (!isTauri) {
@@ -27,11 +27,6 @@ export function UpdateSection() {
       }
     })();
   }, []);
-
-  const onCheck = () => {
-    setManualChecked(true);
-    void refresh();
-  };
 
   return (
     <div className="px-8 py-6 max-w-2xl">
@@ -50,43 +45,20 @@ export function UpdateSection() {
       ) : (
         <div className="mt-6 space-y-4">
           <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-foreground">Current Version</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  August Proxy v{currentVersion}
-                </p>
+            <p className="text-sm font-medium text-foreground">Current Version</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              August Proxy v{currentVersion}
+            </p>
+            {!available && !checking && !installing && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
+                <CheckCircle className="size-3.5 shrink-0" />
+                You&apos;re on the latest version
               </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={checking || installing}
-                onClick={onCheck}
-              >
-                {checking ? (
-                  <RefreshCw className="size-3.5 mr-1.5 animate-spin" />
-                ) : (
-                  <RotateCw className="size-3.5 mr-1.5" />
-                )}
-                {checking ? 'Checking…' : 'Check for Updates'}
-              </Button>
-            </div>
+            )}
+            {checking && !available && (
+              <p className="mt-3 text-xs text-muted-foreground">Checking for updates…</p>
+            )}
           </div>
-
-          {!available && manualChecked && !checking && (
-            <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-5">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="size-5 text-green-400 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-green-400">Up to date</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    You&apos;re running the latest version.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
 
           {available && (
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
@@ -111,80 +83,58 @@ export function UpdateSection() {
                     </div>
                   )}
                 </div>
-                <Button size="sm" disabled={installing} onClick={() => { void install(); }}>
-                  <Download className="size-3.5 mr-1.5" />
-                  {installing
-                    ? progress.phase === 'installing'
+                {!installing && (
+                  <Button size="sm" onClick={() => { void install(); }}>
+                    <Download className="size-3.5 mr-1.5" />
+                    Install
+                  </Button>
+                )}
+                {installing && (
+                  <span className="shrink-0 text-xs font-medium text-primary">
+                    {progress.phase === 'installing'
                       ? 'Installing…'
                       : progress.percent != null
                         ? `Downloading ${progress.percent}%`
-                        : 'Downloading…'
-                    : 'Install'}
-                </Button>
+                        : 'Downloading…'}
+                  </span>
+                )}
               </div>
             </div>
           )}
 
           {installing && (
-            <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5">
-              <div className="flex items-start gap-3">
-                <RefreshCw className="mt-0.5 size-5 shrink-0 animate-spin text-muted-foreground" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {progress.phase === 'installing'
-                          ? 'Installing update…'
-                          : 'Downloading update…'}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {progress.phase === 'installing'
-                          ? 'Almost done — the app will restart shortly.'
-                          : 'The app will restart after installation.'}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
-                      {progress.phase === 'installing'
-                        ? '100%'
-                        : progress.percent != null
-                          ? `${progress.percent}%`
-                          : '…'}
-                    </span>
-                  </div>
-
-                  <div
-                    className="h-2 w-full overflow-hidden rounded-full bg-muted"
-                    role="progressbar"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={progress.percent ?? undefined}
-                    aria-label="Update download progress"
-                  >
-                    <div
-                      className="h-full rounded-full bg-primary transition-[width] duration-150 ease-out"
-                      style={{
-                        width:
-                          progress.phase === 'installing'
-                            ? '100%'
-                            : progress.percent != null
-                              ? `${progress.percent}%`
-                              : '15%',
-                        ...(progress.percent == null && progress.phase === 'downloading'
-                          ? { animation: 'pulse 1.2s ease-in-out infinite' }
-                          : undefined),
-                      }}
-                    />
-                  </div>
-
-                  <p className="text-[11px] tabular-nums text-muted-foreground">
-                    {progress.totalBytes != null && progress.totalBytes > 0
-                      ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
-                      : progress.downloadedBytes > 0
-                        ? `${formatBytes(progress.downloadedBytes)} downloaded`
-                        : 'Starting download…'}
+            <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {progress.phase === 'installing'
+                      ? 'Installing update…'
+                      : 'Downloading update…'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {progress.phase === 'installing'
+                      ? 'Almost done — the app will restart shortly.'
+                      : 'The app will restart after installation.'}
                   </p>
                 </div>
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                  {progress.phase === 'installing'
+                    ? '100%'
+                    : progress.percent != null
+                      ? `${progress.percent}%`
+                      : '…'}
+                </span>
               </div>
+
+              <UpdateProgressBar progress={progress} />
+
+              <p className="text-[11px] tabular-nums text-muted-foreground">
+                {progress.totalBytes != null && progress.totalBytes > 0
+                  ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
+                  : progress.downloadedBytes > 0
+                    ? `${formatBytes(progress.downloadedBytes)} downloaded`
+                    : 'Starting download…'}
+              </p>
             </div>
           )}
 

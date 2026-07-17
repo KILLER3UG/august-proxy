@@ -11,6 +11,8 @@ interface Props {
   label: string;
   active: boolean;
   onSelect: () => void;
+  /** Optional notice badge (e.g. update available). */
+  badge?: string | null;
 }
 
 const rowMotion = {
@@ -25,7 +27,7 @@ const iconMotion = {
   tap: { scale: 0.92, transition: t.fast },
 };
 
-export function WorkspaceNavLink({ icon: Icon, label, active, onSelect }: Props) {
+export function WorkspaceNavLink({ icon: Icon, label, active, onSelect, badge }: Props) {
   return (
     <motion.button
       type="button"
@@ -50,7 +52,12 @@ export function WorkspaceNavLink({ icon: Icon, label, active, onSelect }: Props)
       >
         <Icon className="size-4" />
       </motion.span>
-      <span className="truncate">{label}</span>
+      <span className="truncate flex-1">{label}</span>
+      {badge ? (
+        <span className="shrink-0 rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+          {badge}
+        </span>
+      ) : null}
     </motion.button>
   );
 }

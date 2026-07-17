@@ -1137,3 +1137,12 @@ input::placeholder {
 .august-menu-panel[data-state='open'] .august-menu-item {
   animation: august-menu-item-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+@keyframes aug-progress-shine {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}

@@ -1,30 +1,22 @@
-/* ── useAppUpdate — shared Tauri update check for titlebar + dropdown ─ */
+/* ── useAppUpdate — shared Tauri update check for settings + notifications ─ */
 
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
+import {
+  IDLE_UPDATE_PROGRESS,
+  useAppUpdateInstallStore,
+  type AppUpdateProgress,
+} from '@/store/app-update-install';
+
+export type { AppUpdateProgress };
 
 export interface AppUpdateInfo {
   version: string;
   body?: string;
   date?: string;
 }
-
-export interface AppUpdateProgress {
-  /** 0–100 while downloading; null when size is unknown. */
-  percent: number | null;
-  downloadedBytes: number;
-  totalBytes: number | null;
-  phase: 'idle' | 'downloading' | 'installing';
-}
-
-const IDLE_PROGRESS: AppUpdateProgress = {
-  percent: null,
-  downloadedBytes: 0,
-  totalBytes: null,
-  phase: 'idle',
-};
 
 function formatBytes(n: number): string {
   if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
@@ -46,20 +38,25 @@ async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
 
 export function useAppUpdate() {
   const queryClient = useQueryClient();
-  const [installing, setInstalling] = useState(false);
-  const [progress, setProgress] = useState<AppUpdateProgress>(IDLE_PROGRESS);
+  const installing = useAppUpdateInstallStore((s) => s.installing);
+  const progress = useAppUpdateInstallStore((s) => s.progress);
+  const setInstalling = useAppUpdateInstallStore((s) => s.setInstalling);
+  const setProgress = useAppUpdateInstallStore((s) => s.setProgress);
+  const resetInstall = useAppUpdateInstallStore((s) => s.reset);
 
   const query = useQuery({
     queryKey: ['app-update'],
     queryFn: checkForAppUpdate,
     enabled: isTauri,
-    staleTime: 30 * 60 * 1000,
+    staleTime: 30 * 60_000,
     refetchOnWindowFocus: true,
     retry: false,
   });
 
   const install = useCallback(async () => {
     if (!isTauri || !query.data) return;
+    if (useAppUpdateInstallStore.getState().installing) return;
+
     setInstalling(true);
     setProgress({
       percent: 0,
@@ -133,17 +130,16 @@ export function useAppUpdate() {
       const message = err instanceof Error ? err.message : String(err);
       toast.error(message || 'Failed to install update');
     } finally {
-      setInstalling(false);
-      setProgress(IDLE_PROGRESS);
+      resetInstall();
     }
-  }, [query.data, queryClient]);
+  }, [query.data, queryClient, setInstalling, setProgress, resetInstall]);
 
   return {
     isTauri,
     available: query.data ?? null,
     checking: query.isFetching,
     installing,
-    progress,
+    progress: installing ? progress : IDLE_UPDATE_PROGRESS,
     formatBytes,
     refresh: () => queryClient.invalidateQueries({ queryKey: ['app-update'] }),
     install,

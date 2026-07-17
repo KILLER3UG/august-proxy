@@ -17,6 +17,7 @@ import {
 import { api } from '@/api/client';
 import { Backdrop } from '@/components/overlays/Backdrop';
 import { PageLoader } from '@/components/PageLoader';
+import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { menuItem, menuItemHover, menuItemStagger, menuPanel } from '@/lib/motion';
 import { cn, formatTimeAgo } from '@/lib/utils';
@@ -59,7 +60,13 @@ type NotificationItem =
     };
 
 export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
-  const { available: update, installing, install } = useAppUpdate();
+  const {
+    available: update,
+    installing,
+    progress,
+    formatBytes,
+    install,
+  } = useAppUpdate();
   const query = useQuery({
     queryKey: ['whats-new', 48],
     queryFn: () => api.get<WhatsNewResponse>('/api/whats-new?hours=48'),
@@ -138,6 +145,33 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto py-1">
+            {installing && (
+              <div className="mx-2 mb-2 rounded-lg border border-border/50 bg-muted/30 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-foreground">
+                    {progress.phase === 'installing'
+                      ? 'Installing update…'
+                      : 'Downloading update…'}
+                  </p>
+                  <span className="text-xs font-semibold tabular-nums text-foreground">
+                    {progress.phase === 'installing'
+                      ? '100%'
+                      : progress.percent != null
+                        ? `${progress.percent}%`
+                        : '…'}
+                  </span>
+                </div>
+                <UpdateProgressBar progress={progress} />
+                <p className="text-[10px] tabular-nums text-muted-foreground">
+                  {progress.totalBytes != null && progress.totalBytes > 0
+                    ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
+                    : progress.downloadedBytes > 0
+                      ? `${formatBytes(progress.downloadedBytes)} downloaded`
+                      : 'Starting download…'}
+                </p>
+              </div>
+            )}
+
             {query.isLoading && (
               <PageLoader label="Loading notifications…" className="px-3 py-6" />
             )}
@@ -168,6 +202,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
                     key={item.id}
                     item={item}
                     installing={installing}
+                    progressPercent={progress.percent}
                     onInstall={() => {
                       void install();
                     }}
@@ -211,11 +246,13 @@ function commitToItem(c: WhatsNewCommit): NotificationItem {
 function NotificationRow({
   item,
   installing,
+  progressPercent,
   onInstall,
   onOpenUrl,
 }: {
   item: NotificationItem;
   installing: boolean;
+  progressPercent: number | null;
   onInstall: () => void;
   onOpenUrl: (url: string) => void;
 }) {
@@ -227,6 +264,7 @@ function NotificationRow({
         : GitCommitHorizontal;
 
   const clickable = item.kind !== 'update' && Boolean(item.url);
+  const updateBusy = item.kind === 'update' && installing;
 
   return (
     <motion.div
@@ -272,7 +310,11 @@ function NotificationRow({
               {item.when ? <span>{formatTimeAgo(item.when)}</span> : null}
               {item.kind === 'update' && (
                 <span className="font-medium text-amber-500">
-                  {installing ? 'Installing…' : 'Click to install'}
+                  {updateBusy
+                    ? progressPercent != null
+                      ? `Downloading ${progressPercent}%`
+                      : 'Downloading…'
+                    : 'Click to install'}
                 </span>
               )}
               {clickable && (
