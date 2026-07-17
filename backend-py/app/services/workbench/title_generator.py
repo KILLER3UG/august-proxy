@@ -6,7 +6,10 @@ reads poorly for long prompts. Instead we:
 1. Leave the placeholder title ("Chat YYYY-MM-DD …") while the first turn runs
 2. After the first assistant reply lands, ask a cheap LLM for a 3–7 word title
 3. Fall back to a truncated first-message snippet if the LLM call fails
-4. Never overwrite a title the user already set (or a prior auto-title)
+4. Never overwrite a title the user already set (or a prior successful auto-title)
+
+If a previous attempt fell back to the first-message snippet, a later early
+turn may regenerate once the LLM path works again.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import logging
 import re
 
 from app.json_narrowing import as_dict, as_list, as_str
+from app.providers.clients.base import BaseProviderClient
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +106,44 @@ def sanitize_generated_title(raw: str, *, max_len: int = 60) -> str:
     return title
 
 
+def _is_fallback_title(title: str | None, user_message: str) -> bool:
+    """True when title looks like the truncated first-message fallback."""
+    from app.services.workbench.sessions import derive_title_from_message
+
+    t = (title or '').strip()
+    if not t:
+        return False
+    fallback = derive_title_from_message(user_message)
+    return bool(fallback) and t == fallback
+
+
+def _extract_openai_title(body_json: dict[str, object]) -> str:
+    choices = as_list(body_json.get('choices'), [])
+    if not choices:
+        return ''
+    content = as_dict(as_dict(choices[0]).get('message')).get('content', '')
+    if isinstance(content, list):
+        content = ' '.join(
+            as_str(b.get('text')) for b in content if isinstance(b, dict)
+        )
+    return sanitize_generated_title(as_str(content))
+
+
+def _extract_anthropic_title(body_json: dict[str, object]) -> str:
+    content = body_json.get('content', [])
+    if isinstance(content, list) and content:
+        texts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and as_str(block.get('type'), 'text') in ('text', ''):
+                text = as_str(block.get('text'))
+                if text:
+                    texts.append(text)
+        return sanitize_generated_title('\n'.join(texts))
+    if isinstance(content, str):
+        return sanitize_generated_title(content)
+    return ''
+
+
 async def _llm_title(
     user_message: str,
     assistant_response: str,
@@ -122,39 +164,70 @@ async def _llm_title(
         if not api_key:
             return ''
 
+        # generate() reads model from client.config
+        try:
+            client.config = {**dict(client.config or {}), 'model': model}
+        except Exception:
+            pass
+
         user_snippet = (user_message or '')[:500]
         asst_snippet = (assistant_response or '')[:500]
-        body: dict[str, object] = {
-            'model': model,
-            'messages': [
-                {'role': 'system', 'content': _TITLE_SYSTEM},
-                {
-                    'role': 'user',
-                    'content': f'User: {user_snippet}\n\nAssistant: {asst_snippet}',
-                },
-            ],
-            'max_tokens': 48,
-            'temperature': 0.3,
-        }
-        # Prefer non-streaming chat completions when available.
-        if hasattr(client, 'chat_completions'):
-            resp = await client.chat_completions(body)
-            body_json = getattr(resp, 'body_json', None) or getattr(resp, 'body', None) or {}
-            if not isinstance(body_json, dict):
-                return ''
-            if getattr(resp, 'is_error', False) or body_json.get('error') is not None:
-                return ''
-            choices = as_list(body_json.get('choices'), [])
-            if not choices:
-                return ''
-            content = as_dict(as_dict(choices[0]).get('message')).get('content', '')
-            if isinstance(content, list):
-                content = ' '.join(
-                    as_str(b.get('text')) for b in content if isinstance(b, dict)
-                )
-            return sanitize_generated_title(as_str(content))
+        prompt = f'User: {user_snippet}\n\nAssistant: {asst_snippet}'
+
+        # 1) Unified generate() — Anthropic overrides; OpenAI uses chat_completions.
+        try:
+            raw = await client.generate(prompt, system=_TITLE_SYSTEM)
+            title = sanitize_generated_title(raw)
+            if title:
+                return title
+        except Exception:
+            logger.debug('LLM title generate() failed', exc_info=True)
+
+        # 2) OpenAI-compatible chat_completions (real subclass override only).
+        chat_fn = getattr(type(client), 'chat_completions', None)
+        if chat_fn is not None and chat_fn is not BaseProviderClient.chat_completions:
+            try:
+                body: dict[str, object] = {
+                    'model': model,
+                    'messages': [
+                        {'role': 'system', 'content': _TITLE_SYSTEM},
+                        {'role': 'user', 'content': prompt},
+                    ],
+                    'max_tokens': 48,
+                    'temperature': 0.3,
+                }
+                resp = await client.chat_completions(body)
+                body_json = getattr(resp, 'body_json', None) or getattr(resp, 'body', None) or {}
+                if isinstance(body_json, dict) and not getattr(resp, 'is_error', False):
+                    if body_json.get('error') is None:
+                        title = _extract_openai_title(body_json)
+                        if title:
+                            return title
+            except Exception:
+                logger.debug('LLM title chat_completions failed', exc_info=True)
+
+        # 3) Anthropic-style messages API.
+        messages_fn = getattr(type(client), 'messages', None)
+        if messages_fn is not None and messages_fn is not BaseProviderClient.messages:
+            try:
+                body = {
+                    'model': model,
+                    'max_tokens': 48,
+                    'temperature': 0.3,
+                    'system': _TITLE_SYSTEM,
+                    'messages': [{'role': 'user', 'content': prompt}],
+                }
+                resp = await client.messages(body)
+                body_json = getattr(resp, 'body_json', None) or getattr(resp, 'body', None) or {}
+                if isinstance(body_json, dict) and not getattr(resp, 'is_error', False):
+                    if body_json.get('error') is None:
+                        title = _extract_anthropic_title(body_json)
+                        if title:
+                            return title
+            except Exception:
+                logger.debug('LLM title messages() failed', exc_info=True)
     except Exception:
-        logger.debug('LLM title call failed', exc_info=True)
+        logger.warning('LLM title call failed', exc_info=True)
     return ''
 
 
@@ -190,7 +263,7 @@ async def maybe_auto_title_after_turn(
 
     Safe to call fire-and-forget. Skips when:
     - not the first user turn
-    - title is no longer a placeholder (user renamed / already titled)
+    - title is no longer a placeholder / first-message fallback (user renamed)
     - exchange texts are missing
     """
     from app.services.workbench.sessions import (
@@ -213,7 +286,13 @@ async def maybe_auto_title_after_turn(
     user_text, assistant_text = exchange
 
     session = get_workbench_session(sid)
-    if not session or not is_placeholder_title(getattr(session, 'title', None)):
+    if not session:
+        return None
+    current_title = getattr(session, 'title', None)
+    soft_title = is_placeholder_title(current_title) or _is_fallback_title(
+        current_title, user_text
+    )
+    if not soft_title:
         return None
 
     title = await generate_session_title(
@@ -224,10 +303,19 @@ async def maybe_auto_title_after_turn(
     )
     if not title:
         return None
+    # Don't "upgrade" a fallback title with the same fallback text.
+    if title == (current_title or '').strip():
+        return None
 
     # Re-check before write so a mid-flight manual rename wins.
     session = get_workbench_session(sid)
-    if not session or not is_placeholder_title(getattr(session, 'title', None)):
+    if not session:
+        return None
+    current_title = getattr(session, 'title', None)
+    if not (
+        is_placeholder_title(current_title)
+        or _is_fallback_title(current_title, user_text)
+    ):
         return None
 
     renamed = rename_workbench_session(sid, title)

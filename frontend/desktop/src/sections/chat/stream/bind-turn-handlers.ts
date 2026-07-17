@@ -40,7 +40,10 @@ export function bindTurnStreamHandlers(opts: {
     persistMessages,
     setSessionStatus,
     setWorkbenchSession: (session) => {
-      updateSessionStreamState(sessionId, () => ({ workbenchSession: session }));
+      updateSessionStreamState(sessionId, (prev) => ({
+        workbenchSession:
+          typeof session === 'function' ? session(prev.workbenchSession) : session,
+      }));
     },
     setSubagentPrompts: (updater) => {
       updateSessionStreamState(sessionId, prev => {

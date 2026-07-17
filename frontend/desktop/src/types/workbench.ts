@@ -44,6 +44,8 @@ export interface WorkbenchSession {
   agentMode: string;
   approved: boolean;
   approvedAt: string | null;
+  /** Backend field; prefer normalizeWorkbenchSession so `approved` stays in sync. */
+  planApproved?: boolean;
   plan: WorkbenchPlan | null;
   goal: WorkbenchGoal | null;
   lastGoal: WorkbenchGoal | null;
@@ -303,4 +305,6 @@ export interface WorkbenchEventHandlers {
     currentIndex?: number;
     contextSummary?: string;
   }) => void;
+  /** Model submitted a plan via submit_plan — show the proposal banner. */
+  onPlanProposed?: (data: { plan: unknown }) => void;
 }

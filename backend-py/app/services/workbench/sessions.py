@@ -32,6 +32,13 @@ logger = logging.getLogger('workbench.sessions')
 _SESSION_FILE = 'workbench-sessions.json'
 
 
+def _optional_dict(value: object) -> dict[str, object] | None:
+    """Narrow optional dict fields; None/empty → None (never {})."""
+    if not isinstance(value, dict) or not value:
+        return None
+    return value
+
+
 @dataclass
 class WorkbenchSession:
     """In-memory representation of a workbench session.
@@ -95,9 +102,10 @@ class WorkbenchSession:
             'mutationCount': self.mutationCount,
             'workspacePath': self.workspacePath,
             'goal': self.goal,
-            'plan': self.plan,
+            # Never serialize empty {} as a plan — UI treats truthy plan as pending.
+            'plan': self.plan if self.plan else None,
             'planApproved': self.planApproved,
-            'clarify': self.clarify,
+            'clarify': self.clarify if self.clarify else None,
             'todos': self.todos,
             'messages': self.messages,
             'pendingMutations': self.pendingMutations,
@@ -128,9 +136,11 @@ class WorkbenchSession:
             mutationCount=as_int(d.get('mutationCount', 0)),
             workspacePath=as_str(d.get('workspacePath', '')),
             goal=as_str(d.get('goal', '')),
-            plan=as_dict(d.get('plan')),
+            # Preserve None for optional payloads. as_dict(None) → {} which is
+            # truthy in the UI and falsely triggers the plan banner.
+            plan=_optional_dict(d.get('plan')),
             planApproved=as_bool(d.get('planApproved', False)),
-            clarify=as_dict(d.get('clarify')),
+            clarify=_optional_dict(d.get('clarify')),
             todos=cast('list[dict[str, object]]', as_list(d.get('todos'))),
             messages=cast('list[dict[str, object]]', as_list(d.get('messages', []))),
             pendingMutations=cast('list[dict[str, object]]', as_list(d.get('pendingMutations', []))),
@@ -869,7 +879,8 @@ def summarize_session(session: WorkbenchSession) -> dict[str, object]:
         'agentId': session.agentId,
         'guardMode': session.guardMode,
         'goal': session.goal,
-        'plan': session.plan is not None,
+        # Boolean presence flag for lists — never an empty {} standing in for null.
+        'plan': bool(session.plan),
         'planApproved': session.planApproved,
         'messageCount': session.messageCount,
         'mutationCount': session.mutationCount,

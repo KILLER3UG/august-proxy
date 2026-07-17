@@ -97,3 +97,42 @@ async def test_generate_falls_back_without_provider():
     # Fallback is truncated first-user-message snippet — not the assistant reply.
     assert 'checkout' in title.lower() or 'debug' in title.lower()
     assert 'flaky' in title.lower() or 'checkout' in title.lower()
+
+
+@pytest.mark.asyncio
+async def test_llm_title_uses_client_generate(monkeypatch):
+    """Anthropic (and others) expose generate() — must not require chat_completions."""
+    from app.services.workbench import title_generator as tg
+
+    class FakeClient:
+        config: dict[str, object] = {}
+
+        def resolveApiKey(self):
+            return 'sk-test'
+
+        async def generate(self, prompt: str, system: str | None = None) -> str:
+            assert system
+            assert 'User:' in prompt
+            return 'Fix checkout flake'
+
+    monkeypatch.setattr(
+        'app.providers.clients.getClient',
+        lambda _p: FakeClient(),
+    )
+    title = await tg._llm_title(
+        'Please help me debug the flaky checkout test',
+        'I will inspect the failing assertion.',
+        provider={'id': 'anthropic', 'apiMode': 'anthropicMessages'},
+        model='claude-sonnet-4',
+    )
+    assert title == 'Fix checkout flake'
+
+
+def test_is_fallback_title_matches_derived_snippet():
+    from app.services.workbench.title_generator import _is_fallback_title
+    from app.services.workbench.sessions import derive_title_from_message
+
+    user = 'Please help me debug the flaky checkout test that fails intermittently'
+    derived = derive_title_from_message(user)
+    assert _is_fallback_title(derived, user)
+    assert not _is_fallback_title('Checkout flake investigation', user)

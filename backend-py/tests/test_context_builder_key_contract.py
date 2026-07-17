@@ -14,6 +14,8 @@ from app.services.memory.context_builder import buildSystemPrompt, buildTier3
 def test_camel_case_workbench_session_dict_injects_all_runtime_fields():
     """Exact keys produced by workbench.buildSystemPrompt's sessionDict."""
     session = {
+        'id': 'wb_session_abc123',
+        'title': 'Ship feature plan',
         'goal': 'Ship the feature',
         'plan': {'plan': 'Step 1 do the thing'},
         'planApproved': True,
@@ -47,6 +49,10 @@ def test_camel_case_workbench_session_dict_injects_all_runtime_fields():
     assert 'Ship the feature' in prompt
     assert 'Step 1 do the thing' in prompt
     assert 'C:/Dev/project' in prompt
+    assert '<session>' in prompt
+    assert 'wb_session_abc123' in prompt
+    assert 'Ship feature plan' in prompt
+    assert 'currently chatting' in prompt
     assert 'skill_a' in prompt
     assert 'context_used_pct' in prompt or 'attention_pressure' in prompt
     assert 'deep' in prompt

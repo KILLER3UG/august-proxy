@@ -241,5 +241,8 @@ export function dispatchWorkbenchEvent(
       });
       break;
     }
+    case 'planProposed':
+      handlers.onPlanProposed?.({ plan: p?.plan });
+      break;
   }
 }

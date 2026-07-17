@@ -229,6 +229,20 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
     Empty blocks are never rendered.
     """
     blocks: list[str] = []
+    # Current chat identity (title changes after auto-title / rename).
+    session_id = as_str(_get(session, 'id', 'sessionId'), '').strip()
+    session_title = as_str(_get(session, 'title', 'sessionTitle'), '').strip()
+    if session_id or session_title:
+        session_lines = [
+            'You are currently chatting in this session.',
+            'Use this id when calling session tools (delete_session, rename_session, brain_query).',
+            'For the current chat, rename_session may omit sessionId.',
+        ]
+        if session_id:
+            session_lines.append(f'id: {session_id}')
+        if session_title:
+            session_lines.append(f'title: {session_title}')
+        blocks.append(wrapTag('session', '\n'.join(session_lines)))
     budget = _get(session, 'cognitive_budget', 'cognitiveBudget')
     if budget:
         blocks.append(wrapTag('cognitive_budget', _fmt_jsonish(budget)))

@@ -72,6 +72,7 @@ import {
 import { estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
 import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
+import { hasPendingWorkbenchPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
 import { InitAugCard } from './InitAugCard';
 import type { ChatMessage } from '@/types/chat';
 import type { WorkbenchSandboxMode } from '@/types/workbench';
@@ -207,11 +208,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'full';
   });
   // Plan gate UI only when agent mode requires it — Full Access is a hard barrier.
+  // Require a real plan object (not {} / boolean presence flags from session summaries).
   const planPending =
-    workbenchMode !== 'full' &&
-    !!workbenchSession?.plan &&
-    !workbenchSession?.approved &&
-    !workbenchSession?.approvedAt;
+    workbenchMode !== 'full' && hasPendingWorkbenchPlan(workbenchSession);
 
   // Command / mutation pre-apply — replaces the composer until Accept/Reject.
   const workbenchSessionId = workbenchSession?.id ?? null;
@@ -409,14 +408,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             /* best-effort */
           }
         }
-        setWorkbenchSession(loaded);
+        const normalized = normalizeWorkbenchSession(loaded) ?? loaded;
+        setWorkbenchSession(normalized);
         updateSessionWorkbenchMetadata(sessionId, {
-          workbenchSessionId: loaded.id,
-          workbenchAgentId: loaded.agentId,
-          workbenchProvider: loaded.provider,
+          workbenchSessionId: normalized.id,
+          workbenchAgentId: normalized.agentId,
+          workbenchProvider: normalized.provider,
         });
-        syncTitleToBackend(loaded.id, loaded.title);
-        return loaded;
+        syncTitleToBackend(normalized.id, normalized.title);
+        return normalized;
       } catch {
         // Backend may have restarted; create a fresh Workbench session below.
       }
@@ -444,14 +444,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       sandboxMode,
       sandboxNetwork,
     });
-    setWorkbenchSession(created);
+    const normalizedCreated = normalizeWorkbenchSession(created) ?? created;
+    setWorkbenchSession(normalizedCreated);
     updateSessionWorkbenchMetadata(sessionId, {
-      workbenchSessionId: created.id,
-      workbenchAgentId: created.agentId,
-      workbenchProvider: created.provider,
+      workbenchSessionId: normalizedCreated.id,
+      workbenchAgentId: normalizedCreated.agentId,
+      workbenchProvider: normalizedCreated.provider,
     });
-    syncTitleToBackend(created.id, created.title);
-    return created;
+    syncTitleToBackend(normalizedCreated.id, normalizedCreated.title);
+    return normalizedCreated;
   };
 
   const { send, generateAIResponse } = useChatSend({

@@ -16,6 +16,7 @@ import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
 import { addRightDrawerSection, closeRightDrawer, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
 import { approveWorkbenchPlan, getWorkbenchSession, rejectWorkbenchPlan, setWorkbenchGuardMode, streamWorkbenchRevision } from "@/api/workbench";
+import { normalizeWorkbenchSession } from "@/lib/workbench-plan";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
 import type { RightDrawerSectionId } from "./RightDrawerState";
@@ -179,7 +180,8 @@ export function ChatLayout() {
     refetchInterval: 2_000,
     retry: false,
   });
-  const workbenchSession: WorkbenchSession | null = workbench.data || null;
+  const workbenchSession: WorkbenchSession | null =
+    normalizeWorkbenchSession(workbench.data) || null;
 
   // Auto-open the Tasks section when todos first appear.
   const hasTodosRef = useRef(false);
