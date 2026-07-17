@@ -1,7 +1,7 @@
 /* ── Combined model + effort menu (Claude-like) ───────────────────────── */
 /* One pill trigger; primary popover with Effort / More models flyouts.   */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -126,6 +126,9 @@ export function ModelEffortMenu({
     left: number;
     width: number;
   } | null>(null);
+  const showEffort = !!(
+    selected?.supportsReasoning || selected?.supportsThinking
+  );
   const [flyoutPos, setFlyoutPos] = useState<{
     top: number;
     left: number;
@@ -133,6 +136,9 @@ export function ModelEffortMenu({
 
   const effortOpt =
     EFFORT_OPTIONS.find((o) => o.value === effort) || EFFORT_OPTIONS[1];
+  const showEffort = !!(
+    selected?.supportsReasoning || selected?.supportsThinking
+  );
 
   const closeAll = useCallback(() => {
     clearAllTimers();
@@ -147,12 +153,12 @@ export function ModelEffortMenu({
     if (!el) return null;
     const r = el.getBoundingClientRect();
     const width = 280;
-    const estHeight = 220;
+    const estHeight = showEffort ? 220 : 180;
     const top = Math.max(8, r.top - estHeight - 6);
     let left = r.right - width;
     left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
     return { top, left, width };
-  }, []);
+  }, [showEffort]);
 
   const refinePrimaryPos = useCallback(() => {
     const el = triggerRef.current;
@@ -235,19 +241,27 @@ export function ModelEffortMenu({
     };
   }, [open, flyout, computePrimaryPos, refinePrimaryPos, computeFlyoutPos]);
 
+  // Close effort flyout if the selected model no longer supports it.
   useEffect(() => {
+    if (!showEffort && flyout === 'effort') setFlyout(null);
+  }, [showEffort, flyout, setFlyout]);
+
+  useLayoutEffect(() => {
     if (!open || !flyout) {
-      setFlyoutPos(null);
+      if (!flyout) setFlyoutPos(null);
       return;
     }
-    // Keep prior position while swapping so the shell does not blink off.
-    requestAnimationFrame(() => {
+    // Seed before paint so "More models" does not blink when Effort was never shown.
+    const seeded = computeFlyoutPos();
+    if (seeded) setFlyoutPos(seeded);
+    const raf = requestAnimationFrame(() => {
       const fp = computeFlyoutPos();
       if (fp) setFlyoutPos(fp);
       if (flyout === 'models') {
         setTimeout(() => searchRef.current?.focus(), 0);
       }
     });
+    return () => cancelAnimationFrame(raf);
   }, [open, flyout, computeFlyoutPos]);
 
   const filtered = searchQuery.trim()
@@ -328,24 +342,26 @@ export function ModelEffortMenu({
 
             <div className="h-px bg-border/50 mx-2" />
 
-            <motion.button
-              type="button"
-              variants={menuItem}
-              {...menuItemHover}
-              onClick={() => toggleFlyout('effort')}
-              onMouseEnter={() => scheduleFlyoutOpen('effort')}
-              onMouseLeave={scheduleFlyoutClose}
-              className={cn(
-                'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
-                flyout === 'effort' && 'bg-muted/30',
-              )}
-            >
-              <span className="text-sm text-foreground">Effort</span>
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                {effortOpt.triggerLabel}
-                <ChevronRight className="size-3.5 opacity-60" />
-              </span>
-            </motion.button>
+            {showEffort && (
+              <motion.button
+                type="button"
+                variants={menuItem}
+                {...menuItemHover}
+                onClick={() => toggleFlyout('effort')}
+                onMouseEnter={() => scheduleFlyoutOpen('effort')}
+                onMouseLeave={scheduleFlyoutClose}
+                className={cn(
+                  'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
+                  flyout === 'effort' && 'bg-muted/30',
+                )}
+              >
+                <span className="text-sm text-foreground">Effort</span>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  {effortOpt.triggerLabel}
+                  <ChevronRight className="size-3.5 opacity-60" />
+                </span>
+              </motion.button>
+            )}
 
             <motion.button
               type="button"
@@ -405,8 +421,10 @@ export function ModelEffortMenu({
     </AnimatePresence>
   );
 
-  // Fixed width avoids layout jump when swapping Effort ↔ Models.
+  // Fixed width + min height avoids layout jump when opening Models cold
+  // (without Effort having been shown first) or swapping Effort ↔ Models.
   const flyoutWidth = 300;
+  const flyoutMinHeight = 280;
 
   const sideFlyout = (
     <AnimatePresence>
@@ -425,10 +443,11 @@ export function ModelEffortMenu({
             top: flyoutPos.top,
             left: flyoutPos.left,
             width: flyoutWidth,
+            minHeight: flyoutMinHeight,
           }}
         >
           <AnimatePresence initial={false} mode="wait">
-              {flyout === 'effort' ? (
+              {flyout === 'effort' && showEffort ? (
                 <motion.div key="effort" {...menuFlyoutSwap}>
                   <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
                     Higher effort means more thorough responses. Takes longer
@@ -610,7 +629,9 @@ export function ModelEffortMenu({
         )}
         title={
           selected
-            ? `${getModelDisplayName(selected.id || selected.name || '')} · ${effortOpt.triggerLabel}`
+            ? showEffort
+              ? `${getModelDisplayName(selected.id || selected.name || '')} · ${effortOpt.triggerLabel}`
+              : getModelDisplayName(selected.id || selected.name || '')
             : 'Select model'
         }
         aria-expanded={open}
@@ -619,9 +640,11 @@ export function ModelEffortMenu({
         <span className="min-w-0 truncate font-medium text-foreground">
           {shortModelName(selected)}
         </span>
-        <span className="text-muted-foreground shrink-0">
-          {effortOpt.triggerLabel}
-        </span>
+        {showEffort && (
+          <span className="text-muted-foreground shrink-0">
+            {effortOpt.triggerLabel}
+          </span>
+        )}
         <ChevronDown
           className={cn(
             'size-3 shrink-0 opacity-60 transition-transform duration-200',

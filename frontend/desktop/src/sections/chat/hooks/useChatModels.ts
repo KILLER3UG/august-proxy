@@ -36,9 +36,16 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
     const list =
       availableProviderKeys.size === 0
         ? aggregatedModels
-        : aggregatedModels.filter(
-            (m) => availableProviderKeys.has(m.provider) || m.provider === 'Alias',
-          );
+        : aggregatedModels.filter((m) => {
+            if (m.provider === 'Alias') return true;
+            if (availableProviderKeys.has(m.provider)) return true;
+            // Catalog can refresh before availability — keep models whose
+            // provider is not in the availability payload yet (newly added).
+            const listed = availableProvidersList.some(
+              (p) => p.id === m.provider || p.name === m.provider,
+            );
+            return !listed;
+          });
     return list.map((m) => ({
       id: m.id,
       name: m.name || m.id,
@@ -48,7 +55,7 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
       supportsReasoning: m.supportsReasoning,
       supportsThinking: m.supportsThinking,
     }));
-  }, [aggregatedModels, availableProviderKeys]);
+  }, [aggregatedModels, availableProviderKeys, availableProvidersList]);
 
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
   const [showModelVisibility, setShowModelVisibility] = useState(false);

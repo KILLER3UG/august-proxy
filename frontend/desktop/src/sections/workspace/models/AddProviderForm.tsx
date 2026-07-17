@@ -30,8 +30,16 @@ export function AddProviderForm({
   const create = useMutation({
     mutationFn: () =>
       providersApi.create({ name, baseUrl, apiFormat, apiKey, enabled: true }),
-    onSuccess: (p) => {
+    onSuccess: async (p) => {
       toast.success(`Created ${p.name}`);
+      // Pull /v1/models so chat dropdowns get the new provider's catalog.
+      if (baseUrl.trim() && (apiKey.trim() || p.apiKeySet)) {
+        try {
+          await providersApi.refreshModels(p.id);
+        } catch {
+          /* discovery is best-effort; user can refresh from detail pane */
+        }
+      }
       onCreated(p);
     },
     onError: (e: unknown) => {

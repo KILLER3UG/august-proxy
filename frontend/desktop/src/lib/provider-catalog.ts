@@ -12,6 +12,8 @@ export const PROVIDER_CATALOG_QUERY_KEYS = [
   ['mp-aggregated-models'],
   ['ws-providers'],
   ['providers'],
+  ['mp-providers'],
+  ['provider-availability'],
   ['model-options'],
   ['user-model-aliases'],
   ['provider-health'],
@@ -36,6 +38,9 @@ export async function refreshProviderCatalog(qc: QueryClient): Promise<void> {
     ),
   );
   // Ensure open chat dropdowns refetch immediately, not only on remount.
-  await qc.refetchQueries({ queryKey: ['aggregated-models'] });
-  await qc.refetchQueries({ queryKey: ['ws-providers'] });
+  await Promise.all([
+    qc.refetchQueries({ queryKey: ['aggregated-models'] }),
+    qc.refetchQueries({ queryKey: ['ws-providers'] }),
+    qc.refetchQueries({ queryKey: ['provider-availability'] }),
+  ]);
 }

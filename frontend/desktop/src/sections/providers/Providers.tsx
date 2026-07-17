@@ -149,13 +149,20 @@ export function Providers() {
     if (!newProviderName.trim() || !newBaseUrl.trim()) return;
     setAdding(true);
     try {
-      await providersApi.create({
+      const created = await providersApi.create({
         name: newProviderName.trim(),
         baseUrl: newBaseUrl.trim(),
         apiFormat: newApiFormat,
         apiKey: newProviderKey,
         enabled: true,
       });
+      if (newBaseUrl.trim() && newProviderKey.trim()) {
+        try {
+          await providersApi.refreshModels(created.id);
+        } catch {
+          /* best-effort discovery */
+        }
+      }
       setShowAddForm(false);
       setNewProviderName('');
       setNewProviderKey('');
