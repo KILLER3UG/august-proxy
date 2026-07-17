@@ -28,6 +28,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                 }
             }
             "quit" => {
+                crate::backend::stopBackendForUpdate(app);
                 app.exit(0);
             }
             _ => {}

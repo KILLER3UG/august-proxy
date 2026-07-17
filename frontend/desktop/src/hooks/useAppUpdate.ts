@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
 import {
@@ -34,6 +35,15 @@ async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
     body: update.body,
     date: update.date,
   };
+}
+
+/** Release Python/.pyd locks before NSIS overwrites bundled resources. */
+async function stopBackendBeforeInstall(): Promise<void> {
+  try {
+    await invoke<string>('stop_backend_for_update');
+  } catch (err) {
+    console.warn('[update] stop_backend_for_update failed', err);
+  }
 }
 
 export function useAppUpdate() {
@@ -76,7 +86,10 @@ export function useAppUpdate() {
       let downloaded = 0;
       let contentLength: number | null = null;
 
-      await update.downloadAndInstall((event) => {
+      const onEvent = (event: {
+        event: string;
+        data: { contentLength?: number; chunkLength?: number };
+      }) => {
         switch (event.event) {
           case 'Started': {
             contentLength =
@@ -93,7 +106,7 @@ export function useAppUpdate() {
             break;
           }
           case 'Progress': {
-            downloaded += event.data.chunkLength;
+            downloaded += event.data.chunkLength ?? 0;
             const percent =
               contentLength && contentLength > 0
                 ? Math.min(100, Math.round((downloaded / contentLength) * 100))
@@ -118,7 +131,20 @@ export function useAppUpdate() {
           default:
             break;
         }
+      };
+
+      // Download first, then kill the backend, then install. On Windows NSIS
+      // cannot overwrite resources/python/*.pyd while uvicorn still holds them;
+      // downloadAndInstall races quit vs sidecar teardown.
+      await update.download(onEvent);
+      setProgress({
+        percent: 100,
+        downloadedBytes: contentLength ?? downloaded,
+        totalBytes: contentLength ?? downloaded,
+        phase: 'installing',
       });
+      await stopBackendBeforeInstall();
+      await update.install();
 
       try {
         const { relaunch } = await import('@tauri-apps/plugin-process');

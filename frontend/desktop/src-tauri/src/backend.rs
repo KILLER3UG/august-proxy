@@ -10,6 +10,7 @@ use std::env;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -19,6 +20,9 @@ use std::os::windows::process::CommandExt;
 
 const DEFAULT_PROXY_PORT: u16 = 8085;
 
+/// When true, the watchdog must not respawn the backend (update/install in progress).
+static UPDATE_HOLDOFF: AtomicBool = AtomicBool::new(false);
+
 pub struct BackendProcess(pub Mutex<Option<Child>>, pub Mutex<Option<String>>);
 
 /// Live setup phase for the desktop UI overlay (pollable via `backend_setup_status`).
@@ -27,7 +31,7 @@ pub struct BackendSetupStatus(pub Mutex<SetupPhase>);
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetupPhase {
-    /// idle | copying | creating_venv | installing | starting | ready | error
+    /// idle | copying | creating_venv | installing | starting | ready | error | updating
     pub phase: String,
     pub detail: Option<String>,
 }
@@ -475,7 +479,87 @@ fn appDataDir(app: &AppHandle) -> PathBuf {
 
 fn killChild(child: &mut Child) {
     let _ = child.kill();
-    let _ = child.wait();
+    // Wait until the OS reaps the process so DLL / .pyd handles are released
+    // before NSIS tries to overwrite bundled Python files.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            _ => {
+                let _ = child.wait();
+                break;
+            }
+        }
+    }
+}
+
+pub fn updateHoldoffActive() -> bool {
+    UPDATE_HOLDOFF.load(Ordering::SeqCst)
+}
+
+/// Stop the supervised backend and keep the watchdog from respawning it.
+/// Call this before the Windows updater/NSIS install step so bundled
+/// `resources/python/*.pyd` files are not locked.
+pub fn stopBackendForUpdate(app: &AppHandle) {
+    UPDATE_HOLDOFF.store(true, Ordering::SeqCst);
+    setSetupPhase(
+        app,
+        "updating",
+        Some("Stopping backend for update…".into()),
+    );
+    killStoredChild(app);
+    #[cfg(windows)]
+    killAugustPythonOrphans(app);
+    // Brief settle so Windows releases mapped DLLs before the installer runs.
+    std::thread::sleep(Duration::from_millis(400));
+    log::info!("[backend] stopped for update (holdoff on)");
+}
+
+/// Best-effort: terminate leftover python processes whose executable lives
+/// under the August install dir or AppData backend-runtime (locks `_asyncio.pyd`).
+#[cfg(windows)]
+fn killAugustPythonOrphans(app: &AppHandle) {
+    let mut needles: Vec<String> = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        needles.push(dir.to_string_lossy().replace('/', "\\"));
+    }
+    if let Ok(dir) = app.path().app_data_dir() {
+        needles.push(dir.to_string_lossy().replace('/', "\\"));
+    }
+    needles.push(r"\August\resources\python\".into());
+    needles.push(r"\com.august.proxy\backend-runtime\".into());
+
+    // PowerShell one-liner — avoid killing unrelated system/user Python.
+    let filter = needles
+        .into_iter()
+        .map(|n| {
+            let escaped = n.replace('\'', "''");
+            format!("$_.ExecutablePath -like '*{escaped}*'")
+        })
+        .collect::<Vec<_>>()
+        .join(" -or ");
+    let script = format!(
+        "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | \
+         Where-Object {{ $_.Name -match '^(python|pythonw|node)(\\.exe)?$' -and $_.ExecutablePath -and ({filter}) }} | \
+         ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+    );
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        &script,
+    ]);
+    applyNoWindow(&mut cmd);
+    match cmd.status() {
+        Ok(st) => log::info!("[backend] orphan python/node sweep exit={st}"),
+        Err(e) => log::warn!("[backend] orphan python/node sweep failed: {e}"),
+    }
 }
 
 /// Hide console windows for long-lived backend processes on Windows.
@@ -589,6 +673,11 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
 
 fn ensureRunningLocked(app: &AppHandle) -> bool {
     reclaimDeadChild(app);
+
+    if updateHoldoffActive() {
+        log::info!("[backend] update holdoff — skip ensureRunning");
+        return false;
+    }
 
     if isProxyUp() {
         log::info!("[backend] proxy already up on :{}", proxyPort());
@@ -794,11 +883,17 @@ pub fn watchBackend(app: &AppHandle) {
             continue;
         }
 
-        // Avoid thrashing while the user is mid-bootstrap (copy/pip).
+        // Avoid thrashing while the user is mid-bootstrap (copy/pip) or updating.
+        if updateHoldoffActive() {
+            continue;
+        }
         if let Some(state) = app.try_state::<BackendSetupStatus>() {
             if let Ok(guard) = state.0.lock() {
                 let phase = guard.phase.as_str();
-                if matches!(phase, "copying" | "creating_venv" | "installing") {
+                if matches!(
+                    phase,
+                    "copying" | "creating_venv" | "installing" | "updating"
+                ) {
                     continue;
                 }
             }
@@ -866,6 +961,13 @@ pub fn restart_proxy(app: AppHandle, state: State<'_, BackendProcess>) -> String
     } else {
         "restart_failed".into()
     }
+}
+
+/// Kill the backend (and Windows orphans locking bundled Python) before NSIS runs.
+#[tauri::command]
+pub fn stop_backend_for_update(app: AppHandle) -> Result<String, String> {
+    stopBackendForUpdate(&app);
+    Ok("stopped".into())
 }
 
 #[tauri::command]

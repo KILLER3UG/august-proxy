@@ -68,6 +68,7 @@ pub fn run() {
             backend::backend_last_error,
             backend::backend_setup_status,
             backend::sync_backend_deps,
+            backend::stop_backend_for_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
