@@ -158,7 +158,7 @@ class PtyIO:
         # Package name on PyPI is ``pywinpty``; import module is ``winpty``.
         PtyProcess = None
         try:
-            from winpty import PtyProcess as _P  # type: ignore[import-untyped]
+            from winpty import PtyProcess as _P  # type: ignore[import-untyped,import-not-found]
             PtyProcess = _P
         except ImportError:
             try:

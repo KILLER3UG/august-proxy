@@ -1,18 +1,8 @@
 /* ── ObservabilitySection test (RTL + jsdom) ─────────────────────────── */
-/* This is the first RTL render in the codebase. It establishes the pattern:
- *   1. Mock all data hooks with vi.mock at the top.
- *   2. Render the section with <ObservabilitySection />.
- *   3. Use screen.findBy* / getByRole to assert.
- *
- * The test exercises the orchestrator's subtab switching, the
- * SettingsTabs aria-role, and the Overview tab's empty-state when data
- * fails to load.
- */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
-// Mock react-query's data hooks. We use a controllable data shape per test.
 const mockOverviewData = {
     range: '30d' as const,
     audit: { count: 0, byCategory: {}, byResult: {}, byActor: {}, byCritical: { true: 0, false: 0, null: 0 }, at: new Date().toISOString() },
@@ -37,16 +27,16 @@ const mockUsage = {
 const mockByDay = { results: [] as Array<{ date: string; tokens: number }> };
 const mockByModel = { results: [] as Array<{ model: string; tokens: number; percent: number }> };
 
-let overviewMock: any = { data: mockOverviewData, isLoading: false };
-let usageMock: any = { data: mockUsage, isLoading: false };
-let byDayMock: any = { data: mockByDay, isLoading: false };
-let byModelMock: any = { data: mockByModel, isLoading: false };
+let overviewMock: { data: unknown; isLoading: boolean } = { data: mockOverviewData, isLoading: false };
+let usageMock: { data: unknown; isLoading: boolean } = { data: mockUsage, isLoading: false };
+let byDayMock: { data: unknown; isLoading: boolean } = { data: mockByDay, isLoading: false };
+let byModelMock: { data: unknown; isLoading: boolean } = { data: mockByModel, isLoading: false };
 
 vi.mock('@tanstack/react-query', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@tanstack/react-query')>();
     return {
         ...actual,
-        useQuery: (opts: any) => {
+        useQuery: (opts: { queryKey?: unknown }) => {
             const key = JSON.stringify(opts.queryKey);
             if (key.includes('observability')) return overviewMock;
             if (key.includes('usage') && key.includes('stats')) return usageMock;
@@ -57,7 +47,6 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
     };
 });
 
-// Mock toast (sonner) to no-op so we don't have to deal with portals.
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { ObservabilitySection } from '../ObservabilitySection';
@@ -69,28 +58,28 @@ beforeEach(() => {
     byModelMock = { data: mockByModel, isLoading: false };
 });
 
+function tab(name: string) {
+    // Vertical SettingsTabs include description text in the accessible name.
+    return screen.getByRole('tab', { name: new RegExp(`^${name}\\b`, 'i') });
+}
+
 describe('ObservabilitySection', () => {
     it('renders the page header and default Overview subtab', () => {
         render(<ObservabilitySection />);
         expect(screen.getByRole('heading', { name: /observability/i, level: 1 })).toBeInTheDocument();
-        // SettingsTabs renders a tablist
-        const tablist = screen.getByRole('tablist');
-        expect(tablist).toBeInTheDocument();
-        // The four subtab buttons exist
+        expect(screen.getByRole('tablist')).toBeInTheDocument();
         for (const label of ['Overview', 'Audit', 'Rollback', 'Observations']) {
-            expect(screen.getByRole('tab', { name: label })).toBeInTheDocument();
+            expect(tab(label)).toBeInTheDocument();
         }
-        // Default selected is Overview
-        expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+        expect(tab('Overview')).toHaveAttribute('aria-selected', 'true');
     });
 
     it('switches to the Audit subtab when clicked', async () => {
         render(<ObservabilitySection />);
-        fireEvent.click(screen.getByRole('tab', { name: 'Audit' }));
+        fireEvent.click(tab('Audit'));
         await waitFor(() => {
-            expect(screen.getByRole('tab', { name: 'Audit' })).toHaveAttribute('aria-selected', 'true');
+            expect(tab('Audit')).toHaveAttribute('aria-selected', 'true');
         });
-        // The filter bar should be present
         expect(screen.getByLabelText(/category filter/i)).toBeInTheDocument();
     });
 
@@ -102,37 +91,33 @@ describe('ObservabilitySection', () => {
 
     it('renders the status pill with the right variant for host-agent disconnected', () => {
         render(<ObservabilitySection />);
-        // The host-agent status text should be 'disconnected' (lowercased)
         expect(screen.getAllByText(/disconnected/i).length).toBeGreaterThan(0);
     });
 
     it('renders all 6 subtabs in the tablist', () => {
         render(<ObservabilitySection />);
         for (const label of ['Overview', 'Audit', 'Rollback', 'Observations', 'Traffic', 'Logs']) {
-            expect(screen.getByRole('tab', { name: label })).toBeInTheDocument();
+            expect(tab(label)).toBeInTheDocument();
         }
     });
 
     it('switches to the Traffic subtab and shows the period filter chips', async () => {
         render(<ObservabilitySection />);
-        fireEvent.click(screen.getByRole('tab', { name: 'Traffic' }));
+        fireEvent.click(tab('Traffic'));
         await waitFor(() => {
-            expect(screen.getByRole('tab', { name: 'Traffic' })).toHaveAttribute('aria-selected', 'true');
+            expect(tab('Traffic')).toHaveAttribute('aria-selected', 'true');
         });
-        // The TrafficSubtab renders its own "Period" filter chip group
         expect(screen.getByText(/^Period$/i)).toBeInTheDocument();
     });
 
     it('switches to the Logs subtab and shows the level filter chips', async () => {
         render(<ObservabilitySection />);
-        fireEvent.click(screen.getByRole('tab', { name: 'Logs' }));
+        fireEvent.click(tab('Logs'));
         await waitFor(() => {
-            expect(screen.getByRole('tab', { name: 'Logs' })).toHaveAttribute('aria-selected', 'true');
+            expect(tab('Logs')).toHaveAttribute('aria-selected', 'true');
         });
-        // LogsSubtab renders an "All / Info / Warn / Error" level chip row
         const buttons = screen.getAllByRole('button');
-        const labels = buttons.map(b => b.textContent?.trim());
-        // Level chips should be present (in addition to the subtab buttons)
+        const labels = buttons.map((b) => b.textContent?.trim());
         expect(labels).toEqual(expect.arrayContaining(['All', 'Info', 'Warn', 'Error']));
     });
 });

@@ -98,7 +98,7 @@ async def _try_appcontainer_spawn(
         import ctypes
         from ctypes import wintypes
 
-        userenv = ctypes.WinDLL('userenv')
+        userenv = ctypes.WinDLL('userenv')  # type: ignore[attr-defined]
         derive = userenv.DeriveAppContainerSidFromAppContainerName
         derive.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p)]
         derive.restype = wintypes.HRESULT  # type: ignore[attr-defined]
