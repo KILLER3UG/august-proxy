@@ -59,11 +59,11 @@ export async function reconcileSessionsFromBackend(
           workbenchSessionId: backend.id,
           // Never clobber a real local title with a backend placeholder
           // ("Chat 2026-…", "New Session") — that was wiping auto-titles.
-          title: preferSessionTitle(local.title, backend.title as string | undefined),
+          title: preferSessionTitle(local.title, backend.title),
           startedAt: local.startedAt,
           messageCount: Math.max(backend.messageCount ?? 0, local.messageCount ?? 0),
           provider: backend.provider || local.provider,
-          model: (backend.model as string | undefined) || local.model,
+          model: (backend.model) || local.model,
           workbenchProvider: backend.provider || local.workbenchProvider,
         });
         continue;
@@ -96,22 +96,22 @@ export async function reconcileSessionsFromBackend(
         merged[pendingIdx] = {
           ...pending,
           workbenchSessionId: bs.id,
-          title: preferSessionTitle(pending.title, bs.title as string | undefined),
+          title: preferSessionTitle(pending.title, bs.title),
           messageCount: Math.max(bs.messageCount ?? 0, pending.messageCount ?? 0),
           provider: bs.provider || pending.provider,
-          model: (bs.model as string | undefined) || pending.model,
+          model: (bs.model) || pending.model,
           workbenchProvider: bs.provider || pending.workbenchProvider,
         };
         continue;
       }
       merged.push({
         id: bs.id,
-        title: (bs.title as string | undefined) || 'New Session',
-        startedAt: (bs.updatedAt as string | undefined) || now,
+        title: (bs.title) || 'New Session',
+        startedAt: (bs.updatedAt) || now,
         messageCount: bs.messageCount ?? 0,
         lastMessage: 'Conversation started.',
         provider: bs.provider || '',
-        model: (bs.model as string | undefined) || '',
+        model: (bs.model) || '',
         workbenchSessionId: bs.id,
         workbenchProvider: bs.provider || '',
       });

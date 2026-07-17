@@ -11,8 +11,15 @@ import {
 } from '@/api/api-client';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 
+type LiveTextFieldKey =
+  | 'sttProvider'
+  | 'sttModel'
+  | 'ttsProvider'
+  | 'ttsModel'
+  | 'ttsVoice';
+
 interface Field {
-  key: keyof LiveConfig;
+  key: LiveTextFieldKey;
   label: string;
   hint: string;
   inputType: 'select' | 'text';
@@ -116,7 +123,7 @@ export function LiveSettingsTab() {
     });
   };
 
-  const handleFieldChange = (key: keyof LiveConfig, value: string) => {
+  const handleFieldChange = (key: LiveTextFieldKey, value: string) => {
     setEditCfg({ ...active, [key]: value });
   };
 
@@ -179,7 +186,7 @@ export function LiveSettingsTab() {
               <WorkspaceField label={label} hint={hint}>
                 {inputType === 'select' ? (
                   <select
-                    value={active[key] ?? ''}
+                    value={typeof active[key] === 'string' ? active[key] : ''}
                     onChange={(e) => handleFieldChange(key, e.target.value)}
                     data-testid={`${testid}-input`}
                     className="w-full bg-black/20 border border-white/[0.06] rounded px-3 py-1.5 text-sm text-foreground focus:border-primary outline-none"
@@ -193,7 +200,7 @@ export function LiveSettingsTab() {
                 ) : (
                   <input
                     type="text"
-                    value={active[key] ?? ''}
+                    value={typeof active[key] === 'string' ? active[key] : ''}
                     onChange={(e) =>
                       setEditCfg({ ...active, [key]: e.target.value })
                     }

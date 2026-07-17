@@ -182,7 +182,7 @@ def addEntity(name: str, entityType: str = 'general', metadata: dict[str, object
             conn.execute(
                 'DELETE FROM graph_entities WHERE name_key IN (SELECT name_key FROM graph_entities ORDER BY updated_at ASC LIMIT 1)'
             )
-        ent = {
+        ent: dict[str, object] = {
             'name': name,
             'type': entityType or 'general',
             'metadata': metadata or {},

@@ -86,7 +86,7 @@ def schedule_post_turn_side_effects(
     auto_memory_model: str | None,
     reflection_model: str | None,
     sync_auto_memory: Callable[..., None],
-    reflect_on_turn: Callable[..., None],
+    reflect_on_turn: Callable[..., object],
 ) -> None:
     """Kick off auto-memory and turn reflection without blocking the chat stream.
 

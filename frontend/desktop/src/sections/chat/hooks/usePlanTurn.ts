@@ -323,7 +323,7 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
       const wbId = workbenchSession?.id;
       if (!wbId) return;
       try {
-        await streamPlanTurn(async () => ({ sinceSeq }), undefined, wbId);
+        await streamPlanTurn(() => Promise.resolve({ sinceSeq }), undefined, wbId);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         toast.error('Could not continue after approval', { description: message });

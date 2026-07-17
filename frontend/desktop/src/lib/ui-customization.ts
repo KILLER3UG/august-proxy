@@ -323,7 +323,7 @@ export function draftToPreviewStyle(draft: UiCustomizationMap): CSSProperties {
     style['--dt-sidebar-primary'] = draft.primary;
     style['--dt-sidebar-ring'] = draft.ring || draft.primary;
   }
-  return style as CSSProperties;
+  return style;
 }
 
 export function draftIsDirty(

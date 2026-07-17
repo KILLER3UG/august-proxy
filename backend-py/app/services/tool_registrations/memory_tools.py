@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import json
-from app.json_narrowing import as_str
+from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
 
 
@@ -93,7 +93,7 @@ def _purge_session_everywhere(sessionId: str) -> dict[str, object]:
     result = memory_store.delete_session_cascade(sessionId, notify=not wb_ok)
     return {
         'ok': wb_ok or bool(result.get('ok')),
-        'messages': int(result.get('messages') or 0),
+        'messages': as_int(result.get('messages'), 0),
         'children': result.get('children') or {},
         'workbench': wb_ok,
     }
@@ -105,7 +105,7 @@ async def _deleteSession(sessionId: str) -> str:
         result = _purge_session_everywhere(sessionId)
         if result.get('ok'):
             children = result.get('children') or {}
-            msgCount = int(result.get('messages') or 0)
+            msgCount = as_int(result.get('messages'), 0)
             extra = (
                 sum(int(v) for k, v in children.items() if k != 'messages')
                 if isinstance(children, dict)
@@ -135,7 +135,7 @@ async def _deleteSessions(sessionIds: object = None, sessionId: str = '') -> str
             result = _purge_session_everywhere(sid)
             if result.get('ok'):
                 deleted.append(sid)
-                msg_total += int(result.get('messages') or 0)
+                msg_total += as_int(result.get('messages'), 0)
             else:
                 missing.append(sid)
         except Exception as exc:
@@ -199,7 +199,7 @@ async def _deleteFolder(folderId: str) -> str:
             result = _purge_session_everywhere(sid)
             if result.get('ok'):
                 count += 1
-                msgCount += int(result.get('messages') or 0)
+                msgCount += as_int(result.get('messages'), 0)
         return f"Deleted {count} session(s) from folder '{folderId}' (+ {msgCount} message(s))."
     except Exception as exc:
         return f"Error deleting folder '{folderId}': {exc}"

@@ -16,6 +16,7 @@ import { IntegrationCard } from './IntegrationCard';
 import { IntegrationDetail } from './IntegrationDetail';
 import { IntegrationDirectoryModal } from './IntegrationDirectoryModal';
 import {
+  googleFacetFromCatalogId,
   useConnectAccount,
   useIntegrations,
   type IntegrationItem,
@@ -72,13 +73,13 @@ export function IntegrationsSection() {
 
       setBusyId(item.id);
       try {
-        const facet =
+        const facetId =
           item.source.kind === 'account-facet'
             ? item.source.facetId
             : item.catalogId;
         const res = await connectAccount.mutateAsync({
           kind: 'google',
-          facet: facet ?? 'gmail',
+          facet: googleFacetFromCatalogId(facetId ?? 'gmail'),
         });
         const authUrl = res.authUrl || '';
 

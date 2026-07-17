@@ -61,7 +61,7 @@ async def run_consolidation_once() -> dict[str, object]:
     async with _consolidation_lock:
         from app.services.consolidation_daemon import runConsolidation
 
-        return await runConsolidation()
+        return dict(await runConsolidation())
 
 
 async def start_cognitive_services(app: object | None = None) -> dict[str, object]:

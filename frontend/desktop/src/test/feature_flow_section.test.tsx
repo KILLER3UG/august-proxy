@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FeatureFlowSection } from '@/sections/settings/FeatureFlowSection';
 
 vi.mock('@/api/api-client', () => ({
-  getFeatureInventory: vi.fn(async () => ({
+  getFeatureInventory: vi.fn(() => Promise.resolve({
     count: 2,
     features: [
       {
@@ -22,7 +22,7 @@ vi.mock('@/api/api-client', () => ({
       },
     ],
   })),
-  getFeatureFlowEvents: vi.fn(async () => [
+  getFeatureFlowEvents: vi.fn(() => Promise.resolve([
     {
       id: 'e1',
       traceId: 'tr-1',
@@ -35,7 +35,7 @@ vi.mock('@/api/api-client', () => ({
       meta: {},
       at: new Date().toISOString(),
     },
-  ]),
+  ])),
   openFeatureFlowEventStream: vi.fn(() => {
     const es = {
       onmessage: null as ((ev: MessageEvent) => void) | null,

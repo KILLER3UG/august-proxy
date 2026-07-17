@@ -134,10 +134,11 @@ def save_workbench_session_sot(
             role = as_str(msg.get('role'), 'user')
             content = msg.get('content', '')
             if msg.get('tool_calls') is not None or msg.get('tool_use_id') is not None:
-                payload: object = {
-                    'content': content,
-                    **{k: msg[k] for k in ('tool_calls', 'tool_use_id', 'name') if k in msg},
-                }
+                payload_dict: dict[str, object] = {'content': content}
+                for k in ('tool_calls', 'tool_use_id', 'name'):
+                    if k in msg:
+                        payload_dict[k] = msg[k]
+                payload: object = payload_dict
             else:
                 payload = content
             content_str = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
@@ -220,18 +221,18 @@ def _delete_messages_for_session(conn: object, sid: str) -> int:
     """
     import sqlite3
 
-    c = conn  # typed loosely; always the brain sqlite connection
+    c = cast(sqlite3.Connection, conn)  # typed loosely; always the brain sqlite connection
     try:
-        cur = c.execute('DELETE FROM messages WHERE session_id = ?', (sid,))  # type: ignore[union-attr]
+        cur = c.execute('DELETE FROM messages WHERE session_id = ?', (sid,))
         return int(cur.rowcount or 0)
     except sqlite3.DatabaseError:
         # FTS out of sync with base table — rebuild then retry bulk, then by id.
         try:
-            c.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")  # type: ignore[union-attr]
+            c.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
         except sqlite3.Error:
             pass
         try:
-            cur = c.execute('DELETE FROM messages WHERE session_id = ?', (sid,))  # type: ignore[union-attr]
+            cur = c.execute('DELETE FROM messages WHERE session_id = ?', (sid,))
             return int(cur.rowcount or 0)
         except sqlite3.DatabaseError:
             pass
@@ -239,7 +240,7 @@ def _delete_messages_for_session(conn: object, sid: str) -> int:
         try:
             ids = [
                 int(r[0])
-                for r in c.execute(  # type: ignore[union-attr]
+                for r in c.execute(
                     'SELECT id FROM messages WHERE session_id = ?', (sid,)
                 ).fetchall()
             ]
@@ -247,7 +248,7 @@ def _delete_messages_for_session(conn: object, sid: str) -> int:
             ids = []
         for mid in ids:
             try:
-                cur = c.execute('DELETE FROM messages WHERE id = ?', (mid,))  # type: ignore[union-attr]
+                cur = c.execute('DELETE FROM messages WHERE id = ?', (mid,))
                 deleted += int(cur.rowcount or 0)
             except sqlite3.DatabaseError:
                 continue

@@ -244,7 +244,21 @@ async function runLiveAudit() {
 
 async function main() {
   const staticResult = runStaticAudit();
-  await runLiveAudit();
+  try {
+    await runLiveAudit();
+  } catch (error) {
+    const cause = error && typeof error === 'object' ? error.cause : null;
+    const code =
+      (cause && typeof cause === 'object' && 'code' in cause && cause.code) ||
+      (error && typeof error === 'object' && 'code' in error && error.code);
+    if (code === 'ECONNREFUSED') {
+      console.warn(
+        `Skipping live mobile parity audit — backend not reachable at ${baseUrl} (${String(code)}). Static checks still apply.`,
+      );
+    } else {
+      throw error;
+    }
+  }
 
   if (failures.length) {
     for (const failure of failures) {

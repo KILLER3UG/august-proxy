@@ -13,7 +13,7 @@ describe('v3 — /Exam slash command registration', () => {
   });
 
   it('ChatThread emits an open-exam event when the registry runs the /exam handler', () => {
-    const path = resolve(__dirname, '../sections/chat/ChatThread.tsx');
+    const path = resolve(__dirname, '../sections/chat/hooks/useChatVoiceCommands.ts');
     const src = readFileSync(path, 'utf8');
     expect(src).toMatch(/open-exam|setExamActive\(true\)/);
   });

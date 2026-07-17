@@ -11,10 +11,12 @@ JSON from the frontend stays camelCase (``targetModel``, ``displayAlias``, etc.)
 """
 
 from __future__ import annotations
+from typing import cast
 from fastapi import APIRouter, HTTPException
 from app.models.camel_base import CamelModel
 from app.services import alias_service
 from app.services.memory_store import list_config_audit
+from app.type_aliases import JsonValue
 
 router = APIRouter(prefix='/api/august')
 
@@ -174,10 +176,10 @@ async def manage_sessions(body: ActionBody):
     if action == 'rename' and body.id and body.title:
         from app.services.workbench.sessions import rename_workbench_session
 
-        s = rename_workbench_session(str(body.id), str(body.title))
-        if not s:
+        renamed = rename_workbench_session(str(body.id), str(body.title))
+        if not renamed:
             raise HTTPException(404, detail='Session not found')
-        return {'ok': True, 'session': s.toDict()}
+        return {'ok': True, 'session': renamed.toDict()}
     return {'ok': True, 'sessions': wb.listWorkbenchSessions()}
 
 
@@ -256,7 +258,7 @@ async def manage_memory(body: ActionBody):
     action = (body.action or '').lower()
     key = body.key or ''
     if action in ('set', 'upsert') and key:
-        memory_store.save_fact(key, body.value, category=body.category or 'general')
+        memory_store.save_fact(key, cast(JsonValue, body.value), category=body.category or 'general')
         return {'ok': True, 'key': key, 'value': body.value}
     if action in ('delete', 'forget') and key:
         memory_store.delete_fact(key)
@@ -266,6 +268,7 @@ async def manage_memory(body: ActionBody):
 
 @router.post('/tools/manage')
 async def manage_tools(body: ActionBody):
+    from app.json_narrowing import as_dict, as_list
     from app.services.tools import mcp_client
 
     action = (body.action or '').lower()
@@ -276,8 +279,8 @@ async def manage_tools(body: ActionBody):
         server = mcp_client.registerServer(
             body.name,
             str(cfg.get('command') or 'true'),
-            args=list(cfg.get('args') or []) if isinstance(cfg.get('args'), list) else None,
-            env=dict(cfg.get('env') or {}) if isinstance(cfg.get('env'), dict) else None,
+            args=[str(a) for a in as_list(cfg.get('args'), [])] if isinstance(cfg.get('args'), list) else None,
+            env={str(k): str(v) for k, v in as_dict(cfg.get('env'), {}).items()} if isinstance(cfg.get('env'), dict) else None,
         )
         return {'ok': True, 'tool': server}
     if action == 'delete' and body.name:

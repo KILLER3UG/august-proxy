@@ -18,8 +18,8 @@ import {
 } from '../sessions';
 
 vi.mock('@/api/workbench', () => ({
-  getWorkbenchSessions: vi.fn(async () => []),
-  deleteWorkbenchSession: vi.fn(async () => {}),
+  getWorkbenchSessions: vi.fn(() => Promise.resolve([])),
+  deleteWorkbenchSession: vi.fn(() => Promise.resolve()),
 }));
 
 import { getWorkbenchSessions } from '@/api/workbench';

@@ -131,7 +131,7 @@ export function ComposerToolbar({
     if (workbenchSession?.id) {
       void setWorkbenchGuardMode(workbenchSession.id, mode)
         .then((updated) => {
-          if (updated) setWorkbenchSession(updated as typeof workbenchSession);
+          if (updated) setWorkbenchSession(updated);
         })
         .catch((error) => {
           console.warn('[ChatThread] Failed to persist guard mode:', error);
@@ -160,7 +160,7 @@ export function ComposerToolbar({
     if (workbenchSession?.id) {
       void setWorkbenchSandboxMode(workbenchSession.id, mode, network)
         .then((updated) => {
-          if (updated) setWorkbenchSession(updated as typeof workbenchSession);
+          if (updated) setWorkbenchSession(updated);
         })
         .catch((error) => {
           console.warn('[ChatThread] Failed to persist sandbox mode:', error);

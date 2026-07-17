@@ -13,7 +13,7 @@ async function readErrorDetail(resp: Response): Promise<string> {
     const j = (await resp.json()) as { detail?: unknown; error?: unknown };
     if (typeof j.detail === 'string') return j.detail;
     if (j.detail && typeof j.detail === 'object' && 'message' in j.detail) {
-      return String((j.detail as { message: unknown }).message);
+      return String((j.detail).message);
     }
     if (typeof j.error === 'string') return j.error;
   } catch {

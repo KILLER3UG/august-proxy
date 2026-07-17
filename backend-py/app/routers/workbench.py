@@ -11,6 +11,7 @@ import json
 import uuid
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services import event_log
 from app.services.workbench import workbench as wb
 
@@ -537,7 +538,7 @@ async def respondMutation(request: Request):
         raise HTTPException(status_code=404, detail='Mutation token not found')
     session_id = str(result.get('sessionId') or '')
     tool_name = str(result.get('toolName') or '')
-    args = result.get('args') if isinstance(result.get('args'), dict) else {}
+    args = as_dict(result.get('args'), {})
 
     # Pre-apply: run the approved tool immediately with stored arguments.
     exec_result: str | None = None
@@ -558,7 +559,7 @@ async def respondMutation(request: Request):
             except Exception:
                 pass
 
-    remaining = int(result.get('remainingPending') or 0)
+    remaining = as_int(result.get('remainingPending'), 0)
     next_status = 'awaiting_approval' if remaining > 0 else 'idle'
     try:
         from app.services.realtime_bus import emit_invalidate, emit_realtime
@@ -594,7 +595,7 @@ async def respondMutation(request: Request):
                     'Do not run that change. Acknowledge briefly and ask how they want to proceed.'
                 )
             else:
-                result_snip = (exec_result or result.get('toolResult') or '')[:6000]
+                result_snip = (exec_result or as_str(result.get('toolResult'), ''))[:6000]
                 msg = (
                     f'The user **accepted** the pending tool `{tool_name}` '
                     f'(scope={result.get("scope")}). '
@@ -618,6 +619,9 @@ async def respondMutation(request: Request):
             model = str(getattr(session, 'model', '') or '') if session else ''
             guard = str(getattr(session, 'guardMode', '') or '') if session else ''
 
+            def _emit_continue_event(event: dict[str, object]) -> None:
+                event_log.event_log.append(session_id, as_str(event.get('type'), 'message'), event)
+
             async def _continue_after_decision() -> None:
                 try:
                     await wb.sendWorkbenchMessageStream(
@@ -627,9 +631,7 @@ async def respondMutation(request: Request):
                         agentId=agent_id,
                         model=model,
                         guardMode=guard,
-                        emit=lambda event: event_log.event_log.append(
-                            session_id, event.get('type', 'message'), event
-                        ),
+                        emit=_emit_continue_event,
                         signal=cancel_event,
                     )
                 except Exception:
@@ -1449,7 +1451,7 @@ async def answerBtw(request: Request):
                 answer = str(result.get('text') or result.get('content') or '')
                 if not answer and isinstance(result.get('content'), list):
                     answer = extract_text(
-                        [b for b in result['content'] if isinstance(b, dict)]  # type: ignore[index]
+                        [b for b in as_list(result.get('content'), []) if isinstance(b, dict)]
                     )
     except HTTPException:
         raise

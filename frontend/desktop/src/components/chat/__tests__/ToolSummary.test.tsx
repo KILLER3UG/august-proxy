@@ -111,7 +111,7 @@ describe('ToolSummary UI', () => {
     expect(header.textContent).not.toMatch(/used/);
   });
 
-  it('starts expanded when isLive and collapses after settle delay', async () => {
+  it('starts expanded when isLive and collapses after settle delay', () => {
     const entries = [
       makeEntry(makeTool({ id: 'a', name: 'read_file', status: 'running', context: '{"path":"a.ts"}' }), {
         status: 'running',
@@ -154,7 +154,7 @@ describe('ToolSummary UI', () => {
     // Still open during settle delay
     expect(document.querySelector('[data-slot="tool-summary"]')?.getAttribute('data-expanded')).toBe('true');
 
-    await act(async () => {
+    act(() => {
       vi.advanceTimersByTime(SETTLE_COLLAPSE_MS);
     });
 

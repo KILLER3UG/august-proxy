@@ -34,7 +34,17 @@ export async function wbFetch<T>(
     throw new WorkbenchHttpError(msg, res.status, body);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  // Prefer text() so empty DELETE bodies don't call json(); fall back for
+  // partial Response mocks in unit tests that only stub json().
+  if (typeof res.text === 'function') {
+    const text = await res.text();
+    if (!text.trim()) return undefined as T;
+    return JSON.parse(text) as T;
+  }
+  if (typeof res.json === 'function') {
+    return (await res.json()) as T;
+  }
+  return undefined as T;
 }
 
 export function jsonInit(method: string, body?: unknown): RequestInit {

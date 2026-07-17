@@ -74,6 +74,7 @@ import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { InitAugCard } from './InitAugCard';
 import type { ChatMessage } from '@/types/chat';
+import type { WorkbenchSandboxMode } from '@/types/workbench';
 export type {
   ChatMessage,
   MessageBlock,
@@ -282,7 +283,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const el = scrollRef.current;
     if (!el) return null;
     // scrollRef is already the overflow container; keep closest as a fallback.
-    return (el.closest('.overflow-y-auto') as HTMLElement | null) ?? el;
+    return (el.closest('.overflow-y-auto')) ?? el;
   }, []);
 
   const scrollToBottomSmooth = useCallback(() => {
@@ -421,10 +422,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
     }
 
-    let sandboxMode = 'workspace-write';
+    let sandboxMode: WorkbenchSandboxMode = 'workspace-write';
     let sandboxNetwork: boolean | undefined;
     try {
-      sandboxMode = localStorage.getItem('august_last_sandbox_mode') || 'workspace-write';
+      const stored = localStorage.getItem('august_last_sandbox_mode');
+      sandboxMode =
+        stored === 'read-only' || stored === 'workspace-write' || stored === 'danger-full-access'
+          ? stored
+          : 'workspace-write';
       if (sandboxMode === 'workspace-write' && localStorage.getItem('august_sandbox_network_default') === '1') {
         sandboxNetwork = true;
       }

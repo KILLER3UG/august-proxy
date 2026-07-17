@@ -19,7 +19,8 @@ def _landlock_probe() -> bool:
     """Best-effort: Landlock is available on modern kernels (ABI via syscall)."""
     try:
         # Full Landlock ruleset application needs a helper; probe host only.
-        return os.path.exists('/proc/sys/kernel') and os.uname().sysname == 'Linux'
+        uname = getattr(os, 'uname', None)
+        return os.path.exists('/proc/sys/kernel') and uname is not None and uname().sysname == 'Linux'
     except Exception:
         return False
 

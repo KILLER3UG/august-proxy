@@ -52,8 +52,8 @@ export function usePopupDrag(
     // Prefer capturing on the popup root so moves keep firing if the cursor
     // leaves the element (image-editor style drag).
     const captureEl =
-      (e.currentTarget.closest('[data-brain-popup-root]') as HTMLElement | null) ??
-      (e.currentTarget as HTMLElement);
+      e.currentTarget.closest<HTMLElement>('[data-brain-popup-root]') ??
+      e.currentTarget;
     try {
       captureEl.setPointerCapture?.(e.pointerId);
     } catch {

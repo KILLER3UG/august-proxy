@@ -14,6 +14,7 @@ from fastapi import APIRouter, Query
 from pydantic import ConfigDict
 from pydantic.alias_generators import to_camel
 
+from app.json_narrowing import as_list
 from app.models.camel_base import CamelModel
 from app.services import model_service
 
@@ -101,7 +102,7 @@ async def model_catalog(
     for m in models:
         mid = str(m.get('id', ''))
         prov = str(m.get('provider', ''))
-        caps = m.get('capabilities') if isinstance(m.get('capabilities'), list) else []
+        caps = as_list(m.get('capabilities'), [])
         if pl and pl not in prov.lower():
             continue
         if capability and capability not in caps:

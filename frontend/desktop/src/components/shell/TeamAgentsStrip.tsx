@@ -45,7 +45,7 @@ export function TeamAgentsStrip({
     (a) => a.status === 'pending' || a.status === 'running',
   );
   const lastCk = q.data?.meta?.lastCheckpointLabel;
-  const lastCkId = q.data?.meta?.lastCheckpointId as string | undefined;
+  const lastCkId = q.data?.meta?.lastCheckpointId;
 
   // Rough cost signal: elapsed seconds as proxy when real cost isn't on the row
   const totalElapsed = agents.reduce((sum, a) => sum + (a.elapsed ?? 0), 0);

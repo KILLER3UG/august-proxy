@@ -39,7 +39,7 @@ export interface UserDropdownUser {
   username: string;
   avatar: string;
   initials: string;
-  status: UserStatus | string;
+  status: UserStatus;
 }
 
 export interface UserDropdownAccount {

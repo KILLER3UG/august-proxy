@@ -74,9 +74,17 @@ export const FALLBACK_SERVICES: ServiceConnection[] = [
   },
 ];
 
+/** Safely stringify an unknown value, avoiding the default `[object Object]`
+ *  coercion for non-primitive values. */
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : fallback;
+}
+
 /** Normalize Python /api/mcp/servers rows for the UI. */
 export function normalizeMcpServer(raw: Record<string, unknown>): McpServer {
-  const statusRaw = String(raw.status ?? "stopped");
+  const statusRaw = asString(raw.status, "stopped");
   const status = (
     [
       "running",
@@ -102,7 +110,7 @@ export function normalizeMcpServer(raw: Record<string, unknown>): McpServer {
     : undefined;
   return {
     id: typeof raw.id === "string" ? raw.id : undefined,
-    name: String(raw.name ?? raw.id ?? "unnamed"),
+    name: asString(raw.name, asString(raw.id, "unnamed")),
     status: status === "registered" ? "not_started" : status,
     toolCount:
       typeof raw.toolCount === "number"
@@ -123,7 +131,7 @@ export function normalizeMcpServer(raw: Record<string, unknown>): McpServer {
         ? raw.error
         : raw.error == null
           ? null
-          : String(raw.error),
+          : asString(raw.error, "error"),
     tools,
   };
 }

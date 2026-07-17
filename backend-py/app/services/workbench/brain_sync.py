@@ -15,7 +15,10 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
+
+from app.json_narrowing import as_int
+from app.type_aliases import JsonValue
 
 if TYPE_CHECKING:
     from app.services.workbench.sessions import WorkbenchSession
@@ -75,13 +78,14 @@ def _sync_once(session: WorkbenchSession) -> None:
         role = str(msg.get('role') or 'user')
         content = msg.get('content', '')
         if msg.get('tool_calls') is not None or msg.get('tool_use_id') is not None:
-            payload: object = {
-                'content': content,
-                **{k: msg[k] for k in ('tool_calls', 'tool_use_id', 'name') if k in msg},
-            }
+            payload_dict: dict[str, object] = {'content': content}
+            for k in ('tool_calls', 'tool_use_id', 'name'):
+                if k in msg:
+                    payload_dict[k] = msg[k]
+            payload: object = payload_dict
         else:
             payload = content
-        save_message(session.id, role, payload)
+        save_message(session.id, role, cast(JsonValue, payload))
 
     last_user = ''
     for m in reversed(session.messages or []):
@@ -227,14 +231,14 @@ def backfill_workbench_json_to_brain(
                 continue
             ok = sync_workbench_session_to_brain(session, retries=2, strict=False)
             if ok:
-                result['synced'] = int(result['synced']) + 1  # type: ignore[arg-type]
+                result['synced'] = as_int(result['synced']) + 1
             else:
-                result['failed'] = int(result['failed']) + 1  # type: ignore[arg-type]
+                result['failed'] = as_int(result['failed']) + 1
                 errors = result['errors']
                 if isinstance(errors, list):
                     errors.append({'id': session.id, 'error': _stats.get('last_error')})
         except Exception as exc:
-            result['failed'] = int(result['failed']) + 1  # type: ignore[arg-type]
+            result['failed'] = as_int(result['failed']) + 1
             errors = result['errors']
             if isinstance(errors, list):
                 errors.append({'id': item.get('id'), 'error': str(exc)})

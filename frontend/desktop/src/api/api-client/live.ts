@@ -14,8 +14,8 @@ export interface LiveConfig {
   sttReady?: boolean;
   /** Server TTS is usable (provider selected + API key). */
   ttsReady?: boolean;
-  sttMode?: 'server' | 'browser' | string;
-  ttsMode?: 'server' | 'browser' | string;
+  sttMode?: 'server' | 'browser';
+  ttsMode?: 'server' | 'browser';
   note?: string;
 }
 

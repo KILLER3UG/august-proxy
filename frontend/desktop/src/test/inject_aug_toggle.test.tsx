@@ -33,23 +33,24 @@ describe('Inject AUG.md on proxy path toggle', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => EXTERNAL,
+          json: () => Promise.resolve(EXTERNAL),
         });
       }
       if (typeof url === 'string' && url.includes('/api/config/inject-aug-on-proxy')) {
         if (init?.method === 'PUT') {
-          const body = JSON.parse(String(init.body || '{}')) as { enabled?: boolean };
+          const rawBody = typeof init.body === 'string' ? init.body : '{}';
+          const body = JSON.parse(rawBody) as { enabled?: boolean };
           injectEnabled = Boolean(body.enabled);
           return Promise.resolve({
             ok: true,
             status: 200,
-            json: async () => ({ enabled: injectEnabled }),
+            json: () => Promise.resolve({ enabled: injectEnabled }),
           });
         }
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => ({ enabled: injectEnabled }),
+          json: () => Promise.resolve({ enabled: injectEnabled }),
         });
       }
       return Promise.reject(new Error('unexpected url: ' + url));
@@ -77,7 +78,7 @@ describe('Inject AUG.md on proxy path toggle', () => {
       );
       expect(put).toBeDefined();
       const [, putInit] = put as unknown as [string, RequestInit];
-      const body = JSON.parse(String(putInit.body));
+      const body = JSON.parse(typeof putInit.body === 'string' ? putInit.body : '{}');
       expect(body.enabled).toBe(true);
     });
 

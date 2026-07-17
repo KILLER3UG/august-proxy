@@ -31,11 +31,14 @@ class UnavailableSTT implements LiveSTT {
       'Speech recognition unavailable. Enable browser Web Speech or configure a Live STT provider (with API key) in Settings → Live.';
   }
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
     const err = new Error(this.message);
     for (const cb of this.errCbs) cb(err);
+    return Promise.resolve();
   }
-  async stop(): Promise<void> {}
+  stop(): Promise<void> {
+    return Promise.resolve();
+  }
   onPartial(_cb: (text: string) => void): () => void {
     return () => {};
   }

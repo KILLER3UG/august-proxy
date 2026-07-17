@@ -1245,11 +1245,11 @@ async def _sendWorkbenchMessageStreamImpl(
         else:
             choices = as_list(response.get('choices', []), [])
             choice = as_dict(choices[0]) if choices else {}
-            msg = as_dict(choice.get('message', {}))
+            choiceMsg = as_dict(choice.get('message', {}))
             assistantMsg = {
                 'role': 'assistant',
-                'content': msg.get('content', ''),
-                'tool_calls': msg.get('tool_calls', []),
+                'content': choiceMsg.get('content', ''),
+                'tool_calls': choiceMsg.get('tool_calls', []),
             }
             textContent = as_str(response.get('text', ''))
             thinkingContent = as_str(response.get('thinking', ''))
@@ -2085,11 +2085,9 @@ def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> 
         existing = [
             {
                 'question': str(existing_raw.get('question') or ''),
-                'choices': (
-                    [str(c) for c in (existing_raw.get('choices') or [])[:MAX_CLARIFY_CHOICES]]
-                    if isinstance(existing_raw.get('choices'), list)
-                    else []
-                ),
+                'choices': [
+                    str(c) for c in as_list(existing_raw.get('choices'), [])[:MAX_CLARIFY_CHOICES]
+                ],
             }
         ]
 

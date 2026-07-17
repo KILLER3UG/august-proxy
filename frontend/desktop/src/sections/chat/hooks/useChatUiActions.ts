@@ -79,7 +79,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
         if (wbId) {
           void setWorkbenchGuardMode(wbId, mode)
             .then((updated) => {
-              if (updated) setWorkbenchSession(updated as typeof workbenchSession);
+              if (updated) setWorkbenchSession(updated);
               toast.success(`Mode: ${WORKBENCH_GUARD_MODES[mode].label}`);
             })
             .catch((err: unknown) => {
@@ -108,7 +108,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
         if (wbId) {
           void undoWorkbenchLastTurn(wbId)
             .then((res) => {
-              if (res.session) setWorkbenchSession(res.session as typeof workbenchSession);
+              if (res.session) setWorkbenchSession(res.session);
               toast.success(res.message || 'Undid last turn');
             })
             .catch((err: unknown) => {
@@ -132,7 +132,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
         }
         void compactWorkbenchSession(wbId)
           .then((res) => {
-            if (res.session) setWorkbenchSession(res.session as typeof workbenchSession);
+            if (res.session) setWorkbenchSession(res.session);
             toast.success(res.message || 'Chat memory updated');
           })
           .catch((err: unknown) => {

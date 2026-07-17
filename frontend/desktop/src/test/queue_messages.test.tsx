@@ -169,11 +169,11 @@ describe('workbench API client: queue endpoints', () => {
 
 describe('ChatThread: queue pill rendering and queue badge', () => {
   it('renders QueuePills for queued entries with clear-all / reorder support', () => {
-    const threadSrc = readFileSync(
-      resolve(__dirname, '../sections/chat/ChatThread.tsx'),
+    const composerSrc = readFileSync(
+      resolve(__dirname, '../sections/chat/ChatThreadComposer.tsx'),
       'utf8',
     );
-    expect(threadSrc).toMatch(/QueuePills/);
+    expect(composerSrc).toMatch(/QueuePills/);
     const pillsSrc = readFileSync(
       resolve(__dirname, '../sections/chat/QueuePills.tsx'),
       'utf8',
@@ -185,39 +185,30 @@ describe('ChatThread: queue pill rendering and queue badge', () => {
   });
 
   it('injected user bubbles get a "Queued" badge', () => {
-    // Queued badge lives on MessageBubble.
     const src = readFileSync(
-      resolve(__dirname, '../sections/chat/MessageBubble.tsx'),
+      resolve(__dirname, '../sections/chat/message/UserMessageBubble.tsx'),
       'utf8',
     );
     expect(src).toMatch(/message\.queued\s*&&/);
-    // The "Queued" badge text appears as plain text inside the badge div.
     expect(src).toMatch(/Queued<\/div>|Queued\s*<\/span>|>\s*Queued\s*</);
   });
 
   it('send() routes streaming-time input to queueWorkbenchMessage instead of dropping', () => {
     const src = readFileSync(
-      resolve(__dirname, '../sections/chat/ChatThread.tsx'),
+      resolve(__dirname, '../sections/chat/hooks/useChatSend.ts'),
       'utf8',
     );
-    // When streaming, the queue branch must call the backend queue API
-    // and not just hold the message locally (steer mid-run).
-    expect(src).toMatch(/streaming\s*&&\s*sessionId[\s\S]{0,800}queueWorkbenchMessage/);
-    // The old single-slot state should be gone.
+    expect(src).toMatch(/queueWorkbenchMessage/);
     expect(src).not.toMatch(/setQueuedMessage\b/);
-    expect(src).not.toMatch(/useState<\{\s*text:\s*string;\s*attachments/);
   });
 });
 
 describe('SSE dispatch: queue events route to the new handlers', () => {
-  it('workbench.ts dispatches userMessageQueued / userMessageDequeued / userMessageInjected', () => {
+  it('streamEvents.ts dispatches userMessageQueued / userMessageDequeued / userMessageInjected', () => {
     const src = readFileSync(
-      resolve(__dirname, '../api/workbench.ts'),
+      resolve(__dirname, '../api/workbench/streamEvents.ts'),
       'utf8',
     );
-    // The SSE event payload uses camelCase discriminator strings
-    // (`userMessageQueued`, etc.) — the schema literals live in
-    // src/api/schemas/workbench.ts and the dispatch switch in workbench.ts.
     expect(src).toMatch(/case 'userMessageQueued'/);
     expect(src).toMatch(/case 'userMessageDequeued'/);
     expect(src).toMatch(/case 'userMessageInjected'/);

@@ -84,7 +84,7 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
 
   if (idx >= 0) {
     const prev = sessions[idx];
-    const incomingTitle = ev.title as string | undefined;
+    const incomingTitle = ev.title;
     // Prefer a real incoming title; never replace a good title with a placeholder.
     const nextTitle =
       incomingTitle && !isPlaceholderTitle(incomingTitle)
@@ -95,13 +95,13 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
       // Keep stable UI id — never rewrite sess_* → wb_* here.
       id: prev.id,
       title: nextTitle,
-      provider: (ev.provider as string | undefined) || prev.provider,
-      model: (ev.model as string | undefined) || prev.model,
+      provider: (ev.provider) || prev.provider,
+      model: (ev.model) || prev.model,
       messageCount:
         typeof ev.messageCount === 'number' ? ev.messageCount : prev.messageCount,
       workbenchSessionId: prev.workbenchSessionId || sid,
-      workbenchProvider: (ev.provider as string | undefined) || prev.workbenchProvider,
-      workbenchAgentId: (ev.agentId as string | undefined) || prev.workbenchAgentId,
+      workbenchProvider: (ev.provider) || prev.workbenchProvider,
+      workbenchAgentId: (ev.agentId) || prev.workbenchAgentId,
     };
     const updated = sessions.slice();
     updated[idx] = next;
@@ -113,16 +113,16 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
   // New session from tool / other tab (no local draft to attach)
   const created: Session = {
     id: sid,
-    title: (ev.title as string | undefined) || 'New Session',
-    startedAt: (ev.startedAt as string | undefined) || (ev.createdAt as string | undefined) || new Date().toISOString(),
+    title: (ev.title) || 'New Session',
+    startedAt: (ev.startedAt) || (ev.createdAt) || new Date().toISOString(),
     messageCount: typeof ev.messageCount === 'number' ? ev.messageCount : 0,
     lastMessage: 'Conversation started.',
-    provider: (ev.provider as string | undefined) || '',
-    model: (ev.model as string | undefined) || '',
+    provider: (ev.provider) || '',
+    model: (ev.model) || '',
     workbenchSessionId: sid,
-    workbenchProvider: (ev.provider as string | undefined) || '',
-    workbenchAgentId: (ev.agentId as string | undefined) || '',
-    workspacePath: (ev.workspacePath as string | undefined) || null,
+    workbenchProvider: (ev.provider) || '',
+    workbenchAgentId: (ev.agentId) || '',
+    workspacePath: (ev.workspacePath) || null,
     isArchived: false,
   };
   const updated = dedupeSessions([created, ...sessions]);
@@ -141,7 +141,7 @@ function applySessionStatus(ev: RealtimeEvent): void {
     working: 'working',
     running: 'working',
     awaiting: 'awaiting',
-    awaiting_approval: 'awaiting',
+    'awaiting_approval': 'awaiting',
     error: 'error',
     failed: 'error',
     done: 'done',

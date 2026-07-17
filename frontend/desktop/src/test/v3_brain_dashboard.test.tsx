@@ -91,7 +91,8 @@ describe('v3 — LearningTab', () => {
     renderWithQuery(<LearningTab />);
     await waitFor(() => {
       expect(screen.getByText(/Last run/)).toBeTruthy();
-      expect(screen.getByText(/2 merges/)).toBeTruthy();
+      expect(screen.getByText('Merged')).toBeTruthy();
+      expect(screen.getByText('Promoted')).toBeTruthy();
     });
   });
 

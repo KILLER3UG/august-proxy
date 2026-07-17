@@ -366,7 +366,7 @@ def _runSelfcheck(flagKey: str) -> dict:
             try:
                 if hasattr(graph_memory, 'graphStats'):
                     stats = graph_memory.graphStats()
-                    n = int(stats.get('entities') or 0) if isinstance(stats, dict) else 0
+                    n = as_int(stats.get('entities')) if isinstance(stats, dict) else 0
                 else:
                     g = graph_memory._read() if hasattr(graph_memory, '_read') else {}
                     entities = g.get('entities') if isinstance(g, dict) else []

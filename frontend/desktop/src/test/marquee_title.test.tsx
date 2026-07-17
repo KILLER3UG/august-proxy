@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { MarqueeTitle } from '@/components/ui/MarqueeTitle';
 
 describe('MarqueeTitle', () => {
@@ -40,10 +40,11 @@ describe('MarqueeTitle', () => {
     );
     const outer = screen.getByTestId('session-bar-title');
     const inner = outer.querySelector('span');
-    // Force overflow geometry in jsdom (no real layout)
     Object.defineProperty(outer, 'clientWidth', { configurable: true, value: 40 });
     Object.defineProperty(inner, 'scrollWidth', { configurable: true, value: 240 });
-    window.dispatchEvent(new Event('resize'));
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
     expect(outer.getAttribute('data-overflow')).toBe('true');
     expect(inner?.className).toContain('marquee-title-scroll');
     expect(container.querySelector('.group\\/marquee')).toBeTruthy();

@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from app.json_narrowing import as_int, as_list
 from app.models.camel_base import CamelModel
 from app.services.workbench import workbench as wb
 
@@ -148,7 +149,7 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
                 answer = str(result.get('text') or result.get('content') or '')
                 if not answer and isinstance(result.get('content'), list):
                     answer = extract_text(
-                        [b for b in result['content'] if isinstance(b, dict)]  # type: ignore[index]
+                        [b for b in as_list(result.get('content'), []) if isinstance(b, dict)]
                     )
     except Exception:
         answer = ''
@@ -184,7 +185,7 @@ async def _stt_from_bytes(audio: bytes, filename: str = 'audio.webm', content_ty
 
     result = await transcribe_audio(audio, filename=filename, content_type=content_type)
     if not result.get('ok'):
-        raise HTTPException(status_code=int(result.get('status') or 501), detail=str(result.get('error') or 'STT failed'))
+        raise HTTPException(status_code=as_int(result.get('status'), 501), detail=str(result.get('error') or 'STT failed'))
     return {
         'transcript': result.get('transcript') or '',
         'partial': False,
@@ -226,7 +227,7 @@ async def liveTts(body: TtsBody) -> dict[str, object]:
         raise HTTPException(status_code=400, detail='text is required')
     result = await synthesize_speech(body.text.strip(), voice=body.voice or '')
     if not result.get('ok'):
-        raise HTTPException(status_code=int(result.get('status') or 501), detail=str(result.get('error') or 'TTS failed'))
+        raise HTTPException(status_code=as_int(result.get('status'), 501), detail=str(result.get('error') or 'TTS failed'))
     return {
         'audio': result.get('audio'),
         'format': result.get('format') or 'mp3',
