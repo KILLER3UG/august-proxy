@@ -33,7 +33,8 @@
     ],
     "createUpdaterArtifacts": true,
     "resources": [
-      "binaries/*"
+      "binaries/*",
+      "resources/**/*"
     ],
     "icon": [
       "icons/icon.png",

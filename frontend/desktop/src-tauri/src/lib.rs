@@ -33,9 +33,16 @@ pub fn run() {
                 std::sync::Mutex::new(None),
                 std::sync::Mutex::new(None),
             ));
+            app.manage(backend::BackendSetupStatus(std::sync::Mutex::new(
+                backend::SetupPhase::default(),
+            )));
 
-            // 1) Try to start (or reuse) the Python backend at :8085
-            backend::ensureRunning(app.handle());
+            // Start the backend off the UI thread so the webview can show a
+            // setup overlay while first-launch bootstrap / uvicorn warm-up runs.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                backend::ensureRunning(&handle);
+            });
 
             // 2) Install the system tray (Show / Hide / Quit)
             tray::install(app.handle())?;
@@ -54,6 +61,7 @@ pub fn run() {
             backend::proxy_status,
             backend::select_directory,
             backend::backend_last_error,
+            backend::backend_setup_status,
             backend::sync_backend_deps,
         ])
         .run(tauri::generate_context!())

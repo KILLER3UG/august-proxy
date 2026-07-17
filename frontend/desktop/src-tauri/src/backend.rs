@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -20,6 +20,44 @@ use std::os::windows::process::CommandExt;
 const DEFAULT_PROXY_PORT: u16 = 8085;
 
 pub struct BackendProcess(pub Mutex<Option<Child>>, pub Mutex<Option<String>>);
+
+/// Live setup phase for the desktop UI overlay (pollable via `backend_setup_status`).
+pub struct BackendSetupStatus(pub Mutex<SetupPhase>);
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupPhase {
+    /// idle | copying | creating_venv | installing | starting | ready | error
+    pub phase: String,
+    pub detail: Option<String>,
+}
+
+impl Default for SetupPhase {
+    fn default() -> Self {
+        Self {
+            phase: "idle".into(),
+            detail: None,
+        }
+    }
+}
+
+fn setSetupPhase(app: &AppHandle, phase: &str, detail: Option<String>) {
+    if let Some(state) = app.try_state::<BackendSetupStatus>() {
+        if let Ok(mut guard) = state.0.lock() {
+            *guard = SetupPhase {
+                phase: phase.into(),
+                detail: detail.clone(),
+            };
+        }
+    }
+    let _ = app.emit(
+        "backend-setup",
+        SetupPhase {
+            phase: phase.into(),
+            detail,
+        },
+    );
+}
 
 fn proxyPort() -> u16 {
     std::env::var("AUGUST_PROXY_PORT")
@@ -33,14 +71,6 @@ fn proxyUrl() -> String {
 }
 
 // ── Python backend resolution (preferred) ───────────────────────────
-
-fn pythonBinaryNames() -> &'static [&'static str] {
-    if cfg!(windows) {
-        &["python.exe", "python3.exe", "py.exe"]
-    } else {
-        &["python3", "python"]
-    }
-}
 
 /// Resolve the `.venv` Python interpreter for a discovered backend entry
 /// (`backend-py/app/main.py`). Returns `…/backend-py/.venv/{Scripts/python.exe|bin/python}`.
@@ -63,15 +93,238 @@ fn isStoreStub(path: &Path) -> bool {
         .contains("windowsapps")
 }
 
+fn resolveResource(app: &AppHandle, rel: &str) -> Option<PathBuf> {
+    app.path()
+        .resolve(rel, tauri::path::BaseDirectory::Resource)
+        .ok()
+        .filter(|p| p.exists())
+}
+
+/// Writable AppData tree used for the installed (bundled) backend runtime.
+/// Layout: `{appData}/backend-runtime/backend-py/{app,.venv,…}`
+fn runtimeRoot(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+        .join("backend-runtime")
+}
+
+fn runtimeBackendMain(app: &AppHandle) -> PathBuf {
+    runtimeRoot(app).join("backend-py/app/main.py")
+}
+
+fn runtimeStampPath(app: &AppHandle) -> PathBuf {
+    runtimeRoot(app).join("runtime.stamp")
+}
+
+fn bundledStamp(app: &AppHandle) -> Option<String> {
+    resolveResource(app, "backend-runtime.stamp")
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "dev-placeholder")
+}
+
+fn bundledPython(app: &AppHandle) -> Option<PathBuf> {
+    let rel = if cfg!(windows) {
+        "python/python.exe"
+    } else {
+        "python/bin/python3"
+    };
+    resolveResource(app, rel).or_else(|| resolveResource(app, "python/python.exe"))
+}
+
+fn bundledWheelsDir(app: &AppHandle) -> Option<PathBuf> {
+    resolveResource(app, "wheels")
+}
+
+fn copyDirRecursive(src: &Path, dst: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
+    for entry in std::fs::read_dir(src).map_err(|e| format!("read_dir {}: {e}", src.display()))? {
+        let entry = entry.map_err(|e| format!("read_dir entry: {e}"))?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        let ft = entry
+            .file_type()
+            .map_err(|e| format!("file_type {}: {e}", from.display()))?;
+        if ft.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == "__pycache__"
+                || name == ".venv"
+                || name == ".mypy_cache"
+                || name == ".ruff_cache"
+                || name == "tests"
+            {
+                continue;
+            }
+            copyDirRecursive(&from, &to)?;
+        } else if ft.is_file() {
+            if let Some(ext) = from.extension() {
+                if ext == "pyc" {
+                    continue;
+                }
+            }
+            if let Some(parent) = to.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            std::fs::copy(&from, &to)
+                .map_err(|e| format!("copy {} → {}: {e}", from.display(), to.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn runPythonSilent(python: &Path, args: &[&str], cwd: &Path, log_path: &Path) -> Result<(), String> {
+    let log_file = File::create(log_path).unwrap_or_else(|_| {
+        File::create(devNullPath()).expect("failed to open null")
+    });
+    let mut cmd = Command::new(python);
+    cmd.args(args)
+        .current_dir(cwd)
+        .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+        .env("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+        .stdout(Stdio::from(log_file.try_clone().unwrap_or_else(|_| {
+            File::create(devNullPath()).expect("failed to open null")
+        })))
+        .stderr(Stdio::from(log_file));
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let status = cmd
+        .status()
+        .map_err(|e| format!("{} {} failed to start: {e}", python.display(), args.join(" ")))?;
+    if !status.success() {
+        return Err(format!(
+            "{} {} exited with {}",
+            python.display(),
+            args.join(" "),
+            status
+        ));
+    }
+    Ok(())
+}
+
+/// First-launch (or stamp mismatch): copy bundled backend-py into AppData,
+/// create a venv with the portable Python, install offline from wheels.
+fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
+    let Some(stamp) = bundledStamp(app) else {
+        return Ok(()); // Dev / unpackaged: nothing to bootstrap
+    };
+    let Some(bundled_main) = resolveResource(app, "backend-py/app/main.py") else {
+        return Ok(());
+    };
+    let Some(bundled_py_root) = projectRootFor(&bundled_main) else {
+        return Err("bundled backend-py root missing".into());
+    };
+    let Some(base_python) = bundledPython(app) else {
+        return Err("bundled portable python missing".into());
+    };
+    let Some(wheels) = bundledWheelsDir(app) else {
+        return Err("bundled wheels/ missing".into());
+    };
+
+    let runtime = runtimeRoot(app);
+    let runtime_backend = runtime.join("backend-py");
+    let runtime_main = runtimeBackendMain(app);
+    let stamp_path = runtimeStampPath(app);
+    let current = std::fs::read_to_string(&stamp_path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    let venv_py = if cfg!(windows) {
+        runtime_backend.join(".venv/Scripts/python.exe")
+    } else {
+        runtime_backend.join(".venv/bin/python")
+    };
+
+    if current == stamp && runtime_main.is_file() && venv_py.is_file() {
+        log::info!("[backend] AppData runtime up-to-date ({})", stamp);
+        return Ok(());
+    }
+
+    log::info!(
+        "[backend] bootstrapping AppData runtime → {}",
+        runtime.display()
+    );
+    setSetupPhase(
+        app,
+        "copying",
+        Some("Preparing backend files…".into()),
+    );
+    let log_dir = appDataDir(app).join("logs");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let bootstrap_log = log_dir.join("backend-bootstrap.log");
+
+    // Refresh sources (keep existing .venv if present until recreate)
+    if runtime_backend.exists() {
+        let _ = std::fs::remove_dir_all(runtime_backend.join("app"));
+    }
+    std::fs::create_dir_all(&runtime_backend)
+        .map_err(|e| format!("mkdir runtime: {e}"))?;
+    copyDirRecursive(&bundled_py_root, &runtime_backend)?;
+
+    if !venv_py.is_file() {
+        setSetupPhase(
+            app,
+            "creating_venv",
+            Some("Creating Python environment…".into()),
+        );
+        if runtime_backend.join(".venv").exists() {
+            let _ = std::fs::remove_dir_all(runtime_backend.join(".venv"));
+        }
+        runPythonSilent(
+            &base_python,
+            &["-m", "venv", ".venv"],
+            &runtime_backend,
+            &bootstrap_log,
+        )?;
+    }
+
+    let wheels_str = wheels.to_string_lossy().to_string();
+    setSetupPhase(
+        app,
+        "installing",
+        Some("Installing backend dependencies (first launch)…".into()),
+    );
+    runPythonSilent(
+        &venv_py,
+        &[
+            "-m",
+            "pip",
+            "install",
+            "--no-index",
+            "--find-links",
+            &wheels_str,
+            "august-proxy",
+        ],
+        &runtime_backend,
+        &bootstrap_log,
+    )?;
+
+    let _ = std::fs::write(&stamp_path, format!("{stamp}\n"));
+    log::info!("[backend] AppData runtime ready");
+    Ok(())
+}
+
 fn resolvePython(app: &AppHandle) -> Option<PathBuf> {
-    // 1. If we located the backend, prefer its bundled `.venv` interpreter.
+    // 1. Prefer AppData runtime venv (installed builds).
+    let runtime_main = runtimeBackendMain(app);
+    if runtime_main.is_file() {
+        if let Some(venv) = resolveVenvPython(&runtime_main) {
+            return Some(venv);
+        }
+    }
+    // 2. Prefer `.venv` next to whatever backend sources we found (dev).
     if let Some(backendMain) = resolvePythonBackend(app) {
         if let Some(venv) = resolveVenvPython(&backendMain) {
             return Some(venv);
         }
     }
-    // 2. Prefer the Windows launcher `py` (or `py -3`) on Windows, then
-    //    system python3/python — but never the Microsoft Store alias stub.
+    // 3. Bundled portable Python (bootstrap only — deps live in the venv).
+    if let Some(bundled) = bundledPython(app) {
+        return Some(bundled);
+    }
+    // 4. System Python — never the Microsoft Store alias stub.
     let mut candidates: Vec<Option<PathBuf>> = Vec::new();
     if cfg!(windows) {
         candidates.push(which::which("py").ok());
@@ -86,15 +339,19 @@ fn resolvePython(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
+    // Prefer writable AppData copy (after bootstrap).
+    let runtime_main = runtimeBackendMain(app);
+    if runtime_main.is_file() {
+        return Some(runtime_main);
+    }
+
     let mut candidates: Vec<Option<PathBuf>> = vec![
-        app.path()
-            .resolve("backend-py/app/main.py", tauri::path::BaseDirectory::Resource)
-            .ok(),
+        resolveResource(app, "backend-py/app/main.py"),
         env::current_dir().ok().map(|cwd| cwd.join("backend-py/app/main.py")),
         env::current_dir().ok().map(|cwd| cwd.join("../backend-py/app/main.py")),
     ];
 
-    // Walk up from the executable so release builds find the repo checkout
+    // Walk up from the executable so release/dev builds find a repo checkout
     // (e.g. …/src-tauri/target/release/august-desktop.exe → …/august-proxy/backend-py).
     if let Ok(exe) = env::current_exe() {
         let mut dir = exe.parent().map(|p| p.to_path_buf());
@@ -234,12 +491,29 @@ fn waitUntilProxyUp(timeout: Duration) -> bool {
 pub fn ensureRunning(app: &AppHandle) -> bool {
     if isProxyUp() {
         log::info!("[backend] proxy already up on :{}", proxyPort());
+        setSetupPhase(app, "ready", Some("Backend ready".into()));
         return true;
+    }
+
+    setSetupPhase(app, "starting", Some("Looking for backend…".into()));
+
+    // Installed builds: materialize AppData runtime from bundled python + wheels.
+    if let Err(e) = bootstrapBundledBackend(app) {
+        let msg = format!("[backend] bundled runtime bootstrap failed: {e}");
+        log::error!("{msg}");
+        setLastError(app, msg.clone());
+        setSetupPhase(app, "error", Some(msg));
+        // Continue — maybe a repo checkout .venv is available for dev.
     }
 
     // Try Python backend first
     if let Some(python) = resolvePython(app) {
         if let Some(pyEntry) = resolvePythonBackend(app) {
+            setSetupPhase(
+                app,
+                "starting",
+                Some("Starting backend…".into()),
+            );
             let Some(backendPyRoot) = projectRootFor(&pyEntry) else {
                 log::error!("[backend] could not resolve project root for {}", pyEntry.display());
                 return false;
@@ -277,6 +551,7 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                 .env("AUGUST_PROXY_ROOT", &repoRoot)
                 .env("AUGUST_DATA_DIR", dataDir)
                 .env("AUGUST_PROXY_DESKTOP", "1")
+                .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
                 .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
                     File::create(devNullPath()).expect("failed to open null")
                 })))
@@ -295,8 +570,9 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                     log::info!("[backend] python proxy spawned — waiting for /api/health");
                     // Do not return success on spawn alone: cold start can take seconds
                     // (import + schema). Poll health so the webview does not thrash.
-                    if waitUntilProxyUp(Duration::from_secs(20)) {
+                    if waitUntilProxyUp(Duration::from_secs(45)) {
                         log::info!("[backend] python proxy healthy on :{}", proxyPort());
+                        setSetupPhase(app, "ready", Some("Backend ready".into()));
                         return true;
                     }
                     log::error!(
@@ -305,8 +581,9 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                     setLastError(
                         app,
                         format!(
-                            "[backend] python proxy not healthy on :{} after spawn",
-                            proxyPort()
+                            "[backend] python proxy not healthy on :{} after spawn — see {}",
+                            proxyPort(),
+                            logPath.display()
                         ),
                     );
                     // Fall through to Node fallback only if Python never answered.
@@ -377,6 +654,7 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
             log::info!("[backend] node proxy spawned (fallback) — waiting for /api/health");
             if waitUntilProxyUp(Duration::from_secs(20)) {
                 log::info!("[backend] node proxy healthy on :{}", proxyPort());
+                setSetupPhase(app, "ready", Some("Backend ready".into()));
                 true
             } else {
                 log::error!("[backend] node proxy spawned but /api/health not ready");
@@ -462,6 +740,16 @@ pub fn select_directory(app: AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
+pub fn backend_setup_status(app: AppHandle) -> SetupPhase {
+    if let Some(state) = app.try_state::<BackendSetupStatus>() {
+        if let Ok(guard) = state.0.lock() {
+            return guard.clone();
+        }
+    }
+    SetupPhase::default()
+}
+
+#[tauri::command]
 pub fn backend_last_error(app: AppHandle) -> Option<String> {
     if let Some(state) = app.try_state::<BackendProcess>() {
         if let Ok(guard) = state.1.lock() {
@@ -488,6 +776,14 @@ fn versionStampPath(app: &AppHandle) -> Option<PathBuf> {
 /// child (with `CREATE_NO_WINDOW` on Windows) so the UI never freezes.
 #[tauri::command]
 pub async fn sync_backend_deps(app: AppHandle) -> String {
+    // Prefer materializing the bundled runtime (installed builds).
+    if let Err(e) = bootstrapBundledBackend(&app) {
+        // If we have a bundled stamp, bootstrap failure is fatal for sync.
+        if bundledStamp(&app).is_some() {
+            return format!("error: bootstrap failed: {e}");
+        }
+    }
+
     let Some(backendMain) = resolvePythonBackend(&app) else {
         return "error: backend-py not found".into();
     };
@@ -495,7 +791,7 @@ pub async fn sync_backend_deps(app: AppHandle) -> String {
     let Some(backendPyRoot) = projectRootFor(&backendMain) else {
         return "error: cannot resolve backend root".into();
     };
-    // Repo root is the parent of backend-py (used for AUGUST_PROXY_ROOT).
+    // Repo / runtime root is the parent of backend-py.
     let repoRoot = backendPyRoot
         .parent()
         .map(|p| p.to_path_buf())
@@ -533,12 +829,24 @@ pub async fn sync_backend_deps(app: AppHandle) -> String {
     let log_file = File::create(&log_path).unwrap_or_else(|_| File::create(devNullPath()).expect("null"));
 
     let mut cmd = Command::new(&pip);
-    cmd.arg("-m").arg("pip").arg("install").arg("-e").arg(".");
+    cmd.arg("-m").arg("pip").arg("install");
+    if let Some(wheels) = bundledWheelsDir(&app) {
+        // Offline install from packaged wheels (release builds).
+        cmd.arg("--no-index")
+            .arg("--find-links")
+            .arg(wheels)
+            .arg("august-proxy");
+    } else {
+        // Dev: editable install from source.
+        cmd.arg("-e").arg(".");
+    }
     if cfg!(windows) {
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
     cmd.current_dir(&backendPyRoot)
         .env("AUGUST_PROXY_ROOT", &repoRoot)
+        .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+        .env("PIP_DISABLE_PIP_VERSION_CHECK", "1")
         .stdout(Stdio::from(log_file.try_clone().unwrap_or_else(|_| File::create(devNullPath()).expect("null"))))
         .stderr(Stdio::from(log_file));
 

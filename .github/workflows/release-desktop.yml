@@ -49,6 +49,9 @@ jobs:
       - name: Download Node sidecars
         run: npm run download:node-binaries
 
+      - name: Prepare portable Python + backend resources
+        run: npm run prepare:desktop-backend
+
       - name: Set release version
         shell: pwsh
         run: |

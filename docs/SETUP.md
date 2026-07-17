@@ -295,9 +295,19 @@ Backend Monitor) streams live proxy / memory / security events over
 
 ### Packaging note
 
-Release builds currently expect the `backend-py/` tree to be present next
-to the executable (dev layout). Bundling an embedded Python + wheels is a
-separate, optional phase.
+Release builds (`npm run release:desktop`) run
+`scripts/prepare-desktop-backend.mjs` first. That stages:
+
+- a portable CPython under `frontend/desktop/src-tauri/resources/python/`
+- `backend-py` sources under `resources/backend-py/`
+- dependency wheels under `resources/wheels/`
+
+Those trees are packaged into the MSI/NSIS installer. On first launch the
+desktop shell copies them into AppData, creates a venv, installs from the
+offline wheels, and starts uvicorn — no repo checkout or system Python
+required.
+
+Dev still uses `backend-py/.venv` from `install.ps1` / `install.sh`.
 
 ---
 
@@ -330,4 +340,5 @@ Root scripts (`package.json`):
 | `npm run dev:web` | Vite only |
 | `npm run build:web` | Build SPA into `web-dist/` |
 | `npm run test` | Backend pytest + desktop vitest |
-| `npm run release:desktop` | Build web + node binaries + Tauri release |
+| `npm run release:desktop` | Build web + portable Python/backend + Tauri release |
+| `npm run prepare:desktop-backend` | Stage portable Python + wheels into Tauri resources |

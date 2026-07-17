@@ -1,31 +1,77 @@
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { WifiOff, AlertTriangle } from 'lucide-react';
+import { WifiOff, AlertTriangle, CircleX } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useGatewayStore } from '@/store/gateway';
 import { Backdrop } from './Backdrop';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { BackendSetupPlan } from '@/components/ui/backend-setup-plan';
+import { isTauri } from '@/lib/tauri-detect';
+import { useBackendSetup } from '@/hooks/useBackendSetup';
 
 export function ProxyStatusOverlay() {
   const state = useGatewayStore((s) => s.gateway);
   const qc = useQueryClient();
-  if (state.status === 'open') return null;
+  const { status: setup } = useBackendSetup();
+  const [showReadyFlash, setShowReadyFlash] = useState(false);
 
-  if (state.status === 'connecting') {
+  useEffect(() => {
+    if (setup.phase !== 'ready') return;
+    setShowReadyFlash(true);
+    const t = window.setTimeout(() => setShowReadyFlash(false), 1100);
+    return () => window.clearTimeout(t);
+  }, [setup.phase]);
+
+  if (state.status === 'open' && !showReadyFlash) return null;
+
+  const isBootstrapping =
+    isTauri &&
+    (setup.phase === 'copying' ||
+      setup.phase === 'creating_venv' ||
+      setup.phase === 'installing' ||
+      setup.phase === 'starting' ||
+      (setup.phase === 'ready' && showReadyFlash) ||
+      (state.status === 'connecting' && setup.phase !== 'error' && setup.phase !== 'idle'));
+
+  if (state.status === 'connecting' || isBootstrapping || showReadyFlash) {
+    const headline =
+      setup.phase === 'ready'
+        ? 'Backend ready'
+        : setup.phase === 'installing' || setup.phase === 'copying' || setup.phase === 'creating_venv'
+          ? 'Setting up backend'
+          : 'Starting backend';
+    const detail =
+      setup.detail ||
+      (setup.phase === 'ready'
+        ? 'You can start chatting.'
+        : isTauri
+          ? 'First launch can take a minute while dependencies install.'
+          : 'Connecting to proxy… Waiting for /health');
+
     return (
       <Backdrop>
-        <div
-          className="w-[min(90vw,420px)] rounded-lg border border-border bg-card p-6 space-y-3"
-          role="status"
-          aria-label="Connecting to proxy"
+        <BackendSetupPlan setup={setup} headline={headline} detail={detail} />
+      </Backdrop>
+    );
+  }
+
+  if (setup.phase === 'error') {
+    return (
+      <Backdrop>
+        <motion.div
+          className="w-[min(90vw,480px)] rounded-lg border border-border bg-card p-6 text-center shadow-2xl"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.2, 0.65, 0.3, 0.9] } }}
         >
-          <Skeleton className="h-5 w-44 mx-auto" />
-          <Skeleton className="h-3 w-56 mx-auto" />
-          <div className="space-y-2 pt-2">
-            <Skeleton className="h-8 w-full rounded-md" />
-            <Skeleton className="h-8 w-full rounded-md" />
+          <CircleX className="mx-auto mb-3 size-10 text-red-500" />
+          <h2 className="text-base font-semibold">Backend setup failed</h2>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+            {setup.detail || 'Could not prepare the Python runtime.'}
+          </p>
+          <div className="mt-4 flex justify-center gap-2">
+            <Button onClick={() => { void qc.invalidateQueries(); }}>Retry</Button>
           </div>
-          <p className="sr-only">Connecting to proxy… Waiting for /health</p>
-        </div>
+        </motion.div>
       </Backdrop>
     );
   }
@@ -34,17 +80,21 @@ export function ProxyStatusOverlay() {
   const Icon = state.status === 'error' ? AlertTriangle : WifiOff;
   return (
     <Backdrop>
-      <div className="w-[min(90vw,480px)] rounded-lg border border-border bg-card p-6 text-center shadow-2xl">
-        <Icon className="size-10 mx-auto mb-3 text-muted-foreground" />
+      <motion.div
+        className="w-[min(90vw,480px)] rounded-lg border border-border bg-card p-6 text-center shadow-2xl"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.2, 0.65, 0.3, 0.9] } }}
+      >
+        <Icon className="mx-auto mb-3 size-10 text-muted-foreground" />
         <h2 className="text-base font-semibold">Proxy is offline</h2>
-        <p className="mt-1 text-sm text-muted-foreground max-w-md mx-auto">{message}</p>
+        <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{message}</p>
         <div className="mt-4 flex justify-center gap-2">
           <Button variant="outline" onClick={() => window.open('http://localhost:8085/', '_blank')}>
             Open in browser
           </Button>
           <Button onClick={() => { void qc.invalidateQueries(); }}>Retry</Button>
         </div>
-      </div>
+      </motion.div>
     </Backdrop>
   );
 }

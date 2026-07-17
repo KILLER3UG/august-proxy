@@ -323,6 +323,8 @@ async function prepareTauriUpdaterManifest(nextVersion) {
 
 async function buildTauriApp() {
     if (!buildTauri) return;
+    run('npm', ['run', 'download:node-binaries']);
+    run('npm', ['run', 'prepare:desktop-backend']);
     run('npm', ['run', 'tauri', '-w', 'frontend/desktop', 'build']);
     await prepareTauriUpdaterManifest(version);
 }

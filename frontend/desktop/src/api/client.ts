@@ -53,16 +53,17 @@ function installFetchPatch(): void {
 async function initBaseUrl(): Promise<void> {
   try {
     if (isTauri) {
-      // Retry with backoff in case the Python backend hasn't finished starting yet.
-      for (let i = 0; i < 10; i++) {
+      // Retry with backoff — first-launch bootstrap (venv + wheels) can take
+      // well over the old ~11s window before /api/health answers.
+      for (let i = 0; i < 40; i++) {
         const status: string = await invoke<string>('proxy_status');
         if (status.startsWith('ok:')) {
           baseUrl = `http://127.0.0.1:${status.split(':')[1]}`;
           installFetchPatch();
           return;
         }
-        // Linear backoff: 200ms, 400ms, … — ~11 s total before giving up
-        await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+        // Linear backoff capped: 250ms → 1.5s — ~45s total
+        await new Promise((r) => setTimeout(r, Math.min(250 * (i + 1), 1500)));
       }
       // Last resort: assume the default port so raw `/api` calls don't hit HTML.
       baseUrl = 'http://127.0.0.1:8085';

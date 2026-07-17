@@ -170,7 +170,7 @@ function BackendDepsCard({
     syncLabel = 'Syncing backend dependencies…';
     syncCls = 'text-amber-400';
   } else if (backend.sync === 'needs_setup') {
-    syncLabel = 'Backend needs setup — run install.ps1 / install.sh';
+    syncLabel = 'Backend needs first-launch setup';
     syncCls = 'text-amber-400';
   } else if (backend.sync === 'error') {
     syncLabel = `Sync failed: ${backend.syncError ?? 'unknown error'}`;
