@@ -11,17 +11,18 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $KeyPath = Join-Path $RepoRoot 'tauri-signing.key'
 
 if (-not (Test-Path -LiteralPath $KeyPath)) {
-    Write-Error "Missing $KeyPath — run: npx tauri signer generate -w tauri-signing.key --ci -f (from frontend/desktop)"
+    Write-Error "Missing $KeyPath - run: npx tauri signer generate -w tauri-signing.key --ci -f (from frontend/desktop)"
 }
 
+# Tauri CLI expects the key material in TAURI_SIGNING_PRIVATE_KEY (not just a path).
+$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content -LiteralPath $KeyPath -Raw).Trim()
 $env:TAURI_SIGNING_PRIVATE_KEY_PATH = $KeyPath
-# Prefer path-based signing so we never echo key material into the shell history.
 if (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
     $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
 }
 
 if ($args.Count -eq 0) {
-    Write-Host "Signing env ready (TAURI_SIGNING_PRIVATE_KEY_PATH=$KeyPath)"
+    Write-Host "Signing env ready (key loaded from $KeyPath)"
     exit 0
 }
 
