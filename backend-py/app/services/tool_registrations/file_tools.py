@@ -87,8 +87,20 @@ def _workspace() -> str:
     return str(getattr(session, 'workspacePath', '') or '')
 
 
-async def _readFile(path: str) -> str:
-    """Read a file from the filesystem (workspace-bound when session has a root)."""
+async def _readFile(
+    path: str,
+    offset: int | None = None,
+    limit: int | None = None,
+    start_line: int | None = None,
+    end_line: int | None = None,
+    **_extra: object,
+) -> str:
+    """Read a file from the filesystem (workspace-bound when session has a root).
+
+    Optional ``offset``/``limit`` (1-based line start + line count) and
+    ``start_line``/``end_line`` let models page large files. Unknown kwargs
+    are ignored so provider schema drift cannot crash the tool.
+    """
     filePath, err = bind_path(path, _workspace(), for_write=False)
     if err or filePath is None:
         return err or f'Error: Invalid path: {path}'
@@ -104,6 +116,34 @@ async def _readFile(path: str) -> str:
 
         async with aiofiles.open(str(filePath), 'r', encoding='utf-8', errors='replace') as f:
             content = await f.read()
+        # Line paging (agent-style): offset is 1-based start line when set.
+        start = start_line if start_line is not None else offset
+        if start is not None or limit is not None or end_line is not None:
+            lines = content.splitlines(keepends=True)
+            if not lines and content == '':
+                return content
+            # Treat offset as 1-based line number (common agent convention).
+            try:
+                start_i = max(1, int(start)) if start is not None else 1
+            except (TypeError, ValueError):
+                start_i = 1
+            if end_line is not None:
+                try:
+                    end_i = max(start_i, int(end_line))
+                except (TypeError, ValueError):
+                    end_i = len(lines)
+            elif limit is not None:
+                try:
+                    end_i = start_i + max(0, int(limit)) - 1
+                except (TypeError, ValueError):
+                    end_i = len(lines)
+            else:
+                end_i = len(lines)
+            sliced = lines[start_i - 1 : end_i]
+            header = f'[lines {start_i}-{min(end_i, len(lines))} of {len(lines)}]\n' if (
+                start_i > 1 or end_i < len(lines)
+            ) else ''
+            return header + ''.join(sliced)
         return content
     except Exception as exc:
         return f'Error reading file: {exc}'
@@ -296,11 +336,31 @@ def register() -> None:
     """Register file and shell tools."""
     tool_registry.register(
         'read_file',
-        'Read a file from the filesystem. Path must be absolute (or relative to workspace). Max ~10 MB. Sandboxed to the session workspace when set.',
+        'Read a file from the filesystem. Path must be absolute (or relative to workspace). '
+        'Optional offset/limit (1-based start line + line count) page large files. '
+        'Prefer this over shell head/cat/tail. Max ~10 MB. Sandboxed to the session workspace when set.',
         _readFile,
         {
             'type': 'object',
-            'properties': {'path': {'type': 'string', 'description': 'Absolute path to the file to read.'}},
+            'properties': {
+                'path': {'type': 'string', 'description': 'Absolute path to the file to read.'},
+                'offset': {
+                    'type': 'integer',
+                    'description': 'Optional 1-based line number to start reading from.',
+                },
+                'limit': {
+                    'type': 'integer',
+                    'description': 'Optional max number of lines to return from offset.',
+                },
+                'start_line': {
+                    'type': 'integer',
+                    'description': 'Optional alias for offset (1-based start line).',
+                },
+                'end_line': {
+                    'type': 'integer',
+                    'description': 'Optional inclusive end line (1-based).',
+                },
+            },
             'required': ['path'],
         },
     )
@@ -342,7 +402,9 @@ def register() -> None:
     )
     tool_registry.register(
         'run_command',
-        'Run a shell command inside the session sandbox (workspace-write by default, network off). Allowed prefixes include git, python, npm, node, pytest, uv, … Timeout 300s.',
+        'Run a shell command inside the session sandbox (workspace-write by default, network off). '
+        'On Windows, prefer PowerShell/cmd (or use read_file instead of head/cat/tail). '
+        'Common Unix head/tail/cat/ls are auto-translated when possible. Timeout 300s.',
         _runCommand,
         {
             'type': 'object',

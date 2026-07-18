@@ -9,6 +9,7 @@ import {
   isPlaceholderTitle,
   makeSessionId,
   normalizePath,
+  pathsMatch,
   preferSessionRow,
   preferSessionTitle,
   sessionIsEmpty,
@@ -368,10 +369,14 @@ export function restoreSession(id: string) {
   saveSessionsToStorage(updated);
 }
 
+function sessionMatchesId(s: Session, id: string): boolean {
+  return s.id === id || s.workbenchSessionId === id;
+}
+
 export function moveSessionToFolder(id: string, folderId: string | null) {
   const updated = useSessionsStore
     .getState()
-    .sessions.map((s) => (s.id === id ? { ...s, folderId } : s));
+    .sessions.map((s) => (sessionMatchesId(s, id) ? { ...s, folderId } : s));
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
@@ -471,7 +476,9 @@ export function updateSessionWorkspace(id: string, path: string | null) {
   const normalized = path == null ? null : normalizePath(path);
   const updated = useSessionsStore
     .getState()
-    .sessions.map((s) => (s.id === id ? { ...s, workspacePath: normalized } : s));
+    .sessions.map((s) =>
+      sessionMatchesId(s, id) ? { ...s, workspacePath: normalized } : s,
+    );
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
@@ -488,8 +495,21 @@ export function ensureFolderForWorkspacePath(
   const name = folderName ?? folderNameFromPath(path);
   const existing = useSessionsStore
     .getState()
-    .folders.find((f) => f.workspacePath === normalized);
-  if (existing) return { folder: existing, created: false };
+    .folders.find((f) => pathsMatch(f.workspacePath, normalized));
+  if (existing) {
+    // Keep stored path on the canonical normalized form.
+    if (existing.workspacePath !== normalized) {
+      const folders = useSessionsStore
+        .getState()
+        .folders.map((f) =>
+          f.id === existing.id ? { ...f, workspacePath: normalized } : f,
+        );
+      useSessionsStore.setState({ folders });
+      saveFoldersToStorage(folders);
+      return { folder: { ...existing, workspacePath: normalized }, created: false };
+    }
+    return { folder: existing, created: false };
+  }
   return { folder: createFolder(name, normalized), created: true };
 }
 
@@ -509,21 +529,34 @@ export function bindSessionToWorkspacePath(
     folderName ?? folderNameFromPath(path),
   );
 
-  updateSessionWorkspace(sessionId, normalized);
-  moveSessionToFolder(sessionId, folder.id);
+  const existingRow = useSessionsStore
+    .getState()
+    .sessions.find((s) => sessionMatchesId(s, sessionId));
+  const resolvedId = existingRow?.id ?? sessionId;
+
+  updateSessionWorkspace(resolvedId, normalized);
+  moveSessionToFolder(resolvedId, folder.id);
 
   // Re-parent any other sessions that already share this path.
   for (const s of useSessionsStore.getState().sessions) {
-    if (s.id !== sessionId && s.workspacePath === normalized && s.folderId !== folder.id) {
+    if (
+      s.id !== resolvedId &&
+      pathsMatch(s.workspacePath, normalized) &&
+      s.folderId !== folder.id
+    ) {
       moveSessionToFolder(s.id, folder.id);
     }
   }
 
-  const session =
-    useSessionsStore.getState().sessions.find((s) => s.id === sessionId) ??
-    createSession(folder.id, `Project: ${folder.name}`, normalized);
-
-  return { session, created: false, folderCreated };
+  const session = useSessionsStore
+    .getState()
+    .sessions.find((s) => sessionMatchesId(s, resolvedId));
+  if (session) {
+    return { session, created: false, folderCreated };
+  }
+  // Only create when the caller id truly does not exist.
+  const created = createSession(folder.id, `Project: ${folder.name}`, normalized);
+  return { session: created, created: true, folderCreated };
 }
 
 /**
@@ -549,7 +582,7 @@ export function findOrCreateSessionForPath(
   // the folder so they appear grouped (satisfies the "group existing sessions"
   // requirement). moveSessionToFolder persists the change.
   for (const s of useSessionsStore.getState().sessions) {
-    if (s.workspacePath === normalized && s.folderId !== folder.id) {
+    if (pathsMatch(s.workspacePath, normalized) && s.folderId !== folder.id) {
       moveSessionToFolder(s.id, folder.id);
     }
   }
@@ -557,7 +590,7 @@ export function findOrCreateSessionForPath(
   // Check if a session already exists for this folder path.
   const existing = useSessionsStore
     .getState()
-    .sessions.find((s) => s.workspacePath === normalized);
+    .sessions.find((s) => pathsMatch(s.workspacePath, normalized));
   if (existing) {
     // Ensure the existing session is associated with the folder.
     if (existing.folderId !== folder.id) {

@@ -151,10 +151,12 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
         }
         void branchWorkbenchSession(wbId)
           .then((branched) => {
+            const path = activeSession?.workspacePath || null;
+            const folderId = activeSession?.folderId ?? null;
             const ui = createSession(
-              null,
+              folderId,
               branched.title || 'Chat (branch)',
-              activeSession?.workspacePath || null,
+              path,
             );
             updateSessionWorkbenchMetadata(ui.id, {
               workbenchSessionId: branched.id,

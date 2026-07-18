@@ -25,6 +25,73 @@ from app.services.sandbox.policy import (
 _REDIRECT_RE = re.compile(r'(?:^|[\s;|&])(?:>>?|tee\s+)\s*([^\s;|&]+)')
 
 
+def _ps_literal(path: str) -> str:
+    """Single-quoted PowerShell literal with escaped quotes."""
+    return "'" + (path or '').replace("'", "''") + "'"
+
+
+def rewrite_command_for_platform(command: str) -> str:
+    """Translate common Unix file viewers to PowerShell on Windows.
+
+    Models often emit ``head``/``tail``/``cat``/``ls``; cmd.exe does not have
+    those builtins, which otherwise surfaces as exit 255 for beginners.
+    """
+    if os.name != 'nt':
+        return command
+    text = (command or '').strip()
+    if not text:
+        return command
+
+    # head -n N file | head -N file | head file
+    m = re.match(
+        r'^head(?:\s+-n\s+(\d+)|\s+-(\d+))?(?:\s+--)?\s+(.+)$',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        n = m.group(1) or m.group(2) or '10'
+        path = m.group(3).strip().strip('"').strip("'")
+        return (
+            'powershell -NoProfile -NonInteractive -Command '
+            f'Get-Content -LiteralPath {_ps_literal(path)} -TotalCount {int(n)}'
+        )
+
+    # tail -n N file | tail -N file | tail file
+    m = re.match(
+        r'^tail(?:\s+-n\s+(\d+)|\s+-(\d+))?(?:\s+--)?\s+(.+)$',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        n = m.group(1) or m.group(2) or '10'
+        path = m.group(3).strip().strip('"').strip("'")
+        return (
+            'powershell -NoProfile -NonInteractive -Command '
+            f'Get-Content -LiteralPath {_ps_literal(path)} -Tail {int(n)}'
+        )
+
+    # cat file (simple single-path form)
+    m = re.match(r'^cat(?:\s+--)?\s+(.+)$', text, flags=re.IGNORECASE)
+    if m and '|' not in text and ';' not in text:
+        path = m.group(1).strip().strip('"').strip("'")
+        if path and not path.startswith('-'):
+            return (
+                'powershell -NoProfile -NonInteractive -Command '
+                f'Get-Content -LiteralPath {_ps_literal(path)} -Raw'
+            )
+
+    # ls [path] — bare listing only (skip flag-heavy invocations)
+    m = re.match(r'^ls(?:\s+([^-].*))?$', text, flags=re.IGNORECASE)
+    if m:
+        path = (m.group(1) or '.').strip().strip('"').strip("'") or '.'
+        if path == '.':
+            return 'cmd /c dir /b'
+        safe = path.replace('"', '')
+        return f'cmd /c dir /b "{safe}"'
+
+    return command
+
+
 def _first_word(command: str) -> str:
     text = command.strip()
     if not text:
@@ -125,6 +192,7 @@ async def _spawn(
 
 
 async def run_soft(command: str, policy: SandboxPolicy, *, timeout: float) -> SandboxResult:
+    command = rewrite_command_for_platform(command)
     reason = soft_preflight(command, policy)
     if reason:
         return SandboxResult(
@@ -145,6 +213,7 @@ async def run_soft(command: str, policy: SandboxPolicy, *, timeout: float) -> Sa
 
 
 async def run_unsandboxed(command: str, policy: SandboxPolicy, *, timeout: float) -> SandboxResult:
+    command = rewrite_command_for_platform(command)
     root = resolve_workspace_root(policy.workspace_root)
     cwd = str(root) if root is not None else os.getcwd()
     result = await _spawn(

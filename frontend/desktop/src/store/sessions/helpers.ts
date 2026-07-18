@@ -173,7 +173,26 @@ export function deriveSessionTitleFromMessage(text: string): string | null {
  * Replaces backslashes with forward slashes and strips trailing slashes.
  */
 export function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/, '');
+  let p = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  // Stable Windows drive letter (C: vs c:) so folder matching does not fork.
+  if (/^[a-zA-Z]:\//.test(p)) {
+    p = p[0].toUpperCase() + p.slice(1);
+  }
+  return p;
+}
+
+/** Path equality for workspace/folder matching (case-insensitive on Windows). */
+export function pathsMatch(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (!a || !b) return false;
+  const na = normalizePath(a);
+  const nb = normalizePath(b);
+  if (na === nb) return true;
+  // Windows paths are case-insensitive; treat the same elsewhere for safety
+  // when drive letters / mixed casing show up from different APIs.
+  return na.toLowerCase() === nb.toLowerCase();
 }
 
 /**

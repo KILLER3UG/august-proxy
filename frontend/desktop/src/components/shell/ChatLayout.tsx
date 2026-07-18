@@ -7,7 +7,7 @@ import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse } from "@/store/sessions";
+import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
@@ -196,13 +196,22 @@ export function ChatLayout() {
     }
   }, [workbenchSession?.todos?.length]);
 
+  const createSessionInCurrentWorkspace = () => {
+    const path = currentWorkspacePath || null;
+    if (path) {
+      const { folder } = ensureFolderForWorkspacePath(path);
+      return createSession(folder.id, defaultSessionTitle(), path);
+    }
+    return createSession(null, defaultSessionTitle(), null);
+  };
+
   // Auto redirect from `/` or invalid/archived sessionId to the first non-archived session
   useEffect(() => {
     const activeSessions = sessions.filter((s) => !s.isArchived);
     if (location.pathname === "/" || location.pathname === "") {
       let activeSess = activeSessions[0];
       if (!activeSess) {
-        activeSess = createSession(null, defaultSessionTitle(), currentWorkspacePath);
+        activeSess = createSessionInCurrentWorkspace();
       }
       void navigate(`/c/${activeSess.id}`, { replace: true });
     } else if (location.pathname.startsWith("/c/")) {
@@ -218,7 +227,7 @@ export function ChatLayout() {
         return;
       }
       if (!match || match.isArchived) {
-        const fallback = activeSessions[0] || createSession(null, defaultSessionTitle(), currentWorkspacePath);
+        const fallback = activeSessions[0] || createSessionInCurrentWorkspace();
         void navigate(`/c/${fallback.id}`, { replace: true });
       }
     }
@@ -263,17 +272,24 @@ export function ChatLayout() {
       return;
     }
 
-    // Top-level "New chat": stay in the active project when there is one.
+    // Top-level "New chat": stay in the active project folder when possible.
+    // Resolve by folderId first, then by workspace path so chats do not land
+    // in "Other chats" while Repositories folders keep growing.
     const activeFolderId = active?.folderId ?? null;
     const activeFolder = activeFolderId
       ? folders.find((f) => f.id === activeFolderId)
       : null;
-    const inheritProject = Boolean(activeFolder?.workspacePath);
-    const targetFolderId = inheritProject ? activeFolderId : null;
     const targetPath =
-      (inheritProject ? activeFolder?.workspacePath : null) ??
+      activeFolder?.workspacePath ??
       active?.workspacePath ??
-      currentWorkspacePath;
+      currentWorkspacePath ??
+      null;
+
+    let targetFolderId: string | null =
+      activeFolder?.workspacePath ? activeFolderId : null;
+    if (!targetFolderId && targetPath) {
+      targetFolderId = ensureFolderForWorkspacePath(targetPath).folder.id;
+    }
 
     const newSess = getOrCreateEmptySession(
       targetFolderId,

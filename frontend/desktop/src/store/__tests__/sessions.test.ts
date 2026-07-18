@@ -86,6 +86,22 @@ describe('bindSessionToWorkspacePath', () => {
     expect($folders.get()).toHaveLength(1);
     expect($sessions.get().find((s) => s.id === second.id)?.folderId).toBe(folderId);
   });
+
+  it('binds by workbenchSessionId without creating a ghost Project session', () => {
+    const session = createSession(null, 'Chat', null);
+    updateSessionWorkbenchMetadata(session.id, { workbenchSessionId: 'wb_test_1' });
+
+    const { session: bound, created } = bindSessionToWorkspacePath(
+      'wb_test_1',
+      'C:/Dev/bound-wb',
+      'bound-wb',
+    );
+
+    expect(created).toBe(false);
+    expect(bound.id).toBe(session.id);
+    expect($sessions.get().filter((s) => s.title.startsWith('Project:'))).toHaveLength(0);
+    expect($sessions.get().find((s) => s.id === session.id)?.folderId).toBeTruthy();
+  });
 });
 
 describe('findOrCreateSessionForPath — new folder path', () => {
