@@ -86,10 +86,10 @@ export function useAppUpdate() {
       let downloaded = 0;
       let contentLength: number | null = null;
 
-      const onEvent = (event: {
-        event: string;
-        data: { contentLength?: number; chunkLength?: number };
-      }) => {
+      // Download first, then kill the backend, then install. On Windows NSIS
+      // cannot overwrite resources/python/*.pyd while uvicorn still holds them;
+      // downloadAndInstall races quit vs sidecar teardown.
+      await update.download((event) => {
         switch (event.event) {
           case 'Started': {
             contentLength =
@@ -106,7 +106,7 @@ export function useAppUpdate() {
             break;
           }
           case 'Progress': {
-            downloaded += event.data.chunkLength ?? 0;
+            downloaded += event.data.chunkLength;
             const percent =
               contentLength && contentLength > 0
                 ? Math.min(100, Math.round((downloaded / contentLength) * 100))
@@ -131,12 +131,7 @@ export function useAppUpdate() {
           default:
             break;
         }
-      };
-
-      // Download first, then kill the backend, then install. On Windows NSIS
-      // cannot overwrite resources/python/*.pyd while uvicorn still holds them;
-      // downloadAndInstall races quit vs sidecar teardown.
-      await update.download(onEvent);
+      });
       setProgress({
         percent: 100,
         downloadedBytes: contentLength ?? downloaded,
