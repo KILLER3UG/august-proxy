@@ -518,48 +518,50 @@ pub fn stopBackendForUpdate(app: &AppHandle) {
     log::info!("[backend] stopped for update (holdoff on)");
 }
 
-/// Best-effort: terminate leftover python processes whose executable lives
-/// under the August install dir or AppData backend-runtime (locks `_asyncio.pyd`).
+/// Best-effort: terminate leftover python/node that lock bundled
+/// `resources/python/*.pyd`. Matches install-dir python, AppData venv, and
+/// uvicorn command lines (orphans often survive after tray quit).
 #[cfg(windows)]
 fn killAugustPythonOrphans(app: &AppHandle) {
-    let mut needles: Vec<String> = Vec::new();
-    if let Ok(dir) = app.path().resource_dir() {
-        needles.push(dir.to_string_lossy().replace('/', "\\"));
+    let _ = app;
+    // Prefer -File over -Command so quoting/`\\?\` paths stay reliable.
+    let script = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+function Stop-AugustBackends {
+  Get-CimInstance Win32_Process | Where-Object {
+    $_.Name -match '^(python|pythonw|node)(\.exe)?$' -and (
+      ($_.ExecutablePath -and ($_.ExecutablePath -match 'August|com\.august\.proxy|backend-runtime')) -or
+      ($_.CommandLine -and ($_.CommandLine -match 'August|com\.august\.proxy|uvicorn.*app\.main|AUGUST_PROXY'))
+    )
+  } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+  Get-NetTCPConnection -LocalPort 8085 -State Listen -ErrorAction SilentlyContinue |
+    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+}
+Stop-AugustBackends
+Start-Sleep -Milliseconds 500
+Stop-AugustBackends
+"#;
+    let dir = std::env::temp_dir();
+    let path = dir.join(format!("august-stop-backend-{}.ps1", std::process::id()));
+    if std::fs::write(&path, script).is_err() {
+        log::warn!("[backend] could not write orphan-kill script");
+        return;
     }
-    if let Ok(dir) = app.path().app_data_dir() {
-        needles.push(dir.to_string_lossy().replace('/', "\\"));
-    }
-    needles.push(r"\August\resources\python\".into());
-    needles.push(r"\com.august.proxy\backend-runtime\".into());
-
-    // PowerShell one-liner — avoid killing unrelated system/user Python.
-    let filter = needles
-        .into_iter()
-        .map(|n| {
-            let escaped = n.replace('\'', "''");
-            format!("$_.ExecutablePath -like '*{escaped}*'")
-        })
-        .collect::<Vec<_>>()
-        .join(" -or ");
-    let script = format!(
-        "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | \
-         Where-Object {{ $_.Name -match '^(python|pythonw|node)(\\.exe)?$' -and $_.ExecutablePath -and ({filter}) }} | \
-         ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
-    );
     let mut cmd = Command::new("powershell");
     cmd.args([
         "-NoProfile",
         "-NonInteractive",
         "-ExecutionPolicy",
         "Bypass",
-        "-Command",
-        &script,
+        "-File",
+        &path.to_string_lossy(),
     ]);
     applyNoWindow(&mut cmd);
     match cmd.status() {
         Ok(st) => log::info!("[backend] orphan python/node sweep exit={st}"),
         Err(e) => log::warn!("[backend] orphan python/node sweep failed: {e}"),
     }
+    let _ = std::fs::remove_file(&path);
 }
 
 /// Hide console windows for long-lived backend processes on Windows.

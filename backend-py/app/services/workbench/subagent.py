@@ -299,6 +299,13 @@ async def executeSubAgent(
                     'tool_calls': as_list(msg.get('tool_calls'), []),
                 }
                 textContent = as_str(response.get('text'), '')
+                from app.adapters.reasoning_policy import attach_openai_reasoning
+
+                attach_openai_reasoning(
+                    assistantMsg,
+                    as_str(response.get('thinking'), '')
+                    or as_str(msg.get('reasoning_content') or msg.get('reasoning'), ''),
+                )
                 toolUses = [as_dict(tu) for tu in as_list(response.get('tool_uses'), [])]
             if textContent:
                 finalText += textContent

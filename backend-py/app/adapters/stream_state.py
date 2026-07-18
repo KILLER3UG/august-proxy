@@ -148,7 +148,9 @@ class OpenaiStreamAccumulator:
         """
         message: dict[str, Any] = {'role': 'assistant', 'content': self.content}
         if self.reasoning:
+            # Both keys: DeepSeek/Kimi expect reasoning_content; some stacks use reasoning.
             message['reasoning'] = self.reasoning
+            message['reasoning_content'] = self.reasoning
         if self.tool_calls:
             message['tool_calls'] = [tc.to_openai_dict() for tc in self.tool_calls]
         return {

@@ -862,6 +862,19 @@ def translateMessagesToAnthropic(messages: list[dict[str, object]]) -> list[dict
         else:
             if role == 'assistant' and msg.get('tool_calls'):
                 contentBlocks = []
+                # Only emit a thinking block when we have an Anthropic signature —
+                # unsigned thinking is rejected by the Messages API.
+                reasoning = as_str(msg.get('reasoning'), '') or as_str(msg.get('reasoning_content'), '')
+                signature = as_str(msg.get('thinking_signature') or msg.get('signature'), '')
+                if reasoning and signature:
+                    contentBlocks.append(
+                        {
+                            'type': 'thinking',
+                            'thinking': reasoning,
+                            'text': reasoning,
+                            'signature': signature,
+                        }
+                    )
                 contentVal = msg.get('content')
                 if contentVal:
                     contentBlocks.append({'type': 'text', 'text': contentVal})
@@ -889,13 +902,15 @@ def translateMessagesToAnthropic(messages: list[dict[str, object]]) -> list[dict
                 translated.append({'role': 'assistant', 'content': cast(JsonValue, contentBlocks)})
             elif role == 'assistant' and isinstance(msg.get('content'), list):
                 contentList = as_list(msg.get('content'), [])
-                filtered = [
-                    b
-                    for b in contentList
-                    if not (
-                        isinstance(b, dict) and as_str(b.get('type'), '') == 'thinking' and (not b.get('signature'))
-                    )
-                ]
+                filtered = []
+                for b in contentList:
+                    if not isinstance(b, dict):
+                        filtered.append(b)
+                        continue
+                    if as_str(b.get('type'), '') == 'thinking' and (not b.get('signature')):
+                        # Anthropic rejects thinking blocks without signature.
+                        continue
+                    filtered.append(b)
                 translated.append(
                     {'role': 'assistant', 'content': filtered if filtered else [{'type': 'text', 'text': ''}]}
                 )

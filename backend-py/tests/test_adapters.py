@@ -275,10 +275,8 @@ class TestAnthropicAdapter:
         assert toolMsg['tool_call_id'] in {tc['id'] for tc in tcs}
 
     def testTranslateToAnthropicStripsSignaturelessThinking(self):
-        """Regression: streaming stores thinking blocks without a signature
-        (signature_delta is not captured). Anthropic rejects assistant
-        messages with a signature-less thinking block, aborting the re-call
-        after tool execution on Claude models with thinking enabled."""
+        """Anthropic rejects assistant messages with a signature-less thinking
+        block. Unsigned blocks must still be stripped on re-call."""
         msgs = [
             {'role': 'user', 'content': 'use a tool'},
             {
@@ -305,6 +303,29 @@ class TestAnthropicAdapter:
             )
         )
         assert any((b.get('type') == 'tool_result' and b.get('tool_use_id') == 'tu_1' for b in userTool['content']))
+
+    def testTranslateToAnthropicKeepsSignedThinking(self):
+        msgs = [
+            {'role': 'user', 'content': 'use a tool'},
+            {
+                'role': 'assistant',
+                'content': [
+                    {
+                        'type': 'thinking',
+                        'thinking': 'reasoning...',
+                        'text': 'reasoning...',
+                        'signature': 'sig_abc',
+                    },
+                    {'type': 'tool_use', 'id': 'tu_1', 'name': 'echo', 'input': {}},
+                ],
+            },
+            {'role': 'tool', 'tool_use_id': 'tu_1', 'content': 'hi'},
+        ]
+        out = translateMessagesToAnthropic(msgs)
+        asst = next((m for m in out if m.get('role') == 'assistant'))
+        thinking = [b for b in asst['content'] if b.get('type') == 'thinking']
+        assert len(thinking) == 1
+        assert thinking[0].get('signature') == 'sig_abc'
 
     def testOpenaiRequestBuilder(self):
         req = buildOpenaiRequest({'messages': [{'role': 'user', 'content': 'Hello'}], 'max_tokens': 4096}, 'gpt-4o')

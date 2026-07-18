@@ -1256,7 +1256,12 @@ async def _sendWorkbenchMessageStreamImpl(
                 'tool_calls': choiceMsg.get('tool_calls', []),
             }
             textContent = as_str(response.get('text', ''))
-            thinkingContent = as_str(response.get('thinking', ''))
+            thinkingContent = as_str(response.get('thinking', '')) or as_str(
+                choiceMsg.get('reasoning_content') or choiceMsg.get('reasoning'), ''
+            )
+            from app.adapters.reasoning_policy import attach_openai_reasoning
+
+            attach_openai_reasoning(assistantMsg, thinkingContent)
             toolUses = cast('list[dict[str, object]]', as_list(response.get('tool_uses', []), []))
         if not toolUses:
             if toolRound > 1 and (not textContent) and (not thinkingContent):

@@ -372,8 +372,9 @@ async def streamUpstreamAndResolveToolsOpenai(
                     break
                 toolCallDicts = [tc.to_openai_dict() for tc in acc.tool_calls]
                 assistantMsg: dict[str, object] = {'role': 'assistant', 'content': acc.content}
-                if acc.reasoning:
-                    assistantMsg['reasoning'] = acc.reasoning
+                from app.adapters.reasoning_policy import attach_openai_reasoning
+
+                attach_openai_reasoning(assistantMsg, acc.reasoning)
                 if toolCallDicts:
                     assistantMsg['tool_calls'] = toolCallDicts
                 currentMessages.append(assistantMsg)
@@ -404,13 +405,15 @@ async def streamUpstreamAndResolveToolsOpenai(
                         if nchoices and isinstance(nchoices[0], dict) and as_dict(nchoices[0], {}).get('finish_reason'):
                             break
                     nextToolDicts = [tc.to_openai_dict() for tc in acc.tool_calls] if acc.tool_calls else []
-                    currentMessages.append(
-                        {
-                            'role': 'assistant',
-                            'content': acc.content,
-                            **({'tool_calls': nextToolDicts} if nextToolDicts else {}),
-                        }
-                    )
+                    nextAssistant: dict[str, object] = {
+                        'role': 'assistant',
+                        'content': acc.content,
+                        **({'tool_calls': nextToolDicts} if nextToolDicts else {}),
+                    }
+                    from app.adapters.reasoning_policy import attach_openai_reasoning
+
+                    attach_openai_reasoning(nextAssistant, acc.reasoning)
+                    currentMessages.append(nextAssistant)
                     if acc.usage:
                         yield write_openai_sse_data({'choices': [], 'usage': acc.usage})
             yield write_openai_sse_done()

@@ -26,6 +26,7 @@ class AnthropicWorkbenchStreamAggregator:
         self.content_blocks: list[dict[str, object]] = []
         self.accumulated_text = ''
         self.accumulated_thinking = ''
+        self.thinking_signature: str | None = None
         self.tool_uses: list[dict[str, object]] = []
         self.current_tool_block: dict[str, object] | None = None
         self.current_tool_input_parts: list[str] = []
@@ -52,7 +53,10 @@ class AnthropicWorkbenchStreamAggregator:
                     if self.emit:
                         self.emit({'type': 'finalOutput', 'content': text})
             elif block_type == 'thinking':
-                text = as_str(block.get('thinking', ''))
+                text = as_str(block.get('thinking', '')) or as_str(block.get('text', ''))
+                sig = as_str(block.get('signature'), '')
+                if sig:
+                    self.thinking_signature = sig
                 if text:
                     self.accumulated_thinking += text
                     if self.emit:
@@ -72,6 +76,12 @@ class AnthropicWorkbenchStreamAggregator:
                     self.accumulated_thinking += text
                     if self.emit:
                         self.emit({'type': 'thinking', 'content': text})
+            elif delta_type == 'signature_delta':
+                # Anthropic extended thinking: signature must be re-sent with the
+                # thinking block on subsequent turns (tool loops).
+                sig = as_str(delta.get('signature'), '')
+                if sig:
+                    self.thinking_signature = sig
             elif delta_type == 'input_json_delta':
                 self.current_tool_input_parts.append(as_str(delta.get('partial_json', '')))
         elif event_type == 'content_block_stop':
@@ -98,7 +108,14 @@ class AnthropicWorkbenchStreamAggregator:
             return {'error': self.error}
         blocks: list[dict[str, object]] = []
         if self.accumulated_thinking:
-            blocks.append({'type': 'thinking', 'text': self.accumulated_thinking})
+            thinking_block: dict[str, object] = {
+                'type': 'thinking',
+                'thinking': self.accumulated_thinking,
+                'text': self.accumulated_thinking,
+            }
+            if self.thinking_signature:
+                thinking_block['signature'] = self.thinking_signature
+            blocks.append(thinking_block)
         if self.accumulated_text:
             blocks.append({'type': 'text', 'text': self.accumulated_text})
         blocks.extend(self.tool_uses)

@@ -448,12 +448,9 @@ class TestAnthropicWorkbenchStreaming:
 
 
 class TestOpenaiWorkbenchThinkingToggle:
-    """Regression: some OpenAI-compatible providers (DeepSeek-R1-style
-    "always reasoning" models via OpenCode Zen, etc.) stream
-    `reasoning_content` deltas unconditionally — the `reasoning_effort`
-    request param is only a hint many of them ignore. Before the fix,
-    `call_openai_workbench` captured/emitted those deltas regardless of the
-    user's Thinking toggle, so turning it off had no visible effect."""
+    """Thinking toggle gates UI emit / returned ``thinking`` text. Reasoning
+    is still attached onto the assistant message for tool-loop re-sends
+    even when the toggle is off (DeepSeek/Kimi continuity)."""
 
     @staticmethod
     def _fake_client(reasoning_content: str):
@@ -497,6 +494,9 @@ class TestOpenaiWorkbenchThinkingToggle:
         assert result['text'] == 'Hello world'
         assert result['thinking'] == ''
         assert not any((e.get('type') == 'thinking' for e in emitted))
+        msg = result['choices'][0]['message']
+        assert msg.get('reasoning_content') == 'secret reasoning trace'
+        assert msg.get('reasoning') == 'secret reasoning trace'
 
     async def testReasoningKeptWhenThinkingEnabled(self, monkeypatch):
         from app.services.workbench.providers import call_openai_workbench
@@ -519,6 +519,9 @@ class TestOpenaiWorkbenchThinkingToggle:
         assert result is not None
         assert result['thinking'] == 'visible reasoning trace'
         assert any((e.get('type') == 'thinking' for e in emitted))
+        msg = result['choices'][0]['message']
+        assert msg.get('reasoning_content') == 'visible reasoning trace'
+        assert msg.get('reasoning') == 'visible reasoning trace'
 
     async def testWorkbenchRecordsContextTokensAsFinalSubcallInput(self, monkeypatch):
         """The gauge ground truth: record_usage must be called with

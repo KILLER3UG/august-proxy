@@ -272,7 +272,7 @@ def extract_thinking(content_blocks: list[dict[str, object]]) -> str:
     parts: list[str] = []
     for block in content_blocks:
         if block.get('type') == 'thinking':
-            parts.append(as_str(block.get('text', '')))
+            parts.append(as_str(block.get('thinking'), '') or as_str(block.get('text', '')))
     return '\n'.join(parts)
 
 
@@ -414,6 +414,9 @@ async def call_openai_workbench(
 
     contentText = ''
     thinkingText = ''
+    # Always accumulate reasoning for tool-loop re-sends (DeepSeek/Kimi require it).
+    # UI emit / returned ``thinking`` still respect thinking_enabled.
+    preservedReasoning = ''
     toolCallsAccum: dict[int, dict[str, object]] = {}
     finishReason: str | None = None
     usage: dict[str, int] = {}
@@ -439,20 +442,16 @@ async def call_openai_workbench(
             # Some OpenAI-compatible providers (DeepSeek-R1-style "always
             # reasoning" models via OpenCode Zen, etc.) stream reasoning
             # tokens unconditionally — `reasoning_effort` is a hint they
-            # often ignore entirely. When the user has switched the
-            # Thinking toggle off, drop these deltas instead of
-            # accumulating/emitting them so the UI has nothing to render
-            # and the model effectively "skips" thinking from the user's
-            # perspective.
-            reasoner = (
-                (as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning')))
-                if thinking_enabled
-                else ''
-            )
+            # often ignore entirely. Always keep the text for the next
+            # request (tool-loop continuity); only surface it in the UI
+            # when Thinking is enabled.
+            reasoner = as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning'))
             if reasoner:
-                thinkingText += reasoner
-                if emit:
-                    emit({'type': 'thinking', 'content': reasoner})
+                preservedReasoning += reasoner
+                if thinking_enabled:
+                    thinkingText += reasoner
+                    if emit:
+                        emit({'type': 'thinking', 'content': reasoner})
             textDelta = as_str(delta.get('content', ''))
             if textDelta:
                 contentText += textDelta
@@ -480,7 +479,7 @@ async def call_openai_workbench(
     except Exception as exc:
         return {'error': str(exc)}
 
-    if not contentText and not toolCallsAccum and not thinkingText:
+    if not contentText and not toolCallsAccum and not thinkingText and not preservedReasoning:
         # Defensive: empty success with no tools is almost always an upstream
         # failure that the stream layer failed to classify.
         return {
@@ -491,6 +490,9 @@ async def call_openai_workbench(
         }
 
     assistantMessage: dict[str, object] = {'role': 'assistant', 'content': contentText}
+    from app.adapters.reasoning_policy import attach_openai_reasoning
+
+    attach_openai_reasoning(assistantMessage, preservedReasoning or thinkingText)
     toolUses: list[dict[str, object]] = []
     if toolCallsAccum:
         tcList = []

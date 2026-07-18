@@ -377,9 +377,10 @@ async def deleteModel(providerId: str, modelId: str):
 async def testModel(providerId: str, modelId: str):
     """Probe a model with a real chat request.
 
-    Sends a short "hello" message. Returns ``success: true`` only when the
-    model returns non-empty text. Any upstream/auth/billing failure is
-    returned as ``success: false`` with the exact error message.
+    Instructs the model to reply with exactly ``Connected!``.
+    Returns ``success: true`` only when the trimmed reply matches that
+    string. Any upstream/auth/billing failure is returned as
+    ``success: false`` with the exact error message.
     """
     import time
 
@@ -423,9 +424,15 @@ async def testModel(providerId: str, modelId: str):
 
     t0 = time.perf_counter()
     messages: list[dict[str, object]] = [
-        {'role': 'user', 'content': 'Say hello in one short word only. Do not use tools.'}
+        {
+            'role': 'user',
+            'content': 'Reply with exactly this text and nothing else: Connected!',
+        }
     ]
-    system = 'You are a connectivity probe. Reply with a single short greeting word and nothing else.'
+    system = (
+        'You are a connectivity probe. Reply with exactly the characters Connected! '
+        'and nothing else — no greeting, no punctuation variants, no tools, no markdown.'
+    )
 
     try:
         if is_anthropic_provider(provider):
@@ -497,9 +504,22 @@ async def testModel(providerId: str, modelId: str):
             'content': None,
         }
 
+    # Accept exact match, or a short reply that is only Connected! (trim quotes/spaces).
+    normalized = text.strip().strip('"').strip("'")
+    if normalized != 'Connected!':
+        return {
+            'success': False,
+            'latencyMs': latency_ms,
+            'error': (
+                f'Model "{modelId}" responded with {text[:80]!r} instead of Connected!. '
+                'The endpoint is reachable, but the reply was not the expected probe text.'
+            ),
+            'content': text[:200],
+        }
+
     return {
         'success': True,
         'latencyMs': latency_ms,
-        'content': text[:200],
+        'content': 'Connected!',
         'error': None,
     }
