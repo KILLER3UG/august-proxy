@@ -94,17 +94,35 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
     [sessionId],
   );
 
-  // Keep selection aligned with session model when session switches
+  // Keep selection aligned with session model when session switches.
+  // Prefer the catalog match as soon as models are available so Effort /
+  // Thinking flags are correct without waiting for a refetch round-trip.
   useEffect(() => {
     if (!sessionId || !activeSession?.model) return;
     userSelectedRef.current = activeSession.model;
+    const modelId = activeSession.model;
+    const fromCatalog = models.find(
+      (m) => m.id === modelId || m.id.toLowerCase() === modelId.toLowerCase(),
+    );
     setSelectedModel((prev) => {
-      if (prev?.id === activeSession.model && prev.provider === activeSession.provider) {
+      if (fromCatalog) return fromCatalog;
+      if (prev?.id === modelId && prev.provider === activeSession.provider) {
+        if (
+          !prev.supportsReasoning &&
+          !prev.supportsThinking &&
+          isLikelyReasoningModel(modelId)
+        ) {
+          return {
+            ...prev,
+            supportsReasoning: true,
+            supportsThinking: true,
+          };
+        }
         return prev;
       }
       return modelFromSession(activeSession) || prev;
     });
-  }, [sessionId, activeSession, activeSession?.model, activeSession?.provider]);
+  }, [sessionId, activeSession, activeSession?.model, activeSession?.provider, models]);
 
   return {
     models,

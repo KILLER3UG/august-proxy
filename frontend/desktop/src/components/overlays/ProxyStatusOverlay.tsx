@@ -10,6 +10,8 @@ import { BackendSetupPlan } from '@/components/ui/backend-setup-plan';
 import { isTauri } from '@/lib/tauri-detect';
 import { useBackendSetup } from '@/hooks/useBackendSetup';
 
+const MATERIALIZING = new Set(['copying', 'creating_venv', 'installing']);
+
 export function ProxyStatusOverlay() {
   const state = useGatewayStore((s) => s.gateway);
   const qc = useQueryClient();
@@ -42,29 +44,19 @@ export function ProxyStatusOverlay() {
 
   if (state.status === 'open' && !showReadyFlash) return null;
 
-  const isBootstrapping =
-    isTauri &&
-    (setup.phase === 'copying' ||
-      setup.phase === 'creating_venv' ||
-      setup.phase === 'installing' ||
-      setup.phase === 'starting' ||
-      (setup.phase === 'ready' && showReadyFlash) ||
-      (state.status === 'connecting' && setup.phase !== 'error' && setup.phase !== 'idle'));
+  // First-launch deps install only — not reconnect / folder switches / "starting".
+  const materializing = isTauri && MATERIALIZING.has(setup.phase);
 
-  if (state.status === 'connecting' || isBootstrapping || showReadyFlash) {
+  if (materializing || (showReadyFlash && setup.phase === 'ready')) {
     const headline =
       setup.phase === 'ready'
         ? 'Backend ready'
-        : setup.phase === 'installing' || setup.phase === 'copying' || setup.phase === 'creating_venv'
-          ? 'Setting up backend'
-          : 'Starting backend';
+        : 'Setting up backend';
     const detail =
       setup.detail ||
       (setup.phase === 'ready'
         ? 'You can start chatting.'
-        : isTauri
-          ? 'First launch can take a minute while dependencies install.'
-          : 'Connecting to proxy… Waiting for /health');
+        : 'First launch can take a minute while dependencies install.');
 
     return (
       <Backdrop>
@@ -95,6 +87,9 @@ export function ProxyStatusOverlay() {
       </Backdrop>
     );
   }
+
+  // Still connecting on first paint — stay quiet; BackendBootstrapGate owns that.
+  if (state.status === 'connecting') return null;
 
   const message =
     state.status === 'error'

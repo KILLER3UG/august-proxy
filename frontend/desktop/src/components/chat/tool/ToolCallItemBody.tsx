@@ -77,7 +77,12 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
 
       <div className="mt-2 space-y-2">
         {prompt && (
-          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto">
+          <div
+            className="tool-result-scroll rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto overscroll-contain"
+            onWheel={(e) => {
+              if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
+            }}
+          >
             <div className="mb-1 text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/55">
               Prompt
             </div>
@@ -88,7 +93,12 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
         )}
 
         {output && (
-          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto">
+          <div
+            className="tool-result-scroll rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto overscroll-contain"
+            onWheel={(e) => {
+              if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
+            }}
+          >
             <div className="mb-1 text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/55">
               Subagent output
             </div>
@@ -140,7 +150,12 @@ function SearchResultsCard({ hits }: { hits: SearchHit[] }) {
         <FileSearch className="size-3 shrink-0 opacity-70" />
         <span className="min-w-0 flex-1 truncate">{summary}</span>
       </div>
-      <div className="mt-1 max-w-2xl min-h-0 max-h-52 overflow-y-auto overscroll-contain rounded-lg border border-white/[0.05] bg-white/[0.02] px-2.5 py-2">
+      <div
+        className="tool-result-scroll mt-1 max-w-2xl min-h-0 max-h-52 overflow-y-auto overscroll-contain rounded-lg border border-white/[0.05] bg-white/[0.02] px-2.5 py-2"
+        onWheel={(e) => {
+          if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
+        }}
+      >
         <ol className="m-0 grid list-none gap-2.5 p-0">
           {hits.map((hit, i) => (
             <li key={i} className="grid min-w-0 gap-1">

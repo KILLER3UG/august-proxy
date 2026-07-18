@@ -7,13 +7,17 @@ import { Check, ChevronDown, GitBranch, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gitApi } from '@/api/git';
 import { cn } from '@/lib/utils';
+import { useWorkspacesStore } from '@/store/workspaces';
 
 export function WorkspaceBranchChip({
   sessionId,
+  repoPath,
   className,
   menuPlacement = 'up',
 }: {
   sessionId: string | null | undefined;
+  /** Optional filesystem path when session workspace is not yet bound. */
+  repoPath?: string | null;
   className?: string;
   /** Composer sits near the bottom — open upward. Titlebar opens downward. */
   menuPlacement?: 'up' | 'down';
@@ -22,19 +26,23 @@ export function WorkspaceBranchChip({
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const currentWorkspace = useWorkspacesStore((s) =>
+    s.workspaces.find((w) => w.id === s.currentWorkspaceId) ?? null,
+  );
+  const resolvedPath = (repoPath || currentWorkspace?.path || '').trim() || undefined;
 
-  const enabled = Boolean(sessionId);
+  const enabled = Boolean(sessionId || resolvedPath);
 
   const branch = useQuery({
-    queryKey: ['git', 'branch', sessionId],
-    queryFn: () => gitApi.branch(sessionId || undefined),
+    queryKey: ['git', 'branch', sessionId ?? null, resolvedPath ?? null],
+    queryFn: () => gitApi.branch(sessionId || undefined, resolvedPath),
     enabled,
     refetchInterval: 30_000,
     retry: false,
   });
   const branches = useQuery({
-    queryKey: ['git', 'branches', sessionId],
-    queryFn: () => gitApi.branches(sessionId || undefined),
+    queryKey: ['git', 'branches', sessionId ?? null, resolvedPath ?? null],
+    queryFn: () => gitApi.branches(sessionId || undefined, resolvedPath),
     enabled: enabled && open,
     retry: false,
   });
@@ -59,10 +67,9 @@ export function WorkspaceBranchChip({
     };
   }, [open]);
 
-  if (!sessionId || branch.isLoading) return null;
+  if (!enabled) return null;
   // Hide when folder is not a git repo / has no workspace.
-  if (branch.data?.error) return null;
-  if (!branch.data) return null;
+  if (!branch.isLoading && (branch.data?.error || !branch.data)) return null;
 
   const handleCheckout = async (name: string) => {
     if (!sessionId || name === current) {
@@ -82,11 +89,17 @@ export function WorkspaceBranchChip({
     }
   };
 
+  const canSwitch = Boolean(sessionId);
+
   return (
     <div ref={rootRef} className={cn('relative', className)}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (!canSwitch && !current) return;
+          setOpen((v) => !v);
+        }}
+        disabled={branch.isLoading}
         className={cn(
           'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition',
           'hover:bg-muted text-muted-foreground hover:text-foreground',
@@ -98,13 +111,19 @@ export function WorkspaceBranchChip({
         aria-haspopup="listbox"
       >
         <GitBranch className="size-3.5 shrink-0" />
-        <span className="truncate max-w-[140px] font-mono">{current || '—'}</span>
-        <ChevronDown
-          className={cn('size-3 transition-transform shrink-0', open && 'rotate-180')}
-        />
+        {branch.isLoading ? (
+          <Loader2 className="size-3 animate-spin shrink-0" />
+        ) : (
+          <span className="truncate max-w-[140px] font-mono">{current || '—'}</span>
+        )}
+        {canSwitch && (
+          <ChevronDown
+            className={cn('size-3 transition-transform shrink-0', open && 'rotate-180')}
+          />
+        )}
       </button>
 
-      {open && (
+      {open && canSwitch && (
         <div
           className={cn(
             'absolute left-0 w-64 max-h-72 overflow-y-auto bg-card border border-border rounded-xl shadow-2xl p-1.5 z-50 animate-in fade-in duration-150',

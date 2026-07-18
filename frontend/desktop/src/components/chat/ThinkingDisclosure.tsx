@@ -128,11 +128,20 @@ export function ThinkingDisclosure({
                 : { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
             }
             className={cn(
-              'mt-0.5 w-full min-w-0 max-w-full overflow-y-auto wrap-anywhere pb-1 max-h-36 thinking-scroll text-muted-foreground/65',
+              'mt-0.5 w-full min-w-0 max-w-full wrap-anywhere pb-1 text-muted-foreground/65',
             )}
-            ref={scrollRef}
           >
-            <div ref={contentRef}>{children}</div>
+            <div
+              ref={scrollRef}
+              className="tool-result-scroll max-h-36 overflow-y-auto overscroll-contain thinking-scroll"
+              onWheel={(e) => {
+                if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) {
+                  e.stopPropagation();
+                }
+              }}
+            >
+              <div ref={contentRef}>{children}</div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

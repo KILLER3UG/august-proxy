@@ -647,7 +647,21 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             supportsThinking: isLikelyReasoningModel(activeModelId),
           };
           setSelectedModel((prev) => {
-            if (prev && prev.id === activeModelId) return prev;
+            // Prefer keeping a catalog-enriched selection; only fall back to the
+            // heuristic placeholder when nothing is selected yet.
+            if (prev && prev.id === activeModelId) {
+              if (
+                (prev.supportsReasoning || prev.supportsThinking) ||
+                !placeholder.supportsReasoning
+              ) {
+                return prev;
+              }
+              return {
+                ...prev,
+                supportsReasoning: placeholder.supportsReasoning,
+                supportsThinking: placeholder.supportsThinking,
+              };
+            }
             return placeholder;
           });
         }

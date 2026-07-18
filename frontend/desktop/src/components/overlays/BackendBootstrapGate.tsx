@@ -13,12 +13,37 @@ import { BackendSetupPlan } from '@/components/ui/backend-setup-plan';
 import { Button } from '@/components/ui/button';
 import { $gateway } from '@/store/gateway';
 
+/** Survives soft navigations / remounts within the same app session. */
+const UNLOCKED_KEY = 'august.backend.bootstrapped';
+
+const MATERIALIZING = new Set(['copying', 'creating_venv', 'installing']);
+
+function readUnlocked(): boolean {
+  try {
+    return sessionStorage.getItem(UNLOCKED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeUnlocked(value: boolean) {
+  try {
+    if (value) sessionStorage.setItem(UNLOCKED_KEY, '1');
+    else sessionStorage.removeItem(UNLOCKED_KEY);
+  } catch {
+    /* private mode / blocked storage */
+  }
+}
+
 export function BackendBootstrapGate({ children }: { children: ReactNode }) {
   const { status: setup, refresh } = useBackendSetup();
   const [proxyUp, setProxyUp] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [readyFlash, setReadyFlash] = useState(false);
+  // Once the backend has been healthy this session, never re-show the first-launch
+  // plan for brief proxy blips or React remounts (e.g. folder/session switches).
+  const [unlocked, setUnlocked] = useState(() => readUnlocked());
 
   const poll = useCallback(async () => {
     if (!isTauri) return;
@@ -74,7 +99,21 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
   }, [poll]);
 
   useEffect(() => {
-    if (!proxyUp || setup.phase === 'error') return;
+    if (MATERIALIZING.has(setup.phase)) {
+      setUnlocked(false);
+      writeUnlocked(false);
+      return;
+    }
+    if (proxyUp && setup.phase !== 'error') {
+      setUnlocked(true);
+      writeUnlocked(true);
+    }
+  }, [proxyUp, setup.phase]);
+
+  useEffect(() => {
+    // Brief "ready" flash only the first time we become healthy in this mount
+    // (not when sessionStorage already marks us unlocked from a prior remount).
+    if (!proxyUp || setup.phase === 'error' || readUnlocked()) return;
     setReadyFlash(true);
     const t = window.setTimeout(() => setReadyFlash(false), 900);
     return () => window.clearTimeout(t);
@@ -100,7 +139,9 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
   if (!isTauri) return <>{children}</>;
 
   const failed = setup.phase === 'error';
-  const gated = !proxyUp || failed || readyFlash;
+  const materializing = MATERIALIZING.has(setup.phase);
+  // After unlock: stay in the app. Only re-gate for real deps install / hard error.
+  const gated = failed || materializing || (!unlocked && (!proxyUp || readyFlash));
 
   if (!gated) return <>{children}</>;
 
@@ -113,7 +154,7 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
     ? 'Backend setup failed'
     : proxyUp || setup.phase === 'ready'
       ? 'Backend ready'
-      : setup.phase === 'installing' || setup.phase === 'copying' || setup.phase === 'creating_venv'
+      : materializing
         ? 'Setting up backend'
         : 'Starting backend';
 

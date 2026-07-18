@@ -9,8 +9,30 @@ import {
 } from '@/lib/tool-context-format';
 
 /** Shared scroll shell for long tool result panes (search hits, list_skills, etc.). */
-const RESULT_SCROLL =
-  'min-h-0 max-h-52 overflow-y-auto overscroll-contain';
+export const RESULT_SCROLL =
+  'tool-result-scroll min-h-0 max-h-52 overflow-y-auto overflow-x-hidden overscroll-contain';
+
+function ScrollBody({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn('min-w-0', RESULT_SCROLL, className)}
+      // Keep wheel/trackpad gestures inside this pane so the chat transcript
+      // does not steal scroll while the user is reading a clipped tool result.
+      onWheel={(e) => {
+        const el = e.currentTarget;
+        if (el.scrollHeight > el.clientHeight) e.stopPropagation();
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 export function Section({
   label,
@@ -39,9 +61,7 @@ export function Section({
         >
           {label}
         </div>
-        <div className={cn('min-w-0 text-muted-foreground', RESULT_SCROLL)}>
-          {children}
-        </div>
+        <ScrollBody className="text-muted-foreground">{children}</ScrollBody>
       </div>
     </div>
   );
@@ -97,14 +117,9 @@ export function FormattedSection({
           {isSuccess && <CheckCircle2 className="size-3 shrink-0" />}
           {label}
         </div>
-        <div
-          className={cn(
-            'min-w-0 text-sm text-foreground/90 chat-message-text',
-            RESULT_SCROLL,
-          )}
-        >
+        <ScrollBody className="text-sm text-foreground/90 chat-message-text">
           <Markdown content={summary} variant="assistant" />
-        </div>
+        </ScrollBody>
       </div>
     </div>
   );

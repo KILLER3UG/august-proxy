@@ -7,9 +7,9 @@ import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSessionsStore, createSession, getOrCreateEmptySession, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions } from "@/store/sessions";
+import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
-import { useWorkspacesStore } from "@/store/workspaces";
+import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { TeamAgentsStrip } from "./TeamAgentsStrip";
 import { SessionSidebar } from "./SessionSidebar";
@@ -246,12 +246,43 @@ export function ChatLayout() {
     } catch {
       /* ignore */
     }
-    // Reuse an existing empty chat instead of stacking blanks in the sidebar.
+
+    const folders = useSessionsStore.getState().folders;
+
+    // Codex-style: "+" on a project folder → new thread in that folder/workspace.
+    if (folderId) {
+      const folder = folders.find((f) => f.id === folderId);
+      const newSess = createEmptySessionInFolder(folderId, defaultSessionTitle());
+      if (folder?.workspacePath) {
+        addWorkspace(folder.workspacePath);
+      }
+      if (folder?.isCollapsed) {
+        toggleFolderCollapse(folderId);
+      }
+      void navigate(`/c/${newSess.id}`);
+      return;
+    }
+
+    // Top-level "New chat": stay in the active project when there is one.
+    const activeFolderId = active?.folderId ?? null;
+    const activeFolder = activeFolderId
+      ? folders.find((f) => f.id === activeFolderId)
+      : null;
+    const inheritProject = Boolean(activeFolder?.workspacePath);
+    const targetFolderId = inheritProject ? activeFolderId : null;
+    const targetPath =
+      (inheritProject ? activeFolder?.workspacePath : null) ??
+      active?.workspacePath ??
+      currentWorkspacePath;
+
     const newSess = getOrCreateEmptySession(
-      folderId ?? null,
+      targetFolderId,
       defaultSessionTitle(),
-      currentWorkspacePath,
+      targetPath,
     );
+    if (targetPath) {
+      addWorkspace(targetPath);
+    }
     void navigate(`/c/${newSess.id}`);
   };
 

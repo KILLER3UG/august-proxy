@@ -7,7 +7,7 @@
  * Used only after final output exists so the chat is not a stack of sections.
  */
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -89,6 +89,10 @@ export function ActivitySummary({
   className,
 }: ActivitySummaryProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const [bodyClip, setBodyClip] = useState(true);
+  useEffect(() => {
+    if (open) setBodyClip(true);
+  }, [open]);
   const segments = buildActivityCountSegments({
     thoughtCount,
     toolsCount,
@@ -156,7 +160,9 @@ export function ActivitySummary({
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden"
+            className={bodyClip ? 'overflow-hidden' : 'overflow-visible'}
+            onAnimationStart={() => setBodyClip(true)}
+            onAnimationComplete={() => setBodyClip(false)}
           >
             <div className="activity-summary-body">{children}</div>
           </motion.div>

@@ -174,6 +174,8 @@ export function getOrCreateEmptySession(
     const rest = useSessionsStore.getState().sessions.filter((s) => s.id !== existing.id);
     const bumped: Session = {
       ...existing,
+      folderId: folderId ?? existing.folderId ?? null,
+      workspacePath: workspacePath ?? existing.workspacePath ?? null,
       startedAt: new Date().toISOString(),
       title: isPlaceholderTitle(existing.title)
         ? (title ?? defaultSessionTitle())
@@ -185,6 +187,19 @@ export function getOrCreateEmptySession(
     return bumped;
   }
   return createSession(folderId, title, workspacePath);
+}
+
+/**
+ * Start a new empty chat inside a Repositories (or manual) folder — Codex-style
+ * multi-thread per project. Inherits the folder's workspacePath when set.
+ */
+export function createEmptySessionInFolder(
+  folderId: string,
+  title?: string,
+): Session {
+  const folder = useSessionsStore.getState().folders.find((f) => f.id === folderId);
+  const workspacePath = folder?.workspacePath ?? null;
+  return getOrCreateEmptySession(folderId, title ?? defaultSessionTitle(), workspacePath);
 }
 
 export function renameSession(id: string, newTitle: string) {
@@ -453,11 +468,62 @@ export function toggleFolderCollapse(id: string) {
 }
 
 export function updateSessionWorkspace(id: string, path: string | null) {
+  const normalized = path == null ? null : normalizePath(path);
   const updated = useSessionsStore
     .getState()
-    .sessions.map((s) => (s.id === id ? { ...s, workspacePath: path } : s));
+    .sessions.map((s) => (s.id === id ? { ...s, workspacePath: normalized } : s));
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
+}
+
+/**
+ * Ensure a Repositories sidebar folder exists for a filesystem path.
+ * Creates one when the path is new; reuses the existing folder otherwise.
+ */
+export function ensureFolderForWorkspacePath(
+  path: string,
+  folderName?: string,
+): { folder: Folder; created: boolean } {
+  const normalized = normalizePath(path);
+  const name = folderName ?? folderNameFromPath(path);
+  const existing = useSessionsStore
+    .getState()
+    .folders.find((f) => f.workspacePath === normalized);
+  if (existing) return { folder: existing, created: false };
+  return { folder: createFolder(name, normalized), created: true };
+}
+
+/**
+ * Point a session at a workspace path and ensure a Repositories sidebar
+ * folder group exists for that path (creating one when the path is new).
+ * Always keeps the caller on `sessionId` — does not switch to another chat.
+ */
+export function bindSessionToWorkspacePath(
+  sessionId: string,
+  path: string,
+  folderName?: string,
+): { session: Session; created: boolean; folderCreated: boolean } {
+  const normalized = normalizePath(path);
+  const { folder, created: folderCreated } = ensureFolderForWorkspacePath(
+    path,
+    folderName ?? folderNameFromPath(path),
+  );
+
+  updateSessionWorkspace(sessionId, normalized);
+  moveSessionToFolder(sessionId, folder.id);
+
+  // Re-parent any other sessions that already share this path.
+  for (const s of useSessionsStore.getState().sessions) {
+    if (s.id !== sessionId && s.workspacePath === normalized && s.folderId !== folder.id) {
+      moveSessionToFolder(s.id, folder.id);
+    }
+  }
+
+  const session =
+    useSessionsStore.getState().sessions.find((s) => s.id === sessionId) ??
+    createSession(folder.id, `Project: ${folder.name}`, normalized);
+
+  return { session, created: false, folderCreated };
 }
 
 /**
@@ -477,10 +543,7 @@ export function findOrCreateSessionForPath(
   // Find an existing folder representing this filesystem path. Manual folders
   // (created via the sidebar "New folder" button) have `workspacePath == null`
   // and are intentionally never matched here.
-  let folder = useSessionsStore.getState().folders.find((f) => f.workspacePath === normalized);
-  if (!folder) {
-    folder = createFolder(name, normalized);
-  }
+  const { folder } = ensureFolderForWorkspacePath(normalized, name);
 
   // Re-parent any pre-existing sessions that share this workspace path into
   // the folder so they appear grouped (satisfies the "group existing sessions"

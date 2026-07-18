@@ -439,6 +439,11 @@ export function SessionList({
                       hasActiveSession={folderSessions.some(
                         (s) => mergedSessionStates[s.id] === "working" || mergedSessionStates[s.id] === "streaming",
                       )}
+                      branchSessionId={
+                        folderSessions.find((s) => s.workspacePath)?.id ??
+                        folderSessions[0]?.id ??
+                        null
+                      }
                       onToggleCollapse={() => toggleFolderCollapse(folder.id)}
                       onNewSession={() => onNewInFolder?.(folder.id)}
                       onRename={() =>

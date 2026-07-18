@@ -48,22 +48,20 @@ export function isLikelyReasoningModel(id: string): boolean {
     lower.includes('reasoner') ||
     lower.includes('thinking') ||
     lower.includes('reasoning') ||
-    // Claude models with extended-thinking support, not just sonnet-4.
-    lower.includes('claude-3-7') ||
-    lower.includes('claude-sonnet-4') ||
-    lower.includes('claude-opus-4') ||
-    lower.includes('claude-haiku-4') ||
+    // Broad Claude / GPT-5 / reasoner families so Effort shows before catalog hydrates.
+    lower.includes('claude') ||
     lower.includes('gpt-5') ||
     lower.includes('deepseek') ||
     lower.includes('qwen3') ||
     lower.includes('qwq') ||
     lower.includes('minimax-m2') ||
     lower.includes('minimax-m3') ||
-    lower.includes('glm-4.6') ||
-    lower.includes('glm-4.5') ||
+    lower.includes('glm-4') ||
+    lower.includes('glm-5') ||
     lower.includes('kimi-k2') ||
     lower.includes('grok-4') ||
-    lower.includes('grok-3')
+    lower.includes('grok-3') ||
+    lower.includes('gemini-3')
   );
 }
 

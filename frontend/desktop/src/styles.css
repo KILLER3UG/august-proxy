@@ -787,6 +787,23 @@ input::placeholder {
   overflow-y: visible;
 }
 
+/* Tool / activity result panes — always scrollable when content overflows. */
+.tool-result-scroll {
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 136, 0.35) transparent;
+}
+.tool-result-scroll::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+.tool-result-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-radius: 9999px !important;
+}
+
 /* ── Markdown Content Styling ────────────────────────────────────── */
 .markdown-content {
   font-size: 0.9375rem;

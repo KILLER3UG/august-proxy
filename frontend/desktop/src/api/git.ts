@@ -47,15 +47,23 @@ export interface GitCommitResult {
   output: string;
 }
 
+function gitQuery(sessionId?: string, repoPath?: string): string {
+  const qs = new URLSearchParams();
+  if (sessionId) qs.set('sessionId', sessionId);
+  if (repoPath) qs.set('repoPath', repoPath);
+  const q = qs.toString();
+  return q ? `?${q}` : '';
+}
+
 export const gitApi = {
-  status:   (sessionId?: string) =>
-    api.get<GitStatus>(`/api/git/status${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`),
-  diff:     (sessionId?: string) =>
-    api.get<GitDiffResult>(`/api/git/diff${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`),
-  branch:   (sessionId?: string) =>
-    api.get<GitBranchInfo>(`/api/git/branch${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`),
-  branches: (sessionId?: string) =>
-    api.get<GitBranchList>(`/api/git/branches${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`),
+  status:   (sessionId?: string, repoPath?: string) =>
+    api.get<GitStatus>(`/api/git/status${gitQuery(sessionId, repoPath)}`),
+  diff:     (sessionId?: string, repoPath?: string) =>
+    api.get<GitDiffResult>(`/api/git/diff${gitQuery(sessionId, repoPath)}`),
+  branch:   (sessionId?: string, repoPath?: string) =>
+    api.get<GitBranchInfo>(`/api/git/branch${gitQuery(sessionId, repoPath)}`),
+  branches: (sessionId?: string, repoPath?: string) =>
+    api.get<GitBranchList>(`/api/git/branches${gitQuery(sessionId, repoPath)}`),
   commit:   (sessionId: string, message: string) =>
     api.post<GitCommitResult>('/api/git/commit', { sessionId, message }),
   checkout: (sessionId: string, branch: string) =>

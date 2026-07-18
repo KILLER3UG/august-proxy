@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Folder } from "@/store/sessions";
+import { WorkspaceBranchChip } from "@/components/workspace/WorkspaceBranchChip";
 
 /** Section header for PINNED / RECENTS with optional folder create actions. */
 export function Section({
@@ -77,6 +78,8 @@ export interface FolderHeaderProps {
   folder: Folder;
   count: number;
   hasActiveSession?: boolean;
+  /** Session id used for git branch lookups when the folder is a workspace. */
+  branchSessionId?: string | null;
   onToggleCollapse: () => void;
   onNewSession: () => void;
   onRename: () => void;
@@ -88,6 +91,7 @@ export function FolderHeader({
   folder,
   count,
   hasActiveSession: _hasActiveSession,
+  branchSessionId,
   onToggleCollapse,
   onNewSession,
   onRename,
@@ -114,6 +118,20 @@ export function FolderHeader({
         <span className="truncate text-[12.5px] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
           {folder.name}
         </span>
+        {folder.workspacePath ? (
+          <span
+            className="min-w-0 shrink"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <WorkspaceBranchChip
+              sessionId={branchSessionId}
+              repoPath={folder.workspacePath}
+              className="scale-90 origin-left"
+              menuPlacement="down"
+            />
+          </span>
+        ) : null}
         {count > 0 && (
           <span className="text-[10px] text-sidebar-foreground/25 tabular-nums shrink-0">
             {count}
@@ -123,14 +141,19 @@ export function FolderHeader({
       <div
         className={cn(
           "flex items-center gap-0.5 shrink-0 transition-opacity",
-          isHovered ? "opacity-100" : "opacity-0",
+          // Keep "+" visible on workspace folders so multi-chat-per-project is obvious.
+          folder.workspacePath || isHovered ? "opacity-100" : "opacity-0",
         )}
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onNewSession}
-          className="p-0.5 hover:bg-white/[0.06] rounded text-sidebar-foreground/40 hover:text-sidebar-foreground/70"
-          title={`New session in ${folder.name}`}
+          className={cn(
+            "p-0.5 hover:bg-white/[0.06] rounded text-sidebar-foreground/40 hover:text-sidebar-foreground/70",
+            folder.workspacePath && "text-sidebar-foreground/55",
+          )}
+          title={`New chat in ${folder.name}`}
+          aria-label={`New chat in ${folder.name}`}
         >
           <Plus className="size-2.5" />
         </button>

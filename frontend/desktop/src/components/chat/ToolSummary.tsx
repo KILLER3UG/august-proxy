@@ -204,9 +204,6 @@ export function ToolSummary({
   const panelTransition = reducedMotion
     ? { duration: 0 }
     : { duration: 0.18, ease: [0.16, 1, 0.3, 1] as const };
-  const rowTransition = reducedMotion
-    ? { duration: 0 }
-    : { duration: 0.16, ease: [0.16, 1, 0.3, 1] as const };
 
   const toggleCard = () => {
     setUserExpanded(!expanded);
@@ -220,6 +217,12 @@ export function ToolSummary({
       return next;
     });
   };
+
+  // Clip while height animates; release afterward so nested result panes scroll.
+  const [panelClip, setPanelClip] = useState(true);
+  useEffect(() => {
+    if (expanded) setPanelClip(true);
+  }, [expanded]);
 
   if (countSegments.length === 0 && entries.length === 0) return null;
 
@@ -288,7 +291,9 @@ export function ToolSummary({
             animate={{ opacity: 1, height: 'auto' }}
             exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
             transition={panelTransition}
-            className="overflow-hidden"
+            className={panelClip ? 'overflow-hidden' : 'overflow-visible'}
+            onAnimationStart={() => setPanelClip(true)}
+            onAnimationComplete={() => setPanelClip(false)}
           >
             <div className="tool-summary-divider" />
             <div className="tool-summary-rows">
@@ -348,25 +353,14 @@ export function ToolSummary({
                         <RowStatusGlyph entry={entry} />
                       </span>
                     </button>
-                    <AnimatePresence initial={false}>
-                      {rowOpen && (
-                        <motion.div
-                          key={`${entry.id}-body`}
-                          initial={reducedMotion ? false : { opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
-                          transition={rowTransition}
-                          // Clip during height anim, but don't trap nested scroll panes
-                          // (search results / list_skills max-h containers).
-                          className="overflow-x-hidden"
-                        >
-                          <div className="tool-summary-body">
-                            {renderToolBody(entry.toolEntry)}
-                            {renderAfterRow?.(entry)}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    {rowOpen ? (
+                      <div className="overflow-x-hidden">
+                        <div className="tool-summary-body">
+                          {renderToolBody(entry.toolEntry)}
+                          {renderAfterRow?.(entry)}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}

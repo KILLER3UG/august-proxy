@@ -1,5 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useSessionsStore, updateSessionWorkspace } from '@/store/sessions';
+import {
+  useSessionsStore,
+  updateSessionWorkspace,
+  bindSessionToWorkspacePath,
+} from '@/store/sessions';
 import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, AlertCircle, Trash2, FolderSearch, Link2 } from 'lucide-react';
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
@@ -95,7 +99,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
 
   const handleSetWorkspace = (folderPath: string) => {
     if (!sessionId) return;
-    updateSessionWorkspace(sessionId, folderPath);
+    bindSessionToWorkspacePath(sessionId, folderPath);
     toast.success('Workspace updated to subfolder');
   };
 
@@ -146,7 +150,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
       toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
 
       if (sessionId) {
-        updateSessionWorkspace(sessionId, normalizedPath);
+        bindSessionToWorkspacePath(sessionId, normalizedPath, folderName);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -169,7 +173,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
           `/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`
         );
         toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
-        if (sessionId) updateSessionWorkspace(sessionId, normalizedPath);
+        if (sessionId) bindSessionToWorkspacePath(sessionId, normalizedPath, folderName);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         toast.error(`Access failed: ${message}`, { id: toastId });
@@ -250,7 +254,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
                         );
                         toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
                         if (sessionId) {
-                          updateSessionWorkspace(sessionId, normalized);
+                          bindSessionToWorkspacePath(sessionId, normalized, folderName);
                           (e.target as HTMLInputElement).value = '';
                         }
                       } catch (err) {

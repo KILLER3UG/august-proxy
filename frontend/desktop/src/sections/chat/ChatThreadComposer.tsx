@@ -3,6 +3,7 @@
 /* model/effort menu, send / mid-run steer, stop.                          */
 
 import { useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage, FileAttachment } from '@/types/chat';
@@ -131,6 +132,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     dropdownApiRef,
   } = props;
 
+  const navigate = useNavigate();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Live markdown preview is opt-in; toolbar toggle removed for now.
@@ -207,26 +209,31 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           'border-border/70 overflow-visible',
         )}
       >
-        {messages.length === 0 && (
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40">
-            <WorkspaceSelector
-              sessionId={sessionId}
-              onWorkspaceChange={(ws) => {
-                if (!sessionId || !ws) return;
-                void import('@/store/sessions').then(({ createSession, $sessions }) => {
-                  const existing = $sessions.get().find((s) => s.workspacePath === ws.path);
-                  if (existing) {
-                    window.location.href = `/c/${existing.id}`;
-                  } else {
-                    const newSess = createSession(null, ws.name || 'New Chat', ws.path);
-                    window.location.href = `/c/${newSess.id}`;
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40">
+          <WorkspaceSelector
+            sessionId={sessionId}
+            onWorkspaceChange={(ws) => {
+              if (!ws) return;
+              void import('@/store/sessions').then(
+                ({ bindSessionToWorkspacePath, findOrCreateSessionForPath }) => {
+                  // New filesystem paths always get a Repositories folder.
+                  // Prefer binding the current chat so it lands under that folder
+                  // instead of spawning an orphan "Project:" session.
+                  if (sessionId) {
+                    bindSessionToWorkspacePath(sessionId, ws.path, ws.name);
+                    return;
                   }
-                });
-              }}
-            />
-            <WorkspaceBranchChip sessionId={sessionId} />
-          </div>
-        )}
+                  const { session } = findOrCreateSessionForPath(ws.path, ws.name);
+                  navigate(`/c/${session.id}`);
+                },
+              );
+            }}
+          />
+          <WorkspaceBranchChip
+            sessionId={sessionId}
+            repoPath={workspacePath}
+          />
+        </div>
 
         {voiceActive ? (
           <ComposerVoiceListening />

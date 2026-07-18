@@ -86,7 +86,11 @@ function workspaceNameFromPath(path: string): string {
  * If a workspace with the same path already exists, it is updated and selected.
  */
 export function addWorkspace(path: string): Workspace {
-  const existing = useWorkspacesStore.getState().workspaces.find(w => w.path === path);
+  // Match session-store path normalization so sidebar folders group correctly.
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  const existing = useWorkspacesStore
+    .getState()
+    .workspaces.find((w) => w.path.replace(/\\/g, '/').replace(/\/+$/, '') === normalized);
   if (existing) {
     setCurrentWorkspace(existing.id);
     return existing;
@@ -94,8 +98,8 @@ export function addWorkspace(path: string): Workspace {
 
   const newWorkspace: Workspace = {
     id: 'ws_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5),
-    name: workspaceNameFromPath(path),
-    path,
+    name: workspaceNameFromPath(normalized),
+    path: normalized,
     lastUsedAt: new Date().toISOString(),
   };
 

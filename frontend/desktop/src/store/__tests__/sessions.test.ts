@@ -5,8 +5,10 @@ import {
   $sessions,
   $folders,
   findOrCreateSessionForPath,
+  bindSessionToWorkspacePath,
   createFolder,
   createSession,
+  createEmptySessionInFolder,
   getOrCreateEmptySession,
   saveSessionsToStorage,
   saveFoldersToStorage,
@@ -32,6 +34,58 @@ beforeEach(() => {
   saveFoldersToStorage([]);
   vi.mocked(getWorkbenchSessions).mockReset();
   vi.mocked(getWorkbenchSessions).mockResolvedValue([]);
+});
+
+describe('bindSessionToWorkspacePath', () => {
+  it('creates a Repositories folder for a new path and groups the session', () => {
+    const session = createSession(null, 'Chat', null);
+    expect(session.folderId).toBeNull();
+
+    const { session: bound, folderCreated } = bindSessionToWorkspacePath(
+      session.id,
+      'C:\\Dev\\other-project',
+      'other-project',
+    );
+
+    expect(bound.id).toBe(session.id);
+    expect(folderCreated).toBe(true);
+    const folders = $folders.get();
+    expect(folders).toHaveLength(1);
+    expect(folders[0].workspacePath).toBe('C:/Dev/other-project');
+    const updated = $sessions.get().find((s) => s.id === session.id);
+    expect(updated?.folderId).toBe(folders[0].id);
+    expect(updated?.workspacePath).toBe('C:/Dev/other-project');
+  });
+
+  it('keeps the current session when another chat already owns the path', () => {
+    const existing = createSession(null, 'Older', 'C:/Dev/shared');
+    const current = createSession(null, 'Current', null);
+
+    const { session: bound, folderCreated } = bindSessionToWorkspacePath(
+      current.id,
+      'C:/Dev/shared',
+      'shared',
+    );
+
+    expect(bound.id).toBe(current.id);
+    expect(folderCreated).toBe(true);
+    const folder = $folders.get().find((f) => f.workspacePath === 'C:/Dev/shared')!;
+    expect($sessions.get().find((s) => s.id === current.id)?.folderId).toBe(folder.id);
+    expect($sessions.get().find((s) => s.id === existing.id)?.folderId).toBe(folder.id);
+  });
+
+  it('reuses an existing Repositories folder for the same path', () => {
+    const first = createSession(null, 'A', null);
+    bindSessionToWorkspacePath(first.id, 'C:/Dev/proj', 'proj');
+    const folderId = $folders.get()[0].id;
+
+    const second = createSession(null, 'B', null);
+    const { folderCreated } = bindSessionToWorkspacePath(second.id, 'C:/Dev/proj', 'proj');
+
+    expect(folderCreated).toBe(false);
+    expect($folders.get()).toHaveLength(1);
+    expect($sessions.get().find((s) => s.id === second.id)?.folderId).toBe(folderId);
+  });
 });
 
 describe('findOrCreateSessionForPath — new folder path', () => {
@@ -148,6 +202,33 @@ describe('getOrCreateEmptySession — no blank stacking', () => {
     const second = getOrCreateEmptySession(null, 'Fresh');
     expect(second.id).not.toBe(first.id);
     expect($sessions.get()).toHaveLength(2);
+  });
+});
+
+describe('createEmptySessionInFolder — Codex-style multi-chat per project', () => {
+  it('creates a new chat under the folder with the folder workspace path', () => {
+    const folder = createFolder('august-proxy', 'C:/Dev/august-proxy');
+    const first = createEmptySessionInFolder(folder.id, 'Chat 1');
+    expect(first.folderId).toBe(folder.id);
+    expect(first.workspacePath).toBe('C:/Dev/august-proxy');
+
+    // Mark first as used so a second empty chat can be created.
+    $sessions.set([{ ...first, messageCount: 2 }]);
+    saveSessionsToStorage($sessions.get());
+
+    const second = createEmptySessionInFolder(folder.id, 'Chat 2');
+    expect(second.id).not.toBe(first.id);
+    expect(second.folderId).toBe(folder.id);
+    expect(second.workspacePath).toBe('C:/Dev/august-proxy');
+    expect($sessions.get().filter((s) => s.folderId === folder.id)).toHaveLength(2);
+  });
+
+  it('reuses an empty chat in the same folder instead of stacking blanks', () => {
+    const folder = createFolder('proj', '/repos/proj');
+    const first = createEmptySessionInFolder(folder.id);
+    const second = createEmptySessionInFolder(folder.id);
+    expect(second.id).toBe(first.id);
+    expect($sessions.get()).toHaveLength(1);
   });
 });
 

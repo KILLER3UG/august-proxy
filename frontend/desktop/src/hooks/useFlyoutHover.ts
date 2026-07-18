@@ -6,8 +6,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const HOVER_OPEN_MS = 90;
-const HOVER_CLOSE_MS = 200;
+const HOVER_OPEN_MS = 20;
+const HOVER_CLOSE_MS = 160;
 
 export function useFlyoutHover<T extends string>() {
   const [flyout, setFlyout] = useState<T | null>(null);
