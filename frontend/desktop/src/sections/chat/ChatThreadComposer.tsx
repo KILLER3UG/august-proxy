@@ -224,7 +224,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                     return;
                   }
                   const { session } = findOrCreateSessionForPath(ws.path, ws.name);
-                  navigate(`/c/${session.id}`);
+                  void navigate(`/c/${session.id}`);
                 },
               );
             }}

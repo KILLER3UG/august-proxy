@@ -861,7 +861,7 @@ def translateMessagesToAnthropic(messages: list[dict[str, object]]) -> list[dict
             translated.append({'role': 'user', 'content': cast(JsonValue, toolBlocks)})
         else:
             if role == 'assistant' and msg.get('tool_calls'):
-                contentBlocks = []
+                contentBlocks: list[dict[str, object]] = []
                 # Only emit a thinking block when we have an Anthropic signature —
                 # unsigned thinking is rejected by the Messages API.
                 reasoning = as_str(msg.get('reasoning'), '') or as_str(msg.get('reasoning_content'), '')
@@ -884,7 +884,7 @@ def translateMessagesToAnthropic(messages: list[dict[str, object]]) -> list[dict
                     fn = as_dict(tc.get('function'), {})
                     try:
                         fnArgs = fn.get('arguments', {})
-                        args = (
+                        args: object = (
                             json.loads(as_str(fn.get('arguments'), '{}'))
                             if isinstance(fnArgs, str)
                             else as_dict(fnArgs, {})

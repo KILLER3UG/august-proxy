@@ -396,8 +396,8 @@ async def brainGraph(
             name = as_str(e.get('name'), '')
             if not name:
                 return None
-            meta = e.get('metadata') if isinstance(e.get('metadata'), dict) else {}
-            meta = dict(meta)
+            meta_raw = e.get('metadata')
+            meta: dict[str, object] = dict(meta_raw) if isinstance(meta_raw, dict) else {}
             if name in auto_previews and not as_str(meta.get('preview')):
                 meta['preview'] = auto_previews[name]
             etype = as_str(e.get('type'), 'general') or 'general'

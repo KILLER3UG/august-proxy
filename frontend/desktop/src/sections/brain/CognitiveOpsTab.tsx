@@ -15,19 +15,19 @@ interface CognitiveTree {
 
 const FEATURE_LABELS: Record<string, string> = {
   heuristics: 'Learned heuristics',
-  execution_state: 'Execution state',
+  'execution_state': 'Execution state',
   scratchpad: 'Working memory',
-  tool_guardrails: 'Loop guardrails',
-  progressive_disclosure: 'BM25 tool catalog',
-  prompt_caching: 'Prompt caching',
-  cognitive_budget: 'Cognitive budgeting',
+  'tool_guardrails': 'Loop guardrails',
+  'progressive_disclosure': 'BM25 tool catalog',
+  'prompt_caching': 'Prompt caching',
+  'cognitive_budget': 'Cognitive budgeting',
   daemons: 'Subconscious daemons',
   blackboard: 'Blackboard',
-  env_watcher: 'Env watcher',
-  verifier_reflex: 'Verifier reflex',
+  'env_watcher': 'Env watcher',
+  'verifier_reflex': 'Verifier reflex',
   skill_genesis: 'Skill genesis (evolving skills)',
-  vector_memory: 'Vector memory',
-  graph_memory: 'Graph memory',
+  'vector_memory': 'Vector memory',
+  'graph_memory': 'Graph memory',
 };
 
 const INTERVAL_OPTIONS = [
@@ -40,11 +40,11 @@ const INTERVAL_OPTIONS = [
 ];
 
 const BOOT_LABELS: Record<string, string> = {
-  db_writer: 'DB writer queue',
-  cron_scheduler: 'Cron scheduler',
+  'db_writer': 'DB writer queue',
+  'cron_scheduler': 'Cron scheduler',
   consolidation: 'Consolidation loop',
-  backfill_workbench: 'Workbench → brain backfill',
-  environment_watcher: 'Env watcher (filesystem)',
+  'backfill_workbench': 'Workbench → brain backfill',
+  'environment_watcher': 'Env watcher (filesystem)',
 };
 
 interface SyncStatus {
@@ -113,7 +113,7 @@ export function CognitiveOpsTab() {
       // Keep feature flag in sync with the boot layer for env watcher.
       const features =
         key === 'environment_watcher'
-          ? { ...(cognitiveQ.data?.features ?? {}), env_watcher: value }
+          ? { ...(cognitiveQ.data?.features ?? {}), 'env_watcher': value }
           : undefined;
       return api.put<CognitiveTree>('/api/config/cognitive', {
         boot,
@@ -136,7 +136,7 @@ export function CognitiveOpsTab() {
         key === 'env_watcher'
           ? {
               ...(cognitiveQ.data?.boot ?? {}),
-              environment_watcher: value,
+              'environment_watcher': value,
             }
           : undefined;
       return api.put<CognitiveTree>('/api/config/cognitive', {

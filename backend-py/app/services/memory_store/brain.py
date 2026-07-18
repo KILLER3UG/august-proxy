@@ -137,8 +137,8 @@ def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
             name = as_str(ent.get('name'), '')
             if not name:
                 continue
-            meta = ent.get('metadata') if isinstance(ent.get('metadata'), dict) else {}
-            meta = dict(meta)
+            meta_raw = ent.get('metadata')
+            meta: dict[str, object] = dict(meta_raw) if isinstance(meta_raw, dict) else {}
             etype = as_str(ent.get('type'), 'general') or 'general'
             label = graph_memory.humanize_entity_label(name, meta)
             description = graph_memory.entity_description(name, meta)
@@ -233,7 +233,9 @@ def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
         try:
             from app.services.memory import graph_memory
 
-            label = graph_memory.humanize_entity_label(name, ent.get('attributes') if isinstance(ent.get('attributes'), dict) else {})
+            attrs_raw = ent.get('attributes')
+            attrs: dict[str, object] = dict(attrs_raw) if isinstance(attrs_raw, dict) else {}
+            label = graph_memory.humanize_entity_label(name, attrs)
             etype = as_str(ent.get('type'), '')
             legacy.append(
                 {

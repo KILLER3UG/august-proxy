@@ -11,6 +11,7 @@ import json
 import os
 import re
 import threading
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -126,9 +127,9 @@ def _label_from_preview(preview: str) -> str:
     return _truncate_label(_strip_session_suffix(text))
 
 
-def humanize_entity_label(name: str, metadata: dict[str, object] | None = None) -> str:
+def humanize_entity_label(name: str, metadata: Mapping[str, object] | None = None) -> str:
     """Beginner-friendly node title for the knowledge graph UI."""
-    meta = metadata if isinstance(metadata, dict) else {}
+    meta = dict(metadata) if isinstance(metadata, Mapping) else {}
     custom = meta.get('label')
     if isinstance(custom, str) and custom.strip():
         return _truncate_label(custom.strip(), 48)
@@ -175,9 +176,9 @@ def humanize_relation_type(relation_type: str) -> str:
     return _RELATION_LABELS.get(t) or t.replace('_', ' ').strip() or 'related'
 
 
-def entity_description(name: str, metadata: dict[str, object] | None = None) -> str:
+def entity_description(name: str, metadata: Mapping[str, object] | None = None) -> str:
     """Short description for the graph detail panel / model prompt."""
-    meta = metadata if isinstance(metadata, dict) else {}
+    meta = dict(metadata) if isinstance(metadata, Mapping) else {}
     for key in ('preview', 'summary', 'description'):
         raw = meta.get(key)
         if isinstance(raw, str) and raw.strip():
