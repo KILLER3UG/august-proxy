@@ -1,6 +1,7 @@
 /* ── BrainSettings — modern orchestrator controls ──────────────────── */
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +38,7 @@ const LOOP_OPTIONS = [10, 25, 50, 75, 100, 150, 200, 300, 500].map((n) => ({
 }));
 
 export function BrainSettings() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<BrainConfig | null>(null);
   const [sourceInfo, setSourceInfo] = useState<BrainConfigResponse | null>(null);
@@ -131,7 +133,16 @@ export function BrainSettings() {
             Brain Orchestrator
           </h1>
           <p className="mt-1 text-sm text-muted-foreground max-w-lg">
-            Tune the policy the model uses on every turn. Defaults are pulled from your most recent chat when available.
+            Tune the policy the model uses on every turn. For memories, skill genesis, env watcher, and boot
+            layers, open{' '}
+            <button
+              type="button"
+              className="text-primary hover:underline"
+              onClick={() => void navigate('/brain')}
+            >
+              Brain → Ops
+            </button>
+            .
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

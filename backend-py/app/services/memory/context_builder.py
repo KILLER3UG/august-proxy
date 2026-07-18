@@ -306,18 +306,45 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
     if primed:
         blocks.append(wrapTag('primed_playbooks', as_str(primed) or _fmt_jsonish(primed)))
     # Prefetched auto-memories (Phase 0 proactive memory).
+    # Prefer human labels so the model reads "Chat: …" not "conv_summary_…".
     autoMemories = as_list(_get(session, 'autoMemories', 'auto_memories'), [])
     if autoMemories:
         lines: list[str] = []
         for item in autoMemories[:8]:
             if isinstance(item, dict):
                 key = as_str(item.get('key'), '')
+                label = as_str(item.get('label'), '')
+                description = as_str(item.get('description'), '')
                 content = item.get('content', '')
                 if isinstance(content, (dict, list)):
                     content = json.dumps(content, default=str, ensure_ascii=False)
-                contentS = _fmtVal(content, 400)
-                if key or contentS:
-                    lines.append(f'- {key}: {contentS}' if key else f'- {contentS}')
+                if not label or not description:
+                    try:
+                        from app.services.memory.auto_memory import enrich_memory_for_model
+
+                        enriched = enrich_memory_for_model(dict(item))
+                        label = as_str(enriched.get('label'), label)
+                        description = as_str(enriched.get('description'), description)
+                    except Exception:
+                        pass
+                body = description or _fmtVal(content, 400)
+                title = label or (key.replace('_', ' ') if key else '')
+                # One readable line: prefer the ask/summary; use title when it
+                # adds info (e.g. dated "Chat summary · …") beyond the body.
+                if title and body:
+                    title_l = title.lower()
+                    body_l = body.lower()
+                    if body_l in title_l or title_l.removeprefix('chat:').strip() in body_l:
+                        line = f'- {title if len(title) >= len(body) else body}'
+                    elif title_l.startswith('chat summary'):
+                        line = f'- {title}: {body}'
+                    else:
+                        line = f'- {body}'
+                else:
+                    line = f'- {title or body}'
+                if key and key not in line:
+                    line = f'{line} [id: {key}]'
+                lines.append(_fmtVal(line, 480))
             else:
                 lines.append(f'- {_fmtVal(item, 400)}')
         if lines:

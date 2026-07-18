@@ -50,6 +50,145 @@ def entityKey(value: str) -> str:
     return _safeKey(value)
 
 
+_CATEGORY_LABELS: dict[str, str] = {
+    'conversation': 'Conversations',
+    'auto': 'Auto memories',
+    'general': 'General',
+    'todo': 'Todos',
+    'preference': 'Preferences',
+    'fact': 'Facts',
+    'project': 'Projects',
+}
+
+_TYPE_LABELS: dict[str, str] = {
+    'conversation': 'Chat memory',
+    'memory': 'Memory',
+    'category': 'Category',
+    'project': 'Project',
+    'projectInfo': 'Project info',
+    'concept': 'Concept',
+    'tool': 'Tool',
+    'integration': 'Integration',
+    'userPreference': 'Preference',
+    'userDetail': 'User detail',
+    'workflowRule': 'Workflow rule',
+    'checkpointTopic': 'Checkpoint',
+    'sessionTemp': 'Session',
+    'path': 'Path',
+    'general': 'General',
+    'auto': 'Auto memory',
+    'todo': 'Todo',
+}
+
+_RELATION_LABELS: dict[str, str] = {
+    'contains': 'includes',
+    'related': 'related to',
+    'related_to': 'related to',
+    'uses': 'uses',
+    'part_of': 'part of',
+    'depends_on': 'depends on',
+}
+
+
+def _truncate_label(text: str, max_len: int = 42) -> str:
+    t = ' '.join((text or '').split())
+    if len(t) <= max_len:
+        return t
+    return t[: max_len - 1].rstrip() + '…'
+
+
+def _parse_session_when(token: str) -> str:
+    """Turn wb_YYYYMMDD_HHMMSS (or similar) into a short local-friendly stamp."""
+    m = re.search(r'(20\d{6})_(\d{4,6})', token or '')
+    if not m:
+        return ''
+    ymd, hms = m.group(1), m.group(2).ljust(6, '0')[:6]
+    try:
+        dt = datetime.strptime(f'{ymd}{hms}', '%Y%m%d%H%M%S')
+    except ValueError:
+        return ''
+    return dt.strftime('%b %d, %I:%M %p').replace(' 0', ' ')
+
+
+def _strip_session_suffix(text: str) -> str:
+    """Drop trailing ``(session …)`` noise from auto-memory previews."""
+    return re.sub(r'\s*\(session\s+[^)]+\)\s*$', '', text or '', flags=re.IGNORECASE).strip()
+
+
+def _label_from_preview(preview: str) -> str:
+    text = ' '.join((preview or '').split())
+    if not text:
+        return ''
+    m = re.search(r'User asked:\s*(.+)$', text, re.IGNORECASE | re.DOTALL)
+    if m:
+        asked = _strip_session_suffix(m.group(1).strip())
+        return _truncate_label(f'Chat: {asked}')
+    return _truncate_label(_strip_session_suffix(text))
+
+
+def humanize_entity_label(name: str, metadata: dict[str, object] | None = None) -> str:
+    """Beginner-friendly node title for the knowledge graph UI."""
+    meta = metadata if isinstance(metadata, dict) else {}
+    custom = meta.get('label')
+    if isinstance(custom, str) and custom.strip():
+        return _truncate_label(custom.strip(), 48)
+
+    for key in ('preview', 'summary', 'description'):
+        raw = meta.get(key)
+        if isinstance(raw, str) and raw.strip():
+            labeled = _label_from_preview(raw)
+            if labeled:
+                return labeled
+
+    raw_name = (name or '').strip()
+    if not raw_name:
+        return 'Unknown'
+
+    if raw_name in _CATEGORY_LABELS:
+        return _CATEGORY_LABELS[raw_name]
+
+    if raw_name.startswith('conv_summary_'):
+        when = _parse_session_when(raw_name[len('conv_summary_') :])
+        return f'Chat summary · {when}' if when else 'Chat summary'
+
+    if raw_name.startswith('todo_'):
+        rest = raw_name[5:].replace('_', ' ').strip()
+        return _truncate_label(f'Todo: {rest}' if rest else 'Todo')
+
+    words = [w for w in re.split(r'[_\-]+', raw_name) if w]
+    if not words:
+        return raw_name
+    # Drop noisy prefixes commonly used as technical keys
+    if words[0].lower() in ('ent', 'mem', 'kv'):
+        words = words[1:] or words
+    titled = ' '.join(w if w.isupper() and len(w) <= 3 else w.capitalize() for w in words)
+    return _truncate_label(titled)
+
+
+def humanize_entity_type(entity_type: str) -> str:
+    t = (entity_type or 'general').strip()
+    return _TYPE_LABELS.get(t) or t.replace('_', ' ').strip().title() or 'General'
+
+
+def humanize_relation_type(relation_type: str) -> str:
+    t = (relation_type or 'related').strip()
+    return _RELATION_LABELS.get(t) or t.replace('_', ' ').strip() or 'related'
+
+
+def entity_description(name: str, metadata: dict[str, object] | None = None) -> str:
+    """Short description for the graph detail panel / model prompt."""
+    meta = metadata if isinstance(metadata, dict) else {}
+    for key in ('preview', 'summary', 'description'):
+        raw = meta.get(key)
+        if isinstance(raw, str) and raw.strip():
+            text = ' '.join(raw.split())
+            m = re.search(r'User asked:\s*(.+)$', text, re.IGNORECASE | re.DOTALL)
+            if m:
+                return _truncate_label(_strip_session_suffix(m.group(1).strip()), 200)
+            return _truncate_label(_strip_session_suffix(text), 200)
+    return ''
+
+
 def _conn():
     from app.services.memory_store import _conn as get_conn
     from app.services.memory_schema import create_vector_graph_tables

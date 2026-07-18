@@ -235,7 +235,7 @@ def register() -> None:
     )
     tool_registry.register(
         'brain_query',
-        "Read-only query across any brain store (memory, autoMemories, heuristics, facts, sessions, messages, timeline, blackboard, graph, daemons, exams, examAttempts). Stores not yet shipped return 'not available'. Returns compact JSON rows.",
+        "Read-only query across any brain store (memory, autoMemories, heuristics, facts, sessions, messages, timeline, blackboard, graph, daemons, exams, examAttempts). Stores not yet shipped return 'not available'. Returns compact JSON rows. For autoMemories and graph, rows include human-readable label/description (and typeLabel/relationLabel) plus the stable technical id/key — prefer labels when explaining memories to the user; use id/key when calling other tools.",
         _brainQuery,
         {
             'type': 'object',

@@ -5,6 +5,7 @@
  * Facts / Vectors / Graph / Search / Prompt tabs. */
 
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Database, Tag, Network, Shield, Sparkles } from 'lucide-react';
 import { api } from '@/api/client';
 import { Memory } from '@/sections/memory/Memory';
@@ -24,6 +25,7 @@ interface LearningStatus { status?: string; lastTopic?: string }
 interface BrainDiagnostics { guidelines?: number; semanticFacts?: number; vectorEntries?: number }
 
 export function WorkspaceMemorySection() {
+  const navigate = useNavigate();
   const storeStatus = useQuery<StoreStatus>({
     queryKey: ['ws-mem-store'],
     queryFn: () => api.get<StoreStatus>('/api/brain/status'),
@@ -65,11 +67,20 @@ export function WorkspaceMemorySection() {
 
   return (
     <div className="px-8 py-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Memory</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          The self-evolving knowledge store, semantic facts, vector entries, and learning status.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Memory &amp; Knowledge</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Browse and delete memories/guidelines. Toggle cognitive features under Brain → Ops.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="text-xs text-primary hover:underline shrink-0 mt-1"
+          onClick={() => void navigate('/brain')}
+        >
+          Open Brain →
+        </button>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

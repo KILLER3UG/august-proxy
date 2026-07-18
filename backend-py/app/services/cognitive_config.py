@@ -145,54 +145,32 @@ def ensure_defaults() -> dict[str, object]:
     legacy_fleet = as_dict(aux.get('model_fleet'), {})
     top_orch = as_dict(cfg.get('brain_orchestrator'), {})
 
-    if 'boot' not in cognitive or not isinstance(cognitive.get('boot'), dict):
-        boot_src: dict[str, object] = {}
-        for old, new in (
-            ('scheduler', 'cron_scheduler'),
-            ('cron_scheduler', 'cron_scheduler'),
-            ('sleep_cycle', 'consolidation'),
-            ('consolidation', 'consolidation'),
-            ('db_writer', 'db_writer'),
-            ('backfill_workbench', 'backfill_workbench'),
-            ('environment_watcher', 'environment_watcher'),
-            ('env_watcher', 'environment_watcher'),
-        ):
-            if old in legacy_layers:
-                boot_src[new] = legacy_layers[old]
-        cognitive['boot'] = _merge_bool_map(DEFAULT_BOOT, boot_src)
+    # Fill missing boot keys from defaults; migrate legacy layer names once.
+    boot_src: dict[str, object] = {}
+    for old, new in (
+        ('scheduler', 'cron_scheduler'),
+        ('cron_scheduler', 'cron_scheduler'),
+        ('sleep_cycle', 'consolidation'),
+        ('consolidation', 'consolidation'),
+        ('db_writer', 'db_writer'),
+        ('backfill_workbench', 'backfill_workbench'),
+        ('environment_watcher', 'environment_watcher'),
+        ('env_watcher', 'environment_watcher'),
+    ):
+        if old in legacy_layers:
+            boot_src[new] = legacy_layers[old]
+    prev_boot = as_dict(cognitive.get('boot'), {})
+    next_boot = _merge_bool_map(DEFAULT_BOOT, boot_src, prev_boot)
+    if 'boot' not in cognitive or not isinstance(cognitive.get('boot'), dict) or next_boot != prev_boot:
+        cognitive['boot'] = next_boot
         dirty = True
-    elif legacy_layers:
-        # Merge any remaining layer flags into boot once, then drop legacy key.
-        boot_src_existing: dict[str, object] = {}
-        for old, new in (
-            ('scheduler', 'cron_scheduler'),
-            ('cron_scheduler', 'cron_scheduler'),
-            ('sleep_cycle', 'consolidation'),
-            ('consolidation', 'consolidation'),
-            ('db_writer', 'db_writer'),
-            ('backfill_workbench', 'backfill_workbench'),
-            ('environment_watcher', 'environment_watcher'),
-            ('env_watcher', 'environment_watcher'),
-        ):
-            if old in legacy_layers:
-                boot_src_existing[new] = legacy_layers[old]
-        if boot_src_existing:
-            cognitive['boot'] = _merge_bool_map(
-                DEFAULT_BOOT,
-                as_dict(cognitive.get('boot'), {}),
-                boot_src_existing,
-            )
-            dirty = True
 
-    if 'features' not in cognitive or not isinstance(cognitive.get('features'), dict):
-        cognitive['features'] = _merge_bool_map(DEFAULT_FEATURES, legacy_layers)
-        dirty = True
-    elif legacy_layers:
-        cognitive['features'] = _merge_bool_map(
-            DEFAULT_FEATURES,
-            as_dict(cognitive.get('features'), {}),
-            legacy_layers,
-        )
+    # Always fill missing feature keys from defaults (explicit False stays False).
+    # Keeps memories / skill genesis / etc. on for upgrades that add new flags.
+    prev_features = as_dict(cognitive.get('features'), {})
+    next_features = _merge_bool_map(DEFAULT_FEATURES, legacy_layers, prev_features)
+    if 'features' not in cognitive or not isinstance(cognitive.get('features'), dict) or next_features != prev_features:
+        cognitive['features'] = next_features
         dirty = True
 
     if 'fleet' not in cognitive or not isinstance(cognitive.get('fleet'), dict):

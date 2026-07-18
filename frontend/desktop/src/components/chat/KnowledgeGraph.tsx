@@ -8,7 +8,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface GraphEntity {
   id: string;
   type: string;
+  typeLabel?: string;
   name: string;
+  /** Beginner-friendly title from the API (preferred over raw `name`). */
+  label?: string;
+  description?: string;
   confidence?: number;
   score?: number;
 }
@@ -18,6 +22,8 @@ interface GraphRelation {
   from: string;
   to: string;
   type: string;
+  /** Friendly edge caption (e.g. "includes"). */
+  label?: string;
   fromName?: string;
   toName?: string;
   score?: number;
@@ -32,6 +38,7 @@ interface GraphSearchResult {
 }
 
 const TYPE_COLORS: Record<string, string> = {
+  conversation: '#38bdf8',
   project: '#3b82f6',
   projectInfo: '#60a5fa',
   concept: '#8b5cf6',
@@ -44,12 +51,57 @@ const TYPE_COLORS: Record<string, string> = {
   sessionTemp: '#6366f1',
   path: '#78716c',
   memory: '#f97316',
+  category: '#94a3b8',
   general: '#6b7280',
   test: '#a78bfa',
 };
 
+const TYPE_LEGEND_LABELS: Record<string, string> = {
+  conversation: 'Chat memory',
+  project: 'Project',
+  projectInfo: 'Project info',
+  concept: 'Concept',
+  tool: 'Tool',
+  integration: 'Integration',
+  userPreference: 'Preference',
+  userDetail: 'User detail',
+  workflowRule: 'Workflow rule',
+  memory: 'Memory',
+  category: 'Category',
+  general: 'General',
+};
+
 function getColor(type: string): string {
   return TYPE_COLORS[type] || '#6b7280';
+}
+
+/** Client fallback when an older API omits `label`. */
+function formatEntityLabel(name: string, apiLabel?: string): string {
+  if (apiLabel?.trim()) return apiLabel.trim().slice(0, 42);
+  const raw = (name || '').trim();
+  if (!raw) return 'Unknown';
+  if (raw === 'conversation') return 'Conversations';
+  if (raw.startsWith('conv_summary_')) {
+    const m = raw.match(/(20\d{6})_(\d{4,6})/);
+    if (m) {
+      const y = m[1].slice(0, 4);
+      const mo = m[1].slice(4, 6);
+      const d = m[1].slice(6, 8);
+      const hh = m[2].padEnd(6, '0').slice(0, 2);
+      const mm = m[2].padEnd(6, '0').slice(2, 4);
+      const dt = new Date(`${y}-${mo}-${d}T${hh}:${mm}:00`);
+      if (!Number.isNaN(dt.getTime())) {
+        return `Chat summary · ${dt.toLocaleString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        })}`;
+      }
+    }
+    return 'Chat summary';
+  }
+  return raw.replace(/_/g, ' ').replace(/^ent /, '').slice(0, 30);
 }
 
 interface Node {
@@ -97,7 +149,7 @@ export function KnowledgeGraph({ className }: { className?: string }) {
       const existing = nodesRef.current.get(e.id);
       return {
         id: e.id,
-        label: e.name.replace(/_/g, ' ').replace(/^ent_/, '').substring(0, 30),
+        label: formatEntityLabel(e.name, e.label),
         type: e.type,
         x: existing?.x ?? Math.random() * 600 + 100,
         y: existing?.y ?? Math.random() * 400 + 100,
@@ -113,7 +165,7 @@ export function KnowledgeGraph({ className }: { className?: string }) {
     return data.search.relations.map((r) => ({
       source: r.from,
       target: r.to,
-      label: r.type.replace(/_/g, ' '),
+      label: (r.label || r.type || 'related').replace(/_/g, ' '),
     }));
   }, [data?.search?.relations]);
 
@@ -373,29 +425,48 @@ export function KnowledgeGraph({ className }: { className?: string }) {
         </div>
 
         <div className="absolute top-3 right-3 bg-background/80 rounded-lg p-2 text-[9px] space-y-1">
-          {Object.entries(TYPE_COLORS)
-            .slice(0, 8)
-            .map(([type, color]) => (
-              <div key={type} className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
-                <span className="text-muted-foreground">{type.replace(/_/g, ' ')}</span>
-              </div>
-            ))}
+          {(
+            [
+              'conversation',
+              'project',
+              'concept',
+              'tool',
+              'integration',
+              'userPreference',
+              'memory',
+              'workflowRule',
+            ] as const
+          ).map((type) => (
+            <div key={type} className="flex items-center gap-1.5">
+              <span className="size-2 rounded-full" style={{ backgroundColor: TYPE_COLORS[type] }} />
+              <span className="text-muted-foreground">
+                {TYPE_LEGEND_LABELS[type] || type.replace(/_/g, ' ')}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
       {selectedEntity && (
-        <div className="p-3 border-t border-border/30 bg-muted/20">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium">{selectedEntity.name.replace(/_/g, ' ')}</span>
-            <span className="text-[9px] font-mono text-muted-foreground">{selectedEntity.type}</span>
+        <div className="p-3 border-t border-border/30 bg-muted/20 space-y-1.5">
+          <div className="flex items-start justify-between gap-3">
+            <span className="text-xs font-medium leading-snug">
+              {formatEntityLabel(selectedEntity.name, selectedEntity.label)}
+            </span>
+            <span className="text-[9px] text-muted-foreground shrink-0">
+              {selectedEntity.typeLabel ||
+                TYPE_LEGEND_LABELS[selectedEntity.type] ||
+                selectedEntity.type.replace(/_/g, ' ')}
+            </span>
           </div>
-          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-            {selectedEntity.confidence != null && (
-              <span>confidence: {Math.round(selectedEntity.confidence * 100)}%</span>
-            )}
-            {selectedEntity.score != null && <span>score: {selectedEntity.score}</span>}
-          </div>
+          {selectedEntity.description ? (
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {selectedEntity.description}
+            </p>
+          ) : null}
+          <p className="text-[9px] font-mono text-muted-foreground/70 truncate" title={selectedEntity.name}>
+            id: {selectedEntity.name}
+          </p>
         </div>
       )}
     </div>

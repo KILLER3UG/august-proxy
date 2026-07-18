@@ -51,6 +51,16 @@ export function LearningTab() {
     onError: (e: Error) => toast.error(e.message || 'Consolidation failed'),
   });
 
+  const toggleDeltaConsent = useMutation({
+    mutationFn: (granted: boolean) =>
+      api.put<{ consentGranted: boolean }>('/api/brain/delta-consent', { granted }),
+    onSuccess: (res) => {
+      toast.success(res.consentGranted ? 'Delta engine consent granted' : 'Delta engine consent revoked');
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Consent update failed'),
+  });
+
   if (error) {
     return <div className="p-4 text-danger">Error loading brain data: {error.message}</div>;
   }
@@ -218,16 +228,35 @@ export function LearningTab() {
         )}
       </Card>
 
-      {/* Delta engine (read) */}
+      {/* Delta engine */}
       <Card className="p-4 space-y-2 md:col-span-2">
-        <div className="flex items-center gap-2">
-          <Zap className="size-4 text-primary" />
-          <h3 className="font-medium text-sm">Delta engine</h3>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Zap className="size-4 text-primary shrink-0" />
+            <div>
+              <h3 className="font-medium text-sm">Delta engine</h3>
+              <p className="text-[10px] text-muted-foreground">
+                Learn preferences from your edits. Queue: {data.deltaEngine.queueSize} · Last flush:{' '}
+                {data.deltaEngine.lastFlushAt ?? 'never'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`text-xs px-2 py-1 rounded shrink-0 ${
+              data.deltaEngine.consentGranted
+                ? 'bg-success/20 text-success'
+                : 'bg-muted text-muted-foreground'
+            }`}
+            disabled={toggleDeltaConsent.isPending}
+            data-testid="learning-delta-consent"
+            onClick={() =>
+              toggleDeltaConsent.mutate(!data.deltaEngine.consentGranted)
+            }
+          >
+            {data.deltaEngine.consentGranted ? 'consent on' : 'consent off'}
+          </button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Consent: {data.deltaEngine.consentGranted ? 'granted' : 'not granted'} · Queue:{' '}
-          {data.deltaEngine.queueSize} · Last flush: {data.deltaEngine.lastFlushAt ?? 'never'}
-        </p>
       </Card>
     </div>
   );

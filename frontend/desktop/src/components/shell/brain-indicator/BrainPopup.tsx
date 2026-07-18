@@ -1,12 +1,14 @@
 /* PopupContents — rendered via createPortal(document.body) so
  * position: fixed escapes any transformed ancestor (e.g. framer-motion
  * <motion.div> in ChatLayout). */
-import { Brain, X, Activity, Heart, Sparkles, AlertCircle } from 'lucide-react';
+import { Brain, X, Activity, Heart, Sparkles, Settings2, AlertCircle, ExternalLink } from 'lucide-react';
 import { Component, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { LearningTab } from '@/sections/brain/LearningTab';
 import { SystemHealthTab } from '@/sections/brain/SystemHealthTab';
 import { BrainActivityTab } from '@/sections/brain/BrainActivityTab';
+import { CognitiveOpsTab } from '@/sections/brain/CognitiveOpsTab';
 import type { PopupState, TabKey } from './popupGeometry';
 import type { ResizeEdge } from './usePopupResize';
 import { ResizeHandles } from './ResizeHandles';
@@ -70,6 +72,8 @@ export function BrainPopup({
   handleDragPointerDown,
   handleResizePointerDown,
 }: BrainPopupProps) {
+  const navigate = useNavigate();
+
   return (
     <div
       data-testid="brain-popup"
@@ -99,14 +103,29 @@ export function BrainPopup({
             realtime flow
           </span>
         </div>
-        <button
-          type="button"
-          onClick={handleClose}
-          aria-label="Close"
-          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground pointer-events-auto cursor-pointer"
-        >
-          <X className="size-4" />
-        </button>
+        <div className="flex items-center gap-0.5 pointer-events-auto">
+          <button
+            type="button"
+            data-no-drag
+            onClick={() => {
+              handleClose();
+              void navigate('/brain');
+            }}
+            aria-label="Open full Brain page"
+            title="Open full Brain page"
+            className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            <ExternalLink className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleClose}
+            aria-label="Close"
+            className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
       </div>
 
       {/* Tabs (data-no-drag is read by the closest() check inside handleDragPointerDown) */}
@@ -118,6 +137,7 @@ export function BrainPopup({
           [
             { key: 'activity' as const, label: 'Activity', icon: Activity },
             { key: 'learning' as const, label: 'Learning', icon: Sparkles },
+            { key: 'ops' as const, label: 'Ops', icon: Settings2 },
             { key: 'health' as const, label: 'Health', icon: Heart },
           ]
         ).map(({ key, label, icon: Icon }) => (
@@ -143,6 +163,7 @@ export function BrainPopup({
         <TabErrorBoundary key={tab} tab={tab}>
           {tab === 'activity' && <BrainActivityTab />}
           {tab === 'learning' && <LearningTab />}
+          {tab === 'ops' && <CognitiveOpsTab />}
           {tab === 'health' && <SystemHealthTab />}
         </TabErrorBoundary>
       </div>

@@ -372,24 +372,57 @@ async def brainGraph(
         else:
             raw_entities = graph_memory.listEntities(limit)
 
+        # Optional content lookup so older conv_summary_* nodes (saved before
+        # label metadata) still show what the user actually asked.
+        auto_previews: dict[str, str] = {}
+        try:
+            from app.services.memory_store import _conn as brain_conn
+
+            conn = brain_conn()
+            for e in raw_entities:
+                name = as_str(e.get('name'), '')
+                if not name.startswith('conv_summary_'):
+                    continue
+                row = conn.execute(
+                    'SELECT content FROM auto_memories WHERE key = ? LIMIT 1',
+                    (name,),
+                ).fetchone()
+                if row and row['content']:
+                    auto_previews[name] = as_str(row['content'], '')[:400]
+        except Exception:
+            auto_previews = {}
+
+        def _entity_payload(e: dict[str, object], score: float) -> dict[str, object] | None:
+            name = as_str(e.get('name'), '')
+            if not name:
+                return None
+            meta = e.get('metadata') if isinstance(e.get('metadata'), dict) else {}
+            meta = dict(meta)
+            if name in auto_previews and not as_str(meta.get('preview')):
+                meta['preview'] = auto_previews[name]
+            etype = as_str(e.get('type'), 'general') or 'general'
+            return {
+                'id': graph_memory.entityKey(name),
+                'type': etype,
+                'typeLabel': graph_memory.humanize_entity_type(etype),
+                'name': name,
+                'label': graph_memory.humanize_entity_label(name, meta),
+                'description': graph_memory.entity_description(name, meta),
+                'score': score,
+            }
+
         # Stable ids from name keys; map for relation endpoints
         name_to_id: dict[str, str] = {}
         keys: list[str] = []
         for e in raw_entities:
-            name = as_str(e.get('name'), '')
-            if not name:
+            payload = _entity_payload(e, 1.0)
+            if not payload:
                 continue
-            eid = graph_memory.entityKey(name)
+            name = as_str(payload.get('name'), '')
+            eid = as_str(payload.get('id'), '')
             name_to_id[name] = eid
             keys.append(eid)
-            entities_out.append(
-                {
-                    'id': eid,
-                    'type': as_str(e.get('type'), 'general') or 'general',
-                    'name': name,
-                    'score': 1.0,
-                }
-            )
+            entities_out.append(payload)
 
         if keys:
             raw_rels = graph_memory.listRelationsForKeys(keys, limit=min(200, limit * 4))
@@ -403,28 +436,38 @@ async def brainGraph(
                 ent = graph_memory.getEntity(name)
                 if not ent:
                     continue
-                eid = graph_memory.entityKey(name)
+                if name.startswith('conv_summary_') and name not in auto_previews:
+                    try:
+                        from app.services.memory_store import _conn as brain_conn
+
+                        row = brain_conn().execute(
+                            'SELECT content FROM auto_memories WHERE key = ? LIMIT 1',
+                            (name,),
+                        ).fetchone()
+                        if row and row['content']:
+                            auto_previews[name] = as_str(row['content'], '')[:400]
+                    except Exception:
+                        pass
+                payload = _entity_payload(ent, 0.5)
+                if not payload:
+                    continue
+                eid = as_str(payload.get('id'), '')
                 name_to_id[name] = eid
-                entities_out.append(
-                    {
-                        'id': eid,
-                        'type': as_str(ent.get('type'), 'general') or 'general',
-                        'name': name,
-                        'score': 0.5,
-                    }
-                )
+                entities_out.append(payload)
 
             for r in raw_rels:
                 src = as_str(r.get('source'))
                 tgt = as_str(r.get('target'))
                 if not src or not tgt:
                     continue
+                rel_type = as_str(r.get('type'), 'related') or 'related'
                 relations_out.append(
                     {
                         'id': as_str(r.get('id')) or f'{src}->{tgt}',
                         'from': name_to_id.get(src) or graph_memory.entityKey(src),
                         'to': name_to_id.get(tgt) or graph_memory.entityKey(tgt),
-                        'type': as_str(r.get('type'), 'related') or 'related',
+                        'type': rel_type,
+                        'label': graph_memory.humanize_relation_type(rel_type),
                         'fromName': src,
                         'toName': tgt,
                     }

@@ -1,2 +1,6 @@
 /** Public entry — re-exports the titlebar Brain indicator + floating popup. */
-export { BrainIndicator } from './brain-indicator/BrainIndicator';
+export {
+  BrainIndicator,
+  type BrainIndicatorHandle,
+} from './brain-indicator/BrainIndicator';
+

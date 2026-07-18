@@ -1637,7 +1637,10 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
             # Full session id (includes date/time) so the model can tell which
             # conversation a memory came from; stamp for human-readable ordering.
             stamp = session.updatedAt or session.createdAt or ''
-            summary = f'Session {session.id}' + (f' @ {stamp}' if stamp else '') + f': User asked: {lastUserMsg[:300]}'
+            # Keep the technical session id in the memory key; put the user's
+            # words first so graph labels / previews stay beginner-readable.
+            when = f' @ {stamp}' if stamp else ''
+            summary = f'User asked: {lastUserMsg[:300]} (session {session.id}{when})'
             saveAutoMemory(
                 f'conv_summary_{session.id}',
                 summary,

@@ -8,7 +8,14 @@
  * inside the titlebar and render at the wrong offsets (off-screen on the chat
  * route but visible on routes that don't have motion.div ancestors).
  * Portaling to document.body lets fixed be viewport-relative. */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { Brain } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -29,122 +36,172 @@ import {
 import { usePopupDrag } from './usePopupDrag';
 import { usePopupResize } from './usePopupResize';
 
+export interface BrainIndicatorHandle {
+  toggle: () => void;
+  open: () => void;
+  close: () => void;
+}
+
 interface BrainIndicatorProps {
   /** Optional initial unseen-event count (for tests + future bootstrap). */
   initialUnseen?: number;
+  /**
+   * `icon` — compact titlebar/control button (default).
+   * `menu` — full-width settings-dropdown row (label + icon); parent owns activation.
+   */
+  variant?: 'icon' | 'menu';
 }
 
-export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<TabKey>('activity');
-  const [unseen, setUnseen] = useState(initialUnseen);
-  const [geom, setGeom] = useState<PopupState>(() => loadState());
-  const geomRef = useRef<PopupState>(geom);
-  geomRef.current = geom;
+export const BrainIndicator = forwardRef<BrainIndicatorHandle, BrainIndicatorProps>(
+  function BrainIndicator({ initialUnseen = 0, variant = 'icon' }, ref) {
+    const [open, setOpen] = useState(false);
+    const [tab, setTab] = useState<TabKey>('activity');
+    const [unseen, setUnseen] = useState(initialUnseen);
+    const [geom, setGeom] = useState<PopupState>(() => loadState());
+    const geomRef = useRef<PopupState>(geom);
+    geomRef.current = geom;
 
-  // Pre-fetch recent events so the popup has content instantly
-  useQuery({
-    queryKey: ['brain-events'],
-    queryFn: () => getBrainEvents(200),
-    enabled: open,
-  });
+    // Pre-fetch recent events so the popup has content instantly
+    useQuery({
+      queryKey: ['brain-events'],
+      queryFn: () => getBrainEvents(200),
+      enabled: open,
+    });
 
-  // Always-on SSE so we can bump the unseen counter even when popup is closed
-  useEffect(() => {
-    const es = openBrainEventStream();
-    es.onmessage = (ev: MessageEvent) => {
+    // Always-on SSE so we can bump the unseen counter even when popup is closed
+    useEffect(() => {
+      const es = openBrainEventStream();
+      es.onmessage = (ev: MessageEvent) => {
+        try {
+          const _event: BrainEvent = JSON.parse(ev.data);
+          setUnseen((n) => n + 1);
+        } catch {
+          /* ignore malformed frames */
+        }
+      };
+      return () => es.close();
+    }, []);
+
+    // Persist geometry when popup closes
+    const persistGeom = useCallback(() => {
       try {
-        const _event: BrainEvent = JSON.parse(ev.data);
-        setUnseen((n) => n + 1);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(geomRef.current));
       } catch {
-        /* ignore malformed frames */
+        /* swallow quota errors */
       }
-    };
-    return () => es.close();
-  }, []);
+    }, []);
 
-  // Persist geometry when popup closes
-  const persistGeom = useCallback(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(geomRef.current));
-    } catch {
-      /* swallow quota errors */
-    }
-  }, []);
+    const { dragging, handleDragPointerDown } = usePopupDrag(
+      geomRef,
+      setGeom,
+      persistGeom,
+    );
+    const { handleResizePointerDown } = usePopupResize(
+      geomRef,
+      setGeom,
+      persistGeom,
+    );
 
-  const { dragging, handleDragPointerDown } = usePopupDrag(
-    geomRef,
-    setGeom,
-    persistGeom,
-  );
-  const { handleResizePointerDown } = usePopupResize(
-    geomRef,
-    setGeom,
-    persistGeom,
-  );
+    // Persist beforeunload (best-effort)
+    useEffect(() => {
+      const handler = () => persistGeom();
+      window.addEventListener('beforeunload', handler);
+      return () => window.removeEventListener('beforeunload', handler);
+    }, [persistGeom]);
 
-  // Persist beforeunload (best-effort)
-  useEffect(() => {
-    const handler = () => persistGeom();
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [persistGeom]);
+    // Clamp on viewport resize
+    useEffect(() => {
+      const onResize = () => setGeom((prev) => clampState(prev));
+      window.addEventListener('resize', onResize);
+      return () => window.removeEventListener('resize', onResize);
+    }, []);
 
-  // Clamp on viewport resize
-  useEffect(() => {
-    const onResize = () => setGeom((prev) => clampState(prev));
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+    const handleOpen = useCallback(() => {
+      setOpen((v) => {
+        if (!v) setUnseen(0);
+        return !v;
+      });
+    }, []);
 
-  const handleOpen = () => {
-    setOpen((v) => !v);
-    if (!open) setUnseen(0); // opening the popup resets unseen
-  };
+    const handleClose = useCallback(() => {
+      persistGeom();
+      setOpen(false);
+    }, [persistGeom]);
 
-  const handleClose = () => {
-    persistGeom();
-    setOpen(false);
-  };
+    useImperativeHandle(
+      ref,
+      () => ({
+        toggle: handleOpen,
+        open: () => {
+          setUnseen(0);
+          setOpen(true);
+        },
+        close: handleClose,
+      }),
+      [handleOpen, handleClose],
+    );
 
-  return (
-    <>
-      <button
-        type="button"
-        onClick={handleOpen}
-        aria-label="Toggle Brain activity"
-        aria-expanded={open}
-        data-testid="titlebar-brain-button"
-        data-brain-toggle
-        className={cn(
-          'relative p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition',
-          open && 'bg-accent text-foreground',
+    const pulse =
+      unseen > 0 ? (
+        <span
+          data-testid="brain-pulse-dot"
+          className="absolute top-0.5 right-0.5 size-2 rounded-full bg-primary ring-2 ring-background animate-pulse"
+          aria-label={`${unseen} unseen brain event(s)`}
+        />
+      ) : null;
+
+    return (
+      <>
+        {variant === 'menu' ? (
+          <div
+            className={cn(
+              'flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5',
+              'text-foreground',
+              open && 'bg-accent',
+            )}
+            data-brain-toggle
+            data-testid="titlebar-brain-button"
+            aria-expanded={open}
+          >
+            <span className="text-sm font-medium">Brain</span>
+            <span className="relative inline-flex p-1 text-muted-foreground">
+              <Brain className="size-4" />
+              {pulse}
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleOpen}
+            aria-label="Toggle Brain activity"
+            aria-expanded={open}
+            data-testid="titlebar-brain-button"
+            data-brain-toggle
+            title="Brain activity"
+            className={cn(
+              'relative p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition',
+              open && 'bg-accent text-foreground',
+            )}
+          >
+            <Brain className="size-4" />
+            {pulse}
+          </button>
         )}
-        title="Brain activity"
-      >
-        <Brain className="size-4" />
-        {unseen > 0 && (
-          <span
-            data-testid="brain-pulse-dot"
-            className="absolute top-0.5 right-0.5 size-2 rounded-full bg-primary ring-2 ring-background animate-pulse"
-            aria-label={`${unseen} unseen brain event(s)`}
-          />
-        )}
-      </button>
 
-      {open &&
-        createPortal(
-          <BrainPopup
-            geom={geom}
-            tab={tab}
-            setTab={setTab}
-            dragging={dragging}
-            handleClose={handleClose}
-            handleDragPointerDown={handleDragPointerDown}
-            handleResizePointerDown={handleResizePointerDown}
-          />,
-          document.body,
-        )}
-    </>
-  );
-}
+        {open &&
+          createPortal(
+            <BrainPopup
+              geom={geom}
+              tab={tab}
+              setTab={setTab}
+              dragging={dragging}
+              handleClose={handleClose}
+              handleDragPointerDown={handleDragPointerDown}
+              handleResizePointerDown={handleResizePointerDown}
+            />,
+            document.body,
+          )}
+      </>
+    );
+  },
+);

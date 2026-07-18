@@ -5,7 +5,7 @@ export const MIN_WIDTH = 380;
 export const MIN_HEIGHT = 320;
 export const MARGIN = 16; // padding from viewport edges
 
-export type TabKey = 'activity' | 'learning' | 'health';
+export type TabKey = 'activity' | 'learning' | 'ops' | 'health';
 
 export interface PopupState {
   width: number;

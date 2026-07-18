@@ -345,8 +345,8 @@ export function ChatLayout() {
   const isSettings = location.pathname.startsWith("/settings");
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground">
-      <div className="flex-1 flex min-h-0">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {!isSettings && (
           <SessionSidebar
             activeId={active?.id}

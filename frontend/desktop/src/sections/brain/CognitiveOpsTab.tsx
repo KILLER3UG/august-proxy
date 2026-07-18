@@ -13,6 +13,40 @@ interface CognitiveTree {
   consolidation_interval_s?: number;
 }
 
+const FEATURE_LABELS: Record<string, string> = {
+  heuristics: 'Learned heuristics',
+  execution_state: 'Execution state',
+  scratchpad: 'Working memory',
+  tool_guardrails: 'Loop guardrails',
+  progressive_disclosure: 'BM25 tool catalog',
+  prompt_caching: 'Prompt caching',
+  cognitive_budget: 'Cognitive budgeting',
+  daemons: 'Subconscious daemons',
+  blackboard: 'Blackboard',
+  env_watcher: 'Env watcher',
+  verifier_reflex: 'Verifier reflex',
+  skill_genesis: 'Skill genesis (evolving skills)',
+  vector_memory: 'Vector memory',
+  graph_memory: 'Graph memory',
+};
+
+const INTERVAL_OPTIONS = [
+  { value: 3600, label: '1 hour' },
+  { value: 21600, label: '6 hours' },
+  { value: 43200, label: '12 hours' },
+  { value: 86400, label: '24 hours' },
+  { value: 259200, label: '3 days' },
+  { value: 604800, label: '7 days' },
+];
+
+const BOOT_LABELS: Record<string, string> = {
+  db_writer: 'DB writer queue',
+  cron_scheduler: 'Cron scheduler',
+  consolidation: 'Consolidation loop',
+  backfill_workbench: 'Workbench → brain backfill',
+  environment_watcher: 'Env watcher (filesystem)',
+};
+
 interface SyncStatus {
   brainSync?: Record<string, unknown>;
   cognitiveBoot?: {
@@ -76,11 +110,56 @@ export function CognitiveOpsTab() {
   const toggleBoot = useMutation({
     mutationFn: async ({ key, value }: { key: string; value: boolean }) => {
       const boot = { ...(cognitiveQ.data?.boot ?? {}), [key]: value };
-      return api.put<CognitiveTree>('/api/config/cognitive', { boot });
+      // Keep feature flag in sync with the boot layer for env watcher.
+      const features =
+        key === 'environment_watcher'
+          ? { ...(cognitiveQ.data?.features ?? {}), env_watcher: value }
+          : undefined;
+      return api.put<CognitiveTree>('/api/config/cognitive', {
+        boot,
+        ...(features ? { features } : {}),
+      });
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['cognitive-config'] });
+      void qc.invalidateQueries({ queryKey: ['brain-health'] });
       toast.success('Cognitive boot flags saved (restart to fully apply)');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+  });
+
+  const toggleFeature = useMutation({
+    mutationFn: async ({ key, value }: { key: string; value: boolean }) => {
+      const features = { ...(cognitiveQ.data?.features ?? {}), [key]: value };
+      // Keep boot layer in sync when toggling env_watcher from the feature list.
+      const boot =
+        key === 'env_watcher'
+          ? {
+              ...(cognitiveQ.data?.boot ?? {}),
+              environment_watcher: value,
+            }
+          : undefined;
+      return api.put<CognitiveTree>('/api/config/cognitive', {
+        features,
+        ...(boot ? { boot } : {}),
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['cognitive-config'] });
+      void qc.invalidateQueries({ queryKey: ['brain-health'] });
+      toast.success('Feature flag saved');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+  });
+
+  const saveInterval = useMutation({
+    mutationFn: async (seconds: number) =>
+      api.put<CognitiveTree>('/api/config/cognitive', {
+        consolidation_interval_s: seconds,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['cognitive-config'] });
+      toast.success('Consolidation interval saved (restart to fully apply)');
     },
     onError: (e: Error) => toast.error(e.message || 'Save failed'),
   });
@@ -150,11 +229,16 @@ export function CognitiveOpsTab() {
         </div>
         <ul className="grid sm:grid-cols-2 gap-2">
           {Object.entries(boot).map(([key, val]) => (
-            <li key={key} className="flex items-center justify-between text-xs p-2 rounded bg-muted/20">
-              <span className="font-mono">{key}</span>
+            <li key={key} className="flex items-center justify-between text-xs p-2 rounded bg-muted/20 gap-2">
+              <span className="min-w-0">
+                <span className="font-medium block truncate">
+                  {BOOT_LABELS[key] ?? key}
+                </span>
+                <span className="font-mono text-[10px] text-muted-foreground">{key}</span>
+              </span>
               <button
                 type="button"
-                className={`px-2 py-0.5 rounded ${val ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'}`}
+                className={`px-2 py-0.5 rounded shrink-0 ${val ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'}`}
                 onClick={() => toggleBoot.mutate({ key, value: !val })}
                 data-testid={`ops-boot-${key}`}
               >
@@ -187,17 +271,55 @@ export function CognitiveOpsTab() {
         </p>
       </Card>
 
-      <Card className="p-4 space-y-2 md:col-span-2">
-        <h3 className="font-medium text-sm">Feature flags</h3>
-        <div className="flex flex-wrap gap-1.5">
-          {Object.entries(features).map(([k, v]) => (
-            <span
-              key={k}
-              className={`text-[10px] px-2 py-0.5 rounded-full ${v ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'}`}
+      <Card className="p-4 space-y-3 md:col-span-2">
+        <div>
+          <h3 className="font-medium text-sm">Feature flags</h3>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Click any flag to turn it on or off. These control memories, skill genesis, daemons, and more.
+          </p>
+        </div>
+        <ul className="grid sm:grid-cols-2 gap-2">
+          {Object.entries(features).map(([key, val]) => (
+            <li
+              key={key}
+              className="flex items-center justify-between text-xs p-2 rounded bg-muted/20 gap-2"
             >
-              {k}: {v ? 'on' : 'off'}
-            </span>
+              <span className="min-w-0">
+                <span className="font-medium block truncate">
+                  {FEATURE_LABELS[key] ?? key}
+                </span>
+                <span className="font-mono text-[10px] text-muted-foreground">{key}</span>
+              </span>
+              <button
+                type="button"
+                className={`px-2 py-0.5 rounded shrink-0 ${val ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'}`}
+                disabled={toggleFeature.isPending}
+                onClick={() => toggleFeature.mutate({ key, value: !val })}
+                data-testid={`ops-feature-${key}`}
+              >
+                {val ? 'on' : 'off'}
+              </button>
+            </li>
           ))}
+        </ul>
+        <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40">
+          <div>
+            <span className="text-xs font-medium">Consolidation interval</span>
+            <p className="text-[10px] text-muted-foreground">How often sleep-cycle consolidation runs</p>
+          </div>
+          <select
+            className="text-xs rounded border border-border bg-background px-2 py-1"
+            value={String(cognitiveQ.data?.consolidation_interval_s ?? 86400)}
+            disabled={saveInterval.isPending}
+            onChange={(e) => saveInterval.mutate(Number(e.target.value))}
+            data-testid="ops-consolidation-interval"
+          >
+            {INTERVAL_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
       </Card>
 

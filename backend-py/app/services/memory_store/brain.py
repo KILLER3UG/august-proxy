@@ -109,16 +109,95 @@ def _resolve_store(store: str) -> str:
 
 
 def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
-    """v1.1: Read graph entities/relations from august_graph_memory.json.
+    """Read graph entities/relations from SQLite graph_memory (SoT).
 
-    Returns list of {entity, type, attributes} or {source, relation, target} rows.
-    If the JSON file is missing or empty, returns an empty list (NOT an error).
-
-    Path resolution matches ``graph_memory``: ``AUGUST_GRAPH_MEMORY_FILE`` env,
-    then ``dataPath('august_graph_memory.json')`` (honours ``AUGUST_DATA_DIR``).
+    Returns model-friendly rows with ``label`` / ``description`` / ``typeLabel``
+    alongside the stable technical ``entity`` / ``source`` / ``target`` ids.
+    Falls back to legacy ``august_graph_memory.json`` only if SQLite is empty.
     """
+    import json as _json
+
+    lim = max(1, min(int(limit or 10), 100))
+    q = (query or '').strip().lower()
+    rows: list[dict[str, object]] = []
+
     try:
-        import json as _json
+        from app.services.memory import graph_memory
+
+        if q:
+            entities = graph_memory.searchEntities(query)[:lim]
+        else:
+            entities = graph_memory.listEntities(lim)
+
+        name_to_meta: dict[str, dict[str, object]] = {}
+        keys: list[str] = []
+        for ent in entities:
+            if not isinstance(ent, dict):
+                continue
+            name = as_str(ent.get('name'), '')
+            if not name:
+                continue
+            meta = ent.get('metadata') if isinstance(ent.get('metadata'), dict) else {}
+            meta = dict(meta)
+            etype = as_str(ent.get('type'), 'general') or 'general'
+            label = graph_memory.humanize_entity_label(name, meta)
+            description = graph_memory.entity_description(name, meta)
+            # Text filter against both technical id and human label/description.
+            if q:
+                hay = ' '.join([name, label, description, etype, as_str(meta.get('preview'), '')]).lower()
+                if q not in hay:
+                    continue
+            name_to_meta[name] = meta
+            keys.append(graph_memory.entityKey(name))
+            rows.append(
+                {
+                    'entity': name,
+                    'label': label,
+                    'type': etype,
+                    'typeLabel': graph_memory.humanize_entity_type(etype),
+                    'description': description,
+                    'attributes': meta,
+                }
+            )
+            if len(rows) >= lim:
+                break
+
+        if keys and len(rows) < lim:
+            for rel in graph_memory.listRelationsForKeys(keys, limit=min(200, lim * 4)):
+                if not isinstance(rel, dict):
+                    continue
+                source = as_str(rel.get('source'), '')
+                target = as_str(rel.get('target'), '')
+                relation = as_str(rel.get('type'), 'related') or 'related'
+                if not source or not target:
+                    continue
+                src_label = graph_memory.humanize_entity_label(source, name_to_meta.get(source))
+                tgt_label = graph_memory.humanize_entity_label(target, name_to_meta.get(target))
+                rel_label = graph_memory.humanize_relation_type(relation)
+                if q:
+                    hay = ' '.join([source, target, relation, src_label, tgt_label, rel_label]).lower()
+                    if q not in hay:
+                        continue
+                rows.append(
+                    {
+                        'source': source,
+                        'sourceLabel': src_label,
+                        'relation': relation,
+                        'relationLabel': rel_label,
+                        'target': target,
+                        'targetLabel': tgt_label,
+                    }
+                )
+                if len(rows) >= lim:
+                    break
+
+        if rows:
+            return _json.dumps(rows[:lim], ensure_ascii=False)
+    except Exception:
+        rows = []
+
+    # Legacy JSON fallback for older installs that never migrated to SQLite.
+    try:
         import os as _os
         from pathlib import Path
         from app.lib.paths import dataPath
@@ -128,7 +207,6 @@ def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
         if env:
             candidates.append(Path(env))
         candidates.append(dataPath('august_graph_memory.json'))
-        # Legacy cwd-relative fallbacks (older installs).
         candidates.extend(
             [
                 Path('data') / 'august_graph_memory.json',
@@ -141,35 +219,64 @@ def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
             return _json.dumps([])
         with open(graphPath, 'r', encoding='utf-8') as f:
             data = _json.load(f)
-    except (ImportError, OSError, ValueError):
-        return _json.dumps([])
     except Exception:
-        # JSONDecodeError and other read errors → empty, not tool crash
         return _json.dumps([])
-    rows: list[dict] = []
+
+    legacy: list[dict[str, object]] = []
     entities = data.get('entities', []) if isinstance(data, dict) else []
     for ent in entities:
         if not isinstance(ent, dict):
             continue
-        name = ent.get('name', '')
-        if query and query.lower() not in name.lower():
+        name = as_str(ent.get('name'), '')
+        if q and q not in name.lower():
             continue
-        rows.append({'entity': name, 'type': ent.get('type', ''), 'attributes': ent.get('attributes', {})})
-        if len(rows) >= limit:
-            return _json.dumps(rows[:limit], ensure_ascii=False)
-    if len(rows) < limit:
+        try:
+            from app.services.memory import graph_memory
+
+            label = graph_memory.humanize_entity_label(name, ent.get('attributes') if isinstance(ent.get('attributes'), dict) else {})
+            etype = as_str(ent.get('type'), '')
+            legacy.append(
+                {
+                    'entity': name,
+                    'label': label,
+                    'type': etype,
+                    'typeLabel': graph_memory.humanize_entity_type(etype),
+                    'description': '',
+                    'attributes': ent.get('attributes', {}),
+                }
+            )
+        except Exception:
+            legacy.append({'entity': name, 'type': ent.get('type', ''), 'attributes': ent.get('attributes', {})})
+        if len(legacy) >= lim:
+            return _json.dumps(legacy[:lim], ensure_ascii=False)
+    if len(legacy) < lim:
         relations = data.get('relations', []) if isinstance(data, dict) else []
         for rel in relations:
             if not isinstance(rel, dict):
                 continue
-            source = rel.get('source', '')
-            target = rel.get('target', '')
-            if query and query.lower() not in (source + target).lower():
+            source = as_str(rel.get('source'), '')
+            target = as_str(rel.get('target'), '')
+            if q and q not in (source + target).lower():
                 continue
-            rows.append({'source': source, 'relation': rel.get('relation', ''), 'target': target})
-            if len(rows) >= limit:
+            relation = as_str(rel.get('relation'), 'related')
+            try:
+                from app.services.memory import graph_memory
+
+                legacy.append(
+                    {
+                        'source': source,
+                        'sourceLabel': graph_memory.humanize_entity_label(source),
+                        'relation': relation,
+                        'relationLabel': graph_memory.humanize_relation_type(relation),
+                        'target': target,
+                        'targetLabel': graph_memory.humanize_entity_label(target),
+                    }
+                )
+            except Exception:
+                legacy.append({'source': source, 'relation': relation, 'target': target})
+            if len(legacy) >= lim:
                 break
-    return _json.dumps(rows[:limit], ensure_ascii=False)
+    return _json.dumps(legacy[:lim], ensure_ascii=False)
 
 
 def _brain_query_daemons(query: str, filters: dict | None, limit: int) -> str:
@@ -300,6 +407,13 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
         sql += f' LIMIT {min(limit, 100)}'
         rows = conn.execute(sql, params).fetchall()
         results = [_row_as_wire(r) for r in rows]
+        if store == 'autoMemories':
+            try:
+                from app.services.memory.auto_memory import enrich_memory_for_model
+
+                results = [enrich_memory_for_model(r) if isinstance(r, dict) else r for r in results]
+            except Exception:
+                pass
         resultJson = json.dumps(results, default=str, ensure_ascii=False)
         if len(resultJson) > _TOKENCeiling * 4:
             truncated: list[dict[str, object]] = []

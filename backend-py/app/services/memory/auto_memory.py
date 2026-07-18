@@ -102,15 +102,60 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
             try:
                 from app.services.memory import graph_memory
 
-                graph_memory.addEntity(key, entityType=category or 'memory', metadata={'importance': importance})
+                preview_text = (preview if isinstance(preview, str) else str(preview))[:400]
+                label = graph_memory.humanize_entity_label(
+                    key,
+                    {'preview': preview_text, 'importance': importance},
+                )
+                graph_memory.addEntity(
+                    key,
+                    entityType=category or 'memory',
+                    metadata={
+                        'importance': importance,
+                        'label': label,
+                        'preview': preview_text[:240],
+                    },
+                )
                 # Link category → key when category is meaningful
                 if category and category not in ('auto', 'general', ''):
-                    graph_memory.addEntity(category, entityType='category')
+                    graph_memory.addEntity(
+                        category,
+                        entityType='category',
+                        metadata={'label': graph_memory.humanize_entity_label(category)},
+                    )
                     graph_memory.addRelation(category, key, 'contains')
             except Exception:
                 pass
     except Exception:
         pass
+
+
+def enrich_memory_for_model(item: dict[str, object]) -> dict[str, object]:
+    """Add beginner-readable ``label`` / ``description`` for prompts and tools.
+
+    Keeps the raw ``key`` so the model can pass it back to tools if needed.
+    """
+    if not isinstance(item, dict):
+        return item
+    key = str(item.get('key') or '')
+    content = item.get('content', '')
+    if isinstance(content, (dict, list)):
+        preview = json.dumps(content, default=str, ensure_ascii=False)
+    else:
+        preview = str(content or '')
+    meta = {'preview': preview[:400]}
+    try:
+        from app.services.memory import graph_memory
+
+        item['label'] = graph_memory.humanize_entity_label(key, meta)
+        item['description'] = graph_memory.entity_description(key, meta) or preview[:240]
+        item['categoryLabel'] = graph_memory.humanize_entity_type(
+            str(item.get('category') or 'memory')
+        )
+    except Exception:
+        item.setdefault('label', key.replace('_', ' ') if key else 'Memory')
+        item.setdefault('description', preview[:240])
+    return item
 
 
 def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
@@ -120,6 +165,7 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     JOIN to ``auto_memories``. Falls back to a **bounded** LIKE scan if FTS
     returns nothing (never loads the whole table unbounded).
     Returned keys keep camelCase ``createdAt`` for wire/API consumers.
+    Each hit also includes ``label`` / ``description`` for model-facing use.
     """
     conn = _conn()
     lim = max(1, min(int(limit), 50))
@@ -145,7 +191,7 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
                         item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
                     except (json.JSONDecodeError, TypeError):
                         pass
-                    result.append(item)
+                    result.append(enrich_memory_for_model(item))
                 return result
     except Exception:
         pass
@@ -177,7 +223,7 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
                 item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
             except (json.JSONDecodeError, TypeError):
                 pass
-            scored.append((score, item))
+            scored.append((score, enrich_memory_for_model(item)))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [m for __, m in scored[:limit]]
 

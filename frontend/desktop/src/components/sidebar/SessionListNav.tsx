@@ -4,6 +4,7 @@
 import { motion } from "framer-motion";
 import {
   Bot,
+  Brain,
   Package,
   PanelLeft,
   Plus,
@@ -61,6 +62,12 @@ const packageIconMotion = {
   tap: { scale: 0.92, y: 0, transition: t.fast },
 };
 
+const brainIconMotion = {
+  rest: { scale: 1, rotate: 0 },
+  hover: { scale: 1.12, rotate: -6, transition: t.spring },
+  tap: { scale: 0.92, transition: t.fast },
+};
+
 /** Top of the session sidebar: collapse control + primary nav rows. */
 export function SessionListNav({
   onNew,
@@ -94,6 +101,22 @@ export function SessionListNav({
           <Plus className="size-3.5" />
         </motion.span>
         <span>New chat</span>
+      </motion.button>
+
+      <motion.button
+        type="button"
+        onClick={() => onNavigate("/brain")}
+        className={quietRow}
+        initial="rest"
+        whileHover="hover"
+        whileTap="tap"
+        variants={rowMotion}
+        data-testid="sidebar-nav-brain"
+      >
+        <motion.span className="inline-flex shrink-0 opacity-60" variants={brainIconMotion}>
+          <Brain className="size-3.5" />
+        </motion.span>
+        <span>Brain</span>
       </motion.button>
 
       <motion.button

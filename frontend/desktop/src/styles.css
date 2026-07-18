@@ -123,9 +123,16 @@
 	  :root[data-text-size="comfortable"] { font-size: calc(16px * 1.08); }
 	  :root[data-text-size="spacious"]    { font-size: calc(16px * 1.18); }
 
-  html, body, #root { height: 100%; margin: 0; }
-  body {
+  /* Fill the webview exactly — avoid 100vh/h-screen gaps that show the
+     native window chrome (white hairline) on Windows maximize/fullscreen. */
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    overflow: hidden;
     background: var(--dt-background);
+  }
+  body {
     color: var(--dt-foreground);
     font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     font-size: 0.9375rem;

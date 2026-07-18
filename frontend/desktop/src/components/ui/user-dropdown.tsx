@@ -1,5 +1,6 @@
-import type { ComponentType, ReactNode, SVGProps } from 'react';
+import { useRef, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { motion, type Variants } from 'framer-motion';
+
 import {
   Bell,
   CircleHelp,
@@ -34,7 +35,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { t } from '@/lib/motion';
 import { cn } from '@/lib/utils';
-import { BrainIndicator } from '@/components/shell/BrainIndicator';
+import {
+  BrainIndicator,
+  type BrainIndicatorHandle,
+} from '@/components/shell/BrainIndicator';
+
 
 export type UserStatus = 'online' | 'focus' | 'offline' | 'busy';
 
@@ -230,6 +235,8 @@ export function UserDropdown({
   triggerClassName,
   updateAvailable = null,
 }: UserDropdownProps) {
+  const brainRef = useRef<BrainIndicatorHandle>(null);
+
   const profileItems: MenuItemBase[] = MENU_ITEMS.profile.map((item) => {
     if (item.action === 'notifications' && updateAvailable) {
       return {
@@ -482,14 +489,14 @@ export function UserDropdown({
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuItem
-              className="august-menu-item p-0 focus:bg-transparent"
+              className="august-menu-item p-0 focus:bg-accent/60 cursor-pointer"
               style={{ animationDelay: '160ms' }}
-              onSelect={(e) => e.preventDefault()}
+              onSelect={(e) => {
+                e.preventDefault();
+                brainRef.current?.toggle();
+              }}
             >
-              <div className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5">
-                <span className="text-sm font-medium text-foreground">Brain</span>
-                <BrainIndicator />
-              </div>
+              <BrainIndicator ref={brainRef} variant="menu" />
             </DropdownMenuItem>
           </DropdownMenuGroup>
 

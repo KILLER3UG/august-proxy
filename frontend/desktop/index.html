@@ -4,7 +4,15 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
     <title>August Proxy</title>
+    <!-- Fill the webview before CSS/JS; avoids a white hairline under the UI. -->
+    <style>
+      html, body, #root { height: 100%; width: 100%; margin: 0; overflow: hidden; background: #0e0e10; }
+      @media (prefers-color-scheme: light) {
+        html:not(.dark), html:not(.dark) body, html:not(.dark) #root { background: #fbfbfa; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
