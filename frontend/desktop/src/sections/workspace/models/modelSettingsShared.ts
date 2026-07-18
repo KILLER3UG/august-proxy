@@ -8,14 +8,16 @@ import type { LucideIcon } from 'lucide-react';
 import { Server, Boxes, ArrowRightLeft, ShieldCheck, Brain, Gauge } from 'lucide-react';
 import type { AggregatedModel } from '@/api/api-client';
 
-/** API format dropdown options shown when adding or editing a provider. */
+/** API format dropdown options shown when adding or editing a provider.
+ * Values must be canonical backend ids (camelCase). Labels stay user-facing.
+ */
 export const API_FORMATS: { value: ApiFormat; label: string }[] = [
-  { value: 'anthropic', label: 'Anthropic messages (/v1/messages)' },
-  { value: 'openai-chat', label: 'Chat completions (/chat/completions)' },
-  { value: 'openai-responses', label: 'Responses (/responses)' },
+  { value: 'anthropicMessages', label: 'Anthropic messages (/v1/messages)' },
+  { value: 'openaiChat', label: 'Chat completions (/chat/completions)' },
+  { value: 'openaiResponses', label: 'Responses (/responses)' },
 ];
 
-export const DEFAULT_API_FORMAT: ApiFormat = 'anthropic';
+export const DEFAULT_API_FORMAT: ApiFormat = 'anthropicMessages';
 
 export type ModelSettingsSubtab =
   | 'providers'

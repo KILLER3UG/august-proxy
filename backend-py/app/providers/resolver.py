@@ -15,6 +15,8 @@ from app.providers import aliases
 
 def entry_to_provider_dict(entry: dict[str, object]) -> dict[str, object]:
     """Build a provider dict from a ``providers.json`` entry."""
+    from app.providers.api_format import normalize_api_format
+
     return {
         'name': entry.get('name', ''),
         'id': entry.get('id', ''),
@@ -22,7 +24,7 @@ def entry_to_provider_dict(entry: dict[str, object]) -> dict[str, object]:
         'description': entry.get('description', ''),
         'aliases': entry.get('aliases', []),
         'baseUrl': entry.get('baseUrl', ''),
-        'apiMode': entry.get('apiFormat', 'openaiChat'),
+        'apiMode': normalize_api_format(entry.get('apiFormat') or entry.get('apiMode'), default='openaiChat'),
         'api_key': entry.get('apiKey', ''),
         'is_custom': True,
         'envVars': entry.get('envVars', []),

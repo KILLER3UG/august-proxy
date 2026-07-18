@@ -24,24 +24,7 @@ import json
 import time
 from app.json_narrowing import as_dict, as_list
 
-# Canonical API formats understood by the proxy. Kept in sync with the
-# provider templates (openaiChat / anthropicMessages) plus the OpenAI
-# Responses variant.
-_VALID_FORMATS = frozenset({'openaiChat', 'anthropicMessages', 'openaiResponses'})
-
-_FORMAT_ALIASES = {
-    'openai': 'openaiChat',
-    'openai-chat': 'openaiChat',
-    'openai_chat': 'openaiChat',
-    'chat': 'openaiChat',
-    'anthropic': 'anthropicMessages',
-    'anthropic-messages': 'anthropicMessages',
-    'anthropic_messages': 'anthropicMessages',
-    'messages': 'anthropicMessages',
-    'openai-responses': 'openaiResponses',
-    'openai_responses': 'openaiResponses',
-    'responses': 'openaiResponses',
-}
+from app.providers.api_format import normalize_api_format as _normalize_format
 
 
 def _ok(**fields: object) -> str:
@@ -50,13 +33,6 @@ def _ok(**fields: object) -> str:
 
 def _err(message: str, **fields: object) -> str:
     return json.dumps({'status': 'error', 'error': message, **fields}, default=str)
-
-
-def _normalize_format(api_format: str | None) -> str:
-    if not api_format:
-        return 'openaiChat'
-    norm = _FORMAT_ALIASES.get(str(api_format).lower(), str(api_format))
-    return norm if norm in _VALID_FORMATS else 'openaiChat'
 
 
 async def setupProvider(

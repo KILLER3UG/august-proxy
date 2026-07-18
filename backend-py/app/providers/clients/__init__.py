@@ -22,17 +22,28 @@ _client_pool: dict[str, BaseProviderClient] = {}
 
 
 def _pool_key(providerConfig: dict[str, object]) -> str:
+    from app.providers.api_format import normalize_api_format
+
+    mode = normalize_api_format(
+        providerConfig.get('apiMode') or providerConfig.get('apiFormat'),
+        default='openaiChat',
+    )
     return '|'.join(
         (
             str(providerConfig.get('id') or providerConfig.get('name') or ''),
-            str(providerConfig.get('apiMode') or 'openaiChat'),
+            mode,
             str(providerConfig.get('baseUrl') or providerConfig.get('base_url') or ''),
         )
     )
 
 
 def _make_client(providerConfig: dict[str, object]) -> BaseProviderClient:
-    mode = providerConfig.get('apiMode', 'openaiChat')
+    from app.providers.api_format import normalize_api_format
+
+    mode = normalize_api_format(
+        providerConfig.get('apiMode') or providerConfig.get('apiFormat'),
+        default='openaiChat',
+    )
     match mode:
         case 'anthropicMessages':
             return AnthropicClient(providerConfig)

@@ -15,13 +15,14 @@ router = APIRouter(prefix='/api/providers')
 
 def _provider_to_dict(p: object) -> dict:
     """Convert a ProviderConfig or raw dict to the API response shape."""
+    from app.providers.api_format import normalize_api_format
 
     if isinstance(p, ProviderConfig):
         return {
             'id': p.id,
             'name': p.name,
             'baseUrl': p.base_url,
-            'apiFormat': p.api_format,
+            'apiFormat': normalize_api_format(p.api_format, default='openaiChat'),
             'apiKey': p.api_key,
             'enabled': p.enabled,
             'apiKeySet': bool(p.api_key),
@@ -44,7 +45,7 @@ def _provider_to_dict(p: object) -> dict:
         'id': as_str(pd.get('id', '')),
         'name': as_str(pd.get('name', '')),
         'baseUrl': as_str(pd.get('baseUrl', '')),
-        'apiFormat': as_str(pd.get('apiFormat', '')),
+        'apiFormat': normalize_api_format(pd.get('apiFormat'), default='openaiChat'),
         'apiKey': as_str(pd.get('apiKey', '')),
         'enabled': as_bool(pd.get('enabled', False)),
         'apiKeySet': bool(pd.get('apiKey')),
@@ -73,8 +74,10 @@ async def createProvider(body: ProviderCreate):
     store = config_service.getProvidersStore()
     if 'providers' not in store:
         store['providers'] = []
+    from app.providers.api_format import normalize_api_format
+
     baseUrl = (body.base_url or '').strip()
-    apiFormat = body.api_format or 'openaiChat'
+    apiFormat = normalize_api_format(body.api_format, default='openaiChat')
     if not baseUrl:
         raise HTTPException(
             status_code=400,
@@ -116,11 +119,13 @@ async def importProviderConfig(body: dict):
     providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
+    from app.providers.api_format import normalize_api_format
+
     entry = {
         'id': body.get('id', ''),
         'name': body.get('name', 'Imported Provider'),
         'baseUrl': body.get('baseUrl', ''),
-        'apiFormat': body.get('apiFormat', 'openaiChat'),
+        'apiFormat': normalize_api_format(body.get('apiFormat'), default='openaiChat'),
         'apiKey': body.get('apiKey', ''),
         'enabled': body.get('enabled', True),
         'autoFetch': body.get('autoFetch', False),
@@ -162,7 +167,9 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
             if body.base_url is not None:
                 p['baseUrl'] = body.base_url
             if body.api_format is not None:
-                p['apiFormat'] = body.api_format
+                from app.providers.api_format import normalize_api_format
+
+                p['apiFormat'] = normalize_api_format(body.api_format, default='openaiChat')
             if body.api_key is not None:
                 p['apiKey'] = body.api_key
             if body.enabled is not None:

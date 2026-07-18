@@ -251,11 +251,19 @@ def resolve_chat_llm(
 
 
 def is_anthropic_provider(provider: dict[str, object] | None) -> bool:
-    return provider is not None and as_str(provider.get('apiMode')) == 'anthropicMessages'
+    if provider is None:
+        return False
+    from app.providers.api_format import is_anthropic_api_format
+
+    return is_anthropic_api_format(provider.get('apiMode') or provider.get('apiFormat'))
 
 
 def is_openai_provider(provider: dict[str, object] | None) -> bool:
-    return provider is not None and as_str(provider.get('apiMode')) in ('openaiChat', 'openaiChat', 'codexResponses')
+    if provider is None:
+        return False
+    from app.providers.api_format import is_openai_api_format
+
+    return is_openai_api_format(provider.get('apiMode') or provider.get('apiFormat'))
 
 
 def extract_text(content_blocks: list[dict[str, object]]) -> str:

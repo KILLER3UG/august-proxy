@@ -2,8 +2,17 @@
 
 import { api } from './client';
 
-/** Wire formats accepted by the backend provider store. */
-export type ApiFormat = 'openaiChat' | 'anthropicMessages' | 'openaiResponses' | 'openai-chat' | 'anthropic' | 'openai-responses';
+/** Canonical wire formats for the backend provider store.
+ * Legacy kebab-case aliases are still accepted/normalized server-side.
+ */
+export type ApiFormat =
+  | 'openaiChat'
+  | 'anthropicMessages'
+  | 'openaiResponses'
+  // Legacy UI values (normalized on save / resolve)
+  | 'openai-chat'
+  | 'anthropic'
+  | 'openai-responses';
 
 export interface ProviderModel {
   id: string;

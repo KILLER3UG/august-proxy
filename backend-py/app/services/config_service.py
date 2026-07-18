@@ -66,11 +66,13 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                         source=str(m.get('source', 'manual')),
                     )
                 )
+        from app.providers.api_format import normalize_api_format
+
         result.append(
             ProviderConfig(
                 id=str(raw.get('id', '')),
                 name=str(raw.get('name', '')),
-                api_format=str(raw.get('apiFormat', 'openaiChat')),
+                api_format=normalize_api_format(raw.get('apiFormat'), default='openaiChat'),
                 api_key=str(raw.get('apiKey', '')),
                 base_url=str(raw.get('baseUrl', '')),
                 enabled=bool(raw.get('enabled', True)),
