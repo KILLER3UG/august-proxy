@@ -142,6 +142,7 @@ export function ChatTitlebar({
           {session?.workspacePath ? (
             <WorkspaceBranchChip
               sessionId={session.id}
+              repoPath={session.workspacePath}
               className="shrink-0"
               menuPlacement="down"
             />

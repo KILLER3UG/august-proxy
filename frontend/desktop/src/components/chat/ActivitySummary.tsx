@@ -34,6 +34,10 @@ export interface ActivitySummaryProps extends ActivitySummaryCounts {
   durationLabel?: string | null;
   /** Start expanded (default false — settled answers stay dense). */
   defaultOpen?: boolean;
+  /** When true, show a live “still working” line even while collapsed. */
+  live?: boolean;
+  /** Short live status, e.g. “Reading src/app.ts”. */
+  liveDetail?: string | null;
   className?: string;
 }
 
@@ -86,6 +90,8 @@ export function ActivitySummary({
   summary,
   durationLabel,
   defaultOpen = false,
+  live = false,
+  liveDetail = null,
   className,
 }: ActivitySummaryProps) {
   const [open, setOpen] = useState(defaultOpen);
@@ -103,14 +109,21 @@ export function ActivitySummary({
   });
   const prose = summary?.trim() || '';
   const hasProse = prose.length > 0;
+  const liveLine = (liveDetail || (live ? 'Working…' : '')).trim();
 
-  if (!hasProse && segments.length === 0) return null;
+  if (!hasProse && segments.length === 0 && !liveLine) return null;
 
   return (
     <div
-      className={cn('activity-summary', open && 'activity-summary--open', className)}
+      className={cn(
+        'activity-summary',
+        open && 'activity-summary--open',
+        live && 'activity-summary--live',
+        className,
+      )}
       data-slot="activity-summary"
       data-expanded={open ? 'true' : 'false'}
+      data-live={live ? 'true' : 'false'}
     >
       <button
         type="button"
@@ -151,6 +164,14 @@ export function ActivitySummary({
           aria-hidden
         />
       </button>
+
+      {/* Always visible while live so collapse never looks like a freeze. */}
+      {live && liveLine ? (
+        <div className="activity-summary-live" aria-live="polite">
+          <span className="activity-summary-live-dot" aria-hidden />
+          <span className="truncate">{liveLine}</span>
+        </div>
+      ) : null}
 
       <AnimatePresence initial={false}>
         {open && (

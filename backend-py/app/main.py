@@ -144,13 +144,7 @@ async def lifespan(app: FastAPI):
         logger.info('Curator + subagent orchestrator ready')
     except Exception:
         logger.exception('Runtime services (curator/orchestrator) failed to start')
-    # Ensure workbench session blob columns exist before sessions load.
-    try:
-        from app.services import memory_store
-
-        memory_store.init()
-    except Exception:
-        pass
+    # Schema/workbench blob columns are created by the earlier memory_store.init().
     yield
     # Tear down the log-stream hub and root handler on shutdown.
     try:

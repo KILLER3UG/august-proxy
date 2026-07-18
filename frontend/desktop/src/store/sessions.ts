@@ -268,17 +268,10 @@ async function purgeBackendSession(ids: string[]): Promise<void> {
       seen.add(id);
       return true;
     });
+  // Best-effort: try both APIs. Sessions may live in workbench, manage, or both.
   await Promise.all(
     unique.map(async (id) => {
-      try {
-        await deleteWorkbenchSession(id);
-      } catch {
-        try {
-          await deleteManageSession(id);
-        } catch {
-          /* ignore — local delete already applied */
-        }
-      }
+      await Promise.allSettled([deleteWorkbenchSession(id), deleteManageSession(id)]);
     }),
   );
 }

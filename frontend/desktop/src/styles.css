@@ -654,6 +654,57 @@ input::placeholder {
   flex-direction: column;
   gap: 6px;
 }
+.activity-summary-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: hsl(var(--foreground) / 0.82);
+  background: hsl(var(--info, 210 80% 56%) / 0.08);
+  border-radius: 6px;
+}
+.activity-summary-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: hsl(var(--info, 210 80% 56%));
+  animation: activity-live-pulse 1.2s ease-in-out infinite;
+}
+@keyframes activity-live-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+/* Brain icon — soft “learning / active” pulse while events stream in */
+@keyframes brain-learning-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 6px hsl(var(--primary) / 0.45));
+  }
+}
+.brain-icon-learning {
+  animation: brain-learning-pulse 1.6s ease-in-out infinite;
+  color: hsl(var(--primary));
+}
+.brain-icon-idle {
+  transition: color 0.3s ease, opacity 0.3s ease;
+}
 
 /* Tool activity summary (collapsed multi-tool card) — quieter, less card-like */
 .tool-summary {
@@ -929,10 +980,18 @@ input::placeholder {
   padding: 0;
   border-radius: 0;
   border: none;
-  color: inherit;
   font-size: 0.9rem;
   font-weight: 400;
   display: block;
+}
+/* VS Code–like theme (vs2015) — keep token colors from highlight.js */
+.markdown-content pre code.hljs {
+  background: transparent;
+  padding: 0;
+}
+.markdown-content .markdown-code-block > pre.hljs {
+  background-color: #1e1e1e;
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 /* Tables */

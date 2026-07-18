@@ -24,7 +24,6 @@ import {
   type Session,
   type SessionStatus,
 } from "@/store/sessions";
-import { useWorkspacesStore } from "@/store/workspaces";
 import { useActiveChatStreamsStore, startChatActiveStreamsPoller } from "@/store/chat-active-streams";
 import {
   useAccountStore,
@@ -177,8 +176,6 @@ export function SessionList({
   const folders = useSessionsStore((s) => s.folders);
   const sessionStates = useSessionsStore((s) => s.sessionStates);
   const activeChatSessions = useActiveChatStreamsStore((s) => s.active);
-  const currentWorkspaceId = useWorkspacesStore((s) => s.currentWorkspaceId);
-  const workspaces = useWorkspacesStore((s) => s.workspaces);
 
   useEffect(() => {
     startChatActiveStreamsPoller();
@@ -310,17 +307,10 @@ export function SessionList({
 
   const visible = sessions.filter((s) => !s.isArchived);
 
-  // Get current workspace path for filtering
-  const currentWorkspacePath = currentWorkspaceId
-    ? workspaces.find(w => w.id === currentWorkspaceId)?.path ?? null
-    : null;
-
-  // Filter sessions by workspace if one is selected
-  const workspaceFiltered = currentWorkspacePath
-    ? visible.filter((s) => !s.workspacePath || s.workspacePath === currentWorkspacePath)
-    : visible;
-  const pinned = workspaceFiltered.filter((s) => pinnedIds.has(s.id));
-  const others = workspaceFiltered.filter((s) => !pinnedIds.has(s.id));
+  // Multi-repo sidebar groups by folderId — do not hide other folders' sessions
+  // when the global current workspace changes (that made folders look empty).
+  const pinned = visible.filter((s) => pinnedIds.has(s.id));
+  const others = visible.filter((s) => !pinnedIds.has(s.id));
 
   const togglePin = (id: string) => {
     const next = new Set(pinnedIds);

@@ -36,14 +36,48 @@ def createOpenaiToAnthropicStreamState() -> dict[str, object]:
         'model': '',
         'role': 'assistant',
         'content_blocks': [],
-        'current_index': 0,
+        'current_index': -1,
         'stop_reason': None,
         'input_tokens': 0,
         'output_tokens': 0,
         'accumulated_text': '',
         'accumulated_reasoning': '',
         'pending_tool_calls': [],
+        '_text_block_index': None,
+        '_reasoning_block_index': None,
     }
+
+
+def _close_openai_text_block(state: dict[str, object], events: list[str]) -> None:
+    if not state.get('_text_block_started'):
+        return
+    idx = state.get('_text_block_index')
+    if idx is None:
+        idx = as_int(state.get('current_index'), -1)
+    events.append(
+        write_anthropic_sse_data(
+            'content_block_stop',
+            {'type': 'content_block_stop', 'index': idx},
+        )
+    )
+    state['_text_block_started'] = False
+    state['_text_block_index'] = None
+
+
+def _close_openai_reasoning_block(state: dict[str, object], events: list[str]) -> None:
+    if not state.get('_reasoning_block_started'):
+        return
+    idx = state.get('_reasoning_block_index')
+    if idx is None:
+        idx = as_int(state.get('current_index'), -1)
+    events.append(
+        write_anthropic_sse_data(
+            'content_block_stop',
+            {'type': 'content_block_stop', 'index': idx},
+        )
+    )
+    state['_reasoning_block_started'] = False
+    state['_reasoning_block_index'] = None
 
 
 def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, object]) -> list[str]:
@@ -85,44 +119,52 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
     content = as_str(delta.get('content'), '')
     reasoning = as_str(delta.get('reasoning'), '') or as_str(delta.get('reasoning_content'), '')
     if content:
+        if state.get('_reasoning_block_started'):
+            _close_openai_reasoning_block(state, events)
         if not state.get('_text_block_started'):
             state['_text_block_started'] = True
             idx = as_int(state.get('current_index'), -1) + 1
             state['current_index'] = idx
+            state['_text_block_index'] = idx
             events.append(
                 write_anthropic_sse_data(
                     'content_block_start',
                     {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'text', 'text': ''}},
                 )
             )
+        text_idx = as_int(state.get('_text_block_index'), as_int(state.get('current_index'), -1))
         events.append(
             write_anthropic_sse_data(
                 'content_block_delta',
                 {
                     'type': 'content_block_delta',
-                    'index': as_int(state.get('current_index'), -1),
+                    'index': text_idx,
                     'delta': {'type': 'text_delta', 'text': content},
                 },
             )
         )
         state['accumulated_text'] = as_str(state.get('accumulated_text'), '') + content
     if reasoning:
+        if state.get('_text_block_started'):
+            _close_openai_text_block(state, events)
         if not state.get('_reasoning_block_started'):
             state['_reasoning_block_started'] = True
             idx = as_int(state.get('current_index'), -1) + 1
             state['current_index'] = idx
+            state['_reasoning_block_index'] = idx
             events.append(
                 write_anthropic_sse_data(
                     'content_block_start',
                     {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'thinking', 'text': ''}},
                 )
             )
+        think_idx = as_int(state.get('_reasoning_block_index'), as_int(state.get('current_index'), -1))
         events.append(
             write_anthropic_sse_data(
                 'content_block_delta',
                 {
                     'type': 'content_block_delta',
-                    'index': as_int(state.get('current_index'), -1),
+                    'index': think_idx,
                     'delta': {'type': 'thinking_delta', 'thinking': reasoning},
                 },
             )
@@ -161,20 +203,8 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
             )
     state['pending_tool_calls'] = pending
     if finishReason and finishReason != 'null':
-        if state.get('_text_block_started'):
-            events.append(
-                write_anthropic_sse_data(
-                    'content_block_stop',
-                    {'type': 'content_block_stop', 'index': as_int(state.get('current_index'), -1)},
-                )
-            )
-        if state.get('_reasoning_block_started'):
-            events.append(
-                write_anthropic_sse_data(
-                    'content_block_stop',
-                    {'type': 'content_block_stop', 'index': as_int(state.get('current_index'), -1)},
-                )
-            )
+        _close_openai_text_block(state, events)
+        _close_openai_reasoning_block(state, events)
         pending = as_list(state.get('pending_tool_calls'), [])
         for tc in pending:
             if not isinstance(tc, dict):

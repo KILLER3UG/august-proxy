@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     gatewayApiKey: str | None = None
     _config: Dict[str, object] = {}
     _providers: Dict[str, object] = {}
+    _config_loaded: bool = False
 
     def reload(self) -> None:
         """Re-read config.json and providers.json from disk."""
@@ -79,16 +80,18 @@ class Settings(BaseSettings):
         providersPath = self.dataDir / 'providers.json'
         self._config = _loadJson(configPath)
         self._providers = _loadJson(providersPath)
+        self._config_loaded = True
 
     @property
     def config(self) -> Dict[str, object]:
-        if not self._config:
+        # Empty {} is a valid on-disk config — do not treat it as "not loaded".
+        if not self._config_loaded:
             self.reload()
         return self._config
 
     @property
     def providers(self) -> Dict[str, object]:
-        if not self._providers:
+        if not self._config_loaded:
             self.reload()
         return self._providers
 

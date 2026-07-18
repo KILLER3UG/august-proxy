@@ -1,6 +1,55 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { marked, type Tokens } from 'marked';
 import katex from 'katex';
+import hljs from 'highlight.js/lib/core';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import jsonLang from 'highlight.js/lib/languages/json';
+import bash from 'highlight.js/lib/languages/bash';
+import shell from 'highlight.js/lib/languages/shell';
+import css from 'highlight.js/lib/languages/css';
+import xml from 'highlight.js/lib/languages/xml';
+import markdown from 'highlight.js/lib/languages/markdown';
+import sql from 'highlight.js/lib/languages/sql';
+import rust from 'highlight.js/lib/languages/rust';
+import go from 'highlight.js/lib/languages/go';
+import java from 'highlight.js/lib/languages/java';
+import csharp from 'highlight.js/lib/languages/csharp';
+import cpp from 'highlight.js/lib/languages/cpp';
+import yaml from 'highlight.js/lib/languages/yaml';
+import plaintext from 'highlight.js/lib/languages/plaintext';
+import 'highlight.js/styles/vs2015.css';
+
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('js', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('ts', typescript);
+hljs.registerLanguage('tsx', typescript);
+hljs.registerLanguage('jsx', javascript);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('py', python);
+hljs.registerLanguage('json', jsonLang);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('shell', shell);
+hljs.registerLanguage('sh', shell);
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('html', xml);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('md', markdown);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('java', java);
+hljs.registerLanguage('csharp', csharp);
+hljs.registerLanguage('cs', csharp);
+hljs.registerLanguage('cpp', cpp);
+hljs.registerLanguage('c', cpp);
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('yml', yaml);
+hljs.registerLanguage('text', plaintext);
+hljs.registerLanguage('plaintext', plaintext);
 
 const COPY_PLACEHOLDER_ATTR = 'data-copy-placeholder';
 const COPY_CODE_ATTR = 'data-copy-code';
@@ -14,13 +63,30 @@ function escapeAttr(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function highlightCode(text: string, lang: string): string {
+  const normalized = lang.toLowerCase().replace(/^language-/, '');
+  try {
+    if (normalized && hljs.getLanguage(normalized)) {
+      return hljs.highlight(text, { language: normalized, ignoreIllegals: true }).value;
+    }
+    return hljs.highlightAuto(text).value;
+  } catch {
+    return escapeHtml(text);
+  }
+}
+
 function renderCode(token: Tokens.Code): string {
   const lang = (token.lang || '').trim();
-  const langClass = lang ? ` class="language-${escapeAttr(lang)}"` : '';
+  const langClass = lang ? ` class="hljs language-${escapeAttr(lang)}"` : ' class="hljs"';
   const code = escapeAttr(token.text);
+  const highlighted = highlightCode(token.text, lang);
   return (
     `<div class="markdown-code-block relative group">` +
-      `<pre${langClass}><code${langClass}>${token.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>` +
+      `<pre${langClass}><code${langClass}>${highlighted}</code></pre>` +
       `<button type="button" ${COPY_PLACEHOLDER_ATTR} ${COPY_CODE_ATTR}="${code}" ` +
         `class="markdown-copy-btn absolute right-2 top-2 inline-flex items-center gap-1 rounded-md ` +
         `border border-border/60 bg-background/80 px-2 py-1 text-xs font-medium text-muted-foreground ` +
@@ -268,23 +334,8 @@ export function Markdown({
     return () => el.removeEventListener('click', handleClick);
   }, []);
 
-  // Highlight settled code only — live streams replace innerHTML every flush,
-  // and re-running highlight.js on fresh nodes makes glyphs jitter.
-  useEffect(() => {
-    if (live) return;
-    const el = ref.current;
-    if (!el) return;
-    const blocks = el.querySelectorAll<HTMLElement>('pre code[class*="language-"]');
-    const hljs = window.hljs;
-    if (blocks.length === 0 || !hljs) return;
-    blocks.forEach((block) => {
-      try {
-        hljs.highlightElement(block);
-      } catch {
-        /* silent */
-      }
-    });
-  }, [html, live]);
+  // Syntax colors are applied in renderCode (highlight.js) so live streams
+  // keep colored tokens without a second DOM rewrite pass.
 
   return (
     <div

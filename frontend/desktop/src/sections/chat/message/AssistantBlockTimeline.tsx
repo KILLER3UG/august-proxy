@@ -1,3 +1,5 @@
+import { useEffect, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
   ToolCallItemBody,
@@ -13,6 +15,14 @@ import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { SubagentBlockState } from '../chat-stream-manager';
 import { ReasoningBlock } from './ReasoningBlock';
 import { buildProcessSummaryLine } from '@/lib/process-summary';
+import {
+  clearLiveActivity,
+  publishLiveActivity,
+  type LiveActivityItem,
+  type LiveActivityKind,
+} from '@/store/liveActivity';
+import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
+import { getToolLabel } from '@/lib/tool-labels';
 
 type DisplayBlock = MessageBlock;
 
@@ -38,10 +48,17 @@ function splitActivityAndFinal(units: RenderUnit[]): {
   hasFinalOutput: boolean;
 } {
   const activityUnits: RenderUnit[] = [];
-  const finalUnits: RenderUnit[] = [];
+  const finalCandidates: RenderUnit[] = [];
   for (const unit of units) {
-    if (isFinalOutputUnit(unit)) finalUnits.push(unit);
+    if (isFinalOutputUnit(unit)) finalCandidates.push(unit);
     else activityUnits.push(unit);
+  }
+  // Only the last finalOutput is the answer. Earlier segments were provisional
+  // (think → draft text → think again) and belong in the activity pack.
+  const finalUnits =
+    finalCandidates.length > 0 ? [finalCandidates[finalCandidates.length - 1]] : [];
+  if (finalCandidates.length > 1) {
+    activityUnits.push(...finalCandidates.slice(0, -1));
   }
   return {
     activityUnits,
@@ -84,6 +101,9 @@ export function AssistantBlockTimeline({
   subagentPrompts?: Map<string, SubagentPromptEntry>;
   subagentBlocks?: Map<string, SubagentBlockState>;
 }) {
+  const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
+  const liveSessionKey = routeSessionId || message.id;
+
   // Pre-process blocks:
   //  - consecutive toolCall/command → tool_group (one ToolSummary)
   //  - consecutive thinking → thinking_group (one "Thinking (N)" disclosure)
@@ -162,6 +182,87 @@ export function AssistantBlockTimeline({
         }`
       : null;
 
+  const packActivity =
+    activityUnits.length > 0 &&
+    (hasFinalOutput || !(isLast && streaming));
+  const livePacked = !!(packActivity && isLast && streaming);
+
+  const { liveDetail, liveItems } = useMemo(() => {
+    const items: LiveActivityItem[] = [];
+    let liveDetail = '';
+    for (const block of displayBlocks) {
+      if (block.type === 'thinking' && block.content?.trim()) {
+        const snippet = block.content.trim().replace(/\s+/g, ' ').slice(0, 80);
+        items.push({
+          id: block.id || `think_${items.length}`,
+          kind: 'thinking',
+          label: 'Thinking',
+          detail: snippet,
+          status: 'done',
+          at: Date.now(),
+        });
+        liveDetail = `Thinking… ${snippet}${snippet.length >= 80 ? '…' : ''}`;
+      }
+      if ((block.type === 'toolCall' || block.type === 'command') && block.tool) {
+        const bucket = classifyTool(block.tool.name) as LiveActivityKind;
+        const kind: LiveActivityKind =
+          bucket === 'view' || bucket === 'edit' || bucket === 'run' ? bucket : 'tool';
+        const label = getToolLabel(block.tool.name, {
+          status: block.tool.status,
+        });
+        const detail =
+          block.tool.summary ||
+          block.tool.context?.slice(0, 100) ||
+          undefined;
+        items.push({
+          id: block.tool.id || block.id || `tool_${items.length}`,
+          kind,
+          label,
+          detail,
+          status:
+            block.tool.status === 'error'
+              ? 'error'
+              : block.tool.status === 'running'
+                ? 'running'
+                : 'done',
+          at: block.tool.startedAt || Date.now(),
+        });
+        if (block.tool.status === 'running' || !liveDetail) {
+          liveDetail =
+            kind === 'view'
+              ? `Reading ${detail || 'files…'}`
+              : kind === 'edit'
+                ? `Editing ${detail || 'files…'}`
+                : kind === 'run'
+                  ? `Running ${detail || 'command…'}`
+                  : label;
+        }
+      }
+    }
+    if (showPendingThinking && !liveDetail) liveDetail = 'Thinking…';
+    if (items.length > 0) {
+      const last = items[items.length - 1];
+      if (last.status === 'running' || (isLast && streaming)) {
+        // Keep the latest step marked running while the turn streams.
+        items[items.length - 1] = { ...last, status: last.status === 'error' ? 'error' : 'running' };
+      }
+    }
+    return { liveDetail, liveItems: items };
+  }, [displayBlocks, showPendingThinking, isLast, streaming]);
+
+  useEffect(() => {
+    if (!livePacked) {
+      if (isLast && !streaming) clearLiveActivity(liveSessionKey);
+      return;
+    }
+    publishLiveActivity({
+      sessionId: liveSessionKey,
+      headline: liveDetail || processSummary || 'Working…',
+      items: liveItems,
+    });
+    addRightDrawerSection('activity');
+  }, [livePacked, liveSessionKey, liveDetail, liveItems, processSummary, isLast, streaming]);
+
   const renderThinkingGroup = (
     unit: Extract<RenderUnit, { kind: 'thinking_group' }>,
     unitIdx: number,
@@ -216,32 +317,39 @@ export function AssistantBlockTimeline({
     let ranCount = 0;
     let usedCount = 0;
 
-    const summaryEntries = unit.entries.map(({ block, index }) => {
-      const isSubagentCall =
-        block.tool.name === 'august__spawn_subagent' ||
-        block.tool.name === 'workbench_spawn_subagent' ||
-        block.tool.name === 'august__run_team' ||
-        block.tool.name === 'workbench_run_team';
-      const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
-        ? Array.from(subagentPrompts.entries())
-            .filter(([k]) => k === block.tool.id)
-            .map(([, v]) => v)
-        : [];
-      const agentId =
-        promptEntries[0]?.subagentId ??
-        extractAgentId(block.tool.context) ??
-        undefined;
+    const summaryEntries = unit.entries
+      .map(({ block, index }) => {
+        const isSubagentCall =
+          block.tool.name === 'august__spawn_subagent' ||
+          block.tool.name === 'workbench_spawn_subagent' ||
+          block.tool.name === 'august__run_team' ||
+          block.tool.name === 'workbench_run_team';
+        const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
+          ? Array.from(subagentPrompts.entries())
+              .filter(([k]) => k === block.tool.id)
+              .map(([, v]) => v)
+          : [];
+        const agentId =
+          promptEntries[0]?.subagentId ??
+          extractAgentId(block.tool.context) ??
+          undefined;
 
-      const bucket = classifyTool(block.tool.name);
-      if (bucket === 'view') viewedCount++;
-      else if (bucket === 'edit') editedCount++;
-      else if (bucket === 'run') ranCount++;
-      else usedCount++;
+        const bucket = classifyTool(block.tool.name);
+        if (bucket === 'view') viewedCount++;
+        else if (bucket === 'edit') editedCount++;
+        else if (bucket === 'run') ranCount++;
+        else usedCount++;
 
-      const entry = buildToolSummaryEntry(block.tool, { agentIdOverride: agentId });
-      if (!entry.id) entry.id = `tool_${index}`;
-      return { entry, block, index, promptEntries, isSubagentCall };
-    });
+        const entry = buildToolSummaryEntry(block.tool, { agentIdOverride: agentId });
+        if (!entry.id) entry.id = `tool_${index}`;
+        return { entry, block, index, promptEntries, isSubagentCall, bucket };
+      })
+      // No card/container for read/view tools — only edits, commands, and other tools.
+      .filter((row) => row.bucket !== 'view');
+
+    if (summaryEntries.length === 0) {
+      return null;
+    }
 
     const isLive =
       !opts?.forceIdle &&
@@ -390,20 +498,15 @@ export function AssistantBlockTimeline({
         </div>
       )}
       {(() => {
-        // Pack into ActivitySummary only after the turn settles. While the
-        // last message is still streaming, keep the live timeline so thinking
-        // / tools don't suddenly collapse when final prose starts.
-        // Final prose always renders via `afterUnits` / trailing units with a
-        // stable key so settle does not remount the answer (that caused a
-        // black opacity blink).
-        const packActivity =
-          hasFinalOutput && !(isLast && streaming);
-
+        // Collapse thoughts/tools as soon as a final answer appears (even while
+        // still streaming) so the chat stays short. Live status mirrors to the
+        // right-side Activity panel so collapse never looks stuck.
         if (packActivity) {
           const hasActivity =
             totalThoughts + totalTools > 0 ||
             !!processSummary ||
-            activityUnits.length > 0;
+            activityUnits.length > 0 ||
+            livePacked;
           return (
             <>
               {hasActivity && (
@@ -417,10 +520,10 @@ export function AssistantBlockTimeline({
                     usedCount={totalUsed}
                     summary={processSummary}
                     durationLabel={
-                      // Prefer prose alone (screenshot style); keep duration
-                      // only when we fall back to count segments.
-                      processSummary ? null : durationLabel
+                      processSummary || livePacked ? null : durationLabel
                     }
+                    live={livePacked}
+                    liveDetail={livePacked ? liveDetail || 'Working…' : null}
                   >
                     {renderUnitList(activityUnits, { forceIdle: true })}
                   </ActivitySummary>

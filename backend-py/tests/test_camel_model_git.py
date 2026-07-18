@@ -69,3 +69,69 @@ async def test_post_api_git_command_rejects_empty_args(client, isolatedData):
     )
     assert resp.status_code == 400
     assert 'No git args' in resp.json()['detail']
+
+
+@pytest.mark.asyncio
+async def test_git_branch_falls_back_to_repo_path_when_session_missing(client, isolatedData, tmp_path):
+    """Chat session ids often are not workbench sessions — repoPath must still work."""
+    import subprocess
+
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-b', 'main'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'init'],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env={
+            **dict(__import__('os').environ),
+            'GIT_AUTHOR_NAME': 'Test',
+            'GIT_AUTHOR_EMAIL': 'test@example.com',
+            'GIT_COMMITTER_NAME': 'Test',
+            'GIT_COMMITTER_EMAIL': 'test@example.com',
+        },
+    )
+
+    resp = await client.get(
+        '/api/git/branch',
+        params={'sessionId': 'chat_session_that_does_not_exist', 'repoPath': str(repo)},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get('error') in (None, '')
+    assert data.get('current') == 'main'
+
+
+@pytest.mark.asyncio
+async def test_git_checkout_accepts_repo_path_without_session(client, isolatedData, tmp_path):
+    import subprocess
+
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-b', 'main'], cwd=repo, check=True, capture_output=True)
+    env = {
+        **dict(__import__('os').environ),
+        'GIT_AUTHOR_NAME': 'Test',
+        'GIT_AUTHOR_EMAIL': 'test@example.com',
+        'GIT_COMMITTER_NAME': 'Test',
+        'GIT_COMMITTER_EMAIL': 'test@example.com',
+    }
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'init'],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+    subprocess.run(['git', 'branch', 'feature'], cwd=repo, check=True, capture_output=True)
+
+    resp = await client.post(
+        '/api/git/checkout',
+        json={'sessionId': '', 'repoPath': str(repo), 'branch': 'feature'},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json().get('branch') == 'feature'
+
+    branch = await client.get('/api/git/branch', params={'repoPath': str(repo)})
+    assert branch.json().get('current') == 'feature'

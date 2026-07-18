@@ -1,6 +1,6 @@
 /* ── BrainSettings — modern orchestrator controls ──────────────────── */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -15,9 +15,11 @@ import {
   type BrainConfigResponse,
   type BrainConfigSource,
 } from '@/api/workbench';
+import { openBrainEventStream } from '@/api/api-client';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 const BOOLEAN_KEYS: { key: keyof BrainConfig; label: string; description: string }[] = [
   { key: 'enabled', label: 'Master switch', description: 'Turns the brain orchestrator on or off. When off, the model runs without per-turn policy injection.' },
@@ -42,6 +44,8 @@ export function BrainSettings() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<BrainConfig | null>(null);
   const [sourceInfo, setSourceInfo] = useState<BrainConfigResponse | null>(null);
+  const [learning, setLearning] = useState(false);
+  const learningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['brain-config'],
@@ -55,6 +59,20 @@ export function BrainSettings() {
       setSourceInfo(data);
     }
   }, [data]);
+
+  // Pulse the header brain while live brain events arrive (shows it's functioning).
+  useEffect(() => {
+    const es = openBrainEventStream();
+    es.onmessage = () => {
+      setLearning(true);
+      if (learningTimerRef.current) clearTimeout(learningTimerRef.current);
+      learningTimerRef.current = setTimeout(() => setLearning(false), 2800);
+    };
+    return () => {
+      es.close();
+      if (learningTimerRef.current) clearTimeout(learningTimerRef.current);
+    };
+  }, []);
 
   const save = useMutation({
     mutationFn: (updates: Partial<BrainConfig>) => saveBrainConfig(updates),
@@ -129,8 +147,24 @@ export function BrainSettings() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
-            <Brain className="size-5 text-primary" />
+            <Brain
+              className={cn(
+                'size-5 text-primary brain-icon-idle',
+                learning && 'brain-icon-learning',
+              )}
+              aria-hidden
+            />
             Brain Orchestrator
+            {draft.enabled ? (
+              <span
+                className={cn(
+                  'text-[11px] font-normal text-primary/80',
+                  learning && 'animate-pulse',
+                )}
+              >
+                {learning ? 'Learning…' : 'Active'}
+              </span>
+            ) : null}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground max-w-lg">
             Tune the policy the model uses on every turn. For memories, skill genesis, env watcher, and boot

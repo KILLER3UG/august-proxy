@@ -301,7 +301,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [getScrollTarget]);
 
   // Track pin state from user scrolls only — do not rebind on every stream flush.
+  // Re-attach when the message pane mounts (empty → messages); scrollRef is null
+  // on the empty-state path so a sessionId-only dep never binds the listener.
+  const hasMessages = messages.length > 0;
   useEffect(() => {
+    if (!hasMessages) {
+      setScrolledFromBottom(false);
+      setScrolledFromTop(false);
+      return;
+    }
     const scrollable = getScrollTarget();
     if (!scrollable) return;
     const check = () => {
@@ -315,7 +323,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     check();
     scrollable.addEventListener('scroll', check, { passive: true });
     return () => scrollable.removeEventListener('scroll', check);
-  }, [sessionId, getScrollTarget]);
+  }, [sessionId, getScrollTarget, hasMessages]);
 
   const isTurnVisible = (turnSessionId: string | null) =>
     mountedRef.current && visibleSessionId === turnSessionId;

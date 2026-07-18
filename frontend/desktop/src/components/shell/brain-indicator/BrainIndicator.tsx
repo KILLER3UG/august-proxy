@@ -57,9 +57,18 @@ export const BrainIndicator = forwardRef<BrainIndicatorHandle, BrainIndicatorPro
     const [open, setOpen] = useState(false);
     const [tab, setTab] = useState<TabKey>('activity');
     const [unseen, setUnseen] = useState(initialUnseen);
+    /** Soft “learning” animation window after each brain SSE event. */
+    const [learning, setLearning] = useState(false);
+    const learningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [geom, setGeom] = useState<PopupState>(() => loadState());
     const geomRef = useRef<PopupState>(geom);
     geomRef.current = geom;
+
+    const markLearning = useCallback(() => {
+      setLearning(true);
+      if (learningTimerRef.current) clearTimeout(learningTimerRef.current);
+      learningTimerRef.current = setTimeout(() => setLearning(false), 2800);
+    }, []);
 
     // Pre-fetch recent events so the popup has content instantly
     useQuery({
@@ -75,12 +84,16 @@ export const BrainIndicator = forwardRef<BrainIndicatorHandle, BrainIndicatorPro
         try {
           const _event: BrainEvent = JSON.parse(ev.data);
           setUnseen((n) => n + 1);
+          markLearning();
         } catch {
           /* ignore malformed frames */
         }
       };
-      return () => es.close();
-    }, []);
+      return () => {
+        es.close();
+        if (learningTimerRef.current) clearTimeout(learningTimerRef.current);
+      };
+    }, [markLearning]);
 
     // Persist geometry when popup closes
     const persistGeom = useCallback(() => {
@@ -165,7 +178,13 @@ export const BrainIndicator = forwardRef<BrainIndicatorHandle, BrainIndicatorPro
           >
             <span className="text-sm font-medium">Brain</span>
             <span className="relative inline-flex p-1 text-muted-foreground">
-              <Brain className="size-4" />
+              <Brain
+                className={cn(
+                  'size-4 brain-icon-idle',
+                  (learning || unseen > 0) && 'brain-icon-learning',
+                )}
+                aria-hidden
+              />
               {pulse}
             </span>
           </div>
@@ -177,13 +196,19 @@ export const BrainIndicator = forwardRef<BrainIndicatorHandle, BrainIndicatorPro
             aria-expanded={open}
             data-testid="titlebar-brain-button"
             data-brain-toggle
-            title="Brain activity"
+            title={learning || unseen > 0 ? 'Brain is learning…' : 'Brain activity'}
             className={cn(
               'relative p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition',
               open && 'bg-accent text-foreground',
             )}
           >
-            <Brain className="size-4" />
+            <Brain
+              className={cn(
+                'size-4 brain-icon-idle',
+                (learning || unseen > 0) && 'brain-icon-learning',
+              )}
+              aria-hidden
+            />
             {pulse}
           </button>
         )}

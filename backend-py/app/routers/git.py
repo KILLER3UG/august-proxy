@@ -39,19 +39,37 @@ class CommitBody(CamelModel):
 
 
 def _resolve_workspace(session_id: str = '', repo_path: str = '') -> tuple[str | None, str | None]:
-    """Return (workspace_path, error). Prefers session workspace over repo_path."""
-    path = (repo_path or '').strip()
-    if session_id.strip():
+    """Return (workspace_path, error).
+
+    Chat UI often has a filesystem path before (or without) a workbench
+    session. Prefer any session-bound workspace, then fall back to repoPath
+    so the branch chip still resolves for folder-bound chats.
+    """
+    sid = (session_id or '').strip()
+    fallback = (repo_path or '').strip()
+    path = ''
+
+    if sid:
         from app.services.workbench.sessions import get_workbench_session
 
-        session = get_workbench_session(session_id.strip())
-        if not session:
-            return None, 'Session not found'
-        path = str(getattr(session, 'workspacePath', '') or '').strip()
+        wb = get_workbench_session(sid)
+        if wb:
+            path = str(getattr(wb, 'workspacePath', '') or '').strip()
         if not path:
-            return None, 'No workspace folder for this session'
+            try:
+                from app.services.memory_store import get_session
+
+                rec = get_session(sid)
+                if rec:
+                    path = str(rec.get('workspacePath') or '').strip()
+            except Exception:
+                path = path or ''
+
     if not path:
-        return None, 'No repository path'
+        path = fallback
+    if not path:
+        return None, 'No repository path' if not sid else 'No workspace folder for this session'
+
     cwd = Path(path).expanduser()
     if not cwd.is_dir():
         return None, f'Not a directory: {path}'

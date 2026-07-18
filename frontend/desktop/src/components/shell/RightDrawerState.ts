@@ -3,7 +3,14 @@
 import { create } from 'zustand';
 import type { GitDiffResult } from '@/api/git';
 
-export type RightDrawerSectionId = 'preview' | 'diff' | 'terminal' | 'tasks' | 'plan' | 'browser';
+export type RightDrawerSectionId =
+  | 'activity'
+  | 'preview'
+  | 'diff'
+  | 'terminal'
+  | 'tasks'
+  | 'plan'
+  | 'browser';
 
 export interface RightDrawerState {
   open: boolean;
@@ -14,7 +21,15 @@ export interface RightDrawerState {
 }
 
 const MAX_SECTIONS = 4;
-const SECTION_ORDER: RightDrawerSectionId[] = ['preview', 'diff', 'terminal', 'tasks', 'plan', 'browser'];
+const SECTION_ORDER: RightDrawerSectionId[] = [
+  'activity',
+  'preview',
+  'diff',
+  'terminal',
+  'tasks',
+  'plan',
+  'browser',
+];
 
 const initialState: RightDrawerState = {
   open: false,

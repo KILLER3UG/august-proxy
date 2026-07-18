@@ -16,8 +16,19 @@ export function appendBlockEvent(
 
   if (event.type === 'thinking') {
     const text = event.content || '';
-    if (lastBlock && lastBlock.type === 'thinking') {
-      lastBlock.content = (lastBlock.content || '') + text;
+    // Model wrote "answer" then kept thinking — that prose was provisional.
+    // Demote it into thinking so it cannot stack into the true final reply.
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i].type === 'finalOutput') {
+        blocks[i] = {
+          ...blocks[i],
+          type: 'thinking',
+        };
+      }
+    }
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === 'thinking') {
+      last.content = (last.content || '') + text;
     } else {
       blocks.push({
         id: `b_think_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -27,8 +38,9 @@ export function appendBlockEvent(
     }
   } else if (event.type === 'text' || event.type === 'content' || event.type === 'finalOutput') {
     const text = event.content || '';
-    if (lastBlock && lastBlock.type === 'finalOutput') {
-      lastBlock.content = (lastBlock.content || '') + text;
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === 'finalOutput') {
+      last.content = (last.content || '') + text;
     } else {
       blocks.push({
         id: `b_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,

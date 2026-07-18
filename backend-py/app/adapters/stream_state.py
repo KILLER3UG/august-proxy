@@ -268,7 +268,7 @@ def _make_conversion_data() -> AnthropicStreamData:
     """Factory for the default data in OpenaiToAnthropicStreamState."""
     return AnthropicStreamData(
         message_id=f'msg_{uuid.uuid4().hex[:16]}',
-        current_index=0,
+        current_index=-1,
     )
 
 
@@ -291,11 +291,15 @@ class OpenaiToAnthropicStreamState:
     _started: bool = False
     _text_block_started: bool = False
     _reasoning_block_started: bool = False
+    _text_block_index: int | None = None
+    _reasoning_block_index: int | None = None
 
     def convert_chunk(self, chunk: dict[str, Any]) -> list[str]:
         """Convert one OpenAI chunk to Anthropic SSE event strings.
 
-        This is a faithful port of ``streamOpenaiDeltaAsAnthropic``.
+        Text and thinking each keep their own block index. Switching modality
+        closes the open block first so later thinking cannot land on the text
+        index (which would blend into the final answer).
         """
         events: list[str] = []
         choices = chunk.get('choices', [])
@@ -340,16 +344,18 @@ class OpenaiToAnthropicStreamState:
         # Text content → Anthropic text_delta
         content = delta.get('content', '')
         if content and isinstance(content, str):
+            if self._reasoning_block_started:
+                self._close_reasoning_block(events)
             if not self._text_block_started:
                 self._text_block_started = True
                 self.data.current_index += 1
-                idx = self.data.current_index
+                self._text_block_index = self.data.current_index
                 events.append(
                     write_sse_event(
                         'content_block_start',
                         {
                             'type': 'content_block_start',
-                            'index': idx,
+                            'index': self._text_block_index,
                             'content_block': {'type': 'text', 'text': ''},
                         },
                     )
@@ -359,7 +365,7 @@ class OpenaiToAnthropicStreamState:
                     'content_block_delta',
                     {
                         'type': 'content_block_delta',
-                        'index': self.data.current_index,
+                        'index': self._text_block_index,
                         'delta': {'type': 'text_delta', 'text': content},
                     },
                 )
@@ -369,16 +375,18 @@ class OpenaiToAnthropicStreamState:
         # Reasoning content → Anthropic thinking_delta
         reasoning = delta.get('reasoning') or delta.get('reasoning_content', '')
         if reasoning and isinstance(reasoning, str):
+            if self._text_block_started:
+                self._close_text_block(events)
             if not self._reasoning_block_started:
                 self._reasoning_block_started = True
                 self.data.current_index += 1
-                idx = self.data.current_index
+                self._reasoning_block_index = self.data.current_index
                 events.append(
                     write_sse_event(
                         'content_block_start',
                         {
                             'type': 'content_block_start',
-                            'index': idx,
+                            'index': self._reasoning_block_index,
                             'content_block': {'type': 'thinking', 'text': ''},
                         },
                     )
@@ -388,7 +396,7 @@ class OpenaiToAnthropicStreamState:
                     'content_block_delta',
                     {
                         'type': 'content_block_delta',
-                        'index': self.data.current_index,
+                        'index': self._reasoning_block_index,
                         'delta': {'type': 'thinking_delta', 'thinking': reasoning},
                     },
                 )
@@ -442,29 +450,34 @@ class OpenaiToAnthropicStreamState:
 
     # ── Internal helpers ─────────────────────────────────────────────────
 
+    def _close_text_block(self, events: list[str]) -> None:
+        if not self._text_block_started or self._text_block_index is None:
+            return
+        events.append(
+            write_sse_event(
+                'content_block_stop',
+                {'type': 'content_block_stop', 'index': self._text_block_index},
+            )
+        )
+        self._text_block_started = False
+        self._text_block_index = None
+
+    def _close_reasoning_block(self, events: list[str]) -> None:
+        if not self._reasoning_block_started or self._reasoning_block_index is None:
+            return
+        events.append(
+            write_sse_event(
+                'content_block_stop',
+                {'type': 'content_block_stop', 'index': self._reasoning_block_index},
+            )
+        )
+        self._reasoning_block_started = False
+        self._reasoning_block_index = None
+
     def _emit_content_block_stops(self, events: list[str]) -> None:
-        """Close any open text/thinking content blocks."""
-        idx = self.data.current_index
-        if self._text_block_started:
-            events.append(
-                write_sse_event(
-                    'content_block_stop',
-                    {
-                        'type': 'content_block_stop',
-                        'index': idx,
-                    },
-                )
-            )
-        if self._reasoning_block_started:
-            events.append(
-                write_sse_event(
-                    'content_block_stop',
-                    {
-                        'type': 'content_block_stop',
-                        'index': idx,
-                    },
-                )
-            )
+        """Close any open text/thinking content blocks at their own indices."""
+        self._close_text_block(events)
+        self._close_reasoning_block(events)
 
     def _emit_tool_use_blocks(self, events: list[str]) -> None:
         """Emit tool_use content blocks for all pending tool calls."""

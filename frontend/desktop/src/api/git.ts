@@ -64,8 +64,16 @@ export const gitApi = {
     api.get<GitBranchInfo>(`/api/git/branch${gitQuery(sessionId, repoPath)}`),
   branches: (sessionId?: string, repoPath?: string) =>
     api.get<GitBranchList>(`/api/git/branches${gitQuery(sessionId, repoPath)}`),
-  commit:   (sessionId: string, message: string) =>
-    api.post<GitCommitResult>('/api/git/commit', { sessionId, message }),
-  checkout: (sessionId: string, branch: string) =>
-    api.post<GitCommitResult>('/api/git/checkout', { sessionId, branch }),
+  commit:   (sessionId: string, message: string, repoPath?: string) =>
+    api.post<GitCommitResult>('/api/git/commit', {
+      sessionId,
+      message,
+      ...(repoPath ? { repoPath } : {}),
+    }),
+  checkout: (sessionId: string | undefined, branch: string, repoPath?: string) =>
+    api.post<GitCommitResult>('/api/git/checkout', {
+      sessionId: sessionId || '',
+      branch,
+      ...(repoPath ? { repoPath } : {}),
+    }),
 };

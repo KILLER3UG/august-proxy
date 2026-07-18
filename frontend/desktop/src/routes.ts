@@ -61,7 +61,8 @@ function ChatThreadWithParams() {
 }
 
 export const SECTION_ROUTES: readonly SectionRoute[] = [
-  { path: '/', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThread, { sessionId: 'demo' }), nav: true },
+  // ChatLayout redirects `/` to a real session; null avoids a fake "demo" id.
+  { path: '/', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThread, { sessionId: null }), nav: true },
   { path: '/c/:sessionId', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThreadWithParams) },
   {
     path: '/brain',

@@ -30,25 +30,33 @@ export function WorkspaceBranchChip({
     s.workspaces.find((w) => w.id === s.currentWorkspaceId) ?? null,
   );
   const resolvedPath = (repoPath || currentWorkspace?.path || '').trim() || undefined;
+  const sid = (sessionId || '').trim() || undefined;
 
-  const enabled = Boolean(sessionId || resolvedPath);
+  const enabled = Boolean(sid || resolvedPath);
 
   const branch = useQuery({
-    queryKey: ['git', 'branch', sessionId ?? null, resolvedPath ?? null],
-    queryFn: () => gitApi.branch(sessionId || undefined, resolvedPath),
+    queryKey: ['git', 'branch', sid ?? null, resolvedPath ?? null],
+    queryFn: () => gitApi.branch(sid, resolvedPath),
     enabled,
     refetchInterval: 30_000,
     retry: false,
   });
   const branches = useQuery({
-    queryKey: ['git', 'branches', sessionId ?? null, resolvedPath ?? null],
-    queryFn: () => gitApi.branches(sessionId || undefined, resolvedPath),
+    queryKey: ['git', 'branches', sid ?? null, resolvedPath ?? null],
+    queryFn: () => gitApi.branches(sid, resolvedPath),
     enabled: enabled && open,
     retry: false,
   });
 
   const current = branch.data?.current;
   const list = branches.data?.branches ?? [];
+  const notGitRepo = Boolean(
+    !branch.isLoading &&
+      branch.data &&
+      branch.data.error &&
+      !branch.data.current &&
+      /not a git repository/i.test(branch.data.error),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -68,17 +76,27 @@ export function WorkspaceBranchChip({
   }, [open]);
 
   if (!enabled) return null;
-  // Hide when folder is not a git repo / has no workspace.
-  if (!branch.isLoading && (branch.data?.error || !branch.data)) return null;
+  // Hide only when we confirmed the folder is not a git work tree.
+  // Transient "session not found" / path resolution misses must not blank the chip
+  // when a concrete repoPath is available (backend falls back to it).
+  if (notGitRepo) return null;
+  if (!branch.isLoading && branch.isError && !resolvedPath) return null;
+  if (!branch.isLoading && !branch.data?.current && !branch.isFetching && branch.data?.error && !resolvedPath) {
+    return null;
+  }
 
   const handleCheckout = async (name: string) => {
-    if (!sessionId || name === current) {
+    if (name === current) {
+      setOpen(false);
+      return;
+    }
+    if (!sid && !resolvedPath) {
       setOpen(false);
       return;
     }
     setSwitching(name);
     try {
-      await gitApi.checkout(sessionId, name);
+      await gitApi.checkout(sid, name, resolvedPath);
       await qc.invalidateQueries({ queryKey: ['git'] });
       toast.success(`Switched to ${name}`);
       setOpen(false);
@@ -89,7 +107,7 @@ export function WorkspaceBranchChip({
     }
   };
 
-  const canSwitch = Boolean(sessionId);
+  const canSwitch = Boolean(sid || resolvedPath);
 
   return (
     <div ref={rootRef} className={cn('relative', className)}>
@@ -99,7 +117,7 @@ export function WorkspaceBranchChip({
           if (!canSwitch && !current) return;
           setOpen((v) => !v);
         }}
-        disabled={branch.isLoading}
+        disabled={branch.isLoading && !current}
         className={cn(
           'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition',
           'hover:bg-muted text-muted-foreground hover:text-foreground',
@@ -111,7 +129,7 @@ export function WorkspaceBranchChip({
         aria-haspopup="listbox"
       >
         <GitBranch className="size-3.5 shrink-0" />
-        {branch.isLoading ? (
+        {branch.isLoading && !current ? (
           <Loader2 className="size-3 animate-spin shrink-0" />
         ) : (
           <span className="truncate max-w-[140px] font-mono">{current || '—'}</span>
