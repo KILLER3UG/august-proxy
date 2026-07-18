@@ -150,7 +150,9 @@ export function BrainSettings() {
             <Brain
               className={cn(
                 'size-5 text-primary brain-icon-idle',
-                learning && 'brain-icon-learning',
+                learning
+                  ? 'brain-icon-learning'
+                  : draft.enabled && 'brain-icon-functioning',
               )}
               aria-hidden
             />
@@ -159,7 +161,7 @@ export function BrainSettings() {
               <span
                 className={cn(
                   'text-[11px] font-normal text-primary/80',
-                  learning && 'animate-pulse',
+                  (learning || draft.enabled) && 'animate-pulse',
                 )}
               >
                 {learning ? 'Learning…' : 'Active'}

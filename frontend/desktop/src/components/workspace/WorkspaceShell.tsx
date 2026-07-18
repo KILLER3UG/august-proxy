@@ -22,6 +22,7 @@ import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
 import { useSettingsAdvancedPreference } from '@/hooks/useSettingsAdvancedPreference';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
+import { useBrainLearningPulse } from '@/hooks/useBrainLearningPulse';
 import { cn } from '@/lib/utils';
 import {
   SETTINGS_SECTIONS,
@@ -63,6 +64,7 @@ export function WorkspaceShell({
   const [query, setQuery] = useState('');
   const { showAdvanced, toggle: toggleAdvanced } = useSettingsAdvancedPreference();
   const { available: updateAvailable } = useAppUpdate();
+  const brainPulse = useBrainLearningPulse();
 
   // Resolve each section's category label, icon, tier, description, and
   // keywords. Falls back to the raw `category` string if a section isn't
@@ -164,6 +166,15 @@ export function WorkspaceShell({
                       icon={s.icon}
                       label={s.label}
                       active={active === s.id}
+                      iconClassName={
+                        s.id === 'brain-orchestrator'
+                          ? brainPulse.learning
+                            ? 'brain-icon-learning'
+                            : brainPulse.enabled
+                              ? 'brain-icon-functioning'
+                              : undefined
+                          : undefined
+                      }
                       badge={
                         s.id === 'app-updates' && updateAvailable
                           ? 'New'

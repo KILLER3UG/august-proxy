@@ -13,6 +13,8 @@ interface Props {
   onSelect: () => void;
   /** Optional notice badge (e.g. update available). */
   badge?: string | null;
+  /** Extra classes for the icon (e.g. brain learning pulse). */
+  iconClassName?: string;
 }
 
 const rowMotion = {
@@ -27,7 +29,14 @@ const iconMotion = {
   tap: { scale: 0.92, transition: t.fast },
 };
 
-export function WorkspaceNavLink({ icon: Icon, label, active, onSelect, badge }: Props) {
+export function WorkspaceNavLink({
+  icon: Icon,
+  label,
+  active,
+  onSelect,
+  badge,
+  iconClassName,
+}: Props) {
   return (
     <motion.button
       type="button"
@@ -50,7 +59,7 @@ export function WorkspaceNavLink({ icon: Icon, label, active, onSelect, badge }:
         )}
         variants={iconMotion}
       >
-        <Icon className="size-4" />
+        <Icon className={cn('size-4', iconClassName)} />
       </motion.span>
       <span className="truncate flex-1">{label}</span>
       {badge ? (

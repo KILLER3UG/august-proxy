@@ -128,30 +128,33 @@ export function ChatThreadMessagePane({
           }
         />
         </div>
-        <div className="chat-scroll-chrome sticky bottom-4 z-30 flex flex-col gap-2 items-end pointer-events-none">
-          <ScrollToTopButton
-            scrollParentRef={scrollRef}
-            visible={scrolledFromTop}
-          />
-          <AnimatePresence>
-            {scrolledFromBottom && (
-              <motion.button
-                type="button"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.2 }}
-                onClick={onScrollToBottom}
-                className="pointer-events-auto mr-3 w-9 h-9 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-background/95 transition-colors cursor-pointer"
-                aria-label="Scroll to bottom"
-              >
-                <ChevronDown className="size-4" />
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </div>
         {/* Last in flow so the browser anchors here as the transcript grows. */}
         <div className="chat-scroll-anchor" aria-hidden />
+      </div>
+
+      {/* Viewport-fixed chrome — sticky inside the scroller sat at content end,
+          so the jump-to-bottom control unmounted exactly when it became visible. */}
+      <div className="chat-scroll-chrome pointer-events-none absolute bottom-4 right-3 z-30 flex flex-col gap-2 items-end">
+        <ScrollToTopButton
+          scrollParentRef={scrollRef}
+          visible={scrolledFromTop}
+        />
+        <AnimatePresence>
+          {scrolledFromBottom && (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.2 }}
+              onClick={onScrollToBottom}
+              className="pointer-events-auto w-9 h-9 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-background/95 transition-colors cursor-pointer"
+              aria-label="Scroll to bottom"
+            >
+              <ChevronDown className="size-4" />
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* AUG — anchored above the composer; no exit fade (avoids black blink on settle). */}

@@ -12,6 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Mock react-router-dom so WorkspaceShell can call useNavigate without a
 // real router. We don't need to assert on navigation here — only on what
@@ -20,8 +21,21 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
 }));
 
+vi.mock('@/hooks/useAppUpdate', () => ({
+  useAppUpdate: () => ({ available: false, installing: false, progress: null }),
+}));
+
+vi.mock('@/hooks/useBrainLearningPulse', () => ({
+  useBrainLearningPulse: () => ({ enabled: false, learning: false }),
+}));
+
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
 import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
+
+function renderShell(ui: React.ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 const ADV_KEY = 'august-settings-advanced';
 
@@ -59,7 +73,7 @@ describe('WorkspaceShell — tier filter', () => {
 
   it('with showAdvanced=false (default), only basic items render in the rail', () => {
     // localStorage empty → hook defaults to false.
-    render(
+    renderShell(
       <WorkspaceShell sections={pickSections()} active="system-health">
         <div>main</div>
       </WorkspaceShell>,
@@ -77,7 +91,7 @@ describe('WorkspaceShell — tier filter', () => {
 
   it('with showAdvanced=true, every section renders in the rail', () => {
     localStorage.setItem(ADV_KEY, 'true');
-    render(
+    renderShell(
       <WorkspaceShell sections={pickSections()} active="system-health">
         <div>main</div>
       </WorkspaceShell>,
@@ -94,7 +108,7 @@ describe('WorkspaceShell — tier filter', () => {
     // is advanced. Deep links like /settings/brain must still resolve so
     // the user lands somewhere sensible.
     localStorage.clear();
-    render(
+    renderShell(
       <WorkspaceShell sections={pickSections()} active="brain-orchestrator">
         <div>main</div>
       </WorkspaceShell>,
@@ -109,7 +123,7 @@ describe('WorkspaceShell — tier filter', () => {
 
   it('search input matches advanced items by keyword even when advanced is hidden', () => {
     localStorage.clear();
-    render(
+    renderShell(
       <WorkspaceShell sections={pickSections()} active="system-health">
         <div>main</div>
       </WorkspaceShell>,
@@ -128,7 +142,7 @@ describe('WorkspaceShell — tier filter', () => {
 
   it('search by label also matches advanced items when advanced is hidden', () => {
     localStorage.clear();
-    render(
+    renderShell(
       <WorkspaceShell sections={pickSections()} active="system-health">
         <div>main</div>
       </WorkspaceShell>,
@@ -145,7 +159,7 @@ describe('WorkspaceShell — tier filter', () => {
 
   it('the "Show advanced" toggle flips the toggle button label', () => {
     localStorage.clear();
-    render(
+    renderShell(
       <WorkspaceShell sections={pickSections()} active="system-health">
         <div>main</div>
       </WorkspaceShell>,

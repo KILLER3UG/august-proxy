@@ -222,6 +222,26 @@ describe('getOrCreateEmptySession — no blank stacking', () => {
 });
 
 describe('createEmptySessionInFolder — Codex-style multi-chat per project', () => {
+  it('keeps sessions visible in every folder (sidebar must not filter by current workspace)', () => {
+    // Regression: filtering SessionList by currentWorkspacePath made other
+    // Repositories folders look empty until you switched back.
+    const folderA = createFolder('proj-a', 'C:/Dev/proj-a');
+    const folderB = createFolder('proj-b', 'C:/Dev/proj-b');
+    const sessA = createEmptySessionInFolder(folderA.id, 'A chat');
+    $sessions.set([{ ...sessA, messageCount: 2 }]);
+    saveSessionsToStorage($sessions.get());
+    const sessB = createEmptySessionInFolder(folderB.id, 'B chat');
+
+    const visible = $sessions.get().filter((s) => !s.isArchived);
+    const inA = visible.filter((s) => s.folderId === folderA.id);
+    const inB = visible.filter((s) => s.folderId === folderB.id);
+    expect(inA.map((s) => s.id)).toContain(sessA.id);
+    expect(inB.map((s) => s.id)).toContain(sessB.id);
+    // Switching "current workspace" must not drop the other folder's rows.
+    expect(inA).toHaveLength(1);
+    expect(inB).toHaveLength(1);
+  });
+
   it('creates a new chat under the folder with the folder workspace path', () => {
     const folder = createFolder('august-proxy', 'C:/Dev/august-proxy');
     const first = createEmptySessionInFolder(folder.id, 'Chat 1');
