@@ -16,7 +16,7 @@
 mod backend;
 mod tray;
 
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -70,6 +70,13 @@ pub fn run() {
             backend::sync_backend_deps,
             backend::stop_backend_for_update,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Any exit path (tray Quit, updater, taskkill) must release
+            // resources\python\*.pyd locks — not only the tray Quit handler.
+            if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+                backend::stopBackendForUpdate(app_handle);
+            }
+        });
 }

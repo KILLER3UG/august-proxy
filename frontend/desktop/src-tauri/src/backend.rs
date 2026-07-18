@@ -528,14 +528,26 @@ fn killAugustPythonOrphans(app: &AppHandle) {
     let script = r#"
 $ErrorActionPreference = 'SilentlyContinue'
 function Stop-AugustBackends {
+  Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force
   Get-CimInstance Win32_Process | Where-Object {
     $_.Name -match '^(python|pythonw|node)(\.exe)?$' -and (
-      ($_.ExecutablePath -and ($_.ExecutablePath -match 'August|com\.august\.proxy|backend-runtime')) -or
-      ($_.CommandLine -and ($_.CommandLine -match 'August|com\.august\.proxy|uvicorn.*app\.main|AUGUST_PROXY'))
+      ($_.ExecutablePath -and (
+        $_.ExecutablePath -match '[\\/]August([\\/]|$)' -or
+        $_.ExecutablePath -match 'com\.august\.proxy' -or
+        $_.ExecutablePath -match 'backend-runtime'
+      )) -or
+      ($_.CommandLine -and (
+        $_.CommandLine -match '[\\/]August([\\/]|$)' -or
+        $_.CommandLine -match 'com\.august\.proxy' -or
+        $_.CommandLine -match 'uvicorn.*app\.main' -or
+        $_.CommandLine -match 'AUGUST_PROXY'
+      ))
     )
   } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-  Get-NetTCPConnection -LocalPort 8085 -State Listen -ErrorAction SilentlyContinue |
-    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+  foreach ($port in 8085, 8787) {
+    Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+      ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+  }
 }
 Stop-AugustBackends
 Start-Sleep -Milliseconds 500
