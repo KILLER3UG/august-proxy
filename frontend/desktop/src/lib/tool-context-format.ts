@@ -11,6 +11,7 @@
  */
 
 import { formatBytes, formatDuration } from './utils';
+import { normalizeToolName } from './tool-classify';
 
 export interface FormattedContext {
   /** Human-readable summary, e.g. `Searched: "plan verification"`. */
@@ -34,12 +35,9 @@ export interface FormattedError {
   raw: string;
 }
 
-/**
- * Strip the workbench / august / @ prefixes so the canonical tool name can
- * be matched against the format tables. Mirrors the logic in `tool-labels.ts`.
- */
+/** Strip branding prefixes so format tables match on canonical tool names. */
 export function canonicalToolName(name: string): string {
-  return (name || '').replace(/^[^:]+:/, '').replace(/^@/, '').replace(/^(august__?|workbench_)/, '');
+  return normalizeToolName(name);
 }
 
 const FILE_OPS = new Set([
@@ -81,6 +79,7 @@ const MEMORY_OPS = new Set(['remember', 'forget', 'recall', 'memory_write']);
 
 const SUBAGENT_OPS = new Set([
   'spawn_subagent',
+  'spawn_subagents',
   'invoke_subagent',
   'delegate_task',
   'run_team',

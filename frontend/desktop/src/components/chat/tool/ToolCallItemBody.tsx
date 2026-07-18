@@ -8,6 +8,7 @@ import { formatToolContext } from '@/lib/tool-context-format';
 import { ProviderSetupWidget } from '@/components/chat/ProviderSetupWidget';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
+import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { extractDiffData, extractFilename, extractAgentId } from './extractors';
 import type { ToolEntry } from './types';
 import {
@@ -16,24 +17,6 @@ import {
   FormattedResultSection,
   FormattedErrorSection,
 } from './sections';
-
-const SUBAGENT_TOOL_NAMES = new Set([
-  'august__spawn_subagent',
-  'august_spawn_subagent',
-  'workbench_spawn_subagent',
-  // Registered bare (no `august__`/`workbench_` prefix) in
-  // `agent_tools.py` / `spawn_subagents_tool.py`.
-  'spawn_subagent',
-  'spawn_subagents',
-  'invoke_subagent',
-  'august__run_team',
-  'workbench_run_team',
-]);
-
-function isSubagentToolName(name?: string): boolean {
-  if (!name) return false;
-  return SUBAGENT_TOOL_NAMES.has(name.replace(/^@/, ''));
-}
 
 /** Pull the full prompt/task text out of a spawn_subagent tool's JSON args. */
 function extractSubagentPrompt(context?: string): string | null {

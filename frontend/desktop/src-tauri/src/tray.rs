@@ -3,7 +3,7 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager,
+    AppHandle, Emitter, Manager,
 };
 
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
@@ -28,8 +28,13 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                 }
             }
             "quit" => {
-                crate::backend::stopBackendForUpdate(app);
-                app.exit(0);
+                // Show the window so the webview confirm modal is visible,
+                // then ask the UI to confirm before exiting.
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+                let _ = app.emit("quit-requested", ());
             }
             _ => {}
         })

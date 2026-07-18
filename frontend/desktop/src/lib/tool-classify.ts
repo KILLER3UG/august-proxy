@@ -19,6 +19,21 @@ export function normalizeToolName(name: string): string {
     .toLowerCase();
 }
 
+/** Canonical subagent / team spawn names (after normalizeToolName). */
+const SUBAGENT_CANONICAL = new Set([
+  'spawn_subagent',
+  'spawn_subagents',
+  'invoke_subagent',
+  'delegate_task',
+  'run_team',
+]);
+
+/** True for any prefixed/bare spawn or team tool name. */
+export function isSubagentToolName(name?: string): boolean {
+  if (!name) return false;
+  return SUBAGENT_CANONICAL.has(normalizeToolName(name));
+}
+
 const VIEW_NAMES = new Set([
   'read_file',
   'read',

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Columns, Inbox } from 'lucide-react';
+import { X, Columns } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   closeRightDrawerSection,
@@ -168,8 +168,6 @@ export function RightDrawer({
             </div>
 
             <div className="min-h-0 flex-1 overflow-hidden p-2">
-              {sections.length === 0 && <NoSectionSelected />}
-
               {sections.length === 1 && (
                 <DrawerSectionCard
                   sectionId={sections[0]}
@@ -280,16 +278,3 @@ function DrawerSectionCard({
   );
 }
 
-function NoSectionSelected() {
-  return (
-    <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border/60 bg-card/40">
-      <div className="flex flex-col items-center text-center px-6">
-        <Inbox className="size-6 text-muted-foreground/40" />
-        <div className="mt-2 text-sm font-semibold text-foreground/80">No section selected</div>
-        <div className="mt-1 text-xs text-muted-foreground/70">
-          Pick a section from the Workbench menu to get started.
-        </div>
-      </div>
-    </div>
-  );
-}

@@ -33,10 +33,10 @@ describe('plural', () => {
 
 describe('buildToolSummaryEntry + classifyTool wiring', () => {
   it('builds view/edit/run/tool buckets correctly for common names', () => {
-    expect(classifyTool('august__read_file')).toBe('view');
+    expect(classifyTool('read_file')).toBe('view');
     expect(classifyTool('write_file')).toBe('edit');
     expect(classifyTool('@run_command')).toBe('run');
-    expect(classifyTool('august__spawn_subagent')).toBe('tool');
+    expect(classifyTool('spawn_subagent')).toBe('tool');
   });
 
   it('extracts path detail and past-tense label when done', () => {

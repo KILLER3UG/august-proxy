@@ -16,7 +16,14 @@
 mod backend;
 mod tray;
 
-use tauri::{Manager, RunEvent};
+use tauri::{AppHandle, Manager, RunEvent};
+
+/// Confirmed quit from the webview modal (tray Quit → quit-requested → UI).
+#[tauri::command]
+fn confirm_quit(app: AppHandle) {
+    backend::stopBackendForUpdate(&app);
+    app.exit(0);
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -69,6 +76,7 @@ pub fn run() {
             backend::backend_setup_status,
             backend::sync_backend_deps,
             backend::stop_backend_for_update,
+            confirm_quit,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -9,7 +9,8 @@ import { ToolSummary, buildToolSummaryEntry } from '@/components/chat/ToolSummar
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { classifyTool } from '@/lib/tool-classify';
-import { SubagentBlock } from '@/components/chat/SubagentBlock';
+import { SubagentLaunchList } from '@/components/chat/SubagentLaunchList';
+import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { Markdown } from '../ChatMarkdown';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { SubagentBlockState } from '../chat-stream-manager';
@@ -21,8 +22,9 @@ import {
   type LiveActivityItem,
   type LiveActivityKind,
 } from '@/store/liveActivity';
-import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
+import { addRightDrawerSection, closeRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { getToolLabel } from '@/lib/tool-labels';
+import { modelDisplayParts } from '../model-display';
 
 type DisplayBlock = MessageBlock;
 
@@ -91,6 +93,7 @@ export function AssistantBlockTimeline({
   toolProgress,
   subagentPrompts,
   subagentBlocks,
+  modelId,
 }: {
   displayBlocks: DisplayBlock[];
   message: ChatMessage;
@@ -100,9 +103,12 @@ export function AssistantBlockTimeline({
   toolProgress?: ToolProgressMap;
   subagentPrompts?: Map<string, SubagentPromptEntry>;
   subagentBlocks?: Map<string, SubagentBlockState>;
+  /** Parent session model id — shown as muted tag on subagent launch rows. */
+  modelId?: string | null;
 }) {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const liveSessionKey = routeSessionId || message.id;
+  const modelLabel = modelId ? modelDisplayParts(modelId).name : undefined;
 
   // Pre-process blocks:
   //  - consecutive toolCall/command → tool_group (one ToolSummary)
@@ -252,7 +258,11 @@ export function AssistantBlockTimeline({
 
   useEffect(() => {
     if (!livePacked) {
-      if (isLast && !streaming) clearLiveActivity(liveSessionKey);
+      if (isLast && !streaming) {
+        clearLiveActivity(liveSessionKey);
+        // Drop empty Activity so the Workbench doesn't stay open with no data.
+        closeRightDrawerSection('activity');
+      }
       return;
     }
     publishLiveActivity({
@@ -319,11 +329,7 @@ export function AssistantBlockTimeline({
 
     const summaryEntries = unit.entries
       .map(({ block, index }) => {
-        const isSubagentCall =
-          block.tool.name === 'august__spawn_subagent' ||
-          block.tool.name === 'workbench_spawn_subagent' ||
-          block.tool.name === 'august__run_team' ||
-          block.tool.name === 'workbench_run_team';
+        const isSubagentCall = isSubagentToolName(block.tool.name);
         const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
           ? Array.from(subagentPrompts.entries())
               .filter(([k]) => k === block.tool.id)
@@ -423,16 +429,12 @@ export function AssistantBlockTimeline({
                   </div>
                 )}
                 {subagentContainers.length > 0 && (
-                  <div className="ml-1 mt-1 flex flex-col gap-1">
-                    {subagentContainers.map((s) => (
-                      <SubagentBlock
-                        key={s.jobId}
-                        state={s}
-                        subBlocks={subagentBlocks}
-                        subPrompts={subagentPrompts}
-                      />
-                    ))}
-                  </div>
+                  <SubagentLaunchList
+                    agents={subagentContainers}
+                    subBlocks={subagentBlocks}
+                    subPrompts={subagentPrompts}
+                    modelLabel={modelLabel}
+                  />
                 )}
               </>
             );

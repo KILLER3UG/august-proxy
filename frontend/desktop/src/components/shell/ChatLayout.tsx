@@ -14,9 +14,9 @@ import { ChatTitlebar } from "./ChatTitlebar";
 import { TeamAgentsStrip } from "./TeamAgentsStrip";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
-import { addRightDrawerSection, closeRightDrawer, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
+import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
 import { approveWorkbenchPlan, getWorkbenchSession, rejectWorkbenchPlan, setWorkbenchGuardMode, streamWorkbenchRevision } from "@/api/workbench";
-import { normalizeWorkbenchSession } from "@/lib/workbench-plan";
+import { isNonEmptyPlan, normalizeWorkbenchSession } from "@/lib/workbench-plan";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
 import type { RightDrawerSectionId } from "./RightDrawerState";
@@ -32,9 +32,9 @@ export function ChatLayout() {
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem(SESSIONS_COLLAPSED_KEY) === "1",
   );
-  const [showRightSidebar, setShowRightSidebar] = useState<boolean>(
-    () => localStorage.getItem(WORKBENCH_SIDEBAR_OPEN_KEY) === "1",
-  );
+  // Never restore an empty open drawer from localStorage — sections are not
+  // persisted, so a stale "open" flag left the Workbench shell blank.
+  const [showRightSidebar, setShowRightSidebar] = useState(false);
   const sessions = useSessionsStore((s) => s.sessions);
   const rightDrawer = useRightDrawer();
   const queryClient = useQueryClient();
@@ -49,17 +49,19 @@ export function ChatLayout() {
     : null;
 
   useEffect(() => {
-    localStorage.setItem(
-      WORKBENCH_SIDEBAR_OPEN_KEY,
-      showRightSidebar ? "1" : "0",
-    );
-  }, [showRightSidebar]);
+    const shouldPersist =
+      showRightSidebar && rightDrawer.open && rightDrawer.sections.length > 0;
+    localStorage.setItem(WORKBENCH_SIDEBAR_OPEN_KEY, shouldPersist ? "1" : "0");
+  }, [showRightSidebar, rightDrawer.open, rightDrawer.sections.length]);
 
+  // Keep layout flag in sync with drawer store (both open and close).
   useEffect(() => {
-    if (rightDrawer.open && !showRightSidebar) {
-      setShowRightSidebar(true);
+    if (rightDrawer.open && rightDrawer.sections.length > 0) {
+      if (!showRightSidebar) setShowRightSidebar(true);
+    } else if (showRightSidebar) {
+      setShowRightSidebar(false);
     }
-  }, [rightDrawer.open, showRightSidebar]);
+  }, [rightDrawer.open, rightDrawer.sections.length, showRightSidebar]);
 
   const openWorkbenchSidebar = (section: RightDrawerSectionId) => {
     addRightDrawerSection(section);
@@ -183,18 +185,35 @@ export function ChatLayout() {
   const workbenchSession: WorkbenchSession | null =
     normalizeWorkbenchSession(workbench.data) || null;
 
-  // Auto-open the Tasks section when todos first appear.
+  // Auto-open Tasks when todos appear; close the section when they clear.
   const hasTodosRef = useRef(false);
   useEffect(() => {
     const hasTodos = (workbenchSession?.todos?.length ?? 0) > 0;
     if (hasTodos && !hasTodosRef.current) {
       hasTodosRef.current = true;
       addRightDrawerSection('tasks');
-      setShowRightSidebar(true);
     } else if (!hasTodos) {
+      if (hasTodosRef.current) {
+        closeRightDrawerSection('tasks');
+      }
       hasTodosRef.current = false;
     }
   }, [workbenchSession?.todos?.length]);
+
+  // Auto-open Plan when a plan is presented (Cursor-style); close when gone.
+  const hasPlanRef = useRef(false);
+  useEffect(() => {
+    const hasPlan = isNonEmptyPlan(workbenchSession?.plan);
+    if (hasPlan && !hasPlanRef.current) {
+      hasPlanRef.current = true;
+      addRightDrawerSection('plan');
+    } else if (!hasPlan) {
+      if (hasPlanRef.current) {
+        closeRightDrawerSection('plan');
+      }
+      hasPlanRef.current = false;
+    }
+  }, [workbenchSession?.plan]);
 
   const createSessionInCurrentWorkspace = () => {
     const path = currentWorkspacePath || null;

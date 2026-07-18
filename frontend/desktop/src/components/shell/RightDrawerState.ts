@@ -105,49 +105,48 @@ export function closeRightDrawer() {
   });
 }
 
+/**
+ * Apply a section list. Empty list closes the drawer entirely — never leave
+ * an open shell with "No section selected".
+ */
+function setSectionsOrClose(nextSections: RightDrawerSectionId[], activeSection?: RightDrawerSectionId) {
+  if (nextSections.length === 0) {
+    closeRightDrawer();
+    return;
+  }
+  const current = useRightDrawerStore.getState();
+  useRightDrawerStore.setState({
+    ...current,
+    open: true,
+    sections: nextSections,
+    activeSection: activeSection ?? nextSections[nextSections.length - 1],
+  });
+}
+
 export function toggleRightDrawerSection(section: RightDrawerSectionId) {
   const current = useRightDrawerStore.getState();
   const hasSection = current.sections.includes(section);
 
   if (hasSection) {
-    // Closing a section — if it was the last one, the drawer stays open
-    // so the "No section selected" placeholder can render.
     const nextSections = current.sections.filter((item) => item !== section);
-    useRightDrawerStore.setState({
-      ...current,
-      sections: nextSections,
-      activeSection: nextSections.length > 0 ? nextSections[nextSections.length - 1] : undefined,
-    });
+    setSectionsOrClose(nextSections);
     return;
   }
 
-  // Add to the open list (cap at MAX_SECTIONS, drop oldest when full).
   const nextSections = [...current.sections, section].slice(-MAX_SECTIONS);
-  useRightDrawerStore.setState({
-    ...current,
-    open: true,
-    activeSection: section,
-    sections: nextSections,
-  });
+  setSectionsOrClose(nextSections, section);
 }
 
-/**
- * Close a single section. If it was the last one, the drawer stays open
- * (so the "No section selected" placeholder can be shown) — closing the
- * drawer itself is a separate action.
- */
+/** Close a single section. Last section closes the whole drawer. */
 export function closeRightDrawerSection(section: RightDrawerSectionId) {
   const current = useRightDrawerStore.getState();
+  if (!current.sections.includes(section)) return;
   const nextSections = current.sections.filter((item) => item !== section);
-
-  useRightDrawerStore.setState({
-    ...current,
-    sections: nextSections,
-    activeSection:
-      current.activeSection === section
-        ? (nextSections[nextSections.length - 1] ?? undefined)
-        : current.activeSection,
-  });
+  const nextActive =
+    current.activeSection === section
+      ? nextSections[nextSections.length - 1]
+      : current.activeSection;
+  setSectionsOrClose(nextSections, nextActive);
 }
 
 export function setActiveRightDrawerSection(section: RightDrawerSectionId) {
@@ -160,11 +159,7 @@ export function setActiveRightDrawerSection(section: RightDrawerSectionId) {
 }
 
 export function setRightDrawerSections(sections: RightDrawerSectionId[], activeSection: RightDrawerSectionId = sections[0]) {
-  useRightDrawerStore.setState({
-    open: true,
-    sections: [...new Set([activeSection, ...sections])].slice(-MAX_SECTIONS),
-    activeSection,
-  });
+  setSectionsOrClose([...new Set([activeSection, ...sections])].slice(-MAX_SECTIONS), activeSection);
 }
 
 /**
@@ -179,12 +174,7 @@ export function addRightDrawerSection(section: RightDrawerSectionId) {
     return;
   }
   const nextSections = [...current.sections, section].slice(-MAX_SECTIONS);
-  useRightDrawerStore.setState({
-    ...current,
-    open: true,
-    activeSection: section,
-    sections: nextSections,
-  });
+  setSectionsOrClose(nextSections, section);
 }
 
 export function setRightDrawerDiff(diff?: GitDiffResult, selectedDiffPath?: string) {

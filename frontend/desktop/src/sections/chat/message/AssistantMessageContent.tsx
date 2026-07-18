@@ -69,6 +69,7 @@ export function AssistantMessageContent({
             toolProgress={toolProgress}
             subagentPrompts={subagentPrompts}
             subagentBlocks={subagentBlocks}
+            modelId={modelId}
           />
         )}
         {(() => {
