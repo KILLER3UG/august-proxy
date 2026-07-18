@@ -8,8 +8,16 @@ never hit "Unsupported API format" after picking a dropdown option.
 
 from __future__ import annotations
 
-# Formats understood by workbench / proxy clients.
-VALID_API_FORMATS = frozenset({'openaiChat', 'anthropicMessages', 'openaiResponses', 'codexResponses'})
+# Formats understood by workbench / proxy clients (incl. specialized clients).
+VALID_API_FORMATS = frozenset({
+    'openaiChat',
+    'anthropicMessages',
+    'openaiResponses',
+    'codexResponses',
+    'geminiOpenai',
+    'minimax',
+    'bedrockConverse',
+})
 
 _FORMAT_ALIASES: dict[str, str] = {
     'openai': 'openaiChat',
@@ -30,6 +38,16 @@ _FORMAT_ALIASES: dict[str, str] = {
     'codex-responses': 'codexResponses',
     'codex_responses': 'codexResponses',
     'codexresponses': 'codexResponses',
+    'gemini': 'geminiOpenai',
+    'gemini-openai': 'geminiOpenai',
+    'gemini_openai': 'geminiOpenai',
+    'geminiopenai': 'geminiOpenai',
+    'bedrock': 'bedrockConverse',
+    'bedrock-converse': 'bedrockConverse',
+    'bedrock_converse': 'bedrockConverse',
+    'bedrockconverse': 'bedrockConverse',
+    'minimax-cn': 'minimax',
+    'minimax_cn': 'minimax',
 }
 
 

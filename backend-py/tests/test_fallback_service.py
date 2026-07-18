@@ -21,9 +21,10 @@ def testInvalidModeRejected(isolatedData):
 
 
 def testActiveFallbackValidatesProvider(isolatedData):
+    # Unknown provider names are allowed; empty model with a provider is not.
     with pytest.raises(ValueError):
         fallback_service.configureFallback(
-            enabled=True, mode='always', provider='ZZZ_NoProvider', model='m', actor='test'
+            enabled=True, mode='always', provider='ZZZ_NoProvider', model='', actor='test'
         )
 
 

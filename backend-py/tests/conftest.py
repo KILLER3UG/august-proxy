@@ -42,7 +42,11 @@ def isolatedData(tmp_path, monkeypatch):
     brain = tmp_path / 'test_brain.sqlite'
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(brain))
+    # Gateway auth tests expect a clean key. Use empty string (not delenv) so
+    # settings.reload() → load_dotenv(override=False) cannot rehydrate from .env.
+    monkeypatch.setenv('GATEWAY_API_KEY', '')
     monkeypatch.setattr(settings, 'dataDir', tmp_path)
+    monkeypatch.setattr(settings, 'gatewayApiKey', None)
 
     # Minimal providers.json so route tests don't depend on the live store.
     providers_path = tmp_path / 'providers.json'
@@ -78,6 +82,8 @@ def isolatedData(tmp_path, monkeypatch):
         settings.reload()
     except Exception:
         pass
+    # reload() can rehydrate GATEWAY_API_KEY from a local .env — clear again.
+    settings.gatewayApiKey = None
     memory_store.close()
     memory_store.init()
     yield tmp_path

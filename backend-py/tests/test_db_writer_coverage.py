@@ -52,8 +52,8 @@ async def test_consolidation_routes_writes_through_db_writer(temp_brain):
     """runConsolidation must enqueue its writes via dbWriter.enqueueWrite."""
     captured = []
 
-    async def fake_enqueue(fn, priority='low'):
-        captured.append((fn, priority))
+    async def fake_enqueue(fn, priority='low', must_succeed=False):
+        captured.append((fn, priority, must_succeed))
         return True
 
     with patch.object(
@@ -73,7 +73,7 @@ async def test_consolidation_routes_writes_through_db_writer(temp_brain):
         'expected runConsolidation to enqueue at least one write via db_writer'
     )
     # The enqueued callable should perform a real write (INSERT into facts).
-    fn, _priority = captured[0]
+    fn, _priority, *_rest = captured[0]
     conn = memory_store._conn()
     before = conn.execute('SELECT count(*) FROM facts').fetchone()[0]
     fn()

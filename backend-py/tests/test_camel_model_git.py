@@ -46,16 +46,18 @@ def test_git_command_accepts_snake_case_via_populate_by_name():
 @pytest.mark.asyncio
 async def test_post_api_git_command_accepts_camelcase_json(client, isolatedData):
     """HTTP contract: frontend posts camelCase; endpoint runs a safe git command."""
-    # Use this repo as cwd via empty repoPath (defaults to process cwd).
+    from pathlib import Path
+
+    # Explicit repoPath — empty path is rejected (no cwd default).
     # `git rev-parse --is-inside-work-tree` is read-only and always works here.
     resp = await client.post(
         '/api/git/command',
         json={
-            'repoPath': '',
+            'repoPath': str(Path.cwd()),
             'args': ['rev-parse', '--is-inside-work-tree'],
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.text
     data = resp.json()
     assert 'output' in data
     assert data['output'].strip() == 'true'

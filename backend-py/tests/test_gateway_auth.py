@@ -23,7 +23,7 @@ from app.routers.proxy import router as proxyRouter
 
 
 @pytest.fixture(autouse=True)
-def _resetGatewayKey(isolatedData):
+def _resetGatewayKey(isolatedData, monkeypatch):
     """Reset the in-process ``settings.gatewayApiKey`` between tests.
 
     The ``isolatedData`` fixture provides a fresh data dir, but it doesn't
@@ -33,8 +33,11 @@ def _resetGatewayKey(isolatedData):
     from app.config import settings
 
     prev = settings.gatewayApiKey
+    # Empty env blocks dotenv rehydrate on reload (override=False).
+    monkeypatch.setenv('GATEWAY_API_KEY', '')
     settings.gatewayApiKey = None
     settings.reload()
+    settings.gatewayApiKey = None
     yield
     settings.gatewayApiKey = prev
     settings.reload()
