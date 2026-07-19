@@ -7,24 +7,45 @@
 
 import type { MessageBlock, AppendBlockEvent } from '@/types/chat';
 
+/** Merge adjacent thinking blocks so demotion cannot produce Thought (2). */
+export function coalesceAdjacentThinking(blocks: MessageBlock[]): MessageBlock[] {
+  if (blocks.length < 2) return blocks;
+  const out: MessageBlock[] = [];
+  for (const block of blocks) {
+    const prev = out[out.length - 1];
+    if (prev?.type === 'thinking' && block.type === 'thinking') {
+      prev.content = `${prev.content || ''}${block.content || ''}`;
+      continue;
+    }
+    out.push({ ...block });
+  }
+  return out;
+}
+
 export function appendBlockEvent(
   prevBlocks: MessageBlock[],
   event: AppendBlockEvent
 ): MessageBlock[] {
   const blocks = [...prevBlocks];
-  const lastBlock = blocks[blocks.length - 1];
 
   if (event.type === 'thinking') {
     const text = event.content || '';
     // Model wrote "answer" then kept thinking — that prose was provisional.
     // Demote it into thinking so it cannot stack into the true final reply.
+    let demoted = false;
     for (let i = 0; i < blocks.length; i++) {
       if (blocks[i].type === 'finalOutput') {
         blocks[i] = {
           ...blocks[i],
           type: 'thinking',
         };
+        demoted = true;
       }
+    }
+    if (demoted) {
+      const coalesced = coalesceAdjacentThinking(blocks);
+      blocks.length = 0;
+      blocks.push(...coalesced);
     }
     const last = blocks[blocks.length - 1];
     if (last && last.type === 'thinking') {

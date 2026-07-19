@@ -2,10 +2,12 @@
 
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import {
+  selectSessionLiveActivity,
   useLiveActivityStore,
   type LiveActivityItem,
   type LiveActivityKind,
 } from '@/store/liveActivity';
+import { resolveUiSessionId } from '@/sections/chat/stream/session-id-map';
 
 const KIND_IDLE_LABEL: Record<LiveActivityKind, string> = {
   thinking: 'Thought',
@@ -46,12 +48,12 @@ function ActivityItemRow({ item }: { item: LiveActivityItem }) {
 }
 
 export function RightDrawerActivitySection({ sessionId }: { sessionId: string | null }) {
-  const headline = useLiveActivityStore((s) => s.headline);
-  const items = useLiveActivityStore((s) => s.items);
-  const activeSession = useLiveActivityStore((s) => s.sessionId);
-  const belongsHere = !sessionId || !activeSession || activeSession === sessionId;
-  const visible = belongsHere ? items : [];
-  const title = belongsHere ? headline : '';
+  const uiSessionId = sessionId ? resolveUiSessionId(sessionId) : null;
+  const activity = useLiveActivityStore((s) =>
+    selectSessionLiveActivity(s, uiSessionId),
+  );
+  const visible = activity.items;
+  const title = activity.headline;
   const live = visible.some((item) => item.status === 'running') || !!title;
 
   return (

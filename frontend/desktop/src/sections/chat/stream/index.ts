@@ -46,6 +46,12 @@ export {
   ensureSessionSubscriber,
   detachSessionSubscriber,
   getSessionSubscriberLastSeq,
+  hasSessionSubscriber,
   syncActiveStreams,
   registerStreamResync,
 } from './session-subscriber';
+
+export {
+  resolveUiSessionId,
+  resolveWorkbenchSessionId,
+} from './session-id-map';

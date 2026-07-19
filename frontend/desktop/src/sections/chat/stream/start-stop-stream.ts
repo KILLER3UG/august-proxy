@@ -24,7 +24,11 @@ import {
 } from './session-stream-store';
 import { activeStreamControllers } from './active-stream-controllers';
 import { bindTurnStreamHandlers } from './bind-turn-handlers';
-import { getSessionSubscriberLastSeq } from './session-subscriber';
+import {
+  detachSessionSubscriber,
+  getSessionSubscriberLastSeq,
+  hasSessionSubscriber,
+} from './session-subscriber';
 
 // Start a new chat generation
 export async function startChatStream(
@@ -130,6 +134,10 @@ export async function startChatStream(
     // The POST handler returns { sinceSeq } JSON immediately and runs the
     // generation in the background. Live events are delivered via the
     // separate /api/workbench/chat/stream SSE channel — attach it now.
+    // Drop any durable subscriber first so we never hold two SSEs for one wb.
+    if (hasSessionSubscriber(session.id)) {
+      detachSessionSubscriber(session.id);
+    }
     if (startResult?.consumedViaPost) {
       // Events were already delivered through the POST response body.
     } else {

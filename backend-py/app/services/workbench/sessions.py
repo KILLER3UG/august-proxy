@@ -247,7 +247,7 @@ def rename_workbench_session(session_id: str, title: str) -> WorkbenchSession | 
     session.title = new_title[:120]
     session.updatedAt = _now()
     try:
-        save_sessions()
+        save_sessions(immediate=True)
     except Exception:
         logger.exception('save_sessions failed after rename %s', sid)
     try:
@@ -414,12 +414,18 @@ def get_session_json_export_status() -> dict[str, object]:
     }
 
 
-def save_sessions() -> None:
-    """Persist sessions to SQLite (full blob + messages). Keeps last 50.
+# Debounce concurrent chat turns so SQLite snapshots do not stall the asyncio
+# event loop (and both SSE streams) under `_sessions_lock`.
+_SAVE_DEBOUNCE_S = 0.15
+_save_pending = False
+_save_timer: threading.Timer | None = None
+_save_thread_lock = threading.Lock()
+_persist_io_lock = threading.Lock()
 
-    JSON export is **off by default**. Enable via admin config
-    ``auxiliary.session_json_export.enabled`` or env ``AUGUST_SESSION_JSON_EXPORT=1``.
-    JSON is never the SoT.
+
+def _persist_sessions_snapshot() -> None:
+    """Take a snapshot under the lock, then write SQLite/JSON without holding
+    `_sessions_lock` across I/O so concurrent chat turns are not stalled.
     """
     with _sessions_lock:
         sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
@@ -427,25 +433,81 @@ def save_sessions() -> None:
         for sid in list(_sessions.keys()):
             if sid not in keep_ids:
                 del _sessions[sid]
+        snapshots = [s.toDict() for s in sorted_sessions]
+        export_json = is_session_json_export_enabled()
 
+    with _persist_io_lock:
         try:
             from app.services import memory_store
             from app.services.memory_store import save_workbench_session_sot
 
             memory_store.init()
-            for s in sorted_sessions:
-                save_workbench_session_sot(s.toDict())
+            for blob in snapshots:
+                save_workbench_session_sot(blob)
         except Exception:
             logger.exception('SQLite session write failed')
 
-        if is_session_json_export_enabled():
+        if export_json:
             try:
                 path = _sessions_path()
                 path.parent.mkdir(parents=True, exist_ok=True)
-                write_json_atomic(path, [s.toDict() for s in sorted_sessions], indent=2)
+                write_json_atomic(path, snapshots, indent=2)
             except Exception:
                 logger.exception('JSON session export failed (non-fatal; SQLite is primary)')
 
+def save_sessions_now() -> None:
+    """Persist immediately (create/delete/rename/shutdown/tests)."""
+    global _save_pending, _save_timer
+    with _save_thread_lock:
+        _save_pending = False
+        timer = _save_timer
+        _save_timer = None
+    if timer is not None:
+        try:
+            timer.cancel()
+        except Exception:
+            pass
+    _persist_sessions_snapshot()
+
+
+def save_sessions(*, immediate: bool = False) -> None:
+    """Persist sessions to SQLite (full blob + messages). Keeps last 50.
+
+    Default path is **debounced** and runs the snapshot write on a daemon
+    thread so concurrent chat turns do not block the asyncio event loop.
+    Pass ``immediate=True`` (or call ``save_sessions_now``) when the caller
+    must observe the write before returning.
+
+    JSON export is **off by default**. Enable via admin config
+    ``auxiliary.session_json_export.enabled`` or env ``AUGUST_SESSION_JSON_EXPORT=1``.
+    JSON is never the SoT.
+    """
+    if immediate:
+        save_sessions_now()
+        return
+
+    global _save_pending, _save_timer
+
+    def _fire() -> None:
+        global _save_timer, _save_pending
+        with _save_thread_lock:
+            _save_timer = None
+            if not _save_pending:
+                return
+            _save_pending = False
+        try:
+            _persist_sessions_snapshot()
+        except Exception:
+            logger.exception('debounced save_sessions failed')
+
+    with _save_thread_lock:
+        _save_pending = True
+        if _save_timer is not None:
+            return
+        timer = threading.Timer(_SAVE_DEBOUNCE_S, _fire)
+        timer.daemon = True
+        _save_timer = timer
+        timer.start()
 
 def export_sessions_json() -> Path:
     """Admin one-shot: write workbench-sessions.json from current SQLite/in-memory SoT."""
@@ -619,7 +681,7 @@ def create_workbench_session(
     if goal:
         session.goal = goal
     _sessions[session_id] = session
-    save_sessions()
+    save_sessions(immediate=True)
     # save_sessions() already writes SQLite (blob + messages).
     if session.workspacePath:
         try:
@@ -649,7 +711,7 @@ def set_workbench_session_agent(session_id: str, agent_id: str) -> WorkbenchSess
         return None
     session.agentId = agent_id or ''
     session.updatedAt = _now()
-    save_sessions()
+    save_sessions(immediate=True)
     _emit_session_status(session_id)
     return session
 
@@ -751,7 +813,7 @@ def undo_last_turn(session_id: str) -> dict[str, object] | None:
     session.planApproved = False
     session.clarify = None
     session.queuedUserMessages = []
-    save_sessions()
+    save_sessions(immediate=True)
     _emit_session_status(session_id)
     try:
         from app.services.realtime_bus import emit_invalidate, emit_realtime
@@ -803,7 +865,7 @@ def branch_workbench_session(
     new.todos = list(src.todos) if src.todos else None
     new.updatedAt = _now()
     _sessions[new.id] = new
-    save_sessions()
+    save_sessions(immediate=True)
     notify_session_created(new)
     _emit_session_status(new.id)
     return new
@@ -973,6 +1035,7 @@ def subscribe_session_status(callback: Callable[[dict[str, object]], None]) -> C
 _sessionsPath = _sessions_path
 _loadSessions = _load_sessions
 saveSessions = save_sessions
+saveSessionsNow = save_sessions_now
 _emitSessionStatus = _emit_session_status
 createWorkbenchSession = create_workbench_session
 getWorkbenchSession = get_workbench_session

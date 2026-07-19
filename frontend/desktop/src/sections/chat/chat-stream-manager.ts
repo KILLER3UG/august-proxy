@@ -31,6 +31,9 @@ export {
   ensureSessionSubscriber,
   detachSessionSubscriber,
   getSessionSubscriberLastSeq,
+  hasSessionSubscriber,
   syncActiveStreams,
   registerStreamResync,
+  resolveUiSessionId,
+  resolveWorkbenchSessionId,
 } from './stream';

@@ -43,6 +43,14 @@ describe('appendBlockEvent — basic event merging', () => {
     expect(blocks[0].content).toBe('part 1 part 2');
   });
 
+  it('coalesces demoted finalOutput into one thinking block', () => {
+    let blocks = appendBlockEvent([], { type: 'thinking', content: 'think' });
+    blocks = appendBlockEvent(blocks, { type: 'text', content: 'draft' });
+    blocks = appendBlockEvent(blocks, { type: 'thinking', content: ' more' });
+    expect(blocks.filter((b) => b.type === 'thinking')).toHaveLength(1);
+    expect(blocks[0].content).toBe('thinkdraft more');
+  });
+
   it('appends a new final_output block for text events', () => {
     let blocks = appendBlockEvent([], { type: 'text', content: 'first' });
     blocks = appendBlockEvent(blocks, { type: 'text', content: ' second' });

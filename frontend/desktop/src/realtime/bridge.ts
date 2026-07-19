@@ -58,8 +58,9 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
   );
 
   // Race: workbench `session.created` often arrives before ChatThread has
-  // written workbenchSessionId onto the open local `sess_*` row. Prefer
-  // linking a single empty local draft instead of inserting a duplicate.
+  // written workbenchSessionId onto the open local `sess_*` row. Only
+  // auto-link when there is exactly one empty draft — guessing among
+  // several would bind two UI chats to one wb_* and queue both turns.
   if (idx < 0) {
     const pendingIndexes = sessions
       .map((s, i) => ({ s, i }))
@@ -71,13 +72,6 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
           s.id.startsWith('sess_'),
       );
     if (pendingIndexes.length === 1) {
-      idx = pendingIndexes[0].i;
-    } else if (pendingIndexes.length > 1) {
-      // Most recently started empty draft
-      pendingIndexes.sort(
-        (a, b) =>
-          new Date(b.s.startedAt).getTime() - new Date(a.s.startedAt).getTime(),
-      );
       idx = pendingIndexes[0].i;
     }
   }

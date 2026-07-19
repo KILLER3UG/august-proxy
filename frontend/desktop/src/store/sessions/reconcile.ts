@@ -82,15 +82,19 @@ export async function reconcileSessionsFromBackend(
     for (const bs of liveBackend) {
       if (claimed.has(bs.id) || isSessionIdTombstoned(bs.id)) continue;
       // Prefer attaching to a local empty draft that is waiting for a workbench
-      // link (avoids a second row when SSE/reconcile race with first message).
-      const pendingIdx = merged.findIndex(
-        (s) =>
-          !s.workbenchSessionId &&
-          !s.isArchived &&
-          sessionIsEmpty(s) &&
-          !isSessionIdTombstoned(s.id),
-      );
-      if (pendingIdx >= 0) {
+      // link — but only when exactly one draft is pending. Attaching the first
+      // of many would share one wb_* across concurrent new chats.
+      const pendingIndexes = merged
+        .map((s, i) => ({ s, i }))
+        .filter(
+          ({ s }) =>
+            !s.workbenchSessionId &&
+            !s.isArchived &&
+            sessionIsEmpty(s) &&
+            !isSessionIdTombstoned(s.id),
+        );
+      if (pendingIndexes.length === 1) {
+        const pendingIdx = pendingIndexes[0].i;
         const pending = merged[pendingIdx];
         claimed.add(bs.id);
         merged[pendingIdx] = {

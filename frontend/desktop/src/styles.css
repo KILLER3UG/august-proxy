@@ -684,6 +684,129 @@ input::placeholder {
   }
 }
 
+/* Claude-style process timeline (thinking + tools) */
+.process-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.process-step {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+}
+.process-step--tool {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.process-step-gutter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 20px;
+  flex-shrink: 0;
+  color: hsl(var(--muted-foreground) / 0.75);
+}
+.process-step-icon {
+  width: 12px;
+  height: 12px;
+}
+.process-step-icon-wrap {
+  width: 12px;
+  height: 12px;
+}
+.process-step-body {
+  min-width: 0;
+}
+.process-thought-rail {
+  position: relative;
+  padding-left: 10px;
+  border-left: 1px solid hsl(var(--muted-foreground) / 0.28);
+  color: hsl(var(--muted-foreground) / 0.88);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+.process-thought-pending {
+  font-style: italic;
+  opacity: 0.8;
+}
+.process-tool-toggle {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 14px;
+  column-gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 24px;
+  padding: 2px 4px 2px 0;
+  margin: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+.process-tool-toggle:hover {
+  color: hsl(var(--foreground) / 0.82);
+  background: hsl(var(--foreground) / 0.04);
+}
+.process-tool-toggle:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}
+.process-tool-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.process-tool-label--live {
+  color: hsl(var(--foreground) / 0.78);
+}
+.process-tool-chevron {
+  width: 12px;
+  height: 12px;
+  opacity: 0.55;
+  transition: transform 160ms ease;
+}
+.process-tool-chevron--open {
+  transform: rotate(180deg);
+}
+.process-tool-panel {
+  margin: 2px 0 4px 26px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: hsl(var(--foreground) / 0.035);
+  border: 1px solid hsl(var(--border) / 0.55);
+}
+.process-tool-response-label {
+  margin-bottom: 4px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground) / 0.7);
+}
+.process-tool-response {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: hsl(var(--muted-foreground));
+  overflow-x: auto;
+}
+.process-tool-response--empty {
+  font-style: italic;
+  opacity: 0.75;
+}
+.process-tool-after {
+  margin-left: 26px;
+}
+
 /* Brain icon — soft “learning / active” pulse while events stream in */
 @keyframes brain-learning-pulse {
   0%,

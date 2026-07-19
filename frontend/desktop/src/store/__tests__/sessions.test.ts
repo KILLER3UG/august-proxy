@@ -394,4 +394,32 @@ describe('reconcileSessionsFromBackend — keep drafts, stable ids', () => {
     expect(all[0].id).toBe(draft.id);
     expect(all[0].workbenchSessionId).toBe('wb_new');
   });
+
+  it('does not bind one workbench id onto multiple empty drafts', async () => {
+    const a = createSession(null, 'Chat 2026-07-15 12:00');
+    const b = createSession(null, 'Chat 2026-07-15 12:01');
+    expect(a.id).not.toBe(b.id);
+
+    vi.mocked(getWorkbenchSessions).mockResolvedValue([
+      {
+        id: 'wb_only_one',
+        title: 'New Session',
+        provider: 'x',
+        messageCount: 0,
+        updatedAt: new Date().toISOString(),
+      } as never,
+    ]);
+
+    await reconcileSessionsFromBackend();
+
+    const all = $sessions.get();
+    const linked = all.filter((s) => s.workbenchSessionId === 'wb_only_one');
+    // Ambiguous: keep both drafts unbound and add a separate wb row,
+    // or leave wb as its own row — never share wb across both drafts.
+    expect(linked.length).toBeLessThanOrEqual(1);
+    const unboundDrafts = all.filter(
+      (s) => (s.id === a.id || s.id === b.id) && !s.workbenchSessionId,
+    );
+    expect(unboundDrafts.length).toBe(2);
+  });
 });

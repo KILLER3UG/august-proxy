@@ -12,6 +12,9 @@
  *
  * registerStreamResync re-attaches subscribers on tab refocus / online so
  * long tool→think cycles survive brief disconnects.
+ *
+ * Stream store / chatRuntime keys use the UI `sess_*` id; SSE is keyed by
+ * workbench `wb_*` id so concurrent chats never cross-wire state.
  */
 
 import type { WorkbenchSession } from '@/types/workbench';
@@ -23,10 +26,17 @@ import { pushBrowserAction } from '@/lib/browser-store';
 import { upsertQueuedMessage, removeQueuedMessage } from '../queue-store';
 import { updateSessionStreamState } from './session-stream-store';
 import { makeSubagentEventHandlers } from './apply-subagent-event';
+import { activeStreamControllers } from './active-stream-controllers';
+import {
+  resolveUiSessionId,
+  resolveWorkbenchSessionId,
+} from './session-id-map';
 
+/** Subscribers keyed by workbench session id (backend SSE key). */
 const sessionSubscribers = new Map<string, {
   controller: AbortController;
   lastSeq: number;
+  uiSessionId: string;
 }>();
 
 const LAST_SEQ_PREFIX = 'chat_last_seq_';
@@ -45,30 +55,36 @@ function writeLastSeq(sessionId: string, seq: number) {
   try { localStorage.setItem(SUB_LAST_SEQ(sessionId), String(seq)); } catch { /* silent */ }
 }
 
+/** True when a durable SSE subscriber is already open for this workbench id. */
+export function hasSessionSubscriber(sessionOrWorkbenchId: string): boolean {
+  const wbId = resolveWorkbenchSessionId(sessionOrWorkbenchId);
+  return sessionSubscribers.has(wbId);
+}
+
 /**
  * Attach (or re-attach) the per-session SSE subscriber that pulls events
  * from GET /api/workbench/chat/stream. Idempotent: if one is already
- * attached for `sessionId` it is left alone. The reducer updates
- * `subagentBlocks` and bumps stored `lastSeq` so reconnects don't replay.
+ * attached for the workbench id, or a per-turn stream owns the connection,
+ * it is left alone.
  */
-export function ensureSessionSubscriber(sessionId: string): void {
-  if (!sessionId) return;
-  if (sessionSubscribers.has(sessionId)) return;
+export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
+  if (!sessionOrWorkbenchId) return;
+
+  const wbId = resolveWorkbenchSessionId(sessionOrWorkbenchId);
+  const uiSessionId = resolveUiSessionId(sessionOrWorkbenchId);
+
+  if (sessionSubscribers.has(wbId)) return;
+  // Per-turn startChatStream owns the SSE — avoid a second connection.
+  if (activeStreamControllers.has(uiSessionId)) return;
 
   // Ensure there is an active turn in chatRuntime so the AUG streaming
   // indicator (WorkingIndicator) shows while the backend is generating.
-  // Without this, a previous turn may have been finalized when the original
-  // SSE connection dropped (tab switch, throttling), leaving isSessionStreaming
-  // false even though the backend is still actively streaming and reconnecting
-  // via this subscriber.
-  //
-  // Keep the dummy turn alive for the whole reconnect life-cycle — only
-  // finish it when the subscriber truly ends (terminal event / abort).
+  // Key the turn by UI session id so ChatThread's sess_* checks work.
   let dummyTurnId: string | null = null;
-  if (!chatRuntime.isSessionStreaming(sessionId)) {
-    const assistantMsgId = `subscriber-${sessionId}-${Date.now()}`;
+  if (!chatRuntime.isSessionStreaming(uiSessionId)) {
+    const assistantMsgId = `subscriber-${uiSessionId}-${Date.now()}`;
     const turn = chatRuntime.startTurn({
-      sessionId,
+      sessionId: uiSessionId,
       assistantMsgId,
       transport: 'none',
     });
@@ -76,17 +92,17 @@ export function ensureSessionSubscriber(sessionId: string): void {
   }
 
   const controller = new AbortController();
-  const sinceSeq = readLastSeq(sessionId);
-  const entry = { controller, lastSeq: sinceSeq };
-  sessionSubscribers.set(sessionId, entry);
+  const sinceSeq = readLastSeq(wbId);
+  const entry = { controller, lastSeq: sinceSeq, uiSessionId };
+  sessionSubscribers.set(wbId, entry);
 
-  const subagentHandlers = makeSubagentEventHandlers(sessionId);
+  const subagentHandlers = makeSubagentEventHandlers(uiSessionId);
 
   const handlers: WorkbenchEventHandlers = {
     onSeq: (seq) => {
       if (seq > entry.lastSeq) {
         entry.lastSeq = seq;
-        writeLastSeq(sessionId, seq);
+        writeLastSeq(wbId, seq);
       }
     },
     ...subagentHandlers,
@@ -118,11 +134,9 @@ export function ensureSessionSubscriber(sessionId: string): void {
       });
     },
     onUserMessageQueued: (data) => {
-      // A follow-up was queued (possibly from another tab or via the
-      // optimistic local API call). Add it to the per-session queue
-      // store so the UI pills update in real time.
       if (!data?.messageId || !data?.sessionId) return;
-      upsertQueuedMessage(data.sessionId, {
+      const queueUiId = resolveUiSessionId(data.sessionId);
+      upsertQueuedMessage(queueUiId, {
         id: data.messageId,
         text: data.text ?? '',
         queuedAt: data.queuedAt ?? new Date().toISOString(),
@@ -130,33 +144,26 @@ export function ensureSessionSubscriber(sessionId: string): void {
     },
     onUserMessageDequeued: (data) => {
       if (!data?.messageId || !data?.sessionId) return;
-      removeQueuedMessage(data.sessionId, data.messageId);
+      removeQueuedMessage(resolveUiSessionId(data.sessionId), data.messageId);
     },
     onUserMessageInjected: (data) => {
-      // The backend drained this message and appended it to the model's
-      // in-flight conversation. Clear it from the local queue (it now
-      // lives as an inline user bubble in the chat thread) and append
-      // a synthetic user message to the session's message log so the
-      // thread renders it in the right place.
       if (!data?.messageId || !data?.sessionId) return;
-      removeQueuedMessage(data.sessionId, data.messageId);
-      const entry = {
+      const queueUiId = resolveUiSessionId(data.sessionId);
+      removeQueuedMessage(queueUiId, data.messageId);
+      const injected = {
         id: `qm-${data.messageId}`,
         role: 'user' as const,
         content: data.text ?? '',
         timestamp: data.queuedAt ?? new Date().toISOString(),
         queued: true,
       };
-      updateSessionStreamState(data.sessionId, (prev) => ({
+      updateSessionStreamState(queueUiId, (prev) => ({
         ...prev,
-        messages: [...(prev.messages ?? []), entry],
+        messages: [...(prev.messages ?? []), injected],
       }));
     },
     onClarifyProposed: (data) => {
-      // Attach the clarifying question to the last assistant message so the
-      // ClarifyTool popup renders even when the event arrives on the
-      // background subscriber (e.g. after a reconnect mid-turn).
-      updateSessionStreamState(sessionId, (prev) => {
+      updateSessionStreamState(uiSessionId, (prev) => {
         const msgs = prev.messages ?? [];
         if (msgs.length === 0) return prev;
         let lastAssistantIdx = -1;
@@ -175,12 +182,8 @@ export function ensureSessionSubscriber(sessionId: string): void {
     },
   };
 
-  streamWorkbenchReconnect(sessionId, handlers, controller.signal, sinceSeq, {
+  streamWorkbenchReconnect(wbId, handlers, controller.signal, sinceSeq, {
     // Durable subscriber: effectively-unbounded retry with capped backoff.
-    // The backend always emits a terminal event (done/error/aborted) when
-    // the turn ends, so retries converge; a dead backend fails fast at the
-    // POST /chat that started the turn. This keeps the stream bound to the
-    // session across transient drops / tab switches (issue #2).
     maxRetries: Infinity,
   })
     .catch((err) => {
@@ -189,42 +192,36 @@ export function ensureSessionSubscriber(sessionId: string): void {
       }
     })
     .finally(() => {
-      // If the controller is still ours (not aborted), drop the entry so
-      // a later sync can re-attach. Aborted means we intentionally stopped.
       if (!controller.signal.aborted) {
-        sessionSubscribers.delete(sessionId);
+        sessionSubscribers.delete(wbId);
       }
-      // Finalize the turn we created above so isSessionStreaming reflects
-      // the true state. The original stream's turn was already finalized
-      // when it disconnected; this cleans up the subscriber-created turn.
       if (dummyTurnId) {
         chatRuntime.finishTurn(dummyTurnId, 'done');
       }
     });
 }
 
-export function detachSessionSubscriber(sessionId: string): void {
-  const entry = sessionSubscribers.get(sessionId);
+export function detachSessionSubscriber(sessionOrWorkbenchId: string): void {
+  const wbId = resolveWorkbenchSessionId(sessionOrWorkbenchId);
+  const entry = sessionSubscribers.get(wbId);
   if (!entry) return;
   entry.controller.abort();
-  sessionSubscribers.delete(sessionId);
+  sessionSubscribers.delete(wbId);
 }
 
-export function getSessionSubscriberLastSeq(sessionId: string): number {
-  return sessionSubscribers.get(sessionId)?.lastSeq ?? readLastSeq(sessionId);
+export function getSessionSubscriberLastSeq(sessionOrWorkbenchId: string): number {
+  const wbId = resolveWorkbenchSessionId(sessionOrWorkbenchId);
+  return sessionSubscribers.get(wbId)?.lastSeq ?? readLastSeq(wbId);
 }
 
 // Sync all active streams with the backend
 export async function syncActiveStreams(_ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
   try {
     const active = await api.get<Record<string, string>>('/api/workbench/chat/active');
-    for (const sessionId of Object.keys(active)) {
-      if (active[sessionId] === 'streaming') {
-        // Re-attach the per-session SSE subscriber if we don't have one.
-        // The subscriber is independent of any per-turn AbortController —
-        // it stays attached across tab/session switches and only detaches
-        // when the backend reports the turn finished or the SSE closes.
-        ensureSessionSubscriber(sessionId);
+    for (const wbId of Object.keys(active)) {
+      if (active[wbId] === 'streaming') {
+        // Only attach durable SSE when no per-turn consumer owns this session.
+        ensureSessionSubscriber(wbId);
       }
     }
   } catch (err) {
@@ -247,7 +244,6 @@ export function registerStreamResync(
 
   const resync = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-    // syncActiveStreams accepts a no-arg ensureWorkbenchSession; wrap ours.
     void syncActiveStreams(() => _registeredEnsureSession
       ? _registeredEnsureSession('')
       : Promise.resolve(null));

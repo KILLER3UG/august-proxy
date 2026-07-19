@@ -94,11 +94,16 @@ export function ActivitySummary({
   liveDetail = null,
   className,
 }: ActivitySummaryProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(defaultOpen || live);
   const [bodyClip, setBodyClip] = useState(true);
   useEffect(() => {
     if (open) setBodyClip(true);
   }, [open]);
+  // While the turn is live, keep the pack open so tools stay visible in chat
+  // (not only in the Activity drawer).
+  useEffect(() => {
+    if (live) setOpen(true);
+  }, [live]);
   const segments = buildActivityCountSegments({
     thoughtCount,
     toolsCount,
