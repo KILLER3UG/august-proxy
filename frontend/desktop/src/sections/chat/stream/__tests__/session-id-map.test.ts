@@ -15,6 +15,8 @@ describe('session-id-map', () => {
           startedAt: new Date().toISOString(),
           messageCount: 1,
           lastMessage: 'hi',
+          provider: 'openai',
+          model: 'gpt-5',
           workbenchSessionId: 'wb_a',
         },
         {
@@ -23,6 +25,8 @@ describe('session-id-map', () => {
           startedAt: new Date().toISOString(),
           messageCount: 0,
           lastMessage: '',
+          provider: 'openai',
+          model: 'gpt-5',
           workbenchSessionId: 'wb_b',
         },
       ],

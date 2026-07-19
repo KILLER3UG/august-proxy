@@ -15,23 +15,28 @@ const TABS = [
   { key: 'terminal', label: 'Terminal', icon: TerminalSquare, description: 'Approvals and shell' },
 ] as const;
 
-const TAB_KEYS = new Set(TABS.map((t) => t.key));
+type TabKey = (typeof TABS)[number]['key'];
+const TAB_KEYS = new Set<string>(TABS.map((t) => t.key));
+
+function asTabKey(value: string): TabKey | null {
+  return TAB_KEYS.has(value) ? (value as TabKey) : null;
+}
 
 export function AgentsAutomationSection() {
   const [params, setParams] = useSearchParams();
   const sectionParam = params.get('section') || '';
-  const initial = TAB_KEYS.has(sectionParam) ? sectionParam : 'agents';
-  const [tab, setTab] = useState<string>(initial);
+  const initial = asTabKey(sectionParam) ?? 'agents';
+  const [tab, setTab] = useState<TabKey>(initial);
 
   const activeTab = useMemo(() => {
-    if (TAB_KEYS.has(sectionParam)) return sectionParam;
-    return tab;
+    return asTabKey(sectionParam) ?? tab;
   }, [sectionParam, tab]);
 
   const onChange = (next: string) => {
-    setTab(next);
+    const key = asTabKey(next) ?? 'agents';
+    setTab(key);
     const nextParams = new URLSearchParams(params);
-    nextParams.set('section', next);
+    nextParams.set('section', key);
     setParams(nextParams, { replace: true });
   };
 
