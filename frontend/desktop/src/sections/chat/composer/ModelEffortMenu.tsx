@@ -450,8 +450,8 @@ export function ModelEffortMenu({
               {flyout === 'effort' && showEffort ? (
                 <motion.div key="effort" {...menuFlyoutSwap}>
                   <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
-                    Higher effort means more thorough responses. Takes longer
-                    and uses more tokens.
+                    Controls thinking depth — Low keeps reasoning short; High/Max
+                    allow longer analysis (slower, more tokens).
                   </div>
                   <div className="py-0.5">
                     {EFFORT_OPTIONS.map((opt) => (

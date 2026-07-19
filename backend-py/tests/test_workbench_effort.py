@@ -11,6 +11,7 @@ from app.services.workbench.effort import (
     effort_to_thinking_budget,
     effort_to_prompt_instruction,
     effort_to_openai_reasoning_effort,
+    provider_accepts_reasoning_effort,
 )
 from app.services.workbench import workbench as wb
 
@@ -72,20 +73,29 @@ class TestEffortToThinkingBudget:
 class TestEffortToPromptInstruction:
     """Mapping tables: effort → system-prompt instruction."""
 
-    INSTRUCTIONS = {
-        'low': 'Provide quick, concise responses. Minimize analysis.',
-        'medium': 'Provide balanced responses with moderate analysis.',
-        'high': 'Provide thorough, detailed analysis. Take your time.',
-        'max': 'Provide exhaustive, comprehensive analysis. Leave nothing out.',
-    }
-
     @pytest.mark.parametrize('effort', ['low', 'medium', 'high', 'max'])
     def test_instruction_table(self, effort: str):
-        assert effort_to_prompt_instruction(effort) == self.INSTRUCTIONS[effort]
+        text = effort_to_prompt_instruction(effort)
+        assert isinstance(text, str) and len(text) > 20
+        if effort == 'low':
+            assert 'minimal' in text.lower()
+        if effort == 'max':
+            assert 'maximum' in text.lower() or 'exhaustive' in text.lower()
 
     def test_unknown_defaults_to_medium(self):
-        assert effort_to_prompt_instruction('unknown') == self.INSTRUCTIONS['medium']
-        assert effort_to_prompt_instruction('') == self.INSTRUCTIONS['medium']
+        assert effort_to_prompt_instruction('unknown') == effort_to_prompt_instruction('medium')
+        assert effort_to_prompt_instruction('') == effort_to_prompt_instruction('medium')
+
+
+class TestProviderAcceptsReasoningEffort:
+    def test_deepseek_and_openai(self):
+        assert provider_accepts_reasoning_effort({'name': 'DeepSeek'}, 'deepseek-v4-flash')
+        assert provider_accepts_reasoning_effort({'name': 'OpenAI API'}, 'gpt-4o')
+        assert provider_accepts_reasoning_effort({'name': 'xAI'}, 'grok-4')
+
+    def test_unknown_gateway_skipped_unless_model_hints(self):
+        assert not provider_accepts_reasoning_effort({'name': 'OpenCode Zen'}, 'some-chat')
+        assert provider_accepts_reasoning_effort({'name': 'OpenCode Zen'}, 'deepseek-reasoner')
 
 
 class TestEffortToOpenaiReasoningEffort:

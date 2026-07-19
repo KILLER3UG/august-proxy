@@ -18,6 +18,7 @@ from app.models import AnthropicRequest, ChatCompletionRequest
 from app.services.workbench.effort import (
     effort_to_thinking_budget,
     effort_to_openai_reasoning_effort,
+    provider_accepts_reasoning_effort,
 )
 
 
@@ -407,17 +408,12 @@ async def call_openai_workbench(
     body['max_tokens'] = 8192
     if tools:
         body['tools'] = tools
-    # Only attach OpenAI-style reasoning_effort when the provider is likely to
-    # understand it (official OpenAI / Codex). Other OpenAI-compatible gateways
-    # (OpenCode Zen, MiniMax, …) often reject or ignore it.
+    # Attach OpenAI-style reasoning_effort when the provider/model is likely to
+    # understand it (OpenAI/Codex/DeepSeek/reasoner ids). Unknown gateways often
+    # reject unknown fields — skip those. Prompt-level effort is applied upstream.
     if thinking_enabled:
         reasoning = effort_to_openai_reasoning_effort(effort)
-        pname = as_str(provider.get('name') or provider.get('id')).lower()
-        if reasoning and (
-            'openai' in pname
-            or 'codex' in pname
-            or as_str(provider.get('apiMode')) == 'codexResponses'
-        ):
+        if reasoning and provider_accepts_reasoning_effort(provider, model):
             body['reasoning_effort'] = reasoning
 
     contentText = ''

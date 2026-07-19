@@ -191,7 +191,7 @@ export function ChatComposer({
       )}
 
       <div className={cn(
-        'w-full min-w-0 rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary overflow-visible',
+        'w-full min-w-0 rounded-2xl border bg-card shadow-sm overflow-visible',
         'border-border',
       )}>
         {voiceActive ? (

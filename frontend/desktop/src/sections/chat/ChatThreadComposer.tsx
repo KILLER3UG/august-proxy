@@ -204,8 +204,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
       <div
         className={cn(
-          'w-full min-w-0 rounded-3xl border bg-card/95 backdrop-blur-sm shadow-lg transition',
-          'focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary/60',
+          'w-full min-w-0 rounded-3xl border bg-card/95 backdrop-blur-sm shadow-lg',
           'border-border/70 overflow-visible',
         )}
       >

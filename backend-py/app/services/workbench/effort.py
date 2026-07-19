@@ -50,12 +50,24 @@ def effort_to_thinking_budget(effort: str, model_max: int = 32000, max_tokens: i
 
 
 def effort_to_prompt_instruction(effort: str) -> str:
-    """Map effort to a system-prompt instruction."""
+    """Map effort to a system-prompt instruction that scales thinking depth."""
     instructions = {
-        'low': 'Provide quick, concise responses. Minimize analysis.',
-        'medium': 'Provide balanced responses with moderate analysis.',
-        'high': 'Provide thorough, detailed analysis. Take your time.',
-        'max': 'Provide exhaustive, comprehensive analysis. Leave nothing out.',
+        'low': (
+            'Keep internal reasoning minimal. Prefer short thinking and move '
+            'to the answer quickly. Do not expand chain-of-thought unless needed.'
+        ),
+        'medium': (
+            'Use moderate reasoning. Balance speed with enough analysis to be correct; '
+            'avoid long thinking digressions.'
+        ),
+        'high': (
+            'Think carefully and thoroughly before answering. Prefer deeper analysis '
+            'over speed; allow longer internal reasoning when it improves correctness.'
+        ),
+        'max': (
+            'Use maximum reasoning depth. Exhaustive analysis; do not cut thinking short. '
+            'Prefer completeness over brevity in internal reasoning.'
+        ),
     }
     return instructions.get(effort, instructions['medium'])
 
@@ -64,3 +76,36 @@ def effort_to_openai_reasoning_effort(effort: str) -> str:
     """Map August's 4-level effort to OpenAI's 3-level reasoning_effort."""
     mapping = {'low': 'low', 'medium': 'medium', 'high': 'high', 'max': 'high'}
     return mapping.get(effort, 'medium')
+
+
+def provider_accepts_reasoning_effort(
+    provider: dict[str, object] | None,
+    model: str = '',
+) -> bool:
+    """Whether attaching ``reasoning_effort`` is likely to be understood.
+
+    Official OpenAI/Codex, DeepSeek, and common reasoner model ids accept it.
+    Unknown OpenAI-compatible gateways often reject unknown fields — skip those.
+    """
+    if not provider:
+        return False
+    pname = as_str(provider.get('name') or provider.get('id')).lower()
+    mid = (model or '').lower()
+    api_mode = as_str(provider.get('apiMode') or provider.get('api_mode'))
+    if api_mode == 'codexResponses':
+        return True
+    if any(token in pname for token in ('openai', 'codex', 'deepseek', 'xai', 'grok')):
+        return True
+    return any(
+        token in mid
+        for token in (
+            'o1',
+            'o3',
+            'o4',
+            'reasoner',
+            'deepseek',
+            'gpt-5',
+            'grok-3',
+            'grok-4',
+        )
+    )

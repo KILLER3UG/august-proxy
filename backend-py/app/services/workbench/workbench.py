@@ -1114,6 +1114,18 @@ async def _sendWorkbenchMessageStreamImpl(
         tools = toolDefinitions(session)
         openaiTools = openaiToolDefinitions(session)
         systemText = buildSystemPrompt(session, tools=tools)
+        # Effort scales thinking depth for every provider (Anthropic budget /
+        # OpenAI reasoning_effort / prompt hint for OpenAI-compatible APIs).
+        if thinking_enabled:
+            systemText = (
+                f'{systemText}\n\n## Effort\n{effort_to_prompt_instruction(effectiveEffort)}'
+            )
+        else:
+            systemText = (
+                f'{systemText}\n\n## Effort\n'
+                'Do not use extended reasoning or long chain-of-thought. '
+                'Answer directly with minimal internal thinking.'
+            )
     isAnthropic = _isAnthropicProvider(resolvedProvider)
     isOpenai = _isOpenaiProvider(resolvedProvider)
 
