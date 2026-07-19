@@ -19,9 +19,10 @@ mod tray;
 use tauri::{AppHandle, Manager, RunEvent};
 
 /// Confirmed quit from the webview modal (tray Quit → quit-requested → UI).
+/// Stops the local backend first so the next launch starts a fresh process.
 #[tauri::command]
 fn confirm_quit(app: AppHandle) {
-    backend::stopBackendForUpdate(&app);
+    backend::stopBackendOnQuit(&app);
     app.exit(0);
 }
 
@@ -81,10 +82,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // Any exit path (tray Quit, updater, taskkill) must release
-            // resources\python\*.pyd locks — not only the tray Quit handler.
+            // Any exit path (tray Quit, updater, taskkill) must stop the
+            // backend and release resources\python\*.pyd locks.
             if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
-                backend::stopBackendForUpdate(app_handle);
+                backend::stopBackendOnQuit(app_handle);
             }
         });
 }

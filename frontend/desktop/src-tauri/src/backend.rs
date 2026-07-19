@@ -478,7 +478,20 @@ fn appDataDir(app: &AppHandle) -> PathBuf {
 }
 
 fn killChild(child: &mut Child) {
-    let _ = child.kill();
+    let pid = child.id();
+    // Kill the whole process tree — uvicorn/python often leave children that
+    // survive a plain Child::kill() and keep :8085 occupied after Quit.
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"]);
+        applyNoWindow(&mut cmd);
+        let _ = cmd.status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = child.kill();
+    }
     // Wait until the OS reaps the process so DLL / .pyd handles are released
     // before NSIS tries to overwrite bundled Python files.
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -501,35 +514,52 @@ pub fn updateHoldoffActive() -> bool {
 }
 
 /// Stop the supervised backend and keep the watchdog from respawning it.
-/// Call this before the Windows updater/NSIS install step so bundled
+/// Used on Quit and before the Windows updater/NSIS install step so bundled
 /// `resources/python/*.pyd` files are not locked.
 pub fn stopBackendForUpdate(app: &AppHandle) {
+    stopBackend(app, "update");
+}
+
+/// Full backend teardown for app Quit — same kill path as update holdoff.
+pub fn stopBackendOnQuit(app: &AppHandle) {
+    stopBackend(app, "quit");
+}
+
+fn stopBackend(app: &AppHandle, reason: &str) {
+    // Prevent watchBackend from respawning while we tear down.
     UPDATE_HOLDOFF.store(true, Ordering::SeqCst);
-    setSetupPhase(
-        app,
-        "updating",
-        Some("Stopping backend for update…".into()),
-    );
+    let detail = if reason == "quit" {
+        "Stopping backend…"
+    } else {
+        "Stopping backend for update…"
+    };
+    setSetupPhase(app, "updating", Some(detail.into()));
     killStoredChild(app);
     #[cfg(windows)]
     killAugustPythonOrphans(app);
+    #[cfg(not(windows))]
+    killProxyPortListeners();
     // Brief settle so Windows releases mapped DLLs before the installer runs.
     std::thread::sleep(Duration::from_millis(400));
-    log::info!("[backend] stopped for update (holdoff on)");
+    log::info!("[backend] stopped for {reason} (holdoff on)");
 }
 
 /// Best-effort: terminate leftover python/node that lock bundled
 /// `resources/python/*.pyd`. Matches install-dir python, AppData venv, and
 /// uvicorn command lines (orphans often survive after tray quit).
+///
+/// Important: do **not** Stop-Process August itself here — when invoked from
+/// Quit, that kills this PowerShell mid-script and leaves the backend alive.
 #[cfg(windows)]
 fn killAugustPythonOrphans(app: &AppHandle) {
     let _ = app;
+    let port = proxyPort();
     // Prefer -File over -Command so quoting/`\\?\` paths stay reliable.
-    let script = r#"
+    let script = format!(
+        r#"
 $ErrorActionPreference = 'SilentlyContinue'
-function Stop-AugustBackends {
-  Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force
-  Get-CimInstance Win32_Process | Where-Object {
+function Stop-AugustBackends {{
+  Get-CimInstance Win32_Process | Where-Object {{
     $_.Name -match '^(python|pythonw|node)(\.exe)?$' -and (
       ($_.ExecutablePath -and (
         $_.ExecutablePath -match '[\\/]August([\\/]|$)' -or
@@ -543,16 +573,17 @@ function Stop-AugustBackends {
         $_.CommandLine -match 'AUGUST_PROXY'
       ))
     )
-  } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-  foreach ($port in 8085, 8787) {
+  }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}
+  foreach ($port in {port}, 8787) {{
     Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
-      ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-  }
-}
+      ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force }}
+  }}
+}}
 Stop-AugustBackends
 Start-Sleep -Milliseconds 500
 Stop-AugustBackends
-"#;
+"#
+    );
     let dir = std::env::temp_dir();
     let path = dir.join(format!("august-stop-backend-{}.ps1", std::process::id()));
     if std::fs::write(&path, script).is_err() {
@@ -574,6 +605,24 @@ Stop-AugustBackends
         Err(e) => log::warn!("[backend] orphan python/node sweep failed: {e}"),
     }
     let _ = std::fs::remove_file(&path);
+}
+
+/// Best-effort: free the proxy listen port on macOS/Linux after Quit.
+#[cfg(not(windows))]
+fn killProxyPortListeners() {
+    let port = proxyPort().to_string();
+    // lsof -ti tcp:PORT | xargs kill -9
+    if let Ok(output) = Command::new("lsof")
+        .args(["-ti", &format!("tcp:{port}")])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for pid in stdout.split_whitespace() {
+                let _ = Command::new("kill").args(["-9", pid]).status();
+            }
+        }
+    }
 }
 
 /// Hide console windows for long-lived backend processes on Windows.
