@@ -46,6 +46,18 @@ async function stopBackendBeforeInstall(): Promise<void> {
   }
 }
 
+/**
+ * Windows: `update.install()` quits the process before JS can `relaunch()`.
+ * Schedule a detached starter first; NSIS POSTINSTALL also starts August.
+ */
+async function schedulePostUpdateRelaunch(): Promise<void> {
+  try {
+    await invoke<string>('schedule_post_update_relaunch');
+  } catch (err) {
+    console.warn('[update] schedule_post_update_relaunch failed', err);
+  }
+}
+
 export function useAppUpdate() {
   const queryClient = useQueryClient();
   const installing = useAppUpdateInstallStore((s) => s.installing);
@@ -139,13 +151,16 @@ export function useAppUpdate() {
         phase: 'installing',
       });
       await stopBackendBeforeInstall();
+      // Must run before install(): on Windows the process is killed inside install().
+      await schedulePostUpdateRelaunch();
       await update.install();
 
+      // Non-Windows (and rare Windows paths where install() returns): relaunch now.
       try {
         const { relaunch } = await import('@tauri-apps/plugin-process');
         await relaunch();
       } catch {
-        toast.success('Update installed — restart August to finish.');
+        toast.success('Update installed — August should reopen shortly.');
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

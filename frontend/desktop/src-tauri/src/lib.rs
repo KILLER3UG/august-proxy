@@ -80,6 +80,7 @@ pub fn run() {
             backend::backend_setup_status,
             backend::sync_backend_deps,
             backend::stop_backend_for_update,
+            backend::schedule_post_update_relaunch,
             confirm_quit,
         ])
         .build(tauri::generate_context!())

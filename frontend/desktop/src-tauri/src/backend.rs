@@ -1033,6 +1033,55 @@ pub fn stop_backend_for_update(app: AppHandle) -> Result<String, String> {
     Ok("stopped".into())
 }
 
+/// Schedule a detached relaunch after the Windows updater quits this process.
+///
+/// On Windows, `update.install()` exits the app before JS can call `relaunch()`.
+/// Silent NSIS installs also skip the normal "run app" step. NSIS POSTINSTALL
+/// relaunches when possible; this is a safety net if that path is skipped.
+#[tauri::command]
+pub fn schedule_post_update_relaunch() -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_str = exe.to_string_lossy().replace('\'', "''");
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS — survive August.exe exit
+        // and PREINSTALL taskkill (which only targets August / python / node).
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        let script = format!(
+            "$ErrorActionPreference='SilentlyContinue'; \
+             Start-Sleep -Seconds 8; \
+             if (-not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
+               Start-Process -FilePath '{exe_str}' \
+             }}"
+        );
+        std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &script,
+            ])
+            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        log::info!("[update] scheduled post-update relaunch of {}", exe.display());
+        return Ok("scheduled".into());
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = exe_str;
+        Ok("noop".into())
+    }
+}
+
 #[tauri::command]
 pub fn select_directory(app: AppHandle) -> Option<String> {
     use tauri_plugin_dialog::DialogExt;

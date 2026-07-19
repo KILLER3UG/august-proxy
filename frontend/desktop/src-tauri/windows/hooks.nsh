@@ -8,6 +8,10 @@
 ;   3) Kill whatever still listens on 8085
 ;   4) Rename locked python trees out of the way so the copy can proceed
 ;   5) Retry a few times; only then show a plain-language Retry prompt
+;      (skipped in silent/updater installs — MessageBox would strand the update)
+;
+; After install: silent/updater mode must relaunch August — Tauri NSIS does not
+; auto-start the app after a quiet update (known gap; see tauri#6955).
 
 !macro NSIS_HOOK_PREINSTALL
   DetailPrint "Closing August so it can be updated…"
@@ -84,6 +88,9 @@
     IntCmp $R1 3 stop_ask stop_retry_loop stop_ask
 
   stop_ask:
+    ; Silent/updater installs must never block on MessageBox — that leaves the
+    ; app quit with no UI and no relaunch.
+    IfSilent stop_done
     MessageBox MB_RETRYCANCEL|MB_ICONINFORMATION \
       "August is still finishing in the background.$\r$\n$\r$\nClick Retry — we will close it for you.$\r$\nNo need to open Task Manager." \
       IDRETRY stop_retry_loop
@@ -95,4 +102,13 @@
 
   Pop $R1
   Pop $R0
+!macroend
+
+!macro NSIS_HOOK_POSTINSTALL
+  ; Quiet/updater installs exit without starting the app. Relaunch explicitly.
+  IfSilent 0 august_postinstall_skip
+  DetailPrint "Starting August…"
+  ; Detached start so the installer can finish cleanly.
+  Exec '"$INSTDIR\August.exe"'
+  august_postinstall_skip:
 !macroend
