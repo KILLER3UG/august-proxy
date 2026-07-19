@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from app.adapters.openai import toOpenaiCompatibleTargetUrl
 from app.providers.api_format import (
+    anthropic_v1_base,
     is_anthropic_api_format,
     is_openai_api_format,
+    join_provider_url,
     normalize_api_format,
+    normalize_provider_base_url,
+    provider_endpoint_url,
 )
 from app.services.workbench.providers import is_anthropic_provider, is_openai_provider
 
@@ -46,3 +51,39 @@ def test_resolver_normalizes_api_mode():
         }
     )
     assert out['apiMode'] == 'openaiChat'
+
+
+def test_normalize_strips_leaf_endpoints():
+    assert (
+        normalize_provider_base_url('https://opencode.ai/zen/v1/chat/completions')
+        == 'https://opencode.ai/zen/v1'
+    )
+    assert (
+        normalize_provider_base_url('https://api.kilo.ai/api/gateway/chat/completions/')
+        == 'https://api.kilo.ai/api/gateway'
+    )
+    assert normalize_provider_base_url('https://api.openai.com/v1') == 'https://api.openai.com/v1'
+
+
+def test_base_plus_format_opencode_and_kilo():
+    assert (
+        join_provider_url('https://opencode.ai/zen/v1', 'chat', 'completions')
+        == 'https://opencode.ai/zen/v1/chat/completions'
+    )
+    assert (
+        provider_endpoint_url('https://api.kilo.ai/api/gateway', 'openaiChat', kind='chat')
+        == 'https://api.kilo.ai/api/gateway/chat/completions'
+    )
+    assert (
+        toOpenaiCompatibleTargetUrl('https://api.kilo.ai/api/gateway')
+        == 'https://api.kilo.ai/api/gateway/chat/completions'
+    )
+
+
+def test_anthropic_v1_not_doubled():
+    assert anthropic_v1_base('https://api.anthropic.com') == 'https://api.anthropic.com/v1'
+    assert anthropic_v1_base('https://api.anthropic.com/v1') == 'https://api.anthropic.com/v1'
+    assert (
+        provider_endpoint_url('https://api.anthropic.com/v1', 'anthropicMessages', kind='messages')
+        == 'https://api.anthropic.com/v1/messages'
+    )

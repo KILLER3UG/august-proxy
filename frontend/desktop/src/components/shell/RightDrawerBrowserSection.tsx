@@ -119,7 +119,7 @@ export function RightDrawerBrowserSection() {
                   }}
                 />
               )}
-              {/* Cursor */}
+              {/* Pointer overlay */}
               {cursorPos && (
                 <div
                   className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-1/2"

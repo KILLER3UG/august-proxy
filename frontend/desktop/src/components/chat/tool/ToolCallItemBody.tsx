@@ -34,7 +34,7 @@ function extractSubagentPrompt(context?: string): string | null {
   return null;
 }
 
-/** Claude-style subagent body: one container with a role header and nested
+/** Subagent body: one container with a role header and nested
  *  PROMPT + SUBAGENT OUTPUT boxes. Replaces the generic context/result rows
  *  for spawn_subagent / run_team tool calls. */
 function SubagentToolBody({ tool }: { tool: ToolEntry }) {

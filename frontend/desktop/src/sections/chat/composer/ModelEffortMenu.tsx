@@ -1,4 +1,4 @@
-/* ── Combined model + effort menu (Claude-like) ───────────────────────── */
+/* ── Combined model + effort menu ─────────────────────────────────────── */
 /* One pill trigger; primary popover with Effort / More models flyouts.   */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';

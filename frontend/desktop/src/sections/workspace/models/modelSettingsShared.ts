@@ -12,12 +12,13 @@ import type { AggregatedModel } from '@/api/api-client';
  * Values must be canonical backend ids (camelCase). Labels stay user-facing.
  */
 export const API_FORMATS: { value: ApiFormat; label: string }[] = [
-  { value: 'anthropicMessages', label: 'Anthropic messages (/v1/messages)' },
-  { value: 'openaiChat', label: 'Chat completions (/chat/completions)' },
-  { value: 'openaiResponses', label: 'Responses (/responses)' },
+  { value: 'openaiChat', label: 'OpenAI chat → base + /chat/completions' },
+  { value: 'anthropicMessages', label: 'Anthropic → base + /v1/messages' },
+  { value: 'openaiResponses', label: 'OpenAI responses → base + /responses' },
 ];
 
-export const DEFAULT_API_FORMAT: ApiFormat = 'anthropicMessages';
+/** Prefer chat completions for custom OpenAI-compatible gateways (OpenCode, Kilo, …). */
+export const DEFAULT_API_FORMAT: ApiFormat = 'openaiChat';
 
 export type ModelSettingsSubtab =
   | 'providers'

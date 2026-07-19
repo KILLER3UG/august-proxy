@@ -1,5 +1,5 @@
 /**
- * SubagentLaunchList — Cursor-style "Checked to do list" for parallel subagents.
+ * SubagentLaunchList — checklist for parallel subagents.
  * Click a row to open SubagentDetailModal.
  */
 

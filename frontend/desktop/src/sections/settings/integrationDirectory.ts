@@ -1,5 +1,5 @@
 /* ── Integration directory catalog ─────────────────────────────────── */
-/* Browseable list of things the user can add to August (not Claude).
+/* Browseable list of things the user can add to August.
  * Account facets (Gmail vs Calendar vs Drive) are separate so users
  * only enable what they need. MCP extensions install as real servers. */
 

@@ -1,5 +1,5 @@
 /* ── PermissionToast ──────────────────────────────────────────────────── */
-/* Claude-style lightweight grant toast: Once / This chat / Always here.  */
+/* Lightweight grant toast: Once / This chat / Always here.  */
 /* Reuses POST /api/workbench/confirm-mutation (same grant store as banner). */
 
 import { useState } from 'react';

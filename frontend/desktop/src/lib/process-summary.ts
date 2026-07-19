@@ -1,6 +1,6 @@
 /**
  * One-line process summary for the settled ActivitySummary header.
- * Prefer a short prose gist from thinking text (Claude-style); callers
+ * Prefer a short prose gist from thinking text; callers
  * fall back to count segments when this returns null.
  */
 

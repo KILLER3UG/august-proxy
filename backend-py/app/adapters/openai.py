@@ -137,22 +137,14 @@ def mergeOpenaiCompatibleProfile(
 
 
 def toOpenaiCompatibleTargetUrl(baseUrl: str) -> str:
-    """Ensure the base URL ends with /chat/completions.
+    """``baseUrl`` (host+prefix) + ``/chat/completions``.
 
-    Handles:
-    - Already has /chat/completions → return as-is
-    - Ends with /v1 → append /chat/completions
-    - Already has version prefix (e.g., /v1beta/openai) → append /chat/completions
-    - Otherwise → append /v1/chat/completions
+    Accepts a clean base (``https://api.kilo.ai/api/gateway``) or a pasted
+    full chat URL (leaf is stripped then re-appended once).
     """
-    base = baseUrl.rstrip('/')
-    if base.endswith('/chat/completions'):
-        return base
-    if base.endswith('/v1'):
-        return f'{base}/chat/completions'
-    if '/v1' in base or '/v2' in base:
-        return f'{base}/chat/completions'
-    return f'{base}/v1/chat/completions'
+    from app.providers.api_format import join_provider_url
+
+    return join_provider_url(baseUrl, 'chat', 'completions')
 
 
 def createOpenaiStreamAccumulator() -> OpenaiStreamAccumulator:

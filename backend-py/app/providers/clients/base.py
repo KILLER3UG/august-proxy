@@ -376,13 +376,14 @@ class BaseProviderClient:
         return None
 
     def resolveBaseUrl(self) -> str:
-        """Resolve the base URL from env vars, config.json, or provider default."""
+        """Resolve host+prefix base URL (no /chat/completions leaf)."""
         from app.config import settings
+        from app.providers.api_format import normalize_provider_base_url
 
         providerName = as_str(self.config.get('name'), '')
         cfg = as_dict(settings.config.get(providerName), {})
         baseUrl = as_str(cfg.get('baseUrl')) or as_str(self.config.get('baseUrl'), '')
-        return baseUrl.rstrip('/') if baseUrl else ''
+        return normalize_provider_base_url(baseUrl)
 
     async def requestJson(
         self, method: str, url: str, headers: dict[str, str], body: dict[str, object] | None = None

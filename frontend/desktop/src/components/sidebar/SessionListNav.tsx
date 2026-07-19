@@ -1,4 +1,4 @@
-/* ── Session list nav — Cursor-style top actions ─────────────────────── */
+/* ── Session list nav — top actions ─────────────────────────────────── */
 /* Collapse · New chat · Automations · Skills & Tools · Artifacts         */
 
 import { motion } from "framer-motion";

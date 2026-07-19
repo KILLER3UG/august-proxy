@@ -1,5 +1,5 @@
 /**
- * Claude-style tool step: collapsed one-liner; expand for inset Response.
+ * Tool step: collapsed one-liner; expand for inset Response.
  * Collapse state is owned by the parent (id-keyed) so it survives re-renders.
  */
 

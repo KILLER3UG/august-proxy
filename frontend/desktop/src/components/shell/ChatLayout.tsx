@@ -200,7 +200,7 @@ export function ChatLayout() {
     }
   }, [workbenchSession?.todos?.length]);
 
-  // Auto-open Plan when a plan is presented (Cursor-style); close when gone.
+  // Auto-open Plan when a plan is presented; close when gone.
   const hasPlanRef = useRef(false);
   useEffect(() => {
     const hasPlan = isNonEmptyPlan(workbenchSession?.plan);

@@ -74,9 +74,9 @@ async def createProvider(body: ProviderCreate):
     store = config_service.getProvidersStore()
     if 'providers' not in store:
         store['providers'] = []
-    from app.providers.api_format import normalize_api_format
+    from app.providers.api_format import normalize_api_format, normalize_provider_base_url
 
-    baseUrl = (body.base_url or '').strip()
+    baseUrl = normalize_provider_base_url(body.base_url)
     apiFormat = normalize_api_format(body.api_format, default='openaiChat')
     if not baseUrl:
         raise HTTPException(
@@ -119,12 +119,12 @@ async def importProviderConfig(body: dict):
     providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
-    from app.providers.api_format import normalize_api_format
+    from app.providers.api_format import normalize_api_format, normalize_provider_base_url
 
     entry = {
         'id': body.get('id', ''),
         'name': body.get('name', 'Imported Provider'),
-        'baseUrl': body.get('baseUrl', ''),
+        'baseUrl': normalize_provider_base_url(body.get('baseUrl', '')),
         'apiFormat': normalize_api_format(body.get('apiFormat'), default='openaiChat'),
         'apiKey': body.get('apiKey', ''),
         'enabled': body.get('enabled', True),
@@ -165,7 +165,9 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
             if body.name is not None:
                 p['name'] = body.name
             if body.base_url is not None:
-                p['baseUrl'] = body.base_url
+                from app.providers.api_format import normalize_provider_base_url
+
+                p['baseUrl'] = normalize_provider_base_url(body.base_url)
             if body.api_format is not None:
                 from app.providers.api_format import normalize_api_format
 
@@ -239,17 +241,16 @@ async def refreshModels(providerId: str):
             try:
                 import httpx
 
-                base = baseUrl.rstrip('/')
+                from app.providers.api_format import join_provider_url, normalize_provider_base_url
+
+                base = normalize_provider_base_url(baseUrl)
                 candidates: list[str] = []
-                if base.endswith('/chat/completions'):
-                    candidates.append(base.replace('/chat/completions', '/v1/models'))
-                    candidates.append(base.replace('/chat/completions', '/models'))
-                elif base.endswith('/v1'):
-                    candidates.append(base + '/models')
-                    candidates.append(base.replace('/v1', '') + '/models')
-                else:
-                    candidates.append(base + '/v1/models')
-                    candidates.append(base + '/models')
+                if base:
+                    candidates.append(join_provider_url(base, 'models'))
+                    if base.endswith('/v1'):
+                        candidates.append(join_provider_url(base[: -len('/v1')], 'models'))
+                    else:
+                        candidates.append(join_provider_url(base, 'v1', 'models'))
                 async with httpx.AsyncClient(timeout=5) as client:
                     for url in candidates:
                         try:

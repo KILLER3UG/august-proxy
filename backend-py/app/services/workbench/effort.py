@@ -165,6 +165,8 @@ def provider_accepts_reasoning_effort(
 
     Official OpenAI/Codex, DeepSeek, and common reasoner model ids accept it.
     Unknown OpenAI-compatible gateways often reject unknown fields — skip those.
+    OpenCode Zen/Go also skip: their Console path is sensitive to extras, and
+    free models work without ``reasoning_effort``.
     """
     if not provider:
         return False
@@ -173,6 +175,9 @@ def provider_accepts_reasoning_effort(
     api_mode = as_str(provider.get('apiMode') or provider.get('api_mode'))
     if api_mode == 'codexResponses':
         return True
+    # OpenCode proxies many upstreams; don't infer from model id alone.
+    if 'opencode' in pname or 'open-code' in pname:
+        return False
     if any(token in pname for token in ('openai', 'codex', 'deepseek', 'xai', 'grok')):
         return True
     return any(

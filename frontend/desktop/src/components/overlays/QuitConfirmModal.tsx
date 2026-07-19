@@ -1,5 +1,5 @@
 /**
- * QuitConfirmModal — Cursor-style quit gate for window close and tray Quit.
+ * QuitConfirmModal — quit gate for window close and tray Quit.
  * Lists working/streaming sessions when any are active.
  */
 

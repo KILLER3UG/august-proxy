@@ -1,6 +1,6 @@
 /**
  * SubagentBlock — thin compatibility wrapper around SubagentLaunchList.
- * Primary UX is the Cursor-style checklist + detail modal.
+ * Primary UX is the checklist + detail modal.
  */
 
 import type { ReactElement } from 'react';

@@ -67,11 +67,10 @@ _STATICModelLists: dict[str, list[dict[str, object]]] = {
 
 def _deriveModelsUrl(baseUrl: str) -> str | None:
     """Derive the /models endpoint URL from a provider's base URL."""
-    base = baseUrl.rstrip('/')
-    for suffix in ['/chat/completions', '/messages', '/responses', '/v1']:
-        if base.endswith(suffix):
-            base = base[: -len(suffix)]
-    return f'{base}/models' if base else None
+    from app.providers.api_format import join_provider_url, normalize_provider_base_url
+
+    base = normalize_provider_base_url(baseUrl)
+    return join_provider_url(base, 'models') if base else None
 
 
 def _getContextWindow(

@@ -81,7 +81,7 @@ export type ToolProgressMap = Map<
   ReadonlyArray<{ path: string; status: 'reading' | 'read' }>
 >;
 
-/** Interleaved Claude-style process timeline + final answer. */
+/** Interleaved process timeline (thinking/tools) + final answer. */
 export function AssistantBlockTimeline({
   displayBlocks,
   message,
@@ -111,18 +111,24 @@ export function AssistantBlockTimeline({
   const { processBlocks, finalBlocks, hasFinalOutput } =
     splitProcessAndFinal(displayBlocks);
 
-  // Id-keyed expand overrides; missing key → default from tool status.
+  // Id-keyed expand overrides; missing key → default from status.
+  // Tools: running → open. Thinking: collapsed by default (user expands).
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>(
     {},
   );
 
-  const toggleTool = (id: string, next: boolean) => {
+  const toggleExpand = (id: string, next: boolean) => {
     setExpandOverrides((prev) => ({ ...prev, [id]: next }));
   };
 
   const isToolExpanded = (toolId: string, status: string | undefined) => {
     if (toolId in expandOverrides) return expandOverrides[toolId];
     return status === 'running';
+  };
+
+  const isThoughtExpanded = (thoughtId: string) => {
+    if (thoughtId in expandOverrides) return expandOverrides[thoughtId];
+    return false;
   };
 
   const thinkingParts = processBlocks
@@ -240,11 +246,15 @@ export function AssistantBlockTimeline({
           !hasFinalOutput &&
           ti === blocks.length
         );
+        const thoughtId = block.id || `think_${start}`;
+        const thoughtExpanded = isThoughtExpanded(thoughtId);
         nodes.push(
           <ThoughtStep
-            key={block.id || `think_${start}`}
+            key={thoughtId}
             content={parts.join('\n\n')}
             isGenerating={isGenerating}
+            expanded={thoughtExpanded}
+            onToggle={() => toggleExpand(thoughtId, !thoughtExpanded)}
           />,
         );
         continue;
@@ -284,7 +294,7 @@ export function AssistantBlockTimeline({
             label={label}
             isCommand={isCommand}
             expanded={expanded}
-            onToggle={() => toggleTool(toolId, !expanded)}
+            onToggle={() => toggleExpand(toolId, !expanded)}
             afterRow={
               isSubagentCall &&
               (promptEntries.length > 0 || subagentContainers.length > 0) ? (
@@ -358,7 +368,16 @@ export function AssistantBlockTimeline({
 
   return (
     <div className="process-timeline" data-slot="process-timeline">
-      {showPendingThinking && <ThoughtStep content="" isGenerating />}
+      {showPendingThinking && (
+        <ThoughtStep
+          content=""
+          isGenerating
+          expanded={isThoughtExpanded('pending_think')}
+          onToggle={() =>
+            toggleExpand('pending_think', !isThoughtExpanded('pending_think'))
+          }
+        />
+      )}
       {renderProcessBlocks(processBlocks)}
       {hasFinalOutput && renderFinal(finalBlocks)}
     </div>

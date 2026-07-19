@@ -120,7 +120,7 @@ describe('AssistantBlockTimeline process UI', () => {
     );
     expect(row).toBeTruthy();
     expect(row).toHaveAttribute('data-expanded', 'true');
-    const toggle = screen.getByRole('button', { name: /Reading/i });
+    const toggle = row!.querySelector('button');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
     const updatedRunning: MessageBlock = {
@@ -151,7 +151,7 @@ describe('AssistantBlockTimeline process UI', () => {
       '[data-slot="tool-step-row"][data-status="running"]',
     );
     expect(rowAfter).toHaveAttribute('data-expanded', 'true');
-    expect(screen.getByRole('button', { name: /Reading/i })).toHaveAttribute(
+    expect(rowAfter!.querySelector('button')).toHaveAttribute(
       'aria-expanded',
       'true',
     );
@@ -193,9 +193,32 @@ describe('AssistantBlockTimeline process UI', () => {
 
     expect(screen.queryByText(/Thought\s*\(\d+\)/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Thinking\s*\(\d+\)/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/First thought/)).toBeInTheDocument();
-    expect(screen.getByText(/Second thought/)).toBeInTheDocument();
     expect(document.querySelectorAll('[data-slot="thought-step"]').length).toBe(1);
+  });
+
+  it('collapses thinking by default and expands on toggle', () => {
+    renderTimeline([
+      { id: 'th1', type: 'thinking', content: 'First thought.' },
+      {
+        id: 'f1',
+        type: 'finalOutput',
+        content: 'Answer.',
+      },
+    ]);
+
+    const toggle = screen.getByRole('button', { name: /First thought/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('Done')).toBeInTheDocument();
+    // Collapsed: summary on the toggle, full markdown body hidden.
+    expect(document.querySelector('.process-thought-panel')).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(document.querySelector('.process-thought-panel')).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(document.querySelector('.process-thought-panel')).toBeNull();
   });
 
   it('keyboard Enter on collapsed tool toggles aria-expanded', () => {

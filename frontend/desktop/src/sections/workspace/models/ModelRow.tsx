@@ -258,11 +258,6 @@ export function ModelRow({
               <span className="min-w-0">
                 <span className="font-medium">Connected</span>
                 <span className="text-muted-foreground"> · {testResult.latencyMs}ms</span>
-                {testResult.content && (
-                  <span className="block text-muted-foreground/80 truncate max-w-[28rem]" title={testResult.content}>
-                    reply: {testResult.content}
-                  </span>
-                )}
               </span>
             </>
           ) : (

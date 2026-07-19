@@ -21,6 +21,10 @@ import {
   type Folder,
   type SessionStatus,
 } from "@/store/sessions";
+import {
+  selectSessionLiveActivity,
+  useLiveActivityStore,
+} from "@/store/liveActivity";
 import { modelDisplayParts } from "@/sections/chat/ChatThread";
 
 export interface SessionRowProps {
@@ -51,6 +55,9 @@ export function SessionRow({
   onMoveToFolder,
   onDelete,
 }: SessionRowProps) {
+  const liveHeadline = useLiveActivityStore(
+    (s) => selectSessionLiveActivity(s, session.id).headline,
+  );
   const [showMenu, setShowMenu] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -319,51 +326,28 @@ export function SessionRow({
           </div>
         </div>
         <AnimatePresence>
-          {status === "streaming" && (
+          {(status === "working" || status === "streaming") && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-1 ml-3 overflow-hidden"
+              className="flex items-center gap-1.5 ml-3 min-w-0 overflow-hidden"
+              data-slot="session-live-status"
             >
-              <span className="text-xs text-warning/80 font-medium">
+              <span className="text-xs text-warning/80 font-medium shrink-0">
                 {modelDisplayParts(session.model).name}
               </span>
-              <motion.span
-                className="text-xs text-warning/60 font-medium"
-                animate={{ opacity: [0.4, 1, 0.4] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
+              <span className="text-xs text-warning/40 shrink-0" aria-hidden>
+                ·
+              </span>
+              <span
+                className="text-xs text-warning/65 font-medium truncate session-list-meta"
+                title={liveHeadline || undefined}
               >
-                running in background
-              </motion.span>
-            </motion.div>
-          )}
-          {status === "working" && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-1 ml-3 overflow-hidden"
-            >
-              <span className="text-xs text-warning/80 font-medium">
-                {modelDisplayParts(session.model).name}
-              </span>
-              <span className="text-xs text-warning/50">is</span>
-              <span className="flex items-center gap-px">
-                {["w", "o", "r", "k", "i", "n", "g"].map((ch, i) => (
-                  <motion.span
-                    key={i}
-                    className="text-xs text-warning/70 font-medium inline-block"
-                    animate={{ opacity: [0.3, 1, 0.3], y: [1, -1, 1] }}
-                    transition={{
-                      duration: 0.8,
-                      repeat: Infinity,
-                      delay: i * 0.08,
-                    }}
-                  >
-                    {ch}
-                  </motion.span>
-                ))}
+                {liveHeadline?.trim() ||
+                  (status === "streaming"
+                    ? "Running in background"
+                    : "Working…")}
               </span>
             </motion.div>
           )}
@@ -372,18 +356,15 @@ export function SessionRow({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-1 ml-3 overflow-hidden"
+              className="flex items-center gap-1.5 ml-3 min-w-0 overflow-hidden"
             >
-              <span className="text-xs text-success/80 font-medium">
+              <span className="text-xs text-success/80 font-medium shrink-0">
                 {modelDisplayParts(session.model).name}
               </span>
-              <motion.span
-                className="text-xs text-success/60 font-medium"
-                animate={{ opacity: [0.4, 1, 0.4] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-              >
-                done
-              </motion.span>
+              <span className="text-xs text-success/40 shrink-0" aria-hidden>
+                ·
+              </span>
+              <span className="text-xs text-success/60 font-medium">Done</span>
             </motion.div>
           )}
           {status === "error" && (
@@ -391,14 +372,15 @@ export function SessionRow({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-1 ml-3 overflow-hidden"
+              className="flex items-center gap-1.5 ml-3 min-w-0 overflow-hidden"
             >
-              <span className="text-xs text-danger/80 font-medium">
+              <span className="text-xs text-danger/80 font-medium shrink-0">
                 {modelDisplayParts(session.model).name}
               </span>
-              <span className="text-xs text-danger/60 font-medium">
-                error
+              <span className="text-xs text-danger/40 shrink-0" aria-hidden>
+                ·
               </span>
+              <span className="text-xs text-danger/60 font-medium">Error</span>
             </motion.div>
           )}
         </AnimatePresence>

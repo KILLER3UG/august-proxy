@@ -139,12 +139,15 @@ export function ProviderDetailForm({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 space-y-4">
-        <WorkspaceField label="Base URL">
+        <WorkspaceField
+          label="Base URL"
+          hint="Host + prefix only — the selected API format appends the endpoint path."
+        >
           <Input
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             onBlur={() => baseUrl !== provider.baseUrl && flushField('baseUrl', baseUrl)}
-            placeholder="https://api.example.com/v1"
+            placeholder="https://opencode.ai/zen/v1"
           />
         </WorkspaceField>
 

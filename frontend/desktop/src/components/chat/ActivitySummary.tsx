@@ -27,7 +27,7 @@ export interface ActivitySummaryProps extends ActivitySummaryCounts {
   children: ReactNode;
   /**
    * Optional prose one-liner (from thinking). When set, it is the primary
-   * collapsed label — matching Claude-style “summary above the answer”.
+   * collapsed label.
    */
   summary?: string | null;
   /** Optional “Thought for 2.7s” style meta when settled. */

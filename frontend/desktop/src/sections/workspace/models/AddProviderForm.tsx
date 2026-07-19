@@ -73,11 +73,14 @@ export function AddProviderForm({
           />
         </WorkspaceField>
 
-        <WorkspaceField label="Base URL">
+        <WorkspaceField
+          label="Base URL"
+          hint="Host + prefix only — API format appends /chat/completions or /messages. e.g. https://opencode.ai/zen/v1 or https://api.kilo.ai/api/gateway"
+        >
           <Input
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://api.example.com/v1"
+            placeholder="https://opencode.ai/zen/v1"
           />
         </WorkspaceField>
 

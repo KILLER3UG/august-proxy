@@ -1,4 +1,4 @@
-/* ── Session list — Cursor-like sidebar ─────────────────────────────── */
+/* ── Session list ───────────────────────────────────────────────────── */
 /* Top:   Collapse · New chat · Automations · Skills · Artifacts           */
 /* Middle: Pinned + Repositories (folders / sessions)                      */
 /* Bottom: Settings                                                        */

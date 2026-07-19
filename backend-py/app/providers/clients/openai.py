@@ -9,6 +9,7 @@ Port of the HTTP transport portions of backend/adapters/openai.js.
 
 from __future__ import annotations
 from typing import AsyncIterator
+from app.providers.api_format import join_provider_url, normalize_provider_base_url
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 
@@ -30,21 +31,21 @@ class OpenAIClient(BaseProviderClient):
         return headers
 
     def resolveBaseUrl(self) -> str:
-        """Resolve the base URL for OpenAI-compatible APIs.
-
-        Defaults to ``https://api.openai.com/v1``.
-        """
+        """Host+prefix only — format appends ``/chat/completions`` etc."""
         base = super().resolveBaseUrl()
         if not base:
             base = 'https://api.openai.com/v1'
-        return base.rstrip('/')
+        return normalize_provider_base_url(base)
+
+    def _endpoint(self, *parts: str) -> str:
+        return join_provider_url(self.resolveBaseUrl(), *parts)
 
     async def chat_completions(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
         """Non-streaming call to POST /chat/completions."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
         headers = self.buildAuthHeaders(apiKey)
-        url = f'{self.resolveBaseUrl()}/chat/completions'
+        url = self._endpoint('chat', 'completions')
         body['stream'] = False
         return await self.requestJson('POST', url, headers, body)
 
@@ -58,26 +59,23 @@ class OpenAIClient(BaseProviderClient):
         if apiKey is None:
             apiKey = self.resolveApiKey()
         headers = self.buildAuthHeaders(apiKey)
-        url = f'{self.resolveBaseUrl()}/chat/completions'
+        url = self._endpoint('chat', 'completions')
         body['stream'] = True
         async for event in self.streamSse(url, headers, body):
             yield event
 
     async def responses(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
-        """Call to POST /v1/responses (OpenAI Responses API).
-
-        OpenAI's newer Responses API is a non-streaming endpoint.
-        """
+        """Call to POST /responses (OpenAI Responses API)."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
         headers = self.buildAuthHeaders(apiKey)
-        url = f'{self.resolveBaseUrl()}/responses'
+        url = self._endpoint('responses')
         return await self.requestJson('POST', url, headers, body)
 
     async def listModels(self, apiKey: str | None = None) -> ProviderResponse:
-        """Call GET /v1/models to list available models."""
+        """Call GET /models to list available models."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
         headers = self.buildAuthHeaders(apiKey)
-        url = f'{self.resolveBaseUrl()}/models'
+        url = self._endpoint('models')
         return await self.requestJson('GET', url, headers)

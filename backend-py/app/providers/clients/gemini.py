@@ -8,6 +8,7 @@ Auth is via the ``x-goog-api-key`` header (not Bearer token).
 
 from __future__ import annotations
 from typing import AsyncIterator
+from app.providers.api_format import join_provider_url, normalize_provider_base_url
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 
@@ -30,14 +31,14 @@ class GeminiClient(BaseProviderClient):
         base = super().resolveBaseUrl()
         if not base:
             base = 'https://generativelanguage.googleapis.com/v1beta/openai'
-        return base.rstrip('/')
+        return normalize_provider_base_url(base)
 
     async def chat_completions(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
         """Non-streaming call to POST /chat/completions."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
         headers = self.buildAuthHeaders(apiKey)
-        url = f'{self.resolveBaseUrl()}/chat/completions'
+        url = join_provider_url(self.resolveBaseUrl(), 'chat', 'completions')
         body['stream'] = False
         return await self.requestJson('POST', url, headers, body)
 
@@ -48,7 +49,7 @@ class GeminiClient(BaseProviderClient):
         if apiKey is None:
             apiKey = self.resolveApiKey()
         headers = self.buildAuthHeaders(apiKey)
-        url = f'{self.resolveBaseUrl()}/chat/completions'
+        url = join_provider_url(self.resolveBaseUrl(), 'chat', 'completions')
         body['stream'] = True
         async for event in self.streamSse(url, headers, body):
             yield event

@@ -24,12 +24,12 @@ class MiniMaxClient(AnthropicClient):
     apiFormat = 'minimax'
 
     def resolveBaseUrl(self) -> str:
-        """Resolve the MiniMax API URL.
+        """MiniMax Anthropic-compatible host+prefix ending in ``/v1``."""
+        from app.providers.api_format import anthropic_v1_base, normalize_provider_base_url
+        from app.providers.clients.base import BaseProviderClient
 
-        MiniMax provides an Anthropic-compatible endpoint.
-        The base URL already includes the /anthropic path.
-        """
-        base = super().resolveBaseUrl()
+        # Skip AnthropicClient.resolveBaseUrl (anthropic.com default).
+        base = normalize_provider_base_url(BaseProviderClient.resolveBaseUrl(self))
         if not base:
             base = as_str(self.config.get('baseUrl'), 'https://api.minimax.io/anthropic')
-        return base.rstrip('/')
+        return anthropic_v1_base(base)

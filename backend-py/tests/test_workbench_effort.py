@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from app.services.model_service import get_max_output_tokens
+from app.services.model_service import _deriveModelsUrl, get_max_output_tokens
 from app.services.workbench.effort import (
     resolve_effective_effort,
     effort_to_thinking_budget,
@@ -130,9 +130,19 @@ class TestProviderAcceptsReasoningEffort:
         assert provider_accepts_reasoning_effort({'name': 'OpenAI API'}, 'gpt-4o')
         assert provider_accepts_reasoning_effort({'name': 'xAI'}, 'grok-4')
 
-    def test_unknown_gateway_skipped_unless_model_hints(self):
+    def test_opencode_never_gets_reasoning_effort(self):
+        # Even deepseek-* ids — OpenCode Console rejects unknown extras.
         assert not provider_accepts_reasoning_effort({'name': 'OpenCode Zen'}, 'some-chat')
-        assert provider_accepts_reasoning_effort({'name': 'OpenCode Zen'}, 'deepseek-reasoner')
+        assert not provider_accepts_reasoning_effort(
+            {'name': 'OpenCode Zen'}, 'deepseek-reasoner'
+        )
+        assert not provider_accepts_reasoning_effort(
+            {'name': 'opencode-go'}, 'deepseek-v4-flash'
+        )
+
+    def test_unknown_gateway_uses_model_hints(self):
+        assert provider_accepts_reasoning_effort({'name': 'Custom Proxy'}, 'deepseek-reasoner')
+        assert not provider_accepts_reasoning_effort({'name': 'Custom Proxy'}, 'some-chat')
 
 
 class TestEffortToOpenaiReasoningEffort:
@@ -160,3 +170,19 @@ class TestReexports:
         )
         assert wb.effortToPromptInstruction('max') == effort_to_prompt_instruction('max')
         assert wb.effortToOpenaiReasoningEffort('max') == effort_to_openai_reasoning_effort('max')
+
+
+class TestDeriveModelsUrl:
+    def test_keeps_v1_prefix(self):
+        assert (
+            _deriveModelsUrl('https://opencode.ai/zen/v1') == 'https://opencode.ai/zen/v1/models'
+        )
+        assert (
+            _deriveModelsUrl('https://api.openai.com/v1') == 'https://api.openai.com/v1/models'
+        )
+
+    def test_strips_chat_completions_only(self):
+        assert (
+            _deriveModelsUrl('https://opencode.ai/zen/v1/chat/completions')
+            == 'https://opencode.ai/zen/v1/models'
+        )
