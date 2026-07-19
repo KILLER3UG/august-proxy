@@ -16,7 +16,7 @@
 mod backend;
 mod tray;
 
-use tauri::{AppHandle, Manager, RunEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent};
 
 /// Confirmed quit from the webview modal (tray Quit → quit-requested → UI).
 /// Stops the local backend first so the next launch starts a fresh process.
@@ -63,10 +63,13 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Hide-to-tray on close (X) instead of quitting
+            // Window X / Alt+F4 → full quit (same confirm modal as tray Quit).
+            // Hide-to-tray remains available from the tray menu only.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
                 api.prevent_close();
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.app_handle().emit("quit-requested", ());
             }
         })
         .invoke_handler(tauri::generate_handler![
