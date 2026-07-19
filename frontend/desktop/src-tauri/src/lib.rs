@@ -48,6 +48,14 @@ pub fn run() {
                 },
             )));
 
+            // Clear leftover quiet-update marker from NSIS POSTINSTALL.
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    let marker = dir.join(".august-update-complete");
+                    let _ = std::fs::remove_file(marker);
+                }
+            }
+
             // Start the backend off the UI thread so the webview can show a
             // setup overlay while first-launch bootstrap / uvicorn warm-up runs.
             // Then keep a watchdog that restarts if the process dies.

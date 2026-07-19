@@ -1037,11 +1037,21 @@ pub fn stop_backend_for_update(app: AppHandle) -> Result<String, String> {
 ///
 /// On Windows, `update.install()` exits the app before JS can call `relaunch()`.
 /// Silent NSIS installs also skip the normal "run app" step. NSIS POSTINSTALL
-/// relaunches when possible; this is a safety net if that path is skipped.
+/// relaunches when possible; this waiter is a safety net if that path is skipped.
+///
+/// Important: do **not** use a fixed short sleep — large `resources/python`
+/// copies often take longer than 8s. Relaunching mid-copy causes file-lock
+/// errors and half-written binaries. Wait for `.august-update-complete`
+/// (written in NSIS POSTINSTALL) or a long timeout with the exe present.
 #[tauri::command]
 pub fn schedule_post_update_relaunch() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_str = exe.to_string_lossy().replace('\'', "''");
+    let dir = exe
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| exe.clone());
+    let dir_str = dir.to_string_lossy().replace('\'', "''");
 
     #[cfg(windows)]
     {
@@ -1050,12 +1060,39 @@ pub fn schedule_post_update_relaunch() -> Result<String, String> {
         // and PREINSTALL taskkill (which only targets August / python / node).
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
         const DETACHED_PROCESS: u32 = 0x00000008;
+        // Poll up to ~3 minutes for large Python resource bundles.
         let script = format!(
             "$ErrorActionPreference='SilentlyContinue'; \
-             Start-Sleep -Seconds 8; \
-             if (-not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
-               Start-Process -FilePath '{exe_str}' \
-             }}"
+             $exe = '{exe_str}'; \
+             $dir = '{dir_str}'; \
+             $marker = Join-Path $dir '.august-update-complete'; \
+             $deadline = (Get-Date).AddSeconds(180); \
+             while ((Get-Date) -lt $deadline) {{ \
+               if (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue) {{ \
+                 if (Test-Path -LiteralPath $marker) {{ Remove-Item -LiteralPath $marker -Force }}; \
+                 exit 0 \
+               }}; \
+               $installerBusy = @(Get-Process | Where-Object {{ \
+                 $_.ProcessName -match '^(Aug|august).*-setup' -or \
+                 $_.Path -like '*nsis*' -or \
+                 ($_.Path -and $_.Path -like '*\\AppData\\Local\\Temp\\*' -and $_.ProcessName -match '^(Aug|august)') \
+               }}); \
+               if ($installerBusy.Count -gt 0) {{ Start-Sleep -Seconds 2; continue }}; \
+               if ((Test-Path -LiteralPath $marker) -and (Test-Path -LiteralPath $exe)) {{ \
+                 Start-Sleep -Milliseconds 600; \
+                 if (-not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
+                   Start-Process -FilePath $exe \
+                 }}; \
+                 Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue; \
+                 exit 0 \
+               }}; \
+               Start-Sleep -Seconds 2 \
+             }}; \
+             if (-not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue) \
+                 -and (Test-Path -LiteralPath $exe)) {{ \
+               Start-Process -FilePath $exe \
+             }}; \
+             if (Test-Path -LiteralPath $marker) {{ Remove-Item -LiteralPath $marker -Force }}"
         );
         std::process::Command::new("powershell.exe")
             .args([
@@ -1071,13 +1108,16 @@ pub fn schedule_post_update_relaunch() -> Result<String, String> {
             .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
             .spawn()
             .map_err(|e| e.to_string())?;
-        log::info!("[update] scheduled post-update relaunch of {}", exe.display());
+        log::info!(
+            "[update] scheduled post-update relaunch waiter for {}",
+            exe.display()
+        );
         return Ok("scheduled".into());
     }
 
     #[cfg(not(windows))]
     {
-        let _ = exe_str;
+        let _ = (exe_str, dir_str);
         Ok("noop".into())
     }
 }

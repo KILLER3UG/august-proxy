@@ -91,11 +91,13 @@ export function UpdateSection() {
                 )}
                 {installing && (
                   <span className="shrink-0 text-xs font-medium text-primary">
-                    {progress.phase === 'installing'
-                      ? 'Installing…'
-                      : progress.percent != null
-                        ? `Downloading ${progress.percent}%`
-                        : 'Downloading…'}
+                    {progress.phase === 'restarting'
+                      ? 'Restarting…'
+                      : progress.phase === 'installing'
+                        ? 'Installing…'
+                        : progress.percent != null
+                          ? `Downloading ${progress.percent}%`
+                          : 'Downloading…'}
                   </span>
                 )}
               </div>
@@ -107,18 +109,22 @@ export function UpdateSection() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-foreground">
-                    {progress.phase === 'installing'
-                      ? 'Installing update…'
-                      : 'Downloading update…'}
+                    {progress.phase === 'restarting'
+                      ? 'Restarting August…'
+                      : progress.phase === 'installing'
+                        ? 'Installing update…'
+                        : 'Downloading update…'}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {progress.phase === 'installing'
-                      ? 'Almost done — the app will restart shortly.'
-                      : 'The app will restart after installation.'}
+                    {progress.phase === 'restarting'
+                      ? 'The app will close briefly and reopen on the new version.'
+                      : progress.phase === 'installing'
+                        ? 'Almost done — the app will restart shortly.'
+                        : 'The app will restart after installation.'}
                   </p>
                 </div>
                 <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
-                  {progress.phase === 'installing'
+                  {progress.phase === 'installing' || progress.phase === 'restarting'
                     ? '100%'
                     : progress.percent != null
                       ? `${progress.percent}%`

@@ -105,10 +105,18 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Quiet/updater installs exit without starting the app. Relaunch explicitly.
+  ; Quiet/updater installs exit without starting the app (Tauri#6955).
+  ; 1) Write a completion marker so the pre-scheduled safety-net waiter
+  ;    knows the file copy finished (it must NOT relaunch mid-install).
+  ; 2) Start August via ShellExecute after a short settle delay.
   IfSilent 0 august_postinstall_skip
   DetailPrint "Starting August…"
-  ; Detached start so the installer can finish cleanly.
-  Exec '"$INSTDIR\August.exe"'
+  FileOpen $R9 "$INSTDIR\.august-update-complete" w
+  FileWrite $R9 "ok$\r$\n"
+  FileClose $R9
+  ; Let file handles / AV scanners settle before launch.
+  Sleep 800
+  ; ShellExecute is more reliable than Exec for GUI apps after silent NSIS.
+  ExecShell "open" "$INSTDIR\August.exe" "" SW_SHOWNORMAL
   august_postinstall_skip:
 !macroend

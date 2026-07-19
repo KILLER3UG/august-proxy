@@ -4,12 +4,14 @@
 
 import { create } from 'zustand';
 
+export type AppUpdatePhase = 'idle' | 'downloading' | 'installing' | 'restarting';
+
 export interface AppUpdateProgress {
   /** 0–100 while downloading; null when size is unknown. */
   percent: number | null;
   downloadedBytes: number;
   totalBytes: number | null;
-  phase: 'idle' | 'downloading' | 'installing';
+  phase: AppUpdatePhase;
 }
 
 export const IDLE_UPDATE_PROGRESS: AppUpdateProgress = {

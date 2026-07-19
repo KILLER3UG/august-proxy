@@ -103,6 +103,70 @@ def _resolve_context_window(raw: object) -> int:
     return 128000
 
 
+def _lookup_model_profile(
+    model_id: str, provider: dict[str, object] | None
+) -> dict[str, object]:
+    if not provider:
+        return {}
+    profiles = as_dict(provider.get('modelProfiles') or provider.get('model_profiles'), {})
+    if not profiles:
+        return {}
+    if model_id in profiles:
+        return as_dict(profiles.get(model_id))
+    model_l = (model_id or '').lower()
+    best_key = ''
+    best: dict[str, object] = {}
+    for key, val in profiles.items():
+        if key == '*' or not isinstance(key, str):
+            continue
+        if model_l.startswith(str(key).lower()) and len(str(key)) > len(best_key):
+            best_key = str(key)
+            best = as_dict(val)
+    if best_key:
+        return best
+    return as_dict(profiles.get('*'))
+
+
+def get_max_output_tokens(
+    model_id: str,
+    provider: dict[str, object] | None = None,
+    fallback: object = None,
+) -> int:
+    """Resolve max completion tokens from the **model** (not workbench policy).
+
+    Order:
+      1. Explicit profile ``maxOutputTokens`` / aliases
+      2. Caller ``fallback`` when positive
+      3. Derived from the model's ``contextWindow`` (~1/8, clamped)
+      4. Known model-family defaults (Claude / o-series / generic)
+    """
+    profile = _lookup_model_profile(model_id, provider)
+    for key in ('maxOutputTokens', 'max_output_tokens', 'maxTokens', 'max_tokens'):
+        n = as_int(profile.get(key), 0)
+        if n > 0:
+            return n
+    if isinstance(fallback, (int, float)) and not isinstance(fallback, bool):
+        n = int(fallback)
+        if n > 0:
+            return n
+    # Prefer an explicit contextWindow on the model profile. Avoid the bare
+    # 128k _getContextWindow default when no provider/profile is present —
+    # that would invent a workbench-like ceiling instead of a model one.
+    ctx = as_int(profile.get('contextWindow') or profile.get('context_window'), 0)
+    if ctx <= 0 and provider is not None and (
+        as_dict(provider.get('modelProfiles') or provider.get('model_profiles'))
+    ):
+        ctx = _getContextWindow(model_id, provider)
+    if ctx > 0:
+        return max(4096, min(65536, ctx // 8))
+    mid = (model_id or '').lower()
+    if 'claude' in mid:
+        return 64000
+    if any(tok in mid for tok in ('o1', 'o3', 'o4', 'gpt-5', 'reasoner')):
+        return 32768
+    return 16384
+
+
 def _isFreeModelId(modelId: str) -> bool:
     """Check if a model ID indicates a free tier (:free / -free)."""
     if not isinstance(modelId, str):

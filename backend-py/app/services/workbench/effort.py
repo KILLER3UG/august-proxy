@@ -2,20 +2,35 @@
 Effort / thinking-budget helpers for workbench chat.
 
 Maps August's 4-level effort (low | medium | high | max) to:
-- Anthropic thinking budget tokens
+- Anthropic thinking budget tokens (a *fraction* of the model's max output)
 - System-prompt instructions
 - OpenAI reasoning_effort values
 
-Extracted from workbench.py for Phase 3 modularization.
+``max_tokens`` on the completion request always comes from the **model**
+via :func:`app.services.model_service.get_max_output_tokens`. The workbench
+does not invent an output ceiling — effort only chooses how much of that
+model ceiling may be spent on thinking, always leaving headroom for the
+final answer / tool calls.
 """
 
 from __future__ import annotations
 
 from typing import Protocol
 
-from app.json_narrowing import as_str
+from app.json_narrowing import as_bool, as_dict, as_str
 
 _VALID_EFFORTS = frozenset({'low', 'medium', 'high', 'max'})
+
+# Fraction of the *model's* max_output reserved for thinking by effort level.
+# Remainder is available for the visible answer + tool_use.
+_EFFORT_THINKING_FRACTION: dict[str, float] = {
+    'low': 0.05,
+    'medium': 0.15,
+    'high': 0.35,
+    'max': 0.75,
+}
+# Always keep at least this fraction of model max_output for the answer.
+_ANSWER_HEADROOM_FRACTION = 0.25
 
 
 class EffortSession(Protocol):
@@ -38,27 +53,91 @@ def resolve_effective_effort(
     return 'medium'
 
 
-def effort_to_thinking_budget(effort: str, model_max: int = 32000, max_tokens: int = 8192) -> int:
-    """Map effort to Anthropic thinking budget tokens."""
-    mapping = {
-        'low': min(4096, max_tokens),
-        'medium': min(8192, max_tokens),
-        'high': min(16000, max_tokens),
-        'max': min(model_max, max_tokens * 2),
-    }
-    return mapping.get(effort, 8192)
+def lookup_model_profile(
+    provider: dict[str, object] | None,
+    model: str,
+) -> dict[str, object]:
+    """Resolve the best matching modelProfiles entry for ``model``."""
+    if not provider:
+        return {}
+    profiles = as_dict(provider.get('modelProfiles') or provider.get('model_profiles'), {})
+    if not profiles:
+        return {}
+    if model in profiles:
+        return as_dict(profiles.get(model))
+    model_l = (model or '').lower()
+    best_key = ''
+    best: dict[str, object] = {}
+    for key, val in profiles.items():
+        if key == '*' or not isinstance(key, str):
+            continue
+        if model_l.startswith(str(key).lower()) and len(str(key)) > len(best_key):
+            best_key = str(key)
+            best = as_dict(val)
+    if best_key:
+        return best
+    return as_dict(profiles.get('*'))
+
+
+def model_max_output_tokens(
+    provider: dict[str, object] | None,
+    model: str,
+) -> int:
+    """Delegate to model_service — output limits live on the model, not workbench."""
+    from app.services.model_service import get_max_output_tokens
+
+    return get_max_output_tokens(model, provider)
+
+
+def effort_to_thinking_budget(
+    effort: str,
+    model_max: int,
+    max_tokens: int | None = None,
+) -> int:
+    """Map effort to a thinking budget as a fraction of ``model_max``.
+
+    ``model_max`` must be the model's max output tokens. Optional ``max_tokens``
+    is a legacy extra cap used by older call sites/tests.
+    """
+    budget, _ = resolve_completion_limits(effort, max_output_tokens=model_max)
+    if max_tokens is not None and max_tokens > 0:
+        return min(budget, int(max_tokens))
+    return budget
+
+
+def resolve_completion_limits(
+    effort: str,
+    *,
+    max_output_tokens: int,
+) -> tuple[int, int]:
+    """Return ``(thinking_budget, max_tokens)`` from the **model** ceiling.
+
+    - ``max_tokens`` = the model's max output (sent upstream unchanged)
+    - ``thinking_budget`` = effort fraction of that ceiling, never exceeding
+      the reserved answer headroom
+    """
+    max_tokens = max(1, int(max_output_tokens))
+    headroom = max(1, int(max_tokens * _ANSWER_HEADROOM_FRACTION))
+    thinking_cap = max(1, max_tokens - headroom)
+    frac = _EFFORT_THINKING_FRACTION.get(effort, _EFFORT_THINKING_FRACTION['medium'])
+    budget = max(1, min(thinking_cap, int(max_tokens * frac)))
+    # Anthropic requires max_tokens > budget_tokens
+    if max_tokens <= budget:
+        max_tokens = budget + headroom
+    return budget, max_tokens
 
 
 def effort_to_prompt_instruction(effort: str) -> str:
     """Map effort to a system-prompt instruction that scales thinking depth."""
     instructions = {
         'low': (
-            'Keep internal reasoning minimal. Prefer short thinking and move '
-            'to the answer quickly. Do not expand chain-of-thought unless needed.'
+            'Keep internal reasoning extremely short (a few sentences at most). '
+            'Prefer acting or answering quickly. Do not narrate long plans, '
+            'restate tool results, or expand chain-of-thought.'
         ),
         'medium': (
             'Use moderate reasoning. Balance speed with enough analysis to be correct; '
-            'avoid long thinking digressions.'
+            'avoid long thinking digressions and do not restate large tool outputs.'
         ),
         'high': (
             'Think carefully and thoroughly before answering. Prefer deeper analysis '
@@ -109,3 +188,7 @@ def provider_accepts_reasoning_effort(
             'grok-4',
         )
     )
+
+
+def profile_supports_reasoning(profile: dict[str, object]) -> bool:
+    return as_bool(profile.get('supportsThinking')) or as_bool(profile.get('supportsReasoning'))

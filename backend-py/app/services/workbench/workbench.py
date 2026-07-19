@@ -476,7 +476,8 @@ def resolveEffectiveEffort(
     return resolve_effective_effort(incoming, session, modelEntry)
 
 
-def effortToThinkingBudget(effort: str, modelMax: int = 32000, maxTokens: int = 8192) -> int:
+def effortToThinkingBudget(effort: str, modelMax: int, maxTokens: int | None = None) -> int:
+    """``modelMax`` is the model's max output tokens (required)."""
     return effort_to_thinking_budget(effort, model_max=modelMax, max_tokens=maxTokens)
 
 
@@ -1276,11 +1277,32 @@ async def _sendWorkbenchMessageStreamImpl(
             attach_openai_reasoning(assistantMsg, thinkingContent)
             toolUses = cast('list[dict[str, object]]', as_list(response.get('tool_uses', []), []))
         if not toolUses:
+            stop_reason = as_str(response.get('stop_reason') or response.get('finish_reason'))
             if toolRound > 1 and (not textContent) and (not thinkingContent):
                 logger.warning(
                     'workbench model re-call returned empty content after tool round %d (no text, no tools)',
                     toolRound - 1,
                 )
+            elif toolRound > 1 and (not textContent) and thinkingContent:
+                # Long thinking after tools often exhausts max_tokens — surface it
+                # instead of ending the turn with only a process timeline.
+                logger.warning(
+                    'workbench thinking-only after tool round %d (stop_reason=%s, thinking_chars=%d)',
+                    toolRound - 1,
+                    stop_reason or 'unknown',
+                    len(thinkingContent),
+                )
+                if stop_reason in ('max_tokens', 'length') or len(thinkingContent) > 2000:
+                    emit(
+                        {
+                            'type': 'finalOutput',
+                            'content': (
+                                '\n\n_(Stopped after tools with reasoning but no final answer — '
+                                'the output token budget was likely used up by thinking. '
+                                'Try again, or lower thinking depth in the composer.)_'
+                            ),
+                        }
+                    )
             currentMessages.append(assistantMsg)
             queued = drainQueuedMessages(sessionId, emit=emit)
             if queued:

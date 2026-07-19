@@ -122,9 +122,10 @@ class TestEffort:
         assert resolveEffectiveEffort('', session) == 'medium'
 
     def testThinkingBudget(self):
-        assert effortToThinkingBudget('low') <= 8192
-        assert effortToThinkingBudget('high', maxTokens=32000) == 16000
-        assert effortToThinkingBudget('max', modelMax=64000, maxTokens=32000) >= 32000
+        # Budgets are fractions of the model's max output — no workbench 8k ceiling.
+        assert effortToThinkingBudget('low', modelMax=64000) == int(64000 * 0.05)
+        assert effortToThinkingBudget('high', modelMax=32000) == int(32000 * 0.35)
+        assert effortToThinkingBudget('max', modelMax=64000) == int(64000 * 0.75)
 
     def testOpenaiReasoning(self):
         assert effortToOpenaiReasoningEffort('high') == 'high'
@@ -562,9 +563,17 @@ class TestOpenaiWorkbenchThinkingToggle:
         import app.services.memory_store as memoryStore
 
         monkeypatch.setattr(memoryStore, 'record_usage', fakeRecordUsage)
-        providerConfig = {'name': 'anthropic', 'model_profiles': {'*': {}}, 'apiMode': 'anthropicMessages'}
-        monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **k: providerConfig)
-        monkeypatch.setattr(wb, '_resolveModel', lambda *a, **k: 'claude-3-5-sonnet-20241022')
+        providerConfig = {
+            'name': 'anthropic',
+            'apiKey': 'test-key',
+            'modelProfiles': {'claude-3-5-sonnet-20241022': {'maxOutputTokens': 64000}},
+            'apiMode': 'anthropicMessages',
+        }
+        monkeypatch.setattr(
+            wb,
+            '_resolveChatLlm',
+            lambda **kwargs: (providerConfig, 'claude-3-5-sonnet-20241022'),
+        )
         await sendWorkbenchMessageStream(sessionId=session.id, message='hi', provider='anthropic', emit=lambda e: None)
         assert len(recorded) == 1
         rec = recorded[0]

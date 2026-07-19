@@ -5,30 +5,35 @@ import { CommandPalette } from '@/components/overlays/CommandPalette';
 import { ProviderOnboardingModal } from '@/components/overlays/ProviderOnboardingModal';
 import { BackendBootstrapGate } from '@/components/overlays/BackendBootstrapGate';
 import { QuitConfirmModal } from '@/components/overlays/QuitConfirmModal';
+import { UpdateRelaunchOverlay } from '@/components/overlays/UpdateRelaunchOverlay';
 
 export default function App() {
   return (
-    <BackendBootstrapGate>
-      <Routes>
-        <Route element={<ChatLayout />}>
-          {SECTION_ROUTES.map((route) => (
-            <Route key={route.path} path={route.path} element={route.element} />
-          ))}
-          {/* Single parent keeps SettingsPage mounted across tab changes.
-              Child routes only update :section via useParams — no shell remount. */}
-          <Route path="/settings" element={SETTINGS_PAGE_ELEMENT}>
-            <Route index element={null} />
-            <Route path=":section" element={null} />
+    <>
+      <BackendBootstrapGate>
+        <Routes>
+          <Route element={<ChatLayout />}>
+            {SECTION_ROUTES.map((route) => (
+              <Route key={route.path} path={route.path} element={route.element} />
+            ))}
+            {/* Single parent keeps SettingsPage mounted across tab changes.
+                Child routes only update :section via useParams — no shell remount. */}
+            <Route path="/settings" element={SETTINGS_PAGE_ELEMENT}>
+              <Route index element={null} />
+              <Route path=":section" element={null} />
+            </Route>
+            {ALL_ROUTES.filter((r) => r.path === '/_design').map((route) => (
+              <Route key={route.path} path={route.path} element={route.element} />
+            ))}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
-          {ALL_ROUTES.filter((r) => r.path === '/_design').map((route) => (
-            <Route key={route.path} path={route.path} element={route.element} />
-          ))}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-      <CommandPalette />
-      <ProviderOnboardingModal />
-      <QuitConfirmModal />
-    </BackendBootstrapGate>
+        </Routes>
+        <CommandPalette />
+        <ProviderOnboardingModal />
+        <QuitConfirmModal />
+      </BackendBootstrapGate>
+      {/* Outside the gate so a stopped backend during update can't hide it. */}
+      <UpdateRelaunchOverlay />
+    </>
   );
 }

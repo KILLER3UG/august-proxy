@@ -32,6 +32,7 @@ class AnthropicWorkbenchStreamAggregator:
         self.current_tool_input_parts: list[str] = []
         self.usage: dict[str, int] = {}
         self.error: str | None = None
+        self.stop_reason: str | None = None
 
     def on_event(self, event: dict[str, object]) -> None:
         event_type = event.get('_event_type', '')
@@ -100,6 +101,10 @@ class AnthropicWorkbenchStreamAggregator:
             if msg_usage:
                 self.usage['input_tokens'] = as_int(msg_usage.get('input_tokens', 0))
                 self.usage['output_tokens'] = as_int(msg_usage.get('output_tokens', 0))
+            delta = as_dict(event.get('delta', {}))
+            stop = as_str(delta.get('stop_reason') or event.get('stop_reason'))
+            if stop:
+                self.stop_reason = stop
         elif event_type == 'error':
             self.error = f'Stream error: {event}'
 
@@ -119,10 +124,13 @@ class AnthropicWorkbenchStreamAggregator:
         if self.accumulated_text:
             blocks.append({'type': 'text', 'text': self.accumulated_text})
         blocks.extend(self.tool_uses)
-        return {
+        out: dict[str, Any] = {
             'content': blocks,
             'text': self.accumulated_text,
             'thinking': self.accumulated_thinking,
             'tool_uses': self.tool_uses,
             'usage': self.usage,
         }
+        if getattr(self, 'stop_reason', None):
+            out['stop_reason'] = self.stop_reason
+        return out

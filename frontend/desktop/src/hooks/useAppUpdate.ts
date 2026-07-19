@@ -39,16 +39,26 @@ async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
 
 /** Release Python/.pyd locks before NSIS overwrites bundled resources. */
 async function stopBackendBeforeInstall(): Promise<void> {
-  try {
-    await invoke<string>('stop_backend_for_update');
-  } catch (err) {
-    console.warn('[update] stop_backend_for_update failed', err);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await invoke<string>('stop_backend_for_update');
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[update] stop_backend_for_update attempt ${attempt + 1} failed`, err);
+      await new Promise((r) => setTimeout(r, 400));
+    }
   }
+  // Continue anyway — NSIS PREINSTALL also kills orphans — but log loudly.
+  console.error('[update] stop_backend_for_update failed after retries', lastErr);
 }
 
 /**
  * Windows: `update.install()` quits the process before JS can `relaunch()`.
- * Schedule a detached starter first; NSIS POSTINSTALL also starts August.
+ * Schedule a detached waiter first (polls for NSIS completion marker — never
+ * a fixed short sleep that can relaunch mid-copy). NSIS POSTINSTALL also
+ * starts August when the install succeeds.
  */
 async function schedulePostUpdateRelaunch(): Promise<void> {
   try {
@@ -152,10 +162,28 @@ export function useAppUpdate() {
       });
       await stopBackendBeforeInstall();
       // Must run before install(): on Windows the process is killed inside install().
+      // Waiter polls for `.august-update-complete` (NSIS POSTINSTALL) up to ~3 min.
       await schedulePostUpdateRelaunch();
+
+      // Paint the full-screen “restarting” overlay before the process exits so
+      // users aren’t left staring at a frozen UI or a sudden quit.
+      setProgress({
+        percent: 100,
+        downloadedBytes: contentLength ?? downloaded,
+        totalBytes: contentLength ?? downloaded,
+        phase: 'restarting',
+      });
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          window.setTimeout(resolve, 450);
+        });
+      });
+
       await update.install();
 
       // Non-Windows (and rare Windows paths where install() returns): relaunch now.
+      // On Windows quiet NSIS, install() usually never returns — POSTINSTALL +
+      // the scheduled waiter handle relaunch.
       try {
         const { relaunch } = await import('@tauri-apps/plugin-process');
         await relaunch();
@@ -165,9 +193,10 @@ export function useAppUpdate() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error(message || 'Failed to install update');
-    } finally {
       resetInstall();
     }
+    // Do not reset on success — keep the restarting overlay until the process
+    // exits (Windows) or relaunch() replaces the window.
   }, [query.data, queryClient, setInstalling, setProgress, resetInstall]);
 
   return {

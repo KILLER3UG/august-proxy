@@ -1369,3 +1369,21 @@ input::placeholder {
     background-position: -120% 0;
   }
 }
+
+@keyframes aug-relaunch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes aug-relaunch-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.82;
+    filter: brightness(1.15);
+  }
+}

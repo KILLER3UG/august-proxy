@@ -149,12 +149,14 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
               <div className="mx-2 mb-2 rounded-lg border border-border/50 bg-muted/30 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-medium text-foreground">
-                    {progress.phase === 'installing'
-                      ? 'Installing update…'
-                      : 'Downloading update…'}
+                    {progress.phase === 'restarting'
+                      ? 'Restarting August…'
+                      : progress.phase === 'installing'
+                        ? 'Installing update…'
+                        : 'Downloading update…'}
                   </p>
                   <span className="text-xs font-semibold tabular-nums text-foreground">
-                    {progress.phase === 'installing'
+                    {progress.phase === 'installing' || progress.phase === 'restarting'
                       ? '100%'
                       : progress.percent != null
                         ? `${progress.percent}%`

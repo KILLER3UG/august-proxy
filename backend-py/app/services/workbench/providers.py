@@ -16,9 +16,10 @@ from typing import Callable
 from app.json_narrowing import as_str, as_dict, as_list, as_int, as_bool
 from app.models import AnthropicRequest, ChatCompletionRequest
 from app.services.workbench.effort import (
-    effort_to_thinking_budget,
     effort_to_openai_reasoning_effort,
+    model_max_output_tokens,
     provider_accepts_reasoning_effort,
+    resolve_completion_limits,
 )
 
 
@@ -84,7 +85,15 @@ def make_review_llm_client(
         async def reviewLlm(prompt: list[dict[str, object]]) -> str:
             """Call a cheap/fast model for background review."""
             try:
-                body = {'model': _reviewModel, 'messages': prompt, 'max_tokens': 1024}
+                from app.services.model_service import get_max_output_tokens
+
+                # Short background review: use a small slice of the model's ceiling.
+                model_out = get_max_output_tokens(_reviewModel, provider)
+                body = {
+                    'model': _reviewModel,
+                    'messages': prompt,
+                    'max_tokens': max(256, model_out // 32),
+                }
                 resp = await _client.chat_completions(body)
                 bodyJson = resp.body_json or {}
                 if resp.is_error or 'error' in bodyJson:
@@ -350,15 +359,22 @@ async def call_anthropic_workbench(
     from app.adapters.anthropic import translateMessagesToAnthropic
 
     anthropicMessages = translateMessagesToAnthropic(messages)
-    req = AnthropicRequest(model=model, max_tokens=8192)
+    # max_tokens is the model's output ceiling; effort only sizes thinking within it.
+    model_out = model_max_output_tokens(provider, model)
+    if thinking_enabled and supports_thinking(provider, model):
+        thinking_budget, max_tokens = resolve_completion_limits(
+            effort, max_output_tokens=model_out
+        )
+    else:
+        thinking_budget, max_tokens = 0, model_out
+    req = AnthropicRequest(model=model, max_tokens=max_tokens)
     body = buildAnthropicUpstreamRequest(req, model, [{'type': 'text', 'text': system_text}])
     body['messages'] = anthropicMessages
+    body['max_tokens'] = max_tokens
     if tools:
         body['tools'] = tools
-    if thinking_enabled:
-        thinkingBudget = effort_to_thinking_budget(effort)
-        if thinkingBudget > 0 and supports_thinking(provider, model):
-            body['thinking'] = {'type': 'enabled', 'budget_tokens': thinkingBudget}
+    if thinking_budget > 0:
+        body['thinking'] = {'type': 'enabled', 'budget_tokens': thinking_budget}
     agg = AnthropicWorkbenchStreamAggregator(emit=emit)
     try:
         async for event in client.messages_stream(body):
@@ -405,7 +421,13 @@ async def call_openai_workbench(
     req = ChatCompletionRequest(model=model)
     body: dict[str, object] = req.model_dump()  # type: ignore[assignment]
     body['messages'] = openaiMessages
-    body['max_tokens'] = 8192
+    # Completion ceiling from the model profile — not a workbench constant.
+    model_out = model_max_output_tokens(provider, model)
+    if thinking_enabled:
+        _budget, max_tokens = resolve_completion_limits(effort, max_output_tokens=model_out)
+    else:
+        max_tokens = model_out
+    body['max_tokens'] = max_tokens
     if tools:
         body['tools'] = tools
     # Attach OpenAI-style reasoning_effort when the provider/model is likely to
@@ -522,6 +544,8 @@ async def call_openai_workbench(
         'thinking': thinkingText,
         'tool_uses': toolUses,
         'usage': usage,
+        'finish_reason': finishReason or 'stop',
+        'stop_reason': finishReason or 'stop',
     }
 
 
