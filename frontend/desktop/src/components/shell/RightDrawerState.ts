@@ -78,7 +78,15 @@ export function useRightDrawer(): RightDrawerState {
   const activeSection = useRightDrawerStore((s) => s.activeSection);
   const diff = useRightDrawerStore((s) => s.diff);
   const selectedDiffPath = useRightDrawerStore((s) => s.selectedDiffPath);
-  return { open, sections, activeSection, diff, selectedDiffPath };
+  const activityAutoOpenSuppressed = useRightDrawerStore((s) => s.activityAutoOpenSuppressed);
+  return {
+    open,
+    sections,
+    activeSection,
+    diff,
+    selectedDiffPath,
+    activityAutoOpenSuppressed,
+  };
 }
 
 export function useRightDrawerOpen(): boolean {
