@@ -229,10 +229,23 @@ async def _aggregateModels() -> list[dict[str, object]]:
                 # `claude-sonnet-4-7`, most Anthropic/OpenAI models configured
                 # via `modelProfiles`) reported as non-reasoning, which
                 # permanently disabled the Thinking toggle in the UI for them.
+                # Keep in sync with frontend `isLikelyReasoningModel` so Effort /
+                # Thinking UI appears for families that take effort params even
+                # when modelProfiles omit an explicit supportsReasoning claim.
+                mid_l = mid.lower()
+                likely_reasoning = bool(
+                    re.search(
+                        r'(?:\b(?:o1|o3|o4|reasoner|thinking|reasoning)\b|'
+                        r'claude|gpt-5|deepseek|qwen3|qwq|minimax-m2|minimax-m3|'
+                        r'glm-4|glm-5|kimi-k2|grok-[34]|gemini-3)',
+                        mid_l,
+                        re.IGNORECASE,
+                    )
+                )
                 reasoning = (
                     bool(m.get('reasoning', False))
                     or supports_thinking(entry, mid)
-                    or bool(re.search('\\b(o1|o3|reasoner|thinking|reasoning)\\b', mid, re.IGNORECASE))
+                    or likely_reasoning
                 )
                 allModels.append(
                     {

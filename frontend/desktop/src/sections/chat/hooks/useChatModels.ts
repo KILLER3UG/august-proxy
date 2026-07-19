@@ -46,15 +46,20 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
             );
             return !listed;
           });
-    return list.map((m) => ({
-      id: m.id,
-      name: m.name || m.id,
-      provider: m.provider,
-      contextWindow: m.contextWindow && m.contextWindow > 0 ? m.contextWindow : 128000,
-      isFree: m.isFree,
-      supportsReasoning: m.supportsReasoning,
-      supportsThinking: m.supportsThinking,
-    }));
+    return list.map((m) => {
+      // Catalog may omit / under-report reasoning for models that still take
+      // effort (DeepSeek, Claude, GPT-5, …). Keep the id heuristic as a floor.
+      const likely = isLikelyReasoningModel(m.id);
+      return {
+        id: m.id,
+        name: m.name || m.id,
+        provider: m.provider,
+        contextWindow: m.contextWindow && m.contextWindow > 0 ? m.contextWindow : 128000,
+        isFree: m.isFree,
+        supportsReasoning: !!(m.supportsReasoning || likely),
+        supportsThinking: !!(m.supportsThinking || likely),
+      };
+    });
   }, [aggregatedModels, availableProviderKeys, availableProvidersList]);
 
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
