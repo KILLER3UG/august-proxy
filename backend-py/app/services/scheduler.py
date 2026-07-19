@@ -306,13 +306,27 @@ class Scheduler:
             await asyncio.sleep(interval)
 
     async def _idleLoop(self) -> None:
-        checkInterval = 0.1
+        """Wake near the next idle deadline instead of polling every 100ms."""
         while not self._stopped:
-            for name, fn, threshold in self._idle:
-                if time.monotonic() - self._lastActivity >= threshold:
+            if not self._idle:
+                await asyncio.sleep(1.0)
+                continue
+            now = time.monotonic()
+            earliest_due: float | None = None
+            fired = False
+            for _name, fn, threshold in self._idle:
+                due_at = self._lastActivity + threshold
+                if now >= due_at:
                     try:
                         await fn()
                     except Exception:
                         pass
                     self._lastActivity = time.monotonic()
-            await asyncio.sleep(checkInterval)
+                    fired = True
+                    break
+                if earliest_due is None or due_at < earliest_due:
+                    earliest_due = due_at
+            if fired:
+                continue
+            sleep_for = 1.0 if earliest_due is None else max(0.05, earliest_due - time.monotonic())
+            await asyncio.sleep(sleep_for)

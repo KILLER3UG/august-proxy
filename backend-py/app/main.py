@@ -8,6 +8,7 @@ This is the Python equivalent of the original Node.js index.js.
 from __future__ import annotations
 import asyncio
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -15,6 +16,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
+
+
+def _cors_allow_origins() -> list[str]:
+    """Explicit origins for credentialed CORS (wildcard + credentials is invalid)."""
+    port = settings.port
+    origins = [
+        f'http://localhost:{port}',
+        f'http://127.0.0.1:{port}',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'tauri://localhost',
+        'https://tauri.localhost',
+        'http://tauri.localhost',
+    ]
+    extra = os.environ.get('AUGUST_CORS_ORIGINS', '')
+    if extra.strip():
+        origins.extend(o.strip() for o in extra.split(',') if o.strip())
+    # Preserve order, drop duplicates
+    return list(dict.fromkeys(origins))
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +208,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title='August Proxy', version='0.1.0', lifespan=lifespan)
 app.add_middleware(
-    CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*']
+    CORSMiddleware,
+    allow_origins=_cors_allow_origins(),
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
 )
 from app.routers import config as configRoutes  # noqa: E402
 from app.routers import providers as providersRoutes  # noqa: E402
@@ -290,7 +314,12 @@ if _WEBDist.is_dir():
         index = _WEBDist / 'index.html'
         if index.exists():
             return FileResponse(str(index))
-        return FileResponse(str(index)) if index.exists() else None
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            {'error': 'Web UI not found', 'path': path},
+            status_code=404,
+        )
 
 
 _startedAt: float = time.time()

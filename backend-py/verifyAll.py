@@ -69,10 +69,15 @@ stores = ['memory', 'autoMemories', 'heuristics', 'facts', 'sessions', 'messages
 for s in stores:
     try:
         result = brain_query(s, '', None, 1)
-        if 'error' not in result.lower() or 'not available' in result.lower():
-            print(f'  brain_query({s}): OK')
-        else:
+        lower = result.lower()
+        # Unshipped stores intentionally return "not available".
+        if 'not available' in lower:
+            print(f'  brain_query({s}): OK (not available)')
+        elif '"error"' in lower or lower.strip().startswith('{"error"'):
             print(f'  brain_query({s}): {result[:60]}')
+            errors.append(f'brain_query({s}): {result[:120]}')
+        else:
+            print(f'  brain_query({s}): OK')
     except Exception as e:
         errors.append(f'brain_query({s}): {e}')
 print('\n6. Heuristics CRUD...')

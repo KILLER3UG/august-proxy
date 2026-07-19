@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -192,6 +193,12 @@ def _default_session_title() -> str:
     return f'Chat {stamp} UTC'
 
 
+_PLACEHOLDER_CHAT_TITLE = re.compile(
+    r'^Chat \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: UTC)?$',
+    re.IGNORECASE,
+)
+
+
 def is_placeholder_title(title: str | None) -> bool:
     """True when the title is still a default/empty placeholder."""
     t = (title or '').strip()
@@ -199,11 +206,10 @@ def is_placeholder_title(title: str | None) -> bool:
         return True
     if t.lower() in ('new chat', 'new session', 'untitled', 'conversation started.'):
         return True
-    # Date-stamped defaults: "Chat 2026-07-15 14:30" / "Chat 2026-07-15 14:30 UTC"
-    if t.lower().startswith('chat ') and len(t) >= 15:
-        rest = t[5:].strip()
-        if rest[:4].isdigit() and '-' in rest[:12]:
-            return True
+    # Date-stamped defaults from `_default_session_title`:
+    # "Chat 2026-07-15 14:30" / "Chat 2026-07-15 14:30 UTC"
+    if _PLACEHOLDER_CHAT_TITLE.match(t):
+        return True
     return False
 
 
@@ -213,8 +219,6 @@ def derive_title_from_message(text: str, *, max_len: int = 48) -> str:
     if not cleaned:
         return ''
     # Strip accidental role-prefixed dumps
-    import re
-
     cleaned = re.sub(r'^(user|assistant|system)\s*:\s*', '', cleaned, flags=re.I)
     first = cleaned.split('\n', 1)[0].strip()
     first = re.split(r'\s+(?:user|assistant|system)\s*:\s*', first, maxsplit=1, flags=re.I)[0].strip()

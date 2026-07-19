@@ -22,7 +22,11 @@ import {
   type LiveActivityItem,
   type LiveActivityKind,
 } from '@/store/liveActivity';
-import { addRightDrawerSection, closeRightDrawerSection } from '@/components/shell/RightDrawerState';
+import {
+  addRightDrawerSection,
+  clearActivityAutoOpenSuppression,
+  closeRightDrawerSection,
+} from '@/components/shell/RightDrawerState';
 import { getToolLabel } from '@/lib/tool-labels';
 import { modelDisplayParts } from '../model-display';
 
@@ -261,7 +265,9 @@ export function AssistantBlockTimeline({
       if (isLast && !streaming) {
         clearLiveActivity(liveSessionKey);
         // Drop empty Activity so the Workbench doesn't stay open with no data.
-        closeRightDrawerSection('activity');
+        // fromAuto: don't treat this as a user dismiss — next turn can auto-open.
+        closeRightDrawerSection('activity', { fromAuto: true });
+        clearActivityAutoOpenSuppression();
       }
       return;
     }
@@ -270,7 +276,8 @@ export function AssistantBlockTimeline({
       headline: liveDetail || processSummary || 'Working…',
       items: liveItems,
     });
-    addRightDrawerSection('activity');
+    // Respect user dismiss — keep publishing live data without forcing the drawer.
+    addRightDrawerSection('activity', { fromAuto: true });
   }, [livePacked, liveSessionKey, liveDetail, liveItems, processSummary, isLast, streaming]);
 
   const renderThinkingGroup = (

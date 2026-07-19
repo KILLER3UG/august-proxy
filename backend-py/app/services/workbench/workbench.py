@@ -2366,7 +2366,7 @@ def listProxyCapabilities() -> dict[str, object]:
     """
     from app.services.tool_registry import listTools as regListTools
 
-    _MUTATINGTools = frozenset(
+    _MUTATING_TOOLS = frozenset(
         {
             'write_file',
             'edit_file',
@@ -2442,7 +2442,7 @@ def listProxyCapabilities() -> dict[str, object]:
             group = 'mcp'
         else:
             group = 'other'
-        isMutating = name in _MUTATINGTools
+        isMutating = name in _MUTATING_TOOLS
         schemaStr = str(tool.get('input_schema', tool.get('parameters', {})))
         estimatedTokens = len(schemaStr) // 4 + 50
         entry = {'name': name, 'mutating': isMutating, 'estimated_tokens': estimatedTokens}
@@ -2459,7 +2459,7 @@ def listProxyCapabilities() -> dict[str, object]:
     return {
         'tools_by_group': grouped,
         'total_tools': len(allTools),
-        'mutating_tools': sum((1 for t in allTools if (t.get('name') if isinstance(t, dict) else t) in _MUTATINGTools)),
+        'mutating_tools': sum((1 for t in allTools if (t.get('name') if isinstance(t, dict) else t) in _MUTATING_TOOLS)),
         'estimated_total_tokens': sum((len(str(t)) // 4 + 50 for t in allTools)),
         'agent_count': agentCount,
     }

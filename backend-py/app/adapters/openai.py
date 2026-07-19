@@ -536,16 +536,19 @@ async def handleChatCompletions(
             )
 
 
-_client: BaseProviderClient | None = None
+_stream_client: BaseProviderClient | None = None
 
 
 def _getClient() -> BaseProviderClient:
-    global _client
-    if _client is None:
+    """Lazy shared HTTP client for passthrough streaming.
+
+    Auth/base URL come from the caller-supplied ``upstreamUrl`` /
+    ``upstreamHeaders`` — this client is only the httpx transport.
+    Constructed on first use (not at import time).
+    """
+    global _stream_client
+    if _stream_client is None:
         from app.providers.clients.openai import OpenAIClient
 
-        _client = OpenAIClient({})
-    return _client
-
-
-_getClient()
+        _stream_client = OpenAIClient({})
+    return _stream_client
