@@ -51,6 +51,8 @@ const FULL_LEARNING = {
   coreFacts: { codeStyle: 'spaces' },
   userProfile: null,
   autoMemories: [{ id: 1, key: 'jwt-fix', content: 'JWT expiry bug', importance: 0.8 }],
+  activeProjects: [{ name: 'august-proxy', path: 'C:\\Dev\\august-proxy' }],
+  currentContext: 'Working on automations',
   sleepCycle: { lastRunAt: '2026-06-29T10:00:00Z', lastMerged: 2, lastPromoted: 1, lastDeleted: 0 },
   deltaEngine: { consentGranted: false, queueSize: 0, lastFlushAt: null },
   pendingSkills: [{ id: 1, name: 'jwtDebugFlow', description: 'Debug JWT', triggerText: 'auth error' }],

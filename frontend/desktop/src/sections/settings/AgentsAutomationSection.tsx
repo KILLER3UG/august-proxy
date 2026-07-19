@@ -1,7 +1,8 @@
 /* ── Agents & Automation ───────────────────────────────────────────── */
 /* Workspace-style section hosting Agents, Automations, and Terminal tabs. */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Bot, CalendarClock, TerminalSquare } from 'lucide-react';
 import { SettingsTabs } from '@/components/settings/SettingsTabs';
 import { Agents } from '@/sections/agents/Agents';
@@ -14,8 +15,25 @@ const TABS = [
   { key: 'terminal', label: 'Terminal', icon: TerminalSquare, description: 'Approvals and shell' },
 ] as const;
 
+const TAB_KEYS = new Set(TABS.map((t) => t.key));
+
 export function AgentsAutomationSection() {
-  const [tab, setTab] = useState<string>('agents');
+  const [params, setParams] = useSearchParams();
+  const sectionParam = params.get('section') || '';
+  const initial = TAB_KEYS.has(sectionParam) ? sectionParam : 'agents';
+  const [tab, setTab] = useState<string>(initial);
+
+  const activeTab = useMemo(() => {
+    if (TAB_KEYS.has(sectionParam)) return sectionParam;
+    return tab;
+  }, [sectionParam, tab]);
+
+  const onChange = (next: string) => {
+    setTab(next);
+    const nextParams = new URLSearchParams(params);
+    nextParams.set('section', next);
+    setParams(nextParams, { replace: true });
+  };
 
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col">
@@ -30,15 +48,15 @@ export function AgentsAutomationSection() {
           <SettingsTabs
             className="lg:sticky lg:top-2 shrink-0"
             orientation="vertical"
-            value={tab}
-            onChange={setTab}
+            value={activeTab}
+            onChange={onChange}
             items={[...TABS]}
             label="Agents & automation views"
           />
           <div className="min-w-0 flex-1">
-            {tab === 'agents' && <Agents />}
-            {tab === 'automations' && <Automations />}
-            {tab === 'terminal' && <Terminal />}
+            {activeTab === 'agents' && <Agents />}
+            {activeTab === 'automations' && <Automations />}
+            {activeTab === 'terminal' && <Terminal />}
           </div>
         </div>
       </div>

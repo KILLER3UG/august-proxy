@@ -136,6 +136,34 @@ export function LearningTab() {
         )}
       </Card>
 
+      {/* Cross-session glance */}
+      <Card className="p-4 space-y-3 md:col-span-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className="size-4 text-primary" />
+          <h3 className="font-medium text-sm">Active context</h3>
+        </div>
+        {data.currentContext ? (
+          <p className="text-xs text-muted-foreground">{data.currentContext}</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">No current context yet — it fills in as you chat.</p>
+        )}
+        {data.activeProjects.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No active projects remembered.</p>
+        ) : (
+          <ul className="flex flex-wrap gap-2">
+            {data.activeProjects.map((p, i) => (
+              <li
+                key={`${p.path || p.name || i}`}
+                className="text-[11px] px-2 py-1 rounded-md bg-muted/50 text-muted-foreground font-mono"
+                title={p.path || undefined}
+              >
+                {p.name || p.path}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
       {/* Auto-memories */}
       <Card className="p-4 space-y-3">
         <div className="flex items-center gap-2">

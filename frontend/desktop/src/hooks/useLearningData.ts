@@ -27,12 +27,21 @@ export interface PendingSkill {
   triggerText?: string;
 }
 
+export interface ActiveProject {
+  name?: string;
+  path?: string | null;
+  kind?: string | null;
+  lastActiveAt?: string;
+}
+
 export interface LearningData {
   heuristics: Heuristic[];
   heuristicCount: number;
   coreFacts: unknown;
   userProfile: unknown;
   autoMemories: AutoMemory[];
+  activeProjects: ActiveProject[];
+  currentContext: string;
   sleepCycle: { lastRunAt: string | null; lastMerged: number; lastPromoted: number; lastDeleted: number };
   deltaEngine: { consentGranted: boolean; queueSize: number; lastFlushAt: string | null };
   pendingSkills: PendingSkill[];
@@ -50,6 +59,8 @@ export function useLearningData() {
         coreFacts: json.coreFacts ?? null,
         userProfile: json.userProfile ?? null,
         autoMemories: (json.autoMemories ?? []) as AutoMemory[],
+        activeProjects: (json.activeProjects ?? []) as ActiveProject[],
+        currentContext: String(json.currentContext ?? ''),
         sleepCycle: {
           lastRunAt: ((json.sleepCycle as Record<string, unknown>)?.lastRunAt ?? null) as string | null,
           lastMerged: ((json.sleepCycle as Record<string, unknown>)?.lastMerged ?? 0) as number,

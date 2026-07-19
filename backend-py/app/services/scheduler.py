@@ -183,12 +183,22 @@ def _make_done_callback(job_id: str) -> Callable[[asyncio.Task], None]:
 
 
 async def startScheduler(intervalS: int = 60) -> None:
-    """Start the scheduler loop."""
+    """Start the scheduler loop.
+
+    Fires legacy ``scheduled-jobs.json`` cron jobs and due ``automations.json``
+    jobs (enabled, not paused) each tick.
+    """
     global _running
     if _running:
         return
     _running = True
     _loadJobs()
+    try:
+        from app.services import automations_store as automations
+
+        await automations.boot_automations()
+    except Exception:
+        pass
     while _running:
         now = datetime.now(timezone.utc)
         for jobId, job in list(_jobs.items()):
@@ -198,6 +208,12 @@ async def startScheduler(intervalS: int = 60) -> None:
                 task = asyncio.create_task(runJobNow(jobId))
                 _tasks[jobId] = task
                 task.add_done_callback(_make_done_callback(jobId))
+        try:
+            from app.services import automations_store as automations
+
+            await automations.tick_automations(now=now)
+        except Exception:
+            pass
         await asyncio.sleep(intervalS)
 
 

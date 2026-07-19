@@ -1638,6 +1638,7 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
     the resolved auto-memory model (falls back to the chat model) used
     for audit/metadata on the saved memories."""
     from app.services.memory.auto_memory import saveAutoMemory, extractAndSaveTodos
+    from app.services.memory.cross_session_context import sync_from_turn
 
     try:
         extractAndSaveTodos(messages)
@@ -1659,6 +1660,12 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
                 category='conversation',
                 importance=0.3,
             )
+        # Cross-session bridge: active_projects + current_context (not userProfile).
+        sync_from_turn(
+            workspace_path=as_str(getattr(session, 'workspacePath', '') or ''),
+            last_user_text=lastUserMsg,
+            session_title=as_str(getattr(session, 'title', '') or ''),
+        )
     except Exception:
         pass
 

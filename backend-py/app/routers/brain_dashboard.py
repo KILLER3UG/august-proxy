@@ -193,6 +193,8 @@ async def brainLearning() -> dict[str, object]:
     lastTopic = topics[0].get('topic') if topics else None
     lastAt = (topics[0].get('classifiedAt') or topics[0].get('classified_at')) if topics else None
     backgroundReview = {'status': 'idle', 'lastStartedAt': lastAt, 'lastTopic': lastTopic}
+    activeProjects = memory_store.get_memory('active_projects') or []
+    currentContext = memory_store.get_memory('current_context') or ''
     return {
         'status': 'idle',
         'heuristics': heuristics,
@@ -200,6 +202,8 @@ async def brainLearning() -> dict[str, object]:
         'coreFacts': coreFacts,
         'userProfile': userProfile,
         'autoMemories': autoMemories,
+        'activeProjects': activeProjects,
+        'currentContext': currentContext,
         'sleepCycle': sleepCycle,
         'delta_engine': {
             'consentGranted': bool(_de.isConsentGranted()) if hasattr(_de, 'isConsentGranted') else False,

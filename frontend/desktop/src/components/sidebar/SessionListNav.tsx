@@ -121,7 +121,7 @@ export function SessionListNav({
 
       <motion.button
         type="button"
-        onClick={() => onNavigate("/settings?tab=agents-automation")}
+        onClick={() => onNavigate("/settings?tab=agents-automation&section=automations")}
         className={quietRow}
         initial="rest"
         whileHover="hover"

@@ -690,6 +690,14 @@ def create_workbench_session(
             attach_session_watcher(session_id, session.workspacePath)
         except Exception:
             pass
+        try:
+            from app.services.memory.cross_session_context import upsert_active_project
+
+            upsert_active_project(path=session.workspacePath, kind='workspace')
+        except Exception:
+            pass
+    if task and str(task).startswith('Automation:'):
+        session.title = str(task)[:120]
     _emit_session_status(session_id)
     notify_session_created(session)
     return session
