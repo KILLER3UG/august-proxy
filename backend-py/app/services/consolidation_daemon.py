@@ -65,29 +65,19 @@ def _persist_last_run(stats: ConsolidationSummaryDict) -> None:
 
 
 def _sanitizeSkillName(name: str) -> str:
-    """v2 hardening: Convert any name to a valid camelCase identifier.
+    """Normalize any name to kebab-case matching skill_service validation.
 
-    LLMs may produce names with spaces, hyphens, underscores, or starting
-    with uppercase. This function normalizes the name to camelCase so it's
-    a valid filename-safe identifier. Examples:
-      "Debug Python Script" -> "debugPythonScript"
-      "user_preferences"    -> "userPreferences"
-      "JWT-Auth-Flow"       -> "jwtAuthFlow"
-      "  Hello World  "      -> "helloWorld"
+    Examples:
+      "Debug Python Script" -> "debug-python-script"
+      "user_preferences"    -> "user-preferences"
+      "JWT-Auth-Flow"       -> "jwt-auth-flow"
+      "debugPythonScript"   -> "debug-python-script"
     """
     if not name:
         return ''
-    import re
+    from app.services.skill_service import _kebab_name
 
-    s = name.strip()
-    parts = re.split('[^A-Za-z0-9]+', s)
-    parts = [p for p in parts if p]
-    if not parts:
-        return ''
-    result = parts[0].lower()
-    for p in parts[1:]:
-        result += p[0].upper() + p[1:].lower() if len(p) > 0 else ''
-    return result[:50]
+    return _kebab_name(name)[:50]
 
 
 async def _call_hippocampus(prompt: str) -> str:
@@ -150,8 +140,47 @@ async def _callPrefrontal(prompt: str) -> str:
 
 
 def _getSessionSummary(sessionId: str) -> str:
-    """v2: Get a brief summary of a session's activity. Default impl returns empty."""
-    return ''
+    """Summarize a workbench session for skill genesis drafting."""
+    if not sessionId:
+        return ''
+    try:
+        from app.services.workbench.sessions import get_workbench_session
+
+        session = get_workbench_session(sessionId)
+        if not session:
+            return ''
+        parts: list[str] = []
+        title = getattr(session, 'title', None) or ''
+        goal = getattr(session, 'goal', None) or ''
+        if title:
+            parts.append(f'Title: {title}')
+        if goal:
+            parts.append(f'Goal: {goal}')
+        msgs = getattr(session, 'messages', None) or []
+        snippets: list[str] = []
+        for m in msgs[-12:]:
+            if not isinstance(m, dict):
+                continue
+            role = m.get('role')
+            if role not in ('user', 'assistant'):
+                continue
+            content = m.get('content', '')
+            if isinstance(content, list):
+                texts = []
+                for block in content:
+                    if isinstance(block, dict) and block.get('type') == 'text':
+                        texts.append(str(block.get('text', '')))
+                    elif isinstance(block, str):
+                        texts.append(block)
+                content = ' '.join(texts)
+            text = str(content or '').strip()
+            if text:
+                snippets.append(f'{role}: {text[:400]}')
+        if snippets:
+            parts.append('Recent turns:\n' + '\n'.join(snippets[-8:]))
+        return '\n'.join(parts)[:4000]
+    except Exception:
+        return ''
 
 
 async def runConsolidation() -> ConsolidationSummaryDict:
@@ -275,6 +304,20 @@ async def runConsolidation() -> ConsolidationSummaryDict:
             'deleted_stale': stats['deleted_stale'],
         },
     )
+    # Skill genesis: optionally draft from the most recent workbench session.
+    try:
+        from app.services.workbench.sessions import list_workbench_sessions
+
+        sessions = list_workbench_sessions() or []
+        if sessions:
+            sid = ''
+            first = sessions[0]
+            if isinstance(first, dict):
+                sid = str(first.get('id') or '')
+            if sid:
+                await draftSkillForSession(sid)
+    except Exception:
+        logger.debug('skill genesis draft after consolidation skipped', exc_info=True)
     return stats
 
 
@@ -297,7 +340,15 @@ async def draftSkillForSession(sessionId: str) -> str | None:
         summary = _getSessionSummary(sessionId)
         if not summary:
             return None
-        prompt = f"This session completed a complex multi-step workflow. Is this workflow generic enough to be turned into a reusable skill? If yes, draft a SKILL.md. Constraints: the 'name' MUST be a valid camelCase identifier (e.g., 'debugPythonScript', 'userPreferences', 'jwtAuthFlow') — lowercase first word, capitalized subsequent words, no separators, no spaces, no special chars, <= 50 chars. Return JSON: {{'name': str, 'description': str, 'trigger': str, 'body': str}} or {{'skip': true, 'reason': str}}.\n\nSession summary:\n{summary}\n"
+        prompt = (
+            "This session completed a complex multi-step workflow. Is this workflow generic enough "
+            "to be turned into a reusable skill? If yes, draft a SKILL.md. Constraints: the 'name' "
+            "MUST be a valid kebab-case identifier (e.g., 'debug-python-script', 'user-preferences', "
+            "'jwt-auth-flow') — lowercase, hyphen-separated, no spaces, <= 50 chars. Return JSON: "
+            "{'name': str, 'description': str, 'trigger': str, 'body': str} or "
+            "{'skip': true, 'reason': str}.\n\nSession summary:\n"
+            f'{summary}\n'
+        )
         raw = await _callPrefrontal(prompt)
         try:
             plan = json.loads(raw)
@@ -330,32 +381,79 @@ async def draftSkillForSession(sessionId: str) -> str | None:
 
 
 def approvePendingSkill(name: str) -> bool:
-    """v2: Approve a pending skill — move from staging to active."""
+    """Approve a pending skill — promote into agent skills via skill_service."""
     try:
         from app.services.brain_event_bus import emitBrainEvent
     except Exception:
-        pass
+        emitBrainEvent = None  # type: ignore[assignment]
     try:
         from app.services.memory_store import _conn
+        from app.services import skill_service
 
         conn = _conn()
-        row = conn.execute('SELECT draft_path FROM pending_skills WHERE name = ?', (name,)).fetchone()
+        row = conn.execute(
+            'SELECT name, description, trigger_text, draft_path FROM pending_skills WHERE name = ?',
+            (name,),
+        ).fetchone()
         if not row:
             return False
         draftPath = row['draft_path']
-        if not os.path.exists(draftPath):
+        if not draftPath or not os.path.exists(draftPath):
             return False
-        os.makedirs(_activeSkillsDir, exist_ok=True)
-        import shutil
+        with open(draftPath, encoding='utf-8') as f:
+            raw = f.read()
+        # Parse frontmatter + body from draft
+        import re
 
-        shutil.move(draftPath, os.path.join(_activeSkillsDir, f'{name}.md'))
+        m = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', raw, re.DOTALL)
+        description = row['description'] or ''
+        trigger = row['trigger_text'] or ''
+        body = raw
+        if m:
+            fm: dict[str, str] = {}
+            for line in m.group(1).split('\n'):
+                if ':' in line:
+                    k, __, v = line.partition(':')
+                    fm[k.strip()] = v.strip()
+            description = fm.get('description', description) or 'Evolving skill'
+            trigger = fm.get('trigger', trigger) or ''
+            body = m.group(2).strip()
+        safe_name = _sanitizeSkillName(name)
+        if not safe_name:
+            from app.services.skill_service import _kebab_name
+
+            safe_name = _kebab_name(name) or 'evolving-skill'
+        # Truncate description to skill_service limit
+        if len(description) > 60:
+            description = description[:57] + '...'
+        try:
+            skill_service.createSkill(
+                safe_name,
+                description or 'Evolving skill from chat',
+                body or f'# {safe_name}\n\nEvolving skill.',
+                trigger=trigger,
+                category='evolving',
+                createdBy='agent',
+            )
+        except skill_service.SkillValidationError as exc:
+            # Already exists — patch body instead
+            if 'already exists' in str(exc).lower():
+                skill_service.patchSkill(safe_name, body=body, description=description, trigger=trigger)
+            else:
+                logger.error('Skill approval validation error: %s', exc)
+                return False
+        try:
+            os.remove(draftPath)
+        except Exception:
+            pass
         conn.execute("UPDATE pending_skills SET status = 'approved' WHERE name = ?", (name,))
         conn.commit()
-        emitBrainEvent(
-            category='skill_genesis',
-            layer='consolidation_daemon.approved_pending_skill',
-            summary=f'Approved skill: {name[:80]}',
-        )
+        if emitBrainEvent:
+            emitBrainEvent(
+                category='skill_genesis',
+                layer='consolidation_daemon.approved_pending_skill',
+                summary=f'Approved skill: {safe_name[:80]}',
+            )
         return True
     except Exception as exc:
         logger.error('Skill approval error: %s', exc)

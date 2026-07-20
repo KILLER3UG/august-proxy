@@ -26,6 +26,7 @@ def test_camel_case_workbench_session_dict_injects_all_runtime_fields():
         'memoryStats': {'facts': 12},
         'whatsNew': 'Recent commits xyz',
         'skillsManifest': '- skill_a: does stuff',
+        'capabilitiesBlock': '<capabilities>\n<skills>\n- skill_a: does stuff\n</skills>\n</capabilities>',
         'executionState': {'phase': 'implement', 'step': 2},
         'workingMemory': 'scratch: fix the bug UNIQUE_WM',
         'subconsciousUpdates': 'UNIQUE_DAEMON_XYZ_99',
@@ -75,6 +76,7 @@ def test_snake_case_session_keys_still_work():
     session = {
         'workspace_path': 'C:/snake/path',
         'skills_manifest': '- snake_skill',
+        'capabilities_block': '<capabilities>\n<skills>\n- snake_skill\n</skills>\n</capabilities>',
         'cognitive_budget': {'context_used_pct': 10},
         'brain_policy': {'mode': 'fast'},
         'execution_state': {'phase': 'research'},

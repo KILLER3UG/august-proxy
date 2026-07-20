@@ -38,6 +38,7 @@ def _skillRoots() -> list[Path]:
 
 _NAMEPattern = re.compile('^[a-z0-9][a-z0-9._-]*$')
 _NAMEMax = 64
+_flat_migrate_done = False
 _DESCRIPTIONMax = 60
 _MARKETINGWords = [
     'revolutionary',
@@ -149,6 +150,13 @@ def _agentSkillDir(name: str) -> Path:
 
 def list_all() -> list[dict[str, object]]:
     """Discover all skills from both the agent and bundled roots."""
+    global _flat_migrate_done
+    if not _flat_migrate_done:
+        _flat_migrate_done = True
+        try:
+            migrate_flat_skills()
+        except Exception:
+            pass
     skills: list[dict[str, object]] = []
     seen: set[str] = set()
     for root in _skillRoots():
@@ -211,17 +219,101 @@ def catalogue() -> list[dict[str, object]]:
 
     All discoverable skills are surfaced (not just ``enabled`` ones) —
     discovery is the standard. Returns entries sorted by name for stable
-    prompt output.
+    prompt output. Includes ``created_by`` so evolving/agent-authored skills
+    can be labeled in the prompt.
     """
-    return [
+    entries = [
         {
             'name': s['name'],
             'description': s.get('description', ''),
             'trigger': s.get('trigger', ''),
             'category': s.get('category', 'uncategorized'),
+            'created_by': s.get('created_by', ''),
         }
         for s in list_all()
     ]
+    return sorted(entries, key=lambda e: as_str(e.get('name'), ''))
+
+
+def _bust_prompt_skills_cache() -> None:
+    """Global bust of the workbench skills prompt segment cache.
+
+    Global (not per-session) is acceptable here: August is single-user /
+    local-desktop scale, and skill create/approve/patch/delete is infrequent
+    enough that a full bust is simpler than scoped keys. Revisit scoped
+    invalidation if evolving-skill creation frequency climbs enough to hurt
+    cache hit rate.
+    """
+    try:
+        from app.services.workbench import prompt_segments_cache
+
+        prompt_segments_cache.clear()
+    except Exception:
+        pass
+
+
+def migrate_flat_skills(*, bundled_root: Path | None = None, agent_root: Path | None = None) -> list[str]:
+    """Migrate legacy flat ``{root}/{name}.md`` into ``{root}/{name}/SKILL.md``.
+
+    Genesis used to approve into ``skills/{name}.md`` which ``list_all`` never
+    discovers. Returns names migrated. No-op when none found.
+    """
+    migrated: list[str] = []
+    roots = [agent_root or _agentSkillsDir(), bundled_root if bundled_root is not None else SKILLS_DIR]
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for md in sorted(root.glob('*.md')):
+            if md.name.upper() == 'README.MD' or md.name.lower() == 'readme.md':
+                continue
+            name = md.stem
+            try:
+                _validateName(name)
+            except SkillValidationError:
+                # Try kebab-case sanitize for camelCase genesis names
+                name = _kebab_name(md.stem)
+                try:
+                    _validateName(name)
+                except SkillValidationError:
+                    continue
+            dest_dir = root / name
+            dest = dest_dir / 'SKILL.md'
+            if dest.exists():
+                continue
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            text = md.read_text('utf-8')
+            # Ensure frontmatter has created_by for evolving provenance when missing
+            parts = text.split('---', 2)
+            if len(parts) >= 3 and 'created_by:' not in parts[1]:
+                text = text.replace('---\n', '---\ncreated_by: agent\n', 1)
+            elif not text.lstrip().startswith('---'):
+                text = (
+                    f'---\nname: {name}\ndescription: Migrated skill\n'
+                    f'created_by: agent\ncategory: uncategorized\n---\n\n{text}'
+                )
+            dest.write_text(text, 'utf-8')
+            try:
+                md.unlink()
+            except Exception:
+                pass
+            migrated.append(name)
+    if migrated:
+        _bust_prompt_skills_cache()
+    return migrated
+
+
+def _kebab_name(name: str) -> str:
+    """Normalize camelCase / spaced names to kebab-case for skill_service rules."""
+    import re
+
+    s = name.strip()
+    if not s:
+        return ''
+    # Insert hyphen before capitals in camelCase
+    s = re.sub('([a-z0-9])([A-Z])', r'\1-\2', s)
+    s = re.sub('[^a-zA-Z0-9]+', '-', s)
+    s = s.lower().strip('-')
+    return s[:64]
 
 
 def _ensureAgentRoot() -> Path:
@@ -281,6 +373,7 @@ def createSkill(
     }
     (agentDir / 'SKILL.md').write_text(_renderSkillMd(frontmatter, body), 'utf-8')
     parsed = _parseSkill(agentDir / 'SKILL.md')
+    _bust_prompt_skills_cache()
     return parsed or {'name': name, 'description': description}
 
 
@@ -320,6 +413,7 @@ def patchSkill(
     newBody = currentBody if body is None else body.strip()
     md.write_text(_renderSkillMd(frontmatter, newBody), 'utf-8')
     parsed = _parseSkill(md)
+    _bust_prompt_skills_cache()
     return parsed or {'name': name, 'description': frontmatter.get('description', '')}
 
 
@@ -357,4 +451,5 @@ def deleteSkill(name: str) -> dict[str, object]:
             raise SkillValidationError(f"Refusing to delete bundled skill '{name}'. Archive via the curator instead.")
         raise SkillValidationError(f"Skill '{name}' not found.")
     shutil.rmtree(agentDir)
+    _bust_prompt_skills_cache()
     return {'name': name, 'deleted': True}

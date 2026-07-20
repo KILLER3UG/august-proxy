@@ -220,7 +220,6 @@ async def executeSubAgent(
     agentCtx = renderAgentContext(resolvedAgentId) if not as_bool(agent.get('_synthetic', False)) else ''
     if not agentCtx:
         agentCtx = f'Agent: {as_str(agent.get("name"), "General")}\nRole: {as_str(agent.get("role"), "General")}'
-    systemText = f'{agentCtx}\n\nYou are a focused sub-agent. Complete the assigned goal using the available tools, then return a concise final answer. Do not spawn further sub-agents.'
     parentId = getattr(session, 'agent_id', '') or None
     if parentId and (not as_bool(agent.get('_synthetic', False))):
         try:
@@ -234,6 +233,24 @@ async def executeSubAgent(
     }
     tools = [t for t in fullTools if _toolName(t) in allowedNames]
     openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
+    try:
+        from app.services.memory.capabilities_prompt import (
+            build_capabilities_block,
+            skills_tools_allowed,
+        )
+
+        caps = build_capabilities_block(
+            sorted(allowedNames),
+            include_skills=skills_tools_allowed(allowedNames),
+        )
+    except Exception:
+        caps = ''
+    systemText = (
+        f'{agentCtx}\n\n'
+        'You are a focused sub-agent. Complete the assigned goal using the available tools, '
+        'then return a concise final answer. Do not spawn further sub-agents.\n\n'
+        f'{caps}'
+    )
     isAnthropic = _isAnthropicProvider(provider)
     isOpenai = _isOpenaiProvider(provider)
 

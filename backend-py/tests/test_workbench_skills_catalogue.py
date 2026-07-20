@@ -1,8 +1,8 @@
 """Chunk 3 — skills progressive disclosure.
 
 Asserts the Claude-Code-style pattern:
-  * `build_system_prompt(session)` contains an ``## Available Skills``
-    section listing EVERY discoverable skill (name + description).
+  * `build_system_prompt(session)` contains a ``<skills>`` section inside
+    ``<capabilities>`` listing EVERY discoverable skill (name + description).
   * `load_skill("<known>")` returns the full SKILL.md body (frontmatter
     stripped).
   * The skill tools (load_skill/list_skills/skill_manage) appear in the
@@ -44,7 +44,7 @@ class TestCatalogue:
         cat = skill_service.catalogue()
         gamma = next((c for c in cat if c['name'] == 'gamma'))
         assert 'instructions' not in gamma
-        assert set(gamma.keys()) <= {'name', 'description', 'trigger', 'category'}
+        assert set(gamma.keys()) <= {'name', 'description', 'trigger', 'category', 'created_by'}
 
 
 class TestSystemPromptSkillsSection:
@@ -54,12 +54,14 @@ class TestSystemPromptSkillsSection:
         _makeSkill(bundledRoot, 'beta', 'Beta skill does Y.', trigger='when beta')
         session = WorkbenchSession(id='wb_skills')
         prompt = buildSystemPrompt(session)
-        assert '## Available Skills' in prompt
+        assert '<skills>' in prompt
+        assert 'tool_read' in prompt
         assert 'alpha: Alpha skill does X.' in prompt
         assert 'beta: Beta skill does Y.' in prompt
         assert '(trigger: when beta)' in prompt
         assert 'step one' not in prompt
         assert 'step two' not in prompt
+        assert '## Available Skills' not in prompt
 
     def testPromptIncludesLoadSkillInstruction(self, isolatedSkills):
         __, bundledRoot = isolatedSkills
@@ -68,8 +70,9 @@ class TestSystemPromptSkillsSection:
         assert 'load_skill' in prompt
 
     def testNoSkillsSectionWhenEmpty(self, isolatedSkills):
-        """No skills → no spurious empty section."""
+        """No skills → capabilities still present; skills body notes empty catalogue."""
         prompt = buildSystemPrompt(WorkbenchSession(id='wb_skills'))
+        assert '<capabilities>' in prompt
         assert '## Available Skills' not in prompt
 
 

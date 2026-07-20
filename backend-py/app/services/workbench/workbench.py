@@ -331,7 +331,7 @@ def buildSystemPrompt(
                 whatsNew = 'Recent git activity:\n' + '\n'.join((f'  - {line}' for line in lines))
         except Exception:
             logger.debug('prompt: git log failed', exc_info=True)
-    skillsManifest, skillsExtra = _seg_cache.get_skills_segments()
+    skillsManifest, _skillsInner = _seg_cache.get_skills_segments()
     cognitiveBudget = None
     try:
         from app.services.workbench.token_budget import computeBudget
@@ -344,6 +344,23 @@ def buildSystemPrompt(
         cognitiveBudget = computeBudget(msgsForBudget, model=modelName or None, provider=providerName or None)
     except Exception:
         logger.debug('prompt: cognitive budget failed', exc_info=True)
+    if tools is None:
+        tools = toolDefinitions(session)
+    tool_names: list[str] = []
+    for t in tools or []:
+        if isinstance(t, dict):
+            n = as_str(t.get('name'), '')
+            if not n:
+                n = as_str(as_dict(t.get('function')).get('name'), '')
+            if n:
+                tool_names.append(n)
+    capabilities_block = ''
+    try:
+        from app.services.memory.capabilities_prompt import build_capabilities_block
+
+        capabilities_block = build_capabilities_block(tool_names or None)
+    except Exception:
+        logger.debug('prompt: capabilities block failed', exc_info=True)
     sessionDict = {
         # Ambient identity so tools like delete/rename/brain_query can target
         # "this chat" without a prior list call.
@@ -361,6 +378,8 @@ def buildSystemPrompt(
         'memoryStats': memoryStats,
         'whatsNew': whatsNew,
         'skillsManifest': skillsManifest,
+        'capabilitiesBlock': capabilities_block,
+        'toolNames': tool_names,
         'executionState': getattr(session, '_execution_state', None),
         'workingMemory': getattr(session, '_working_memory', None),
         'subconsciousUpdates': _buildDaemonUpdates(getattr(session, 'id', '')),
@@ -370,8 +389,6 @@ def buildSystemPrompt(
     for k in ('coreMemory', 'learnedHeuristics', 'autoMemories'):
         if k in memory:
             sessionDict[k] = memory[k]
-    if tools is None:
-        tools = toolDefinitions(session)
     # Load workspace AUG.md into Tier 2 as soft context (Claude CLAUDE.md parity).
     augMdBody = ''
     if workspacePath:
@@ -399,27 +416,24 @@ def buildSystemPrompt(
     )
     if cachedT12 is None:
         try:
-            from app.services.memory.context_builder import buildTier1, buildTier2
+            from app.services.memory.context_builder import buildTier1, buildTier2, wrapTag
 
             t1 = buildTier1(sessionDict)
             t2 = buildTier2(sessionDict)
             t12Parts = []
+            # Cache the same wrapped form that buildSystemPrompt emits (no double-emit).
             if t1:
-                t12Parts.append(t1)
+                t12Parts.append(wrapTag('tier1_identity', t1))
             if t2:
-                t12Parts.append(t2)
+                t12Parts.append(wrapTag('tier2_experience', t2))
             if t12Parts:
                 promptCache.set(cacheKey, '\n\n'.join(t12Parts))
         except Exception:
             logger.debug('prompt: T1/T2 cache write failed', exc_info=True)
-    extraParts: list[str] = []
-    if skillsExtra:
-        extraParts.append(skillsExtra)
-    extraParts.append(_seg_cache.CLARIFY_BLOCK)
-    extraParts.append(_seg_cache.BULK_BLOCK)
-    if extraParts:
-        return base + '\n\n' + '\n\n'.join(extraParts)
-    return base
+    # Skills catalogue is inside Tier 1 <capabilities>; do not append a duplicate
+    # markdown "## Available Skills" block.
+    extraParts: list[str] = [_seg_cache.CLARIFY_BLOCK, _seg_cache.BULK_BLOCK]
+    return base + '\n\n' + '\n\n'.join(extraParts)
 
 
 def _shouldAutoCompact(attentionPressure: str, turnsSinceCompaction: int) -> bool:
@@ -1119,13 +1133,14 @@ async def _sendWorkbenchMessageStreamImpl(
         # OpenAI reasoning_effort / prompt hint for OpenAI-compatible APIs).
         if thinking_enabled:
             systemText = (
-                f'{systemText}\n\n## Effort\n{effort_to_prompt_instruction(effectiveEffort)}'
+                f'{systemText}\n\n<effort>\n{effort_to_prompt_instruction(effectiveEffort)}\n</effort>'
             )
         else:
             systemText = (
-                f'{systemText}\n\n## Effort\n'
+                f'{systemText}\n\n<effort>\n'
                 'Do not use extended reasoning or long chain-of-thought. '
-                'Answer directly with minimal internal thinking.'
+                'Answer directly with minimal internal thinking.\n'
+                '</effort>'
             )
     isAnthropic = _isAnthropicProvider(resolvedProvider)
     isOpenai = _isOpenaiProvider(resolvedProvider)
@@ -2430,7 +2445,7 @@ def listProxyCapabilities() -> dict[str, object]:
             'submit_plan',
             'approve_plan',
             'reject_plan',
-            'load_skill',
+            # load_skill is read-only knowledge load — not mutating
             'skill_manage',
             'spawn_subagent',
             'spawn_daemon',
@@ -2466,11 +2481,10 @@ def listProxyCapabilities() -> dict[str, object]:
             'delete_memory',
             'save_fact',
             'update_heuristics',
-            'load_skill',
-            'list_skills',
-            'skill_manage',
         ):
             group = 'memory'
+        elif name in ('load_skill', 'load_skills', 'list_skills', 'skill_manage'):
+            group = 'skill'
         elif name in ('web_fetch', 'web_search'):
             group = 'web'
         elif name in ('spawn_subagent', 'create_agent', 'list_agents'):

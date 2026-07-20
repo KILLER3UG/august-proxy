@@ -22,6 +22,7 @@ _ARCHIVEAfterDays = 60
 _CURATIONIntervalSeconds = 3600
 _USAGEFilename = '.usage.json'
 _AGENTCreatedTag = 'agent'
+_EVOLVINGCreatedTags = frozenset({'agent', 'auto-gen'})
 
 
 @dataclass
@@ -187,7 +188,7 @@ class SkillCurator:
         sk = skill_service.get(name)
         if not sk:
             return False
-        return sk.get('created_by', '') == _AGENTCreatedTag
+        return as_str(sk.get('created_by'), '') in _EVOLVINGCreatedTags
 
     def run_curation(self, dryRun: bool = False) -> dict[str, object]:
         """Iterate all agent-authored skills and transition stale / archiveable ones.
@@ -199,7 +200,7 @@ class SkillCurator:
         now = time.time()
         report: dict[str, object] = {'active': 0, 'staled': [], 'archived': [], 'errors': []}
         for skill in skill_service.list_all():
-            if as_str(skill.get('created_by'), '') != _AGENTCreatedTag:
+            if as_str(skill.get('created_by'), '') not in _EVOLVINGCreatedTags:
                 continue
             name = as_str(skill['name'], '')
             rec = self._ensure(name)

@@ -106,7 +106,9 @@ def isolatedSkills(tmp_path, monkeypatch):
     bundledRoot.mkdir()
     monkeypatch.setattr(skill_service, '_agentSkillsDir', lambda: agentRoot)
     monkeypatch.setattr(skill_service, 'SKILLS_DIR', bundledRoot)
+    skill_service._flat_migrate_done = False
     # Skills catalogue is cached ~30s for prompt build; wipe so isolated roots win.
     prompt_segments_cache.clear()
     yield (agentRoot, bundledRoot)
     prompt_segments_cache.clear()
+    skill_service._flat_migrate_done = False

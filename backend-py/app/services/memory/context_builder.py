@@ -20,12 +20,26 @@ from typing import Any
 from app.json_narrowing import as_str, as_dict, as_list, as_int
 from app.services.memory_store import get_memory
 
-AUGUST_PLATFORM: str = 'Platform: August Proxy.\n- Cross-session memory tools are available: memory_search() to find past conversations, fact_search() for structured facts, context_read() for user profile.\n- Save recurring user corrections/lessons as skills via `skill_manage`; load them via `load_skill`.\n- Note: "August" or "August Proxy" is the name of this proxy platform. You are still yourself — respond as your actual underlying model identity.\n- Address the user neutrally without honorifics.'
+AUGUST_PLATFORM: str = (
+    'Platform: August Proxy.\n'
+    '- You are the underlying model. "August" / "August Proxy" is the platform name — respond as yourself.\n'
+    '- Address the user neutrally without honorifics.\n'
+    '- Skills = on-demand knowledge. Tools = callable actions (schemas are in the tools array).\n'
+    '- To use a skill: call load_skill(name), then follow the returned instructions.\n'
+    '- load_skill works for ALL catalogued skills: bundled AND evolving skills created through chat\n'
+    '  (background review / approved genesis). Evolving entries are marked [evolving] in <skills>.\n'
+    '- Save recurring user corrections/lessons as skills via skill_manage.\n'
+    '- Cross-session memory: memory_search(), fact_search(), context_read(), brain_query().\n'
+    '- To discover or inspect a tool schema beyond the index: tool_describe(name) or tool_search(query).\n'
+    '- Prefer unicode math symbols over LaTeX except for genuinely complex formulas.'
+)
 DEFAULT_CONTEXT_MAX_CHARS: int = 24000
 
 # camelCase (workbench) → snake_case (design/tests) aliases for dual-get.
 _KEY_ALIASES: dict[str, tuple[str, ...]] = {
     'skills_manifest': ('skillsManifest', 'skills_manifest'),
+    'capabilities_block': ('capabilitiesBlock', 'capabilities_block'),
+    'tool_names': ('toolNames', 'tool_names'),
     'workspace_path': ('workspacePath', 'workspace_path'),
     'cognitive_budget': ('cognitiveBudget', 'cognitive_budget'),
     'brain_policy': ('brainPolicy', 'brain_policy'),
@@ -111,14 +125,13 @@ def _active_guard_mode(session: dict[str, object] | None) -> str:
 def _guard_mode_barrier_lines(mode: str) -> list[str]:
     """Hard system-barrier instructions for the active agent mode only."""
     lines = [
-        '=== AGENT MODE (SYSTEM BARRIER) ===',
-        f'- ACTIVE MODE: {mode.upper()} — this is a hard system constraint, not a suggestion.',
+        f'- Agent mode: {mode} — hard constraint, not a suggestion.',
         '- You must not invent another mode. Follow ONLY the rules for the active mode.',
     ]
     if mode == 'full':
         lines.extend(
             [
-                '- Full Access: you may execute tools (including writes, edits, deletes, shell)',
+                '- Full access: you may execute tools (including writes, edits, deletes, shell)',
                 '  immediately when needed. Do NOT call submit_plan. Do NOT pause for plan',
                 '  approval. Do NOT present multi-step plans as gated workflows — just do the work.',
                 '- You may briefly outline intent in prose if helpful, then act with tools.',
@@ -128,7 +141,7 @@ def _guard_mode_barrier_lines(mode: str) -> list[str]:
     elif mode == 'plan':
         lines.extend(
             [
-                '- Plan Mode: investigate with non-destructive tools only.',
+                '- Plan mode: investigate with non-destructive tools only.',
                 '- Destructive tools (write/edit/delete/shell/install) are blocked until the user',
                 '  approves a plan. When ready, call submit_plan with concrete steps, then wait.',
                 '- After approval, execute only approved steps.',
@@ -137,7 +150,7 @@ def _guard_mode_barrier_lines(mode: str) -> list[str]:
     else:  # ask
         lines.extend(
             [
-                '- Ask Before Changes: mutating tools require user confirmation before execution.',
+                '- Ask before changes: mutating tools require user confirmation before execution.',
                 '- Propose the mutation clearly; do not bypass the approval gate.',
                 '- Prefer submit_plan only when a multi-step mutation sequence needs review.',
             ]
@@ -146,7 +159,7 @@ def _guard_mode_barrier_lines(mode: str) -> list[str]:
 
 
 def buildTier1(session: dict[str, object] | None = None) -> str:
-    """Build Tier 1 — static identity and constraints."""
+    """Build Tier 1 — static identity, constraints, and capabilities."""
     blocks: list[str] = []
     mode = _active_guard_mode(session)
     constraints = [AUGUST_PLATFORM]
@@ -163,21 +176,30 @@ def buildTier1(session: dict[str, object] | None = None) -> str:
             '  execute a verification command. Do not skip or fake verification output.',
             '- Brain Access: You have a unified long-term brain (august_brain.sqlite).',
             '  Call brain_query(store, query, filters) to recall anything not in the prompt.',
-            '- Math: Prefer unicode math symbols (², ³, √, ∑, ∏, ∫, π, ≈, ≤, ≥, ±, →,',
-            '  ×, ÷, ∈, ∉, ∞, ∂) over LaTeX. Use plain unicode fractions (½) or',
-            '  parentheses ((a+b)/c) instead of \\frac{a+b}{c}. Reserve LaTeX $...$',
-            '  / $$...$$ for genuinely complex formulas (matrices, multi-line derivations).',
         ]
     )
     blocks.append(wrapTag('system_constraints', '\n'.join(constraints)))
     userParts: list[str] = []
     profile = get_memory('userProfile') if session else None
+    if not profile and session:
+        profile = _get(session, 'userProfile', 'user_profile')
     if profile:
         userParts.append(f'Profile: {_fmtVal(profile, 300)}')
-    skillsManifest = as_str(_get(session, 'skills_manifest', 'skillsManifest'), '')
-    if skillsManifest:
-        userParts.append(f'Skills:\n{skillsManifest}')
-    blocks.append(wrapTag('user_state', '\n'.join(userParts)))
+    if userParts:
+        blocks.append(wrapTag('user_state', '\n'.join(userParts)))
+    # Capabilities: prefer prebuilt block from workbench; else build from session hints.
+    capabilities = as_str(_get(session, 'capabilities_block', 'capabilitiesBlock'), '')
+    if not capabilities:
+        try:
+            from app.services.memory.capabilities_prompt import build_capabilities_block
+
+            tool_names = as_list(_get(session, 'tool_names', 'toolNames'), [])
+            names = [as_str(n, '') for n in tool_names if as_str(n, '')]
+            capabilities = build_capabilities_block(names or None)
+        except Exception:
+            capabilities = ''
+    if capabilities:
+        blocks.append(capabilities)
     return '\n\n'.join((b for b in blocks if b.strip()))
 
 
@@ -448,31 +470,35 @@ def buildSystemPrompt(
         merged['agent_context'] = agentContext
         merged['agentContext'] = agentContext
     if tools:
-        coreCount = len(tools)
-        merged['tool_guidance'] = (
-            f'You have {coreCount} tools available. To learn about any tool, call tool_describe(name). '
-            f'To search for a tool, call tool_search(query, limit). When doing web research, call '
-            f'web_search with maxResults=5 or more -- it automatically fetches full content from the '
-            f'top results, so you get rich content in one call. To configure a model provider hands-free '
-            f'(name, base URL, API format), use web_search to find its details, then call setup_provider '
-            f'without an apiKey -- the chat UI will prompt the user to paste their key.'
-        )
+        # Prefer explicit names; fall back to extracting from tool defs.
+        names: list[str] = []
+        for t in tools:
+            if not isinstance(t, dict):
+                continue
+            n = as_str(t.get('name'), '')
+            if not n:
+                n = as_str(as_dict(t.get('function')).get('name'), '')
+            if n:
+                names.append(n)
+        if names and not _get(merged, 'tool_names', 'toolNames'):
+            merged['tool_names'] = names
+            merged['toolNames'] = names
     tiers: list[str] = []
     if cachedT12:
         tiers.append(cachedT12)
     else:
+        # Emit each tier once (wrapped). Callers/cache must not depend on a
+        # duplicate unwrapped copy — audited 2026-07: workbench cache, dashboard,
+        # and tests only assert content tags, never "wrap + raw".
         tier1 = buildTier1(merged)
         if tier1:
             tiers.append(wrapTag('tier1_identity', tier1))
-            tiers.append(tier1)
         tier2 = buildTier2(merged)
         if tier2:
             tiers.append(wrapTag('tier2_experience', tier2))
-            tiers.append(tier2)
     tier3 = buildTier3(merged)
     if tier3:
         tiers.append(wrapTag('tier3_runtime', tier3))
-        tiers.append(tier3)
     return '\n\n'.join(tiers)
 
 
