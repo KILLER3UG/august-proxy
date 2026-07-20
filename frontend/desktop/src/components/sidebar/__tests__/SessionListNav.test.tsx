@@ -1,11 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { SessionListNav } from '../SessionListNav';
 
 describe('SessionListNav', () => {
-  it('routes Automations, Skills, and Artifacts to the correct settings sections', async () => {
-    const user = userEvent.setup();
+  it('routes Automations, Skills, and Artifacts to chat-shell pages', () => {
     const onNavigate = vi.fn();
     render(
       <SessionListNav
@@ -15,13 +13,13 @@ describe('SessionListNav', () => {
       />,
     );
 
-    await user.click(screen.getByTestId('sidebar-nav-automations'));
+    fireEvent.click(screen.getByTestId('sidebar-nav-automations'));
     expect(onNavigate).toHaveBeenCalledWith('/automations');
 
-    await user.click(screen.getByTestId('sidebar-nav-skills'));
+    fireEvent.click(screen.getByTestId('sidebar-nav-skills'));
     expect(onNavigate).toHaveBeenCalledWith('/skills');
 
-    await user.click(screen.getByTestId('sidebar-nav-artifacts'));
+    fireEvent.click(screen.getByTestId('sidebar-nav-artifacts'));
     expect(onNavigate).toHaveBeenCalledWith('/artifacts');
   });
 });

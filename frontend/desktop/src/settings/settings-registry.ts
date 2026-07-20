@@ -384,13 +384,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
   },
   {
+    id: 'plans',
     label: 'Artifacts',
     description: 'Workspace .aug artifacts — model-generated plans and todo lists. Manually delete survivors left behind by errors.',
     icon: ClipboardList,
     category: 'activity',
     tier: 'advanced',
     keywords: ['plans', 'todos', 'aug', 'init', 'checklist', 'tasks'],
-    legacyAliases: ['aug-plans', 'aug-artifacts', 'plans'],
+    legacyAliases: ['aug-plans', 'aug-artifacts'],
   },
 
   /* ── Security & Access ──────────────────────────────────────── */
