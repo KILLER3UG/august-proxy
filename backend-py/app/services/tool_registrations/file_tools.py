@@ -202,6 +202,8 @@ async def _searchFiles(query: str, path: str = '.') -> str:
     if not searchPath.exists():
         return f'Error: Path not found: {path}'
     try:
+        from app.lib.async_subprocess import communicate_or_kill
+
         proc = await asyncio.create_subprocess_exec(
             'rg',
             '-n',
@@ -214,7 +216,10 @@ async def _searchFiles(query: str, path: str = '.') -> str:
             stderr=asyncio.subprocess.PIPE,
             limit=_MAXFileSize,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        try:
+            stdout, stderr = await communicate_or_kill(proc, timeout=30)
+        except asyncio.TimeoutError:
+            return 'Error: Search timed out'
         if proc.returncode == 0:
             output = stdout.decode('utf-8', errors='replace')
             lines = output.split('\n')
@@ -223,8 +228,6 @@ async def _searchFiles(query: str, path: str = '.') -> str:
                 lines.append(f'... and {len(lines) - _MAXSearchResults} more results')
             return '\n'.join(lines)
         return await _pySearchFiles(query, searchPath)
-    except asyncio.TimeoutError:
-        return 'Error: Search timed out'
     except Exception:
         return await _pySearchFiles(query, searchPath)
 

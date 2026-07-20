@@ -153,6 +153,8 @@ async def _spawn(
 ) -> SandboxResult:
     started = time.monotonic()
     try:
+        from app.lib.async_subprocess import communicate_or_kill
+
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
@@ -160,7 +162,7 @@ async def _spawn(
             cwd=cwd or None,
             env=os.environ.copy(),
         )
-        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        stdout_b, stderr_b = await communicate_or_kill(proc, timeout=timeout)
         stdout = stdout_b.decode('utf-8', errors='replace') if stdout_b else ''
         stderr = stderr_b.decode('utf-8', errors='replace') if stderr_b else ''
         code = proc.returncode

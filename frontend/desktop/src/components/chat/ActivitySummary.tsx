@@ -32,7 +32,7 @@ export interface ActivitySummaryProps extends ActivitySummaryCounts {
   summary?: string | null;
   /** Optional “Thought for 2.7s” style meta when settled. */
   durationLabel?: string | null;
-  /** Start expanded (default false — settled answers stay dense). */
+  /** Start expanded (thoughts default open so the rail is visible). */
   defaultOpen?: boolean;
   /** When true, show a live “still working” line even while collapsed. */
   live?: boolean;

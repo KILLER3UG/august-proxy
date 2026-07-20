@@ -380,20 +380,19 @@ async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | Non
 
 async def _stopServerProcess(serverId: str) -> None:
     """Stop an MCP server subprocess and clear remote session state."""
+    from app.lib.async_subprocess import close_process
+
     proc = _processes.pop(serverId, None)
     _remote_sessions.pop(serverId, None)
     drain = _stderr_tasks.pop(serverId, None)
     if drain and not drain.done():
         drain.cancel()
-    if proc:
         try:
-            proc.terminate()
-            await asyncio.wait_for(proc.wait(), timeout=5)
-        except (asyncio.TimeoutError, ProcessLookupError):
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
+            await drain
+        except (asyncio.CancelledError, Exception):
+            pass
+    if proc:
+        await close_process(proc)
     if serverId in _servers:
         _servers[serverId]['status'] = 'stopped'
 

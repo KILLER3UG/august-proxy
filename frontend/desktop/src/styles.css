@@ -723,14 +723,18 @@ input::placeholder {
 .process-step-body {
   min-width: 0;
 }
+/* Thought rail: vertical line along the left of the prose (beside the clock). */
+.process-step--thought[data-expanded="true"] .process-step-body {
+  padding-left: 10px;
+  /* inset shadow — survives the global border-color guard that washes out border-left */
+  box-shadow: inset 1px 0 0 hsl(var(--foreground) / 0.22);
+}
 .process-thought-panel {
   margin: 2px 0 4px 26px;
   min-width: 0;
 }
 .process-thought-rail {
   position: relative;
-  padding-left: 10px;
-  border-left: 1px solid hsl(var(--muted-foreground) / 0.28);
   color: hsl(var(--muted-foreground) / 0.88);
   font-size: 0.875rem;
   line-height: 1.55;
@@ -739,8 +743,30 @@ input::placeholder {
   font-style: italic;
   opacity: 0.8;
 }
+.process-thought-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 20px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.process-thought-icon-btn:hover {
+  color: hsl(var(--foreground) / 0.85);
+  background: hsl(var(--foreground) / 0.05);
+}
+.process-thought-icon-btn:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}
 .process-thought-toggle {
-  grid-template-columns: 18px minmax(0, 1fr) auto 14px;
+  grid-template-columns: 18px minmax(0, 1fr) 14px;
   color: hsl(var(--muted-foreground) / 0.9);
 }
 .process-thought-label {

@@ -134,7 +134,7 @@ async def stop_session(sessionId: str):
     tid = _preview_to_term.pop(sessionId, None)
     if not tid:
         raise HTTPException(status_code=404, detail='Preview session not found')
-    term.closeTerminalSession(tid)
+    await term.closeTerminalSession(tid)
     return {'deleted': True}
 
 

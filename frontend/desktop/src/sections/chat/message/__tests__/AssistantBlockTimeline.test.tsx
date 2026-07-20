@@ -80,13 +80,32 @@ describe('AssistantBlockTimeline process UI', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps settled process pack collapsed to a summary line', () => {
+  it('keeps settled process pack expanded when thoughts are present', () => {
     renderTimeline([
       {
         id: 't1',
         type: 'thinking',
         content: 'Considering the clock.',
       },
+      makeToolBlock('tool_a', 'system_info', 'done', {
+        summary: '{"time":"12:00"}',
+      }),
+      {
+        id: 'f1',
+        type: 'finalOutput',
+        content: 'It is noon.',
+      },
+    ]);
+
+    const pack = document.querySelector('[data-slot="activity-summary"]');
+    expect(pack).toHaveAttribute('data-expanded', 'true');
+    expect(document.querySelector('[data-slot="thought-step"]')).toBeTruthy();
+    expect(document.querySelector('.process-thought-rail')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /system info/i })).toBeTruthy();
+  });
+
+  it('keeps settled tool-only process pack collapsed to a summary line', () => {
+    renderTimeline([
       makeToolBlock('tool_a', 'system_info', 'done', {
         summary: '{"time":"12:00"}',
       }),
@@ -238,17 +257,23 @@ describe('AssistantBlockTimeline process UI', () => {
       },
     ]);
 
-    expandActivitySummary();
+    const pack = document.querySelector('[data-slot="activity-summary"]');
+    expect(pack).toHaveAttribute('data-expanded', 'true');
     const thought = document.querySelector('[data-slot="thought-step"]');
     expect(thought).toBeTruthy();
+    expect(thought).toHaveAttribute('data-expanded', 'true');
+    expect(document.querySelector('.process-thought-rail')).toBeTruthy();
+    expect(
+      document.querySelector('.process-thought-rail')?.textContent,
+    ).toContain('First thought.');
+
     const toggle = thought!.querySelector('button');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('Done')).toBeInTheDocument();
-    expect(document.querySelector('.process-thought-panel')).toBeTruthy();
-
     fireEvent.click(toggle!);
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(document.querySelector('.process-thought-panel')).toBeNull();
+    expect(
+      document.querySelector('[data-slot="thought-step"]'),
+    ).toHaveAttribute('data-expanded', 'false');
+    expect(document.querySelector('.process-thought-rail')).toBeNull();
   });
 
   it('keyboard Enter on collapsed tool toggles aria-expanded', () => {

@@ -78,6 +78,8 @@ def _resolve_workspace(session_id: str = '', repo_path: str = '') -> tuple[str |
 
 async def _run_git(repo_path: str, *args: str, check: bool = True) -> tuple[int, str, str]:
     """Run git; return (code, stdout, stderr). Raises only on missing git / timeout."""
+    from app.lib.async_subprocess import communicate_or_kill
+
     cwd = Path(repo_path).resolve()
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -87,7 +89,7 @@ async def _run_git(repo_path: str, *args: str, check: bool = True) -> tuple[int,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=30)
+        stdout_b, stderr_b = await communicate_or_kill(proc, timeout=30)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail='Git command timed out') from None
     except FileNotFoundError:

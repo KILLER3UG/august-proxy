@@ -50,7 +50,7 @@ async def getTerminal(sessionId: str):
 @router.delete('/{sessionId}')
 async def deleteTerminal(sessionId: str):
     """Delete a terminal session."""
-    if not terminal_service.closeTerminalSession(sessionId):
+    if not await terminal_service.closeTerminalSession(sessionId):
         raise HTTPException(status_code=404, detail='Terminal session not found')
     return {'status': 'ok'}
 

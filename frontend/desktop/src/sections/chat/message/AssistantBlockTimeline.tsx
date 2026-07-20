@@ -109,7 +109,7 @@ export function AssistantBlockTimeline({
 
   // Id-keyed expand overrides; missing key → default from status.
   // Tools: running → open, else collapsed. Thoughts: expanded by default
-  // (visible once the outer activity summary is opened).
+  // (activity pack also opens by default whenever thoughts are present).
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>(
     {},
   );
@@ -403,7 +403,11 @@ export function AssistantBlockTimeline({
           summary={processSummary}
           live={livePacked}
           liveDetail={liveDetail || null}
-          defaultOpen={livePacked}
+          defaultOpen={
+            livePacked ||
+            coalescedThoughtCount > 0 ||
+            showPendingThinking
+          }
         >
           {showPendingThinking && (
             <ThoughtStep

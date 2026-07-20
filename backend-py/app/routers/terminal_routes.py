@@ -141,7 +141,7 @@ async def approveRequest(body: ApproveBody):
 @router.delete('/sessions/{session_id}')
 async def deleteSession(sessionId: str):
     """Close and delete a terminal session."""
-    if not terminal_service.closeTerminalSession(sessionId):
+    if not await terminal_service.closeTerminalSession(sessionId):
         raise HTTPException(status_code=404, detail='Session not found')
     return {'deleted': True}
 

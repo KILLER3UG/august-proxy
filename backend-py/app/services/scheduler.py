@@ -151,11 +151,12 @@ async def runJobNow(jobId: str) -> dict[str, object]:
         return {'error': 'Job not found'}
     job['status'] = 'running'
     try:
+        from app.lib.async_subprocess import communicate_or_kill
 
         proc = await asyncio.create_subprocess_shell(
             as_str(job['command'], ''), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+        stdout, stderr = await communicate_or_kill(proc, timeout=300)
         job['lastRun'] = _now()
         job['status'] = 'idle'
         job['lastResult'] = stdout.decode('utf-8', errors='replace')[:1000]

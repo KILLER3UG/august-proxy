@@ -430,10 +430,12 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
             }
             return {'status': 'approval_required', 'requestId': reqId, 'reason': danger}
     try:
+        from app.lib.async_subprocess import communicate_or_kill
+
         proc = await asyncio.create_subprocess_shell(
             command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeoutMs / 1000)
+        stdout, stderr = await communicate_or_kill(proc, timeout=timeoutMs / 1000)
         output = stdout.decode('utf-8', errors='replace')[-COMMAND_OUTPUT_LIMIT:]
         if stderr:
             error = stderr.decode('utf-8', errors='replace')[-COMMAND_OUTPUT_LIMIT:]
@@ -473,8 +475,10 @@ async def approveTerminalRequest(requestId: str, approve: bool = True) -> dict[s
     return {'status': 'approved', 'requestId': requestId}
 
 
-def closeTerminalSession(sessionId: str) -> bool:
+async def closeTerminalSession(sessionId: str) -> bool:
     """Close and remove a terminal session."""
+    from app.lib.async_subprocess import close_process
+
     session = _sessions.pop(sessionId, None)
     if not session:
         return False
@@ -487,19 +491,29 @@ def closeTerminalSession(sessionId: str) -> bool:
     readerTask = cast(asyncio.Task[None] | None, session.get('reader_task'))
     if readerTask:
         readerTask.cancel()
+        try:
+            await readerTask
+        except (asyncio.CancelledError, Exception):
+            pass
     pty = cast(PtyIO | None, session.get('pty_io'))
     if pty:
         try:
-            asyncio.create_task(pty.close())
+            await pty.close()
         except Exception:
             pass
     proc = cast(asyncio.subprocess.Process | None, session.get('process'))
     if proc:
+        await close_process(proc)
+    return True
+
+
+async def closeAllTerminalSessions() -> None:
+    """Close every terminal session (app shutdown)."""
+    for sid in list(_sessions.keys()):
         try:
-            proc.kill()
+            await closeTerminalSession(sid)
         except Exception:
             pass
-    return True
 
 
 async def handleTerminalConnection(websocket: object, terminalId: str) -> None:

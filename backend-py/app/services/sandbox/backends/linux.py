@@ -104,12 +104,14 @@ async def _run_bwrap(command: str, policy: SandboxPolicy, *, timeout: float) -> 
     args.extend(['--', 'bash', '-lc', command])
 
     try:
+        from app.lib.async_subprocess import communicate_or_kill
+
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        out_b, err_b = await communicate_or_kill(proc, timeout=timeout)
         return SandboxResult(
             ok=proc.returncode == 0,
             stdout=out_b.decode('utf-8', errors='replace') if out_b else '',

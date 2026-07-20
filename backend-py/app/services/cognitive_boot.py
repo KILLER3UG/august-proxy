@@ -315,5 +315,12 @@ async def stop_cognitive_services() -> None:
     except Exception:
         pass
 
+    try:
+        from app.services.workbench.terminal_service import closeAllTerminalSessions
+
+        await closeAllTerminalSessions()
+    except Exception:
+        pass
+
     _status['started'] = False
     logger.info('Cognitive services stopped')

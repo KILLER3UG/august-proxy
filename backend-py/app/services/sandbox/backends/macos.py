@@ -68,6 +68,8 @@ async def run(command: str, policy: SandboxPolicy, *, timeout: float) -> Sandbox
             fh.write(profile)
             profile_path = fh.name
 
+        from app.lib.async_subprocess import communicate_or_kill
+
         shell = os.environ.get('SHELL') or '/bin/bash'
         proc = await asyncio.create_subprocess_exec(
             'sandbox-exec',
@@ -80,7 +82,7 @@ async def run(command: str, policy: SandboxPolicy, *, timeout: float) -> Sandbox
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
         )
-        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        out_b, err_b = await communicate_or_kill(proc, timeout=timeout)
         return SandboxResult(
             ok=proc.returncode == 0,
             stdout=out_b.decode('utf-8', errors='replace') if out_b else '',

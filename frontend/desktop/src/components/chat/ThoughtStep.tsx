@@ -1,11 +1,10 @@
 /**
- * Collapsible thought step: summary row; expand for rail prose.
- * Generating → summary only.
- * Done → check + one-line summary + "Done".
+ * Thought step: icon gutter + muted rail prose (Claude-style left line).
+ * Expanded by default; can collapse to a one-line summary.
  */
 
 import { useId } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { ChevronDown, Clock, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 
@@ -21,7 +20,7 @@ function thoughtSummary(content: string): string {
 export function ThoughtStep({
   content,
   isGenerating = false,
-  expanded = false,
+  expanded = true,
   onToggle,
   className,
 }: {
@@ -43,81 +42,96 @@ export function ThoughtStep({
     : thoughtSummary(text);
   const canToggle = typeof onToggle === 'function';
 
+  const gutterIcon = isGenerating ? (
+    <Loader2 className="process-step-icon animate-spin" />
+  ) : (
+    <Clock className="process-step-icon" />
+  );
+
+  // Collapsed: one-line summary.
+  if (!expanded) {
+    return (
+      <div
+        className={cn(
+          'process-step process-step--thought process-step--tool',
+          className,
+        )}
+        data-slot="thought-step"
+        data-generating={isGenerating ? 'true' : 'false'}
+        data-expanded="false"
+      >
+        {canToggle ? (
+          <button
+            type="button"
+            className="process-tool-toggle process-thought-toggle"
+            onClick={onToggle}
+            aria-expanded={false}
+            aria-controls={panelId}
+          >
+            <span className="process-step-gutter" aria-hidden>
+              {gutterIcon}
+            </span>
+            <span
+              className={cn(
+                'process-tool-label process-thought-label',
+                isGenerating && 'process-thought-label--live',
+              )}
+            >
+              {summary}
+            </span>
+            <ChevronDown className="process-tool-chevron" aria-hidden />
+          </button>
+        ) : (
+          <div className="process-tool-toggle process-thought-toggle" aria-hidden>
+            <span className="process-step-gutter">{gutterIcon}</span>
+            <span className="process-tool-label process-thought-label">
+              {summary}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Expanded: icon gutter + left-rail prose (reference look).
   return (
     <div
-      className={cn(
-        'process-step process-step--thought process-step--tool',
-        className,
-      )}
+      className={cn('process-step process-step--thought', className)}
       data-slot="thought-step"
       data-generating={isGenerating ? 'true' : 'false'}
-      data-expanded={expanded ? 'true' : 'false'}
+      data-expanded="true"
     >
-      {canToggle ? (
-        <button
-          type="button"
-          className="process-tool-toggle process-thought-toggle"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          aria-controls={panelId}
-        >
-          <span className="process-step-gutter" aria-hidden>
-            {!isGenerating ? (
-              <Check className="process-step-icon text-success" />
-            ) : null}
-          </span>
-          <span
-            className={cn(
-              'process-tool-label process-thought-label',
-              isGenerating && 'process-thought-label--live',
-            )}
+      <span className="process-step-gutter" aria-hidden={!canToggle}>
+        {canToggle ? (
+          <button
+            type="button"
+            className="process-thought-icon-btn"
+            onClick={onToggle}
+            aria-expanded
+            aria-controls={panelId}
+            aria-label="Collapse thought"
           >
-            {summary}
-          </span>
-          {!isGenerating && (
-            <span className="process-thought-done shrink-0">Done</span>
-          )}
-          <ChevronDown
-            className={cn(
-              'process-tool-chevron',
-              expanded && 'process-tool-chevron--open',
-            )}
-            aria-hidden
-          />
-        </button>
-      ) : (
-        <div className="process-tool-toggle process-thought-toggle" aria-hidden>
-          <span className="process-step-gutter">
-            {!isGenerating ? (
-              <Check className="process-step-icon text-success" />
-            ) : null}
-          </span>
-          <span className="process-tool-label process-thought-label">
-            {summary}
-          </span>
-          {!isGenerating && (
-            <span className="process-thought-done">Done</span>
-          )}
-        </div>
-      )}
-
-      {expanded && (
-        <div
-          id={panelId}
-          className="process-thought-panel"
-          aria-live={isGenerating ? 'polite' : undefined}
-        >
-          {text ? (
-            <div className="process-thought-rail thought-content chat-thought-text">
-              <Markdown content={text} />
-            </div>
-          ) : (
-            <div className="process-thought-rail process-thought-pending">
-              Thinking…
-            </div>
-          )}
-        </div>
-      )}
+            {gutterIcon}
+          </button>
+        ) : (
+          gutterIcon
+        )}
+      </span>
+      <div
+        id={panelId}
+        className="process-step-body"
+        aria-live={isGenerating ? 'polite' : undefined}
+      >
+        {text ? (
+          <div className="process-thought-rail thought-content chat-thought-text">
+            <Markdown content={text} />
+          </div>
+        ) : (
+          <div className="process-thought-rail process-thought-pending">
+            Thinking…
+          </div>
+        )}
+      </div>
     </div>
   );
 }
