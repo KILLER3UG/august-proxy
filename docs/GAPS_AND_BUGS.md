@@ -4,6 +4,13 @@ Living list. Prefer fixing code first, then ticking items off here.
 
 ---
 
+## Closed (2026-07-20)
+
+| Item | Resolution |
+|------|------------|
+| OpenCode Console `session_id: null` 400 on workbench/Test | Desktop **0.12.21** — `dump_openai_upstream_body` / `dump_anthropic_upstream_body` on workbench + proxy |
+| API format dropdown showed `base + /chat/completions` | Labels are leaf paths only (`chat/completions`, `messages`, `responses`) |
+
 ## Closed (2026-07-15)
 
 | Item | Resolution |
@@ -20,6 +27,14 @@ Living list. Prefer fixing code first, then ticking items off here.
 ---
 
 ## Open / deferred
+
+### OpenCode Zen: models list ≠ usable chat path — **OPEN**
+
+Zen’s `GET /models` returns Claude, GPT, DeepSeek, etc., but each family uses a
+different endpoint (`/messages`, `/responses`, `/chat/completions`, Gemini).
+August binds one `apiFormat` per provider, so Test/chat **404** for
+wrong-format models. Desktop **0.12.21** fixed null `session_id` dumps; this
+routing gap remains.
 
 ### Dual naming (Python params vs camelCase wire) — **DEFERRED by design**
 

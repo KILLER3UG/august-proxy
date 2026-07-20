@@ -1,0 +1,16 @@
+---
+description: August product is the Tauri desktop app; do not treat web as the product surface
+alwaysApply: true
+---
+
+# Desktop is the product
+
+August’s user-facing product is the **Tauri desktop app** (`frontend/desktop/` + bundled `backend-py/`).
+
+- Ship and verify fixes for **desktop** (dev shell or packaged install). Do not treat browser/`web-dist` as a separate product QA target.
+- `web-dist/` is only the SPA build packaged into Tauri (and optionally served by FastAPI). Prefer `npm run dev:desktop` for UI/workbench checks.
+- Backend changes must ship in a **desktop release** — installed apps run the bundled AppData `backend-py` from the installer stamp, not an arbitrary local checkout unless in `tauri:dev`.
+
+## Known fix context (0.12.21)
+
+Null `session_id` / polluted OpenAI dumps to OpenCode were fixed via `dump_openai_upstream_body` (workbench + proxy). OpenCode Zen multi-endpoint routing (Claude `/messages`, GPT `/responses` vs DeepSeek `/chat/completions`) remains a known gap — models list ≠ usable under a single `apiFormat`. Details: root `AGENTS.md`, `docs/TROUBLESHOOTING.md`.

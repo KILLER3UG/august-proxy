@@ -14,8 +14,8 @@ client connected.
 5. [Pointing a Client at the Proxy](#pointing-a-client-at-the-proxy)
 6. [Verifying It Works](#verifying-it-works)
 7. [Stopping and Updating](#stopping-and-updating)
-8. [Desktop (Tauri) — local development](#desktop-tauri--local-development)
-9. [Frontend web / mobile](#frontend-web--mobile)
+8. [Desktop (Tauri) — primary product UI](#desktop-tauri--primary-product-ui)
+9. [SPA build artifact / mobile companion](#spa-build-artifact--mobile-companion)
 
 ---
 
@@ -25,9 +25,8 @@ client connected.
   endpoint such as OpenRouter / Opencode / MiniMax). See
   [`CONFIGURATION.md`](CONFIGURATION.md).
 - **Docker** (for Option A) **or** **Python 3.12+** (for Option B; `uv` recommended).
-- (Optional) Node.js for frontend development and Tauri desktop builds.
-- (Optional) Dashboard already ships in `web-dist/`; rebuild from
-  `frontend/desktop/` when you change the UI.
+- (Optional) Node.js + Rust for the **desktop** app (`npm run dev:desktop`).
+- `web-dist/` is the SPA build packaged into Tauri — not a separate product to QA in a browser.
 
 ---
 
@@ -48,7 +47,7 @@ docker ps            # expect: august-proxy   Up
 docker logs august-proxy --tail 30
 ```
 
-The dashboard is served at **http://localhost:8085**. Compose maps host port
+The API listens on **http://localhost:8085**. Compose maps host port
 `8085` to container port `8085` (see `docker-compose.yml` and `Dockerfile` `EXPOSE 8085`).
 
 `data/` is bind-mounted, so `config.json`, `providers.json`, the brain DB, and
@@ -86,9 +85,9 @@ uv run pytest -q
 # or from repo root: npm run test:backend
 ```
 
-The server listens on **http://localhost:8085**. If `web-dist/` exists the
-dashboard is served at `/`; otherwise run the Vite dev server and proxy `/api`
-to `:8085` (see [Frontend web / mobile](#frontend-web--mobile)).
+The server listens on **http://localhost:8085**. Use the **desktop app** for the
+product UI (`npm run dev:desktop`). If `web-dist/` exists, FastAPI may serve that
+SPA at `/` for backend-only runs — that is packaging support, not the product QA path.
 
 > **Note:** If you see `RuntimeError: asyncio.run() cannot be called from a
 > running event loop` under uvicorn `--reload`, run without `--reload`.
@@ -100,7 +99,7 @@ The process **refuses to start on Python &lt; 3.12** (`main.py` fail-fast check)
 ## First-run Configuration
 
 On first start, the proxy reads (or creates) files in `data/`. You can edit them
-directly or use the dashboard (**Settings → Model Providers**).
+directly or use the **desktop app** (**Settings → Model Providers**).
 
 ### 1. Add API keys
 
@@ -135,7 +134,7 @@ under a matching name in `config.json` or put the key on the provider entry in
 ```
 
 Aliases let clients request `sonnet` (or any friendly id) while the proxy routes
-to the real model. Manage them from the dashboard or
+to the real model. Manage them from the **desktop app** or
 `GET/PUT /api/config/model-aliases`.
 
 ### 3. Add a custom / OpenAI-compatible provider
@@ -220,7 +219,9 @@ curl http://localhost:8085/v1/chat/completions \
   -d '{"model":"sonnet","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-Then open **http://localhost:8085** in your browser to use the dashboard.
+Then open the **desktop app** (`npm run dev:desktop` or an installed build) for
+Settings → Model Providers and workbench chat. Do not treat a browser tab on
+`:8085` as the product test surface — see [`AGENTS.md`](../AGENTS.md).
 
 ---
 
@@ -249,11 +250,11 @@ ports:
 
 ---
 
-## Desktop (Tauri) — local development
+## Desktop (Tauri) — primary product UI
 
-The desktop app bundles the React SPA and launches the Python backend
-(`backend-py/`) as a child process via uvicorn. First-run setup is a
-one-shot script.
+The desktop app is the product UI. It bundles the React SPA and launches the
+Python backend (`backend-py/`) as a child process via uvicorn. First-run setup
+is a one-shot script.
 
 ### Prerequisites
 
@@ -311,20 +312,17 @@ Dev still uses `backend-py/.venv` from `install.ps1` / `install.sh`.
 
 ---
 
-## Frontend web / mobile
+## SPA build artifact / mobile companion
 
 ```bash
 # From repo root (npm workspaces: frontend/desktop, frontend/mobile)
 npm install
 
-# Vite SPA only (proxies /api and WS to the backend)
-npm run dev:web
-
-# Production SPA build → web-dist/
-npm run build:web
-
-# Desktop Tauri
+# Preferred: full desktop product surface
 npm run dev:desktop
+
+# SPA build used by the desktop installer (and optional FastAPI static serve)
+npm run build:web
 
 # Mobile companion (Expo) — see frontend/mobile/README / AGENTS.md
 cd frontend/mobile && npm start
@@ -336,9 +334,8 @@ Root scripts (`package.json`):
 |--------|---------|
 | `npm start` | Start backend helper |
 | `npm run dev` | Full dev app orchestrator |
-| `npm run dev:desktop` | Tauri desktop |
-| `npm run dev:web` | Vite only |
-| `npm run build:web` | Build SPA into `web-dist/` |
+| `npm run dev:desktop` | Tauri desktop (**product UI**) |
+| `npm run build:web` | Build SPA into `web-dist/` for packaging |
 | `npm run test` | Backend pytest + desktop vitest |
-| `npm run release:desktop` | Build web + portable Python/backend + Tauri release |
+| `npm run release:desktop` | Build SPA + portable Python/backend + Tauri release |
 | `npm run prepare:desktop-backend` | Stage portable Python + wheels into Tauri resources |

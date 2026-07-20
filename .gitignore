@@ -14,8 +14,8 @@ backend/host-agent/node_modules/
 # Vite build output
 web-dist/
 
-# Local release artifacts
-releases/
+# Local release artifacts (installer zips / manifests under repo root)
+/releases/
 
 # TypeScript build artifacts
 *.tsbuildinfo

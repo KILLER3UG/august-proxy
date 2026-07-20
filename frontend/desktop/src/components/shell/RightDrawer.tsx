@@ -15,7 +15,6 @@ import { RightDrawerPlanSection } from './RightDrawerPlanSection';
 import { RightDrawerTerminalSection } from './RightDrawerTerminalSection';
 import { RightDrawerPreviewSection } from './RightDrawerPreviewSection';
 import { RightDrawerBrowserSection } from './RightDrawerBrowserSection';
-import { RightDrawerActivitySection } from './RightDrawerActivitySection';
 import type { WorkbenchSession } from '@/types/workbench';
 
 const DEFAULT_BASE_WIDTH = 320;   // 1-2 sections
@@ -218,8 +217,6 @@ function renderSection(
   },
 ) {
   switch (sectionId) {
-    case 'activity':
-      return <RightDrawerActivitySection sessionId={ctx.sessionId} />;
     case 'preview':
       return (
         <RightDrawerPreviewSection

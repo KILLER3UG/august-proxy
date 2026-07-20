@@ -50,6 +50,23 @@ class AnthropicMessage(ExtraAllowBaseModel):
     role: str
 
 
+# August routing / bookkeeping — never forward to Anthropic-compatible gateways.
+_AUGUST_ONLY_ANTHROPIC_KEYS = frozenset({'session_id', 'sessionId'})
+
+
+def dump_anthropic_upstream_body(
+    body: AnthropicRequest | dict[str, object],
+) -> dict[str, object]:
+    """Serialize an Anthropic messages body for upstream without null / August-only keys."""
+    if isinstance(body, AnthropicRequest):
+        dumped: dict[str, object] = body.model_dump(exclude_none=True)  # type: ignore[assignment]
+    else:
+        dumped = {k: v for k, v in body.items() if v is not None}
+    for key in _AUGUST_ONLY_ANTHROPIC_KEYS:
+        dumped.pop(key, None)
+    return dumped
+
+
 class AnthropicRequest(ExtraAllowBaseModel):
     """Loose on messages, strict on routing fields.
 

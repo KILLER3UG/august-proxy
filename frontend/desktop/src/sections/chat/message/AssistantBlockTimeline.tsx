@@ -8,6 +8,7 @@ import {
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { ThoughtStep } from '@/components/chat/ThoughtStep';
 import { ToolStepRow } from '@/components/chat/ToolStepRow';
+import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { SubagentLaunchList } from '@/components/chat/SubagentLaunchList';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { classifyTool } from '@/lib/tool-classify';
@@ -21,11 +22,6 @@ import {
   type LiveActivityItem,
   type LiveActivityKind,
 } from '@/store/liveActivity';
-import {
-  addRightDrawerSection,
-  clearActivityAutoOpenSuppression,
-  closeRightDrawerSection,
-} from '@/components/shell/RightDrawerState';
 import { getToolLabel } from '@/lib/tool-labels';
 import { modelDisplayParts } from '../model-display';
 import { resolveUiSessionId } from '../stream/session-id-map';
@@ -112,7 +108,8 @@ export function AssistantBlockTimeline({
     splitProcessAndFinal(displayBlocks);
 
   // Id-keyed expand overrides; missing key → default from status.
-  // Tools: running → open. Thinking: collapsed by default (user expands).
+  // Tools: running → open, else collapsed. Thoughts: expanded by default
+  // (visible once the outer activity summary is opened).
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>(
     {},
   );
@@ -128,13 +125,43 @@ export function AssistantBlockTimeline({
 
   const isThoughtExpanded = (thoughtId: string) => {
     if (thoughtId in expandOverrides) return expandOverrides[thoughtId];
-    return false;
+    return true;
   };
 
   const thinkingParts = processBlocks
     .filter((b) => b.type === 'thinking' && b.content?.trim())
     .map((b) => b.content!.trim());
   const processSummary = buildProcessSummaryLine(thinkingParts);
+
+  let toolsCount = 0;
+  let viewedCount = 0;
+  let editedCount = 0;
+  let ranCount = 0;
+  let usedCount = 0;
+  for (const block of processBlocks) {
+    if ((block.type === 'toolCall' || block.type === 'command') && block.tool) {
+      toolsCount += 1;
+      const bucket = classifyTool(block.tool.name);
+      if (bucket === 'view') viewedCount += 1;
+      else if (bucket === 'edit') editedCount += 1;
+      else if (bucket === 'run') ranCount += 1;
+      else usedCount += 1;
+    }
+  }
+  // Coalesced consecutive thoughts count as one ThoughtStep in the UI.
+  const coalescedThoughtCount = (() => {
+    let n = 0;
+    let i = 0;
+    while (i < processBlocks.length) {
+      if (processBlocks[i].type === 'thinking') {
+        n += 1;
+        while (i < processBlocks.length && processBlocks[i].type === 'thinking') i++;
+        continue;
+      }
+      i++;
+    }
+    return n;
+  })();
 
   const livePacked = !!(
     isLast &&
@@ -211,8 +238,6 @@ export function AssistantBlockTimeline({
     if (!livePacked) {
       if (isLast && !streaming) {
         clearLiveActivity(liveSessionKey);
-        closeRightDrawerSection('activity', { fromAuto: true });
-        clearActivityAutoOpenSuppression();
       }
       return;
     }
@@ -221,7 +246,6 @@ export function AssistantBlockTimeline({
       headline: liveDetail || processSummary || 'Working…',
       items: liveItems,
     });
-    addRightDrawerSection('activity', { fromAuto: true });
   }, [livePacked, liveSessionKey, liveDetail, liveItems, processSummary, isLast, streaming]);
 
   const renderProcessBlocks = (blocks: DisplayBlock[]) => {
@@ -368,17 +392,35 @@ export function AssistantBlockTimeline({
 
   return (
     <div className="process-timeline" data-slot="process-timeline">
-      {showPendingThinking && (
-        <ThoughtStep
-          content=""
-          isGenerating
-          expanded={isThoughtExpanded('pending_think')}
-          onToggle={() =>
-            toggleExpand('pending_think', !isThoughtExpanded('pending_think'))
-          }
-        />
+      {(processBlocks.length > 0 || showPendingThinking) && (
+        <ActivitySummary
+          thoughtCount={coalescedThoughtCount || (showPendingThinking ? 1 : 0)}
+          toolsCount={toolsCount}
+          viewedCount={viewedCount}
+          editedCount={editedCount}
+          ranCount={ranCount}
+          usedCount={usedCount}
+          summary={processSummary}
+          live={livePacked}
+          liveDetail={liveDetail || null}
+          defaultOpen={livePacked}
+        >
+          {showPendingThinking && (
+            <ThoughtStep
+              content=""
+              isGenerating
+              expanded={isThoughtExpanded('pending_think')}
+              onToggle={() =>
+                toggleExpand(
+                  'pending_think',
+                  !isThoughtExpanded('pending_think'),
+                )
+              }
+            />
+          )}
+          {renderProcessBlocks(processBlocks)}
+        </ActivitySummary>
       )}
-      {renderProcessBlocks(processBlocks)}
       {hasFinalOutput && renderFinal(finalBlocks)}
     </div>
   );

@@ -121,7 +121,7 @@ export function TeamAgentsStrip({
           <button
             type="button"
             className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-0.5 text-muted-foreground hover:bg-muted/40"
-            title="Open activity / logs drawer"
+            title="Open Workbench tasks"
             onClick={() => {
               addRightDrawerSection('tasks');
               window.dispatchEvent(new CustomEvent('august-open-right-sidebar'));

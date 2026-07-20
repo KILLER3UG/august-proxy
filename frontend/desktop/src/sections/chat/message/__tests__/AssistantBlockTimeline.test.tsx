@@ -9,12 +9,6 @@ vi.mock('@/store/liveActivity', () => ({
   publishLiveActivity: vi.fn(),
 }));
 
-vi.mock('@/components/shell/RightDrawerState', () => ({
-  addRightDrawerSection: vi.fn(),
-  clearActivityAutoOpenSuppression: vi.fn(),
-  closeRightDrawerSection: vi.fn(),
-}));
-
 function makeMessage(partial?: Partial<ChatMessage>): ChatMessage {
   return {
     id: 'msg_1',
@@ -65,12 +59,48 @@ function renderTimeline(
   );
 }
 
+function expandActivitySummary() {
+  const pack = document.querySelector('[data-slot="activity-summary"]');
+  expect(pack).toBeTruthy();
+  if (pack?.getAttribute('data-expanded') === 'false') {
+    const header = pack.querySelector('button.activity-summary-header');
+    expect(header).toBeTruthy();
+    fireEvent.click(header!);
+  }
+  expect(
+    document.querySelector('[data-slot="activity-summary"]'),
+  ).toHaveAttribute('data-expanded', 'true');
+}
+
 describe('AssistantBlockTimeline process UI', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('keeps settled process pack collapsed to a summary line', () => {
+    renderTimeline([
+      {
+        id: 't1',
+        type: 'thinking',
+        content: 'Considering the clock.',
+      },
+      makeToolBlock('tool_a', 'system_info', 'done', {
+        summary: '{"time":"12:00"}',
+      }),
+      {
+        id: 'f1',
+        type: 'finalOutput',
+        content: 'It is noon.',
+      },
+    ]);
+
+    const pack = document.querySelector('[data-slot="activity-summary"]');
+    expect(pack).toHaveAttribute('data-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /system info/i })).toBeNull();
+    expect(document.querySelector('[data-slot="thought-step"]')).toBeNull();
   });
 
   it('collapses done tools by default and expands to reveal response', () => {
@@ -90,6 +120,7 @@ describe('AssistantBlockTimeline process UI', () => {
       },
     ]);
 
+    expandActivitySummary();
     expect(screen.queryByText(/Thought\s*\(\d+\)/i)).not.toBeInTheDocument();
 
     const toggle = screen.getByRole('button', { name: /system info/i });
@@ -191,12 +222,13 @@ describe('AssistantBlockTimeline process UI', () => {
       },
     ]);
 
+    expandActivitySummary();
     expect(screen.queryByText(/Thought\s*\(\d+\)/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Thinking\s*\(\d+\)/i)).not.toBeInTheDocument();
     expect(document.querySelectorAll('[data-slot="thought-step"]').length).toBe(1);
   });
 
-  it('collapses thinking by default and expands on toggle', () => {
+  it('expands thoughts by default inside the activity pack', () => {
     renderTimeline([
       { id: 'th1', type: 'thinking', content: 'First thought.' },
       {
@@ -206,17 +238,15 @@ describe('AssistantBlockTimeline process UI', () => {
       },
     ]);
 
-    const toggle = screen.getByRole('button', { name: /First thought/i });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByText('Done')).toBeInTheDocument();
-    // Collapsed: summary on the toggle, full markdown body hidden.
-    expect(document.querySelector('.process-thought-panel')).toBeNull();
-
-    fireEvent.click(toggle);
+    expandActivitySummary();
+    const thought = document.querySelector('[data-slot="thought-step"]');
+    expect(thought).toBeTruthy();
+    const toggle = thought!.querySelector('button');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Done')).toBeInTheDocument();
     expect(document.querySelector('.process-thought-panel')).toBeTruthy();
 
-    fireEvent.click(toggle);
+    fireEvent.click(toggle!);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(document.querySelector('.process-thought-panel')).toBeNull();
   });
@@ -228,10 +258,10 @@ describe('AssistantBlockTimeline process UI', () => {
       }),
     ]);
 
+    expandActivitySummary();
     const toggle = screen.getByRole('button', { name: /system info/i });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     toggle.focus();
-    // Real <button> activates on click (Enter/Space in browsers); assert a11y attrs + toggle.
     fireEvent.keyDown(toggle, { key: 'Enter', code: 'Enter' });
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -247,6 +277,7 @@ describe('AssistantBlockTimeline process UI', () => {
     });
     const { rerender } = renderTimeline([block]);
 
+    expandActivitySummary();
     const toggle = screen.getByRole('button', { name: /Read/i });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(toggle);
@@ -273,6 +304,7 @@ describe('AssistantBlockTimeline process UI', () => {
       </MemoryRouter>,
     );
 
+    expandActivitySummary();
     expect(screen.getByRole('button', { name: /Read/i })).toHaveAttribute(
       'aria-expanded',
       'true',

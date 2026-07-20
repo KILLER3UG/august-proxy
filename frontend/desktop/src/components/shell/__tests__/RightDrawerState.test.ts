@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addRightDrawerSection,
-  clearActivityAutoOpenSuppression,
   closeRightDrawer,
   closeRightDrawerSection,
   toggleRightDrawerSection,
@@ -10,8 +9,7 @@ import {
 
 describe('RightDrawerState', () => {
   beforeEach(() => {
-    closeRightDrawer({ fromAuto: true });
-    clearActivityAutoOpenSuppression();
+    closeRightDrawer();
   });
 
   it('opens when a section is added', () => {
@@ -45,45 +43,10 @@ describe('RightDrawerState', () => {
   });
 
   it('does not leave an empty open shell', () => {
-    addRightDrawerSection('activity');
-    closeRightDrawerSection('activity');
+    addRightDrawerSection('diff');
+    closeRightDrawerSection('diff');
     const state = useRightDrawerStore.getState();
     expect(state.open).toBe(false);
     expect(state.sections).toHaveLength(0);
-  });
-
-  it('does not auto-reopen Activity after the user dismisses it', () => {
-    addRightDrawerSection('activity', { fromAuto: true });
-    expect(useRightDrawerStore.getState().open).toBe(true);
-
-    closeRightDrawer();
-    expect(useRightDrawerStore.getState().open).toBe(false);
-    expect(useRightDrawerStore.getState().activityAutoOpenSuppressed).toBe(true);
-
-    addRightDrawerSection('activity', { fromAuto: true });
-    expect(useRightDrawerStore.getState().open).toBe(false);
-    expect(useRightDrawerStore.getState().sections).toEqual([]);
-  });
-
-  it('allows manual Activity open after dismiss', () => {
-    addRightDrawerSection('activity', { fromAuto: true });
-    closeRightDrawerSection('activity');
-    expect(useRightDrawerStore.getState().activityAutoOpenSuppressed).toBe(true);
-
-    addRightDrawerSection('activity');
-    const state = useRightDrawerStore.getState();
-    expect(state.open).toBe(true);
-    expect(state.sections).toEqual(['activity']);
-    expect(state.activityAutoOpenSuppressed).toBe(false);
-  });
-
-  it('system close of Activity does not suppress the next auto-open', () => {
-    addRightDrawerSection('activity', { fromAuto: true });
-    closeRightDrawerSection('activity', { fromAuto: true });
-    clearActivityAutoOpenSuppression();
-
-    addRightDrawerSection('activity', { fromAuto: true });
-    expect(useRightDrawerStore.getState().open).toBe(true);
-    expect(useRightDrawerStore.getState().sections).toEqual(['activity']);
   });
 });

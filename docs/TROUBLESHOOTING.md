@@ -100,6 +100,25 @@ providers**. That is expected, not a missing install step.
 Provider clients retry with exponential backoff (capped, honors `Retry-After`).
 If it persists, spread traffic or reduce parallelism.
 
+### Workbench / Test: `session_id: … received null` (OpenCode Console)
+
+**Fixed in desktop 0.12.21.** Earlier builds dumped `session_id: null` (and other
+nulls) on OpenAI-compatible upstream calls. OpenCode’s Console Zod schema rejects
+that; free DeepSeek Flash often still worked. Desktop workbench chat, the model
+**Test** button, and `/v1/chat/completions` now use `dump_openai_upstream_body`
+(`exclude_none` + strip August-only keys). Ship/reinstall **0.12.21+** for
+installed desktop users (bundled backend).
+
+### Models list OK but Test / chat returns **Not Found** (OpenCode Zen)
+
+`GET …/models` returns the full Zen catalog. Each model family still needs a
+different wire path (`/chat/completions`, `/messages`, `/responses`, or Gemini’s
+Google-style path). August picks **one** `apiFormat` per provider. With
+`openaiChat`, only chat-completions models work (DeepSeek, GLM, Kimi, MiniMax,
+Grok, free tier). Claude needs `messages`; GPT needs `responses` — those will
+**404** under a single Zen `openaiChat` provider until per-model routing exists.
+See [`CONFIGURATION.md`](CONFIGURATION.md) (OpenCode note).
+
 ---
 
 ## Workbench & chat

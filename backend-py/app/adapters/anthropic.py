@@ -45,6 +45,7 @@ from app.models import (
     AnthropicUsage,
     ToolResultBlock,
 )
+from app.models.anthropic import dump_anthropic_upstream_body
 from app.adapters.case_converters import snakeToCamel, camelToSnake
 from app.adapters.anthropic_sse import (
     write_anthropic_sse_data,
@@ -464,10 +465,10 @@ async def handleMessages(
     """
     if isinstance(body, AnthropicRequest):
         model: str = body.model
-        raw_body = cast('dict[str, object]', body.model_dump())
+        raw_body = dump_anthropic_upstream_body(body)
     else:
         model = as_str(body.get('model'), 'claude-sonnet-4-7')
-        raw_body = body
+        raw_body = dump_anthropic_upstream_body(body)
     resolvedModel = resolve_claude_public_model_alias(model)
     try:
         resolved = resolve(resolvedModel, default_alias='claude-sonnet-4-7')

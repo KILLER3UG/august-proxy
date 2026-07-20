@@ -8,10 +8,11 @@ managed tools, persistent memory (brain), skills, sub-agents, browser automation
 desktop automation, platform gateways, and a Tauri desktop + Expo mobile UI.
 
 It is the successor to an earlier Node.js HTTP bridge. The server is written in
-**Python 3.12+** (FastAPI) under [`backend-py/`](backend-py). The primary UI is a
-**React + Vite + TypeScript** SPA in [`frontend/desktop/`](frontend/desktop)
-(Tauri shell optional); compiled output is served from [`web-dist/`](web-dist).
-A companion Expo app lives in [`frontend/mobile/`](frontend/mobile).
+**Python 3.12+** (FastAPI) under [`backend-py/`](backend-py). The **product UI**
+is the **Tauri desktop app** in [`frontend/desktop/`](frontend/desktop) (React +
+Vite + TypeScript). `web-dist/` is the SPA build artifact packaged into that
+desktop shell (FastAPI can also serve it for backend-only local runs — not a
+separate product). A companion Expo app lives in [`frontend/mobile/`](frontend/mobile).
 
 ---
 
@@ -87,7 +88,8 @@ cp .env.example .env          # then edit .env and add your API keys
 docker compose up --build -d
 ```
 
-The dashboard is served at **http://localhost:8085** (host and container both use port `8085`).
+The API listens on **http://localhost:8085**. Use the **desktop app** for the
+product UI (`npm run dev:desktop`). `web-dist/` is only the packaged SPA build.
 
 ### Run locally (development)
 
@@ -105,16 +107,16 @@ uv run uvicorn app.main:app --reload --port 8085
 # uvicorn app.main:app --reload --port 8085
 ```
 
-Frontend:
+**Product UI (desktop):**
 
 ```bash
 npm install
-npm run dev:web          # Vite only, proxy /api → :8085
-# or full desktop shell:
-npm run dev:desktop      # Tauri + backend
+npm run dev:desktop      # Tauri shell + backend — preferred for UI / workbench QA
 ```
 
-Build the SPA into `web-dist/` with `npm run build:web` so the backend can serve it at `/`.
+`npm run build:web` produces `web-dist/` for packaging into the desktop installer
+(and optional FastAPI static serve). Do not treat browser-only Vite as the
+product test surface — see [`AGENTS.md`](AGENTS.md).
 
 ### Point a client at the proxy
 
@@ -153,6 +155,7 @@ provider's declared env vars, then standard `{NAME}_API_KEY` patterns. See
 
 | Document | Audience | Contents |
 |----------|----------|----------|
+| [`AGENTS.md`](AGENTS.md) | Agents / contributors | Desktop product surface + recent fix notes |
 | [`docs/SETUP.md`](docs/SETUP.md) | All users | Installation, first-run, clients, desktop |
 | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Operators | Config / providers / env reference |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Developers | Request flow, workbench, brain, gateway |

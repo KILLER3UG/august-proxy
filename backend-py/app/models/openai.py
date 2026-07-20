@@ -53,6 +53,24 @@ class ChatMessage(ExtraAllowBaseModel):
     # content, tool_calls, function_call → pass through via extra="allow"
 
 
+# August routing / bookkeeping — never forward to OpenAI-compatible gateways.
+# OpenCode Console Zod-rejects ``session_id: null`` (expects string if present).
+_AUGUST_ONLY_OPENAI_KEYS = frozenset({'session_id', 'sessionId', 'user', 'metadata'})
+
+
+def dump_openai_upstream_body(
+    body: ChatCompletionRequest | dict[str, object],
+) -> dict[str, object]:
+    """Serialize an OpenAI chat body for upstream without null / August-only keys."""
+    if isinstance(body, ChatCompletionRequest):
+        dumped: dict[str, object] = body.model_dump(exclude_none=True)  # type: ignore[assignment]
+    else:
+        dumped = {k: v for k, v in body.items() if v is not None}
+    for key in _AUGUST_ONLY_OPENAI_KEYS:
+        dumped.pop(key, None)
+    return dumped
+
+
 class ChatCompletionRequest(ExtraAllowBaseModel):
     """Loose on messages, strict on routing fields."""
 

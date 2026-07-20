@@ -247,11 +247,11 @@ User-added providers, edited from **Settings → Model Providers** or
       "autoFetch": false,
       "models": [
         {
-          "id": "claude-opus-4-6",
-          "name": "claude-opus-4-6",
+          "id": "deepseek-v4-flash-free",
+          "name": "deepseek-v4-flash-free",
           "contextWindow": 128000,
           "reasoning": false,
-          "free": false,
+          "free": true,
           "source": "fetched"
         }
       ]
@@ -263,12 +263,20 @@ User-added providers, edited from **Settings → Model Providers** or
 | Field | Values |
 |-------|--------|
 | `name` | Display name; used for key resolution |
-| `baseUrl` | Upstream base URL |
-| `apiFormat` | Wire format (e.g. `openaiChat`, `anthropicMessages`, Responses-style keys) |
+| `baseUrl` | Host + prefix only (e.g. `https://opencode.ai/zen/v1`). API format appends the leaf (`chat/completions`, `messages`, `responses`) |
+| `apiFormat` | Wire format: `openaiChat` → `chat/completions`, `anthropicMessages` → `messages`, `openaiResponses` → `responses` |
 | `apiKey` | Provider key (or rely on `config.json` / env) |
 | `enabled` | Whether it is used |
 | `autoFetch` | Re-fetch models on startup when supported |
 | `models` | Cached catalog |
+
+**OpenCode Zen:** one `baseUrl` + one `apiFormat` cannot cover every listed
+model. Prefer `openaiChat` for DeepSeek / free / GLM / Kimi / MiniMax / Grok.
+Claude and GPT on Zen need different formats/endpoints — fetching them into the
+same provider still yields **404** on Test/chat until multi-endpoint routing
+ships. Desktop **0.12.21+** also stops forwarding `session_id: null` on OpenAI
+bodies (Console 400).
+
 There is **no built-in template catalog**. You configure every provider
 yourself (name, base URL, API format, API key) via Settings → Providers or
 `POST /api/providers`. `GET /api/providers/templates` remains for back-compat

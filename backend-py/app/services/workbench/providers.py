@@ -418,8 +418,10 @@ async def call_openai_workbench(
 
     openaiMessages = translateMessages(messages)
     openaiMessages.insert(0, {'role': 'system', 'content': system_text})
-    req = ChatCompletionRequest(model=model)
-    body: dict[str, object] = req.model_dump()  # type: ignore[assignment]
+    from app.models.openai import dump_openai_upstream_body
+
+    # Clean dump: OpenCode Console (and similar) Zod-reject nulls like session_id: null.
+    body: dict[str, object] = dump_openai_upstream_body(ChatCompletionRequest(model=model))
     body['messages'] = openaiMessages
     # Completion ceiling from the model profile — not a workbench constant.
     model_out = model_max_output_tokens(provider, model)

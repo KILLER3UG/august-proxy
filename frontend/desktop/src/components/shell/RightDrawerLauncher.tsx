@@ -13,7 +13,6 @@ import {
   Play,
   Check,
   Globe,
-  Activity,
 } from 'lucide-react';
 import { useRightDrawer, type RightDrawerSectionId } from './RightDrawerState';
 
@@ -21,11 +20,6 @@ const SECTION_META: Record<
   RightDrawerSectionId,
   { label: string; hint?: string; Icon: typeof FileDiff }
 > = {
-  activity: {
-    label: 'Activity',
-    hint: 'Live steps while August works (even when chat is collapsed)',
-    Icon: Activity,
-  },
   preview: {
     label: 'Preview',
     hint: 'Live preview of what August is building',
@@ -59,7 +53,6 @@ const SECTION_META: Record<
 };
 
 const OPTIONS: RightDrawerSectionId[] = [
-  'activity',
   'diff',
   'terminal',
   'plan',

@@ -5,6 +5,7 @@
 | Document | Audience | Contents |
 |----------|----------|----------|
 | [**README.md**](../README.md) | Everyone | Project overview, highlights, repo layout, quick start |
+| [**AGENTS.md**](../AGENTS.md) | Agents / contributors | Desktop is the product; 0.12.21 OpenCode null-body fix notes |
 | [**SETUP.md**](SETUP.md) | All users | Installation (Docker, local, desktop), first-run, connecting a client |
 | [**CONFIGURATION.md**](CONFIGURATION.md) | Operators | `config.json` / `providers.json` / MCP / `.env` reference |
 | [**ARCHITECTURE.md**](ARCHITECTURE.md) | Developers | Request flow, adapters, workbench, brain, gateway, data persistence |

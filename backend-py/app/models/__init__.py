@@ -7,16 +7,6 @@ Usage:
 """
 
 from app.models.base import ExtraAllowBaseModel, BaseRequest, JsonValue
-from app.models.anthropic import (
-    AnthropicRequest,
-    AnthropicMessage,
-    ContentBlock,
-    ToolUseBlock,
-    ToolResultBlock,
-    AnthropicResponse,  # noqa: F401 — re-exported for app.adapters.anthropic
-    AnthropicUsage,  # noqa: F401 — re-exported for app.adapters.anthropic
-    AnthropicSSEEvent,  # noqa: F401 — re-exported for app.adapters.anthropic
-)
 from app.models.openai import (
     ChatCompletionRequest,
     ChatMessage,
@@ -27,6 +17,18 @@ from app.models.openai import (
     Usage,
     StreamChunk,
     StreamChoice,
+    dump_openai_upstream_body,
+)
+from app.models.anthropic import (
+    AnthropicRequest,
+    AnthropicMessage,
+    ContentBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+    AnthropicResponse,  # noqa: F401 — re-exported for app.adapters.anthropic
+    AnthropicUsage,  # noqa: F401 — re-exported for app.adapters.anthropic
+    AnthropicSSEEvent,  # noqa: F401 — re-exported for app.adapters.anthropic
+    dump_anthropic_upstream_body,
 )
 from app.models.config import ProviderConfig, ModelConfig
 from app.models.proxy import ToolClassificationResult
@@ -50,6 +52,8 @@ __all__ = [
     'Usage',
     'StreamChunk',
     'StreamChoice',
+    'dump_openai_upstream_body',
+    'dump_anthropic_upstream_body',
     'ProviderConfig',
     'ModelConfig',
     'ToolClassificationResult',

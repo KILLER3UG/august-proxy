@@ -44,9 +44,9 @@ interface ActiveProviderData {
 }
 
 const API_FORMATS: { value: ApiFormat; label: string }[] = [
-  { value: 'openaiChat', label: 'OpenAI Chat Completions' },
-  { value: 'anthropicMessages', label: 'Anthropic Messages' },
-  { value: 'openaiResponses', label: 'OpenAI Responses' },
+  { value: 'openaiChat', label: 'chat/completions' },
+  { value: 'anthropicMessages', label: 'messages' },
+  { value: 'openaiResponses', label: 'responses' },
 ];
 
 function authLabel(authType?: string) {

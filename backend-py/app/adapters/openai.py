@@ -42,6 +42,7 @@ from app.providers import resolver as providerResolver
 from app.providers.model_resolver import resolve
 from app.providers.clients import getClient, BaseProviderClient
 from app.models import ChatCompletionRequest, ChatMessage
+from app.models.openai import dump_openai_upstream_body
 
 # Back-compat aliases (previous camelCase names on this module).
 writeOpenaiSseHeaders = write_openai_sse_headers
@@ -341,7 +342,7 @@ async def streamUpstreamAndResolveToolsOpenai(
     """
     acc = OpenaiStreamAccumulator()
     toolRound = 0
-    raw_body = body.model_dump() if isinstance(body, ChatCompletionRequest) else body
+    raw_body = dump_openai_upstream_body(body)
     currentMessages = cast('list[dict[str, object]]', as_list(raw_body.get('messages'), []))
     streamBody = cast('dict[str, object]', camelToSnake({**raw_body, 'stream': True}))
     async for chunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, streamBody):
@@ -422,10 +423,10 @@ async def handleChatCompletions(
     """
     if isinstance(body, ChatCompletionRequest):
         model = body.model
-        raw_body = cast('dict[str, object]', body.model_dump())
+        raw_body = dump_openai_upstream_body(body)
     else:
         model = as_str(body.get('model'), 'gpt-4o')
-        raw_body = body
+        raw_body = dump_openai_upstream_body(body)
     try:
         resolved = resolve(model, default_alias='gpt-4o')
         providerName = as_str(resolved.get('provider'), '')
