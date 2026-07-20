@@ -73,11 +73,11 @@ export function PlansSection() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-zinc-100">Plans &amp; Todos</h1>
+          <h1 className="text-lg font-semibold text-zinc-100">Artifacts</h1>
           <p className="text-sm text-zinc-400">
             {workspace
-              ? `Workspace: ${workspace.name}`
-              : 'No active workspace — showing project-root artifacts.'}
+              ? `Workspace plans & todos · ${workspace.name}`
+              : 'No active workspace — showing project-root .aug artifacts.'}
           </p>
         </div>
         <button

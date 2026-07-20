@@ -56,7 +56,8 @@ import {
 export type SettingsTier = 'basic' | 'advanced';
 
 /**
- * A single settings screen. `id` doubles as the URL param (`?tab=<id>`),
+ * A single settings screen. `id` doubles as the URL segment (`/settings/<id>`),
+ * with legacy `?tab=<id>` query links rewritten to the path form.
  * `keywords` power global search, and `legacyAliases` keep old deep links
  * (`/settings/traffic`, `/settings/connections`, ...) resolving to the
  * correct section.
@@ -383,14 +384,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
   },
   {
-    id: 'plans',
-    label: 'Plans & Todos',
+    label: 'Artifacts',
     description: 'Workspace .aug artifacts — model-generated plans and todo lists. Manually delete survivors left behind by errors.',
     icon: ClipboardList,
     category: 'activity',
     tier: 'advanced',
     keywords: ['plans', 'todos', 'aug', 'init', 'checklist', 'tasks'],
-    legacyAliases: ['aug-plans', 'aug-artifacts'],
+    legacyAliases: ['aug-plans', 'aug-artifacts', 'plans'],
   },
 
   /* ── Security & Access ──────────────────────────────────────── */

@@ -45,6 +45,9 @@ export interface AutomationJob {
   runs?: AutomationRun[];
   triggerToken?: string;
   triggerUrlHint?: string;
+  url?: string;
+  method?: string;
+  body?: string;
 }
 
 export interface AutomationListResponse {
@@ -70,6 +73,9 @@ export type AutomationUpsertInput = {
   paused?: boolean;
   approvalRequired?: boolean;
   timeoutMs?: number;
+  url?: string;
+  method?: string;
+  body?: string;
 };
 
 export function getAutomations(): Promise<AutomationListResponse> {

@@ -10,7 +10,7 @@
  * active section component remounts so it can refetch live data. */
 
 import { useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -52,6 +52,7 @@ const DEFAULT_SECTION_ID = 'model-providers';
 
 export function SettingsPage() {
   const params = useParams<{ section?: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const rawSection = params.section;
@@ -62,16 +63,28 @@ export function SettingsPage() {
 
   // Normalize bare /settings → /settings/<default> so deep links and the
   // left rail stay in sync without remounting this page.
+  // Also rewrite legacy ?tab=<id> query links used by older sidebar nav.
   useEffect(() => {
+    const tabQuery = searchParams.get('tab');
+    const sectionQuery = searchParams.get('section');
+
+    if (!rawSection && tabQuery) {
+      const id = resolveLegacyTab(tabQuery);
+      const qs = sectionQuery ? `?section=${encodeURIComponent(sectionQuery)}` : '';
+      void navigate(`/settings/${id}${qs}`, { replace: true });
+      return;
+    }
+
     if (!rawSection) {
       void navigate(`/settings/${DEFAULT_SECTION_ID}`, { replace: true });
       return;
     }
     // Rewrite legacy aliases in the URL (e.g. /settings/traffic → traffic-activity).
     if (rawSection !== active.id) {
-      void navigate(`/settings/${active.id}`, { replace: true });
+      const qs = sectionQuery ? `?section=${encodeURIComponent(sectionQuery)}` : '';
+      void navigate(`/settings/${active.id}${qs}`, { replace: true });
     }
-  }, [rawSection, active.id, navigate]);
+  }, [rawSection, active.id, navigate, searchParams]);
 
   // Tab switch: remounted section queries may still be within the global
   // 5s staleTime. Invalidate so the newly active tab always hits the network

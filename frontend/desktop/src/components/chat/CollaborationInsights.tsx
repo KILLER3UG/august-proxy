@@ -46,7 +46,7 @@ export function CollaborationInsights({ className }: { className?: string }) {
             ))}
           </ul>
           <Link
-            to="/settings/skills"
+            to="/skills"
             className="inline-flex text-[11px] text-primary hover:underline"
           >
             Review in Skills →

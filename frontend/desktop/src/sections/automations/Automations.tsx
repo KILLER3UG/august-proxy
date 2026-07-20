@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
@@ -28,24 +28,43 @@ import {
   deleteAutomation,
   rotateAutomationToken,
   type AutomationJob,
+  type AutomationUpsertInput,
 } from '@/api/api-client';
 import { PageLoader } from '@/components/PageLoader';
 import { useNavigate } from 'react-router-dom';
+import { OsNotifyService } from '@/lib/os-notify';
 
 const SCHEDULE_PRESETS: Array<{ label: string; value: string }> = [
   { label: 'Every hour', value: '0 * * * *' },
-  { label: 'Daily 9:00', value: '0 9 * * *' },
-  { label: 'Weekdays 9:00', value: '0 9 * * 0-4' },
+  { label: 'Daily at 9:00', value: '0 9 * * *' },
+  { label: 'Weekdays at 9:00', value: '0 9 * * 0-4' },
   { label: 'Weekly Monday 9:00', value: '0 9 * * 0' },
   { label: 'Every 30 minutes', value: 'every 30m' },
   { label: 'Every 2 hours', value: 'every 2h' },
   { label: 'Custom…', value: '' },
 ];
 
+const JOB_TYPE_OPTIONS: Array<{
+  value: 'workbench' | 'shell' | 'http';
+  label: string;
+  hint: string;
+}> = [
+  { value: 'workbench', label: 'Workbench', hint: 'Fresh chat session with a prompt' },
+  { value: 'shell', label: 'Shell', hint: 'Run a local command' },
+  { value: 'http', label: 'HTTP', hint: 'Call a webhook / URL' },
+];
+
+function scheduleLabel(schedule?: string | null): string {
+  if (!schedule) return '';
+  const preset = SCHEDULE_PRESETS.find((p) => p.value && p.value === schedule);
+  return preset?.label || schedule;
+}
+
 export function Automations() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [tokenFlash, setTokenFlash] = useState<Record<string, string>>({});
+  const prevStatusRef = useRef<Map<string, string>>(new Map());
 
   const { data, isLoading } = useQuery({
     queryKey: ['automations'],
@@ -54,6 +73,30 @@ export function Automations() {
   });
 
   const jobs = data?.jobs ?? [];
+
+  // Toast + optional OS notify when a running job settles.
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    for (const job of jobs) {
+      const id = job.id;
+      const status = job.status || 'idle';
+      const was = prev.get(id);
+      if (was === 'running' && status !== 'running') {
+        const name = job.name || id;
+        const failed = status === 'error' || status === 'failed';
+        const detail = failed
+          ? job.lastOutput?.slice(0, 120) || 'Automation failed'
+          : job.lastOutput?.slice(0, 120) || 'Automation finished';
+        if (failed) {
+          toast.error(`Automation failed: ${name}`, { description: detail });
+        } else {
+          toast.success(`Automation done: ${name}`, { description: detail });
+        }
+        void OsNotifyService.notifyJobComplete(name, detail);
+      }
+      prev.set(id, status);
+    }
+  }, [jobs]);
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['automations'] });
 
@@ -151,7 +194,8 @@ export function Automations() {
             <Inbox className="size-8 text-muted-foreground/40 mb-2" />
             <p className="text-sm">No automations yet.</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-              Create a named job with a prompt and schedule. Each run starts a fresh workbench session.
+              Schedule a workbench prompt, shell command, or HTTP call. Each workbench run starts a
+              fresh chat session in the sidebar.
             </p>
             <Button size="sm" className="mt-3" onClick={() => setShowCreate(true)}>
               <Plus className="size-3.5" /> Create automation
@@ -188,22 +232,25 @@ function CreateAutomationForm({
 }: {
   busy: boolean;
   onCancel: () => void;
-  onSave: (body: {
-    name: string;
-    prompt: string;
-    schedule: string;
-    jobType: string;
-    workspacePath?: string;
-    timezone?: string;
-  }) => void;
+  onSave: (body: AutomationUpsertInput) => void;
 }) {
   const [name, setName] = useState('');
+  const [jobType, setJobType] = useState<'workbench' | 'shell' | 'http'>('workbench');
   const [prompt, setPrompt] = useState('');
+  const [command, setCommand] = useState('');
+  const [url, setUrl] = useState('');
+  const [method, setMethod] = useState('GET');
+  const [httpBody, setHttpBody] = useState('');
   const [preset, setPreset] = useState(SCHEDULE_PRESETS[0].value);
   const [customSchedule, setCustomSchedule] = useState('');
   const [workspacePath, setWorkspacePath] = useState('');
 
   const schedule = preset || customSchedule.trim();
+  const canSave =
+    !!schedule &&
+    ((jobType === 'workbench' && !!prompt.trim()) ||
+      (jobType === 'shell' && !!command.trim()) ||
+      (jobType === 'http' && !!url.trim()));
 
   return (
     <Card>
@@ -218,15 +265,94 @@ function CreateAutomationForm({
             placeholder="Morning standup brief"
           />
         </label>
-        <label className="block space-y-1">
-          <span className="text-xs text-muted-foreground">Prompt</span>
-          <textarea
-            className="w-full min-h-[88px] rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="What should the agent do each run?"
-          />
-        </label>
+
+        <div className="space-y-1.5">
+          <span className="text-xs text-muted-foreground">Type</span>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {JOB_TYPE_OPTIONS.map((opt) => {
+              const active = jobType === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setJobType(opt.value)}
+                  className={
+                    active
+                      ? 'rounded-md border border-primary/50 bg-primary/10 px-2.5 py-2 text-left'
+                      : 'rounded-md border border-border bg-background px-2.5 py-2 text-left hover:bg-muted/40'
+                  }
+                >
+                  <div className="text-sm font-medium">{opt.label}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">{opt.hint}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {jobType === 'workbench' && (
+          <label className="block space-y-1">
+            <span className="text-xs text-muted-foreground">Prompt</span>
+            <textarea
+              className="w-full min-h-[88px] rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="What should the agent do each run?"
+            />
+          </label>
+        )}
+
+        {jobType === 'shell' && (
+          <label className="block space-y-1">
+            <span className="text-xs text-muted-foreground">Command</span>
+            <textarea
+              className="w-full min-h-[72px] rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              placeholder="npm test"
+            />
+          </label>
+        )}
+
+        {jobType === 'http' && (
+          <div className="grid gap-3 sm:grid-cols-[100px_1fr]">
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">Method</span>
+              <select
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+              >
+                {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">URL</span>
+              <input
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://example.com/hook"
+              />
+            </label>
+            {(method === 'POST' || method === 'PUT' || method === 'PATCH') && (
+              <label className="block space-y-1 sm:col-span-2">
+                <span className="text-xs text-muted-foreground">Body (optional)</span>
+                <textarea
+                  className="w-full min-h-[64px] rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
+                  value={httpBody}
+                  onChange={(e) => setHttpBody(e.target.value)}
+                  placeholder='{"ok":true}'
+                />
+              </label>
+            )}
+          </div>
+        )}
+
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-1">
             <span className="text-xs text-muted-foreground">Schedule</span>
@@ -254,7 +380,9 @@ function CreateAutomationForm({
             </label>
           )}
           <label className="block space-y-1 sm:col-span-2">
-            <span className="text-xs text-muted-foreground">Workspace path (optional)</span>
+            <span className="text-xs text-muted-foreground">
+              {jobType === 'shell' ? 'Working directory (optional)' : 'Workspace path (optional)'}
+            </span>
             <input
               className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
               value={workspacePath}
@@ -269,14 +397,19 @@ function CreateAutomationForm({
           </Button>
           <Button
             size="sm"
-            disabled={busy || !prompt.trim() || !schedule}
+            disabled={busy || !canSave}
             onClick={() =>
               onSave({
                 name: name.trim() || 'Automation',
-                prompt: prompt.trim(),
                 schedule,
-                jobType: 'workbench',
+                jobType,
+                prompt: jobType === 'workbench' ? prompt.trim() : undefined,
+                command: jobType === 'shell' ? command.trim() : undefined,
+                url: jobType === 'http' ? url.trim() : undefined,
+                method: jobType === 'http' ? method : undefined,
+                body: jobType === 'http' ? httpBody.trim() || undefined : undefined,
                 workspacePath: workspacePath.trim() || undefined,
+                cwd: workspacePath.trim() || undefined,
               })
             }
           >
@@ -309,6 +442,14 @@ function AutomationCard({
   const [openRuns, setOpenRuns] = useState(false);
   const jobType = job.jobType || job.type || 'workbench';
   const runs = job.runs ?? [];
+  const detail =
+    jobType === 'http'
+      ? [job.method || 'GET', job.url].filter(Boolean).join(' ')
+      : job.prompt || job.task || job.command;
+
+  const openSession = (sessionId: string) => {
+    void navigate(`/c/${sessionId}`);
+  };
 
   return (
     <Card className={job.enabled && !job.paused ? '' : 'opacity-70'}>
@@ -338,8 +479,8 @@ function AutomationCard({
                 label={job.paused ? 'paused' : job.enabled ? 'enabled' : 'disabled'}
               />
               {job.schedule && (
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="size-2.5" /> {job.schedule}
+                <span className="inline-flex items-center gap-1" title={job.schedule}>
+                  <Clock className="size-2.5" /> {scheduleLabel(job.schedule)}
                   {job.timezone ? ` · ${job.timezone}` : ''}
                 </span>
               )}
@@ -349,9 +490,9 @@ function AutomationCard({
               )}
             </div>
 
-            {(job.prompt || job.task || job.command) && (
+            {detail && (
               <pre className="text-[11px] font-mono whitespace-pre-wrap break-all text-muted-foreground/70 mt-1.5 bg-muted/40 rounded px-2 py-1 max-h-20 overflow-auto">
-                {job.prompt || job.task || job.command}
+                {detail}
               </pre>
             )}
           </div>
@@ -404,7 +545,7 @@ function AutomationCard({
                 size="sm"
                 variant="ghost"
                 className="h-7 text-[11px]"
-                onClick={() => navigate(`/session/${job.sessionId}`)}
+                onClick={() => openSession(job.sessionId!)}
               >
                 <ExternalLink className="size-3" /> Open last session
               </Button>
@@ -438,7 +579,7 @@ function AutomationCard({
                       <button
                         type="button"
                         className="text-info underline-offset-2 hover:underline"
-                        onClick={() => navigate(`/session/${r.sessionId}`)}
+                        onClick={() => openSession(r.sessionId!)}
                       >
                         session
                       </button>

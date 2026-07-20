@@ -8,6 +8,9 @@ import {
   Settings,
   Brain,
   Mic,
+  Bot,
+  Package,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -21,6 +24,15 @@ const SettingsPage = lazy(() =>
 );
 const BrainDashboard = lazy(() =>
   import('@/sections/brain/BrainDashboard').then((m) => ({ default: m.BrainDashboard })),
+);
+const AutomationsPage = lazy(() =>
+  import('@/sections/automations/AutomationsPage').then((m) => ({ default: m.AutomationsPage })),
+);
+const ArtifactsPage = lazy(() =>
+  import('@/sections/artifacts/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })),
+);
+const SkillsPage = lazy(() =>
+  import('@/sections/skills/SkillsPage').then((m) => ({ default: m.SkillsPage })),
 );
 const LiveSurface = lazy(() =>
   import('@/sections/live/LiveSurface').then((m) => ({ default: m.LiveSurface })),
@@ -69,6 +81,27 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     label: 'Brain',
     Icon: Brain,
     element: React.createElement(Lazy, null, React.createElement(BrainDashboard)),
+    nav: true,
+  },
+  {
+    path: '/automations',
+    label: 'Automations',
+    Icon: Bot,
+    element: React.createElement(Lazy, null, React.createElement(AutomationsPage)),
+    nav: true,
+  },
+  {
+    path: '/skills',
+    label: 'Skills & Tools',
+    Icon: Wrench,
+    element: React.createElement(Lazy, null, React.createElement(SkillsPage)),
+    nav: true,
+  },
+  {
+    path: '/artifacts',
+    label: 'Artifacts',
+    Icon: Package,
+    element: React.createElement(Lazy, null, React.createElement(ArtifactsPage)),
     nav: true,
   },
   {

@@ -121,12 +121,13 @@ export function SessionListNav({
 
       <motion.button
         type="button"
-        onClick={() => onNavigate("/settings?tab=agents-automation&section=automations")}
+        onClick={() => onNavigate("/automations")}
         className={quietRow}
         initial="rest"
         whileHover="hover"
         whileTap="tap"
         variants={rowMotion}
+        data-testid="sidebar-nav-automations"
       >
         <motion.span className="inline-flex shrink-0 opacity-60" variants={botIconMotion}>
           <Bot className="size-3.5" />
@@ -136,12 +137,13 @@ export function SessionListNav({
 
       <motion.button
         type="button"
-        onClick={() => onNavigate("/settings?tab=mcp")}
+        onClick={() => onNavigate("/skills")}
         className={quietRow}
         initial="rest"
         whileHover="hover"
         whileTap="tap"
         variants={rowMotion}
+        data-testid="sidebar-nav-skills"
       >
         <motion.span className="inline-flex shrink-0 opacity-60" variants={wrenchIconMotion}>
           <Wrench className="size-3.5" />
@@ -151,12 +153,13 @@ export function SessionListNav({
 
       <motion.button
         type="button"
-        onClick={() => onNavigate("/settings?tab=overview")}
+        onClick={() => onNavigate("/artifacts")}
         className={quietRow}
         initial="rest"
         whileHover="hover"
         whileTap="tap"
         variants={rowMotion}
+        data-testid="sidebar-nav-artifacts"
       >
         <motion.span className="inline-flex shrink-0 opacity-60" variants={packageIconMotion}>
           <Package className="size-3.5" />
