@@ -95,15 +95,27 @@ export function useChatAttachments() {
   const handleComposerPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const files = ChatAttachmentService.filesFromClipboard(e.clipboardData);
-      if (files.length === 0) return;
-      const hasImage = files.some((f) => f.type.startsWith('image/'));
+      if (files.length > 0) {
+        const hasImage = files.some((f) => f.type.startsWith('image/'));
+        e.preventDefault();
+        void attachFiles(files);
+        toast.message(
+          hasImage
+            ? `Attached ${files.length} image${files.length === 1 ? '' : 's'}`
+            : `Attached ${files.length} file${files.length === 1 ? '' : 's'}`,
+        );
+        return;
+      }
+
+      const text = e.clipboardData?.getData('text/plain') ?? '';
+      if (!ChatAttachmentService.isLongPasteText(text)) return;
+
       e.preventDefault();
-      void attachFiles(files);
-      toast.message(
-        hasImage
-          ? `Attached ${files.length} image${files.length === 1 ? '' : 's'}`
-          : `Attached ${files.length} file${files.length === 1 ? '' : 's'}`,
-      );
+      const file = ChatAttachmentService.textFileFromPaste(text);
+      void attachFiles([file]);
+      toast.message('Long paste attached as text file', {
+        description: file.name,
+      });
     },
     [attachFiles],
   );

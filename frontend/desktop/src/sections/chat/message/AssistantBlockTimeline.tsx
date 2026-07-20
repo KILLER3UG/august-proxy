@@ -270,6 +270,15 @@ export function AssistantBlockTimeline({
           !hasFinalOutput &&
           ti === blocks.length
         );
+        // "Done" on the last thought once thinking has finished and a final
+        // answer exists (or the turn is no longer streaming).
+        const hasMoreThoughts = blocks
+          .slice(ti)
+          .some((b) => b.type === 'thinking');
+        const showDone =
+          !isGenerating &&
+          !hasMoreThoughts &&
+          (hasFinalOutput || !(isLast && streaming));
         const thoughtId = block.id || `think_${start}`;
         const thoughtExpanded = isThoughtExpanded(thoughtId);
         nodes.push(
@@ -277,6 +286,7 @@ export function AssistantBlockTimeline({
             key={thoughtId}
             content={parts.join('\n\n')}
             isGenerating={isGenerating}
+            showDone={showDone}
             expanded={thoughtExpanded}
             onToggle={() => toggleExpand(thoughtId, !thoughtExpanded)}
           />,
@@ -373,7 +383,13 @@ export function AssistantBlockTimeline({
       const key = block.id || `final_${index}`;
       const isFinalStreaming = !!(isLast && streaming);
       return (
-        <div key={key} className="chat-streaming-block">
+        <div
+          key={key}
+          className={cn(
+            'chat-streaming-block',
+            isFinalStreaming && 'chat-streaming-block--live',
+          )}
+        >
           <div
             className={cn(
               'chat-message-text text-foreground/90 space-y-3 max-w-none',
@@ -401,13 +417,10 @@ export function AssistantBlockTimeline({
           ranCount={ranCount}
           usedCount={usedCount}
           summary={processSummary}
-          live={livePacked}
+          live={livePacked && !hasFinalOutput}
           liveDetail={liveDetail || null}
-          defaultOpen={
-            livePacked ||
-            coalescedThoughtCount > 0 ||
-            showPendingThinking
-          }
+          defaultOpen={livePacked && !hasFinalOutput}
+          collapseWhen={hasFinalOutput}
         >
           {showPendingThinking && (
             <ThoughtStep

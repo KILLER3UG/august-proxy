@@ -54,7 +54,7 @@ export function ScrollToTopButton({
           exit={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 0.2 }}
           onClick={scrollToTop}
-          className="pointer-events-auto mr-3 w-9 h-9 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-background/95 transition-colors cursor-pointer"
+          className="pointer-events-auto w-9 h-9 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-background/95 transition-colors cursor-pointer"
           aria-label="Scroll to top"
         >
           <ChevronUp className="size-4" />

@@ -80,7 +80,7 @@ describe('AssistantBlockTimeline process UI', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps settled process pack expanded when thoughts are present', () => {
+  it('collapses process pack once a final response exists', () => {
     renderTimeline([
       {
         id: 't1',
@@ -98,10 +98,32 @@ describe('AssistantBlockTimeline process UI', () => {
     ]);
 
     const pack = document.querySelector('[data-slot="activity-summary"]');
+    expect(pack).toHaveAttribute('data-expanded', 'false');
+    expect(document.querySelector('[data-slot="thought-step"]')).toBeNull();
+    expect(screen.queryByRole('button', { name: /system info/i })).toBeNull();
+
+    expandActivitySummary();
+    expect(document.querySelector('[data-slot="thought-step"]')).toBeTruthy();
+    expect(document.querySelector('.process-thought-prose')).toBeTruthy();
+    expect(document.querySelector('.process-thought-stem')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /system info/i })).toBeTruthy();
+  });
+
+  it('keeps thinking pack open while streaming before final output', () => {
+    renderTimeline(
+      [
+        {
+          id: 't1',
+          type: 'thinking',
+          content: 'Still thinking…',
+        },
+      ],
+      { streaming: true, isLast: true },
+    );
+
+    const pack = document.querySelector('[data-slot="activity-summary"]');
     expect(pack).toHaveAttribute('data-expanded', 'true');
     expect(document.querySelector('[data-slot="thought-step"]')).toBeTruthy();
-    expect(document.querySelector('.process-thought-rail')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /system info/i })).toBeTruthy();
   });
 
   it('keeps settled tool-only process pack collapsed to a summary line', () => {
@@ -258,14 +280,21 @@ describe('AssistantBlockTimeline process UI', () => {
     ]);
 
     const pack = document.querySelector('[data-slot="activity-summary"]');
-    expect(pack).toHaveAttribute('data-expanded', 'true');
+    expect(pack).toHaveAttribute('data-expanded', 'false');
+    expandActivitySummary();
     const thought = document.querySelector('[data-slot="thought-step"]');
     expect(thought).toBeTruthy();
     expect(thought).toHaveAttribute('data-expanded', 'true');
-    expect(document.querySelector('.process-thought-rail')).toBeTruthy();
+    expect(thought).toHaveAttribute('data-done', 'true');
+    expect(document.querySelector('.process-thought-prose')).toBeTruthy();
+    expect(document.querySelector('.process-thought-clock')).toBeTruthy();
+    expect(document.querySelector('.process-thought-stem')).toBeTruthy();
+    expect(document.querySelector('.process-thought-check')).toBeTruthy();
+    expect(document.querySelector('[data-slot="thought-done"]')).toBeTruthy();
     expect(
-      document.querySelector('.process-thought-rail')?.textContent,
+      document.querySelector('.process-thought-prose')?.textContent,
     ).toContain('First thought.');
+    expect(screen.getByText('Done')).toBeInTheDocument();
 
     const toggle = thought!.querySelector('button');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -273,7 +302,29 @@ describe('AssistantBlockTimeline process UI', () => {
     expect(
       document.querySelector('[data-slot="thought-step"]'),
     ).toHaveAttribute('data-expanded', 'false');
-    expect(document.querySelector('.process-thought-rail')).toBeNull();
+    expect(document.querySelector('.process-thought-prose')).toBeNull();
+  });
+
+  it('shows Done only on the last thought after final response', () => {
+    renderTimeline([
+      { id: 'th1', type: 'thinking', content: 'First thought.' },
+      makeToolBlock('tool_a', 'memory_search', 'done', {
+        summary: 'ok',
+      }),
+      { id: 'th2', type: 'thinking', content: 'Second thought.' },
+      {
+        id: 'f1',
+        type: 'finalOutput',
+        content: 'Answer.',
+      },
+    ]);
+
+    expandActivitySummary();
+    const thoughts = document.querySelectorAll('[data-slot="thought-step"]');
+    expect(thoughts.length).toBe(2);
+    expect(thoughts[0]).toHaveAttribute('data-done', 'false');
+    expect(thoughts[1]).toHaveAttribute('data-done', 'true');
+    expect(screen.getAllByText('Done')).toHaveLength(1);
   });
 
   it('keyboard Enter on collapsed tool toggles aria-expanded', () => {

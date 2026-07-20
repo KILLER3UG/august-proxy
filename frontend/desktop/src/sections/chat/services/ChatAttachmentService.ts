@@ -55,11 +55,44 @@ const CODE_LANG_MAP: Record<string, string> = {
 
 export type AttachmentProgressHandler = (id: string, progress: number) => void;
 
+/** Paste becomes a .txt attachment at or above this character count. */
+export const LONG_PASTE_CHAR_THRESHOLD = 2000;
+/** Or when the paste has at least this many lines (whichever hits first). */
+export const LONG_PASTE_LINE_THRESHOLD = 40;
+
 export class ChatAttachmentService {
   /** Highlight language for fenced blocks in the user prompt. */
   static codeLangFor(filename: string): string {
     const ext = filename.split('.').pop()?.toLowerCase() ?? '';
     return CODE_LANG_MAP[ext] ?? '';
+  }
+
+  /** True when clipboard plain text is large enough to attach as a file. */
+  static isLongPasteText(text: string): boolean {
+    if (!text) return false;
+    if (text.length >= LONG_PASTE_CHAR_THRESHOLD) return true;
+    let lines = 1;
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 10) lines++;
+    }
+    return lines >= LONG_PASTE_LINE_THRESHOLD;
+  }
+
+  /** Filename for a long paste converted to an attachment. */
+  static pastedTextFilename(now = new Date()): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return (
+      `pasted-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+      `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.txt`
+    );
+  }
+
+  /** Build a text/plain File from pasted clipboard text. */
+  static textFileFromPaste(text: string, name?: string): File {
+    return new File([text], name || this.pastedTextFilename(), {
+      type: 'text/plain',
+      lastModified: Date.now(),
+    });
   }
 
   static formatSize(bytes: number): string {

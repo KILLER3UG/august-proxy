@@ -447,6 +447,66 @@ class TestAnthropicWorkbenchStreaming:
         assert result['thinking'] == ''
         assert not any((b.get('type') == 'thinking' for b in result['content']))
 
+    async def testModernClaudeGetsEffortBudgetTokens(self, monkeypatch):
+        """Effort dropdown must size Anthropic thinking.budget_tokens."""
+        from app.services.workbench.workbench import _callAnthropicWorkbench
+        from app.services.workbench.effort import resolve_completion_limits
+
+        capturedBody: dict = {}
+
+        class _FakeClient:
+            def resolveApiKey(self):
+                return 'test-key'
+
+            async def messages_stream(self, body):
+                capturedBody.update(body)
+                yield {
+                    '_event_type': 'content_block_start',
+                    'content_block': {'type': 'thinking', 'thinking': ''},
+                }
+                yield {
+                    '_event_type': 'content_block_delta',
+                    'delta': {'type': 'thinking_delta', 'thinking': 'plan'},
+                }
+                yield {'_event_type': 'content_block_stop'}
+                yield {
+                    '_event_type': 'content_block_start',
+                    'content_block': {'type': 'text', 'text': ''},
+                }
+                yield {
+                    '_event_type': 'content_block_delta',
+                    'delta': {'type': 'text_delta', 'text': 'ok'},
+                }
+                yield {'_event_type': 'content_block_stop'}
+                yield {
+                    '_event_type': 'message_delta',
+                    'usage': {'input_tokens': 10, 'output_tokens': 5},
+                }
+
+        import app.providers.clients as clients
+
+        monkeypatch.setattr(clients, 'getClient', lambda provider: _FakeClient())
+        provider = {'name': 'Anthropic', 'apiMode': 'anthropicMessages'}
+        result = await _callAnthropicWorkbench(
+            [{'role': 'user', 'content': 'hi'}],
+            'You are helpful.',
+            'claude-sonnet-4-6',
+            [],
+            'high',
+            provider=provider,
+            emit=lambda _e: None,
+            thinking_enabled=True,
+        )
+        assert 'error' not in result
+        expected_budget, expected_max = resolve_completion_limits(
+            'high', max_output_tokens=64000
+        )
+        assert capturedBody.get('thinking') == {
+            'type': 'enabled',
+            'budget_tokens': expected_budget,
+        }
+        assert capturedBody.get('max_tokens') == expected_max
+
 
 class TestOpenaiWorkbenchThinkingToggle:
     """Thinking toggle gates UI emit / returned ``thinking`` text. Reasoning
@@ -523,6 +583,39 @@ class TestOpenaiWorkbenchThinkingToggle:
         msg = result['choices'][0]['message']
         assert msg.get('reasoning_content') == 'visible reasoning trace'
         assert msg.get('reasoning') == 'visible reasoning trace'
+
+    async def testDeepseekGetsReasoningEffortFromDropdown(self, monkeypatch):
+        from app.services.workbench.providers import call_openai_workbench
+
+        captured: dict = {}
+
+        class _FakeClient:
+            def resolveApiKey(self):
+                return 'test-key'
+
+            async def chat_completions_stream(self, body):
+                captured.update(body)
+                yield {
+                    'choices': [
+                        {'index': 0, 'delta': {'content': 'hi'}, 'finish_reason': 'stop'},
+                    ]
+                }
+
+        import app.providers.clients as clients
+
+        monkeypatch.setattr(clients, 'getClient', lambda provider: _FakeClient())
+        provider = {'name': 'DeepSeek', 'apiMode': 'openaiChat'}
+        result = await call_openai_workbench(
+            [{'role': 'user', 'content': 'hi'}],
+            'You are helpful.',
+            'deepseek-chat',
+            [],
+            'max',
+            provider=provider,
+            thinking_enabled=True,
+        )
+        assert 'error' not in result
+        assert captured.get('reasoning_effort') == 'high'  # max → high
 
     async def testWorkbenchRecordsContextTokensAsFinalSubcallInput(self, monkeypatch):
         """The gauge ground truth: record_usage must be called with

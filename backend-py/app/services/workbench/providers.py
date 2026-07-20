@@ -299,8 +299,12 @@ def supports_thinking(provider: dict[str, object], model: str) -> bool:
 
     Exact and non-wildcard prefix profiles win. A wildcard ``*`` claim alone
     only enables thinking for **Claude** model ids.
+
+    Without profiles, modern Claude 4+ ids default to True so effort can set
+    ``thinking.budget_tokens``. Legacy Claude 3.5 / Haiku stay False unless a
+    profile explicitly opts them in (API rejects extended thinking on those).
     """
-    profiles = as_dict(provider.get('modelProfiles', {}))
+    profiles = as_dict(provider.get('modelProfiles', {}) or provider.get('model_profiles', {}))
     model_l = (model or '').lower()
 
     if model in profiles:
@@ -321,9 +325,29 @@ def supports_thinking(provider: dict[str, object], model: str) -> bool:
         )
 
     star = as_dict(profiles.get('*') or {})
-    if not (as_bool(star.get('supportsThinking')) or as_bool(star.get('supportsReasoning'))):
+    if as_bool(star.get('supportsThinking')) or as_bool(star.get('supportsReasoning')):
+        return 'claude' in model_l
+
+    return _claude_supports_extended_thinking_by_id(model_l)
+
+
+def _claude_supports_extended_thinking_by_id(model_l: str) -> bool:
+    """Heuristic for Anthropic extended thinking when modelProfiles are empty."""
+    if 'claude' not in model_l:
         return False
-    return 'claude' in model_l
+    # Known generations that reject thinking / budget_tokens.
+    legacy = (
+        'claude-3-5',
+        'claude-3.5',
+        'claude-3-haiku',
+        'claude-3-opus',
+        'claude-3-sonnet',
+        'claude-instant',
+        'claude-2',
+    )
+    if any(token in model_l for token in legacy):
+        return False
+    return True
 
 
 async def call_anthropic_workbench(

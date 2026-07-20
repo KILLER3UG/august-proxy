@@ -158,6 +158,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   // streamPerf* marks when localStorage august_stream_perf=1
   streamPerfStart(sessionId);
   let updateTimeout: number | null = null;
+  let updateRaf: number | null = null;
   let lastFlushAt = 0;
   const update = () => {
     setMessages(prev => prev.map(msg =>
@@ -174,21 +175,41 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   };
   const flushUpdate = () => {
     updateTimeout = null;
+    updateRaf = null;
     lastFlushAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     streamPerfFlush(sessionId, update);
   };
+  const scheduleFlushOnFrame = () => {
+    if (updateRaf !== null) return;
+    updateRaf = window.requestAnimationFrame(() => {
+      updateRaf = null;
+      flushUpdate();
+    });
+  };
   const scheduleUpdate = () => {
-    if (updateTimeout !== null) return;
+    if (updateTimeout !== null || updateRaf !== null) return;
     // First content for TTFT: any scheduled UI update implies stream content arrived
     streamPerfContent(sessionId);
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const delay = Math.max(0, streamUpdateIntervalMs - (now - lastFlushAt));
-    updateTimeout = window.setTimeout(flushUpdate, delay);
+    // Align paint with the next frame so text + stick-to-bottom scroll land together.
+    if (delay <= 0) {
+      scheduleFlushOnFrame();
+      return;
+    }
+    updateTimeout = window.setTimeout(() => {
+      updateTimeout = null;
+      scheduleFlushOnFrame();
+    }, delay);
   };
   const cancelPendingUpdate = () => {
     if (updateTimeout !== null) {
       window.clearTimeout(updateTimeout);
       updateTimeout = null;
+    }
+    if (updateRaf !== null) {
+      window.cancelAnimationFrame(updateRaf);
+      updateRaf = null;
     }
   };
 

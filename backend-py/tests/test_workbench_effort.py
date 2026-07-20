@@ -142,6 +142,7 @@ class TestProviderAcceptsReasoningEffort:
 
     def test_unknown_gateway_uses_model_hints(self):
         assert provider_accepts_reasoning_effort({'name': 'Custom Proxy'}, 'deepseek-reasoner')
+        assert provider_accepts_reasoning_effort({'name': 'Custom Proxy'}, 'nemotron-3-ultra')
         assert not provider_accepts_reasoning_effort({'name': 'Custom Proxy'}, 'some-chat')
 
 

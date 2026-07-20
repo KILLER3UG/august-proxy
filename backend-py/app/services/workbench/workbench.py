@@ -1046,6 +1046,8 @@ async def _sendWorkbenchMessageStreamImpl(
     # Title is generated after the first assistant reply (see schedule_auto_title
     # below) — do not stamp the raw first user message into the sidebar.
     effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
+    # Persist so later turns / BTW inherit the composer effort selection.
+    session.metadata['effort'] = effectiveEffort
     resolvedProvider, resolvedModel = _resolveChatLlm(
         model=model or '',
         model_provider=modelProvider or '',

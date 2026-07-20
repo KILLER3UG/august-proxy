@@ -32,12 +32,17 @@ export interface ActivitySummaryProps extends ActivitySummaryCounts {
   summary?: string | null;
   /** Optional “Thought for 2.7s” style meta when settled. */
   durationLabel?: string | null;
-  /** Start expanded (thoughts default open so the rail is visible). */
+  /** Start expanded (while the turn is still working, before final output). */
   defaultOpen?: boolean;
   /** When true, show a live “still working” line even while collapsed. */
   live?: boolean;
   /** Short live status, e.g. “Reading src/app.ts”. */
   liveDetail?: string | null;
+  /**
+   * When this becomes true (e.g. final answer started), collapse the pack so
+   * the chat focuses on the response. User can still re-expand manually.
+   */
+  collapseWhen?: boolean;
   className?: string;
 }
 
@@ -92,6 +97,7 @@ export function ActivitySummary({
   defaultOpen = false,
   live = false,
   liveDetail = null,
+  collapseWhen = false,
   className,
 }: ActivitySummaryProps) {
   const [open, setOpen] = useState(defaultOpen || live);
@@ -99,11 +105,15 @@ export function ActivitySummary({
   useEffect(() => {
     if (open) setBodyClip(true);
   }, [open]);
-  // While the turn is live, keep the pack open so tools stay visible in chat
-  // (not only in the Activity drawer).
+  // While the turn is live (pre-final), keep the pack open so tools stay
+  // visible in chat (not only in the Activity drawer).
   useEffect(() => {
-    if (live) setOpen(true);
-  }, [live]);
+    if (live && !collapseWhen) setOpen(true);
+  }, [live, collapseWhen]);
+  // As soon as the final response starts, collapse thinking/tools.
+  useEffect(() => {
+    if (collapseWhen) setOpen(false);
+  }, [collapseWhen]);
   const segments = buildActivityCountSegments({
     thoughtCount,
     toolsCount,

@@ -263,10 +263,7 @@ export function ChatComposer({
               onSetSessionModel={onSetSessionModel}
               sessionId={sessionId}
             />
-            {(selectedModel?.supportsReasoning ||
-              selectedModel?.supportsThinking) && (
-              <EffortDropdown value={effort} onChange={onEffortChange} />
-            )}
+            <EffortDropdown value={effort} onChange={onEffortChange} />
 
             {streaming ? (
               <>

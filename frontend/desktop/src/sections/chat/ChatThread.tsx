@@ -45,6 +45,7 @@ import {
 import { SavePointBanner } from '@/components/chat/SavePointChip';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
+import { useStickToBottomScroll } from './hooks/useStickToBottomScroll';
 import { useChatModels } from './hooks/useChatModels';
 import { useChatUsage } from './hooks/useChatUsage';
 import { useChatAttachments } from './hooks/useChatAttachments';
@@ -278,27 +279,24 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     [],
   );
 
-  const getScrollTarget = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return null;
-    // scrollRef is already the overflow container; keep closest as a fallback.
-    return (el.closest('.overflow-y-auto')) ?? el;
-  }, []);
+  const {
+    getScrollTarget,
+    scrollToBottomSmooth: scrollToBottomSmoothRaw,
+    scrollToBottomImmediate,
+    programmaticScrollRef,
+  } = useStickToBottomScroll({
+    scrollRef,
+    pinnedToBottomRef,
+    streaming,
+    sessionId,
+    loadedSessionId,
+    messagesVersion: messages,
+  });
 
   const scrollToBottomSmooth = useCallback(() => {
-    const target = getScrollTarget();
-    if (!target) return;
-    pinnedToBottomRef.current = true;
     setScrolledFromBottom(false);
-    target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
-  }, [getScrollTarget]);
-
-  const scrollToBottomImmediate = useCallback(() => {
-    const target = getScrollTarget();
-    if (!target) return;
-    // Assign before paint so growth + scroll land in the same frame (no bounce).
-    target.scrollTop = target.scrollHeight;
-  }, [getScrollTarget]);
+    scrollToBottomSmoothRaw();
+  }, [scrollToBottomSmoothRaw]);
 
   // Track pin state from user scrolls only — do not rebind on every stream flush.
   // Re-attach when the message pane mounts (empty → messages); scrollRef is null
@@ -313,6 +311,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const scrollable = getScrollTarget();
     if (!scrollable) return;
     const check = () => {
+      // Ignore stick-to-bottom lerp / snaps — those are not user intent.
+      if (programmaticScrollRef.current) return;
       const distanceFromBottom =
         scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight;
       const nearBottom = distanceFromBottom < NEAR_BOTTOM_PX;
@@ -323,7 +323,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     check();
     scrollable.addEventListener('scroll', check, { passive: true });
     return () => scrollable.removeEventListener('scroll', check);
-  }, [sessionId, getScrollTarget, hasMessages]);
+  }, [sessionId, getScrollTarget, hasMessages, programmaticScrollRef]);
 
   const isTurnVisible = (turnSessionId: string | null) =>
     mountedRef.current && visibleSessionId === turnSessionId;
@@ -568,22 +568,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     wasStreamingRef.current = streaming;
   }, [streaming, scrollToBottomImmediate]);
 
-  // Stick to bottom while pinned. During streaming, CSS overflow-anchor on
-  // the transcript sentinel tracks growth continuously — per-token scrollTop
-  // snaps were what made long replies feel choppy. JS only recovers if
-  // anchoring slipped (large reflow / virtualizer), or settles when idle.
-  useLayoutEffect(() => {
-    if (!sessionId || loadedSessionId !== sessionId) return;
-    if (!pinnedToBottomRef.current) return;
-    const target = getScrollTarget();
-    if (!target) return;
-    const dist =
-      target.scrollHeight - target.scrollTop - target.clientHeight;
-    const threshold = streaming ? 80 : 4;
-    if (dist > threshold) {
-      target.scrollTop = target.scrollHeight;
-    }
-  }, [sessionId, loadedSessionId, messages, streaming, getScrollTarget]);
+  // Stick-to-bottom while streaming is handled by useStickToBottomScroll (smooth rAF lerp).
 
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));

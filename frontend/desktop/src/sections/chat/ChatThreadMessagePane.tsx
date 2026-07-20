@@ -134,7 +134,7 @@ export function ChatThreadMessagePane({
 
       {/* Viewport-fixed chrome — sticky inside the scroller sat at content end,
           so the jump-to-bottom control unmounted exactly when it became visible. */}
-      <div className="chat-scroll-chrome pointer-events-none absolute bottom-4 right-3 z-30 flex flex-col gap-2 items-end">
+      <div className="chat-scroll-chrome pointer-events-none absolute bottom-4 right-3 z-30 flex flex-col gap-2 items-center">
         <ScrollToTopButton
           scrollParentRef={scrollRef}
           visible={scrolledFromTop}

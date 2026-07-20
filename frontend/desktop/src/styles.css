@@ -252,6 +252,7 @@
 .chat-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(128, 128, 136, 0.22) transparent;
+  overscroll-behavior-y: contain;
 }
 
 /* Growing transcript content must not steal the scroll anchor; the sentinel
@@ -467,10 +468,46 @@ input::placeholder {
   font-variant-ligatures: none;
   font-synthesis-weight: none;
   text-rendering: optimizeSpeed;
+  /* Soft trailing edge so new tokens feel inked-in rather than snapped. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 calc(100% - 12px),
+    rgba(0, 0, 0, 0.78) 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 calc(100% - 12px),
+    rgba(0, 0, 0, 0.78) 100%
+  );
 }
 
-/* No enter animation while streaming — last-child keyframes restart on every
-   markdown innerHTML replace and make glyphs look like they bounce downward. */
+/* One-shot rise when the final answer block mounts — not on every token flush. */
+@keyframes chat-final-stream-enter {
+  from {
+    opacity: 0.45;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-streaming-block--live {
+  animation: chat-final-stream-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-streaming-block--live {
+    animation: none;
+  }
+  .streaming-markdown-content {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
 
 .thought-content {
   opacity: 0.72;
@@ -599,9 +636,10 @@ input::placeholder {
 .activity-summary {
   margin: 4px 0;
   border-radius: 6px;
+  background: transparent;
 }
 .activity-summary[data-expanded="true"] {
-  background: hsl(var(--foreground) / 0.03);
+  background: transparent;
 }
 .activity-summary-header {
   display: flex;
@@ -611,7 +649,7 @@ input::placeholder {
   min-height: 30px;
   padding: 5px 10px;
   font-size: 12px;
-  color: hsl(var(--muted-foreground));
+  color: var(--dt-muted-foreground);
   cursor: pointer;
   user-select: none;
   border: none;
@@ -620,11 +658,11 @@ input::placeholder {
   border-radius: 6px;
 }
 .activity-summary-header:hover {
-  background: hsl(var(--foreground) / 0.05);
-  color: hsl(var(--foreground) / 0.85);
+  background: color-mix(in srgb, var(--dt-foreground) 5%, transparent);
+  color: color-mix(in srgb, var(--dt-foreground) 85%, transparent);
 }
 .activity-summary-header:focus-visible {
-  outline: 2px solid hsl(var(--ring));
+  outline: 2px solid var(--dt-border);
   outline-offset: 1px;
 }
 .activity-summary-counts {
@@ -638,7 +676,7 @@ input::placeholder {
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-style: italic;
-  color: hsl(var(--muted-foreground) / 0.78);
+  color: color-mix(in srgb, var(--dt-muted-foreground) 85%, transparent);
   line-height: 1.35;
 }
 .activity-summary-duration {
@@ -662,15 +700,15 @@ input::placeholder {
   margin: 0 10px 6px;
   padding: 4px 8px;
   font-size: 11px;
-  color: hsl(var(--foreground) / 0.82);
-  background: hsl(var(--info, 210 80% 56%) / 0.08);
+  color: color-mix(in srgb, var(--dt-foreground) 82%, transparent);
+  background: color-mix(in srgb, var(--dt-foreground) 6%, transparent);
   border-radius: 6px;
 }
 .activity-summary-live-dot {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: hsl(var(--info, 210 80% 56%));
+  background: var(--dt-muted-foreground);
   animation: activity-live-pulse 1.2s ease-in-out infinite;
 }
 @keyframes activity-live-pulse {
@@ -723,32 +761,85 @@ input::placeholder {
 .process-step-body {
   min-width: 0;
 }
-/* Thought rail: vertical line along the left of the prose (beside the clock). */
-.process-step--thought[data-expanded="true"] .process-step-body {
-  padding-left: 10px;
-  /* inset shadow — survives the global border-color guard that washes out border-left */
-  box-shadow: inset 1px 0 0 hsl(var(--foreground) / 0.22);
+/* Expanded thought: clock on top, stem under it, ✓ Done at the end of the stem. */
+.process-thought {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: stretch;
+  width: 100%;
+  background: transparent;
 }
-.process-thought-panel {
-  margin: 2px 0 4px 26px;
+.process-thought-axis {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100%;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent);
+}
+.process-thought-icon-static {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.process-thought-clock {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  stroke-width: 1.75;
+}
+.process-thought-stem {
+  flex: 1 1 auto;
+  width: 1px;
+  min-height: 10px;
+  margin: 3px 0;
+  background: color-mix(in srgb, var(--dt-foreground) 32%, transparent);
+}
+.process-thought-check {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 85%, transparent);
+}
+.process-thought-body {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 100%;
 }
-.process-thought-rail {
-  position: relative;
-  color: hsl(var(--muted-foreground) / 0.88);
+.process-thought-prose {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 92%, transparent);
   font-size: 0.875rem;
   line-height: 1.55;
+}
+.process-thought-prose > .markdown-content {
+  margin: 0;
+}
+.process-thought-prose > .markdown-content > :first-child {
+  margin-top: 0;
+}
+.process-thought-prose > .markdown-content > :last-child {
+  margin-bottom: 0;
 }
 .process-thought-pending {
   font-style: italic;
   opacity: 0.8;
 }
+.process-thought-panel {
+  margin: 2px 0 4px 26px;
+  min-width: 0;
+}
 .process-thought-icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   margin: 0;
   border: none;
@@ -756,30 +847,38 @@ input::placeholder {
   background: transparent;
   color: inherit;
   cursor: pointer;
+  flex-shrink: 0;
 }
 .process-thought-icon-btn:hover {
-  color: hsl(var(--foreground) / 0.85);
-  background: hsl(var(--foreground) / 0.05);
+  color: var(--dt-foreground);
+  background: color-mix(in srgb, var(--dt-foreground) 6%, transparent);
 }
 .process-thought-icon-btn:focus-visible {
-  outline: 2px solid hsl(var(--ring));
+  outline: 2px solid var(--dt-border);
   outline-offset: 1px;
 }
 .process-thought-toggle {
-  grid-template-columns: 18px minmax(0, 1fr) 14px;
-  color: hsl(var(--muted-foreground) / 0.9);
+  grid-template-columns: 18px minmax(0, 1fr) auto 14px;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 90%, transparent);
 }
 .process-thought-label {
-  color: hsl(var(--muted-foreground) / 0.88);
+  color: color-mix(in srgb, var(--dt-muted-foreground) 88%, transparent);
   white-space: nowrap;
 }
 .process-thought-label--live {
-  color: hsl(var(--foreground) / 0.72);
+  color: color-mix(in srgb, var(--dt-foreground) 72%, transparent);
 }
 .process-thought-done {
-  font-size: 0.75rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  min-height: 14px;
+  margin-top: 6px;
+  font-size: 0.8125rem;
   font-weight: 500;
-  color: hsl(var(--muted-foreground) / 0.55);
+  line-height: 1.2;
+  color: var(--dt-muted-foreground);
+  opacity: 0.8;
 }
 .process-tool-toggle {
   display: grid;

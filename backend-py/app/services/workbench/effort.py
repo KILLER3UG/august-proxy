@@ -157,6 +157,35 @@ def effort_to_openai_reasoning_effort(effort: str) -> str:
     return mapping.get(effort, 'medium')
 
 
+def model_likely_accepts_reasoning_effort(model: str) -> bool:
+    """Model-id heuristic mirroring the desktop Effort UI families."""
+    mid = (model or '').lower()
+    return any(
+        token in mid
+        for token in (
+            'o1',
+            'o3',
+            'o4',
+            'reasoner',
+            'thinking',
+            'reasoning',
+            'deepseek',
+            'gpt-5',
+            'qwen3',
+            'qwq',
+            'minimax-m2',
+            'minimax-m3',
+            'glm-4',
+            'glm-5',
+            'kimi-k2',
+            'grok-3',
+            'grok-4',
+            'gemini-3',
+            'nemotron',
+        )
+    )
+
+
 def provider_accepts_reasoning_effort(
     provider: dict[str, object] | None,
     model: str = '',
@@ -171,8 +200,9 @@ def provider_accepts_reasoning_effort(
     if not provider:
         return False
     pname = as_str(provider.get('name') or provider.get('id')).lower()
-    mid = (model or '').lower()
-    api_mode = as_str(provider.get('apiMode') or provider.get('api_mode'))
+    api_mode = as_str(
+        provider.get('apiMode') or provider.get('api_mode') or provider.get('apiFormat')
+    )
     if api_mode == 'codexResponses':
         return True
     # OpenCode proxies many upstreams; don't infer from model id alone.
@@ -180,19 +210,7 @@ def provider_accepts_reasoning_effort(
         return False
     if any(token in pname for token in ('openai', 'codex', 'deepseek', 'xai', 'grok')):
         return True
-    return any(
-        token in mid
-        for token in (
-            'o1',
-            'o3',
-            'o4',
-            'reasoner',
-            'deepseek',
-            'gpt-5',
-            'grok-3',
-            'grok-4',
-        )
-    )
+    return model_likely_accepts_reasoning_effort(model)
 
 
 def profile_supports_reasoning(profile: dict[str, object]) -> bool:

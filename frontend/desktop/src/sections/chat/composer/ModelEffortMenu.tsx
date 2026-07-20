@@ -21,7 +21,6 @@ import {
   modelDisplayParts,
   formatContextWindow,
   getModelDisplayName,
-  isLikelyReasoningModel,
 } from '../model-display';
 import type { EffortLevel } from '../hooks/useChatSend';
 
@@ -134,11 +133,8 @@ export function ModelEffortMenu({
 
   const effortOpt =
     EFFORT_OPTIONS.find((o) => o.value === effort) || EFFORT_OPTIONS[1];
-  const showEffort = !!(
-    selected?.supportsReasoning ||
-    selected?.supportsThinking ||
-    (selected?.id && isLikelyReasoningModel(selected.id))
-  );
+  // Effort applies to every model (API reasoning_effort and/or prompt hint).
+  const showEffort = true;
 
   const closeAll = useCallback(() => {
     clearAllTimers();
