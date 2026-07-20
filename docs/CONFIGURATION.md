@@ -263,8 +263,8 @@ User-added providers, edited from **Settings → Model Providers** or
 | Field | Values |
 |-------|--------|
 | `name` | Display name; used for key resolution |
-| `baseUrl` | Host + prefix only (e.g. `https://opencode.ai/zen/v1`). API format appends the leaf (`chat/completions`, `messages`, `responses`) |
-| `apiFormat` | Wire format: `openaiChat` → `chat/completions`, `anthropicMessages` → `messages`, `openaiResponses` → `responses` |
+| `baseUrl` | Exact host + prefix as pasted. OpenAI-compatible: include `/v1` in the base if the host needs it. Anthropic format appends `v1/messages` itself (do not rely on inventing `/v1` on the base). |
+| `apiFormat` | Wire leaf: `openaiChat` → `chat/completions`, `anthropicMessages` → `v1/messages`, `openaiResponses` → `responses` |
 | `apiKey` | Provider key (or rely on `config.json` / env) |
 | `enabled` | Whether it is used |
 | `autoFetch` | Re-fetch models on startup when supported |

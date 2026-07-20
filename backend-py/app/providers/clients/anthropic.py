@@ -11,7 +11,7 @@ Handles:
 from __future__ import annotations
 from typing import AsyncIterator
 from app.json_narrowing import as_str
-from app.providers.api_format import anthropic_v1_base, join_provider_url
+from app.providers.api_format import anthropic_host_base, join_provider_url
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 
@@ -34,19 +34,18 @@ class AnthropicClient(BaseProviderClient):
         return headers
 
     def resolveBaseUrl(self) -> str:
-        """Anthropic host+prefix ending in ``/v1`` (never doubled)."""
-        base = super().resolveBaseUrl()
-        return anthropic_v1_base(base or 'https://api.anthropic.com')
+        """Host only — format leaf adds ``v1/messages`` (never double ``/v1``)."""
+        return anthropic_host_base(super().resolveBaseUrl() or 'https://api.anthropic.com')
 
     def _endpoint(self, *parts: str) -> str:
         return join_provider_url(self.resolveBaseUrl(), *parts)
 
     async def messages(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
-        """Non-streaming call to POST /v1/messages."""
+        """Non-streaming call to POST …/v1/messages."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
         headers = self.buildAuthHeaders(apiKey)
-        url = self._endpoint('messages')
+        url = self._endpoint('v1', 'messages')
         return await self.requestJson('POST', url, headers, body)
 
     async def generate(self, prompt: str, system: str | None = None) -> str:
@@ -82,15 +81,15 @@ class AnthropicClient(BaseProviderClient):
         if apiKey is None:
             apiKey = self.resolveApiKey()
         headers = self.buildAuthHeaders(apiKey)
-        url = self._endpoint('messages')
+        url = self._endpoint('v1', 'messages')
         body['stream'] = True
         async for event in self.streamSse(url, headers, body):
             yield event
 
     async def countTokens(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
-        """Call POST /v1/messages/count_tokens (token estimation endpoint)."""
+        """Call POST …/v1/messages/count_tokens (token estimation endpoint)."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
         headers = self.buildAuthHeaders(apiKey)
-        url = self._endpoint('messages', 'count_tokens')
+        url = self._endpoint('v1', 'messages', 'count_tokens')
         return await self.requestJson('POST', url, headers, body)

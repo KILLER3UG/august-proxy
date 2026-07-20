@@ -22,7 +22,9 @@ export function ModelDiscoveryActions({
   return (
     <div className="flex items-center justify-between rounded-lg border border-white/[0.06] p-3">
       <div>
-        <p className="text-sm font-medium">Model discovery from <code className="text-xs font-mono">/v1/models</code></p>
+        <p className="text-sm font-medium">
+          Model discovery from <code className="text-xs font-mono">baseUrl/models</code>
+        </p>
         <p className="text-xs text-muted-foreground mt-0.5">
           When on, August finds every model the provider exposes and adds them here.
           Use the refresh icon to re-discover now.

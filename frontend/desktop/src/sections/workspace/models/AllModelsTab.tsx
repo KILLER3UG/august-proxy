@@ -1,6 +1,6 @@
 /* All models view — flat catalog of every model across providers.
  * Supports search/filter, per-provider grouping, and Discover all (refresh
- * /v1/models on each configured provider and merge into the catalog).
+ * baseUrl/models on each configured provider and merge into the catalog).
  */
 
 import { useMemo, useState } from 'react';
@@ -185,7 +185,7 @@ export function AllModelsTab() {
           <Button
             onClick={startDiscoverAll}
             disabled={discovering || refreshAll.isPending}
-            title="Fetch every provider's /v1/models and merge into the catalog"
+            title="Fetch each provider's baseUrl/models and merge into the catalog"
           >
             {discovering || refreshAll.isPending ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -204,7 +204,7 @@ export function AllModelsTab() {
           title="No models yet"
           description={
             providersDiscoverable(listQ.data ?? [])
-              ? 'Click Discover all to fetch /v1/models from every configured provider. Manual models can also be added per provider.'
+              ? 'Click Discover all to fetch baseUrl/models from every configured provider. Manual models can also be added per provider.'
               : 'No providers configured yet. Add a provider first, then discover models.'
           }
           action={

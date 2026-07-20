@@ -119,6 +119,11 @@ Grok, free tier). Claude needs `messages`; GPT needs `responses` — those will
 **404** under a single Zen `openaiChat` provider until per-model routing exists.
 See [`CONFIGURATION.md`](CONFIGURATION.md) (OpenCode note).
 
+Paste the provider base URL **exactly**. August does **not** invent `/v1` on
+the base — it only appends the API format leaf (`chat/completions`,
+`v1/messages`, `responses`, or `/models` for discovery). Anthropic’s format
+already includes `v1` in the leaf.
+
 ---
 
 ## Workbench & chat

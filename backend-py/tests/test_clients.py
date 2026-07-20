@@ -68,8 +68,11 @@ class TestAnthropicClient:
     def testBaseUrl(self):
         client = AnthropicClient({'name': 'Anthropic'})
         url = client.resolveBaseUrl()
-        assert 'anthropic.com' in url
-        assert url.endswith('/v1')
+        assert url == 'https://api.anthropic.com'
+
+    def testBaseUrlStripsTrailingV1(self):
+        client = AnthropicClient({'name': 'Anthropic', 'baseUrl': 'https://api.anthropic.com/v1'})
+        assert client.resolveBaseUrl() == 'https://api.anthropic.com'
 
     def testResolveApiKeyNoKey(self):
         client = AnthropicClient({'name': 'Anthropic'})

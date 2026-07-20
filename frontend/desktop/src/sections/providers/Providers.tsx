@@ -45,7 +45,7 @@ interface ActiveProviderData {
 
 const API_FORMATS: { value: ApiFormat; label: string }[] = [
   { value: 'openaiChat', label: 'chat/completions' },
-  { value: 'anthropicMessages', label: 'messages' },
+  { value: 'anthropicMessages', label: 'v1/messages' },
   { value: 'openaiResponses', label: 'responses' },
 ];
 

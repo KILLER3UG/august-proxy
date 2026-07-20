@@ -486,12 +486,16 @@ async def handleMessages(
     if not apiKey:
         return ({'error': 'API key not configured for provider'}, None)
     headers = client.buildAuthHeaders(apiKey)
-    baseUrl = client.resolveBaseUrl()
+    from app.providers.api_format import provider_endpoint_url
+
+    fmt = as_str(getattr(client, 'apiFormat', None) or provider.get('apiMode') or provider.get('apiFormat'))
     isAnthropicUpstream = client.apiFormat == 'anthropicMessages'
     if isAnthropicUpstream:
-        upstreamUrl = f'{baseUrl}/messages'
+        upstreamUrl = provider_endpoint_url(client.resolveBaseUrl(), 'anthropicMessages', kind='messages')
     else:
-        upstreamUrl = f'{baseUrl}/chat/completions'
+        upstreamUrl = provider_endpoint_url(
+            client.resolveBaseUrl(), fmt or 'openaiChat', kind='chat'
+        )
     clientWantsStream = body.stream if isinstance(body, AnthropicRequest) else body.get('stream', False)
     systemBlocks = build_anthropic_system_blocks(cast(JsonValue, as_list(raw_body.get('system'), [])))
     clientToolsRaw = as_list(raw_body.get('tools'), [])

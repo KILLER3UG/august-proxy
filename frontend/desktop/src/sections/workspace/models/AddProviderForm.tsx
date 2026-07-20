@@ -75,7 +75,7 @@ export function AddProviderForm({
 
         <WorkspaceField
           label="Base URL"
-          hint="Host + prefix only — API format appends /chat/completions or /messages. e.g. https://opencode.ai/zen/v1 or https://api.kilo.ai/api/gateway"
+          hint="Used exactly as pasted — we only append the API format leaf (chat/completions, v1/messages, responses). For OpenAI-compatible hosts include /v1 in the base if needed (e.g. https://opencode.ai/zen/v1). Anthropic format already adds v1/messages."
         >
           <Input
             value={baseUrl}

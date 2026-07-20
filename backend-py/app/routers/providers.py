@@ -243,32 +243,28 @@ async def refreshModels(providerId: str):
 
                 from app.providers.api_format import join_provider_url, normalize_provider_base_url
 
+                # Exact pasted base + /models — never invent /v1.
                 base = normalize_provider_base_url(baseUrl)
-                candidates: list[str] = []
-                if base:
-                    candidates.append(join_provider_url(base, 'models'))
-                    if base.endswith('/v1'):
-                        candidates.append(join_provider_url(base[: -len('/v1')], 'models'))
-                    else:
-                        candidates.append(join_provider_url(base, 'v1', 'models'))
-                async with httpx.AsyncClient(timeout=5) as client:
-                    for url in candidates:
+                models_url = join_provider_url(base, 'models') if base else ''
+                if models_url:
+                    async with httpx.AsyncClient(timeout=5) as client:
                         try:
-                            resp = await client.get(url, headers={'Authorization': f'Bearer {apiKey}'})
+                            resp = await client.get(
+                                models_url, headers={'Authorization': f'Bearer {apiKey}'}
+                            )
                             if resp.status_code == 200:
                                 data = resp.json()
-                                raw = data.get('data', data.get('models', data if isinstance(data, list) else []))
+                                raw = data.get(
+                                    'data', data.get('models', data if isinstance(data, list) else [])
+                                )
                                 if isinstance(raw, list):
                                     liveModels = [
-                                        m['id'] for m in raw if isinstance(m, dict) and as_str(m.get('id', ''))
+                                        m['id']
+                                        for m in raw
+                                        if isinstance(m, dict) and as_str(m.get('id', ''))
                                     ]
-                                break
                         except Exception:
-                            continue
-                        data = resp.json()
-                        raw = data.get('data', data.get('models', data if isinstance(data, list) else []))
-                        if isinstance(raw, list):
-                            liveModels = [m['id'] for m in raw if isinstance(m, dict) and as_str(m.get('id', ''))]
+                            pass
             except Exception:
                 pass
         liveIds = set(liveModels)

@@ -80,10 +80,43 @@ def test_base_plus_format_opencode_and_kilo():
     )
 
 
-def test_anthropic_v1_not_doubled():
-    assert anthropic_v1_base('https://api.anthropic.com') == 'https://api.anthropic.com/v1'
-    assert anthropic_v1_base('https://api.anthropic.com/v1') == 'https://api.anthropic.com/v1'
+def test_anthropic_format_owns_v1_leaf():
+    # Format appends v1/messages — base is host only; trailing /v1 is not doubled.
+    assert anthropic_v1_base('https://api.anthropic.com') == 'https://api.anthropic.com'
+    assert anthropic_v1_base('https://api.anthropic.com/v1') == 'https://api.anthropic.com'
+    assert anthropic_v1_base('') == 'https://api.anthropic.com'
+    assert (
+        provider_endpoint_url('https://api.anthropic.com', 'anthropicMessages', kind='messages')
+        == 'https://api.anthropic.com/v1/messages'
+    )
     assert (
         provider_endpoint_url('https://api.anthropic.com/v1', 'anthropicMessages', kind='messages')
         == 'https://api.anthropic.com/v1/messages'
+    )
+    assert (
+        provider_endpoint_url('https://api.minimax.chat', 'anthropicMessages', kind='messages')
+        == 'https://api.minimax.chat/v1/messages'
+    )
+    assert (
+        provider_endpoint_url('https://api.minimax.chat/v1', 'anthropicMessages', kind='chat')
+        == 'https://api.minimax.chat/v1/messages'
+    )
+    assert (
+        provider_endpoint_url('https://custom.gateway.example', 'anthropicMessages', kind='chat')
+        == 'https://custom.gateway.example/v1/messages'
+    )
+    assert (
+        provider_endpoint_url('https://api.anthropic.com', 'anthropicMessages', kind='models')
+        == 'https://api.anthropic.com/v1/models'
+    )
+
+
+def test_models_url_exact_base_no_v1_invent():
+    assert (
+        provider_endpoint_url('https://api.kilo.ai/api/gateway', 'openaiChat', kind='models')
+        == 'https://api.kilo.ai/api/gateway/models'
+    )
+    assert (
+        provider_endpoint_url('https://opencode.ai/zen/v1', 'openaiChat', kind='models')
+        == 'https://opencode.ai/zen/v1/models'
     )
