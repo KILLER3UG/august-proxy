@@ -21,6 +21,8 @@ export interface StreamWorkbenchChatParams {
   /** Selected provider id for the model — helps the backend route when the
    *  model id is ambiguous across providers. */
   modelProvider?: string;
+  /** Brief of prior interrupted turn when switching models after cancel. */
+  handoffSummary?: string;
 }
 
 /**
@@ -50,6 +52,7 @@ export async function streamWorkbenchChat(
       thinkingEnabled: params.thinkingEnabled,
       model: params.model,
       modelProvider: params.modelProvider,
+      handoffSummary: params.handoffSummary || undefined,
     }),
     signal,
   });

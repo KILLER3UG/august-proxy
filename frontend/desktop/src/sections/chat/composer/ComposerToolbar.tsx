@@ -226,14 +226,65 @@ export function ComposerToolbar({
           thinkingEnabled={thinkingEnabled}
           onThinkingChange={setThinkingEnabled}
           onSelect={(m) => {
-            setSelectedModel(m);
-            userSelectedRef.current = m.id;
-            try {
-              localStorage.setItem('august_last_model', JSON.stringify(m));
-            } catch {
-              /* silent */
-            }
-            if (sessionId) updateSessionModel(sessionId, m.id, m.provider);
+            void (async () => {
+              const prev = selectedModel;
+              if (streaming && sessionId) {
+                const { stopChatStream } = await import(
+                  '@/sections/chat/stream/start-stop-stream'
+                );
+                const {
+                  buildHandoffSummary,
+                  markHandoffPending,
+                } = await import('@/sections/chat/handoff-summary');
+                // Capture handoff before stop clears stream state.
+                const { getOrInitSessionStreamState } = await import(
+                  '@/sections/chat/stream/session-stream-store'
+                );
+                const msgs =
+                  getOrInitSessionStreamState(sessionId).messages || [];
+                const summary = buildHandoffSummary(
+                  msgs,
+                  prev?.name || prev?.id,
+                );
+                await stopChatStream(sessionId);
+                markHandoffPending(sessionId, summary, prev?.id);
+              } else if (sessionId && prev && prev.id !== m.id) {
+                // Model change after a prior cancel — still attach handoff if pending empty.
+                const { peekHandoffPending, buildHandoffSummary, markHandoffPending } =
+                  await import('@/sections/chat/handoff-summary');
+                if (!peekHandoffPending(sessionId)) {
+                  const { getOrInitSessionStreamState } = await import(
+                    '@/sections/chat/stream/session-stream-store'
+                  );
+                  const msgs =
+                    getOrInitSessionStreamState(sessionId).messages || [];
+                  const last = msgs[msgs.length - 1];
+                  const incomplete =
+                    last?.role === 'assistant' &&
+                    (!last.content?.trim() ||
+                      last.blocks?.some(
+                        (b) =>
+                          b.type === 'thinking' ||
+                          (b.type === 'toolCall' && b.tool?.status === 'running'),
+                      ));
+                  if (incomplete) {
+                    markHandoffPending(
+                      sessionId,
+                      buildHandoffSummary(msgs, prev.name || prev.id),
+                      prev.id,
+                    );
+                  }
+                }
+              }
+              setSelectedModel(m);
+              userSelectedRef.current = m.id;
+              try {
+                localStorage.setItem('august_last_model', JSON.stringify(m));
+              } catch {
+                /* silent */
+              }
+              if (sessionId) updateSessionModel(sessionId, m.id, m.provider);
+            })();
           }}
         />
 

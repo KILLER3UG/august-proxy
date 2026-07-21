@@ -1014,6 +1014,7 @@ async def sendWorkbenchMessageStream(
     modelProvider: str = '',
     guardMode: str = '',
     thinking_enabled: bool = True,
+    handoff_summary: str = '',
     emit: Callable[[dict[str, object]], None] | None = None,
     signal: asyncio.Event | None = None,
 ) -> None:
@@ -1057,6 +1058,7 @@ async def sendWorkbenchMessageStream(
             modelProvider=modelProvider,
             guardMode=guardMode,
             thinking_enabled=thinking_enabled,
+            handoff_summary=handoff_summary,
             emit=emit,
             signal=signal,
             trace=trace,
@@ -1079,6 +1081,7 @@ async def _sendWorkbenchMessageStreamImpl(
     modelProvider: str = '',
     guardMode: str = '',
     thinking_enabled: bool = True,
+    handoff_summary: str = '',
     emit: Callable[[dict[str, object]], None] | None = None,
     signal: asyncio.Event | None = None,
     trace: object | None = None,
@@ -1203,6 +1206,14 @@ async def _sendWorkbenchMessageStreamImpl(
                 'Do not use extended reasoning or long chain-of-thought. '
                 'Answer directly with minimal internal thinking.\n'
                 '</effort>'
+            )
+        handoff = (handoff_summary or '').strip()
+        if handoff:
+            systemText = (
+                f'{systemText}\n\n'
+                '<model_handoff>\n'
+                f'{handoff}\n'
+                '</model_handoff>'
             )
     isAnthropic = _isAnthropicProvider(resolvedProvider)
     isOpenai = _isOpenaiProvider(resolvedProvider)

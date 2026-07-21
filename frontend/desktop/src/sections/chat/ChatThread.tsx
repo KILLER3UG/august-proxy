@@ -42,6 +42,7 @@ import {
   clearQueuedMessages,
   type QueuedUserMessage,
 } from './queue-store';
+import { buildHandoffSummary, markHandoffPending } from './handoff-summary';
 import { SavePointBanner } from '@/components/chat/SavePointChip';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
@@ -737,7 +738,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [ensureWorkbenchSession, sessionId]);
 
   const stop = () => {
-    if (sessionId) void stopChatStream(sessionId);
+    if (!sessionId) return;
+    const prevModel = selectedModel?.name || selectedModel?.id;
+    const summary = buildHandoffSummary(messages, prevModel);
+    markHandoffPending(sessionId, summary, selectedModel?.id);
+    void stopChatStream(sessionId);
   };
 
   const maxContext = modelForRequest?.contextWindow && modelForRequest.contextWindow > 0

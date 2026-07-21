@@ -15,7 +15,12 @@
 import type { ChatMessage } from '@/types/chat';
 import type { WorkbenchMode, EffortLevel } from '@/types/chat';
 import type { WorkbenchSession } from '@/types/workbench';
-import { streamWorkbenchChat, streamWorkbenchReconnect, workbenchClient } from '@/api/workbench';
+import {
+  streamWorkbenchChat,
+  streamWorkbenchReconnect,
+  workbenchClient,
+  clearQueuedWorkbenchMessages,
+} from '@/api/workbench';
 import { setSessionStatus, clearSessionStatus } from '@/store/sessions';
 import { chatRuntime } from '../chat-runtime';
 import {
@@ -29,6 +34,8 @@ import {
   getSessionSubscriberLastSeq,
   hasSessionSubscriber,
 } from './session-subscriber';
+import { clearQueuedMessages } from '../queue-store';
+import { takeHandoffSummary } from '../handoff-summary';
 
 // Start a new chat generation
 export async function startChatStream(
@@ -45,6 +52,8 @@ export async function startChatStream(
     provider?: string;
     agentId?: string;
     guardMode?: string;
+    /** Optional handoff brief when switching models after an interrupted turn. */
+    handoffSummary?: string;
     ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   }
 ): Promise<'started' | 'queued' | 'error' | 'aborted'> {
@@ -96,6 +105,9 @@ export async function startChatStream(
 
     chatRuntime.setTransport(turn.turnId, 'http');
 
+    const handoffSummary =
+      params.handoffSummary || takeHandoffSummary(sessionId) || undefined;
+
     const startResult = await streamWorkbenchChat({
       sessionId: session.id,
       message: params.message,
@@ -106,6 +118,7 @@ export async function startChatStream(
       thinkingEnabled: params.thinkingEnabled,
       model: params.model,
       modelProvider: params.modelProvider,
+      handoffSummary,
     }, handlers, abortController.signal);
 
     // Backend queued because another turn is active — finalize the empty
@@ -199,12 +212,14 @@ export async function stopChatStream(sessionId: string) {
   }
 
   clearSessionStatus(sessionId);
+  clearQueuedMessages(sessionId);
 
-  // Tell the backend to stop
+  // Tell the backend to stop and free the in-flight slot immediately.
   try {
     const state = getOrInitSessionStreamState(sessionId);
     const wbSessionId = state.workbenchSession?.id || sessionId;
     await workbenchClient.stopChat(wbSessionId);
+    await clearQueuedWorkbenchMessages(wbSessionId).catch(() => undefined);
   } catch (err) {
     console.warn('Failed to notify backend of stop:', err);
   }

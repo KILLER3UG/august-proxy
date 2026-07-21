@@ -171,19 +171,28 @@ async def startChat(request: Request):
     # task must not permanently block the session.
     existing = _activeStreams.get(sessionId)
     if existing and not existing.done():
-        entry = wb.enqueueUserMessage(sessionId, message) if message else None
-        return {
-            'status': 'queued',
-            'sessionId': sessionId,
-            'queuedMessageId': (entry or {}).get('id') if entry else None,
-            'message': 'A turn is already in progress; message queued for the next iteration boundary.',
-        }
+        # If a stop is already in flight, free the slot instead of queueing.
+        cancel_ev = _cancelled.get(sessionId)
+        if cancel_ev is not None and cancel_ev.is_set():
+            _activeStreams.pop(sessionId, None)
+            if not existing.done():
+                existing.cancel()
+        else:
+            entry = wb.enqueueUserMessage(sessionId, message) if message else None
+            return {
+                'status': 'queued',
+                'sessionId': sessionId,
+                'queuedMessageId': (entry or {}).get('id') if entry else None,
+                'message': 'A turn is already in progress; message queued for the next iteration boundary.',
+            }
     if existing and existing.done():
         _activeStreams.pop(sessionId, None)
 
     seq = event_log.event_log.append(sessionId, 'started', {'sinceSeq': 0})
     cancelEvent = asyncio.Event()
     _cancelled[sessionId] = cancelEvent
+
+    handoff_summary = as_str(body.get('handoffSummary') or body.get('handoff_summary') or '')
 
     def _notify_chat_idle() -> None:
         try:
@@ -205,6 +214,7 @@ async def startChat(request: Request):
                 model=model,
                 modelProvider=modelProvider,
                 guardMode=guardMode,
+                handoff_summary=handoff_summary,
                 emit=lambda event: event_log.event_log.append(sessionId, event.get('type', 'message'), event),
                 signal=cancelEvent,
             )
@@ -290,14 +300,55 @@ async def streamChat(
 
 @router.post('/chat/stop')
 async def stopChat(request: Request):
-    """Abort a running generation."""
+    """Abort a running generation and free the session for a new turn.
+
+    Immediately clears the in-flight task slot and queued follow-ups so the
+    next POST /chat is not stuck behind \"already in progress\".
+    """
     body = await request.json()
     sessionId = body.get('sessionId', '')
+    if not sessionId:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+
     cancelEvent = _cancelled.get(sessionId)
     if cancelEvent and (not cancelEvent.is_set()):
         cancelEvent.set()
-    event_log.event_log.append(sessionId, 'aborted', {})
-    return {'status': 'ok'}
+
+    # Free the slot now — do not wait for the LLM stream to notice cancel.
+    task = _activeStreams.pop(sessionId, None)
+    if task is not None and not task.done():
+        task.cancel()
+
+    cleared = 0
+    try:
+        cleared = wb.clearQueuedMessages(sessionId)
+    except Exception:
+        cleared = 0
+
+    try:
+        session = wb.getWorkbenchSession(sessionId)
+        if session:
+            session.status = 'idle'
+            session.updatedAt = wb._now()
+            wb.saveSessions()
+            wb._emitSessionStatus(sessionId)
+    except Exception:
+        pass
+
+    try:
+        event_log.event_log.append(sessionId, 'aborted', {})
+        event_log.event_log.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
+    except Exception:
+        pass
+
+    try:
+        from app.services.realtime_bus import emit_realtime
+
+        emit_realtime('chat.idle', sessionId=sessionId)
+    except Exception:
+        pass
+
+    return {'status': 'ok', 'clearedQueue': cleared}
 
 
 @router.get('/chat/active')
