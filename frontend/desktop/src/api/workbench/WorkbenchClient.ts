@@ -29,6 +29,16 @@ export type QueuedUserMessage = {
   kind?: 'queue' | 'steer';
 };
 
+/** Persisted server-side handoff record — mirrors the backend's
+ *  `create_workbench_handoff` return shape (camelCase over the wire). */
+export type SessionHandoffRecord = {
+  fromModel?: string;
+  toModel?: string;
+  summary: string;
+  createdAt?: string;
+  sourceMessageRange?: [number, number];
+};
+
 export type DoctorCheck = {
   id: string;
   label: string;
@@ -167,6 +177,19 @@ export class WorkbenchClient {
     }>(
       `/api/workbench/sessions/${encodeURIComponent(sessionId)}/compact`,
       jsonInit('POST'),
+    );
+  }
+
+  /** Summarize context for a model switch and persist it server-side so the
+   *  next chat turn can pick it up even if the client-side fallback fails. */
+  async requestHandoff(
+    sessionId: string,
+    fromModel?: string | null,
+    toModel?: string | null,
+  ): Promise<SessionHandoffRecord> {
+    return wbFetch<SessionHandoffRecord>(
+      `/api/workbench/sessions/${encodeURIComponent(sessionId)}/handoff`,
+      jsonInit('POST', { from_model: fromModel || '', to_model: toModel || '' }),
     );
   }
 

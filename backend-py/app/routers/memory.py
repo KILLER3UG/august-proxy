@@ -42,6 +42,23 @@ class FactSearch(CamelModel):
     category: str = ''
 
 
+class AutoMemoryCreate(CamelModel):
+    """Auto-memory create body. Internals are snake_case; JSON stays camelCase."""
+
+    key: str
+    content: object
+    category: str = 'auto'
+    importance: float = 0.5
+
+
+class AutoMemoryUpdate(CamelModel):
+    """Auto-memory update body — all fields optional (partial update)."""
+
+    content: object | None = None
+    category: str | None = None
+    importance: float | None = None
+
+
 class ProposalCreate(CamelModel):
     """Proposal create body. Internals are snake_case; JSON stays camelCase."""
 
@@ -94,6 +111,67 @@ async def searchMemoryRoute(query: str = ''):
         return {'results': []}
     results = memory_store.search_memory(query)
     return {'results': results, 'query': query, 'count': len(results)}
+
+
+@router.get('/auto')
+async def listAutoMemoriesRoute(category: str = ''):
+    """List auto-memories, grouped by category (Recalled Memory settings panel)."""
+    from app.services.memory.auto_memory import list_all_auto_memories
+
+    items = list_all_auto_memories(category)
+    grouped: dict[str, list[object]] = {}
+    for item in items:
+        cat = str(item.get('category') or 'auto')
+        grouped.setdefault(cat, []).append(item)
+    return {'items': items, 'grouped': grouped}
+
+
+@router.post('/auto')
+async def createAutoMemoryRoute(body: AutoMemoryCreate):
+    """Create (or upsert-by-key) an auto-memory entry."""
+    from app.services.memory.auto_memory import create_auto_memory
+
+    memoryId = create_auto_memory(
+        body.key, cast(JsonValue, body.content), body.category, body.importance
+    )
+    return {'id': memoryId, 'status': 'ok'}
+
+
+@router.get('/auto/{memoryId}')
+async def getAutoMemoryRoute(memoryId: int):
+    """Get a single auto-memory entry by id."""
+    from app.services.memory.auto_memory import get_auto_memory
+
+    item = get_auto_memory(memoryId)
+    if not item:
+        raise HTTPException(status_code=404, detail='Memory not found')
+    return item
+
+
+@router.put('/auto/{memoryId}')
+async def updateAutoMemoryRoute(memoryId: int, body: AutoMemoryUpdate):
+    """Update an auto-memory entry's content/category/importance."""
+    from app.services.memory.auto_memory import update_auto_memory
+
+    ok = update_auto_memory(
+        memoryId,
+        content=cast(JsonValue, body.content) if body.content is not None else None,
+        category=body.category,
+        importance=body.importance,
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail='Memory not found')
+    return {'status': 'ok'}
+
+
+@router.delete('/auto/{memoryId}')
+async def deleteAutoMemoryRoute(memoryId: int):
+    """Delete an auto-memory entry by id."""
+    from app.services.memory.auto_memory import delete_auto_memory
+
+    if not delete_auto_memory(memoryId):
+        raise HTTPException(status_code=404, detail='Memory not found')
+    return {'status': 'ok'}
 
 
 @router.get('/facts')

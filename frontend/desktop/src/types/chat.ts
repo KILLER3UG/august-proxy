@@ -26,12 +26,23 @@ export interface ProviderSetupResult {
  *  narrow on `type` before relying on a specific field shape. */
 export interface MessageBlock {
   id: string;
-  type: 'thinking' | 'toolCall' | 'command' | 'finalOutput';
+  type: 'thinking' | 'toolCall' | 'command' | 'finalOutput' | 'recalledMemories';
   content?: string;
   tool?: MessageBlockToolCall;
   /** Set on toolCall blocks whose context represents a revised plan
    *  (august__submit_plan with isRevisedPlan=true). */
   isRevisedPlan?: boolean;
+  /** For type === 'recalledMemories': the auto-memory rows that
+   *  getRelevantMemories() prefetched into the system prompt this turn. */
+  memories?: RecalledMemoryItem[];
+}
+
+/** One auto-memory row surfaced by the `recalledMemories` SSE event. */
+export interface RecalledMemoryItem {
+  id: string;
+  key: string;
+  category: string;
+  snippet: string;
 }
 
 export interface MessageBlockToolCall {
@@ -116,7 +127,7 @@ export interface ChatMessage {
   timestamp: string;
   /** Optional message kind. Used for special rendering (e.g. 'help' panel,
    *  registry-driven inline cards, subagent approval cards). */
-  kind?: 'help' | 'voice-command-card' | 'subagent-approval';
+  kind?: 'help' | 'voice-command-card' | 'subagent-approval' | 'handoff-notice';
   /** When kind === 'voice-command-card', the registry id of the command. */
   commandId?: string;
   /** Optional context payload for inline cards and approvals. */
@@ -219,7 +230,8 @@ export interface AppendBlockEvent {
     | 'toolCall'
     | 'command'
     | 'tool_progress'
-    | 'toolResult';
+    | 'toolResult'
+    | 'recalledMemories';
   content?: string;
   name?: string;
   id?: string;
@@ -234,4 +246,6 @@ export interface AppendBlockEvent {
   searchHits?: Array<{ title: string; url: string; snippet?: string }>;
   /** For setup_provider results: structured provider config so the UI renders an inline key field. */
   providerSetup?: ProviderSetupResult;
+  /** For type === 'recalledMemories': the recalled auto-memory rows. */
+  memories?: RecalledMemoryItem[];
 }

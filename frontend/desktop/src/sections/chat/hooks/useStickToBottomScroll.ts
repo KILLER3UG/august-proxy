@@ -88,7 +88,13 @@ export function useStickToBottomScroll({
     const target = getScrollTarget();
     if (!target) return;
     setPinned(true);
+    // Keep the programmatic guard up for the whole smooth animation so the
+    // distance-from-bottom check doesn't briefly flip pinned=false mid-scroll.
+    programmaticScrollRef.current = true;
     target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
+    window.setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, prefersReducedMotion() ? 50 : 450);
   }, [getScrollTarget, setPinned]);
 
   const scrollToBottomImmediate = useCallback(() => {

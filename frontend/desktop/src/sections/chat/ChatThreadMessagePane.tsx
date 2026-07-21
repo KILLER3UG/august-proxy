@@ -30,6 +30,7 @@ export function ChatThreadMessagePane({
   onDismissModelPicker,
   scrolledFromTop,
   scrolledFromBottom,
+  showNewContentPill = false,
   scrollRef,
   onScrollToBottom,
   onRevert,
@@ -50,6 +51,8 @@ export function ChatThreadMessagePane({
   onDismissModelPicker: () => void;
   scrolledFromTop: boolean;
   scrolledFromBottom: boolean;
+  /** True when new tokens/cards arrived while the user was scrolled up. */
+  showNewContentPill?: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
   onScrollToBottom: () => void;
   onRevert: (index: number) => void;
@@ -140,18 +143,19 @@ export function ChatThreadMessagePane({
           visible={scrolledFromTop}
         />
         <AnimatePresence>
-          {scrolledFromBottom && (
+          {scrolledFromBottom && showNewContentPill && (
             <motion.button
               type="button"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, y: 6, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.96 }}
+              transition={{ duration: 0.18 }}
               onClick={onScrollToBottom}
-              className="pointer-events-auto w-9 h-9 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-background/95 transition-colors cursor-pointer"
-              aria-label="Scroll to bottom"
+              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-background/90 backdrop-blur-sm border border-border shadow-sm px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background transition-colors cursor-pointer"
+              aria-label="Jump to new content"
             >
-              <ChevronDown className="size-4" />
+              <ChevronDown className="size-3.5 shrink-0" />
+              New content
             </motion.button>
           )}
         </AnimatePresence>

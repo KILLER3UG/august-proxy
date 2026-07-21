@@ -11,6 +11,7 @@ import { ThoughtStep } from '@/components/chat/ThoughtStep';
 import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { SubagentLaunchList } from '@/components/chat/SubagentLaunchList';
+import { RecalledMemoryStep } from '@/components/chat/RecalledMemoryStep';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { classifyTool } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
@@ -547,6 +548,21 @@ export function AssistantBlockTimeline({
               progress={tool.id ? toolProgress?.get(tool.id) : undefined}
             />
           </ToolStepRow>,
+        );
+        ti++;
+        continue;
+      }
+
+      if (block.type === 'recalledMemories' && block.memories && block.memories.length > 0) {
+        const recallId = block.id || `recall_${ti}`;
+        const recallExpanded = isToolExpanded(recallId, 'done');
+        nodes.push(
+          <RecalledMemoryStep
+            key={recallId}
+            memories={block.memories}
+            expanded={recallExpanded}
+            onToggle={() => toggleExpand(recallId, !recallExpanded)}
+          />,
         );
         ti++;
         continue;

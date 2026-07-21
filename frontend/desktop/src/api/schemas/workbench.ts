@@ -246,6 +246,20 @@ export const WorkbenchUserMessageInjectedEventSchema = WorkbenchBaseSchema.exten
   text: z.string().optional(),
 });
 
+/** Auto-memory recall visibility — emitted once per turn right after
+ *  buildSystemPrompt() prefetches relevant `auto_memories` rows. */
+export const WorkbenchRecalledMemoriesEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('recalledMemories'),
+  items: z.array(
+    z.object({
+      id: z.string().optional(),
+      key: z.string().optional(),
+      category: z.string().optional(),
+      snippet: z.string().optional(),
+    }),
+  ),
+});
+
 export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchStartedEventSchema,
   WorkbenchThinkingEventSchema,
@@ -270,6 +284,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchSubagentDoneEventSchema,
   WorkbenchWarningEventSchema,
   WorkbenchUserMessageInjectedEventSchema,
+  WorkbenchRecalledMemoriesEventSchema,
 ]);
 
 /** Inferred TypeScript type — should match `WorkbenchEvent` from

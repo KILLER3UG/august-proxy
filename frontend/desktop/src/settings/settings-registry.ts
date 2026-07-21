@@ -28,6 +28,7 @@ import {
   Boxes,
   BookOpen,
   Bot,
+  BrainCircuit,
   ClipboardList,
   Code2,
   Cpu,
@@ -228,6 +229,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'advanced',
     keywords: ['memory', 'semantic', 'facts', 'vector', 'db', 'graph', 'knowledge', 'prompt', 'learning', 'guidelines'],
     legacyAliases: ['memory', 'semantic-facts', 'vector-db'],
+  },
+  {
+    id: 'recalled-memory',
+    label: 'Recalled Memory',
+    description: 'Browse, add, and delete the auto-memories August recalls into chat context, grouped by category.',
+    icon: BrainCircuit,
+    category: 'intelligence',
+    tier: 'advanced',
+    // Note: 'memory' is owned by memory-knowledge — this section is
+    // reached via 'recall' / 'auto-memory' / category names instead.
+    keywords: ['recall', 'recalled', 'auto-memory', 'auto memory', 'category', 'quick add'],
+    legacyAliases: ['recalled-memories', 'auto-memories'],
   },
 
   /* ── Tools & Skills ──────────────────────────────────────────── */

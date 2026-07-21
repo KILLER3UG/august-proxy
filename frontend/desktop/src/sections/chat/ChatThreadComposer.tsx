@@ -47,6 +47,8 @@ export interface ChatThreadComposerProps {
   streaming: boolean;
   send: (textOverride?: string) => Promise<void>;
   stop: () => void;
+  /** Optional: lets the composer toolbar append a synthetic handoff-notice card. */
+  setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
   queuedMessages: QueuedUserMessage[];
   workbenchSession: WorkbenchSession | null;
   setWorkbenchSession: (
@@ -103,6 +105,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     streaming,
     send,
     stop,
+    setMessages,
     queuedMessages,
     workbenchSession,
     setWorkbenchSession,
@@ -291,6 +294,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           streaming={streaming}
           send={send}
           stop={stop}
+          setMessages={setMessages}
           workbenchSession={workbenchSession}
           setWorkbenchSession={setWorkbenchSession}
           workbenchMode={workbenchMode}

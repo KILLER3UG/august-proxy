@@ -108,6 +108,14 @@ export function appendBlockEvent(
       }
       blocks[targetIdx] = target;
     }
+  } else if (event.type === 'recalledMemories') {
+    if (event.memories && event.memories.length > 0) {
+      blocks.push({
+        id: `b_recall_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: 'recalledMemories',
+        memories: event.memories,
+      });
+    }
   } else if (event.type === 'toolResult') {
     const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
     if (targetIdx !== -1) {

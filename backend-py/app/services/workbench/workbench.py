@@ -45,7 +45,12 @@ logger = logging.getLogger('workbench')
 # 0 = unlimited tool rounds by default. Safety nets: cancel signal, empty
 # model responses, and brain-orchestrator maxWorkbenchToolLoops when set.
 MAX_MANAGED_TOOL_ROUNDS = 0
+# Legacy fallback only — auto-compact keys off the model's real contextWindow.
 WORKBENCH_TOKEN_BUDGET = 2000000
+# Auto-compact when estimated history reaches this fraction of the model window.
+AUTO_COMPACT_RATIO = 0.80
+# Cap tool results stored in the transcript (SSE already truncates separately).
+MAX_TOOL_RESULT_CHARS = 64 * 1024
 
 # Session API re-exports (explicit bindings so external importers keep working;
 # ruff F401 would strip pure unused imports from the import list above).
@@ -277,6 +282,7 @@ def buildSystemPrompt(
     projects = get_memory('active_projects')
     if projects:
         memory['active_projects'] = projects
+    session._last_recalled_memories = None
     try:
         from app.services.memory.auto_memory import getRelevantMemories
 
@@ -294,6 +300,9 @@ def buildSystemPrompt(
             prefetched = getRelevantMemories(recentText, limit=5)
             if prefetched:
                 memory['autoMemories'] = cast('list[JsonValue]', prefetched)
+                # Stashed for chatTurn() to emit as a `recalledMemories` SSE
+                # event — visibility into what auto-memory recall actually used.
+                session._last_recalled_memories = cast('list[dict[str, object]]', prefetched)
     except Exception:
         logger.debug('prompt: auto-memory prefetch failed', exc_info=True)
     try:
@@ -476,14 +485,31 @@ def buildSystemPrompt(
     return base + '\n\n' + '\n\n'.join(extraParts)
 
 
-def _shouldAutoCompact(attentionPressure: str, turnsSinceCompaction: int) -> bool:
-    """v1.1: Compaction triggers only at critical pressure and after 5-turn cooldown.
+def _resolveModelContextWindow(
+    resolvedModel: str, resolvedProvider: dict[str, object] | None
+) -> int:
+    """Model context window for auto-compact (never the legacy 2M workbench budget)."""
+    try:
+        from app.services.model_service import _getContextWindow
 
-    Spec reference: cognitive-architecture-v1.md §5.5
-    - Trigger: attention_pressure == "critical" (90% with accurate tokenizer, 85% with fallback)
-    - Cooldown: minimum 5 turns between compactions
+        window = int(_getContextWindow(resolvedModel, resolvedProvider) or 0)
+        if window > 0:
+            return max(8192, window)
+    except Exception:
+        logger.debug('resolveModelContextWindow failed', exc_info=True)
+    return 128000
+
+
+def _shouldAutoCompact(attention_pressure: str, turns_since_compaction: int) -> bool:
+    """Auto-compact at high (≥80%) or critical (≥90%) pressure after a short cooldown.
+
+    Cooldown avoids re-compacting every turn once we are near the window.
     """
-    return attentionPressure == 'critical' and turnsSinceCompaction >= 5
+    return attention_pressure in ('high', 'critical') and turns_since_compaction >= 2
+
+
+# Snake_case alias for tests / external callers.
+_should_auto_compact = _shouldAutoCompact
 
 
 def _buildDaemonUpdates(sessionId: str) -> str:
@@ -1194,6 +1220,22 @@ async def _sendWorkbenchMessageStreamImpl(
         tools = toolDefinitions(session)
         openaiTools = openaiToolDefinitions(session)
         systemText = buildSystemPrompt(session, tools=tools)
+        if emit and session._last_recalled_memories:
+            emit(
+                {
+                    'type': 'recalledMemories',
+                    'items': [
+                        {
+                            'id': str(m.get('key') or ''),
+                            'key': str(m.get('key') or ''),
+                            'category': str(m.get('category') or 'auto'),
+                            'snippet': str(m.get('description') or m.get('label') or '')[:200],
+                        }
+                        for m in session._last_recalled_memories
+                        if isinstance(m, dict)
+                    ],
+                }
+            )
         # Effort scales thinking depth for every provider (Anthropic budget /
         # OpenAI reasoning_effort / prompt hint for OpenAI-compatible APIs).
         if thinking_enabled:
@@ -1226,11 +1268,12 @@ async def _sendWorkbenchMessageStreamImpl(
         from app.providers.clients.base import estimateTokens
 
         if isFeatureEnabled():
+            contextWindow = _resolveModelContextWindow(resolvedModel, resolvedProvider)
             originalTokens = estimateTokens(session.messages)
-            ratio = originalTokens / WORKBENCH_TOKEN_BUDGET if WORKBENCH_TOKEN_BUDGET else 0.0
+            ratio = originalTokens / contextWindow if contextWindow else 0.0
             if ratio >= 0.9:
                 attentionPressure = 'critical'
-            elif ratio >= 0.75:
+            elif ratio >= AUTO_COMPACT_RATIO:
                 attentionPressure = 'high'
             elif ratio >= 0.5:
                 attentionPressure = 'medium'
@@ -1239,7 +1282,8 @@ async def _sendWorkbenchMessageStreamImpl(
             currentTurn = getattr(session, 'turn_count', 0)
             lastCompaction = getattr(session, '_last_compaction_turn', -100)
             turnsSinceCompaction = currentTurn - lastCompaction
-            threshold = WORKBENCH_TOKEN_BUDGET // 2
+            # Compress toward ~55% of the real window so the next turn has headroom.
+            threshold = max(4096, int(contextWindow * 0.55))
             currentMessages = list(session.messages)
             if _shouldAutoCompact(attentionPressure, turnsSinceCompaction):
                 compressed = compressMessages(currentMessages, threshold=threshold, head_count=4, tail_count=6)
@@ -1247,7 +1291,14 @@ async def _sendWorkbenchMessageStreamImpl(
                 if compressedTokens < originalTokens:
                     compressedCount = len(currentMessages) - len(compressed)
                     currentMessages = compressed
+                    # Persist so later turns / reload don't re-send the bloated history.
+                    session.messages = list(compressed)
+                    session.messageCount = len(session.messages)
                     session._last_compaction_turn = currentTurn
+                    try:
+                        saveSessions()
+                    except Exception:
+                        logger.exception('workbench save_sessions failed after auto-compact')
                     if emit:
                         emit(
                             {
@@ -1257,8 +1308,19 @@ async def _sendWorkbenchMessageStreamImpl(
                                 'compressedCount': compressedCount,
                                 'headCount': 4,
                                 'tailCount': 6,
+                                'threshold': threshold,
+                                'contextWindow': contextWindow,
+                                'underThreshold': False,
                             }
                         )
+                    logger.info(
+                        'workbench auto-compact session=%s tokens=%d→%d ratio=%.2f window=%d',
+                        sessionId,
+                        originalTokens,
+                        compressedTokens,
+                        ratio,
+                        contextWindow,
+                    )
         else:
             currentMessages = list(session.messages)
     except Exception:
@@ -1626,7 +1688,15 @@ async def _sendWorkbenchMessageStreamImpl(
                                 'status': 'success',
                             }
                         )
-            return {'tool_use_id': toolUseId, 'role': 'tool', 'content': result}
+            # Truncate what the model sees next turn — SSE already truncates for the UI.
+            historyContent = result
+            if len(historyContent) > MAX_TOOL_RESULT_CHARS:
+                historyContent = (
+                    historyContent[:MAX_TOOL_RESULT_CHARS]
+                    + f'\n\n[... Tool result truncated at {MAX_TOOL_RESULT_CHARS // 1024} KB '
+                    f'— full length: {len(result)} bytes]'
+                )
+            return {'tool_use_id': toolUseId, 'role': 'tool', 'content': historyContent}
 
         toolResults.extend(
             await run_regular_tools_stage(

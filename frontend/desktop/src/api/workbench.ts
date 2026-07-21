@@ -30,6 +30,19 @@ export async function setWorkbenchGuardMode(
   return workbenchClient.setGuardMode(sessionId, guardMode);
 }
 
+export type { SessionHandoffRecord } from './workbench/WorkbenchClient';
+
+/** Ask the backend to summarize context for a model switch and persist it
+ *  on the session. Best-effort — the backend always returns 200 with a
+ *  (possibly truncated) summary as long as the session exists. */
+export async function requestSessionHandoff(
+  sessionId: string,
+  fromModel?: string | null,
+  toModel?: string | null,
+) {
+  return workbenchClient.requestHandoff(sessionId, fromModel, toModel);
+}
+
 export async function setWorkbenchSandboxMode(
   sessionId: string,
   sandboxMode: WorkbenchSandboxMode,

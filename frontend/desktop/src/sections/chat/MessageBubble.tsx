@@ -12,6 +12,7 @@ import {
 } from '@/api/voice/registry';
 import { CommandHelpCard } from './CommandHelpCard';
 import { ToolCallCard } from './message/ToolCallCard';
+import { HandoffNoticeCard } from './message/HandoffNoticeCard';
 import { SubagentApprovalInline } from './message/SubagentApprovalInline';
 import { UserMessageBubble } from './message/UserMessageBubble';
 import { AssistantMessageContent } from './message/AssistantMessageContent';
@@ -142,6 +143,23 @@ export function MessageBubble({
     return (
       <div className="flex justify-start text-xs text-muted-foreground">
         Unknown card: {message.commandId}
+      </div>
+    );
+  }
+
+  if (message.kind === 'handoff-notice') {
+    const ctx = (message.context ?? {}) as {
+      fromModel?: string;
+      toModel?: string;
+      summary?: string;
+    };
+    return (
+      <div className="flex justify-start">
+        <HandoffNoticeCard
+          fromModel={ctx.fromModel}
+          toModel={ctx.toModel}
+          summary={ctx.summary || 'No summary available.'}
+        />
       </div>
     );
   }

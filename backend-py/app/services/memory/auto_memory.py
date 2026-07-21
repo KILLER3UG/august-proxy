@@ -228,6 +228,111 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     return [m for __, m in scored[:limit]]
 
 
+def list_all_auto_memories(category: str = '') -> list[dict[str, object]]:
+    """List every ``auto_memories`` row (with id), optionally filtered by category.
+
+    Ordered by category then most-recently-updated so the settings panel can
+    group rows by category without a separate query per group.
+    """
+    conn = _conn()
+    from app.services.memory_store import _row_as_wire
+
+    if category:
+        rows = conn.execute(
+            'SELECT id, key, content, category, importance, source, created_at, updated_at '
+            'FROM auto_memories WHERE category = ? ORDER BY updated_at DESC, id DESC',
+            (category,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            'SELECT id, key, content, category, importance, source, created_at, updated_at '
+            'FROM auto_memories ORDER BY category ASC, updated_at DESC, id DESC'
+        ).fetchall()
+    result = []
+    for r in rows:
+        item = _row_as_wire(r)
+        try:
+            item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        result.append(item)
+    return result
+
+
+def get_auto_memory(memory_id: int) -> dict[str, object] | None:
+    """Fetch a single ``auto_memories`` row by id."""
+    conn = _conn()
+    from app.services.memory_store import _row_as_wire
+
+    row = conn.execute(
+        'SELECT id, key, content, category, importance, source, created_at, updated_at '
+        'FROM auto_memories WHERE id = ?',
+        (memory_id,),
+    ).fetchone()
+    if not row:
+        return None
+    item = _row_as_wire(row)
+    try:
+        item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return item
+
+
+def create_auto_memory(
+    key: str, content: object, category: str = 'auto', importance: float = 0.5
+) -> int | None:
+    """Create (or upsert-by-key) a memory row via ``saveAutoMemory`` and return its id."""
+    saveAutoMemory(key, content, category=category, importance=importance)
+    conn = _conn()
+    row = conn.execute('SELECT id FROM auto_memories WHERE key = ?', (key,)).fetchone()
+    return int(row['id']) if row else None
+
+
+def update_auto_memory(
+    memory_id: int,
+    content: object = None,
+    category: str | None = None,
+    importance: float | None = None,
+) -> bool:
+    """Update fields on an existing ``auto_memories`` row by id. No-op fields stay untouched."""
+    conn = _conn()
+    existing = conn.execute('SELECT id FROM auto_memories WHERE id = ?', (memory_id,)).fetchone()
+    if not existing:
+        return False
+    now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    sets: list[str] = []
+    params: list[object] = []
+    if content is not None:
+        sets.append('content = ?')
+        params.append(content if isinstance(content, str) else json.dumps(content))
+    if category is not None:
+        sets.append('category = ?')
+        params.append(category)
+    if importance is not None:
+        sets.append('importance = ?')
+        params.append(importance)
+    if not sets:
+        return True
+    sets.append('updated_at = ?')
+    params.append(now)
+    params.append(memory_id)
+    conn.execute(f'UPDATE auto_memories SET {", ".join(sets)} WHERE id = ?', params)
+    conn.commit()
+    return True
+
+
+def delete_auto_memory(memory_id: int) -> bool:
+    """Delete an ``auto_memories`` row by id."""
+    conn = _conn()
+    existing = conn.execute('SELECT id FROM auto_memories WHERE id = ?', (memory_id,)).fetchone()
+    if not existing:
+        return False
+    conn.execute('DELETE FROM auto_memories WHERE id = ?', (memory_id,))
+    conn.commit()
+    return True
+
+
 def deleteOrphanedBlob() -> bool:
     """Delete the old JSON blob from memory_store if it exists.
 

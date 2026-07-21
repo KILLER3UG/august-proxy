@@ -261,6 +261,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
   const [scrolledFromTop, setScrolledFromTop] = useState(false);
+  /** True when content arrived while the user was scrolled up (gates the jump pill). */
+  const [hasNewContentWhileUnpinned, setHasNewContentWhileUnpinned] = useState(false);
   /** True while the user is near the bottom — gates stick-to-bottom during stream. */
   const pinnedToBottomRef = useRef(true);
   const mountedRef = useRef(false);
@@ -295,11 +297,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     messagesVersion: messages,
     onPinnedChange: (pinned) => {
       setScrolledFromBottom(!pinned);
+      if (pinned) setHasNewContentWhileUnpinned(false);
     },
   });
 
   const scrollToBottomSmooth = useCallback(() => {
     setScrolledFromBottom(false);
+    setHasNewContentWhileUnpinned(false);
     scrollToBottomSmoothRaw();
   }, [scrollToBottomSmoothRaw]);
 
@@ -311,10 +315,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (!hasMessages) {
       setScrolledFromBottom(false);
       setScrolledFromTop(false);
+      setHasNewContentWhileUnpinned(false);
       return;
     }
     const scrollable = getScrollTarget();
     if (!scrollable) return;
+    let raf = 0;
     const check = () => {
       // Ignore stick-to-bottom lerp / snaps — those are not user intent.
       if (programmaticScrollRef.current) return;
@@ -326,10 +332,34 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setPinned(nearBottom);
       setScrolledFromTop(scrollable.scrollTop > SCROLL_TO_TOP_THRESHOLD);
     };
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        check();
+      });
+    };
     check();
-    scrollable.addEventListener('scroll', check, { passive: true });
-    return () => scrollable.removeEventListener('scroll', check);
+    scrollable.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      scrollable.removeEventListener('scroll', onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, [sessionId, getScrollTarget, hasMessages, programmaticScrollRef, setPinned]);
+
+  // When unpinned, surface a "↓ New content" pill as the transcript grows.
+  const contentVersionRef = useRef(0);
+  useEffect(() => {
+    contentVersionRef.current = 0;
+    setHasNewContentWhileUnpinned(false);
+  }, [sessionId]);
+  useEffect(() => {
+    contentVersionRef.current += 1;
+    if (contentVersionRef.current <= 1) return;
+    if (!pinnedToBottomRef.current) {
+      setHasNewContentWhileUnpinned(true);
+    }
+  }, [messages, streaming]);
 
   const isTurnVisible = (turnSessionId: string | null) =>
     mountedRef.current && visibleSessionId === turnSessionId;
@@ -563,18 +593,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on session load
   }, [sessionId, loadedSessionId]);
 
-  // New turn starting: re-pin so the reply is visible even if the user had scrolled up.
-  const wasStreamingRef = useRef(false);
-  useLayoutEffect(() => {
-    if (streaming && !wasStreamingRef.current) {
-      setPinned(true);
-      setScrolledFromBottom(false);
-      scrollToBottomImmediate();
-    }
-    wasStreamingRef.current = streaming;
-  }, [streaming, scrollToBottomImmediate, setPinned]);
-
   // Stick-to-bottom while streaming is handled by useStickToBottomScroll (smooth rAF lerp).
+  // Do not force-re-pin when a new turn starts — if the user scrolled up to read, stay put.
 
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));
@@ -803,6 +823,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       streaming={streaming}
       send={send}
       stop={stop}
+      setMessages={setMessages}
       queuedMessages={queuedMessages}
       workbenchSession={workbenchSession}
       setWorkbenchSession={setWorkbenchSession}
@@ -975,6 +996,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onDismissModelPicker={() => setModelPickerActive(false)}
                 scrolledFromTop={scrolledFromTop}
                 scrolledFromBottom={scrolledFromBottom}
+                showNewContentPill={hasNewContentWhileUnpinned}
                 scrollRef={scrollRef}
                 onScrollToBottom={scrollToBottomSmooth}
                 onRevert={handleRevert}

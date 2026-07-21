@@ -138,7 +138,11 @@ export type WorkbenchEvent =
   | { type: 'btw'; data: WorkbenchBtwResult }
   | { type: 'compaction'; data: { headCount: number; tailCount: number; compressedCount: number; originalTokens: number; compressedTokens: number; underThreshold?: boolean; threshold?: number } }
   | { type: 'done'; data: Record<string, never> }
-  | { type: 'error'; data: { message: string } };
+  | { type: 'error'; data: { message: string } }
+  | {
+      type: 'recalledMemories';
+      data: { items: Array<{ id: string; key: string; category: string; snippet: string }> };
+    };
 
 export interface WorkbenchEventHandlers {
   onThinking?: (data: { content: string }) => void;
@@ -307,4 +311,11 @@ export interface WorkbenchEventHandlers {
   }) => void;
   /** Model submitted a plan via submit_plan — show the proposal banner. */
   onPlanProposed?: (data: { plan: unknown }) => void;
+  /** Emitted once per turn when auto-memory recall (`getRelevantMemories`)
+   *  prefetched rows into the system prompt. The chat thread renders a
+   *  collapsed "Recalled: {category} — {snippet}" card, same style as a
+   *  tool card. */
+  onRecalledMemories?: (data: {
+    items: Array<{ id: string; key: string; category: string; snippet: string }>;
+  }) => void;
 }

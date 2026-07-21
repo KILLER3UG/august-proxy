@@ -244,5 +244,17 @@ export function dispatchWorkbenchEvent(
     case 'planProposed':
       handlers.onPlanProposed?.({ plan: p?.plan });
       break;
+    case 'recalledMemories': {
+      const items = Array.isArray(p?.items) ? (p.items as Record<string, unknown>[]) : [];
+      handlers.onRecalledMemories?.({
+        items: items.map((it) => ({
+          id: typeof it?.id === 'string' ? it.id : '',
+          key: typeof it?.key === 'string' ? it.key : '',
+          category: typeof it?.category === 'string' ? it.category : 'auto',
+          snippet: typeof it?.snippet === 'string' ? it.snippet : '',
+        })),
+      });
+      break;
+    }
   }
 }

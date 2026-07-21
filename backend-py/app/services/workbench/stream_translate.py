@@ -36,6 +36,16 @@ class AnthropicWorkbenchStreamAggregator:
 
     def on_event(self, event: dict[str, object]) -> None:
         event_type = event.get('_event_type', '')
+        # HTTP/stream failures from BaseProvider.streamSse use type='error'
+        # without _event_type — treat them as hard failures (not empty success).
+        if event.get('type') == 'error' or (not event_type and event.get('error')):
+            status = event.get('status')
+            body = as_str(event.get('body') or event.get('error') or event.get('message'))
+            if status:
+                self.error = f'Stream error HTTP {status}: {body[:800]}'
+            else:
+                self.error = f'Stream error: {body[:800] or event}'
+            return
         if event_type == 'content_block_start':
             block = as_dict(event.get('content_block', {}))
             block_type = block.get('type', '')
@@ -111,6 +121,19 @@ class AnthropicWorkbenchStreamAggregator:
     def result(self) -> dict[str, Any]:
         if self.error:
             return {'error': self.error}
+        # Empty success with no tools is almost always a swallowed upstream failure
+        # (e.g. context overflow 400 that arrived as type=error without _event_type).
+        if (
+            not self.accumulated_text
+            and not self.accumulated_thinking
+            and not self.tool_uses
+        ):
+            return {
+                'error': (
+                    'Provider returned an empty response. '
+                    'The context may be full — try Free up chat memory, or start a new chat.'
+                )
+            }
         blocks: list[dict[str, object]] = []
         if self.accumulated_thinking:
             thinking_block: dict[str, object] = {

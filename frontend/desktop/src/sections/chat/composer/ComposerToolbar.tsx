@@ -1,11 +1,12 @@
 /* ── Composer toolbar ──────────────────────────────────────────────────── */
 /* Slim pill controls: + menu, model/effort, voice, send / steer / stop.   */
 
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { Mic, Send, Square } from 'lucide-react';
+import { useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { Loader2, Mic, Send, Square } from 'lucide-react';
 import { updateSessionModel } from '@/store/sessions';
 import { setWorkbenchGuardMode, setWorkbenchSandboxMode } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
+import type { ChatMessage } from '@/types/chat';
 import {
   WorkbenchModeSelector,
   type WorkbenchGuardMode,
@@ -33,6 +34,7 @@ export function ComposerToolbar({
   streaming,
   send,
   stop,
+  setMessages,
   workbenchSession,
   setWorkbenchSession,
   workbenchMode,
@@ -73,6 +75,8 @@ export function ComposerToolbar({
   streaming: boolean;
   send: (textOverride?: string) => Promise<void>;
   stop: () => void;
+  /** Optional: lets the toolbar append a synthetic handoff-notice card. */
+  setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
   workbenchSession: WorkbenchSession | null;
   setWorkbenchSession: (
     session:
@@ -109,6 +113,8 @@ export function ComposerToolbar({
   onMention: () => void;
   onVoice: () => void;
 }) {
+  const [handoffPreparing, setHandoffPreparing] = useState(false);
+
   const canSend =
     !!sessionId &&
     loadedSessionId === sessionId &&
@@ -228,6 +234,14 @@ export function ComposerToolbar({
           onSelect={(m) => {
             void (async () => {
               const prev = selectedModel;
+              const modelChanged = !!(sessionId && prev && prev.id !== m.id);
+              const { getOrInitSessionStreamState } = await import(
+                '@/sections/chat/stream/session-stream-store'
+              );
+              const msgs = sessionId
+                ? getOrInitSessionStreamState(sessionId).messages || []
+                : [];
+
               if (streaming && sessionId) {
                 const { stopChatStream } = await import(
                   '@/sections/chat/stream/start-stop-stream'
@@ -237,27 +251,17 @@ export function ComposerToolbar({
                   markHandoffPending,
                 } = await import('@/sections/chat/handoff-summary');
                 // Capture handoff before stop clears stream state.
-                const { getOrInitSessionStreamState } = await import(
-                  '@/sections/chat/stream/session-stream-store'
-                );
-                const msgs =
-                  getOrInitSessionStreamState(sessionId).messages || [];
                 const summary = buildHandoffSummary(
                   msgs,
                   prev?.name || prev?.id,
                 );
                 await stopChatStream(sessionId);
                 markHandoffPending(sessionId, summary, prev?.id);
-              } else if (sessionId && prev && prev.id !== m.id) {
+              } else if (modelChanged) {
                 // Model change after a prior cancel — still attach handoff if pending empty.
                 const { peekHandoffPending, buildHandoffSummary, markHandoffPending } =
                   await import('@/sections/chat/handoff-summary');
-                if (!peekHandoffPending(sessionId)) {
-                  const { getOrInitSessionStreamState } = await import(
-                    '@/sections/chat/stream/session-stream-store'
-                  );
-                  const msgs =
-                    getOrInitSessionStreamState(sessionId).messages || [];
+                if (!peekHandoffPending(sessionId!)) {
                   const last = msgs[msgs.length - 1];
                   const incomplete =
                     last?.role === 'assistant' &&
@@ -269,13 +273,53 @@ export function ComposerToolbar({
                       ));
                   if (incomplete) {
                     markHandoffPending(
-                      sessionId,
-                      buildHandoffSummary(msgs, prev.name || prev.id),
-                      prev.id,
+                      sessionId!,
+                      buildHandoffSummary(msgs, prev!.name || prev!.id),
+                      prev!.id,
                     );
                   }
                 }
               }
+
+              // Server-computed handoff for ANY model change with prior
+              // messages — runs non-blocking, upgrades the pending summary
+              // once resolved, and drops a collapsed card in the transcript.
+              if (modelChanged && msgs.length > 0) {
+                const sid = sessionId!;
+                const fromLabel = prev!.name || prev!.id;
+                setHandoffPreparing(true);
+                void (async () => {
+                  try {
+                    const { requestSessionHandoff } = await import('@/api/workbench');
+                    const record = await requestSessionHandoff(sid, prev!.id, m.id);
+                    const { markHandoffPending, buildHandoffNoticeMessage } = await import(
+                      '@/sections/chat/handoff-summary'
+                    );
+                    markHandoffPending(
+                      sid,
+                      `Previous model (${fromLabel}) context handoff:\n${record.summary}`,
+                      prev!.id,
+                    );
+                    setMessages?.((list) => [
+                      ...list,
+                      buildHandoffNoticeMessage(record, fromLabel),
+                    ]);
+                  } catch (error) {
+                    console.warn(
+                      '[ComposerToolbar] Server handoff summary failed, using local fallback:',
+                      error,
+                    );
+                    const { peekHandoffPending, buildHandoffSummary, markHandoffPending } =
+                      await import('@/sections/chat/handoff-summary');
+                    if (!peekHandoffPending(sid)) {
+                      markHandoffPending(sid, buildHandoffSummary(msgs, fromLabel), prev!.id);
+                    }
+                  } finally {
+                    setHandoffPreparing(false);
+                  }
+                })();
+              }
+
               setSelectedModel(m);
               userSelectedRef.current = m.id;
               try {
@@ -287,6 +331,16 @@ export function ComposerToolbar({
             })();
           }}
         />
+
+        {handoffPreparing && (
+          <span
+            className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 px-1"
+            aria-live="polite"
+          >
+            <Loader2 className="size-3 animate-spin" />
+            Preparing handoff…
+          </span>
+        )}
 
         <button
           type="button"

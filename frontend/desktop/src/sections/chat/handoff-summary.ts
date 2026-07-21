@@ -69,6 +69,28 @@ export function clearHandoffPending(sessionId: string): void {
 }
 
 /**
+ * Build the collapsed "Context carried over from {fromModel}" transcript
+ * card shown after a completed handoff (client or server-computed).
+ */
+export function buildHandoffNoticeMessage(
+  record: { summary: string; fromModel?: string; toModel?: string },
+  fromLabel?: string,
+): ChatMessage {
+  return {
+    id: `handoff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role: 'assistant',
+    content: '',
+    timestamp: new Date().toISOString(),
+    kind: 'handoff-notice',
+    context: {
+      fromModel: fromLabel || record.fromModel || '',
+      toModel: record.toModel || '',
+      summary: record.summary,
+    },
+  };
+}
+
+/**
  * Summarize recent user turns + the last (possibly incomplete) assistant work.
  */
 export function buildHandoffSummary(

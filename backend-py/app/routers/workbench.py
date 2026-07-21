@@ -193,6 +193,17 @@ async def startChat(request: Request):
     _cancelled[sessionId] = cancelEvent
 
     handoff_summary = as_str(body.get('handoffSummary') or body.get('handoff_summary') or '')
+    if not handoff_summary:
+        # No client-computed handoff this turn — fall back to the latest
+        # persisted server-side handoff (from POST .../handoff), consumed once.
+        try:
+            from app.services.workbench.sessions import format_session_handoff, take_session_handoff
+
+            persisted_handoff = take_session_handoff(sessionId)
+            if persisted_handoff:
+                handoff_summary = format_session_handoff(persisted_handoff)
+        except Exception:
+            pass
 
     def _notify_chat_idle() -> None:
         try:
@@ -1313,6 +1324,53 @@ async def compactSession(sessionId: str):
     if result is None:
         raise HTTPException(status_code=404, detail='Session not found')
     return result
+
+
+@router.post('/sessions/{sessionId}/handoff')
+async def createSessionHandoff(sessionId: str, request: Request):
+    """Summarize context for a model switch and persist it on the session.
+
+    Body: ``{ from_model, to_model }`` (camelCase ``fromModel``/``toModel``
+    also accepted). Summarizes messages since the last handoff cursor (or a
+    recent tail window if there's no cursor yet), persists the record on the
+    session's metadata, and returns it. The next ``POST /chat`` for this
+    session will consume the persisted record automatically if the request
+    doesn't already carry a client-computed ``handoffSummary``.
+
+    Always returns 200 with a summary (truncated fallback on internal
+    failure) as long as the session exists — this is a best-effort context
+    aid, not a hard dependency for chat to proceed.
+    """
+    body: dict = {}
+    try:
+        if request.headers.get('content-type', '').startswith('application/json'):
+            raw = await request.json()
+            if isinstance(raw, dict):
+                body = raw
+    except Exception:
+        body = {}
+    from_model = as_str(body.get('from_model') or body.get('fromModel') or '')
+    to_model = as_str(body.get('to_model') or body.get('toModel') or '')
+
+    from app.services.workbench.sessions import create_workbench_handoff
+
+    try:
+        record = create_workbench_handoff(sessionId, from_model=from_model, to_model=to_model)
+    except Exception:
+        record = None
+        session_exists = wb.getWorkbenchSession(sessionId) is not None
+        if not session_exists:
+            raise HTTPException(status_code=404, detail='Session not found')
+        record = {
+            'fromModel': from_model,
+            'toModel': to_model,
+            'summary': 'Context summary unavailable; continuing from prior messages as-is.',
+            'createdAt': wb._now(),
+            'sourceMessageRange': [0, 0],
+        }
+    if record is None:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return record
 
 
 @router.post('/guard-mode')

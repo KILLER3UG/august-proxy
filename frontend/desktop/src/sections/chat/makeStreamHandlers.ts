@@ -432,6 +432,11 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
+    onRecalledMemories: ({ items }) => {
+      if (!items || items.length === 0) return;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'recalledMemories', memories: items });
+      scheduleUpdate();
+    },
     onPlanProposed: ({ plan }) => {
       if (!isNonEmptyPlan(plan)) return;
       setWorkbenchSession((prev) => {

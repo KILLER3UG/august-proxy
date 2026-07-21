@@ -85,6 +85,10 @@ class WorkbenchSession:
     _execution_state: object | None = None
     _working_memory: object | None = None
     _state_lock: asyncio.Lock | None = None
+    # Auto-memories that getRelevantMemories() prefetched into the last
+    # buildSystemPrompt() call — surfaced to the frontend as a `recalledMemories`
+    # SSE event (see workbench.chatTurn). Cleared/replaced every turn.
+    _last_recalled_memories: list[dict[str, object]] | None = None
 
     def toDict(self) -> dict[str, object]:
         return {
@@ -941,6 +945,135 @@ def compact_workbench_session_now(session_id: str) -> dict[str, object] | None:
             f'(~{original_tokens} → ~{compressed_tokens} tokens).'
         ),
     }
+
+
+def _handoff_tail_window(
+    messages: list[dict[str, object]], *, max_tokens: int = 2000, max_turns: int = 24
+) -> list[dict[str, object]]:
+    """Fallback window when there's no tracked handoff cursor yet.
+
+    Walks backwards from the end of the conversation, collecting the last
+    ``max_turns`` messages while staying under ``max_tokens`` (best-effort).
+    """
+    from app.providers.clients.base import estimateTokens
+
+    tail: list[dict[str, object]] = []
+    tokens = 0
+    for msg in reversed(messages):
+        try:
+            t = estimateTokens([msg])
+        except Exception:
+            t = 0
+        if tail and tokens + t > max_tokens:
+            break
+        tail.insert(0, msg)
+        tokens += t
+        if len(tail) >= max_turns:
+            break
+    return tail
+
+
+def _handoff_plain_truncate(messages: list[dict[str, object]], max_chars: int = 1200) -> str:
+    """Cheap non-LLM fallback used when ``localSummarize`` itself fails."""
+    parts: list[str] = []
+    for msg in messages[-6:]:
+        role = as_str(msg.get('role')) if isinstance(msg, dict) else ''
+        content = msg.get('content') if isinstance(msg, dict) else ''
+        text = content if isinstance(content, str) else ''
+        text = ' '.join(text.split())
+        if text:
+            parts.append(f'[{role}] {text[:200]}')
+    joined = '\n'.join(parts)
+    return joined[:max_chars]
+
+
+def create_workbench_handoff(
+    session_id: str,
+    *,
+    from_model: str = '',
+    to_model: str = '',
+) -> dict[str, object] | None:
+    """Summarize messages since the last handoff (or a recent tail window) and
+    persist the record on the session for the next chat turn to pick up.
+
+    Returns ``None`` only when the session does not exist. Any summarization
+    failure degrades to a plain-truncation fallback rather than raising, so
+    callers can always surface *some* summary to the frontend.
+    """
+    session = get_workbench_session(session_id)
+    if not session:
+        return None
+
+    msgs = [m for m in session.messages if isinstance(m, dict)]
+    meta = dict(session.metadata) if isinstance(session.metadata, dict) else {}
+    cursor = as_int(meta.get('handoffCursor'), 0)
+
+    source = msgs[cursor:] if 0 <= cursor < len(msgs) else []
+    if not source:
+        source = _handoff_tail_window(msgs)
+
+    start_index = max(len(msgs) - len(source), 0)
+    end_index = max(len(msgs) - 1, 0) if msgs else -1
+
+    summary = ''
+    try:
+        from app.services.memory.context_compressor import localSummarize
+
+        summary = localSummarize(source) if source else ''
+    except Exception:
+        logger.exception('localSummarize failed during handoff; using plain truncation')
+    if not summary:
+        summary = _handoff_plain_truncate(source)
+    if not summary:
+        summary = 'No prior conversation content available for handoff.'
+
+    record: dict[str, object] = {
+        'fromModel': from_model or session.model,
+        'toModel': to_model,
+        'summary': summary,
+        'createdAt': _now(),
+        'sourceMessageRange': [start_index, end_index],
+    }
+    meta['lastHandoff'] = record
+    meta['handoffCursor'] = len(msgs)
+    session.metadata = meta
+    session.updatedAt = _now()
+    try:
+        save_sessions()
+    except Exception:
+        logger.exception('Failed to persist session after handoff summary')
+    return record
+
+
+def take_session_handoff(session_id: str) -> dict[str, object] | None:
+    """Pop the persisted handoff record so the next chat turn consumes it once."""
+    session = get_workbench_session(session_id)
+    if not session:
+        return None
+    meta = session.metadata if isinstance(session.metadata, dict) else {}
+    record = meta.get('lastHandoff')
+    if not isinstance(record, dict):
+        return None
+    meta = dict(meta)
+    meta.pop('lastHandoff', None)
+    session.metadata = meta
+    try:
+        save_sessions()
+    except Exception:
+        logger.exception('Failed to persist session after consuming handoff')
+    return record
+
+
+def format_session_handoff(record: dict[str, object]) -> str:
+    """Render a persisted handoff record into the ``<model_handoff>`` body text."""
+    summary = as_str(record.get('summary')).strip()
+    if not summary:
+        return ''
+    from_model = as_str(record.get('fromModel')).strip()
+    header = (
+        f'Previous model ({from_model}) context handoff:' if from_model else 'Context handoff from previous model:'
+    )
+    return f'{header}\n{summary}'
 
 
 def summarize_session(session: WorkbenchSession) -> dict[str, object]:
