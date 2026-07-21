@@ -1,20 +1,28 @@
 /* ── Shared permission / approval copy ────────────────────────────────── */
-/* One mental model for workbench + terminal grant surfaces.              */
+/* Cursor-style “Permission required” card + legacy toast aliases.         */
 
 export const PERMISSION_COPY = {
-  title: 'Allow this action?',
-  subtitle: 'Choose how long similar permissions last.',
-  once: 'Once',
-  onceHint: 'Allow this single action',
+  title: 'Permission required',
+  awaiting: 'Awaiting approval',
+  allow: 'Allow',
+  allowHint: 'Allow only this time',
+  always: 'Always allow in this project',
+  alwaysHint: 'Do not ask again for the same command',
+  deny: 'Deny',
+  denyHint: 'Reject it for now',
+  confirmHint: 'Use Tab / arrow keys to choose, then press Enter to confirm',
+  confirm: 'Confirm',
+  /** @deprecated Prefer `allow` — kept for PermissionToast */
+  once: 'Allow',
+  onceHint: 'Allow only this time',
   session: 'This chat',
   sessionHint: 'Allow for the rest of this conversation',
-  always: 'Always here',
-  alwaysHint: 'Remember for this workspace folder',
-  reject: 'Reject',
-  rejectHint: 'Do not run this change',
-  preApply: 'Review change before it applies',
-  terminalTitle: 'Allow terminal command?',
-  terminalSubtitle: 'Same as file tools: Once · This chat · Always here',
+  reject: 'Deny',
+  rejectHint: 'Reject it for now',
+  subtitle: 'Choose how long similar permissions last.',
+  preApply: 'Permission required',
+  terminalTitle: 'Permission required',
+  terminalSubtitle: 'Allow · Always in this project · Deny',
 } as const;
 
 export type PermissionCopyKey = keyof typeof PERMISSION_COPY;

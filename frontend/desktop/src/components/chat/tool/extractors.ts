@@ -7,7 +7,19 @@ export function extractFilename(context?: string): string | null {
   try {
     const parsed = JSON.parse(context);
     if (typeof parsed === 'string') return parsed;
-    for (const key of ['filePath', 'file_path', 'path', 'filename', 'file', 'filepath', 'notebook_path', 'target_file']) {
+    for (const key of [
+      'filePath',
+      'file_path',
+      'path',
+      'filename',
+      'file',
+      'filepath',
+      'notebook_path',
+      'target_file',
+      'dir',
+      'directory',
+      'target_directory',
+    ]) {
       const v = parsed[key];
       if (typeof v === 'string' && v.length > 0) return v;
     }

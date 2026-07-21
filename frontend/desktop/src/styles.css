@@ -711,6 +711,14 @@ input::placeholder {
   background: var(--dt-muted-foreground);
   animation: activity-live-pulse 1.2s ease-in-out infinite;
 }
+.activity-summary-header-live {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.activity-summary-header-live .activity-summary-live-dot {
+  background: color-mix(in srgb, var(--dt-foreground) 70%, transparent);
+}
 @keyframes activity-live-pulse {
   0%,
   100% {

@@ -44,6 +44,21 @@ describe('getToolLabel mapping and cleaning', () => {
     expect(getToolLabel('run_command', { command: 'git status', status: 'done' })).toBe('Ran: git status');
   });
 
+  it('includes file/dir path on read and list labels', () => {
+    expect(getToolLabel('read_file', { filename: 'README.md', status: 'running' })).toBe(
+      'Reading README.md',
+    );
+    expect(getToolLabel('read_file', { filename: 'src/app.ts', status: 'done' })).toBe(
+      'Read src/app.ts',
+    );
+    expect(getToolLabel('list_directory', { filename: 'backend-py/app', status: 'running' })).toBe(
+      'Listing backend-py/app',
+    );
+    expect(getToolLabel('list_dir', { filename: 'backend-py/app', status: 'done' })).toBe(
+      'Listed backend-py/app',
+    );
+  });
+
   it('falls back to title cased names for unknown tools', () => {
     expect(getToolLabel('default_api:some_unknown_tool', { status: 'running' })).toBe('Some Unknown Tool');
     expect(getToolLabel('default_api:some_unknown_tool', { status: 'done' })).toBe('Some Unknown Tool');

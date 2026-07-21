@@ -321,12 +321,14 @@ export function getToolLabel(
     return verb;
   }
 
+  // File/dir tools: always put the path on the label ("Read src/a.ts", "Listed backend/").
   if (context?.filename) {
     const base =
       (isRunning ? TOOL_LABEL_MAP[clean] : undefined) ??
       (!isRunning ? TOOL_VERB_DONE[clean] : undefined) ??
-      TOOL_LABEL_MAP[clean];
-    if (base) return base;
+      TOOL_LABEL_MAP[clean] ??
+      (isRunning ? formatFallbackLabel(toolName) : derivePastTense(formatFallbackLabel(toolName)));
+    return `${base} ${truncateLabel(context.filename, 80)}`;
   }
 
   if (isRunning) {

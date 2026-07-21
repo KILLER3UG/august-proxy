@@ -1,6 +1,6 @@
 /* ── ApprovalBanner ───────────────────────────────────────────────────── */
-/* Session-level pre-apply UI. Multi-file batches use MutationDiffCards;  */
-/* each card has Accept/Reject + Once / This chat / Always (grant store). */
+/* Session-level permission UI. Renders Cursor-style PermissionRequiredCard */
+/* via MutationDiffCards (Allow / Always in project / Deny + Confirm).     */
 
 import { useEffect } from 'react';
 import { useSessionStatus } from '@/hooks/useSessionStatus';

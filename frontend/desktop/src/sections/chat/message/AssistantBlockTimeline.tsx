@@ -598,7 +598,7 @@ export function AssistantBlockTimeline({
           ranCount={ranCount}
           usedCount={usedCount}
           summary={processSummary}
-          live={livePacked && !hasFinalOutput}
+          live={livePacked}
           liveDetail={liveDetail || null}
           defaultOpen={livePacked && !hasFinalOutput}
           collapseWhen={hasFinalOutput}

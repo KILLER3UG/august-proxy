@@ -88,6 +88,15 @@ export function ThoughtStep({
                 Done
               </span>
             ) : null}
+            {isGenerating ? (
+              <span
+                className="activity-summary-header-live"
+                data-testid="thought-live-indicator"
+                aria-label="Still thinking"
+              >
+                <span className="activity-summary-live-dot" aria-hidden />
+              </span>
+            ) : null}
             <ChevronDown className="process-tool-chevron" aria-hidden />
           </button>
         ) : (

@@ -171,6 +171,16 @@ export function ActivitySummary({
             </span>
           ) : null}
         </span>
+        {/* Collapsed + live: pulse beside the chevron so the row still reads as working. */}
+        {live && !open ? (
+          <span
+            className="activity-summary-header-live"
+            data-testid="activity-summary-live-indicator"
+            aria-label="Still working"
+          >
+            <span className="activity-summary-live-dot" aria-hidden />
+          </span>
+        ) : null}
         <ChevronDown
           className={cn(
             'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',

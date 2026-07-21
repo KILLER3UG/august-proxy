@@ -1,13 +1,15 @@
 /* ── MutationDiffCards ────────────────────────────────────────────────── */
-/* Multi-file pre-apply UI: one card per pending mutation with DiffView,  */
-/* Accept/Reject (and Once / This chat / Always) per path.                */
+/* Pending mutations → Cursor-style PermissionRequiredCard (Allow/Always/Deny). */
 
-import { useMemo, useState } from 'react';
-import { FileCode2, ShieldAlert } from 'lucide-react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { ShieldAlert } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
 import { DiffView } from '@/components/chat/DiffView';
-import { PermissionToast, type GrantScope } from '@/components/overlays/PermissionToast';
+import {
+  PermissionRequiredCard,
+  type PermissionChoice,
+} from '@/components/overlays/PermissionRequiredCard';
+import type { GrantScope } from '@/components/overlays/PermissionToast';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
@@ -36,6 +38,50 @@ function pathFromMutation(m: PendingMutationItem): string {
     if (typeof v === 'string' && v) return v;
   }
   return m.toolName || 'change';
+}
+
+function commandFromMutation(m: PendingMutationItem): string | null {
+  const args = m.args || {};
+  for (const key of ['command', 'cmd', 'shell', 'script']) {
+    const v = args[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  const preview = m.preview || '';
+  if (preview.startsWith('Run:')) {
+    return preview.slice(4).trim() || null;
+  }
+  const path = pathFromMutation(m);
+  if (path.startsWith('sandbox:unsandboxed:')) {
+    return path.slice('sandbox:unsandboxed:'.length).trim() || null;
+  }
+  return null;
+}
+
+function descriptionFromMutation(m: PendingMutationItem): string {
+  const args = m.args || {};
+  for (const key of ['description', 'summary', 'reason', 'goal', 'title']) {
+    const v = args[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  const cmd = commandFromMutation(m);
+  if (cmd) {
+    const short = cmd.length > 80 ? `${cmd.slice(0, 77)}…` : cmd;
+    return `Run \`${short}\``;
+  }
+  const path = pathFromMutation(m);
+  if (path.startsWith('sandbox:unsandboxed:')) {
+    return 'Unsandboxed command';
+  }
+  const tool = m.toolName || 'tool';
+  if (path && path !== tool) {
+    return `${tool} → ${path}`;
+  }
+  const preview = (m.preview || '').trim();
+  if (preview) {
+    const first = preview.split('\n').find((l) => l.trim()) || preview;
+    return first.length > 100 ? `${first.slice(0, 97)}…` : first;
+  }
+  return tool;
 }
 
 function diffPropsFromMutation(m: PendingMutationItem): {
@@ -79,6 +125,49 @@ function diffPropsFromMutation(m: PendingMutationItem): {
   return null;
 }
 
+function previewFromMutation(m: PendingMutationItem): ReactNode {
+  const cmd = commandFromMutation(m);
+  if (cmd) {
+    return (
+      <div className="px-3 py-2.5 font-mono text-[12px] leading-relaxed text-foreground/90">
+        <div className="whitespace-pre-wrap break-all">
+          <span className="text-muted-foreground">$ </span>
+          {cmd}
+        </div>
+        <div className="mt-2 text-[11px] text-muted-foreground">No output.</div>
+      </div>
+    );
+  }
+
+  const diff = diffPropsFromMutation(m);
+  if (diff) {
+    return <DiffView {...diff} maxLines={80} />;
+  }
+
+  if (m.preview) {
+    return (
+      <pre className="px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/90">
+        {m.preview}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="px-3 py-2.5 text-[12px] text-muted-foreground">
+      No preview available.
+    </div>
+  );
+}
+
+function choiceToDecision(choice: PermissionChoice): {
+  reject: boolean;
+  scope: GrantScope;
+} {
+  if (choice === 'deny') return { reject: true, scope: 'once' };
+  if (choice === 'always') return { reject: false, scope: 'always' };
+  return { reject: false, scope: 'once' };
+}
+
 async function postDecision(
   sessionId: string,
   token: string,
@@ -100,117 +189,46 @@ function MutationCard({
   mutation: PendingMutationItem;
   onContinued?: (sinceSeq: number) => void;
 }) {
-  const [deciding, setDeciding] = useState<string | null>(null);
-  const [showToast, setShowToast] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const qc = useQueryClient();
   const path = pathFromMutation(mutation);
-  const diff = useMemo(() => diffPropsFromMutation(mutation), [mutation]);
   const token = mutation.token || '';
+  const description = useMemo(
+    () => descriptionFromMutation(mutation),
+    [mutation],
+  );
+  const preview = useMemo(() => previewFromMutation(mutation), [mutation]);
 
-  const decide = async (reject: boolean, scope: GrantScope = 'once') => {
-    if (!token) return;
-    setDeciding(reject ? 'reject' : scope);
+  const handleConfirm = async (choice: PermissionChoice) => {
+    if (!token || confirming) return;
+    const { reject, scope } = choiceToDecision(choice);
+    setConfirming(true);
     try {
       const res = await postDecision(sessionId, token, reject, scope);
       void qc.invalidateQueries({ queryKey: ['session-status', sessionId] });
       if (reject) {
-        toast.message(`Rejected ${path}`);
+        toast.message(`Denied ${path}`);
       } else {
-        toast.success(
-          res?.executed ? `Applied ${path}` : `Accepted ${path}`,
-        );
+        toast.success(res?.executed ? `Applied ${path}` : `Allowed ${path}`);
       }
-      // Backend already kicked off the continuation — attach the live stream.
       if (res?.continued && Number.isFinite(res.sinceSeq)) {
         onContinued?.(res.sinceSeq as number);
       }
     } catch (e) {
       toast.error(`Decision failed: ${(e as Error).message}`);
     } finally {
-      setDeciding(null);
+      setConfirming(false);
     }
   };
 
   return (
-    <div
-      className="rounded-lg border border-warning/30 bg-warning/5 overflow-hidden"
-      data-testid="mutation-diff-card"
-    >
-      <div className="flex items-start gap-2 px-3 py-2 border-b border-warning/20">
-        <FileCode2 className="mt-0.5 size-4 shrink-0 text-warning" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium truncate" title={path}>
-            {path.startsWith('sandbox:unsandboxed:')
-              ? 'Unsandboxed command'
-              : path}
-          </div>
-          <div className="text-[11px] text-muted-foreground">
-            {path.startsWith('sandbox:unsandboxed:')
-              ? 'Sandbox escape · Once / This chat / Always'
-              : `${mutation.toolName || 'tool'} · pre-apply review`}
-          </div>
-        </div>
-      </div>
-
-      {diff ? (
-        <div className="max-h-56 overflow-auto border-b border-warning/15">
-          <DiffView {...diff} maxLines={80} />
-        </div>
-      ) : mutation.preview ? (
-        <pre className="max-h-40 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap border-b border-warning/15">
-          {mutation.preview}
-        </pre>
-      ) : null}
-
-      {showToast ? (
-        <div className="p-2">
-          <PermissionToast
-            sessionId={sessionId}
-            token={token}
-            toolName={mutation.toolName}
-            path={path}
-            summary={`${mutation.toolName || 'tool'} → ${path}`}
-            onDecided={() => setShowToast(false)}
-            onContinued={onContinued}
-          />
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center justify-end gap-1.5 px-3 py-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-[11px] border-warning/40 text-warning"
-            disabled={!!deciding || !token}
-            onClick={() => {
-              void decide(true);
-            }}
-          >
-            {deciding === 'reject' ? '…' : 'Reject'}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-[11px]"
-            disabled={!!deciding || !token}
-            onClick={() => {
-              void decide(false, 'once');
-            }}
-          >
-            {deciding === 'once' ? 'Applying…' : 'Accept'}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-[11px]"
-            disabled={!!deciding || !token}
-            onClick={() => setShowToast(true)}
-            title="Choose Once / This chat / Always"
-          >
-            More…
-          </Button>
-        </div>
-      )}
-    </div>
+    <PermissionRequiredCard
+      description={description}
+      preview={preview}
+      disabled={!token}
+      confirming={confirming}
+      onConfirm={handleConfirm}
+    />
   );
 }
 
@@ -244,18 +262,16 @@ export function MutationDiffCards({
   // will hide the rest of the stack.
   if (items.length === 0) return null;
 
-  // Single non-file mutation: keep one card; multi-file batches get a header.
-  // Width/centering is owned by the chat footer (composer slot).
   return (
     <div
       className={cn('flex w-full flex-col gap-2', className)}
       data-testid="mutation-diff-cards"
     >
       {items.length > 1 && (
-        <div className="flex items-center gap-2 px-1 text-xs text-warning">
-          <ShieldAlert className="size-3.5" />
+        <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+          <ShieldAlert className="size-3.5 text-warning" />
           <span className="font-medium">
-            {items.length} changes need approval — accept or reject each path
+            {items.length} changes need approval — confirm each one
           </span>
         </div>
       )}
@@ -272,3 +288,6 @@ export function MutationDiffCards({
 }
 
 export default MutationDiffCards;
+
+/** Exported for unit tests. */
+export { choiceToDecision, commandFromMutation, descriptionFromMutation };
