@@ -127,9 +127,11 @@ export function ToolCallItem({
     command: commandText ?? undefined,
     status: tool.status
   });
-  const labelTitle = isCommand && commandText && commandText.length > 120
-    ? commandText
-    : isLongLabel(label) ? label : undefined;
+  const labelTitle =
+    (!isCommand && filename) ? filename
+    : (isCommand && commandText && commandText.length > 120) ? commandText
+    : isLongLabel(label) ? label
+    : undefined;
   const displayLabel = (elapsed !== undefined && elapsed >= 100) ? `${label} · ${formatTimer(elapsed)}` : label;
 
   // Always-visible friendly context line: prefer the humanized summary from

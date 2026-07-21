@@ -255,6 +255,18 @@ function truncateLabel(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`;
 }
 
+/**
+ * Last path segment for tool-card labels. Accepts `/` or `\` so Windows and
+ * POSIX paths both collapse to a short, scannable name (full path stays in
+ * the hover tooltip at the render site).
+ */
+export function pathBasename(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, '');
+  if (!trimmed) return path;
+  const base = trimmed.split(/[\\/]/).pop();
+  return base && base.length > 0 ? base : path;
+}
+
 function formatFallbackLabel(name: string): string {
   console.warn(`[ToolLabels] Unknown tool name: "${name}"`);
   const cleanName = normalizeToolName(name).replace(/[_-]+/g, ' ');
@@ -321,14 +333,14 @@ export function getToolLabel(
     return verb;
   }
 
-  // File/dir tools: always put the path on the label ("Read src/a.ts", "Listed backend/").
+  // File/dir tools: basename only ("Read app.ts", "Listed backend") — full path via tooltip.
   if (context?.filename) {
     const base =
       (isRunning ? TOOL_LABEL_MAP[clean] : undefined) ??
       (!isRunning ? TOOL_VERB_DONE[clean] : undefined) ??
       TOOL_LABEL_MAP[clean] ??
       (isRunning ? formatFallbackLabel(toolName) : derivePastTense(formatFallbackLabel(toolName)));
-    return `${base} ${truncateLabel(context.filename, 80)}`;
+    return `${base} ${truncateLabel(pathBasename(context.filename), 80)}`;
   }
 
   if (isRunning) {

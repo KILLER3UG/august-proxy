@@ -319,7 +319,7 @@ export function ToolSummary({
                         toggleRow(entry.id);
                       }}
                       aria-expanded={rowOpen}
-                      title={entry.detail || entry.label}
+                      title={entry.filename || entry.detail || entry.label}
                     >
                       <span className="shrink-0 mt-0.5">
                         {entry.filename ? (

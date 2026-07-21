@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getToolLabel } from '../tool-labels';
+import { getToolLabel, pathBasename } from '../tool-labels';
 
 describe('getToolLabel mapping and cleaning', () => {
   it('maps canonical tool names correctly', () => {
@@ -44,19 +44,39 @@ describe('getToolLabel mapping and cleaning', () => {
     expect(getToolLabel('run_command', { command: 'git status', status: 'done' })).toBe('Ran: git status');
   });
 
-  it('includes file/dir path on read and list labels', () => {
+  it('includes file/dir basename on read and list labels', () => {
     expect(getToolLabel('read_file', { filename: 'README.md', status: 'running' })).toBe(
       'Reading README.md',
     );
     expect(getToolLabel('read_file', { filename: 'src/app.ts', status: 'done' })).toBe(
-      'Read src/app.ts',
+      'Read app.ts',
     );
+    expect(
+      getToolLabel('read_file', {
+        filename: 'C:/Dev/Agentic-Trading/backend/ai/app/paths.py',
+        status: 'done',
+      }),
+    ).toBe('Read paths.py');
+    expect(
+      getToolLabel('read_file', {
+        filename: 'C:\\Dev\\Agentic-Trading\\frontend\\src\\hooks\\useWebSocket.ts',
+        status: 'done',
+      }),
+    ).toBe('Read useWebSocket.ts');
     expect(getToolLabel('list_directory', { filename: 'backend-py/app', status: 'running' })).toBe(
-      'Listing backend-py/app',
+      'Listing app',
     );
-    expect(getToolLabel('list_dir', { filename: 'backend-py/app', status: 'done' })).toBe(
-      'Listed backend-py/app',
+    expect(getToolLabel('list_dir', { filename: 'C:/Dev/Agentic-Trading', status: 'done' })).toBe(
+      'Listed Agentic-Trading',
     );
+  });
+
+  it('pathBasename strips directories and handles both separators', () => {
+    expect(pathBasename('C:/Dev/Agentic-Trading/backend/ai/app/paths.py')).toBe('paths.py');
+    expect(pathBasename('C:\\Dev\\Agentic-Trading')).toBe('Agentic-Trading');
+    expect(pathBasename('src/app.ts')).toBe('app.ts');
+    expect(pathBasename('README.md')).toBe('README.md');
+    expect(pathBasename('C:/Dev/Agentic-Trading/')).toBe('Agentic-Trading');
   });
 
   it('falls back to title cased names for unknown tools', () => {

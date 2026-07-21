@@ -12,6 +12,7 @@
 
 import { formatBytes, formatDuration } from './utils';
 import { normalizeToolName } from './tool-classify';
+import { pathBasename } from './tool-labels';
 
 export interface FormattedContext {
   /** Human-readable summary, e.g. `Searched: "plan verification"`. */
@@ -152,14 +153,14 @@ export function formatToolContext(toolName: string, contextJson?: string): Forma
         canonical.startsWith('edit') || canonical.startsWith('replace') ? 'Editing' :
         canonical.startsWith('delete') ? 'Deleting' :
         'Reading';
-      return { summary: `${verb} ${path}`, raw };
+      return { summary: `${verb} ${pathBasename(path)}`, raw };
     }
   }
 
   // List directory
   if (LIST_OPS.has(canonical)) {
     const path = parsed && pickString(parsed, ['path', 'dir', 'directory', 'filePath', 'file_path']);
-    if (path) return { summary: `Listing directory ${path}`, raw };
+    if (path) return { summary: `Listing directory ${pathBasename(path)}`, raw };
     return { summary: 'Listing directory', raw };
   }
 
@@ -181,7 +182,9 @@ export function formatToolContext(toolName: string, contextJson?: string): Forma
   if (SEARCH_OPS.has(canonical)) {
     const pattern = parsed && pickString(parsed, ['pattern', 'query', 'q', 'regex', 'searchPattern', 'search_pattern']);
     const path = parsed && pickString(parsed, ['path', 'dir', 'directory', 'filePath', 'file_path', 'includePattern', 'include_pattern']);
-    if (pattern && path) return { summary: `Searching files: "${truncate(pattern, 80)}" in ${path}`, raw };
+    if (pattern && path) {
+      return { summary: `Searching files: "${truncate(pattern, 80)}" in ${pathBasename(path)}`, raw };
+    }
     if (pattern) return { summary: `Searching files: "${truncate(pattern, 80)}"`, raw };
     return { summary: 'Searching files', raw };
   }

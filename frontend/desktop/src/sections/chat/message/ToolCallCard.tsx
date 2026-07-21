@@ -8,7 +8,7 @@ import { ToolIcon as NewToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { visibleProgress } from '@/lib/tool-progress';
-import { getToolLabel } from '@/lib/tool-labels';
+import { getToolLabel, pathBasename } from '@/lib/tool-labels';
 import type { ChatMessage } from '@/types/chat';
 
 /** Renders a flat list of tool call items with per-tool progress. */
@@ -134,7 +134,7 @@ export function ToolCallCard({
                   )}
                 >
                   {entry.status === 'reading' ? 'Reading ' : 'Read '}
-                  {entry.path}
+                  {pathBasename(entry.path)}
                 </span>
               </div>
             ))}

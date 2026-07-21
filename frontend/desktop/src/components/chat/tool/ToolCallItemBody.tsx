@@ -8,7 +8,7 @@ import { formatToolContext } from '@/lib/tool-context-format';
 import { classifyTool } from '@/lib/tool-classify';
 import { ProviderSetupWidget } from '@/components/chat/ProviderSetupWidget';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
-import { getAgentRoleLabel } from '@/lib/tool-labels';
+import { getAgentRoleLabel, pathBasename } from '@/lib/tool-labels';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { extractDiffData, extractFilename, extractAgentId } from './extractors';
 import type { ToolEntry } from './types';
@@ -256,7 +256,7 @@ export function ToolCallItemBody({
                 )}
               >
                 {entry.status === 'reading' ? 'Reading ' : 'Read '}
-                {entry.path}
+                {pathBasename(entry.path)}
               </span>
             </div>
           ))}

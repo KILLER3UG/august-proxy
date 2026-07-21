@@ -104,6 +104,7 @@ export function ToolStepRow({
             'process-tool-label',
             running && 'shimmer process-tool-label--live',
           )}
+          title={filename ?? undefined}
         >
           {label}
         </span>
