@@ -1,6 +1,7 @@
 """Memory, facts, brain_query, and session-deletion tool handlers + registration."""
 
 from __future__ import annotations
+import asyncio
 import json
 from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
@@ -102,7 +103,10 @@ def _purge_session_everywhere(sessionId: str) -> dict[str, object]:
 async def _deleteSession(sessionId: str) -> str:
     """Delete a chat session and all dependent rows from workbench + brain DB."""
     try:
-        result = _purge_session_everywhere(sessionId)
+        # SQLite cascades and the legacy JSON cleanup are synchronous.  Keep
+        # them off the event loop so another chat can continue streaming while
+        # a large session is being deleted.
+        result = await asyncio.to_thread(_purge_session_everywhere, sessionId)
         if result.get('ok'):
             children = result.get('children') or {}
             msgCount = as_int(result.get('messages'), 0)
@@ -132,7 +136,7 @@ async def _deleteSessions(sessionIds: object = None, sessionId: str = '') -> str
     msg_total = 0
     for sid in ids:
         try:
-            result = _purge_session_everywhere(sid)
+            result = await asyncio.to_thread(_purge_session_everywhere, sid)
             if result.get('ok'):
                 deleted.append(sid)
                 msg_total += as_int(result.get('messages'), 0)
@@ -196,7 +200,7 @@ async def _deleteFolder(folderId: str) -> str:
         msgCount = 0
         for s in folderSessions:
             sid = s['id']
-            result = _purge_session_everywhere(sid)
+            result = await asyncio.to_thread(_purge_session_everywhere, sid)
             if result.get('ok'):
                 count += 1
                 msgCount += as_int(result.get('messages'), 0)

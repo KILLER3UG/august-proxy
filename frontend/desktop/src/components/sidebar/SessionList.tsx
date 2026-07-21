@@ -19,6 +19,8 @@ import {
   createFolder,
   renameFolder,
   deleteFolder,
+  deleteUncategorizedSessions,
+  getOrCreateEmptySession,
   toggleFolderCollapse,
   findOrCreateSessionForPath,
   type Session,
@@ -349,6 +351,29 @@ export function SessionList({
     localStorage.setItem("august-uncategorized-collapsed", next ? "1" : "0");
   };
 
+  const handleDeleteUncategorized = () => {
+    // Match the sidebar group: unfiled and not pinned (pinned lives under Pinned).
+    const unfiled = useSessionsStore
+      .getState()
+      .sessions.filter(
+        (session) =>
+          !session.isArchived && !session.folderId && !pinnedIds.has(session.id),
+      );
+    if (!unfiled.length) return;
+    if (!confirm(`Permanently delete all ${unfiled.length} chat${unfiled.length === 1 ? "" : "s"} in Other chats?`)) {
+      return;
+    }
+    const deletedIds = new Set(
+      deleteUncategorizedSessions({ excludeIds: pinnedIds }),
+    );
+    if (activeId && deletedIds.has(activeId)) {
+      const fallback =
+        useSessionsStore.getState().sessions.find((session) => !session.isArchived) ??
+        getOrCreateEmptySession(null);
+      onSelect(fallback);
+    }
+  };
+
   const sessionRowHandlers = (s: Session) => ({
     onClick: () => onSelect(s),
     onTogglePin: () => togglePin(s.id),
@@ -478,6 +503,7 @@ export function SessionList({
                       count={uncategorizedSessions.length}
                       isCollapsed={uncategorizedCollapsed}
                       onToggleCollapse={toggleUncategorizedCollapse}
+                      onDelete={handleDeleteUncategorized}
                     />
 
                     {!uncategorizedCollapsed && (

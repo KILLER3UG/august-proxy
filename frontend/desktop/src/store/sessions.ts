@@ -334,6 +334,50 @@ export function deleteSession(id: string) {
   void purgeBackendSession(localIds);
 }
 
+/**
+ * Permanently remove the chats represented by the virtual "Other chats"
+ * sidebar group.  Unlike normal folders this group has no folder record: it
+ * is every active unfiled chat that is not pinned (pinned unfiled chats live
+ * under Pinned, not Other chats).
+ *
+ * Pass `excludeIds` (typically the pinned id set) so wipe matches the sidebar
+ * group exactly.  The local removal is one transaction so the sidebar updates
+ * immediately; backend cleanup remains best-effort and never holds up the UI.
+ */
+export function deleteUncategorizedSessions(options?: {
+  excludeIds?: Iterable<string>;
+}): string[] {
+  const sessions = useSessionsStore.getState().sessions;
+  const excluded = new Set(options?.excludeIds ?? []);
+  const toDelete = sessions.filter(
+    (session) =>
+      !session.isArchived && !session.folderId && !excluded.has(session.id),
+  );
+  if (!toDelete.length) return [];
+
+  const deleteIdSet = new Set(toDelete.map((session) => session.id));
+  const removeIds = new Set(
+    toDelete.flatMap((session) => [session.id, session.workbenchSessionId].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    )),
+  );
+  for (const id of removeIds) tombstoneSessionId(id);
+
+  const updated = sessions.filter((session) => !deleteIdSet.has(session.id));
+  useSessionsStore.setState({ sessions: updated });
+  saveSessionsToStorage(updated);
+  for (const id of removeIds) {
+    try {
+      localStorage.removeItem(`chat_messages_${id}`);
+      localStorage.removeItem(`august_composer_draft_${id}`);
+    } catch {
+      /* ignore */
+    }
+  }
+  void purgeBackendSession([...removeIds]);
+  return toDelete.map((session) => session.id);
+}
+
 export function archiveSession(id: string) {
   const updated = useSessionsStore
     .getState()

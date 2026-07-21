@@ -9,6 +9,7 @@ import {
   createFolder,
   createSession,
   createEmptySessionInFolder,
+  deleteUncategorizedSessions,
   getOrCreateEmptySession,
   saveSessionsToStorage,
   saveFoldersToStorage,
@@ -199,6 +200,37 @@ describe('createFolder — manual (no path)', () => {
     findOrCreateSessionForPath('/some/path', 'path');
     expect($folders.get().filter((f) => f.workspacePath === null)).toHaveLength(1);
     expect($folders.get().filter((f) => f.workspacePath === '/some/path')).toHaveLength(1);
+  });
+});
+
+describe('deleteUncategorizedSessions', () => {
+  it('removes only active chats in the virtual Other chats group', () => {
+    const other = createSession(null, 'Other');
+    const archived = createSession(null, 'Archived');
+    const folder = createFolder('Project');
+    const grouped = createSession(folder.id, 'Grouped');
+    $sessions.set($sessions.get().map((session) =>
+      session.id === archived.id ? { ...session, isArchived: true } : session,
+    ));
+
+    expect(deleteUncategorizedSessions()).toEqual([other.id]);
+    expect($sessions.get().map((session) => session.id)).toEqual(
+      expect.arrayContaining([archived.id, grouped.id]),
+    );
+    expect($sessions.get().some((session) => session.id === other.id)).toBe(false);
+  });
+
+  it('leaves pinned unfiled chats alone when excludeIds is set', () => {
+    const other = createSession(null, 'Other');
+    const pinned = createSession(null, 'Pinned');
+    const folder = createFolder('Project');
+    const grouped = createSession(folder.id, 'Grouped');
+
+    expect(deleteUncategorizedSessions({ excludeIds: [pinned.id] })).toEqual([other.id]);
+    expect($sessions.get().map((session) => session.id)).toEqual(
+      expect.arrayContaining([pinned.id, grouped.id]),
+    );
+    expect($sessions.get().some((session) => session.id === other.id)).toBe(false);
   });
 });
 

@@ -10,6 +10,7 @@ emitted to the parent session's SSE stream as ``subagent_*`` events.
 """
 
 from __future__ import annotations
+import asyncio
 import uuid
 from typing import Callable, cast
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
@@ -117,6 +118,13 @@ async def executeSubAgent(
             emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg})
         return {'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg}
 
+    # Publish the launch before any workspace setup.  Git can take noticeable
+    # time on large repositories; without this event the UI has no indication
+    # that the accepted tool call is actually progressing.
+    job = createJob(resolvedAgentId, goal, context)
+    jobId = as_str(job['id'])
+    updateJob(jobId, {'status': 'running'})
+
     # Git worktree isolation for parallel agents.
     # Default ON when isolateSubagents is unset (parallel agents keep files separate).
     # Explicit False (via isolateSubagentsExplicit + isolateSubagents=false) opts out.
@@ -128,24 +136,35 @@ async def executeSubAgent(
         # Default: isolate so parallel agents do not collide on the main tree
         isolate = True
     workspace = as_str(getattr(session, 'workspacePath', ''))
+    if emit:
+        emit(
+            {
+                'type': 'subagentStart',
+                'agentId': resolvedAgentId,
+                'jobId': jobId,
+                'name': as_str(agent.get('name'), 'General'),
+                'role': as_str(agent.get('role'), ''),
+                'goal': goal,
+                'worktreePath': None,
+                'isolated': bool(isolate and workspace),
+            }
+        )
     if isolate and workspace:
         try:
             from app.services.workbench.worktree_service import create_agent_worktree
 
-            wt = create_agent_worktree(
+            # Worktree creation shells out to git.  Running it on the event
+            # loop paused every active stream, making a sub-agent launch look
+            # like it had failed.  It is independent setup work, so move it to
+            # a worker thread.
+            wt = await asyncio.to_thread(
+                create_agent_worktree,
                 workspace,
                 session_id=as_str(getattr(session, 'id', '')),
                 agent_label=resolvedAgentId or 'agent',
             )
             if wt.get('ok') and wt.get('path'):
                 worktree_path = str(wt['path'])
-                # Prefer isolated cwd for tools that honor AUGUST_WORKTREE / session path
-                try:
-                    import os
-
-                    os.environ['AUGUST_SUBAGENT_WORKTREE'] = worktree_path
-                except Exception:
-                    pass
                 # Persist active worktree path for UI badge / cleanup
                 try:
                     meta = dict(meta)
@@ -164,22 +183,6 @@ async def executeSubAgent(
         except Exception:
             worktree_path = ''
 
-    job = createJob(resolvedAgentId, goal, context)
-    jobId = as_str(job['id'])
-    updateJob(jobId, {'status': 'running'})
-    if emit:
-        emit(
-            {
-                'type': 'subagentStart',
-                'agentId': resolvedAgentId,
-                'jobId': jobId,
-                'name': as_str(agent.get('name'), 'General'),
-                'role': as_str(agent.get('role'), ''),
-                'goal': goal,
-                'worktreePath': worktree_path or None,
-                'isolated': bool(worktree_path),
-            }
-        )
     aliasHint = as_str(agent.get('modelAlias')) or parentAlias or ''
     resolution = resolve_or_fallback(aliasHint, provider_hint=getattr(session, 'provider', '') or '')
     model = as_str((resolution or {}).get('model')) or aliasHint or ''

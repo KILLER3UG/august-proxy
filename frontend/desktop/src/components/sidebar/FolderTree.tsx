@@ -181,10 +181,12 @@ export function UncategorizedHeader({
   count,
   isCollapsed,
   onToggleCollapse,
+  onDelete,
 }: {
   count: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div
@@ -209,6 +211,20 @@ export function UncategorizedHeader({
           </span>
         )}
       </div>
+      {count > 0 && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          className="p-0.5 rounded text-destructive/70 hover:bg-white/[0.06] hover:text-destructive"
+          title="Delete all other chats"
+          aria-label="Delete all other chats"
+        >
+          <Trash2 className="size-2.5" />
+        </button>
+      )}
     </div>
   );
 }
