@@ -16,7 +16,6 @@ import asyncio
 import re
 import time
 import httpx
-from app.config import settings
 from app.json_narrowing import as_str, as_list, as_dict, as_int
 from app.providers.clients import getClient
 from app.services.workbench.providers import supports_thinking
@@ -36,6 +35,128 @@ def invalidate_cache() -> None:
     _modelCacheAt = 0
     _aliasCache = None
     _aliasCacheAt = 0
+    # Provider model edits write providers.json then call invalidate_cache.
+    # Without a settings reload, aggregate() keeps serving the pre-edit snapshot
+    # (so every model looks stuck at the default 128k context window).
+    try:
+        from app.config import settings
+
+        settings.reload()
+    except Exception:
+        pass
+
+
+def _extract_context_window_value(raw: object) -> int:
+    """Positive int from int/float/numeric-string; else 0."""
+    if isinstance(raw, bool):
+        return 0
+    if isinstance(raw, (int, float)):
+        n = int(raw)
+        return n if n > 0 else 0
+    if isinstance(raw, str):
+        s = raw.strip().replace(',', '')
+        if s.isdigit():
+            n = int(s)
+            return n if n > 0 else 0
+    return 0
+
+
+def _context_from_model_entry(entry: dict[str, object]) -> int:
+    for key in ('contextWindow', 'context_window', 'context_length', 'max_model_len'):
+        n = _extract_context_window_value(entry.get(key))
+        if n > 0:
+            return n
+    return 0
+
+
+def _getContextWindow(
+    modelId: str, provider: dict[str, object] | None = None, fallback: object = None
+) -> int:
+    """Resolve context window.
+
+    Priority (user intent first — applies to every model, not one family):
+      1. Per-model entry from Model Providers UI (``providers.json``)
+      2. modelProfiles exact → longest prefix (not ``*``)
+      3. Explicit fallback (live ``/models`` metadata from the host)
+      4. Family heuristic
+      5. Wildcard ``*`` profile (weak — often a stale 128k boilerplate)
+      6. 128000
+    """
+    profiles: dict[str, object] = {}
+    if provider:
+        for m_raw in as_list(provider.get('models'), []):
+            m = as_dict(m_raw)
+            if as_str(m.get('id')) == modelId:
+                n = _context_from_model_entry(m)
+                if n > 0:
+                    # Historical refresh stamped every fetched model with 128k.
+                    # Treat that boilerplate as unset so heuristics/profiles apply
+                    # until the user explicitly edits the model (source → manual).
+                    if n == 128000 and as_str(m.get('source')) == 'fetched':
+                        break
+                    return n
+                break
+
+        profiles = as_dict(
+            provider.get('modelProfiles') or provider.get('model_profiles'),
+            {},
+        )
+        exact = as_dict(profiles.get(modelId))
+        n = _context_from_model_entry(exact) if exact else 0
+        if n > 0:
+            return n
+        # Longest prefix match (stable for model family profiles).
+        prefix_hits = sorted(
+            (
+                (k, as_dict(profiles.get(k)))
+                for k in profiles
+                if k != '*' and isinstance(k, str) and modelId.startswith(k)
+            ),
+            key=lambda kv: len(kv[0]),
+            reverse=True,
+        )
+        for _, profile in prefix_hits:
+            n = _context_from_model_entry(profile)
+            if n > 0:
+                return n
+
+    explicit = _extract_context_window_value(fallback)
+    if explicit > 0:
+        return explicit
+
+    # Family heuristics when nothing was configured.
+    mid = (modelId or '').lower()
+    if 'claude' in mid:
+        return 200000
+    if 'gemini' in mid and any(x in mid for x in ('1.5', '2.0', '2.5', 'pro', 'flash', 'ultra')):
+        return 1_000_000
+    if 'deepseek-v4' in mid or re.search(r'deepseek[-_]?v4', mid):
+        return 1_000_000
+    if any(x in mid for x in ('gpt-4.1',)):
+        return 1_047_576
+    if any(x in mid for x in ('gpt-4o', 'chatgpt-4o')):
+        return 128000
+    if re.search(r'\b(o1|o3|o4)\b', mid):
+        return 200000
+    if 'deepseek' in mid:
+        return 128000
+    if 'kimi' in mid or 'moonshot' in mid:
+        return 128000
+    if 'grok' in mid:
+        return 131072
+
+    if profiles:
+        wildcard = as_dict(profiles.get('*'), {})
+        n = _context_from_model_entry(wildcard) if wildcard else 0
+        if n > 0:
+            return n
+    return 128000
+
+
+def _resolve_context_window(raw: object) -> int:
+    """Stored contextWindow, or 128k when unset."""
+    n = _extract_context_window_value(raw)
+    return n if n > 0 else 128000
 
 
 _STATICModelLists: dict[str, list[dict[str, object]]] = {
@@ -71,52 +192,6 @@ def _deriveModelsUrl(baseUrl: str) -> str | None:
 
     base = normalize_provider_base_url(baseUrl)
     return join_provider_url(base, 'models') if base else None
-
-
-def _getContextWindow(
-    modelId: str, provider: dict[str, object] | None = None, fallback: object = None
-) -> int:
-    """Resolve context window from provider profile, upstream value, or family heuristic."""
-    if provider:
-        profiles = as_dict(provider.get('modelProfiles'), {})
-        for key in [modelId] + [k for k in profiles if modelId.startswith(k)]:
-            profile = as_dict(profiles.get(key))
-            if isinstance(profile, dict) and profile.get('contextWindow'):
-                return as_int(profile['contextWindow'])
-        wildcard = as_dict(profiles.get('*'), {})
-        if isinstance(wildcard, dict) and wildcard.get('contextWindow'):
-            return as_int(wildcard['contextWindow'])
-    if isinstance(fallback, (int, float)) and not isinstance(fallback, bool):
-        n = int(fallback)
-        if n > 0:
-            return n
-    # Family heuristics when the provider never set a profile (avoids a fake
-    # universal 128k label in the model dropdown).
-    mid = (modelId or '').lower()
-    if 'claude' in mid:
-        return 200000
-    if 'gemini' in mid and any(x in mid for x in ('1.5', '2.0', '2.5', 'pro', 'flash', 'ultra')):
-        return 1_000_000
-    if any(x in mid for x in ('gpt-4.1', 'gpt-4o', 'chatgpt-4o')):
-        return 128000
-    if re.search(r'\b(o1|o3|o4)\b', mid):
-        return 200000
-    if 'deepseek' in mid:
-        return 128000
-    if 'kimi' in mid or 'moonshot' in mid:
-        return 128000
-    if 'grok' in mid:
-        return 131072
-    return 128000
-
-
-def _resolve_context_window(raw: object) -> int:
-    """Stored contextWindow, or 128k when unset."""
-    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
-        n = int(raw)
-        if n > 0:
-            return n
-    return 128000
 
 
 def _lookup_model_profile(
@@ -251,9 +326,14 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float = 5.
                             'id': m['id'],
                             'name': m['id'],
                             'provider': providerName,
-                            'contextWindow': _getContextWindow(m['id'], provider, m.get('context_length')),
+                            'contextWindow': _getContextWindow(
+                                m['id'],
+                                provider,
+                                _context_from_model_entry(as_dict(m)) or None,
+                            ),
                         }
                         for m in (modelList if isinstance(modelList, list) else [])
+                        if isinstance(m, dict) and as_str(m.get('id'))
                     ]
         except Exception:
             pass
@@ -291,7 +371,11 @@ async def _aggregateModels() -> list[dict[str, object]]:
     """
     allModels: list[dict[str, object]] = []
     try:
-        store = settings.providers
+        # Always read providers.json fresh — settings.providers can lag behind
+        # Model Providers UI edits until the next process restart.
+        from app.services import config_service
+
+        store = config_service.getProvidersStore()
         for entry_raw in as_list(store.get('providers'), []):
             entry = as_dict(entry_raw)
             if not entry.get('enabled') or not entry.get('apiKey'):
@@ -299,19 +383,6 @@ async def _aggregateModels() -> list[dict[str, object]]:
             for m_raw in as_list(entry.get('models'), []):
                 m = as_dict(m_raw)
                 mid = as_str(m['id'])
-                # `supports_thinking` is the same capability check the request
-                # path uses to decide whether to attach Anthropic-style
-                # extended-thinking params — it reads the provider's
-                # `modelProfiles` (exact id, longest-prefix, or wildcard `*`
-                # claims). Falling back to a bare id-keyword regex (below)
-                # left every reasoning-capable model whose id doesn't literally
-                # contain "o1"/"o3"/"reasoner"/"thinking"/"reasoning" (e.g.
-                # `claude-sonnet-4-7`, most Anthropic/OpenAI models configured
-                # via `modelProfiles`) reported as non-reasoning, which
-                # permanently disabled the Thinking toggle in the UI for them.
-                # Keep in sync with frontend `isLikelyReasoningModel` so Effort /
-                # Thinking UI appears for families that take effort params even
-                # when modelProfiles omit an explicit supportsReasoning claim.
                 mid_l = mid.lower()
                 likely_reasoning = bool(
                     re.search(
@@ -332,12 +403,10 @@ async def _aggregateModels() -> list[dict[str, object]]:
                         'id': mid,
                         'name': as_str(m.get('name'), mid),
                         'provider': entry['name'],
-                        # Prefer modelProfiles / upstream length — bare m.contextWindow
-                        # alone left every unset entry stuck at the 128k default.
                         'contextWindow': _getContextWindow(
                             mid,
                             entry,
-                            m.get('contextWindow') or m.get('context_length'),
+                            _context_from_model_entry(m) or None,
                         ),
                         'supportsReasoning': reasoning,
                         'supportsThinking': reasoning,

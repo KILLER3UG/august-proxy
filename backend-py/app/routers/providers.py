@@ -273,11 +273,13 @@ async def refreshModels(providerId: str):
         updated = sorted(currentIds & liveIds)
         for mid in liveModels:
             if mid not in currentIds:
+                # Prefer family heuristics / profiles over a hardcoded 128k —
+                # that default made every refreshed model look identical in chat.
                 currentModels.append(
                     {
                         'id': mid,
                         'name': mid,
-                        'contextWindow': 128000,
+                        'contextWindow': model_service._getContextWindow(mid, p),
                         'reasoning': False,
                         'free': ':free' in mid or '-free' in mid,
                         'source': 'fetched',
@@ -344,6 +346,9 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                             m['contextWindow'] = 128000
                         else:
                             m['contextWindow'] = cw
+                        # Mark user-edited so a 128k value is kept (not treated as
+                        # the old fetched-default stamp).
+                        m['source'] = 'manual'
                     if body.reasoning is not None:
                         m['reasoning'] = body.reasoning
                     if body.free is not None:

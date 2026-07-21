@@ -38,6 +38,9 @@ class ModelInfo(CamelModel):
         extra="allow",
         alias_generator=to_camel,
         populate_by_name=True,
+        # Ensure /api/models always emits contextWindow (camelCase) so the
+        # desktop catalog does not fall back to a generic 128k estimate.
+        ser_json_by_alias=True,
     )
 
 

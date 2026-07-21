@@ -126,6 +126,7 @@ export function estimateContextWindow(id?: string | null): number {
   ) {
     return 1_000_000;
   }
+  if (mid.includes('deepseek-v4') || /deepseek[-_]?v4/.test(mid)) return 1_000_000;
   if (/\b(o1|o3|o4)\b/.test(mid)) return 200000;
   if (mid.includes('gpt-4.1')) return 1_047_576;
   if (mid.includes('gpt-4o') || mid.includes('chatgpt-4o')) return 128000;

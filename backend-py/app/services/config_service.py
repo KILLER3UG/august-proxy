@@ -42,6 +42,13 @@ def saveProvidersStore(data: dict[str, object]) -> None:
     from app.services.provider_credentials import _fireInvalidation
 
     _fireInvalidation()
+    # Bust model-list cache + reload settings so chat picks up contextWindow edits.
+    try:
+        from app.services import model_service
+
+        model_service.invalidate_cache()
+    except Exception:
+        pass
 
 
 def getProvidersAsModels() -> list[ProviderConfig]:
@@ -60,7 +67,9 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                     ModelConfig(
                         id=str(m.get('id', '')),
                         name=str(m.get('name', '')),
-                        context_window=as_int(m.get('contextWindow'), 128000),
+                        context_window=as_int(
+                            m.get('contextWindow') or m.get('context_window'), 128000
+                        ),
                         reasoning=bool(m.get('reasoning', False)),
                         free=bool(m.get('free', False)),
                         source=str(m.get('source', 'manual')),

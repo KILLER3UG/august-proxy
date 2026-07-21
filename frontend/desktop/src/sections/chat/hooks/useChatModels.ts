@@ -51,10 +51,12 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
       // Catalog may omit / under-report reasoning for models that still take
       // effort (DeepSeek, Claude, GPT-5, …). Keep the id heuristic as a floor.
       const likely = isLikelyReasoningModel(m.id);
-      const ctx =
-        m.contextWindow && m.contextWindow > 0
-          ? m.contextWindow
-          : estimateContextWindow(m.id);
+      // Prefer server catalog; accept snake_case if a proxy layer strips aliases.
+      const raw = m as { context_window?: number };
+      const reported =
+        (m.contextWindow && m.contextWindow > 0 ? m.contextWindow : 0) ||
+        (raw.context_window && raw.context_window > 0 ? raw.context_window : 0);
+      const ctx = reported > 0 ? reported : estimateContextWindow(m.id);
       return {
         id: m.id,
         name: m.name || m.id,
