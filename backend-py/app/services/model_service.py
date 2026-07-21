@@ -76,7 +76,7 @@ def _deriveModelsUrl(baseUrl: str) -> str | None:
 def _getContextWindow(
     modelId: str, provider: dict[str, object] | None = None, fallback: object = None
 ) -> int:
-    """Resolve context window from provider profile, upstream value, or 128k default."""
+    """Resolve context window from provider profile, upstream value, or family heuristic."""
     if provider:
         profiles = as_dict(provider.get('modelProfiles'), {})
         for key in [modelId] + [k for k in profiles if modelId.startswith(k)]:
@@ -90,6 +90,23 @@ def _getContextWindow(
         n = int(fallback)
         if n > 0:
             return n
+    # Family heuristics when the provider never set a profile (avoids a fake
+    # universal 128k label in the model dropdown).
+    mid = (modelId or '').lower()
+    if 'claude' in mid:
+        return 200000
+    if 'gemini' in mid and any(x in mid for x in ('1.5', '2.0', '2.5', 'pro', 'flash', 'ultra')):
+        return 1_000_000
+    if any(x in mid for x in ('gpt-4.1', 'gpt-4o', 'chatgpt-4o')):
+        return 128000
+    if re.search(r'\b(o1|o3|o4)\b', mid):
+        return 200000
+    if 'deepseek' in mid:
+        return 128000
+    if 'kimi' in mid or 'moonshot' in mid:
+        return 128000
+    if 'grok' in mid:
+        return 131072
     return 128000
 
 
@@ -315,7 +332,13 @@ async def _aggregateModels() -> list[dict[str, object]]:
                         'id': mid,
                         'name': as_str(m.get('name'), mid),
                         'provider': entry['name'],
-                        'contextWindow': _resolve_context_window(m.get('contextWindow')),
+                        # Prefer modelProfiles / upstream length — bare m.contextWindow
+                        # alone left every unset entry stuck at the 128k default.
+                        'contextWindow': _getContextWindow(
+                            mid,
+                            entry,
+                            m.get('contextWindow') or m.get('context_length'),
+                        ),
                         'supportsReasoning': reasoning,
                         'supportsThinking': reasoning,
                         'isFree': m.get('free', False) or _isFreeModelId(mid),

@@ -128,6 +128,7 @@ export const WorkbenchCompactionEventSchema = WorkbenchBaseSchema.extend({
   compressedTokens: z.number(),
   underThreshold: z.boolean().optional(),
   threshold: z.number().optional(),
+  contextWindow: z.number().optional(),
 });
 
 export const WorkbenchDoneEventSchema = WorkbenchBaseSchema.extend({

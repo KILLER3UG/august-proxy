@@ -95,6 +95,7 @@ import {
   getModelDisplayName,
   isLikelyReasoningModel,
   formatContextWindow,
+  estimateContextWindow,
 } from './model-display';
 import {
   loadMessagesForSession as loadMessagesForSessionBase,
@@ -661,7 +662,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             id: activeModelId,
             name: activeModelId,
             provider: activeProvider,
-            contextWindow: 128000,
+            contextWindow: estimateContextWindow(activeModelId),
             supportsReasoning: isLikelyReasoningModel(activeModelId),
             supportsThinking: isLikelyReasoningModel(activeModelId),
           };

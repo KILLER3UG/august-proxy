@@ -73,7 +73,9 @@ export function modelFromSession(
     id: session.model,
     name: session.model,
     provider: session.provider || '',
-    contextWindow: 128000,
+    // Placeholder until catalog hydrates — estimateContextWindow fills a
+    // sensible family size so the dropdown doesn't always read "128k".
+    contextWindow: estimateContextWindow(session.model),
     supportsReasoning: isLikelyReasoningModel(session.model),
     supportsThinking: isLikelyReasoningModel(session.model),
   };
@@ -113,9 +115,29 @@ export function getModelDisplayName(id: string): string {
   return stripProviderPrefix(id);
 }
 
+/** Best-effort context window from the model id when catalog/profile is missing. */
+export function estimateContextWindow(id?: string | null): number {
+  const mid = (id || '').toLowerCase();
+  if (!mid) return 128000;
+  if (mid.includes('claude')) return 200000;
+  if (
+    mid.includes('gemini') &&
+    ['1.5', '2.0', '2.5', 'pro', 'flash', 'ultra'].some((x) => mid.includes(x))
+  ) {
+    return 1_000_000;
+  }
+  if (/\b(o1|o3|o4)\b/.test(mid)) return 200000;
+  if (mid.includes('gpt-4.1')) return 1_047_576;
+  if (mid.includes('gpt-4o') || mid.includes('chatgpt-4o')) return 128000;
+  if (mid.includes('deepseek')) return 128000;
+  if (mid.includes('kimi') || mid.includes('moonshot')) return 128000;
+  if (mid.includes('grok')) return 131072;
+  return 128000;
+}
+
 export function formatContextWindow(num?: number): string {
-  if (!num) return '128k';
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(0)}M`;
+  if (!num || num <= 0) return '—';
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(num % 1_000_000 === 0 ? 0 : 1)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(0)}k`;
   return String(num);
 }

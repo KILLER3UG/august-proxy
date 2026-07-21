@@ -13,6 +13,7 @@ import {
 import { CommandHelpCard } from './CommandHelpCard';
 import { ToolCallCard } from './message/ToolCallCard';
 import { HandoffNoticeCard } from './message/HandoffNoticeCard';
+import { CompactionNoticeCard } from './message/CompactionNoticeCard';
 import { SubagentApprovalInline } from './message/SubagentApprovalInline';
 import { UserMessageBubble } from './message/UserMessageBubble';
 import { AssistantMessageContent } from './message/AssistantMessageContent';
@@ -159,6 +160,33 @@ export function MessageBubble({
           fromModel={ctx.fromModel}
           toModel={ctx.toModel}
           summary={ctx.summary || 'No summary available.'}
+        />
+      </div>
+    );
+  }
+
+  if (message.kind === 'compaction-notice') {
+    const ctx = (message.context ?? {}) as {
+      headCount?: number;
+      tailCount?: number;
+      compressedCount?: number;
+      originalTokens?: number;
+      compressedTokens?: number;
+      contextWindow?: number;
+      threshold?: number;
+    };
+    return (
+      <div className="flex justify-start w-full max-w-3xl">
+        <CompactionNoticeCard
+          info={{
+            headCount: ctx.headCount ?? 0,
+            tailCount: ctx.tailCount ?? 0,
+            compressedCount: ctx.compressedCount ?? 0,
+            originalTokens: ctx.originalTokens ?? 0,
+            compressedTokens: ctx.compressedTokens ?? 0,
+            contextWindow: ctx.contextWindow,
+            threshold: ctx.threshold,
+          }}
         />
       </div>
     );

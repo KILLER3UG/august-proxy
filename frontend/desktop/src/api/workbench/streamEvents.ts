@@ -100,6 +100,7 @@ export function dispatchWorkbenchEvent(
         compressedTokens: Number(p?.compressedTokens) || 0,
         underThreshold: p?.underThreshold === true,
         threshold: Number(p?.threshold) || undefined,
+        contextWindow: Number(p?.contextWindow) || undefined,
       });
       break;
     case 'checkpoint':

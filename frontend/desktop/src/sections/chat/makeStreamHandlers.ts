@@ -36,6 +36,7 @@ import { classifyTool } from '@/lib/tool-classify';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { playReceiveChime } from '@/lib/chat-chime';
 import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
+import { buildCompactionNoticeMessage } from '@/sections/chat/message/CompactionNoticeCard';
 import {
   applySubagentEvent,
   makeSubagentEventHandlers,
@@ -507,13 +508,15 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onCompaction: (info) => {
-      // When the summarizing compressor collapses the middle of the
-      // conversation, surface a small inline notice so the user can see
-      // it happened. The notice is part of the assistant turn so it
-      // disappears if the turn is rolled back.
-      const notice = `\n\n📦 Context compacted — kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} middle messages (~${info.originalTokens} → ~${info.compressedTokens} tokens).`;
-      assistantContent += notice;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: notice });
+      // Dedicated animated card — don't dump a text blob into the assistant reply.
+      const notice = buildCompactionNoticeMessage(info);
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === assistantMsgId);
+        if (idx >= 0) {
+          return [...prev.slice(0, idx), notice, ...prev.slice(idx)];
+        }
+        return [...prev, notice];
+      });
       scheduleUpdate();
     },
     onCheckpoint: (info) => {

@@ -136,7 +136,7 @@ export type WorkbenchEvent =
   | { type: 'toolResult'; data: { id: string; content: unknown; isError?: boolean } }
   | { type: 'session'; data: WorkbenchSession }
   | { type: 'btw'; data: WorkbenchBtwResult }
-  | { type: 'compaction'; data: { headCount: number; tailCount: number; compressedCount: number; originalTokens: number; compressedTokens: number; underThreshold?: boolean; threshold?: number } }
+  | { type: 'compaction'; data: { headCount: number; tailCount: number; compressedCount: number; originalTokens: number; compressedTokens: number; underThreshold?: boolean; threshold?: number; contextWindow?: number } }
   | { type: 'done'; data: Record<string, never> }
   | { type: 'error'; data: { message: string } }
   | {
@@ -167,6 +167,7 @@ export interface WorkbenchEventHandlers {
     compressedTokens: number;
     underThreshold?: boolean;
     threshold?: number;
+    contextWindow?: number;
   }) => void;
   onCheckpoint?: (data: {
     id?: string;

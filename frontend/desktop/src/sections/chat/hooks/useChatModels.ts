@@ -13,6 +13,7 @@ import {
   modelFromSession,
   loadLastModel,
   isLikelyReasoningModel,
+  estimateContextWindow,
 } from '../model-display';
 import { updateSessionModel, type Session } from '@/store/sessions';
 
@@ -50,11 +51,15 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
       // Catalog may omit / under-report reasoning for models that still take
       // effort (DeepSeek, Claude, GPT-5, …). Keep the id heuristic as a floor.
       const likely = isLikelyReasoningModel(m.id);
+      const ctx =
+        m.contextWindow && m.contextWindow > 0
+          ? m.contextWindow
+          : estimateContextWindow(m.id);
       return {
         id: m.id,
         name: m.name || m.id,
         provider: m.provider,
-        contextWindow: m.contextWindow && m.contextWindow > 0 ? m.contextWindow : 128000,
+        contextWindow: ctx,
         isFree: m.isFree,
         supportsReasoning: !!(m.supportsReasoning || likely),
         supportsThinking: !!(m.supportsThinking || likely),
@@ -128,6 +133,37 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
       return modelFromSession(activeSession) || prev;
     });
   }, [sessionId, activeSession, activeSession?.model, activeSession?.provider, models]);
+
+  // When the catalog hydrates/refreshes, upgrade a stale selected model
+  // (localStorage / session stub often carried a fake 128k window).
+  const selectedId = selectedModel?.id;
+  useEffect(() => {
+    if (!selectedId || models.length === 0) return;
+    const fromCatalog = models.find(
+      (m) => m.id === selectedId || m.id.toLowerCase() === selectedId.toLowerCase(),
+    );
+    if (!fromCatalog) return;
+    setSelectedModel((prev) => {
+      if (!prev || (prev.id !== fromCatalog.id && prev.id.toLowerCase() !== fromCatalog.id.toLowerCase())) {
+        return prev;
+      }
+      if (
+        fromCatalog.contextWindow === prev.contextWindow &&
+        fromCatalog.supportsReasoning === prev.supportsReasoning &&
+        fromCatalog.supportsThinking === prev.supportsThinking &&
+        fromCatalog.name === prev.name &&
+        fromCatalog.provider === prev.provider
+      ) {
+        return prev;
+      }
+      try {
+        localStorage.setItem('august_last_model', JSON.stringify(fromCatalog));
+      } catch {
+        /* ignore */
+      }
+      return fromCatalog;
+    });
+  }, [models, selectedId]);
 
   return {
     models,

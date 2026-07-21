@@ -127,7 +127,7 @@ export interface ChatMessage {
   timestamp: string;
   /** Optional message kind. Used for special rendering (e.g. 'help' panel,
    *  registry-driven inline cards, subagent approval cards). */
-  kind?: 'help' | 'voice-command-card' | 'subagent-approval' | 'handoff-notice';
+  kind?: 'help' | 'voice-command-card' | 'subagent-approval' | 'handoff-notice' | 'compaction-notice';
   /** When kind === 'voice-command-card', the registry id of the command. */
   commandId?: string;
   /** Optional context payload for inline cards and approvals. */
