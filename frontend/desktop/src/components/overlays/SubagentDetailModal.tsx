@@ -264,7 +264,7 @@ export function SubagentDetailModal({
       (modelTag ? ` [model: ${modelTag}]` : '') +
       `:\n\n${text}`;
     try {
-      const uiSession = resolveUiSessionId(params.sessionId);
+      const uiSession = resolveUiSessionId(params.sessionId || '');
       const wbId =
         resolveWorkbenchSessionId(uiSession || params.sessionId || '') ||
         params.sessionId ||

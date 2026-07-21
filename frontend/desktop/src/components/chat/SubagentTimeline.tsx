@@ -27,21 +27,10 @@ export function splitSubagentBlocks(blocks: MessageBlock[]): {
 } {
   let lastIdx = -1;
   for (let i = blocks.length - 1; i >= 0; i--) {
-    if (blocks[i].type === 'finalOutput') {
+    // Stream text/content events are stored as finalOutput (see append-block-event).
+    if (blocks[i].type === 'finalOutput' && (blocks[i].content || '').trim()) {
       lastIdx = i;
       break;
-    }
-  }
-  // Fallback: last non-empty text block is the verdict when finalOutput is missing.
-  if (lastIdx < 0) {
-    for (let i = blocks.length - 1; i >= 0; i--) {
-      if (
-        blocks[i].type === 'text' &&
-        (blocks[i].content || '').trim()
-      ) {
-        lastIdx = i;
-        break;
-      }
     }
   }
   return {
@@ -257,7 +246,7 @@ function SubagentInnerBlock({
       </ThinkingDisclosure>
     );
   }
-  if (block.type === 'finalOutput' || block.type === 'text') {
+  if (block.type === 'finalOutput') {
     return (
       <div className="text-[13px] text-foreground/90 chat-message-text">
         <Markdown content={block.content || ''} />

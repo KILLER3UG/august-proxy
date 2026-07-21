@@ -102,7 +102,7 @@ function resolveChecklistAgents(
   const withToolOutput = (agent: SubagentBlockState): SubagentBlockState => {
     const hasOutput = agent.blocks.some(
       (b) =>
-        (b.type === 'finalOutput' || b.type === 'text') &&
+        b.type === 'finalOutput' &&
         !!(b.content && String(b.content).trim()),
     );
     if (hasOutput) return agent;
