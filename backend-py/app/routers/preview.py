@@ -115,7 +115,7 @@ async def start_session(body: StartBody):
     return _as_preview(created, pid)
 
 
-@router.get('/session/{session_id}')
+@router.get('/session/{sessionId}')
 async def get_session(sessionId: str):
     tid = _preview_to_term.get(sessionId)
     if not tid:
@@ -129,7 +129,7 @@ async def get_session(sessionId: str):
     return preview
 
 
-@router.delete('/session/{session_id}')
+@router.delete('/session/{sessionId}')
 async def stop_session(sessionId: str):
     tid = _preview_to_term.pop(sessionId, None)
     if not tid:

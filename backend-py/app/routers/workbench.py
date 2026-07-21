@@ -45,7 +45,7 @@ async def list_sessions():
     return wb.listWorkbenchSessions()
 
 
-@router.get('/sessions/{session_id}')
+@router.get('/sessions/{sessionId}')
 async def get_session(sessionId: str):
     """Get a session by ID."""
     session = wb.getWorkbenchSession(sessionId)
@@ -80,7 +80,7 @@ async def createSessionDirect(request: Request):
     return session.toDict()
 
 
-@router.delete('/sessions/{session_id}')
+@router.delete('/sessions/{sessionId}')
 async def deleteSession(sessionId: str):
     """Delete a session."""
     if not wb.deleteWorkbenchSession(sessionId):
@@ -88,7 +88,7 @@ async def deleteSession(sessionId: str):
     return {'status': 'ok'}
 
 
-@router.patch('/sessions/{session_id}/title')
+@router.patch('/sessions/{sessionId}/title')
 async def renameSessionTitle(sessionId: str, request: Request):
     """Rename a workbench session (sidebar title)."""
     body = await request.json() if request.headers.get('content-type') else {}
@@ -119,7 +119,7 @@ async def renameSessionTitlePost(request: Request):
     return session.toDict()
 
 
-@router.post('/sessions/{session_id}/reset')
+@router.post('/sessions/{sessionId}/reset')
 async def resetSession(sessionId: str, request: Request):
     """Reset a session (delete and recreate)."""
     body = await request.json() if request.headers.get('content-type') else {}
@@ -680,7 +680,7 @@ async def confirmMutationAlias(request: Request):
     return await respondMutation(request)
 
 
-@router.get('/sessions/{session_id}/checkpoints')
+@router.get('/sessions/{sessionId}/checkpoints')
 async def listCheckpoints(sessionId: str):
     """List filesystem save points for a session."""
     from app.services.workbench.checkpoint_service import list_checkpoints
@@ -688,7 +688,7 @@ async def listCheckpoints(sessionId: str):
     return {'checkpoints': list_checkpoints(sessionId)}
 
 
-@router.post('/sessions/{session_id}/checkpoints/{checkpoint_id}/restore')
+@router.post('/sessions/{sessionId}/checkpoints/{checkpointId}/restore')
 async def restoreCheckpointRoute(sessionId: str, checkpointId: str):
     """Restore files from a save point."""
     from app.services.workbench.checkpoint_service import restore_checkpoint
@@ -706,7 +706,7 @@ async def restoreCheckpointRoute(sessionId: str, checkpointId: str):
     return result
 
 
-@router.get('/sessions/{session_id}/agents')
+@router.get('/sessions/{sessionId}/agents')
 async def listSessionAgents(sessionId: str):
     """Active/recent sub-agents for the team strip."""
     try:
@@ -727,7 +727,7 @@ async def listSessionAgents(sessionId: str):
     return {'agents': agents, 'meta': meta}
 
 
-@router.post('/sessions/{session_id}/agents/cancel-all')
+@router.post('/sessions/{sessionId}/agents/cancel-all')
 async def cancelAllSessionAgents(sessionId: str):
     """Cancel every active/pending sub-agent for this session."""
     from app.services.runtime_services import get_orchestrator
@@ -752,7 +752,7 @@ async def cancelAllSessionAgents(sessionId: str):
     return {'ok': True, 'cancelled': cancelled, 'count': len(cancelled)}
 
 
-@router.post('/sessions/{session_id}/isolate-subagents')
+@router.post('/sessions/{sessionId}/isolate-subagents')
 async def setIsolateSubagents(sessionId: str, request: Request):
     """Toggle git worktree isolation for sub-agents on this session."""
     body: dict = {}
@@ -1193,7 +1193,7 @@ async def workbenchDoctor():
     }
 
 
-@router.post('/sessions/{session_id}/worktree')
+@router.post('/sessions/{sessionId}/worktree')
 async def createSessionWorktree(sessionId: str):
     """Create an isolated git worktree for this session (manual / demo)."""
     from app.services.workbench.worktree_service import create_agent_worktree
@@ -1214,7 +1214,7 @@ async def createSessionWorktree(sessionId: str):
     return result
 
 
-@router.post('/sessions/{session_id}/undo-last-turn')
+@router.post('/sessions/{sessionId}/undo-last-turn')
 async def undoLastTurn(sessionId: str):
     """Remove the last user turn and all following messages from the session."""
     from app.services.workbench.sessions import undo_last_turn
@@ -1225,7 +1225,7 @@ async def undoLastTurn(sessionId: str):
     return result
 
 
-@router.post('/sessions/{session_id}/branch')
+@router.post('/sessions/{sessionId}/branch')
 async def branchSession(sessionId: str, request: Request):
     """Fork a session into a new branch (optional upToIndex of source messages)."""
     from app.services.workbench.sessions import branch_workbench_session
@@ -1253,7 +1253,7 @@ async def branchSession(sessionId: str, request: Request):
     return session.toDict()
 
 
-@router.post('/sessions/{session_id}/compact')
+@router.post('/sessions/{sessionId}/compact')
 async def compactSession(sessionId: str):
     """Force context compression (\"Free up chat memory\")."""
     from app.services.workbench.sessions import compact_workbench_session_now
@@ -1366,13 +1366,13 @@ async def setSandboxMode(request: Request):
     return await _apply_sandbox_body(sessionId, body if isinstance(body, dict) else {})
 
 
-@router.patch('/sessions/{session_id}/sandbox')
-async def patchSessionSandbox(session_id: str, request: Request):
+@router.patch('/sessions/{sessionId}/sandbox')
+async def patchSessionSandbox(sessionId: str, request: Request):
     """REST alias: PATCH sandbox fields on a session."""
     body = await request.json()
     if not isinstance(body, dict):
         body = {}
-    return await _apply_sandbox_body(session_id, body)
+    return await _apply_sandbox_body(sessionId, body)
 
 
 @router.post('/btw')
@@ -1520,7 +1520,7 @@ async def workbenchAgents(active: str = ''):
     return {'agents': agents, 'active': active}
 
 
-@router.post('/sessions/{session_id}/agent')
+@router.post('/sessions/{sessionId}/agent')
 async def setSessionAgent(sessionId: str, request: Request):
     """Bind an agent to a session (or clear it with an empty agentId)."""
     body = await request.json() if request.headers.get('content-type') else {}
