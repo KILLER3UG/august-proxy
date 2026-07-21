@@ -1,9 +1,13 @@
 /**
- * Keep the chat transcript pinned to the bottom while streaming.
+ * Keep the chat transcript pinned to the bottom while streaming —
+ * unless the user scrolls up to read earlier content.
  *
  * Uses a rAF lerp instead of per-token scrollTop snaps so long replies
  * scroll down smoothly without feeling laggy. Instant snap on session load
  * / turn start stays in the caller.
+ *
+ * Upward wheel / touch / PageUp releases the pin and disables CSS
+ * overflow-anchor so generation cannot yank the viewport back down.
  */
 
 import {
@@ -23,6 +27,8 @@ function prefersReducedMotion(): boolean {
   }
 }
 
+const FREE_CLASS = 'chat-scroll--free';
+
 export function useStickToBottomScroll({
   scrollRef,
   pinnedToBottomRef,
@@ -30,6 +36,7 @@ export function useStickToBottomScroll({
   sessionId,
   loadedSessionId,
   messagesVersion,
+  onPinnedChange,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   pinnedToBottomRef: MutableRefObject<boolean>;
@@ -38,9 +45,14 @@ export function useStickToBottomScroll({
   loadedSessionId: string | null;
   /** Any value that changes when transcript content grows (e.g. messages). */
   messagesVersion: unknown;
+  /** Fired when pin state changes (for jump-to-bottom chrome). */
+  onPinnedChange?: (pinned: boolean) => void;
 }) {
   /** True while we assign scrollTop — ignore those events for pin tracking. */
   const programmaticScrollRef = useRef(false);
+  const touchStartYRef = useRef<number | null>(null);
+  const onPinnedChangeRef = useRef(onPinnedChange);
+  onPinnedChangeRef.current = onPinnedChange;
 
   const getScrollTarget = useCallback(() => {
     const el = scrollRef.current;
@@ -48,24 +60,92 @@ export function useStickToBottomScroll({
     return (el.closest('.overflow-y-auto') as HTMLElement | null) ?? el;
   }, [scrollRef]);
 
+  const setPinned = useCallback(
+    (pinned: boolean) => {
+      if (pinnedToBottomRef.current === pinned) {
+        const el = getScrollTarget();
+        el?.classList.toggle(FREE_CLASS, !pinned);
+        return;
+      }
+      pinnedToBottomRef.current = pinned;
+      const el = getScrollTarget();
+      el?.classList.toggle(FREE_CLASS, !pinned);
+      onPinnedChangeRef.current?.(pinned);
+    },
+    [getScrollTarget, pinnedToBottomRef],
+  );
+
   const applyScrollTop = useCallback((el: HTMLElement, next: number) => {
     programmaticScrollRef.current = true;
     el.scrollTop = next;
-    programmaticScrollRef.current = false;
+    // Clear on next frame so the browser's scroll event from this write is ignored.
+    requestAnimationFrame(() => {
+      programmaticScrollRef.current = false;
+    });
   }, []);
 
   const scrollToBottomSmooth = useCallback(() => {
     const target = getScrollTarget();
     if (!target) return;
-    pinnedToBottomRef.current = true;
+    setPinned(true);
     target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
-  }, [getScrollTarget, pinnedToBottomRef]);
+  }, [getScrollTarget, setPinned]);
 
   const scrollToBottomImmediate = useCallback(() => {
     const target = getScrollTarget();
     if (!target) return;
+    setPinned(true);
     applyScrollTop(target, target.scrollHeight);
-  }, [getScrollTarget, applyScrollTop]);
+  }, [getScrollTarget, applyScrollTop, setPinned]);
+
+  // User intent to read earlier content: release pin immediately.
+  useEffect(() => {
+    const el = getScrollTarget();
+    if (!el) return;
+
+    const release = () => setPinned(false);
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) release();
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartYRef.current = e.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const start = touchStartYRef.current;
+      const y = e.touches[0]?.clientY;
+      if (start == null || y == null) return;
+      // Finger moves down → content scrolls up.
+      if (y - start > 8) release();
+    };
+    const onTouchEnd = () => {
+      touchStartYRef.current = null;
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'PageUp' || e.key === 'Home' || e.key === 'ArrowUp') {
+        // Only release when the chat scroller (or a child) has focus / is target.
+        if (el.contains(document.activeElement) || document.activeElement === el) {
+          release();
+        }
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [getScrollTarget, setPinned, sessionId, messagesVersion]);
 
   // Smooth follow while streaming + pinned. Adaptive lerp: small gaps ease,
   // large chunks catch up quickly so the viewport never falls behind tokens.
@@ -138,5 +218,6 @@ export function useStickToBottomScroll({
     scrollToBottomSmooth,
     scrollToBottomImmediate,
     programmaticScrollRef,
+    setPinned,
   };
 }

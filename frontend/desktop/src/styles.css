@@ -268,6 +268,11 @@
   pointer-events: none;
 }
 
+/* User scrolled up while the model is generating — do not yank them back. */
+.chat-scroll--free .chat-scroll-anchor {
+  overflow-anchor: none;
+}
+
 /* AUG working indicator — CSS so it keeps moving during heavy stream rerenders */
 @keyframes augLetterBounce {
   0%,

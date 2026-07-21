@@ -284,6 +284,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     scrollToBottomSmooth: scrollToBottomSmoothRaw,
     scrollToBottomImmediate,
     programmaticScrollRef,
+    setPinned,
   } = useStickToBottomScroll({
     scrollRef,
     pinnedToBottomRef,
@@ -291,6 +292,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     sessionId,
     loadedSessionId,
     messagesVersion: messages,
+    onPinnedChange: (pinned) => {
+      setScrolledFromBottom(!pinned);
+    },
   });
 
   const scrollToBottomSmooth = useCallback(() => {
@@ -316,14 +320,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       const distanceFromBottom =
         scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight;
       const nearBottom = distanceFromBottom < NEAR_BOTTOM_PX;
-      pinnedToBottomRef.current = nearBottom;
-      setScrolledFromBottom(!nearBottom);
+      // Re-pin only when the user scrolls back near the bottom; upward release
+      // is handled immediately by wheel/touch in useStickToBottomScroll.
+      setPinned(nearBottom);
       setScrolledFromTop(scrollable.scrollTop > SCROLL_TO_TOP_THRESHOLD);
     };
     check();
     scrollable.addEventListener('scroll', check, { passive: true });
     return () => scrollable.removeEventListener('scroll', check);
-  }, [sessionId, getScrollTarget, hasMessages, programmaticScrollRef]);
+  }, [sessionId, getScrollTarget, hasMessages, programmaticScrollRef, setPinned]);
 
   const isTurnVisible = (turnSessionId: string | null) =>
     mountedRef.current && visibleSessionId === turnSessionId;
@@ -552,7 +557,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Session switch / first load: always land at bottom once messages are ready.
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
-    pinnedToBottomRef.current = true;
+    setPinned(true);
     scrollToBottomImmediate();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on session load
   }, [sessionId, loadedSessionId]);
@@ -561,12 +566,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const wasStreamingRef = useRef(false);
   useLayoutEffect(() => {
     if (streaming && !wasStreamingRef.current) {
-      pinnedToBottomRef.current = true;
+      setPinned(true);
       setScrolledFromBottom(false);
       scrollToBottomImmediate();
     }
     wasStreamingRef.current = streaming;
-  }, [streaming, scrollToBottomImmediate]);
+  }, [streaming, scrollToBottomImmediate, setPinned]);
 
   // Stick-to-bottom while streaming is handled by useStickToBottomScroll (smooth rAF lerp).
 
