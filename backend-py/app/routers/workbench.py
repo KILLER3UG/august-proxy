@@ -580,86 +580,96 @@ async def respondMutation(request: Request):
     # but only once the whole approval stack is cleared. Continuing mid-stack
     # hides remaining MutationDiffCards.
     # On reject, optionally notify so the model does not assume the change landed.
+    #
+    # Ask-mode already returned a [Blocked] tool result to the model, so a still-
+    # running original stream will never "pick up" the grant. Cancel any stale
+    # active stream and always start the continuation turn.
     if do_continue and session_id and remaining <= 0:
         existing = _activeStreams.get(session_id)
         if existing and not existing.done():
-            # Stream still running — grant/result will apply on next iteration if any.
-            pass
-        else:
-            if existing and existing.done():
-                _activeStreams.pop(session_id, None)
-            session = wb.getWorkbenchSession(session_id)
-            if reject:
-                msg = (
-                    f'The user **rejected** the pending tool `{tool_name}`. '
-                    'Do not run that change. Acknowledge briefly and ask how they want to proceed.'
-                )
-            else:
-                result_snip = (exec_result or as_str(result.get('toolResult'), ''))[:6000]
-                msg = (
-                    f'The user **accepted** the pending tool `{tool_name}` '
-                    f'(scope={result.get("scope")}). '
-                    'It was executed with the approved arguments — do **not** re-run it '
-                    'unless further changes are needed.\n\n'
-                    f'Tool result:\n```\n{result_snip}\n```\n\n'
-                    'Continue the task with this result.'
-                )
-            cancel_event = asyncio.Event()
-            _cancelled[session_id] = cancel_event
-            seq = event_log.event_log.append(
-                session_id,
-                'started',
-                {
-                    'sinceSeq': 0,
-                    'reason': 'mutation_rejected' if reject else 'mutation_accepted_executed',
-                },
+            try:
+                stale_cancel = _cancelled.get(session_id)
+                if stale_cancel and not stale_cancel.is_set():
+                    stale_cancel.set()
+                existing.cancel()
+            except Exception:
+                pass
+            _activeStreams.pop(session_id, None)
+        elif existing and existing.done():
+            _activeStreams.pop(session_id, None)
+
+        session = wb.getWorkbenchSession(session_id)
+        if reject:
+            msg = (
+                f'The user **rejected** the pending tool `{tool_name}`. '
+                'Do not run that change. Acknowledge briefly and ask how they want to proceed.'
             )
-            provider = str(getattr(session, 'provider', '') or '') if session else ''
-            agent_id = str(getattr(session, 'agentId', '') or '') if session else ''
-            model = str(getattr(session, 'model', '') or '') if session else ''
-            guard = str(getattr(session, 'guardMode', '') or '') if session else ''
+        else:
+            result_snip = (exec_result or as_str(result.get('toolResult'), ''))[:6000]
+            msg = (
+                f'The user **accepted** the pending tool `{tool_name}` '
+                f'(scope={result.get("scope")}). '
+                'It was executed with the approved arguments — do **not** re-run it '
+                'unless further changes are needed.\n\n'
+                f'Tool result:\n```\n{result_snip}\n```\n\n'
+                'Continue the task with this result.'
+            )
+        cancel_event = asyncio.Event()
+        _cancelled[session_id] = cancel_event
+        seq = event_log.event_log.append(
+            session_id,
+            'started',
+            {
+                'sinceSeq': 0,
+                'reason': 'mutation_rejected' if reject else 'mutation_accepted_executed',
+            },
+        )
+        provider = str(getattr(session, 'provider', '') or '') if session else ''
+        agent_id = str(getattr(session, 'agentId', '') or '') if session else ''
+        model = str(getattr(session, 'model', '') or '') if session else ''
+        guard = str(getattr(session, 'guardMode', '') or '') if session else ''
 
-            def _emit_continue_event(event: dict[str, object]) -> None:
-                event_log.event_log.append(session_id, as_str(event.get('type'), 'message'), event)
+        def _emit_continue_event(event: dict[str, object]) -> None:
+            event_log.event_log.append(session_id, as_str(event.get('type'), 'message'), event)
 
-            async def _continue_after_decision() -> None:
+        async def _continue_after_decision() -> None:
+            try:
+                await wb.sendWorkbenchMessageStream(
+                    sessionId=session_id,
+                    message=msg,
+                    provider=provider,
+                    agentId=agent_id,
+                    model=model,
+                    guardMode=guard,
+                    emit=_emit_continue_event,
+                    signal=cancel_event,
+                )
+            except Exception:
                 try:
-                    await wb.sendWorkbenchMessageStream(
-                        sessionId=session_id,
-                        message=msg,
-                        provider=provider,
-                        agentId=agent_id,
-                        model=model,
-                        guardMode=guard,
-                        emit=_emit_continue_event,
-                        signal=cancel_event,
+                    event_log.event_log.append(
+                        session_id,
+                        'error',
+                        {
+                            'type': 'error',
+                            'message': 'Failed to continue after mutation decision',
+                        },
+                    )
+                    event_log.event_log.append(
+                        session_id, 'done', {'type': 'done', 'sessionId': session_id}
                     )
                 except Exception:
-                    try:
-                        event_log.event_log.append(
-                            session_id,
-                            'error',
-                            {
-                                'type': 'error',
-                                'message': 'Failed to continue after mutation decision',
-                            },
-                        )
-                        event_log.event_log.append(
-                            session_id, 'done', {'type': 'done', 'sessionId': session_id}
-                        )
-                    except Exception:
-                        pass
-                finally:
-                    _cancelled.pop(session_id, None)
-                    if _activeStreams.get(session_id) is cont_task:
-                        _activeStreams.pop(session_id, None)
+                    pass
+            finally:
+                _cancelled.pop(session_id, None)
+                if _activeStreams.get(session_id) is cont_task:
+                    _activeStreams.pop(session_id, None)
 
-            cont_task = asyncio.create_task(_continue_after_decision())
-            _activeStreams[session_id] = cont_task
-            _chatTasks.add(cont_task)
-            cont_task.add_done_callback(_chatTasks.discard)
-            result['continued'] = True
-            result['sinceSeq'] = seq
+        cont_task = asyncio.create_task(_continue_after_decision())
+        _activeStreams[session_id] = cont_task
+        _chatTasks.add(cont_task)
+        cont_task.add_done_callback(_chatTasks.discard)
+        result['continued'] = True
+        result['sinceSeq'] = seq
 
     return result
 

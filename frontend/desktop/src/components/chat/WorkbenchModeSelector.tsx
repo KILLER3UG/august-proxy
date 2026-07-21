@@ -1,20 +1,25 @@
 /* eslint-disable react-refresh/only-export-components */
 
-/* ── WorkbenchModeSelector — agent mode + tool reach (model-menu style) ─ */
-/* One pill trigger. Primary popover has two hover flyouts:
- *   Agent mode → Plan / Ask / Make changes
- *   Tool reach → Read-only / Project / Whole machine
- * Portaled + fixed so the chat column overflow does not clip panels. */
+/* ── WorkbenchModeSelector — agent mode popover + tool-reach flyout ──── */
+/* Matches model dropdown: compact primary panel, Tool reach as a side
+ * flyout (not stacked in the same tall list). */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Hand,
+  Shield,
+  ShieldCheck,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
   chipTrigger,
   menuFlyout,
-  menuFlyoutSwap,
   menuItem,
   menuItemHover,
   menuItemStagger,
@@ -28,48 +33,64 @@ import {
   type WorkbenchSandboxModeConfig,
 } from '@/components/chat/SandboxModeSelector';
 
-export type WorkbenchGuardMode = 'plan' | 'full' | 'ask';
+export type WorkbenchGuardMode = 'ask' | 'edit' | 'plan' | 'full';
 
 export interface WorkbenchGuardModeConfig {
   id: WorkbenchGuardMode;
   label: string;
   description: string;
   agentId: 'plan' | 'build';
+  Icon: typeof Hand;
 }
 
+/** Display order matches the reference: Ask → Edit → Plan → Full. */
 export const WORKBENCH_GUARD_MODES = {
-  plan: {
-    id: 'plan',
-    label: 'Plan only',
-    description:
-      'Agent mode: don’t change files yet — August investigates, then shows a plan for you to approve.',
-    agentId: 'plan' as const,
-  },
   ask: {
     id: 'ask',
     label: 'Ask before changes',
-    description:
-      'Agent mode: August asks you before changing files or running risky commands. (Separate from tool reach / sandbox.)',
+    description: 'Ask before file changes.',
     agentId: 'build' as const,
+    Icon: Hand,
+  },
+  edit: {
+    id: 'edit',
+    label: 'Edit automatically',
+    description: 'Edit files automatically.',
+    agentId: 'build' as const,
+    Icon: ShieldCheck,
+  },
+  plan: {
+    id: 'plan',
+    label: 'Plan mode',
+    description: 'Plan before editing.',
+    agentId: 'plan' as const,
+    Icon: ClipboardList,
   },
   full: {
     id: 'full',
-    label: 'Make changes',
-    description:
-      'Agent mode: August can edit and run tools without asking each time. You can still Stop anytime.',
+    label: 'Full access',
+    description: 'Run with fewer confirmations.',
     agentId: 'build' as const,
+    Icon: Shield,
   },
 } as const satisfies Record<WorkbenchGuardMode, WorkbenchGuardModeConfig>;
 
+export const WORKBENCH_GUARD_MODE_ORDER: WorkbenchGuardMode[] = [
+  'ask',
+  'edit',
+  'plan',
+  'full',
+];
+
 export function getWorkbenchGuardMode(mode: WorkbenchGuardMode) {
-  return WORKBENCH_GUARD_MODES[mode];
+  return WORKBENCH_GUARD_MODES[mode] ?? WORKBENCH_GUARD_MODES.full;
 }
 
 export function applyWorkbenchGuardMode(_mode: WorkbenchGuardMode, message: string) {
   return message.trim();
 }
 
-type FlyoutKind = 'agent' | 'reach';
+type FlyoutKind = 'reach';
 
 interface WorkbenchModeSelectorProps {
   selectedMode: WorkbenchGuardMode;
@@ -103,7 +124,7 @@ export function WorkbenchModeSelector({
 
   const guard = getWorkbenchGuardMode(selectedMode);
   const sandbox = getWorkbenchSandboxMode(sandboxMode);
-  const agentOptions = Object.values(WORKBENCH_GUARD_MODES) as WorkbenchGuardModeConfig[];
+  const agentOptions = WORKBENCH_GUARD_MODE_ORDER.map((id) => WORKBENCH_GUARD_MODES[id]);
   const reachOptions = Object.values(WORKBENCH_SANDBOX_MODES) as WorkbenchSandboxModeConfig[];
 
   const [primaryPos, setPrimaryPos] = useState<{
@@ -111,10 +132,7 @@ export function WorkbenchModeSelector({
     left: number;
     width: number;
   } | null>(null);
-  const [flyoutPos, setFlyoutPos] = useState<{
-    top: number;
-    left: number;
-  } | null>(null);
+  const [flyoutPos, setFlyoutPos] = useState<{ top: number; left: number } | null>(null);
 
   const closeAll = useCallback(() => {
     clearAllTimers();
@@ -125,9 +143,9 @@ export function WorkbenchModeSelector({
   const computePrimaryPos = useCallback(() => {
     const el = triggerRef.current;
     if (!el) return null;
-    const r = el.getBoundingClientRect();
     const width = 280;
-    const estHeight = 140;
+    const estHeight = 260;
+    const r = el.getBoundingClientRect();
     const top = Math.max(8, r.top - estHeight - 6);
     let left = r.left;
     left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
@@ -140,7 +158,7 @@ export function WorkbenchModeSelector({
     if (!el || !panel) return;
     const r = el.getBoundingClientRect();
     const width = 280;
-    const panelHeight = panel.offsetHeight || 140;
+    const panelHeight = panel.offsetHeight || 260;
     const top = Math.max(8, r.top - panelHeight - 6);
     let left = r.left;
     left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
@@ -185,7 +203,7 @@ export function WorkbenchModeSelector({
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [open, flyout, closeAll]);
+  }, [open, flyout, closeAll, setFlyout]);
 
   useEffect(() => {
     if (!open) resetFlyout();
@@ -215,16 +233,21 @@ export function WorkbenchModeSelector({
     };
   }, [open, flyout, computePrimaryPos, refinePrimaryPos, computeFlyoutPos]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || !flyout) {
-      setFlyoutPos(null);
+      if (!flyout) setFlyoutPos(null);
       return;
     }
-    requestAnimationFrame(() => {
+    const seeded = computeFlyoutPos();
+    if (seeded) setFlyoutPos(seeded);
+    const raf = requestAnimationFrame(() => {
       const fp = computeFlyoutPos();
       if (fp) setFlyoutPos(fp);
     });
+    return () => cancelAnimationFrame(raf);
   }, [open, flyout, computeFlyoutPos]);
+
+  const ModeIcon = guard.Icon;
 
   const primaryPanel = (
     <AnimatePresence>
@@ -239,42 +262,56 @@ export function WorkbenchModeSelector({
             width: primaryPos.width,
           }}
           data-testid="agent-mode-menu"
+          role="menu"
+          aria-label="Agent mode"
         >
-          <motion.div
-            variants={menuItemStagger}
-            initial="initial"
-            animate="animate"
-          >
-            <motion.div variants={menuItem} className="px-3 pt-2.5 pb-1.5">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
-                Permissions
-              </div>
-              <p className="text-[11px] leading-snug text-muted-foreground mt-0.5">
-                Agent mode is approvals. Tool reach is where shell/files can go.
-              </p>
-            </motion.div>
+          <motion.div variants={menuItemStagger} initial="initial" animate="animate" className="py-1">
+            {agentOptions.map((option) => {
+              const Icon = option.Icon;
+              const selected = selectedMode === option.id;
+              return (
+                <motion.button
+                  key={option.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  variants={menuItem}
+                  {...menuItemHover}
+                  onClick={() => {
+                    onChange(option.id);
+                    closeAll();
+                  }}
+                  className={cn(
+                    'w-full text-left px-3 py-2.5 flex items-start gap-2.5 transition',
+                    selected ? 'bg-muted/40' : 'hover:bg-muted/30',
+                  )}
+                  data-testid="agent-mode-row"
+                  data-mode={option.id}
+                >
+                  <Icon
+                    className={cn(
+                      'size-4 mt-0.5 shrink-0',
+                      selected ? 'text-foreground' : 'text-muted-foreground',
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-foreground leading-snug">
+                      {option.label}
+                    </span>
+                    <span className="block mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                      {option.description}
+                    </span>
+                  </span>
+                  {selected ? (
+                    <Check className="size-4 shrink-0 mt-0.5 text-foreground" aria-hidden />
+                  ) : (
+                    <span className="size-4 shrink-0" aria-hidden />
+                  )}
+                </motion.button>
+              );
+            })}
 
-            <div className="h-px bg-border/50 mx-2" />
-
-            <motion.button
-              type="button"
-              variants={menuItem}
-              {...menuItemHover}
-              onClick={() => toggleFlyout('agent')}
-              onMouseEnter={() => scheduleFlyoutOpen('agent')}
-              onMouseLeave={scheduleFlyoutClose}
-              className={cn(
-                'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
-                flyout === 'agent' && 'bg-muted/30',
-              )}
-              data-testid="agent-mode-row"
-            >
-              <span className="text-sm text-foreground">Agent mode</span>
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                {guard.label}
-                <ChevronRight className="size-3.5 opacity-60" />
-              </span>
-            </motion.button>
+            <div className="h-px bg-border/50 mx-2 my-1" />
 
             <motion.button
               type="button"
@@ -303,7 +340,7 @@ export function WorkbenchModeSelector({
 
   const sideFlyout = (
     <AnimatePresence>
-      {open && flyout && flyoutPos && (
+      {open && flyout === 'reach' && flyoutPos && (
         <motion.div
           ref={flyoutRef}
           {...menuFlyout}
@@ -311,90 +348,46 @@ export function WorkbenchModeSelector({
           onMouseLeave={scheduleFlyoutClose}
           className="fixed z-50 w-[280px] bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
           style={{ top: flyoutPos.top, left: flyoutPos.left }}
-          data-testid={
-            flyout === 'agent' ? 'agent-mode-flyout' : 'tool-reach-flyout'
-          }
+          data-testid="tool-reach-flyout"
+          role="menu"
+          aria-label="Tool reach"
         >
-          <AnimatePresence initial={false} mode="wait">
-              {flyout === 'agent' ? (
-                <motion.div key="agent" {...menuFlyoutSwap}>
-                  <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
-                    Should August act? Approvals only — not the same as tool
-                    reach.
+          <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
+            Where shell/files can go. Separate from agent mode approvals.
+          </div>
+          <div className="py-0.5 pb-1">
+            {reachOptions.map((option) => {
+              const selected = sandboxMode === option.id;
+              return (
+                <motion.button
+                  key={option.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  {...menuItemHover}
+                  onClick={() => {
+                    onSandboxChange(option.id);
+                    setFlyout(null);
+                  }}
+                  className={cn(
+                    'w-full text-left px-3 py-2 transition',
+                    selected
+                      ? 'text-primary bg-primary/10'
+                      : 'text-foreground/85 hover:bg-muted/40',
+                  )}
+                  title={option.description}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{option.label}</span>
+                    {selected && <Check className="size-3.5 shrink-0" />}
                   </div>
-                  <div className="py-0.5 pb-1">
-                    {agentOptions.map((option) => (
-                      <motion.button
-                        key={option.id}
-                        type="button"
-                        {...menuItemHover}
-                        onClick={() => {
-                          onChange(option.id);
-                          setFlyout(null);
-                        }}
-                        className={cn(
-                          'w-full text-left px-3 py-2 transition',
-                          selectedMode === option.id
-                            ? 'text-primary bg-primary/10'
-                            : 'text-foreground/85 hover:bg-muted/40',
-                        )}
-                        title={option.description}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium">
-                            {option.label}
-                          </span>
-                          {selectedMode === option.id && (
-                            <Check className="size-3.5 shrink-0" />
-                          )}
-                        </div>
-                        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                          {option.description}
-                        </p>
-                      </motion.button>
-                    ))}
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div key="reach" {...menuFlyoutSwap}>
-                  <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
-                    Where shell/files can go. Project only by default.
-                  </div>
-                  <div className="py-0.5 pb-1">
-                    {reachOptions.map((option) => (
-                      <motion.button
-                        key={option.id}
-                        type="button"
-                        {...menuItemHover}
-                        onClick={() => {
-                          onSandboxChange(option.id);
-                          setFlyout(null);
-                        }}
-                        className={cn(
-                          'w-full text-left px-3 py-2 transition',
-                          sandboxMode === option.id
-                            ? 'text-primary bg-primary/10'
-                            : 'text-foreground/85 hover:bg-muted/40',
-                        )}
-                        title={option.description}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium">
-                            {option.label}
-                          </span>
-                          {sandboxMode === option.id && (
-                            <Check className="size-3.5 shrink-0" />
-                          )}
-                        </div>
-                        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                          {option.description}
-                        </p>
-                      </motion.button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-          </AnimatePresence>
+                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                    {option.description}
+                  </p>
+                </motion.button>
+              );
+            })}
+          </div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -413,13 +406,14 @@ export function WorkbenchModeSelector({
             setOpen(true);
           }
         }}
-        className="h-8 px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted hover:bg-muted/70 text-foreground border border-border/50 inline-flex items-center gap-1 max-w-[200px]"
+        className="h-8 px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted hover:bg-muted/70 text-foreground border border-border/50 inline-flex items-center gap-1.5 max-w-[220px]"
         title={`${guard.description}\nTool reach: ${sandbox.description}`}
         aria-label={`Agent mode: ${guard.label}. Tool reach: ${sandbox.shortLabel}`}
         aria-expanded={open}
         aria-haspopup="menu"
         data-testid="agent-mode-chip"
       >
+        <ModeIcon className="size-3.5 shrink-0 opacity-80" aria-hidden />
         <span className="truncate">{guard.label}</span>
         <ChevronDown
           className={cn(

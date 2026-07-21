@@ -24,7 +24,7 @@ export type SessionStatus = {
     pendingPath?: string | null;
     pendingCreatedAt: number | string | null;
     updatedAt: string | null;
-    guardMode: 'plan' | 'ask' | 'full';
+    guardMode: 'plan' | 'ask' | 'edit' | 'full';
     sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
     sandboxNetwork?: boolean;
     approved: boolean;

@@ -51,10 +51,22 @@ export function useSubagentStream(sessionId: string | null): UseSubagentStreamRe
 
       // Update agent status from events
       if (event.taskId && (event.type === 'subagentCompleted' || event.type === 'subagentDone')) {
+        const status =
+          event.status === 'failed' || event.status === 'error' || event.status === 'cancelled'
+            ? (event.status as SubagentInfo['status'])
+            : 'completed';
         setAgents((prev) =>
           prev.map((a) =>
             a.taskId === event.taskId
-              ? { ...a, status: 'completed', finishedAt: Date.now() }
+              ? { ...a, status, finishedAt: Date.now() }
+              : a,
+          ),
+        );
+      } else if (event.type === 'subagentFailed' && event.taskId) {
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.taskId === event.taskId
+              ? { ...a, status: 'failed', finishedAt: Date.now(), error: String(event.error || '') }
               : a,
           ),
         );

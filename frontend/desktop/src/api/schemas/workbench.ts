@@ -93,7 +93,7 @@ const WorkbenchSessionSchema = z.object({
   lastMutationAt: z.string().nullable(),
   updatedAt: z.string(),
   todos: z.array(z.unknown()),
-  guardMode: z.enum(['plan', 'full', 'ask']),
+  guardMode: z.enum(['plan', 'full', 'ask', 'edit']),
   sandboxMode: z
     .enum(['read-only', 'workspace-write', 'danger-full-access'])
     .or(z.string())

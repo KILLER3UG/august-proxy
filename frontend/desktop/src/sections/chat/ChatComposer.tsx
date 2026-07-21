@@ -7,6 +7,7 @@ import {
   INSERT_COMPOSER_TEXT_EVENT,
 } from '@/api/ui-events';
 import { ContextRing } from './ContextRing';
+import { useFocusedSubagent } from '@/components/chat/focused-subagent';
 
 export type { ContextBreakdown } from './context-breakdown';
 export { estimateContextBreakdown } from './context-breakdown';
@@ -110,6 +111,7 @@ export function ChatComposer({
   onSetModelVisibilityOpen,
   onSetSessionModel,
 }: ChatComposerProps) {
+  const focusedSubagent = useFocusedSubagent();
   // Task 5: respond to LLM-driven UI events that target the composer.
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -232,9 +234,11 @@ export function ChatComposer({
               placeholder={
                 streaming
                   ? 'Add a direction while August works…'
-                  : currentModel
-                    ? `Message ${currentModel.name}…`
-                    : 'Message August…'
+                  : focusedSubagent
+                    ? 'Send follow-up with subagent'
+                    : currentModel
+                      ? `Message ${currentModel.name}…`
+                      : 'Message August…'
               }
               rows={1}
               className="w-full resize-none bg-transparent px-4 pt-3 pb-1.5 bubble-body outline-none placeholder:text-muted-foreground"

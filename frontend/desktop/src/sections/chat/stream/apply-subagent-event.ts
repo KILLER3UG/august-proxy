@@ -9,7 +9,7 @@ import { updateSessionStreamState } from './session-stream-store';
 import { appendBlockEvent } from './append-block-event';
 
 export type SubagentStreamEvent =
-  | { type: 'subagentStart'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; depth?: number }
+  | { type: 'subagentStart'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; goal?: string; depth?: number }
   | { type: 'subagent_thinking'; jobId: string; content?: string }
   | { type: 'subagentText'; jobId: string; content?: string }
   | { type: 'subagentToolCall'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
@@ -32,13 +32,17 @@ export function applySubagentEvent(
     updateSessionStreamState(sessionId, (prev) => {
       const blocks = new Map(prev.subagentBlocks);
       if (blocks.has(jobId)) return {};
+      const task =
+        event.task ||
+        (event as { goal?: string }).goal ||
+        undefined;
       blocks.set(jobId, {
         id: `sb_${jobId}`,
         jobId,
         parentToolId: event.parentToolUseId || `subagent-${jobId}`,
         agentId: event.agentId,
         scope: event.scope,
-        task: event.task,
+        task,
         depth: event.depth,
         status: 'running',
         startedAt: Date.now(),
@@ -58,8 +62,22 @@ export function applySubagentEvent(
       const status = event.status === 'failed' ? 'failed'
         : event.status === 'cancelled' ? 'cancelled'
         : 'completed';
+      let inner = current.blocks;
+      const resultText = (event.result || '').trim();
+      if (resultText) {
+        const hasFinal = inner.some(
+          (b) => b.type === 'finalOutput' && (b.content || '').trim(),
+        );
+        if (!hasFinal) {
+          inner = appendBlockEvent(inner, {
+            type: 'finalOutput',
+            content: resultText,
+          });
+        }
+      }
       blocks.set(jobId, {
         ...current,
+        blocks: inner,
         status,
         finishedAt: Date.now(),
         error: event.message,
@@ -126,6 +144,7 @@ export function makeSubagentEventHandlers(sessionId: string): {
     parentToolUseId?: string;
     scope?: string;
     task?: string;
+    goal?: string;
     depth?: number;
   }) => void;
   onSubagentDone: (data: {
@@ -160,6 +179,7 @@ export function makeSubagentEventHandlers(sessionId: string): {
         parentToolUseId: data.parentToolUseId,
         scope: data.scope,
         task: data.task,
+        goal: data.goal,
         depth: data.depth,
       });
     },

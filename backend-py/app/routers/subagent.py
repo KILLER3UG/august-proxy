@@ -42,6 +42,7 @@ class SpawnRequest(CamelModel):
 
     work_items: list[WorkItem]
     mode: str = 'auto'
+    background: bool = True
 
 
 class ProposeBreakdownRequest(CamelModel):
@@ -85,7 +86,9 @@ async def spawnSubagents(body: SpawnRequest, request: Request):
         }
         for w in body.work_items
     ]
-    result = await executeSpawnSubagents(orch, session, workItems, mode=body.mode)
+    result = await executeSpawnSubagents(
+        orch, session, workItems, mode=body.mode, background=body.background
+    )
     return result
 
 
@@ -120,31 +123,75 @@ async def proposeBreakdown(body: ProposeBreakdownRequest, request: Request):
 async def streamSubagentEvents(request: Request, sessionId: Optional[str] = None):
     """SSE stream of sub-agent events for a session.
 
-    Uses the existing ``event_log.py`` SSE pattern: yields ``data:`` lines
-    as sub-agent events occur.
+    Fans out orchestrator lifecycle events (and, when ``sessionId`` is set,
+    workbench ``event_log`` subagent payloads). Stays open across many
+    parallel completions — does not close after the first done event.
     """
     from app.services.event_log import event_log
+
+    orch = _getOrchestrator(request)
 
     async def eventGenerator():
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=256)
 
-        def handler(ev: dict[str, Any]) -> None:
+        def _push(ev: dict[str, Any]) -> None:
+            if sessionId:
+                sid = str(ev.get('sessionId') or '')
+                if sid and sid != sessionId:
+                    return
             try:
                 queue.put_nowait(ev)
             except asyncio.QueueFull:
                 pass
 
-        unsub = event_log.on('subagent', handler)
+        for name in ('subagentStarted', 'subagentCompleted', 'subagentFailed'):
+            orch.on(name, _push)
+
+        log_task: asyncio.Task | None = None
+        if sessionId:
+
+            async def _forward_log() -> None:
+                async for ev in event_log.subscribe(sessionId):
+                    et = str(ev.get('type') or '')
+                    payload = ev.get('payload') if isinstance(ev.get('payload'), dict) else {}
+                    inner = str(payload.get('type') or '') if isinstance(payload, dict) else ''
+                    if not (
+                        et.startswith('subagent')
+                        or inner.startswith('subagent')
+                        or et in ('subagent_event', 'subagentStart', 'subagentDone')
+                    ):
+                        continue
+                    out = dict(payload) if isinstance(payload, dict) else {}
+                    out.setdefault('type', inner or et)
+                    out.setdefault('sessionId', sessionId)
+                    _push(out)
+
+            log_task = asyncio.create_task(_forward_log())
+
         try:
             while True:
-                ev = await queue.get()
-                yield f'data: {json.dumps(ev)}\n\n'
-                if ev.get('type') in ('subagentDone', 'subagentCompleted', 'done'):
+                if await request.is_disconnected():
                     break
+                try:
+                    ev = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield f'data: {json.dumps(ev, default=str)}\n\n'
+                except asyncio.TimeoutError:
+                    yield ': keepalive\n\n'
         except asyncio.CancelledError:
             pass
         finally:
-            unsub()
+            for name in ('subagentStarted', 'subagentCompleted', 'subagentFailed'):
+                handlers = orch._eventHandlers.get(name) or []
+                try:
+                    handlers.remove(_push)
+                except ValueError:
+                    pass
+            if log_task is not None:
+                log_task.cancel()
+                try:
+                    await log_task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
     return StreamingResponse(
         eventGenerator(),

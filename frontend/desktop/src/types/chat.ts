@@ -199,7 +199,7 @@ export interface WorkbenchBtwState {
 }
 
 /** Mode of Workbench execution. */
-export type WorkbenchMode = 'plan' | 'full' | 'ask';
+export type WorkbenchMode = 'plan' | 'full' | 'ask' | 'edit';
 
 /** Reasoning effort level for chat turns. Includes `max` because some
  *  backends (Anthropic extended thinking) accept it as an alternative

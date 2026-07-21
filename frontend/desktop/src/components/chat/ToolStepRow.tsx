@@ -3,10 +3,14 @@
  * Collapse state is owned by the parent (id-keyed) so it survives re-renders.
  */
 
-import { useId, type ReactNode } from 'react';
+import { Children, useId, type ReactNode } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ToolIcon } from '@/components/ui/ToolIcon';
+import { FileIcon } from '@/components/ui/FileIcon';
+import { extractFilename } from '@/components/chat/tool/extractors';
+import { classifyTool } from '@/lib/tool-classify';
+import { formatToolContext } from '@/lib/tool-context-format';
 import type { ToolEntry } from '@/components/chat/ToolCallItem';
 
 export function ToolStepRow({
@@ -32,12 +36,35 @@ export function ToolStepRow({
   const panelId = `tool-step-panel-${toolId}`;
   const running = tool.status === 'running';
   const errored = tool.status === 'error';
-  const detail =
-    tool.summary?.trim() ||
-    (tool.context && tool.context.length > 80
-      ? `${tool.context.slice(0, 77).trimEnd()}…`
-      : tool.context?.trim()) ||
-    '';
+  const filename = !isCommand ? extractFilename(tool.context) : null;
+  const isView = classifyTool(tool.name) === 'view';
+  // View tools: no truncated file-body detail — path lives in the row label.
+  const friendlyCtx = tool.context ? formatToolContext(tool.name, tool.context) : null;
+  const detail = isView
+    ? ''
+    : (
+        tool.summary?.trim() ||
+        friendlyCtx?.summary?.trim() ||
+        (tool.context && tool.context.length > 80
+          ? `${tool.context.slice(0, 77).trimEnd()}…`
+          : tool.context?.trim()) ||
+        ''
+      );
+  const childNodes = Children.toArray(children);
+  const hasChildren = childNodes.length > 0;
+  // ToolCallItemBody is often passed as children but returns null for view/read
+  // tools (path lives on the label). Don't treat that empty element as expandable.
+  const hasExpandableContent = !!(
+    detail ||
+    tool.error ||
+    tool.inlineDiff ||
+    (tool.searchHits && tool.searchHits.length > 0) ||
+    tool.providerSetup ||
+    tool.pendingApproval ||
+    (!isView && hasChildren)
+  );
+  // View tools stay header-only even while running (no empty "Running…" panel).
+  const canExpand = hasExpandableContent || (running && !isView);
 
   return (
     <div
@@ -53,13 +80,16 @@ export function ToolStepRow({
       <button
         type="button"
         className="process-tool-toggle"
-        onClick={onToggle}
+        onClick={canExpand ? onToggle : undefined}
         aria-expanded={expanded}
-        aria-controls={panelId}
+        aria-controls={canExpand ? panelId : undefined}
+        disabled={!canExpand}
       >
         <span className="process-step-gutter" aria-hidden>
           {running ? (
             <Loader2 className="process-step-icon animate-spin" />
+          ) : filename ? (
+            <FileIcon name={filename} size={12} className="process-step-icon-wrap" />
           ) : (
             <ToolIcon
               name={tool.name}
@@ -77,29 +107,31 @@ export function ToolStepRow({
         >
           {label}
         </span>
-        <ChevronDown
-          className={cn(
-            'process-tool-chevron',
-            expanded && 'process-tool-chevron--open',
-          )}
-          aria-hidden
-        />
+        {canExpand && (
+          <ChevronDown
+            className={cn(
+              'process-tool-chevron',
+              expanded && 'process-tool-chevron--open',
+            )}
+            aria-hidden
+          />
+        )}
       </button>
 
-      {expanded && (
+      {expanded && canExpand && (
         <div
           id={panelId}
           className="process-tool-panel"
           aria-live={running ? 'polite' : undefined}
         >
           <div className="process-tool-response-label">Response</div>
-          {detail && !children ? (
+          {detail && !hasChildren ? (
             <div className="process-tool-response">{detail}</div>
           ) : null}
-          {children ? (
-            <div className="process-tool-response">{children}</div>
+          {hasChildren ? (
+            <div className="process-tool-response">{childNodes}</div>
           ) : null}
-          {!detail && !children ? (
+          {!detail && !hasChildren ? (
             <div className="process-tool-response process-tool-response--empty">
               {running ? 'Running…' : 'No details'}
             </div>

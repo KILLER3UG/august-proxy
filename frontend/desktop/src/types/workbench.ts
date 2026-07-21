@@ -30,7 +30,7 @@ export interface WorkbenchGoal {
   lastMet: boolean;
 }
 
-export type WorkbenchGuardMode = 'plan' | 'full' | 'ask';
+export type WorkbenchGuardMode = 'plan' | 'full' | 'ask' | 'edit';
 export type WorkbenchSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 
 export interface WorkbenchSession {

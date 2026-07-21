@@ -140,3 +140,83 @@ def test_status_exposes_flat_pending_fields():
     assert status['pendingTool'] == 'write_file'
     assert status['pendingArgs']['path'] == 'foo.py'
     assert status.get('pendingPreview')
+
+
+@pytest.mark.asyncio
+async def test_accept_continues_even_when_stream_still_active(monkeypatch):
+    """Accept must start a continuation turn even if the original chat task
+    is still registered in _activeStreams (ask-mode already returned [Blocked]).
+    """
+    import asyncio
+
+    from app.routers import workbench as wr
+
+    s = create_workbench_session(guardMode='ask')
+    s.guardMode = 'ask'
+    wb._checkToolGuard(s, 'write_file', {'path': 'a.txt', 'content': 'x'})
+    token = s.pendingMutations[0]['token']
+
+    async def _hang() -> None:
+        await asyncio.Event().wait()
+
+    stale = asyncio.create_task(_hang())
+    wr._activeStreams[s.id] = stale
+    stale_cancel = asyncio.Event()
+    wr._cancelled[s.id] = stale_cancel
+
+    continued_msgs: list[str] = []
+
+    async def _fake_stream(**kwargs):
+        continued_msgs.append(str(kwargs.get('message') or ''))
+
+    async def _fake_exec(session, tool_name, args):
+        return f'Wrote {args.get("path")}'
+
+    monkeypatch.setattr(wb, 'sendWorkbenchMessageStream', _fake_stream)
+    monkeypatch.setattr(wb, 'execute_approved_mutation', _fake_exec)
+
+    class _Req:
+        async def json(self):
+            return {
+                'token': token,
+                'reject': False,
+                'scope': 'once',
+                'continue': True,
+            }
+
+    result = await wr.respondMutation(_Req())  # type: ignore[arg-type]
+    assert result.get('continued') is True
+    assert result.get('executed') is True
+    assert result.get('sinceSeq') is not None
+    assert stale_cancel.is_set()
+    # Cancellation is cooperative; yield until the hang task observes CancelledError.
+    for _ in range(50):
+        if stale.cancelled() or stale.done():
+            break
+        await asyncio.sleep(0)
+    assert stale.cancelled() or stale.done()
+
+    # Let the continuation task run
+    for _ in range(20):
+        if continued_msgs:
+            break
+        await asyncio.sleep(0.01)
+    assert continued_msgs, 'continuation turn never called sendWorkbenchMessageStream'
+    assert 'accepted' in continued_msgs[0].lower()
+    assert 'Tool result' in continued_msgs[0]
+
+    cont = wr._activeStreams.get(s.id)
+    if cont and not cont.done():
+        cont.cancel()
+        try:
+            await cont
+        except (asyncio.CancelledError, Exception):
+            pass
+    wr._activeStreams.pop(s.id, None)
+    wr._cancelled.pop(s.id, None)
+    if not stale.done():
+        stale.cancel()
+        try:
+            await stale
+        except (asyncio.CancelledError, Exception):
+            pass

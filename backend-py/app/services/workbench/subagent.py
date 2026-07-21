@@ -61,15 +61,23 @@ def _cleanup_agent_worktree(session: object, workspace: str, worktree_path: str)
 
 
 def _agentOrGeneral(agentId: str, parentAlias: str) -> dict[str, object]:
-    """Return the persisted agent, or a synthetic 'general' fallback."""
+    """Return the persisted agent, or a synthetic fallback for known roles."""
     agent = getAgent(agentId)
     if agent:
         return agent
+    aid = (agentId or 'general').strip() or 'general'
+    known = {
+        'general': ('General', 'General-purpose fallback sub-agent.'),
+        'explore': ('Explore', 'Read-only codebase exploration sub-agent.'),
+        'plan': ('Plan', 'Planning-focused sub-agent.'),
+        'shell': ('Shell', 'Command-oriented sub-agent.'),
+    }
+    name, desc = known.get(aid.lower(), (aid.title() or 'General', f'Synthetic sub-agent ({aid}).'))
     return {
-        'id': 'general',
-        'name': 'General',
-        'role': 'General',
-        'description': 'General-purpose fallback sub-agent.',
+        'id': aid.lower() if aid.lower() in known else 'general',
+        'name': name,
+        'role': name,
+        'description': desc,
         'permissions': ['all'],
         'modelAlias': parentAlias,
         'depth': 0,
@@ -145,6 +153,7 @@ async def executeSubAgent(
                 'name': as_str(agent.get('name'), 'General'),
                 'role': as_str(agent.get('role'), ''),
                 'goal': goal,
+                'task': goal,
                 'worktreePath': None,
                 'isolated': bool(isolate and workspace),
             }

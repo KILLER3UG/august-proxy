@@ -6,7 +6,6 @@
  */
 
 import { useMemo, type ReactNode } from 'react';
-import { Loader2 } from 'lucide-react';
 import type { MessageBlock } from '@/types/chat';
 import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
@@ -33,6 +32,18 @@ export function splitSubagentBlocks(blocks: MessageBlock[]): {
       break;
     }
   }
+  // Fallback: last non-empty text block is the verdict when finalOutput is missing.
+  if (lastIdx < 0) {
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      if (
+        blocks[i].type === 'text' &&
+        (blocks[i].content || '').trim()
+      ) {
+        lastIdx = i;
+        break;
+      }
+    }
+  }
   return {
     bodyBlocks: blocks.filter((_, i) => i !== lastIdx),
     finalOutput: lastIdx >= 0 ? blocks[lastIdx] : null,
@@ -46,6 +57,8 @@ interface SubagentTimelineProps {
   modelLabel?: string;
   /** Open a nested subagent in the parent detail modal. */
   onOpenAgent?: (jobId: string) => void;
+  /** When true, skip rendering the task/prompt (modal already shows it). */
+  hideTaskPrompt?: boolean;
 }
 
 export function SubagentTimeline({
@@ -54,6 +67,7 @@ export function SubagentTimeline({
   subPrompts,
   modelLabel,
   onOpenAgent,
+  hideTaskPrompt = false,
 }: SubagentTimelineProps) {
   const friendlyRole = useMemo(
     () => getAgentRoleLabel(state.agentId),
@@ -104,7 +118,7 @@ export function SubagentTimeline({
   if (state.blocks.length === 0) {
     return (
       <div className="space-y-3">
-        {state.task ? (
+        {!hideTaskPrompt && state.task ? (
           <div className="min-w-0 text-sm text-foreground/90 chat-message-text">
             <Markdown content={state.task} variant="assistant" />
           </div>
@@ -124,7 +138,7 @@ export function SubagentTimeline({
   if (isRunning) {
     return (
       <div className="space-y-2" data-slot="subagent-timeline-live">
-        {state.task ? (
+        {!hideTaskPrompt && state.task ? (
           <div className="min-w-0 text-sm text-foreground/90 chat-message-text pb-2 border-b border-border/40">
             <Markdown content={state.task} variant="assistant" />
           </div>
@@ -182,45 +196,41 @@ function NestedAgentRows({
 }) {
   if (agents.length === 0) return null;
   return (
-    <div className="mt-1 ml-1 space-y-0.5" data-slot="subagent-nested-list">
-      <div className="text-[11px] text-muted-foreground/70 px-1">Checked to do list</div>
-      {agents.map((agent) => {
-        const title = agent.task?.trim() || getAgentRoleLabel(agent.agentId);
-        return (
-          <button
-            key={agent.jobId}
-            type="button"
-            onClick={() => onOpenAgent?.(agent.jobId)}
-            className="flex w-full items-start gap-2 rounded-md px-1 py-1 text-left hover:bg-white/[0.03]"
-            data-subagent-id={agent.jobId}
-          >
-            <span className="mt-1 flex size-3.5 shrink-0 items-center justify-center">
-              {agent.status === 'running' ? (
-                <Loader2 className="size-3 animate-spin text-muted-foreground" />
-              ) : (
+    <div className="mt-1 space-y-1" data-slot="subagent-nested-list">
+      <div className="text-[12px] text-muted-foreground/75 px-0.5">Checked to-do list</div>
+      <ul className="flex flex-col gap-2" role="list">
+        {agents.map((agent) => {
+          const title = agent.task?.trim() || getAgentRoleLabel(agent.agentId);
+          return (
+            <li key={agent.jobId}>
+              <button
+                type="button"
+                onClick={() => onOpenAgent?.(agent.jobId)}
+                className="group grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 rounded-md px-0.5 py-0.5 text-left hover:bg-white/[0.03]"
+                data-subagent-id={agent.jobId}
+              >
                 <span
-                  className={
-                    agent.status === 'completed'
-                      ? 'size-2 rounded-full bg-emerald-500'
-                      : agent.status === 'failed'
-                        ? 'size-2 rounded-full bg-destructive'
-                        : 'size-2 rounded-full bg-muted-foreground/50'
-                  }
-                />
-              )}
-            </span>
-            <span className="min-w-0 flex-1 text-[12px] leading-5">
-              <span className="text-foreground/90">{title}</span>
-              {modelLabel ? (
-                <span className="text-muted-foreground/60"> {modelLabel}</span>
-              ) : null}
-            </span>
-            <span className="shrink-0 text-[11px] text-muted-foreground/70">
-              {SUBAGENT_STATUS_LABEL[agent.status]}
-            </span>
-          </button>
-        );
-      })}
+                  className="col-start-1 row-start-1 mt-[2px] text-[13px] leading-5 text-muted-foreground/70 select-none"
+                  aria-hidden
+                >
+                  •
+                </span>
+                <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2 text-[13px] leading-5">
+                  <span className="min-w-0 truncate text-foreground/90">{title}</span>
+                  {modelLabel ? (
+                    <span className="ml-auto shrink-0 text-[12px] text-muted-foreground/55">
+                      {modelLabel}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="col-start-2 row-start-2 text-[12px] leading-4 text-muted-foreground/70">
+                  {SUBAGENT_STATUS_LABEL[agent.status]}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -247,9 +257,9 @@ function SubagentInnerBlock({
       </ThinkingDisclosure>
     );
   }
-  if (block.type === 'finalOutput') {
+  if (block.type === 'finalOutput' || block.type === 'text') {
     return (
-      <div className="text-[12px] text-foreground/90 chat-message-text">
+      <div className="text-[13px] text-foreground/90 chat-message-text">
         <Markdown content={block.content || ''} />
       </div>
     );

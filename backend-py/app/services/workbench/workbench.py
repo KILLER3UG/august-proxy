@@ -104,11 +104,51 @@ _makeReviewLlmClient = _providers_mod.make_review_llm_client
 
 
 def normalizeGuardMode(mode: str) -> str:
-    """Normalize guard mode to one of: plan, full, ask."""
-    lower = mode.strip().lower()
-    if lower in ('plan', 'full', 'ask'):
-        return lower
-    return 'full'
+    """Normalize guard mode to one of: plan, ask, edit, full."""
+    lower = mode.strip().lower().replace('_', '-').replace(' ', '-')
+    aliases = {
+        'plan': 'plan',
+        'plan-only': 'plan',
+        'plan-mode': 'plan',
+        'ask': 'ask',
+        'ask-before': 'ask',
+        'ask-before-changes': 'ask',
+        'edit': 'edit',
+        'edit-auto': 'edit',
+        'edit-automatically': 'edit',
+        'auto': 'edit',
+        'full': 'full',
+        'full-access': 'full',
+        'make-changes': 'full',
+    }
+    return aliases.get(lower, 'full')
+
+
+def isShellMutationTool(toolName: str, args: dict[str, object] | None = None) -> bool:
+    """True when the tool is a shell/command execution (not a file edit)."""
+    if not toolName:
+        return False
+    name = toolName.lower()
+    shell = {
+        'run_command',
+        'bash',
+        'bashtool',
+        'shell',
+        'exec',
+        'execute',
+        'terminal',
+        'install',
+        'uninstall',
+        'pip_install',
+        'npm_install',
+        'pnpm_add',
+    }
+    if name in shell:
+        return True
+    if name == 'bulk':
+        op = as_str((args or {}).get('operation')).lower().replace('-', '_')
+        return op in {'run_command', 'bash', 'shell', 'exec'}
+    return any(m in name for m in ('bash', 'shell', 'terminal', 'run_command'))
 
 
 def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> bool:
@@ -645,17 +685,25 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
     """Build a single user-role message that wraps one or more queued/steer entries.
 
     Steers (``kind=steer``) are mid-run course corrections and take priority
-    in the preamble. Ordinary queue entries are follow-ups for later.
+    in the preamble. Subagent completions (``kind=subagent``) are next so the
+    model sees per-subagent results as they settle. Ordinary queue entries
+    are follow-ups for later.
     """
     if not entries:
         return {'role': 'user', 'content': ''}
-    # Steers first so the model sees direction before softer follow-ups
-    ordered = sorted(
-        entries,
-        key=lambda e: 0 if as_str(e.get('kind'), 'queue') == 'steer' else 1,
-    )
+
+    def _kind_rank(e: dict[str, object]) -> int:
+        k = as_str(e.get('kind'), 'queue')
+        if k == 'steer':
+            return 0
+        if k == 'subagent':
+            return 1
+        return 2
+
+    ordered = sorted(entries, key=_kind_rank)
     steers = [e for e in ordered if as_str(e.get('kind'), 'queue') == 'steer']
-    queues = [e for e in ordered if as_str(e.get('kind'), 'queue') != 'steer']
+    subagents = [e for e in ordered if as_str(e.get('kind'), 'queue') == 'subagent']
+    queues = [e for e in ordered if as_str(e.get('kind'), 'queue') not in ('steer', 'subagent')]
     parts: list[str] = []
     if steers:
         parts.append(
@@ -672,6 +720,17 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
             parts.append(f'<steer{attr}>')
             parts.append(text)
             parts.append('</steer>')
+            parts.append('')
+    if subagents:
+        parts.append(
+            '[SUBAGENT RESULTS — One or more background subagents finished. '
+            'Each block below is that subagent\'s completion (taskId + output). '
+            'Incorporate useful findings; do not re-launch the same work unless needed.]'
+        )
+        parts.append('')
+        for entry in subagents:
+            text = as_str(entry.get('text'), '')
+            parts.append(text)
             parts.append('')
     if queues:
         parts.append(
@@ -710,6 +769,7 @@ def enqueueUserMessage(
     ``kind``:
       - ``queue`` — follow-up for the next loop boundary (default)
       - ``steer`` — mid-run course correction; formatted with higher priority
+      - ``subagent`` — background subagent completion; delivered per-agent as it settles
 
     Returns the queued entry on success, or None if the session does not
     exist. Emits a ``user_message_queued`` SSE event so open tabs can
@@ -721,7 +781,7 @@ def enqueueUserMessage(
     if not hasattr(session, 'queuedUserMessages') or session.queuedUserMessages is None:
         session.queuedUserMessages = []
     kind_n = (kind or 'queue').strip().lower()
-    if kind_n not in ('queue', 'steer'):
+    if kind_n not in ('queue', 'steer', 'subagent'):
         kind_n = 'queue'
     entry: dict[str, object] = {
         'id': f'qm_{uuid.uuid4().hex[:12]}',
@@ -730,8 +790,8 @@ def enqueueUserMessage(
         'queuedAt': _now(),
         'kind': kind_n,
     }
-    # Steers jump to the front so they apply at the next tool boundary first
-    if kind_n == 'steer':
+    # Steers and subagent completions jump to the front so they apply first
+    if kind_n in ('steer', 'subagent'):
         session.queuedUserMessages.insert(0, entry)
     else:
         session.queuedUserMessages.append(entry)
@@ -1438,7 +1498,16 @@ async def _sendWorkbenchMessageStreamImpl(
             blockedReason = _checkToolGuard(session, toolName, toolInput)
             if blockedReason:
                 if emit:
-                    emit({'type': 'toolResult', 'name': toolName, 'error': blockedReason, 'status': 'blocked'})
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': f'[Blocked] {blockedReason}',
+                            'error': blockedReason,
+                            'status': 'blocked',
+                        }
+                    )
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': f'[Blocked] {blockedReason}'})
                 continue
             pending_regular.append((toolName, toolInput, toolUseId))
@@ -2057,6 +2126,34 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
             f"Tool '{toolName}' is destructive and cannot run in plan mode. "
             'Finish investigating with non-destructive tools, then call `submit_plan` '
             'and wait for the user to approve before executing.'
+        )
+    # Edit automatically: file edits proceed; shell/commands still need approval.
+    if session.guardMode == 'edit' and isShellMutationTool(toolName, args):
+        if has_tool_grant(session, toolName, args):
+            return None
+        key = _mutation_grant_key(toolName, args)
+        for pm in session.pendingMutations:
+            if not isinstance(pm, dict):
+                continue
+            if as_str(pm.get('toolName')) == toolName and _mutation_grant_key(
+                toolName, as_dict(pm.get('args'))
+            ) == key:
+                return (
+                    f"Tool '{toolName}' is waiting for the user's approval in the app. "
+                    'Do not retry until the user approves or rejects it.'
+                )
+        mutation = createPendingMutation(session, toolName, args)
+        preview = _mutation_preview(toolName, args)
+        if mutation is not None:
+            mutation['preview'] = preview
+            mutation['grantKey'] = key
+            saveSessions()
+            _emitSessionStatus(session.id)
+        return (
+            f"Tool '{toolName}' requires your approval before it can run. "
+            'A permission prompt was shown to the user (Accept / Reject, with once / this chat / always). '
+            'Do not retry. When the user accepts, the tool will be executed with the proposed arguments '
+            'and you will receive the result automatically.'
         )
     if session.guardMode == 'ask' and isPlanModeBlocked(toolName, args):
         if has_tool_grant(session, toolName, args):

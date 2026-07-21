@@ -32,6 +32,7 @@ import type { WorkbenchEventHandlers, WorkbenchSession } from '@/types/workbench
 import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
+import { classifyTool } from '@/lib/tool-classify';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { playReceiveChime } from '@/lib/chat-chime';
 import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
@@ -352,6 +353,26 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // Extract search hits from structured web_search JSON result
       let searchHits: Array<{ title: string; url: string; snippet?: string }> | undefined;
       const toolEntry = toolResults.find(t => t.id === id);
+      // View/read tools: keep a short metadata summary, never the file body.
+      const viewSummary = (() => {
+        if (!toolEntry || classifyTool(toolEntry.name) !== 'view') return null;
+        try {
+          const parsed = toolEntry.context ? JSON.parse(toolEntry.context) as Record<string, unknown> : null;
+          const path =
+            (typeof parsed?.path === 'string' && parsed.path) ||
+            (typeof parsed?.file_path === 'string' && parsed.file_path) ||
+            (typeof parsed?.filePath === 'string' && parsed.filePath) ||
+            (typeof parsed?.target_file === 'string' && parsed.target_file) ||
+            '';
+          const lines = resultText ? resultText.split(/\r?\n/).length : 0;
+          if (path && lines > 0) return `${path} · ${lines} line${lines === 1 ? '' : 's'}`;
+          if (path) return path;
+        } catch {
+          /* ignore */
+        }
+        return 'Read complete';
+      })();
+      const summaryText = viewSummary ?? resultText.slice(0, 240);
       if (toolEntry && (toolEntry.name === 'web_search' || toolEntry.name === 'WebSearch')) {
         if (parsedResult && Array.isArray(parsedResult.results)) {
           searchHits = (parsedResult.results as Array<{ title?: string; url?: string; snippet?: string }>).map((r) => ({
@@ -377,6 +398,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         } : undefined,
         status: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
         result: resultText,
+        summary: summaryText,
         error: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText : '',
         duration: t.startedAt ? Date.now() - t.startedAt : undefined,
         searchHits: searchHits ?? t.searchHits,
@@ -386,7 +408,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         type: 'toolResult',
         id,
         status: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
-        summary: resultText.slice(0, 240),
+        summary: summaryText,
         error: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText.slice(0, 240) : '',
         duration: toolResults.find(t => t.id === id)?.duration,
         searchHits,

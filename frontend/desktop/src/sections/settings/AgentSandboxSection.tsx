@@ -67,7 +67,7 @@ export function AgentSandboxSection() {
         </h2>
         <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
           <strong className="font-medium text-foreground/90">Not agent mode.</strong> Agent mode
-          (Plan / Ask / Make changes) on the chat input answers “should August act?” Tool reach /
+          (Ask / Edit / Plan / Full access) on the chat input answers “should August act?” Tool reach /
           sandbox answers “where can tools touch?” — by default only this project, with network off.
         </p>
       </div>

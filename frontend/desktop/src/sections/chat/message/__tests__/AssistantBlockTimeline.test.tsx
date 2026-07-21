@@ -151,7 +151,8 @@ describe('AssistantBlockTimeline process UI', () => {
         type: 'thinking',
         content: 'Considering the clock.',
       },
-      makeToolBlock('tool_a', 'system_info', 'done', {
+      // Non-view tool so summary remains expandable (view tools are header-only).
+      makeToolBlock('tool_a', 'diagnose_proxy', 'done', {
         summary: '{"time":"12:00"}',
       }),
       {
@@ -164,7 +165,7 @@ describe('AssistantBlockTimeline process UI', () => {
     expandActivitySummary();
     expect(screen.queryByText(/Thought\s*\(\d+\)/i)).not.toBeInTheDocument();
 
-    const toggle = screen.getByRole('button', { name: /system info/i });
+    const toggle = screen.getByRole('button', { name: /diagnos/i });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(document.querySelector('.process-tool-panel')).toBeNull();
     expect(screen.queryByText('Response')).not.toBeInTheDocument();
@@ -175,13 +176,13 @@ describe('AssistantBlockTimeline process UI', () => {
     expect(screen.getByText('Response')).toBeInTheDocument();
   });
 
-  it('keeps running tool expand/shimmer state across streaming re-render', () => {
-    const running = makeToolBlock('tool_run', 'read_file', 'running', {
-      context: JSON.stringify({ path: 'a.ts' }),
+  it('keeps running edit-tool expand/shimmer state across streaming re-render', () => {
+    const running = makeToolBlock('tool_run', 'write_file', 'running', {
+      context: JSON.stringify({ path: 'a.ts', content: 'x' }),
     });
     const { rerender } = renderTimeline(
       [
-        { id: 'th1', type: 'thinking', content: 'Reading…' },
+        { id: 'th1', type: 'thinking', content: 'Writing…' },
         running,
       ],
       { streaming: true, isLast: true },
@@ -199,7 +200,7 @@ describe('AssistantBlockTimeline process UI', () => {
       ...running,
       tool: {
         ...running.tool!,
-        context: JSON.stringify({ path: 'a.ts' }),
+        context: JSON.stringify({ path: 'a.ts', content: 'xy' }),
         preview: 'line 1\nline 2',
       },
     };
@@ -208,7 +209,7 @@ describe('AssistantBlockTimeline process UI', () => {
       <MemoryRouter initialEntries={['/session/sess_test']}>
         <AssistantBlockTimeline
           displayBlocks={[
-            { id: 'th1', type: 'thinking', content: 'Reading the file…' },
+            { id: 'th1', type: 'thinking', content: 'Writing the file…' },
             updatedRunning,
           ]}
           message={makeMessage()}
@@ -229,6 +230,24 @@ describe('AssistantBlockTimeline process UI', () => {
     );
   });
 
+  it('keeps view/read tools collapsed while running (no content preview)', () => {
+    renderTimeline(
+      [
+        makeToolBlock('tool_read', 'read_file', 'running', {
+          context: JSON.stringify({ path: 'a.ts' }),
+        }),
+      ],
+      { streaming: true, isLast: true },
+    );
+
+    const row = document.querySelector(
+      '[data-slot="tool-step-row"][data-status="running"]',
+    );
+    expect(row).toHaveAttribute('data-expanded', 'false');
+    const toggle = row!.querySelector('button');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('back-to-back tools keep independent expand state', () => {
     renderTimeline(
       [
@@ -236,7 +255,7 @@ describe('AssistantBlockTimeline process UI', () => {
           context: JSON.stringify({ path: 'a.ts' }),
         }),
         makeToolBlock('tool_b', 'write_file', 'running', {
-          context: JSON.stringify({ path: 'b.ts' }),
+          context: JSON.stringify({ path: 'b.ts', content: 'y' }),
         }),
       ],
       { streaming: true },
@@ -244,12 +263,13 @@ describe('AssistantBlockTimeline process UI', () => {
 
     const a = screen.getByRole('button', { name: /Reading/i });
     const b = screen.getByRole('button', { name: /Writing/i });
-    expect(a).toHaveAttribute('aria-expanded', 'true');
-    expect(b).toHaveAttribute('aria-expanded', 'true');
-
-    fireEvent.click(a);
+    // View tools stay collapsed; edit tools auto-expand while running.
     expect(a).toHaveAttribute('aria-expanded', 'false');
     expect(b).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(b);
+    expect(a).toHaveAttribute('aria-expanded', 'false');
+    expect(b).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('thinking steps render without Thought (N) count label', () => {
@@ -329,13 +349,13 @@ describe('AssistantBlockTimeline process UI', () => {
 
   it('keyboard Enter on collapsed tool toggles aria-expanded', () => {
     renderTimeline([
-      makeToolBlock('tool_k', 'system_info', 'done', {
+      makeToolBlock('tool_k', 'diagnose_proxy', 'done', {
         summary: '{"ok":1}',
       }),
     ]);
 
     expandActivitySummary();
-    const toggle = screen.getByRole('button', { name: /system info/i });
+    const toggle = screen.getByRole('button', { name: /diagnos/i });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     toggle.focus();
     fireEvent.keyDown(toggle, { key: 'Enter', code: 'Enter' });
@@ -347,14 +367,14 @@ describe('AssistantBlockTimeline process UI', () => {
   });
 
   it('updates collapsed label when same tool.id gets new context without resetting expand', () => {
-    const block = makeToolBlock('tool_same', 'read_file', 'done', {
-      context: JSON.stringify({ path: 'old.ts' }),
-      summary: 'old',
+    const block = makeToolBlock('tool_same', 'write_file', 'done', {
+      context: JSON.stringify({ path: 'old.ts', content: 'a' }),
+      summary: 'Wrote old.ts',
     });
     const { rerender } = renderTimeline([block]);
 
     expandActivitySummary();
-    const toggle = screen.getByRole('button', { name: /Read/i });
+    const toggle = screen.getByRole('button', { name: /Wrote|Writing|Write/i });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -367,8 +387,8 @@ describe('AssistantBlockTimeline process UI', () => {
               ...block,
               tool: {
                 ...block.tool!,
-                context: JSON.stringify({ path: 'new.ts' }),
-                summary: 'new summary',
+                context: JSON.stringify({ path: 'new.ts', content: 'b' }),
+                summary: 'Wrote new.ts',
               },
             },
           ]}
@@ -381,9 +401,26 @@ describe('AssistantBlockTimeline process UI', () => {
     );
 
     expandActivitySummary();
-    expect(screen.getByRole('button', { name: /Read/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /Wrote|Writing|Write/i })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
+  });
+
+  it('read tools stay header-only with no expandable content preview', () => {
+    renderTimeline([
+      makeToolBlock('tool_read_done', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'foo.py' }),
+        summary: 'def main():\n  pass\n' + 'x'.repeat(200),
+      }),
+    ]);
+
+    expandActivitySummary();
+    const toggle = screen.getByRole('button', { name: /Read|Reading/i });
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(document.querySelector('.process-tool-panel')).toBeNull();
+    // Truncated file body must not appear in the timeline.
+    expect(screen.queryByText(/def main/)).not.toBeInTheDocument();
   });
 });

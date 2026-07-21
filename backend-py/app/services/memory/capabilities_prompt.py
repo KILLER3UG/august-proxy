@@ -310,7 +310,11 @@ def format_skills_by_category(
 def format_agents_block() -> str:
     return '\n'.join(
         [
-            '- Main agent: may call spawn_subagent(goal, agentId?, context?).',
+            '- Main agent: may call spawn_subagent(goal, agentId?, context?, background?)',
+            '  or spawn_subagents({workItems:[...]}) to launch several in parallel.',
+            '- Prefer multiple spawn_subagent calls in one turn (or one spawn_subagents call)',
+            '  when investigating independent areas; set background=true (default for',
+            '  spawn_subagents) so each completion is delivered to you as it finishes.',
             '- Subagents: complete the assigned goal; do NOT spawn further subagents.',
             '- Bound agent (if any): see <runtime_context>.',
             '- Any agent/subagent with load_skill permission may load ANY skill in <skills>',

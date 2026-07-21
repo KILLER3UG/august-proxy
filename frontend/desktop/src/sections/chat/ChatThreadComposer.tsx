@@ -26,6 +26,7 @@ import { ComposerMentionsDropdown } from './composer/ComposerMentionsDropdown';
 import { ComposerCommandsDropdown } from './composer/ComposerCommandsDropdown';
 import { ComposerToolbar } from './composer/ComposerToolbar';
 import { ComposerVoiceListening } from './composer/ComposerVoiceListening';
+import { useFocusedSubagent } from '@/components/chat/focused-subagent';
 
 export type { ComposerDropdownApi };
 
@@ -135,6 +136,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
   const navigate = useNavigate();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const focusedSubagent = useFocusedSubagent();
   // Live markdown preview is opt-in; toolbar toggle removed for now.
   // TODO: re-enable via keyboard shortcut (e.g. Ctrl/Cmd+Shift+P)
   const [showPreview, setShowPreview] = useState(false);
@@ -256,7 +258,9 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
               placeholder={
                 streaming
                   ? 'Add a direction while August works…'
-                  : 'Write a message...'
+                  : focusedSubagent
+                    ? 'Send follow-up with subagent'
+                    : 'Write a message...'
               }
               rows={1}
               className="w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm outline-none placeholder:text-muted-foreground/70"

@@ -96,6 +96,8 @@ class TestGuardMode:
         assert normalizeGuardMode('plan') == 'plan'
         assert normalizeGuardMode('FULL') == 'full'
         assert normalizeGuardMode('ask') == 'ask'
+        assert normalizeGuardMode('edit') == 'edit'
+        assert normalizeGuardMode('edit-automatically') == 'edit'
         assert normalizeGuardMode('invalid') == 'full'
 
     def testPlanModeBlocked(self):

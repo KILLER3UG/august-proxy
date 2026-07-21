@@ -7,6 +7,7 @@ import { FileIcon } from '@/components/ui/FileIcon';
 import { type ProgressEntry } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
 import { formatToolContext } from '@/lib/tool-context-format';
+import { classifyTool } from '@/lib/tool-classify';
 import { useLiveBackendAction } from '@/hooks/useLiveBackendAction';
 import { extractFilename, extractCommand, extractAgentId } from './extractors';
 import type { ToolEntry } from './types';
@@ -88,8 +89,16 @@ export function ToolCallItem({
     : undefined;
 
 
+  const isView = classifyTool(tool.name) === 'view';
   const hasBody = !!(
-    tool.context || tool.preview || tool.summary || tool.error || tool.inlineDiff || tool.searchHits || tool.providerSetup || tool.pendingApproval
+    (!isView && tool.context) ||
+    (!isView && tool.preview) ||
+    (!isView && tool.summary) ||
+    tool.error ||
+    tool.inlineDiff ||
+    tool.searchHits ||
+    tool.providerSetup ||
+    tool.pendingApproval
   );
 
   const isRunning = tool.status === 'running';

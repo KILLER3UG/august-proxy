@@ -173,6 +173,28 @@ class SubagentOrchestrator:
             await asyncio.gather(*futures, return_exceptions=True)
         return [h.toDict() for h in handles]
 
+    async def waitForEach(self, handles: list[SubagentHandle]):
+        """Yield each handle's dict as that subagent settles (incremental).
+
+        Already-finished handles are yielded first (stable order), then
+        remaining futures complete via ``asyncio.wait(FIRST_COMPLETED)``.
+        Callers can emit per-subagent results to the model/UI without
+        blocking on the full batch.
+        """
+        pending: dict[asyncio.Future, SubagentHandle] = {}
+        for h in handles:
+            fut = h._future
+            if fut is None or fut.done():
+                yield h.toDict()
+            else:
+                pending[fut] = h
+        while pending:
+            done, _ = await asyncio.wait(set(pending.keys()), return_when=asyncio.FIRST_COMPLETED)
+            for fut in done:
+                h = pending.pop(fut, None)
+                if h is not None:
+                    yield h.toDict()
+
     def getHandle(self, taskId: str) -> SubagentHandle | None:
         """Get a handle by taskId."""
         return self._handles.get(taskId)

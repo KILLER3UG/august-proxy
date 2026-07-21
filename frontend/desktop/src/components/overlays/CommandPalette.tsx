@@ -114,15 +114,6 @@ export function CommandPalette() {
               <History className="size-3.5" /> Restore last save point
             </Command.Item>
             <Command.Item
-              value="mode plan only"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'set_guard_mode', target: 'plan' }),
-              )}
-              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
-            >
-              <Shield className="size-3.5" /> Mode: Plan only
-            </Command.Item>
-            <Command.Item
               value="mode ask before changes"
               onSelect={run(() =>
                 dispatchUiAction({ action: 'set_guard_mode', target: 'ask' }),
@@ -132,13 +123,31 @@ export function CommandPalette() {
               <Shield className="size-3.5" /> Mode: Ask before changes
             </Command.Item>
             <Command.Item
-              value="mode make changes full access"
+              value="mode edit automatically"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'set_guard_mode', target: 'edit' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Shield className="size-3.5" /> Mode: Edit automatically
+            </Command.Item>
+            <Command.Item
+              value="mode plan mode"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'set_guard_mode', target: 'plan' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Shield className="size-3.5" /> Mode: Plan mode
+            </Command.Item>
+            <Command.Item
+              value="mode full access"
               onSelect={run(() =>
                 dispatchUiAction({ action: 'set_guard_mode', target: 'full' }),
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
-              <Shield className="size-3.5" /> Mode: Make changes
+              <Shield className="size-3.5" /> Mode: Full access
             </Command.Item>
             <Command.Item
               value="open plan panel drawer"

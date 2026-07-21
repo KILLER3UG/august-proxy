@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Check, Loader2, FileSearch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DiffView } from '@/components/chat/DiffView';
 import { confirmWorkbenchMutation } from '@/api/workbench';
 import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
 import { formatToolContext } from '@/lib/tool-context-format';
+import { classifyTool } from '@/lib/tool-classify';
 import { ProviderSetupWidget } from '@/components/chat/ProviderSetupWidget';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
@@ -199,141 +200,177 @@ export function ToolCallItemBody({
 }) {
   const [approvalStatus, setApprovalStatus] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
   const isSubagent = isSubagentToolName(tool.name);
+  const bucket = classifyTool(tool.name);
+  const isView = bucket === 'view';
+  const parts: ReactNode[] = [];
+
+  if (isSubagent) {
+    parts.push(<SubagentToolBody key="subagent" tool={tool} />);
+  } else if (
+    tool.context &&
+    !isView &&
+    !tool.name.match(/context_read|memory_search|read_file|search/)
+  ) {
+    // View/read tools: raw JSON input is noise — path lives in the row label.
+    parts.push(
+      <FormattedSection
+        key="context"
+        toolName={tool.name}
+        label="context"
+        raw={tool.context}
+        format={formatToolContext}
+      />,
+    );
+  }
+
+  if (!isSubagent) {
+    const visible = progress ? visibleProgress(progress) : [];
+    const total = progress?.length ?? 0;
+    const overflow = Math.max(0, total - visible.length);
+    if (visible.length > 0) {
+      parts.push(
+        <div key="progress" className="my-1.5 space-y-0.5" aria-label="Tool progress" data-tool-progress>
+          <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
+            <FileSearch size={10} />
+            <span>
+              {tool.status === 'running' ? 'Exploring' : 'Files'}
+            </span>
+          </div>
+          {visible.map((entry) => (
+            <div
+              key={entry.path}
+              className="flex items-center gap-1.5 text-[11px] truncate"
+              title={entry.path}
+            >
+              <span className="w-2.5 shrink-0 inline-flex justify-center">
+                {entry.status === 'reading' ? (
+                  <Loader2 size={10} className="animate-spin text-info" />
+                ) : (
+                  <Check size={10} className="text-muted-foreground/50" />
+                )}
+              </span>
+              <span
+                className={cn(
+                  'truncate font-mono',
+                  entry.status === 'reading' ? 'text-info italic' : 'text-muted-foreground/60 line-through'
+                )}
+              >
+                {entry.status === 'reading' ? 'Reading ' : 'Read '}
+                {entry.path}
+              </span>
+            </div>
+          ))}
+          {overflow > 0 && (
+            <div className="text-[10px] text-muted-foreground/50 italic pl-4">
+              + {overflow} more
+            </div>
+          )}
+        </div>,
+      );
+    }
+  }
+
+  // Streaming preview is useful for edits/commands, not for dumping file reads.
+  if (!isSubagent && !isView && tool.preview && tool.status === 'running') {
+    parts.push(
+      <Section key="preview" label="streaming">
+        {tool.preview}
+        <span className="inline-block w-1.5 h-3 align-middle bg-foreground/40 ml-0.5 animate-pulse" />
+      </Section>,
+    );
+  }
+
+  let hasDiff = false;
+  if (!isSubagent) {
+    const diffData = extractDiffData(tool);
+    if (diffData) {
+      hasDiff = true;
+      parts.push(
+        <Section key="diff" label="diff">
+          <DiffView
+            diff={diffData.diff}
+            oldContent={diffData.oldContent}
+            newContent={diffData.newContent}
+          />
+        </Section>,
+      );
+    }
+  }
+
+  if (!isSubagent && tool.searchHits && tool.searchHits.length > 0) {
+    parts.push(<SearchResultsCard key="search" hits={tool.searchHits} />);
+  }
+
+  // View/read tools: no truncated content preview — path is on the row label.
+  // Edit tools route through DiffView above; other tools keep FormattedResult.
+  if (
+    !isSubagent &&
+    !isView &&
+    tool.summary &&
+    !tool.searchHits &&
+    !tool.providerSetup &&
+    !hasDiff
+  ) {
+    parts.push(
+      <FormattedResultSection key="result" toolName={tool.name} raw={tool.summary} />,
+    );
+  }
+
+  if (tool.providerSetup) {
+    parts.push(<ProviderSetupWidget key="provider" setup={tool.providerSetup} />);
+  }
+
+  if (tool.error) {
+    parts.push(
+      <FormattedErrorSection key="error" toolName={tool.name} raw={tool.error} />,
+    );
+  }
+
+  if (
+    tool.pendingApproval &&
+    approvalStatus !== 'confirmed' &&
+    !tool.pendingApproval.confirmationToken
+  ) {
+    parts.push(
+      <div key="approval" className="mt-2">
+        <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/10 p-2">
+          <div className="text-xs text-foreground/90">
+            {tool.pendingApproval.message ||
+              'This change needs approval before it can run.'}
+          </div>
+          {tool.pendingApproval.detail && (
+            <div className="text-[11px] font-mono text-muted-foreground wrap-anywhere">
+              {tool.pendingApproval.detail}
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={approvalStatus !== 'idle'}
+            className="h-7 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
+            onClick={() => {
+              const token = tool.pendingApproval?.confirmationToken;
+              if (!token) return;
+              setApprovalStatus('confirming');
+              void confirmWorkbenchMutation(token, {
+                onDone: () => setApprovalStatus('confirmed'),
+                onError: ({ message }) => {
+                  tool.error = message;
+                },
+              });
+            }}
+          >
+            {approvalStatus === 'confirming' ? 'Approving…' : 'Approve'}
+          </button>
+        </div>
+      </div>,
+    );
+  }
+
+  if (parts.length === 0) return null;
 
   return (
     <div className="mt-0.5 w-full min-w-0 max-w-full overflow-x-hidden wrap-anywhere pb-1">
-      {isSubagent ? (
-        <SubagentToolBody tool={tool} />
-      ) : (
-        <>
-          {/* For read-type tools (context_read, memory_search, read_file etc.)
-              the raw JSON input is noise — skip it so the user sees what was
-              actually read (the result/summary) when they expand the card. */}
-          {tool.context && !tool.name.match(/context_read|memory_search|read_file|search/) && (
-            <FormattedSection toolName={tool.name} label="context" raw={tool.context} format={formatToolContext} />
-          )}
-        </>
-      )}
-
-      {!isSubagent && (() => {
-        const visible = progress ? visibleProgress(progress) : [];
-        const total = progress?.length ?? 0;
-        const overflow = Math.max(0, total - visible.length);
-        if (visible.length === 0) return null;
-        return (
-          <div className="my-1.5 space-y-0.5" aria-label="Tool progress" data-tool-progress>
-            <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
-              <FileSearch size={10} />
-              <span>
-                {tool.status === 'running' ? 'Exploring' : 'Files'}
-              </span>
-            </div>
-            {visible.map((entry) => (
-              <div
-                key={entry.path}
-                className="flex items-center gap-1.5 text-[11px] truncate"
-                title={entry.path}
-              >
-                <span className="w-2.5 shrink-0 inline-flex justify-center">
-                  {entry.status === 'reading' ? (
-                    <Loader2 size={10} className="animate-spin text-info" />
-                  ) : (
-                    <Check size={10} className="text-muted-foreground/50" />
-                  )}
-                </span>
-                <span
-                  className={cn(
-                    'truncate font-mono',
-                    entry.status === 'reading' ? 'text-info italic' : 'text-muted-foreground/60 line-through'
-                  )}
-                >
-                  {entry.status === 'reading' ? 'Reading ' : 'Read '}
-                  {entry.path}
-                </span>
-              </div>
-            ))}
-            {overflow > 0 && (
-              <div className="text-[10px] text-muted-foreground/50 italic pl-4">
-                + {overflow} more
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {!isSubagent && tool.preview && tool.status === 'running' && (
-        <Section label="streaming">
-          {tool.preview}
-          <span className="inline-block w-1.5 h-3 align-middle bg-foreground/40 ml-0.5 animate-pulse" />
-        </Section>
-      )}
-
-      {!isSubagent && (() => {
-        const diffData = extractDiffData(tool);
-        return diffData ? (
-          <Section label="diff">
-            <DiffView
-              diff={diffData.diff}
-              oldContent={diffData.oldContent}
-              newContent={diffData.newContent}
-            />
-          </Section>
-        ) : null;
-      })()}
-
-      {!isSubagent && tool.searchHits && tool.searchHits.length > 0 && (
-        <SearchResultsCard hits={tool.searchHits} />
-      )}
-
-      {!isSubagent && tool.summary && !tool.searchHits && !tool.providerSetup && (
-        <FormattedResultSection toolName={tool.name} raw={tool.summary} />
-      )}
-
-      {tool.providerSetup && (
-        <ProviderSetupWidget setup={tool.providerSetup} />
-      )}
-
-      {tool.error && (
-        <FormattedErrorSection toolName={tool.name} raw={tool.error} />
-      )}
-
-      {/* Session-level ApprovalBanner (composer slot) owns token decisions.
-          Only show legacy inline Approve when there is no confirmation token. */}
-      {tool.pendingApproval &&
-        approvalStatus !== 'confirmed' &&
-        !tool.pendingApproval.confirmationToken && (
-        <div className="mt-2">
-          <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/10 p-2">
-            <div className="text-xs text-foreground/90">
-              {tool.pendingApproval.message ||
-                'This change needs approval before it can run.'}
-            </div>
-            {tool.pendingApproval.detail && (
-              <div className="text-[11px] font-mono text-muted-foreground wrap-anywhere">
-                {tool.pendingApproval.detail}
-              </div>
-            )}
-            <button
-              type="button"
-              disabled={approvalStatus !== 'idle'}
-              className="h-7 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
-              onClick={() => {
-                const token = tool.pendingApproval?.confirmationToken;
-                if (!token) return;
-                setApprovalStatus('confirming');
-                void confirmWorkbenchMutation(token, {
-                  onDone: () => setApprovalStatus('confirmed'),
-                  onError: ({ message }) => {
-                    tool.error = message;
-                  },
-                });
-              }}
-            >
-              {approvalStatus === 'confirming' ? 'Approving…' : 'Approve'}
-            </button>
-          </div>
-        </div>
-      )}
+      {parts}
     </div>
   );
 }
