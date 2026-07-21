@@ -62,7 +62,7 @@ function previewOf(content: unknown): string {
   try {
     return JSON.stringify(content);
   } catch {
-    return String(content);
+    return '(unreadable value)';
   }
 }
 
@@ -97,7 +97,8 @@ export function RecalledMemorySection() {
     onError: (e: Error) => toast.error(e.message || 'Add failed'),
   });
 
-  const grouped = memoriesQuery.data?.grouped ?? {};
+  const groupedData = memoriesQuery.data?.grouped;
+  const grouped = useMemo(() => groupedData ?? {}, [groupedData]);
   const categories = useMemo(() => orderCategories(Object.keys(grouped)), [grouped]);
   const totalCount = memoriesQuery.data?.items.length ?? 0;
 
