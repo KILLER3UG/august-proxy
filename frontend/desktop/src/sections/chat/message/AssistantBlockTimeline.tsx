@@ -393,7 +393,8 @@ export function AssistantBlockTimeline({
                 ? `Editing ${detail || 'files…'}`
                 : kind === 'run'
                   ? `Running ${detail || 'command…'}`
-                  : label;
+                  : // Prefer live progress summary (e.g. web_search fetch status).
+                    detail || label;
         }
       }
     }

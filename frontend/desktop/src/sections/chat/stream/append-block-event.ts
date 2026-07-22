@@ -103,7 +103,8 @@ export function appendBlockEvent(
       if (target.tool) {
         target.tool = {
           ...target.tool,
-          preview: (target.tool.preview || '') + (event.preview || '')
+          preview: (target.tool.preview || '') + (event.preview || ''),
+          ...(event.summary ? { summary: event.summary } : {}),
         };
       }
       blocks[targetIdx] = target;

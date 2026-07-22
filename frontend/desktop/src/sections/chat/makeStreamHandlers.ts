@@ -495,6 +495,20 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         path: event.path,
       };
       setToolProgress(prev => applyToolProgress(prev, e));
+      // Surface web_search / long-tool status text on the running tool row.
+      const msg = typeof event.message === 'string' ? event.message.trim() : '';
+      if (msg && event.id) {
+        toolResults = toolResults.map((t) =>
+          t.id === event.id && t.status === 'running' ? { ...t, summary: msg } : t,
+        );
+        streamBlocks = appendBlockEvent(streamBlocks, {
+          type: 'tool_progress',
+          id: event.id,
+          status: 'running',
+          summary: msg,
+        });
+        scheduleUpdate();
+      }
     },
     onBtw: (result) => {
       setWorkbenchBtw(result);

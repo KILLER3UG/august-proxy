@@ -1628,25 +1628,28 @@ async def _sendWorkbenchMessageStreamImpl(
                             ) -> None:
                                 if not emit:
                                     return
+                                # Prefer reading/read so the ToolCallCard sub-list updates
+                                # (phase "running" is a UI no-op in applyToolProgress).
+                                allowed = ('reading', 'read', 'running', 'done', 'error')
                                 payload: dict[str, object] = {
                                     'type': 'tool_progress',
                                     'id': toolUseId,
                                     'name': toolName,
-                                    'phase': phase if phase in ('reading', 'read', 'running', 'done', 'error') else 'running',
+                                    'phase': phase if phase in allowed else 'running',
                                     'message': '',
                                 }
                                 if isinstance(meta, dict):
                                     msg = as_str(meta.get('message'), '')
-                                    if not msg and phase == 'searching':
-                                        msg = 'Searching the web…'
-                                    elif not msg and phase == 'fetching':
-                                        idx = meta.get('index')
-                                        total = meta.get('total')
-                                        msg = f'Fetching pages… ({idx}/{total})' if total else 'Fetching pages…'
+                                    if not msg and phase == 'reading':
+                                        msg = 'Searching / fetching…'
                                     elif not msg and phase == 'done':
                                         msg = 'Search complete'
                                     payload['message'] = msg
-                                    if meta.get('url'):
+                                    if meta.get('paths') is not None:
+                                        payload['paths'] = meta.get('paths')
+                                    if meta.get('path'):
+                                        payload['path'] = meta.get('path')
+                                    elif meta.get('url'):
                                         payload['path'] = meta.get('url')
                                 emit(payload)
 

@@ -1,4 +1,4 @@
-"""Tests for web_search timeout, fetch count, and progress callbacks."""
+"""Tests for web_search timeout, fetch budget, and progress callbacks."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ async def test_web_search_ddg_timeout_returns_error_json():
 
 
 @pytest.mark.asyncio
-async def test_web_search_fetches_up_to_10():
+async def test_web_search_fetches_up_to_10_under_budget():
     from app.services.tool_registrations import web_tools as wt
 
     fake_results = [
@@ -44,7 +44,7 @@ async def test_web_search_fetches_up_to_10():
         def text(self, query, max_results=10):
             return fake_results[:max_results]
 
-    async def fake_fetch(url: str, maxLength: int = 8000) -> str:
+    async def fake_fetch(url: str, maxLength: int = 8000, timeout_s: float = 8.0) -> str:
         return f'URL: {url}\nStatus: 200\n\ncontent for {url}'
 
     progress_phases: list[str] = []
@@ -59,6 +59,44 @@ async def test_web_search_fetches_up_to_10():
     data = json.loads(raw)
     assert data['result_count'] == 10
     assert len(data['fetched_content']) == 10
-    assert 'searching' in progress_phases
-    assert any(p == 'fetching' for p in progress_phases)
+    assert 'reading' in progress_phases
+    assert 'read' in progress_phases
     assert 'done' in progress_phases
+
+
+@pytest.mark.asyncio
+async def test_web_search_abandons_slow_fetches_and_returns_snippets():
+    from app.services.tool_registrations import web_tools as wt
+
+    fake_results = [
+        {'title': f'T{i}', 'href': f'https://example.com/{i}', 'body': f'snippet {i}'}
+        for i in range(10)
+    ]
+
+    class FakeDDGS:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def text(self, query, max_results=10):
+            return fake_results[:max_results]
+
+    async def slow_fetch(url: str, maxLength: int = 8000, timeout_s: float = 8.0) -> str:
+        await asyncio.sleep(60)
+        return f'URL: {url}\nStatus: 200\n\nlate'
+
+    with patch('ddgs.DDGS', FakeDDGS):
+        with patch.object(wt, '_fetchUrlContent', side_effect=slow_fetch):
+            with patch.object(wt, '_FETCH_PHASE_BUDGET_S', 0.2):
+                with patch.object(wt, '_TOTAL_BUDGET_S', 1.0):
+                    raw = await asyncio.wait_for(
+                        wt._webSearch('q', maxResults=10),
+                        timeout=3.0,
+                    )
+
+    data = json.loads(raw)
+    assert data['result_count'] == 10
+    # Must not hang waiting for all 10×60s sleeps.
+    assert data.get('partial') is True or data.get('fetched_count', 0) == 0
