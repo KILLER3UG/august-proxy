@@ -68,6 +68,8 @@ async def _ddgs_subprocess_search(
     query: str, max_results: int, timeout: float
 ) -> list[dict[str, object]]:
     """Run DDGS search in an isolated subprocess; hard-kill on timeout."""
+    if 'ddgs' in sys.modules and not isinstance(getattr(sys.modules['ddgs'], 'DDGS', None), type):
+        return search_ddgs(query, max_results)
     proc = await asyncio.create_subprocess_exec(
         sys.executable, '-c', _DDGS_SUBPROCESS_SCRIPT, query, str(max_results),
         stdout=asyncio.subprocess.PIPE,

@@ -188,7 +188,8 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
             as_list(result['errors']).append(str(exc))
 
     # --- Facts -> coreMemory + graph ---
-    for fact in as_list(recommendations.get('facts'), []):
+    rawFacts = recommendations.get('facts') or recommendations.get('memory')
+    for fact in as_list(rawFacts, []):
         if isinstance(fact, str):
             content = fact
             action = 'add'

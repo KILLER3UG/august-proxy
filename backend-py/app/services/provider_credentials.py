@@ -1,9 +1,10 @@
 """Provider credentials — single source of truth from ``providers.json``."""
 
 from __future__ import annotations
+
 from typing import Callable, Optional
 
-from app.json_narrowing import as_str, as_list
+from app.json_narrowing import as_list, as_str
 from app.services import config_service
 
 _storeCache: Optional[dict[str, object]] = None
@@ -26,6 +27,12 @@ def _fireInvalidation() -> None:
 def invalidate() -> None:
     global _storeCache
     _storeCache = None
+    try:
+        from app.providers.clients import clear_client_pool
+
+        clear_client_pool()
+    except Exception:
+        pass
 
 
 def _loadStore() -> dict[str, object]:

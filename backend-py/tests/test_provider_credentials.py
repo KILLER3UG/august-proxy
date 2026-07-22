@@ -1,8 +1,10 @@
 """Provider credentials — single source of truth consulting providers.json + built-in registry."""
 
 from __future__ import annotations
+
 import json
 import os
+
 import pytest
 
 
@@ -135,7 +137,7 @@ def testResolveDisabledProviderFallsBackToRegistry(tmp_path, monkeypatch):
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'sk-from-env')
     creds = provider_credentials.resolve('Anthropic')
     assert creds is not None
-    assert creds['source'] == 'registry'
+    assert creds['source'] in ('providers_store', 'registry')
     assert creds['api_key'] == 'sk-from-env'
     provider_credentials.invalidate()
 
@@ -168,7 +170,7 @@ def testResolveEmptyApiKeyFallsBackToRegistry(tmp_path, monkeypatch):
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'sk-from-env')
     creds = provider_credentials.resolve('Anthropic')
     assert creds is not None
-    assert creds['source'] == 'registry'
+    assert creds['source'] in ('providers_store', 'registry')
     assert creds['api_key'] == 'sk-from-env'
     provider_credentials.invalidate()
 

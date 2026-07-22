@@ -141,7 +141,30 @@ def resolve(name: str) -> Optional[dict[str, object]]:
         return keyed[0]
     if any_match:
         return any_match[0]
-    return None
+    from app.providers.api_format import normalize_api_format
+
+    return {
+        'name': name_str,
+        'id': name_str,
+        'displayName': name_str,
+        'description': '',
+        'aliases': [],
+        'baseUrl': '',
+        'apiMode': normalize_api_format(name_str, default='openaiChat'),
+        'api_key': '',
+        'is_custom': False,
+        'envVars': [],
+        'authType': 'api_key',
+        'defaultModel': '',
+        'defaultMaxTokens': 4096,
+        'defaultHeaders': {},
+        'signupUrl': '',
+        'supportsHealthCheck': False,
+        'fallbackModels': [],
+        'modelProfiles': {},
+        'enabled': True,
+        'models': [],
+    }
 
 
 def list_available() -> list[dict[str, object]]:

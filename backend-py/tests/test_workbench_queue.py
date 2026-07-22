@@ -179,8 +179,7 @@ class TestChatLoopInjection:
         monkeypatch.setattr(sessions_mod, '_sessions', empty_sessions)
         monkeypatch.setattr(wb, '_sessions', empty_sessions)
         monkeypatch.setattr(
-            wb,
-            '_resolveWorkbenchProvider',
+            'app.services.workbench.providers.resolve_workbench_provider',
             lambda *a, **kw: {
                 'name': 'stub-anthropic',
                 'apiMode': 'anthropicMessages',
@@ -188,7 +187,7 @@ class TestChatLoopInjection:
                 'model_profiles': {},
             },
         )
-        monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
+        monkeypatch.setattr('app.services.workbench.providers.resolve_model', lambda p, hint='': 'stub-claude')
         monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session, tools=None: 'stub system prompt')
         monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
 
@@ -201,7 +200,7 @@ class TestChatLoopInjection:
         monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
         monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session, tools=None: 'stub system prompt')
 
-        async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None):
+        async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None, **_kwargs):
             calls.append({'provider': 'anthropic', 'messages': [dict(m) for m in messages]})
             if len(calls) == 1:
                 return {
@@ -253,7 +252,7 @@ class TestChatLoopInjection:
         of breaking immediately."""
         calls = []
 
-        async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None):
+        async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None, **_kwargs):
             calls.append(len(messages))
             if len(calls) == 1:
                 return {
@@ -288,7 +287,7 @@ class TestChatLoopInjection:
         the model's first text response."""
         calls = []
 
-        async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None):
+        async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None, **_kwargs):
             calls.append(len(messages))
             return {
                 'content': [{'type': 'text', 'text': 'only'}],
@@ -314,7 +313,7 @@ class TestChatLoopInjection:
         wrapper AFTER the assistant tool_use + tool_result pair."""
         calls = []
 
-        async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None):
+        async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None, **_kwargs):
             calls.append([dict(m) for m in messages])
             if len(calls) == 1:
                 return {
