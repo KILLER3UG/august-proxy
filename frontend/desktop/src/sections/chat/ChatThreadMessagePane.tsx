@@ -165,16 +165,17 @@ export function ChatThreadMessagePane({
         </AnimatePresence>
       </div>
 
-      {/* AUG — anchored above the composer; no exit fade (avoids black blink on settle). */}
+      {/* AUG — anchored above the composer in a fixed-height slot with opacity transition to avoid layout reflow when streaming completes. */}
       <div
-        className="mx-auto w-full max-w-3xl px-4 shrink-0"
+        className={cn(
+          'mx-auto w-full max-w-3xl px-4 shrink-0 h-7 transition-opacity duration-200',
+          streaming ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+        )}
         aria-hidden={!streaming}
       >
-        {streaming ? (
-          <div className="pt-1" data-testid="aug-working-indicator">
-            <WorkingIndicator />
-          </div>
-        ) : null}
+        <div className="pt-1" data-testid="aug-working-indicator">
+          <WorkingIndicator />
+        </div>
       </div>
 
       {/* Plan / approval banners replace the composer until the user decides. */}
