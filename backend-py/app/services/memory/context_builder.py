@@ -33,6 +33,8 @@ AUGUST_PLATFORM: str = (
     '  already in this prompt. When the user asks about a prior session, preference, or fact you may\n'
     '  have stored, call memory_search(), fact_search(), context_read(), or brain_query() to retrieve it.\n'
     '  Do not invent recalled memories; fetch them with tools when needed.\n'
+    '- User-Added Memory (facts the user explicitly saved) appears in <added_memories> when present —\n'
+    '  treat those as durable preferences/facts to honor without a tool call.\n'
     '- To discover or inspect a tool schema beyond the index: tool_describe(name) or tool_search(query).\n'
     '- Prefer unicode math symbols over LaTeX except for genuinely complex formulas.'
 )
@@ -60,6 +62,7 @@ _KEY_ALIASES: dict[str, tuple[str, ...]] = {
     'coreMemory': ('coreMemory', 'core_memory'),
     'learnedHeuristics': ('learnedHeuristics', 'learned_heuristics'),
     'autoMemories': ('autoMemories', 'auto_memories'),
+    'addedMemories': ('addedMemories', 'added_memories'),
     'userProfile': ('userProfile', 'user_profile'),
     'planApproved': ('planApproved', 'plan_approved'),
 }
@@ -375,6 +378,24 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
                 lines.append(f'- {_fmtVal(item, 400)}')
         if lines:
             blocks.append(wrapTag('auto_memories', '\n'.join(lines)))
+    # User-Added Memory — always injected when present (opposite of recalled).
+    addedMemories = as_list(_get(session, 'addedMemories', 'added_memories'), [])
+    if addedMemories:
+        added_lines: list[str] = []
+        for item in addedMemories[:40]:
+            if isinstance(item, dict):
+                title = as_str(item.get('title') or item.get('label'), '')
+                summary = as_str(item.get('summary') or item.get('description'), '')
+                content = item.get('content', '')
+                if isinstance(content, (dict, list)):
+                    content = json.dumps(content, default=str, ensure_ascii=False)
+                body = summary or _fmtVal(content, 400)
+                line = f'- {title}: {body}' if title and body and title not in body else f'- {title or body}'
+                added_lines.append(_fmtVal(line, 480))
+            else:
+                added_lines.append(f'- {_fmtVal(item, 400)}')
+        if added_lines:
+            blocks.append(wrapTag('added_memories', '\n'.join(added_lines)))
     rcParts: list[str] = []
     coreFacts = _get(session, 'coreMemory', 'core_memory')
     if coreFacts:
@@ -467,6 +488,7 @@ def buildSystemPrompt(
         _merge_memory_key(merged, memory, 'coreMemory', 'core_memory')
         _merge_memory_key(merged, memory, 'learnedHeuristics', 'learned_heuristics')
         _merge_memory_key(merged, memory, 'autoMemories', 'auto_memories')
+        _merge_memory_key(merged, memory, 'addedMemories', 'added_memories')
         _merge_memory_key(merged, memory, 'userProfile', 'user_profile')
         _merge_memory_key(merged, memory, 'global_context', 'globalContext')
         _merge_memory_key(merged, memory, 'active_projects', 'activeProjects')

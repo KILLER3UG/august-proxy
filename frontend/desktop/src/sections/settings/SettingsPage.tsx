@@ -46,6 +46,7 @@ import { AgentSandboxSection } from './AgentSandboxSection';
 import { AccountSection } from './AccountSection';
 import { UpdateSection } from './UpdateSection';
 import { RecalledMemorySection } from './RecalledMemorySection';
+import { AddedMemorySection } from './AddedMemorySection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -130,6 +131,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   memory: MemoryWrapper,
   'memory-knowledge': MemoryWrapper,
   'recalled-memory': RecalledMemoryWrapper,
+  'added-memory': AddedMemoryWrapper,
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
   'brain-orchestrator': BrainWrapper,
@@ -170,6 +172,7 @@ function AppUpdatesWrapper() { return <UpdateSection />; }
 function UsageWrapper() { return <WorkspaceUsageSection />; }
 function MemoryWrapper() { return <WorkspaceMemorySection />; }
 function RecalledMemoryWrapper() { return <RecalledMemorySection />; }
+function AddedMemoryWrapper() { return <AddedMemorySection />; }
 function InspectorWrapper() { return <WorkspaceInspectorSection />; }
 function ModelsWrapper() { return <WorkspaceModelsSection />; }
 function BrainWrapper() { return <BrainSettings />; }

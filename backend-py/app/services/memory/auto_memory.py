@@ -1,9 +1,12 @@
 """
 Auto-memory — automatically saves and retrieves relevant memory context.
 
-Port of backend/services/memory/auto-memory.js + background-review.js.
 Phase 0 rewrite: writes individual FTS-indexed rows to the `auto_memories`
 table instead of a JSON blob under one key in `memory_store`.
+
+``source`` distinguishes:
+  - ``auto`` / ``agent`` / empty — Recalled Memory (on-demand tools)
+  - ``user`` — Added Memory (injected every turn)
 """
 
 from __future__ import annotations
@@ -14,6 +17,8 @@ from datetime import datetime, timezone
 from app.services.memory_store import save_memory, get_memory
 
 _MAXMemories = 100
+_AREAS_CATEGORIES = frozenset({'correction', 'learning', 'preference', 'user'})
+_TELEMETRY_KEY_PREFIXES = ('tool_failure_',)
 
 
 def _conn():
@@ -23,32 +28,93 @@ def _conn():
     return getConn()
 
 
-def saveAutoMemory(key: str, content: object, category: str = 'auto', importance: float = 0.5) -> None:
-    """Save an automatically captured memory as an individual FTS-indexed row.
+def _normalize_source(source: str | None) -> str:
+    s = (source or '').strip().lower()
+    if s == 'user':
+        return 'user'
+    if s in ('auto', 'agent'):
+        return s
+    return 'auto'
 
-    The FTS5 triggers on `auto_memories` (created in Phase 0) automatically
-    keep `auto_memories_fts` in sync — no manual FTS insert needed.
-    """
+
+def _is_user_source(source: object) -> bool:
+    return str(source or '').strip().lower() == 'user'
+
+
+def _is_telemetry_key(key: str) -> bool:
+    return any(key.startswith(p) for p in _TELEMETRY_KEY_PREFIXES)
+
+
+def _content_preview(content: object) -> str:
+    if isinstance(content, (dict, list)):
+        return json.dumps(content, default=str, ensure_ascii=False)
+    return str(content or '')
+
+
+def _enforce_cap(conn) -> None:
+    """Keep at most ``_MAXMemories`` rows, preferring to drop low-importance auto rows first."""
+    total = conn.execute('SELECT COUNT(*) AS c FROM auto_memories').fetchone()['c']
+    if int(total) <= _MAXMemories:
+        return
+    overflow = int(total) - _MAXMemories
+    conn.execute(
+        """
+        DELETE FROM auto_memories WHERE id IN (
+            SELECT id FROM auto_memories
+            WHERE COALESCE(source, '') != 'user'
+            ORDER BY importance ASC, id ASC
+            LIMIT ?
+        )
+        """,
+        (overflow,),
+    )
+    total = conn.execute('SELECT COUNT(*) AS c FROM auto_memories').fetchone()['c']
+    if int(total) <= _MAXMemories:
+        return
+    overflow = int(total) - _MAXMemories
+    conn.execute(
+        """
+        DELETE FROM auto_memories WHERE id IN (
+            SELECT id FROM auto_memories
+            ORDER BY
+              CASE WHEN COALESCE(source, '') = 'user' THEN 1 ELSE 0 END ASC,
+              importance ASC,
+              id ASC
+            LIMIT ?
+        )
+        """,
+        (overflow,),
+    )
+
+
+def saveAutoMemory(
+    key: str,
+    content: object,
+    category: str = 'auto',
+    importance: float = 0.5,
+    source: str = 'auto',
+) -> None:
+    """Save an automatically captured memory as an individual FTS-indexed row."""
     conn = _conn()
     now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     contentJson = content if isinstance(content, str) else json.dumps(content)
-    existing = conn.execute('SELECT id FROM auto_memories WHERE key = ?', (key,)).fetchone()
+    src = _normalize_source(source)
+    existing = conn.execute('SELECT id, source FROM auto_memories WHERE key = ?', (key,)).fetchone()
     if existing:
+        keep_src = 'user' if _is_user_source(existing['source']) and src != 'user' else src
         conn.execute(
-            'UPDATE auto_memories SET content = ?, importance = ?, updated_at = ? WHERE id = ?',
-            (contentJson, importance, now, existing['id']),
+            'UPDATE auto_memories SET content = ?, importance = ?, category = ?, '
+            'source = ?, updated_at = ? WHERE id = ?',
+            (contentJson, importance, category, keep_src, now, existing['id']),
         )
     else:
         conn.execute(
-            'INSERT INTO auto_memories (key, content, category, importance, created_at) VALUES (?, ?, ?, ?, ?)',
-            (key, contentJson, category, importance, now),
+            'INSERT INTO auto_memories (key, content, category, importance, source, created_at, updated_at) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (key, contentJson, category, importance, src, now, now),
         )
-    conn.execute(
-        '\n        DELETE FROM auto_memories WHERE id NOT IN (\n            SELECT id FROM auto_memories ORDER BY importance DESC, id DESC LIMIT ?\n        )\n    ',
-        (_MAXMemories,),
-    )
+    _enforce_cap(conn)
     conn.commit()
-    # Surface auto-memory writes in the Backend Monitor + Feature Flow.
     try:
         from app.services import logger as _tl
 
@@ -57,7 +123,12 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
                 'category': 'auto_memory',
                 'level': 'info',
                 'message': f'Auto-memory saved: {key}',
-                'metadata': {'key': key, 'category': category, 'importance': importance},
+                'metadata': {
+                    'key': key,
+                    'category': category,
+                    'importance': importance,
+                    'source': src,
+                },
             }
         )
     except Exception:
@@ -75,12 +146,12 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
                 'key': key,
                 'category': category,
                 'importance': importance,
+                'source': src,
                 'preview': preview[:160],
             },
         )
     except Exception:
         pass
-    # Wire vector + graph planes when feature flags are on (product honesty).
     try:
         from app.services.cognitive_config import get_features
 
@@ -93,7 +164,7 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
 
                 vector_db.insert(
                     text,
-                    metadata={'key': key, 'category': category, 'source': 'auto_memory'},
+                    metadata={'key': key, 'category': category, 'source': src},
                     namespace='auto_memory',
                 )
             except Exception:
@@ -103,20 +174,20 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
                 from app.services.memory import graph_memory
 
                 preview_text = (preview if isinstance(preview, str) else str(preview))[:400]
-                label = graph_memory.humanize_entity_label(
-                    key,
-                    {'preview': preview_text, 'importance': importance},
-                )
+                ui = present_memory_fields(key, content, category)
+                label = str(ui.get('title') or graph_memory.humanize_entity_label(
+                    key, {'preview': preview_text, 'importance': importance}
+                ))[:48]
                 graph_memory.addEntity(
                     key,
                     entityType=category or 'memory',
                     metadata={
                         'importance': importance,
                         'label': label,
-                        'preview': preview_text[:240],
+                        'preview': str(ui.get('summary') or preview_text)[:240],
+                        'source': src,
                     },
                 )
-                # Link category → key when category is meaningful
                 if category and category not in ('auto', 'general', ''):
                     graph_memory.addEntity(
                         category,
@@ -130,54 +201,114 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
         pass
 
 
-def enrich_memory_for_model(item: dict[str, object]) -> dict[str, object]:
-    """Add beginner-readable ``label`` / ``description`` for prompts and tools.
+def present_memory_fields(
+    key: str, content: object, category: str = 'auto'
+) -> dict[str, object]:
+    """Build title / summary / details / section for UI and prompts (never raw JSON labels)."""
+    cat = (category or 'auto').strip() or 'auto'
+    section = 'areas' if cat in _AREAS_CATEGORIES else 'topics'
+    preview = _content_preview(content).strip()
 
-    Keeps the raw ``key`` so the model can pass it back to tools if needed.
-    """
+    if isinstance(content, dict):
+        if 'suggestion' in content and 'count' in content:
+            count = content.get('count')
+            suggestion = str(content.get('suggestion') or 'Review tool usage patterns')
+            preview = f'High tool failure rate ({count} errors). {suggestion}'
+        elif 'fact' in content:
+            preview = str(content.get('fact') or preview)
+        else:
+            parts = [f'{k}: {v}' for k, v in content.items() if not str(k).startswith('_')]
+            preview = '; '.join(str(p) for p in parts)[:400] if parts else preview
+
+    if isinstance(content, list):
+        preview = '; '.join(str(x) for x in content)[:400]
+
+    title = ''
+    if key.startswith('conv_summary_'):
+        m = re.search(r'User asked:\s*(.+?)(?:\s*\(session|\s*$)', preview, re.I | re.S)
+        asked = (m.group(1).strip() if m else '')[:80]
+        title = f'Chat: {asked}' if asked else 'Chat summary'
+    elif key.startswith('correction_'):
+        title = 'Correction'
+        if preview.lower().startswith('user prefers:'):
+            title = f"Correction: {preview.split(':', 1)[-1].strip()[:60]}"
+    elif key.startswith('tool_failure_'):
+        title = 'Tool usage'
+    elif key.startswith('quick_') or key.startswith('added_'):
+        title = preview.split('\n', 1)[0][:60] or 'Added memory'
+    elif key == 'todos':
+        title = 'Todos'
+    else:
+        words = [w for w in re.split(r'[_\-]+', key) if w]
+        if words and words[0].lower() in ('ent', 'mem', 'kv'):
+            words = words[1:] or words
+        title = ' '.join(w.capitalize() for w in words)[:60] or 'Memory'
+
+    if title.lstrip().startswith('{'):
+        title = 'Memory'
+
+    summary = preview.split('\n', 1)[0].strip()[:160]
+    if summary.lstrip().startswith('{'):
+        summary = title
+
+    details: list[str] = []
+    if isinstance(content, list):
+        details = [str(x).strip() for x in content if str(x).strip()]
+    elif isinstance(content, str) and '\n' in content:
+        details = [ln.strip().lstrip('-•* ').strip() for ln in content.splitlines() if ln.strip()]
+    elif preview:
+        details = [preview[:500]]
+
+    try:
+        from app.services.memory import graph_memory
+
+        category_label = graph_memory.humanize_entity_type(cat)
+    except Exception:
+        category_label = cat.replace('_', ' ').title()
+
+    return {
+        'title': title,
+        'summary': summary,
+        'details': details[:40],
+        'section': section,
+        'categoryLabel': category_label,
+    }
+
+
+def enrich_memory_for_model(item: dict[str, object]) -> dict[str, object]:
+    """Add beginner-readable label / description / title fields for prompts and tools."""
     if not isinstance(item, dict):
         return item
     key = str(item.get('key') or '')
     content = item.get('content', '')
-    if isinstance(content, (dict, list)):
-        preview = json.dumps(content, default=str, ensure_ascii=False)
-    else:
-        preview = str(content or '')
-    meta = {'preview': preview[:400]}
-    try:
-        from app.services.memory import graph_memory
-
-        item['label'] = graph_memory.humanize_entity_label(key, meta)
-        item['description'] = graph_memory.entity_description(key, meta) or preview[:240]
-        item['categoryLabel'] = graph_memory.humanize_entity_type(
-            str(item.get('category') or 'memory')
-        )
-    except Exception:
-        item.setdefault('label', key.replace('_', ' ') if key else 'Memory')
-        item.setdefault('description', preview[:240])
+    category = str(item.get('category') or 'auto')
+    presented = present_memory_fields(key, content, category)
+    item['title'] = presented['title']
+    item['summary'] = presented['summary']
+    item['details'] = presented['details']
+    item['section'] = presented['section']
+    item['label'] = presented['title']
+    item['description'] = presented['summary']
+    item['categoryLabel'] = presented['categoryLabel']
+    src = _normalize_source(str(item.get('source') or ''))
+    if not item.get('source'):
+        item['source'] = src
+    item['origin'] = 'added' if src == 'user' else 'recalled'
     return item
 
 
 def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
-    """Find memories relevant to a query using FTS5 ranking.
-
-    FTS virtual table only has ``key``/``content``; metadata comes from a
-    JOIN to ``auto_memories``. Falls back to a **bounded** LIKE scan if FTS
-    returns nothing (never loads the whole table unbounded).
-    Returned keys keep camelCase ``createdAt`` for wire/API consumers.
-    Each hit also includes ``label`` / ``description`` for model-facing use.
-    """
+    """Find memories relevant to a query using FTS5 ranking."""
     conn = _conn()
     lim = max(1, min(int(limit), 50))
     from app.services.memory_store import _row_as_wire, _fts_match_query
 
+    cols = 't.id, t.key, t.content, t.category, t.importance, t.source, t.created_at, t.updated_at'
     try:
         ftsQ = _fts_match_query(query) if query and query.strip() else ''
         if ftsQ:
-            # Table-level MATCH must name the FTS table (alias MATCH can fail as
-            # "no such column" on some SQLite builds).
             rows = conn.execute(
-                'SELECT t.key, t.content, t.category, t.importance, t.created_at '
+                f'SELECT {cols} '
                 'FROM auto_memories_fts AS fts '
                 'JOIN auto_memories AS t ON fts.rowid = t.rowid '
                 'WHERE auto_memories_fts MATCH ? ORDER BY rank LIMIT ?',
@@ -196,13 +327,12 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     except Exception:
         pass
 
-    # Bounded fallback — never SELECT entire auto_memories without LIMIT.
     like = f'%{(query or "").strip()}%'
     if like == '%%':
         return []
     allRows = conn.execute(
-        'SELECT key, content, category, importance, created_at FROM auto_memories '
-        'WHERE key LIKE ? OR content LIKE ? '
+        'SELECT id, key, content, category, importance, source, created_at, updated_at '
+        'FROM auto_memories WHERE key LIKE ? OR content LIKE ? '
         'ORDER BY importance DESC LIMIT ?',
         (like, like, max(lim * 4, 20)),
     ).fetchall()
@@ -216,7 +346,9 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
             score += 0.5
         if q and q in content:
             score += 0.3
-        score += r['importance'] * 0.2
+        score += float(r['importance'] or 0) * 0.2
+        if _is_user_source(r['source']):
+            score += 0.15
         if score > 0:
             item = _row_as_wire(r)
             try:
@@ -228,34 +360,68 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     return [m for __, m in scored[:limit]]
 
 
-def list_all_auto_memories(category: str = '') -> list[dict[str, object]]:
-    """List every ``auto_memories`` row (with id), optionally filtered by category.
-
-    Ordered by category then most-recently-updated so the settings panel can
-    group rows by category without a separate query per group.
-    """
+def list_user_added_memories(limit: int = 50) -> list[dict[str, object]]:
+    """Return user-authored memories for every-turn prompt injection."""
     conn = _conn()
     from app.services.memory_store import _row_as_wire
 
-    if category:
-        rows = conn.execute(
-            'SELECT id, key, content, category, importance, source, created_at, updated_at '
-            'FROM auto_memories WHERE category = ? ORDER BY updated_at DESC, id DESC',
-            (category,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            'SELECT id, key, content, category, importance, source, created_at, updated_at '
-            'FROM auto_memories ORDER BY category ASC, updated_at DESC, id DESC'
-        ).fetchall()
-    result = []
+    lim = max(1, min(int(limit), 100))
+    rows = conn.execute(
+        'SELECT id, key, content, category, importance, source, created_at, updated_at '
+        "FROM auto_memories WHERE source = 'user' "
+        'ORDER BY importance DESC, updated_at DESC LIMIT ?',
+        (lim,),
+    ).fetchall()
+    out = []
     for r in rows:
         item = _row_as_wire(r)
         try:
             item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
         except (json.JSONDecodeError, TypeError):
             pass
-        result.append(item)
+        out.append(enrich_memory_for_model(item))
+    return out
+
+
+def list_all_auto_memories(
+    category: str = '',
+    origin: str = 'all',
+    include_telemetry: bool = True,
+) -> list[dict[str, object]]:
+    """List ``auto_memories`` rows with optional origin / telemetry filters.
+
+    ``origin``: ``all`` | ``recalled`` | ``added``
+    """
+    conn = _conn()
+    from app.services.memory_store import _row_as_wire
+
+    origin_n = (origin or 'all').strip().lower()
+    clauses: list[str] = []
+    params: list[object] = []
+    if category:
+        clauses.append('category = ?')
+        params.append(category)
+    if origin_n == 'added':
+        clauses.append("source = 'user'")
+    elif origin_n == 'recalled':
+        clauses.append("COALESCE(source, '') != 'user'")
+    where = f'WHERE {" AND ".join(clauses)}' if clauses else ''
+    rows = conn.execute(
+        f'SELECT id, key, content, category, importance, source, created_at, updated_at '
+        f'FROM auto_memories {where} ORDER BY category ASC, updated_at DESC, id DESC',
+        params,
+    ).fetchall()
+    result = []
+    for r in rows:
+        key = str(r['key'] or '')
+        if not include_telemetry and _is_telemetry_key(key):
+            continue
+        item = _row_as_wire(r)
+        try:
+            item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        result.append(enrich_memory_for_model(item))
     return result
 
 
@@ -276,14 +442,18 @@ def get_auto_memory(memory_id: int) -> dict[str, object] | None:
         item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
     except (json.JSONDecodeError, TypeError):
         pass
-    return item
+    return enrich_memory_for_model(item)
 
 
 def create_auto_memory(
-    key: str, content: object, category: str = 'auto', importance: float = 0.5
+    key: str,
+    content: object,
+    category: str = 'auto',
+    importance: float = 0.5,
+    source: str = 'auto',
 ) -> int | None:
-    """Create (or upsert-by-key) a memory row via ``saveAutoMemory`` and return its id."""
-    saveAutoMemory(key, content, category=category, importance=importance)
+    """Create (or upsert-by-key) a memory row and return its id."""
+    saveAutoMemory(key, content, category=category, importance=importance, source=source)
     conn = _conn()
     row = conn.execute('SELECT id FROM auto_memories WHERE key = ?', (key,)).fetchone()
     return int(row['id']) if row else None
@@ -294,8 +464,9 @@ def update_auto_memory(
     content: object = None,
     category: str | None = None,
     importance: float | None = None,
+    source: str | None = None,
 ) -> bool:
-    """Update fields on an existing ``auto_memories`` row by id. No-op fields stay untouched."""
+    """Update fields on an existing ``auto_memories`` row by id."""
     conn = _conn()
     existing = conn.execute('SELECT id FROM auto_memories WHERE id = ?', (memory_id,)).fetchone()
     if not existing:
@@ -312,6 +483,9 @@ def update_auto_memory(
     if importance is not None:
         sets.append('importance = ?')
         params.append(importance)
+    if source is not None:
+        sets.append('source = ?')
+        params.append(_normalize_source(source))
     if not sets:
         return True
     sets.append('updated_at = ?')
@@ -334,12 +508,7 @@ def delete_auto_memory(memory_id: int) -> bool:
 
 
 def deleteOrphanedBlob() -> bool:
-    """Delete the old JSON blob from memory_store if it exists.
-
-    Returns True if the blob was found and deleted, False otherwise.
-    Call this once after migration to avoid polluting LIKE-based searches.
-    """
-    # Blob key name stays camelCase (row key, not a table/column).
+    """Delete the old JSON blob from memory_store if it exists."""
     blob = get_memory('autoMemories')
     if blob is not None:
         save_memory('autoMemories', None)
@@ -358,7 +527,7 @@ def extractAndSaveTodos(messages: list[dict[str, object]]) -> list[str]:
             items = re.findall('- \\[ \\] (.+)', content)
             todos.extend(items)
     if todos:
-        saveAutoMemory('todos', todos, category='tasks', importance=0.8)
+        saveAutoMemory('todos', todos, category='tasks', importance=0.8, source='auto')
     return todos
 
 
@@ -387,5 +556,7 @@ def backgroundReview(messages: list[dict[str, object]]) -> dict[str, object]:
         'needs_attention': toolErrors > 2 or frustrated,
     }
     if result['needs_attention']:
-        saveAutoMemory(f'review_{time.time()}', result, category='review', importance=0.9)
+        saveAutoMemory(
+            f'review_{time.time()}', result, category='review', importance=0.9, source='auto'
+        )
     return result

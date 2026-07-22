@@ -300,6 +300,15 @@ def buildSystemPrompt(
     coreFacts = get_memory('coreMemory')
     if coreFacts:
         memory['coreMemory'] = coreFacts
+    # User-authored Added Memory — inject every turn (opposite of on-demand recalled).
+    try:
+        from app.services.memory.auto_memory import list_user_added_memories
+
+        added = list_user_added_memories(limit=40)
+        if added:
+            memory['addedMemories'] = added
+    except Exception:
+        logger.debug('prompt: added memories load failed', exc_info=True)
     agentContext = None
     if session.agentId:
         try:
@@ -1612,7 +1621,44 @@ async def _sendWorkbenchMessageStreamImpl(
                     tracker.record_failure(toolName)
                 else:
                     with _trace.span('tool_exec', tool=toolName):
-                        result = await _executeTool(toolName, toolInput, session)
+                        if toolName in ('web_search', 'WebSearch', 'mcp__workspace__web_search'):
+                            # Progress events so the UI is not silent during DDG + page fetches.
+                            async def _on_web_progress(
+                                phase: str, meta: dict[str, object] | None = None
+                            ) -> None:
+                                if not emit:
+                                    return
+                                payload: dict[str, object] = {
+                                    'type': 'tool_progress',
+                                    'id': toolUseId,
+                                    'name': toolName,
+                                    'phase': phase if phase in ('reading', 'read', 'running', 'done', 'error') else 'running',
+                                    'message': '',
+                                }
+                                if isinstance(meta, dict):
+                                    msg = as_str(meta.get('message'), '')
+                                    if not msg and phase == 'searching':
+                                        msg = 'Searching the web…'
+                                    elif not msg and phase == 'fetching':
+                                        idx = meta.get('index')
+                                        total = meta.get('total')
+                                        msg = f'Fetching pages… ({idx}/{total})' if total else 'Fetching pages…'
+                                    elif not msg and phase == 'done':
+                                        msg = 'Search complete'
+                                    payload['message'] = msg
+                                    if meta.get('url'):
+                                        payload['path'] = meta.get('url')
+                                emit(payload)
+
+                            from app.services.tool_registrations.web_tools import _webSearch
+
+                            result = await _webSearch(
+                                as_str(toolInput.get('query'), ''),
+                                maxResults=as_int(toolInput.get('maxResults'), 10),
+                                on_progress=_on_web_progress,
+                            )
+                        else:
+                            result = await _executeTool(toolName, toolInput, session)
                     if isinstance(result, str) and result.startswith('Error:'):
                         tracker.record_failure(toolName)
                     if guardStatus == 'warn':
@@ -1829,6 +1875,7 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
                 summary,
                 category='conversation',
                 importance=0.3,
+                source='auto',
             )
         # Cross-session bridge: active_projects + current_context (not userProfile).
         sync_from_turn(

@@ -8,28 +8,84 @@ from app.services import tool_registry
 
 
 async def _memorySearch(query: str) -> str:
-    """Search past conversation memory."""
+    """Search past conversation memory across KV store and auto_memories."""
     from app.services.memory_store import search_memory
+    from app.services.memory.auto_memory import getRelevantMemories
 
     try:
-        results = search_memory(query)
-        if not results:
-            return f'No memory results for: {query}'
         lines = [f'Memory search results for: {query}\n']
-        for r in results:
+        found = False
+        try:
+            kv_results = search_memory(query) or []
+        except Exception:
+            kv_results = []
+        for r in kv_results:
+            found = True
             key = as_str(r.get('key'), '')
             value = r.get('value', '')
             if isinstance(value, dict) or isinstance(value, list):
                 value = json.dumps(value, indent=2)
-            lines.append(f'  [{key}]: {str(value)[:500]}')
+            lines.append(f'  [kv:{key}]: {str(value)[:500]}')
+        try:
+            auto_results = getRelevantMemories(query, limit=8) or []
+        except Exception:
+            auto_results = []
+        for r in auto_results:
+            found = True
+            origin = as_str(r.get('origin') or r.get('source'), 'auto')
+            title = as_str(r.get('title') or r.get('label'), as_str(r.get('key'), ''))
+            desc = as_str(r.get('summary') or r.get('description') or r.get('content'), '')
+            lines.append(f'  [{origin}:{title}]: {desc[:500]}')
+        if not found:
+            return f'No memory results for: {query}'
         return '\n'.join(lines)
     except Exception as exc:
         return f'Error searching memory: {exc}'
 
 
 async def _factSearch(query: str) -> str:
-    """Search semantic facts in memory."""
-    return await _memorySearch(query)
+    """Search semantic facts (KV + facts table) and include tagged auto_memories."""
+    from app.services.memory_store import search_memory, search_facts
+    from app.services.memory.auto_memory import getRelevantMemories
+
+    try:
+        lines = [f'Fact search results for: {query}\n']
+        found = False
+        try:
+            for r in search_memory(query) or []:
+                found = True
+                key = as_str(r.get('key'), '')
+                value = r.get('value', '')
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value, indent=2)
+                lines.append(f'  [kv:{key}]: {str(value)[:500]}')
+        except Exception:
+            pass
+        try:
+            for r in search_facts(query) or []:
+                found = True
+                if isinstance(r, dict):
+                    fk = as_str(r.get('factKey') or r.get('fact_key') or r.get('key'), '')
+                    fv = r.get('factValue') or r.get('fact_value') or r.get('value') or r
+                    lines.append(f'  [fact:{fk}]: {str(fv)[:500]}')
+                else:
+                    lines.append(f'  [fact]: {str(r)[:500]}')
+        except Exception:
+            pass
+        try:
+            for r in getRelevantMemories(query, limit=5) or []:
+                found = True
+                origin = as_str(r.get('origin') or r.get('source'), 'auto')
+                title = as_str(r.get('title') or r.get('label'), as_str(r.get('key'), ''))
+                desc = as_str(r.get('summary') or r.get('description') or r.get('content'), '')
+                lines.append(f'  [autoMemories/{origin}:{title}]: {desc[:500]}')
+        except Exception:
+            pass
+        if not found:
+            return f'No fact results for: {query}'
+        return '\n'.join(lines)
+    except Exception as exc:
+        return f'Error searching facts: {exc}'
 
 
 async def _contextRead() -> str:

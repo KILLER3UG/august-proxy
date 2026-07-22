@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+from collections.abc import Awaitable, Callable
 from app.json_narrowing import as_str
 from app.services import tool_registry
 from app.services.tool_html import html_to_markdown, unescape_html
@@ -9,6 +10,26 @@ from app.services.tool_html import html_to_markdown, unescape_html
 # Private aliases for minimal churn (match prior tool_definitions aliases)
 _htmlToMarkdown = html_to_markdown
 _unescapeHtml = unescape_html
+
+_DDG_SEARCH_TIMEOUT_S = 15.0
+_FETCH_BODY_CAP_BYTES = 300_000
+_FETCH_MARKDOWN_MAX = 8000
+_WEB_FETCH_MARKDOWN_MAX = 50000
+
+ProgressCb = Callable[[str, dict[str, object] | None], Awaitable[None] | None]
+
+
+async def _emit_progress(
+    on_progress: ProgressCb | None, phase: str, meta: dict[str, object] | None = None
+) -> None:
+    if not on_progress:
+        return
+    try:
+        result = on_progress(phase, meta)
+        if asyncio.iscoroutine(result):
+            await result
+    except Exception:
+        pass
 
 
 async def _fetchUrlContent(url: str, maxLength: int = 50000) -> str:
@@ -32,7 +53,9 @@ async def _fetchUrlContent(url: str, maxLength: int = 50000) -> str:
             )
             resp.raise_for_status()
             contentType = as_str(resp.headers.get('content-type'), '')
-            text = resp.text
+            # Cap raw body before expensive HTML→markdown conversion.
+            raw = resp.content[:_FETCH_BODY_CAP_BYTES]
+            text = raw.decode(resp.encoding or 'utf-8', errors='replace')
             if 'text/html' in contentType:
                 text = _htmlToMarkdown(text)
             return f'URL: {url}\nStatus: {resp.status_code}\n\n{text[:maxLength]}'
@@ -46,18 +69,19 @@ async def _fetchUrlContent(url: str, maxLength: int = 50000) -> str:
 
 async def _webFetch(url: str) -> str:
     """Fetch a URL and return its content as Markdown."""
-    return await _fetchUrlContent(url, maxLength=50000)
+    return await _fetchUrlContent(url, maxLength=_WEB_FETCH_MARKDOWN_MAX)
 
 
-async def _webSearch(query: str, maxResults: int = 10) -> str:
+async def _webSearch(
+    query: str,
+    maxResults: int = 10,
+    on_progress: ProgressCb | None = None,
+) -> str:
     """Search the web using DuckDuckGo. Automatically fetches content from top results.
 
-    Uses the ``duckduckgo_search`` library which handles DuckDuckGo's anti-bot
-    protections. Returns a JSON object (serialised) with:
-      search_query    — the query string
-      result_count    — number of search results found
-      results         — array of {index, title, url, snippet}
-      fetched_content — array of {index, url, content} with full page content
+    Uses the ``ddgs`` library. Returns JSON with:
+      search_query, result_count, results[{index,title,url,snippet}],
+      fetched_content[{index,url,content}] for the top 10 pages.
     """
     import json as _json
     from ddgs import DDGS
@@ -65,6 +89,7 @@ async def _webSearch(query: str, maxResults: int = 10) -> str:
     maxResults = min(maxResults, 20)
     searchResults: list[dict[str, object]] = []
     errorHint: str | None = None
+    await _emit_progress(on_progress, 'searching', {'query': query})
     try:
 
         def _search() -> list[dict[str, str]]:
@@ -72,7 +97,21 @@ async def _webSearch(query: str, maxResults: int = 10) -> str:
                 return list(ddgs.text(query, max_results=maxResults))
 
         loop = asyncio.get_running_loop()
-        rawResults: list[dict[str, str]] = await loop.run_in_executor(None, _search)
+        try:
+            rawResults: list[dict[str, str]] = await asyncio.wait_for(
+                loop.run_in_executor(None, _search),
+                timeout=_DDG_SEARCH_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            return _json.dumps(
+                {
+                    'search_query': query,
+                    'result_count': 0,
+                    'message': f'DuckDuckGo search timed out after {_DDG_SEARCH_TIMEOUT_S:.0f}s',
+                    'error': 'timeout',
+                },
+                ensure_ascii=False,
+            )
         for i, r in enumerate(rawResults):
             title = as_str(r.get('title'), '').strip()
             url = as_str(r.get('href'), '').strip()
@@ -94,6 +133,7 @@ async def _webSearch(query: str, maxResults: int = 10) -> str:
                 iaData = iaResp.json()
                 abstract = as_str(iaData.get('Abstract'), '')
                 if abstract:
+                    await _emit_progress(on_progress, 'done', {'result_count': 0, 'abstract': True})
                     return _json.dumps(
                         {
                             'search_query': query,
@@ -107,20 +147,47 @@ async def _webSearch(query: str, maxResults: int = 10) -> str:
             pass
     if not searchResults:
         msg = errorHint or f'No results found for: {query}'
+        await _emit_progress(on_progress, 'done', {'result_count': 0})
         return _json.dumps({'search_query': query, 'result_count': 0, 'message': msg}, ensure_ascii=False)
     fetchCount = min(10, len(searchResults))
     fetchedContent: list[dict[str, object]] = []
     if fetchCount > 0:
+        await _emit_progress(
+            on_progress,
+            'fetching',
+            {'index': 0, 'total': fetchCount, 'message': f'Fetching 0/{fetchCount}'},
+        )
+
+        async def _one(i: int, url: str) -> tuple[int, str, str]:
+            content = await _fetchUrlContent(url, maxLength=_FETCH_MARKDOWN_MAX)
+            await _emit_progress(
+                on_progress,
+                'fetching',
+                {
+                    'index': i + 1,
+                    'total': fetchCount,
+                    'url': url,
+                    'message': f'Fetching {i + 1}/{fetchCount}',
+                },
+            )
+            return i, url, content
+
         fetched = await asyncio.gather(
-            *[_fetchUrlContent(as_str(r['url']), maxLength=8000) for r in searchResults[:fetchCount]],
+            *[_one(i, as_str(r['url'])) for i, r in enumerate(searchResults[:fetchCount])],
             return_exceptions=True,
         )
-        for i, content in enumerate(fetched):
-            if isinstance(content, BaseException):
+        for item in fetched:
+            if isinstance(item, BaseException):
                 continue
+            i, url, content = item
             fetchedContent.append(
-                {'index': searchResults[i]['index'], 'url': searchResults[i]['url'], 'content': content}
+                {'index': searchResults[i]['index'], 'url': url, 'content': content}
             )
+    await _emit_progress(
+        on_progress,
+        'done',
+        {'result_count': len(searchResults), 'fetched': len(fetchedContent)},
+    )
     return _json.dumps(
         {
             'search_query': query,
@@ -144,10 +211,16 @@ def register() -> None:
             'required': ['url'],
         },
     )
+
+    async def _webSearchHandler(query: str, maxResults: int = 10, **kwargs: object) -> str:
+        on_progress = kwargs.get('on_progress')
+        cb = on_progress if callable(on_progress) else None
+        return await _webSearch(query, maxResults=maxResults, on_progress=cb)  # type: ignore[arg-type]
+
     tool_registry.register(
         'web_search',
-        'Search the web for information using DuckDuckGo. Returns a numbered list of results with titles, URLs, and snippets, and AUTOMATICALLY fetches the full content from the top 10 results (fetched content appears below the result list). Max 20 results (default 10).',
-        _webSearch,
+        'Search the web for information using DuckDuckGo. Returns a numbered list of results with titles, URLs, and snippets, and AUTOMATICALLY fetches the full content from the top 10 results (fetched content appears below the result list). Max 20 results (default 10). Search provider calls time out after 15s.',
+        _webSearchHandler,
         {
             'type': 'object',
             'properties': {
@@ -169,16 +242,12 @@ def register() -> None:
         {
             'type': 'object',
             'properties': {
-                'url': {'type': 'string', 'description': 'The URL to open.'},
-                'waitUntil': {
-                    'type': 'string',
-                    'enum': ['load', 'domcontentloaded', 'networkidle', 'commit'],
-                    'description': 'When navigation is considered complete (default: load).',
-                },
+                'url': {'type': 'string', 'description': 'URL to open.'},
             },
             'required': ['url'],
         },
     )
+
     tool_registry.register(
         'browser_click',
         "Click an element. Locate it by ref (e.g. '@e3'), CSS/XPath selector, or visible text.",

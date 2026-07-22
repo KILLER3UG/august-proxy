@@ -29,6 +29,7 @@ import {
   BookOpen,
   Bot,
   BrainCircuit,
+  StickyNote,
   ClipboardList,
   Code2,
   Cpu,
@@ -233,14 +234,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     id: 'recalled-memory',
     label: 'Recalled Memory',
-    description: 'Browse, add, and delete the auto-memories August recalls into chat context, grouped by category.',
+    description:
+      'Browse agent-captured memories August can search on demand in chat (Topics / Areas).',
     icon: BrainCircuit,
     category: 'intelligence',
     tier: 'advanced',
     // Note: 'memory' is owned by memory-knowledge — this section is
     // reached via 'recall' / 'auto-memory' / category names instead.
-    keywords: ['recall', 'recalled', 'auto-memory', 'auto memory', 'category', 'quick add'],
+    keywords: ['recall', 'recalled', 'auto-memory', 'auto memory', 'category'],
     legacyAliases: ['recalled-memories', 'auto-memories'],
+  },
+  {
+    id: 'added-memory',
+    label: 'Added Memory',
+    description:
+      'Facts you explicitly save for August — injected into every chat turn.',
+    icon: StickyNote,
+    category: 'intelligence',
+    tier: 'advanced',
+    keywords: ['added', 'add memory', 'remember this', 'user memory', 'saved fact'],
+    legacyAliases: ['added-memories', 'user-memories'],
   },
 
   /* ── Tools & Skills ──────────────────────────────────────────── */

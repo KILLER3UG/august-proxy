@@ -49,6 +49,7 @@ class AutoMemoryCreate(CamelModel):
     content: object
     category: str = 'auto'
     importance: float = 0.5
+    source: str = 'auto'
 
 
 class AutoMemoryUpdate(CamelModel):
@@ -57,6 +58,7 @@ class AutoMemoryUpdate(CamelModel):
     content: object | None = None
     category: str | None = None
     importance: float | None = None
+    source: str | None = None
 
 
 class ProposalCreate(CamelModel):
@@ -114,16 +116,30 @@ async def searchMemoryRoute(query: str = ''):
 
 
 @router.get('/auto')
-async def listAutoMemoriesRoute(category: str = ''):
-    """List auto-memories, grouped by category (Recalled Memory settings panel)."""
+async def listAutoMemoriesRoute(
+    category: str = '',
+    origin: str = 'all',
+    include_telemetry: bool | None = None,
+):
+    """List auto-memories, grouped by category.
+
+    ``origin``: ``all`` | ``recalled`` | ``added``.
+    Settings UIs pass ``recalled`` / ``added``; tools use default ``all``.
+    Telemetry keys (``tool_failure_*``) are hidden for ``origin=recalled`` unless
+    ``include_telemetry=true``.
+    """
     from app.services.memory.auto_memory import list_all_auto_memories
 
-    items = list_all_auto_memories(category)
+    if include_telemetry is None:
+        tele = origin != 'recalled'
+    else:
+        tele = include_telemetry
+    items = list_all_auto_memories(category, origin=origin, include_telemetry=tele)
     grouped: dict[str, list[object]] = {}
     for item in items:
         cat = str(item.get('category') or 'auto')
         grouped.setdefault(cat, []).append(item)
-    return {'items': items, 'grouped': grouped}
+    return {'items': items, 'grouped': grouped, 'origin': origin}
 
 
 @router.post('/auto')
@@ -131,10 +147,20 @@ async def createAutoMemoryRoute(body: AutoMemoryCreate):
     """Create (or upsert-by-key) an auto-memory entry."""
     from app.services.memory.auto_memory import create_auto_memory
 
+    src = (body.source or 'auto').strip().lower()
+    if src not in ('user', 'auto', 'agent'):
+        src = 'auto'
+    importance = body.importance
+    if src == 'user' and importance < 0.8:
+        importance = 0.85
     memoryId = create_auto_memory(
-        body.key, cast(JsonValue, body.content), body.category, body.importance
+        body.key,
+        cast(JsonValue, body.content),
+        body.category,
+        importance,
+        source=src,
     )
-    return {'id': memoryId, 'status': 'ok'}
+    return {'id': memoryId, 'status': 'ok', 'source': src}
 
 
 @router.get('/auto/{memoryId}')
@@ -150,7 +176,7 @@ async def getAutoMemoryRoute(memoryId: int):
 
 @router.put('/auto/{memoryId}')
 async def updateAutoMemoryRoute(memoryId: int, body: AutoMemoryUpdate):
-    """Update an auto-memory entry's content/category/importance."""
+    """Update an auto-memory entry's content/category/importance/source."""
     from app.services.memory.auto_memory import update_auto_memory
 
     ok = update_auto_memory(
@@ -158,6 +184,7 @@ async def updateAutoMemoryRoute(memoryId: int, body: AutoMemoryUpdate):
         content=cast(JsonValue, body.content) if body.content is not None else None,
         category=body.category,
         importance=body.importance,
+        source=body.source,
     )
     if not ok:
         raise HTTPException(status_code=404, detail='Memory not found')

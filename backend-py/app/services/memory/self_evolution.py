@@ -71,6 +71,7 @@ def reflectOnTurn(messages: list[dict[str, object]], model: str = '') -> dict[st
                         f'User prefers: {match}',
                         category='correction',
                         importance=0.8,
+                        source='auto',
                     )
                     guidelineUpdates += 1
     toolFailures = sum((1 for m in messages if m.get('role') == 'tool' and 'Error' in str(m.get('content', ''))))
@@ -78,9 +79,10 @@ def reflectOnTurn(messages: list[dict[str, object]], model: str = '') -> dict[st
         learnings.append(f'High tool failure rate: {toolFailures} errors in this turn')
         saveAutoMemory(
             f'tool_failure_{int(time.time())}',
-            {'count': toolFailures, 'suggestion': 'Review tool usage patterns'},
+            f'High tool failure rate: {toolFailures} errors — review tool usage patterns',
             category='learning',
             importance=0.7,
+            source='auto',
         )
         memoryUpdates += 1
     for msg in messages:
