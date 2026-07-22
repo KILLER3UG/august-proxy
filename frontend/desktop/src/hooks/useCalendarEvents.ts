@@ -14,6 +14,8 @@ export interface CalendarEvent {
 
 export interface CalendarResponse {
   events: CalendarEvent[];
+  status?: string;
+  hint?: string;
 }
 
 export function useCalendarEvents() {

@@ -93,8 +93,10 @@ async def auditLog(category: str = '', limit: int = 200) -> dict[str, object]:
 
 @router.get('/rollback')
 async def rollbackList() -> dict[str, object]:
-    """Rollback is out of scope for this pass — return an empty list."""
-    return {'entries': [], 'count': 0}
+    from app.services.rollback_store import list_entries
+
+    entries = list_entries()
+    return {'entries': entries, 'count': len(entries)}
 
 
 # ── Manage action endpoints used by the desktop API client ─────────────
@@ -131,9 +133,11 @@ class ActionBody(CamelModel):
 @router.post('/settings/update')
 async def update_settings(body: SettingsUpdateBody):
     from app.services.config_service import getConfig, saveConfig
+    from app.services.rollback_store import capture_setting_before, record_rollback
 
     if not body.key_path:
         raise HTTPException(400, detail='keyPath is required')
+    before = capture_setting_before(body.key_path)
     cfg = getConfig()
     keys = body.key_path.split('.')
     cur: dict = cfg
@@ -145,18 +149,41 @@ async def update_settings(body: SettingsUpdateBody):
         cur = nxt
     cur[keys[-1]] = body.value
     saveConfig(cfg)
+    try:
+        record_rollback(
+            type='restore_setting',
+            target=body.key_path,
+            before=before,
+            after=body.value,
+        )
+    except Exception:
+        pass
     return {'ok': True, 'keyPath': body.key_path, 'value': body.value}
 
 
 @router.post('/models/select')
 async def select_model(body: ModelSelectBody):
     from app.services.config_service import getConfig, saveConfig
+    from app.services.rollback_store import record_rollback
 
     cfg = getConfig()
+    before = {
+        'activeModel': cfg.get('activeModel'),
+        'activeProvider': cfg.get('activeProvider'),
+    }
     cfg['activeModel'] = body.model
     if body.provider:
         cfg['activeProvider'] = body.provider
     saveConfig(cfg)
+    try:
+        record_rollback(
+            type='restore_model_selection',
+            target='activeModel',
+            before=before,
+            after={'activeModel': body.model, 'activeProvider': body.provider or before.get('activeProvider')},
+        )
+    except Exception:
+        pass
     return {'ok': True, 'model': body.model, 'provider': body.provider}
 
 
@@ -187,15 +214,19 @@ async def manage_sessions(body: ActionBody):
 async def manage_providers(body: ActionBody):
     from app.services.config_service import getProvidersStore, saveProvidersStore
     from app.json_narrowing import as_list
+    from app.services.rollback_store import record_rollback
+    import copy
 
     store = getProvidersStore()
     providers = list(as_list(store.get('providers')))
     action = (body.action or '').lower()
     if action == 'upsert' and body.provider:
         pid = str(body.provider.get('id') or body.provider.get('name') or '')
+        before = None
         replaced = False
         for i, p in enumerate(providers):
             if isinstance(p, dict) and str(p.get('id') or p.get('name')) == pid:
+                before = copy.deepcopy(p)
                 providers[i] = {**p, **body.provider}
                 replaced = True
                 break
@@ -203,14 +234,36 @@ async def manage_providers(body: ActionBody):
             providers.append(body.provider)
         store['providers'] = providers
         saveProvidersStore(store)
+        try:
+            record_rollback(
+                type='restore_provider',
+                target=pid or str(body.provider.get('name') or ''),
+                before=before,
+                after=copy.deepcopy(body.provider),
+            )
+        except Exception:
+            pass
         return {'ok': True, 'provider': body.provider}
     if action == 'delete' and body.id:
-        store['providers'] = [
-            p
-            for p in providers
-            if not (isinstance(p, dict) and str(p.get('id') or p.get('name')) == body.id)
-        ]
+        before = None
+        kept = []
+        for p in providers:
+            if isinstance(p, dict) and str(p.get('id') or p.get('name')) == body.id:
+                before = copy.deepcopy(p)
+            else:
+                kept.append(p)
+        store['providers'] = kept
         saveProvidersStore(store)
+        try:
+            if before is not None:
+                record_rollback(
+                    type='restore_provider',
+                    target=body.id,
+                    before=before,
+                    after=None,
+                )
+        except Exception:
+            pass
         return {'ok': True, 'deleted': True, 'id': body.id}
     return {'ok': True, 'providers': providers}
 
@@ -220,15 +273,19 @@ async def manage_agents(body: ActionBody):
     from app.services.tools import agent_registry
     from app.services.config_service import getConfig, saveConfig
     from app.json_narrowing import as_list, as_dict
+    from app.services.rollback_store import record_rollback
+    import copy
 
     action = (body.action or '').lower()
     cfg = getConfig()
     custom = [as_dict(a) for a in as_list(cfg.get('customAgents'))]
     if action == 'upsert' and body.agent:
         aid = str(body.agent.get('id') or body.agent.get('name') or '')
+        before = None
         replaced = False
         for i, a in enumerate(custom):
             if str(a.get('id') or a.get('name')) == aid:
+                before = copy.deepcopy(a)
                 custom[i] = {**a, **body.agent}
                 replaced = True
                 break
@@ -236,8 +293,22 @@ async def manage_agents(body: ActionBody):
             custom.append(dict(body.agent))
         cfg['customAgents'] = custom
         saveConfig(cfg)
+        try:
+            record_rollback(
+                type='restore_agent_config',
+                target=aid,
+                before=before,
+                after=copy.deepcopy(body.agent),
+            )
+        except Exception:
+            pass
         return {'ok': True, 'agent': body.agent}
     if action == 'delete' and body.id:
+        before = None
+        for a in custom:
+            if str(a.get('id') or a.get('name')) == body.id:
+                before = copy.deepcopy(a)
+                break
         try:
             agent_registry.deleteAgent(body.id)
         except Exception:
@@ -246,6 +317,16 @@ async def manage_agents(body: ActionBody):
             a for a in custom if str(a.get('id') or a.get('name')) != body.id
         ]
         saveConfig(cfg)
+        try:
+            if before is not None:
+                record_rollback(
+                    type='restore_agent_config',
+                    target=body.id,
+                    before=before,
+                    after=None,
+                )
+        except Exception:
+            pass
         return {'ok': True, 'deleted': True, 'id': body.id}
     agents = list(agent_registry.listAgents()) + custom
     return {'ok': True, 'agents': agents}
@@ -254,14 +335,39 @@ async def manage_agents(body: ActionBody):
 @router.post('/memory/manage')
 async def manage_memory(body: ActionBody):
     from app.services import memory_store
+    from app.services.rollback_store import record_rollback
+    import copy
 
     action = (body.action or '').lower()
     key = body.key or ''
     if action in ('set', 'upsert') and key:
+        before_fact = memory_store.get_fact(key)
+        before = copy.deepcopy(before_fact) if before_fact else None
         memory_store.save_fact(key, cast(JsonValue, body.value), category=body.category or 'general')
+        try:
+            record_rollback(
+                type='restore_memory_item',
+                target=key,
+                before=before,
+                after={'key': key, 'value': body.value, 'category': body.category or 'general'},
+            )
+        except Exception:
+            pass
         return {'ok': True, 'key': key, 'value': body.value}
     if action in ('delete', 'forget') and key:
+        before_fact = memory_store.get_fact(key)
+        before = copy.deepcopy(before_fact) if before_fact else None
         memory_store.delete_fact(key)
+        try:
+            if before is not None:
+                record_rollback(
+                    type='restore_memory_item',
+                    target=key,
+                    before=before,
+                    after=None,
+                )
+        except Exception:
+            pass
         return {'ok': True, 'key': key}
     return {'ok': False}
 
@@ -329,6 +435,7 @@ async def ui_events(since: str = ''):
 
 
 @router.post('/rollback/{entry_id}/undo')
-async def undo_rollback(entryId: str):
-    return {'ok': False, 'entry': None, 'id': entryId, 'message': 'No rollback entry'}
+async def undo_rollback(entry_id: str):
+    from app.services.rollback_store import undo_entry
 
+    return undo_entry(entry_id)

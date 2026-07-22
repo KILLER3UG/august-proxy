@@ -5,7 +5,6 @@ Provider alias map — short names to provider module names.
 PROVIDER_ALIASES: dict[str, str] = {
     'claude': 'anthropic',
     'gpt': 'openai_api',
-    'gemini': 'gemini',
     'deepseek': 'deepseek',
     'openrouter': 'openrouter',
     'kimi': 'kimi',

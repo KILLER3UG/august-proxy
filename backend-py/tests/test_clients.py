@@ -10,7 +10,7 @@ from app.providers.clients.base import (
     parseRetryAfterMs,
     isRetryableStatus,
 )
-from app.providers.clients import getClient, AnthropicClient, OpenAIClient, GeminiClient, MiniMaxClient, BedrockClient
+from app.providers.clients import getClient, AnthropicClient, OpenAIClient
 
 
 class TestBaseClient:
@@ -92,43 +92,6 @@ class TestOpenAIClient:
         assert url == 'https://custom.api.com/v1'
 
 
-class TestGeminiClient:
-    def testAuthHeaders(self):
-        client = GeminiClient({'name': 'Google AI Studio'})
-        headers = client.buildAuthHeaders('gemini-key')
-        assert 'x-goog-api-key' in headers
-        assert headers['x-goog-api-key'] == 'gemini-key'
-        assert 'Authorization' not in headers
-
-    def testBaseUrl(self):
-        client = GeminiClient({'name': 'Google AI Studio'})
-        url = client.resolveBaseUrl()
-        assert 'googleapis.com' in url
-
-
-class TestMiniMaxClient:
-    def testExtendsAnthropic(self):
-        client = MiniMaxClient({'name': 'MiniMax'})
-        assert isinstance(client, AnthropicClient)
-
-    def testBaseUrl(self):
-        client = MiniMaxClient({'name': 'MiniMax', 'baseUrl': 'https://api.minimax.io/anthropic'})
-        url = client.resolveBaseUrl()
-        assert 'minimax.io' in url
-
-
-class TestBedrockClient:
-    def testAuthHeaders(self):
-        client = BedrockClient({'name': 'AWS Bedrock'})
-        headers = client.buildAuthHeaders(None)
-        assert headers['Content-Type'] == 'application/json'
-
-    def testApiKey(self):
-        client = BedrockClient({'name': 'AWS Bedrock'})
-        key = client.resolveApiKey()
-        assert key is None or key == '__aws_sdk__'
-
-
 class TestFactory:
     def testAnthropicMessages(self):
         client = getClient({'name': 'Anthropic', 'apiMode': 'anthropicMessages'})
@@ -142,17 +105,17 @@ class TestFactory:
         client = getClient({'name': 'OpenAI API', 'apiMode': 'codexResponses'})
         assert isinstance(client, OpenAIClient)
 
-    def testGeminiOpenai(self):
+    def testLegacyGeminiModeMapsToOpenaiClient(self):
         client = getClient({'name': 'Google AI Studio', 'apiMode': 'geminiOpenai'})
-        assert isinstance(client, GeminiClient)
+        assert isinstance(client, OpenAIClient)
 
-    def testBedrockConverse(self):
+    def testLegacyBedrockModeMapsToOpenaiClient(self):
         client = getClient({'name': 'AWS Bedrock', 'apiMode': 'bedrockConverse'})
-        assert isinstance(client, BedrockClient)
+        assert isinstance(client, OpenAIClient)
 
-    def testMinimax(self):
+    def testLegacyMinimaxModeMapsToAnthropicClient(self):
         client = getClient({'name': 'MiniMax', 'apiMode': 'minimax'})
-        assert isinstance(client, MiniMaxClient)
+        assert isinstance(client, AnthropicClient)
 
     def testUnknownModeDefaultsToOpenai(self):
         client = getClient({'name': 'Unknown', 'apiMode': 'weird_format'})

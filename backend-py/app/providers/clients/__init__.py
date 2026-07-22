@@ -4,6 +4,10 @@ Reuses client instances per provider identity (id + apiMode + baseUrl) so the
 underlying ``httpx.AsyncClient`` connection pool is shared across requests.
 ``BaseProviderClient`` already creates one HTTP client per instance; pooling
 here avoids constructing a new client object on every call.
+
+Only wire formats users configure: openaiChat / openaiResponses / codexResponses
+→ OpenAIClient; anthropicMessages → AnthropicClient. No first-class Gemini /
+MiniMax / Bedrock clients — paste an OpenAI-compatible or Anthropic baseUrl.
 """
 
 from __future__ import annotations
@@ -13,9 +17,6 @@ import threading
 from app.providers.clients.base import BaseProviderClient
 from app.providers.clients.anthropic import AnthropicClient
 from app.providers.clients.openai import OpenAIClient
-from app.providers.clients.gemini import GeminiClient
-from app.providers.clients.minimax import MiniMaxClient
-from app.providers.clients.bedrock import BedrockClient
 
 _lock = threading.Lock()
 _client_pool: dict[str, BaseProviderClient] = {}
@@ -47,14 +48,8 @@ def _make_client(providerConfig: dict[str, object]) -> BaseProviderClient:
     match mode:
         case 'anthropicMessages':
             return AnthropicClient(providerConfig)
-        case 'openaiChat' | 'codexResponses':
+        case 'openaiChat' | 'openaiResponses' | 'codexResponses':
             return OpenAIClient(providerConfig)
-        case 'geminiOpenai':
-            return GeminiClient(providerConfig)
-        case 'minimax':
-            return MiniMaxClient(providerConfig)
-        case 'bedrockConverse':
-            return BedrockClient(providerConfig)
         case _:
             return OpenAIClient(providerConfig)
 
@@ -90,9 +85,6 @@ __all__ = [
     'BaseProviderClient',
     'AnthropicClient',
     'OpenAIClient',
-    'GeminiClient',
-    'MiniMaxClient',
-    'BedrockClient',
     'getClient',
     'clear_client_pool',
 ]

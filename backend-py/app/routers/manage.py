@@ -104,10 +104,10 @@ async def createAlias(body: AliasCreate):
 
 
 @router.put('/aliases/{alias_name}')
-async def updateAlias(aliasName: str, body: AliasUpdate):
+async def updateAlias(alias_name: str, body: AliasUpdate):
     """Update a model alias."""
     aliases = _readAliases()
-    existing = next((a for a in aliases if a.get('alias') == aliasName), None)
+    existing = next((a for a in aliases if a.get('alias') == alias_name), None)
     if not existing:
         raise _err('not_found', 'Alias not found')
     if body.target_model is not None:
@@ -119,11 +119,11 @@ async def updateAlias(aliasName: str, body: AliasUpdate):
 
 
 @router.delete('/aliases/{alias_name}')
-async def deleteAlias(aliasName: str):
+async def deleteAlias(alias_name: str):
     """Delete a model alias."""
     aliases = _readAliases()
     before = len(aliases)
-    aliases = [a for a in aliases if a.get('alias') != aliasName]
+    aliases = [a for a in aliases if a.get('alias') != alias_name]
     if len(aliases) == before:
         raise _err('not_found', 'Alias not found')
     _writeAliases(aliases)

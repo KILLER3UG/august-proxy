@@ -74,7 +74,7 @@ export function useProviderOnboardingState() {
       {
         id: 'provider',
         label: 'Connect an AI provider',
-        description: 'Anthropic, OpenAI, Gemini, or any OpenAI-compatible endpoint',
+        description: 'Anthropic, OpenAI, or any OpenAI-compatible endpoint',
         done: hasProvider,
         href: '/settings/providers',
       },

@@ -42,4 +42,4 @@ async def test_post_api_cron_accepts_json(client, isolatedData):
     data = resp.json()
     assert data['name'] == 'camel-cron'
     assert data['status'] == 'idle'
-    assert data['id'].startswith('cron_')
+    assert data['id'].startswith('sch_')

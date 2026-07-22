@@ -19,13 +19,16 @@ async def getHostInfo() -> dict[str, object]:
 
     at = datetime.now(timezone.utc).isoformat()
     baseUrl = os.environ.get('AUGUST_HOST_AGENT_URL', '')
+    from app.services.post_observation import count_observations, latest_observation_meta
+
+    obs_meta = latest_observation_meta()
     base = {
         'lastComputerActionAt': None,
         'lastComputerAction': None,
         'lastComputerTarget': None,
-        'lastObservationAt': None,
-        'lastObservedApp': None,
-        'postObservationCount': 0,
+        'lastObservationAt': obs_meta.get('lastObservationAt'),
+        'lastObservedApp': obs_meta.get('lastObservedApp'),
+        'postObservationCount': count_observations(),
         'at': at,
         'computerUseEnabled': False,
     }

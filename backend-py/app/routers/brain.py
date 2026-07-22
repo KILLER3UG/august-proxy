@@ -37,23 +37,23 @@ async def putDeltaConsent(body: dict):
 
 
 @router.delete('/heuristics/{heuristic_id}')
-async def deleteHeuristic(heuristicId: int):
+async def deleteHeuristic(heuristic_id: int):
     """v3: Delete a learned heuristic."""
     from app.services.heuristics_service import removeHeuristicById
 
-    ok = removeHeuristicById(heuristicId)
+    ok = removeHeuristicById(heuristic_id)
     return {'deleted': ok}
 
 
 @router.patch('/heuristics/{heuristic_id}')
-async def editHeuristic(heuristicId: int, body: dict):
+async def editHeuristic(heuristic_id: int, body: dict):
     """v3: Edit a learned heuristic's rule text."""
     from app.services.heuristics_service import updateHeuristic
 
     newRule = (body.get('rule') or '').strip()
     if not newRule:
         return {'updated': False, 'error': 'rule cannot be empty'}
-    ok = updateHeuristic(heuristicId, newRule)
+    ok = updateHeuristic(heuristic_id, newRule)
     return {'updated': ok}
 
 

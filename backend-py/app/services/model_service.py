@@ -173,11 +173,6 @@ _STATICModelLists: dict[str, list[dict[str, object]]] = {
         {'id': 'o1'},
         {'id': 'o3'},
     ],
-    'Google AI Studio': [
-        {'id': 'gemini-2.0-flash'},
-        {'id': 'gemini-2.0-pro'},
-        {'id': 'gemini-1.5-pro'},
-    ],
     'DeepSeek': [
         {'id': 'deepseek-v4'},
         {'id': 'deepseek-v4-flash'},

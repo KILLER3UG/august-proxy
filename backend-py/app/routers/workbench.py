@@ -433,14 +433,14 @@ async def steerMessage(request: Request):
 
 
 @router.delete('/chat/queue/{message_id}')
-async def dequeueMessage(messageId: str, sessionId: str = Query(default='', alias='sessionId')):
+async def dequeueMessage(message_id: str, sessionId: str = Query(default='', alias='sessionId')):
     """Remove a queued message by id before it's delivered to the model."""
     if not sessionId:
         raise HTTPException(status_code=400, detail='sessionId is required')
-    removed = wb.dequeueUserMessage(sessionId=sessionId, messageId=messageId)
+    removed = wb.dequeueUserMessage(sessionId=sessionId, messageId=message_id)
     if not removed:
         raise HTTPException(status_code=404, detail='Queued message not found')
-    return {'status': 'ok', 'messageId': messageId}
+    return {'status': 'ok', 'messageId': message_id}
 
 
 @router.delete('/chat/queue')
@@ -474,7 +474,7 @@ async def reorderQueue(request: Request):
 
 
 @router.patch('/chat/queue/{message_id}')
-async def updateQueueMessage(messageId: str, request: Request):
+async def updateQueueMessage(message_id: str, request: Request):
     """Edit the text of a queued message before delivery.
 
     Body: { sessionId, text }
@@ -486,7 +486,7 @@ async def updateQueueMessage(messageId: str, request: Request):
         raise HTTPException(status_code=400, detail='sessionId is required')
     if text is None:
         raise HTTPException(status_code=400, detail='text is required')
-    entry = wb.updateQueuedMessage(sessionId, messageId, text=str(text))
+    entry = wb.updateQueuedMessage(sessionId, message_id, text=str(text))
     if entry is None:
         raise HTTPException(status_code=404, detail='Queued message not found')
     return entry

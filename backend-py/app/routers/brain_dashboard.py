@@ -271,7 +271,8 @@ async def brainSearch(q: str = Query(default='')) -> dict[str, object]:
     except Exception:
         pass
     try:
-        for v in vector_db.search(query, top_k=5) or []:
+        # Writes from auto_memory use namespace='auto_memory' (not 'default').
+        for v in vector_db.search(query, namespace='auto_memory', top_k=5) or []:
             if not isinstance(v, dict):
                 continue
             meta = as_dict(v.get('metadata'), {})

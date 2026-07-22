@@ -106,8 +106,8 @@ async def list_observations(limit: int = Query(50, ge=1, le=500), since: str = '
 
 
 @router.get('/api/observations/{obs_id}.png')
-async def observation_png(obsId: str):
-    p = dataPath('observations', f'{obsId}.png')
+async def observation_png(obs_id: str):
+    p = dataPath('observations', f'{obs_id}.png')
     if not p.is_file():
         from fastapi import HTTPException
 
@@ -127,14 +127,25 @@ async def observability_overview(range: str = Query('30d')):
         key = as_str(v)
         if key in counts:
             counts[key] += 1
+    from app.services.memory_store import list_config_audit
+
+    audit_rows = list_config_audit(limit=500)
+    by_category: dict[str, int] = {}
+    by_actor: dict[str, int] = {}
+    for row in audit_rows:
+        cat = as_str(row.get('category') or 'unknown') or 'unknown'
+        actor = as_str(row.get('actor') or 'system') or 'system'
+        by_category[cat] = by_category.get(cat, 0) + 1
+        by_actor[actor] = by_actor.get(actor, 0) + 1
+    audit_count = len(audit_rows)
     return {
         'range': range if range in ('7d', '30d') else '30d',
         'audit': {
-            'count': 0,
-            'byCategory': {},
-            'byResult': {},
-            'byActor': {},
-            'byCritical': {'true': 0, 'false': 0, 'null': 0},
+            'count': audit_count,
+            'byCategory': by_category,
+            'byResult': {'ok': audit_count},
+            'byActor': by_actor,
+            'byCritical': {'true': 0, 'false': 0, 'null': audit_count},
             'at': _now(),
         },
         'rollback': rb,

@@ -1605,6 +1605,27 @@ async def _sendWorkbenchMessageStreamImpl(
                         meta['lastCheckpointAt'] = ck.get('createdAt')
                         meta['lastCheckpointLabel'] = ck.get('label')
                         session.metadata = meta
+                        try:
+                            from app.services.rollback_store import record_rollback
+
+                            paths = []
+                            for f in as_list(ck.get('files')):
+                                if isinstance(f, dict) and f.get('path'):
+                                    paths.append(str(f.get('path')))
+                            target = paths[0] if len(paths) == 1 else (as_str(ck.get('label')) or as_str(ck.get('id')))
+                            record_rollback(
+                                type='restore_file',
+                                target=target,
+                                before={
+                                    'sessionId': session.id,
+                                    'checkpointId': ck.get('id'),
+                                    'paths': paths,
+                                },
+                                after={'toolName': toolName, 'paths': paths},
+                                extra={'sessionId': session.id, 'checkpointId': ck.get('id')},
+                            )
+                        except Exception:
+                            pass
                         if emit:
                             emit(
                                 {
@@ -2024,7 +2045,14 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
         if isMcpToolName(toolName):
             return str(await executeMcpToolCall(toolName, args))
         result = await dispatchTool(toolName, args)
-        return str(result)
+        result_str = str(result)
+        try:
+            from app.services.post_observation import capture_after_tool
+
+            await capture_after_tool(toolName, result_str)
+        except Exception:
+            pass
+        return result_str
     except Exception as exc:
         import traceback as _tb
 
@@ -2679,6 +2707,27 @@ async def execute_approved_mutation(
                 meta['lastCheckpointAt'] = ck.get('createdAt')
                 meta['lastCheckpointLabel'] = ck.get('label')
                 session.metadata = meta
+                try:
+                    from app.services.rollback_store import record_rollback
+
+                    paths = []
+                    for f in as_list(ck.get('files')):
+                        if isinstance(f, dict) and f.get('path'):
+                            paths.append(str(f.get('path')))
+                    target = paths[0] if len(paths) == 1 else (as_str(ck.get('label')) or as_str(ck.get('id')))
+                    record_rollback(
+                        type='restore_file',
+                        target=target,
+                        before={
+                            'sessionId': session.id,
+                            'checkpointId': ck.get('id'),
+                            'paths': paths,
+                        },
+                        after={'toolName': tool_name, 'paths': paths},
+                        extra={'sessionId': session.id, 'checkpointId': ck.get('id')},
+                    )
+                except Exception:
+                    pass
     except Exception:
         logger.debug('checkpoint before approved mutation failed', exc_info=True)
     result = await _executeTool(tool_name, args, session)

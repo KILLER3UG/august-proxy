@@ -102,7 +102,7 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
     session = wb.getWorkbenchSession(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail='Session not found')
-    answer = ''
+
     try:
         from app.services.workbench.providers import (
             resolve_chat_llm,
@@ -119,47 +119,54 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
             session_provider=session.provider or body.provider or '',
             session_model=session.model or '',
         )
-        if provider and model:
-            session.model = model
-            pname = str(provider.get('name') or provider.get('id') or '')
-            if pname:
-                session.provider = pname
-            msgs: list[dict[str, object]] = []
-            for m in (session.messages or [])[-6:]:
-                if isinstance(m, dict) and m.get('role') in ('user', 'assistant') and m.get('content'):
-                    msgs.append({'role': m['role'], 'content': str(m['content'])[:1500]})
-            msgs.append({'role': 'user', 'content': transcript})
-            system_text = (
-                'You are August Live voice mode. Answer concisely for spoken delivery. '
-                'No tools. Prefer short sentences.'
+        if not provider or not model:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    'No Live provider/model configured. '
+                    'Set an active provider with an API key, or use Workbench chat.'
+                ),
             )
-            if is_anthropic_provider(provider):
-                result = await call_anthropic_workbench(
-                    messages=msgs, system_text=system_text, model=model,
-                    tools=[], effort='low', provider=provider,
-                )
-            elif is_openai_provider(provider):
-                result = await call_openai_workbench(
-                    messages=msgs, system_text=system_text, model=model,
-                    tools=[], effort='low', provider=provider,
-                )
-            else:
-                result = {'error': 'unsupported provider'}
-            if isinstance(result, dict) and not result.get('error'):
-                answer = str(result.get('text') or result.get('content') or '')
-                if not answer and isinstance(result.get('content'), list):
-                    answer = extract_text(
-                        [b for b in as_list(result.get('content'), []) if isinstance(b, dict)]
-                    )
-    except Exception:
-        answer = ''
-
-    if not answer:
-        answer = (
-            f'Heard: {transcript[:200]}. '
-            'Configure a provider API key for full Live model replies, '
-            'or use POST /api/workbench/chat for streaming chat.'
+        session.model = model
+        pname = str(provider.get('name') or provider.get('id') or '')
+        if pname:
+            session.provider = pname
+        msgs: list[dict[str, object]] = []
+        for m in (session.messages or [])[-6:]:
+            if isinstance(m, dict) and m.get('role') in ('user', 'assistant') and m.get('content'):
+                msgs.append({'role': m['role'], 'content': str(m['content'])[:1500]})
+        msgs.append({'role': 'user', 'content': transcript})
+        system_text = (
+            'You are August Live voice mode. Answer concisely for spoken delivery. '
+            'No tools. Prefer short sentences.'
         )
+        if is_anthropic_provider(provider):
+            result = await call_anthropic_workbench(
+                messages=msgs, system_text=system_text, model=model,
+                tools=[], effort='low', provider=provider,
+            )
+        elif is_openai_provider(provider):
+            result = await call_openai_workbench(
+                messages=msgs, system_text=system_text, model=model,
+                tools=[], effort='low', provider=provider,
+            )
+        else:
+            raise HTTPException(status_code=502, detail='Unsupported Live provider type')
+        if isinstance(result, dict) and result.get('error'):
+            raise HTTPException(status_code=502, detail=str(result.get('error')))
+        answer = ''
+        if isinstance(result, dict):
+            answer = str(result.get('text') or result.get('content') or '')
+            if not answer and isinstance(result.get('content'), list):
+                answer = extract_text(
+                    [b for b in as_list(result.get('content'), []) if isinstance(b, dict)]
+                )
+        if not (answer or '').strip():
+            raise HTTPException(status_code=502, detail='Live model returned an empty reply')
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f'Live model call failed: {exc}') from exc
 
     from datetime import datetime, timezone
 

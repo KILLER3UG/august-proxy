@@ -8,15 +8,13 @@ never hit "Unsupported API format" after picking a dropdown option.
 
 from __future__ import annotations
 
-# Formats understood by workbench / proxy clients (incl. specialized clients).
+# Formats understood by workbench / proxy clients.
+# Users paste baseUrl + choose one of these; no first-class Gemini/MiniMax/Bedrock.
 VALID_API_FORMATS = frozenset({
     'openaiChat',
     'anthropicMessages',
     'openaiResponses',
     'codexResponses',
-    'geminiOpenai',
-    'minimax',
-    'bedrockConverse',
 })
 
 _FORMAT_ALIASES: dict[str, str] = {
@@ -38,16 +36,20 @@ _FORMAT_ALIASES: dict[str, str] = {
     'codex-responses': 'codexResponses',
     'codex_responses': 'codexResponses',
     'codexresponses': 'codexResponses',
-    'gemini': 'geminiOpenai',
-    'gemini-openai': 'geminiOpenai',
-    'gemini_openai': 'geminiOpenai',
-    'geminiopenai': 'geminiOpenai',
-    'bedrock': 'bedrockConverse',
-    'bedrock-converse': 'bedrockConverse',
-    'bedrock_converse': 'bedrockConverse',
-    'bedrockconverse': 'bedrockConverse',
-    'minimax-cn': 'minimax',
-    'minimax_cn': 'minimax',
+    # Legacy ids → nearest user-configurable wire format
+    'gemini': 'openaiChat',
+    'gemini-openai': 'openaiChat',
+    'gemini_openai': 'openaiChat',
+    'geminiopenai': 'openaiChat',
+    'geminiOpenai': 'openaiChat',
+    'bedrock': 'openaiChat',
+    'bedrock-converse': 'openaiChat',
+    'bedrock_converse': 'openaiChat',
+    'bedrockconverse': 'openaiChat',
+    'bedrockConverse': 'openaiChat',
+    'minimax': 'anthropicMessages',
+    'minimax-cn': 'anthropicMessages',
+    'minimax_cn': 'anthropicMessages',
 }
 
 
@@ -166,7 +168,7 @@ def provider_endpoint_url(
     ``kind``: ``chat`` | ``responses`` | ``messages`` | ``models`` | ``count_tokens``
     """
     fmt = normalize_api_format(api_format)
-    anthropic_like = is_anthropic_api_format(fmt) or fmt == 'minimax'
+    anthropic_like = is_anthropic_api_format(fmt)
 
     if anthropic_like:
         host = anthropic_host_base(base_url)

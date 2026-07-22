@@ -109,9 +109,9 @@ async def getRequests(
 
 
 @router.get('/requests/{request_id}')
-async def getRequestDetail(requestId: str):
+async def getRequestDetail(request_id: str):
     """Return detailed info for a specific request."""
-    detail = getReqDetail(requestId)
+    detail = getReqDetail(request_id)
     if not detail:
         raise HTTPException(status_code=404, detail='Request not found')
     return detail
@@ -139,9 +139,9 @@ async def getDetails(period: str = Query(default='all', alias='period')):
 
 
 @router.get('/detail/{request_id}')
-async def getSingleDetail(requestId: str):
+async def getSingleDetail(request_id: str):
     """Return detailed info for a specific request, or 404."""
-    detail = getReqDetail(requestId)
+    detail = getReqDetail(request_id)
     if not detail:
         raise HTTPException(status_code=404, detail='Request not found')
     return detail

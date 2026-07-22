@@ -95,9 +95,18 @@ def _toolAllowed(agent: dict[str, object], name: str) -> bool:
 
 
 async def executeSubAgent(
-    session: object, agentId: str, goal: str, context: str = '', emit: Callable[[dict[str, object]], None] | None = None
+    session: object,
+    agentId: str,
+    goal: str,
+    context: str = '',
+    emit: Callable[[dict[str, object]], None] | None = None,
+    job_id: str | None = None,
 ) -> dict[str, object]:
-    """Execute a sub-agent task and return ``{jobId, agentId, status, result}``."""
+    """Execute a sub-agent task and return ``{jobId, agentId, status, result}``.
+
+    When ``job_id`` is provided (API-created jobs), reuse that row instead of
+    creating a second pending job.
+    """
     from app.providers.model_resolver import resolve_or_fallback
     from app.providers.route_resolver import resolve_for_model
     from app.services.fallback_service import getFallback
@@ -124,14 +133,26 @@ async def executeSubAgent(
         blocked_msg = f'Sub-agent depth cap reached ({depth} >= {_MAXAgentDepth}).'
         if emit:
             emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg})
+        if job_id:
+            updateJob(job_id, {'status': 'failed', 'error': blocked_msg})
         return {'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg}
 
     # Publish the launch before any workspace setup.  Git can take noticeable
     # time on large repositories; without this event the UI has no indication
     # that the accepted tool call is actually progressing.
-    job = createJob(resolvedAgentId, goal, context)
-    jobId = as_str(job['id'])
-    updateJob(jobId, {'status': 'running'})
+    if job_id:
+        existing = updateJob(job_id, {'status': 'running', 'agentId': resolvedAgentId, 'goal': goal})
+        if existing is None:
+            job = createJob(resolvedAgentId, goal, context)
+            jobId = as_str(job['id'])
+            updateJob(jobId, {'status': 'running'})
+        else:
+            jobId = job_id
+            job = existing
+    else:
+        job = createJob(resolvedAgentId, goal, context)
+        jobId = as_str(job['id'])
+        updateJob(jobId, {'status': 'running'})
 
     # Git worktree isolation for parallel agents.
     # Default ON when isolateSubagents is unset (parallel agents keep files separate).
@@ -300,18 +321,42 @@ async def executeSubAgent(
                     messages, systemText, resolvedModel, openaiTools, 'medium', provider=provider, emit=_subEmit
                 )
             else:
-                break
+                err = 'Unsupported provider type for sub-agent.'
+                if emit:
+                    emit(
+                        {
+                            'type': 'subagentDone',
+                            'agentId': resolvedAgentId,
+                            'jobId': jobId,
+                            'status': 'error',
+                            'error': err,
+                        }
+                    )
+                updateJob(jobId, {'status': 'failed', 'error': err})
+                _cleanup_agent_worktree(session, workspace, worktree_path)
+                return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
             if as_str(response.get('error')):
+                err = as_str(response.get('error')) or 'Sub-agent model error'
                 if emit:
                     emit(
                         {
                             'type': 'subagentText',
                             'agentId': resolvedAgentId,
                             'jobId': jobId,
-                            'content': f'[error] {response["error"]}',
+                            'content': f'[error] {err}',
                         }
                     )
-                break
+                    emit(
+                        {
+                            'type': 'subagentDone',
+                            'agentId': resolvedAgentId,
+                            'jobId': jobId,
+                            'status': 'error',
+                            'error': err,
+                        }
+                    )
+                updateJob(jobId, {'status': 'failed', 'error': err})
+                return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
             assistantMsg: dict[str, object]
             if isAnthropic:
                 contentBlocks = [as_dict(b) for b in as_list(response.get('content'), [])]

@@ -5,20 +5,9 @@ import os
 PROVIDERS = [
     ('anthropic', 'Anthropic', 'claude-sonnet-4-7', 8192, 'anthropicMessages', 'https://api.anthropic.com'),
     ('openai_api', 'OpenAI API', 'gpt-4o', 16384, 'codexResponses', 'https://api.openai.com/v1'),
-    (
-        'gemini',
-        'Google AI Studio',
-        'gemini-2.0-flash',
-        8192,
-        'openaiChat',
-        'https://generativelanguage.googleapis.com/v1beta/openai',
-    ),
     ('deepseek', 'DeepSeek', 'deepseek-chat', 8192, 'openaiChat', 'https://api.deepseek.com/v1'),
     ('openrouter', 'OpenRouter', 'gpt-4o', 16384, 'openaiChat', 'https://openrouter.ai/api/v1'),
-    ('bedrock', 'AWS Bedrock', 'anthropic.claude-v2', 8192, 'bedrockConverse', None),
     ('azure', 'Azure AI Foundry', 'gpt-4o', 16384, 'openaiChat', None),
-    ('minimax', 'MiniMax (Global)', 'minimax-m3', 64000, 'anthropicMessages', 'https://api.minimax.chat/v1'),
-    ('minimax_cn', 'MiniMax (China)', 'minimax-m3', 64000, 'anthropicMessages', 'https://api.minimax.chat/v1'),
     ('opencode_go', 'OpenCode Go', 'deepseek-v4', 64000, 'openaiChat', 'https://opencode.ai/zen/go/v1'),
     ('opencode_zen', 'OpenCode Zen', 'deepseek-v4-flash', 64000, 'openaiChat', 'https://opencode.ai/zen/go/v1'),
     ('kilo', 'KiloCode', 'deepseek-v4-flash', 64000, 'openaiChat', 'https://api.kilocode.ai/v1'),
@@ -62,12 +51,12 @@ for fileName, displayName, model, tokens, mode, base_url in PROVIDERS:
     print(f'Created: {fileName}.py')
 with open(os.path.join(BASE_DIR, 'aliases.py'), 'w') as f:
     f.write(
-        '"""\nProvider alias map — short names to provider module names.\n"""\n\nPROVIDER_ALIASES: dict[str, str] = {\n    "claude": "anthropic",\n    "gpt": "openai_api",\n    "gemini": "gemini",\n    "deepseek": "deepseek",\n    "openrouter": "openrouter",\n    "kimi": "kimi",\n    "qwen": "alibaba",\n    "glm": "zai",\n}\n\n\ndef normalize(name: str) -> str:\n    """Resolve a short alias to the canonical provider module name."""\n    return PROVIDER_ALIASES.get(name.lower(), name)\n'
+        '"""\nProvider alias map — short names to provider module names.\n"""\n\nPROVIDER_ALIASES: dict[str, str] = {\n    "claude": "anthropic",\n    "gpt": "openai_api",\n    "deepseek": "deepseek",\n    "openrouter": "openrouter",\n    "kimi": "kimi",\n    "qwen": "alibaba",\n    "glm": "zai",\n}\n\n\ndef normalize(name: str) -> str:\n    """Resolve a short alias to the canonical provider module name."""\n    return PROVIDER_ALIASES.get(name.lower(), name)\n'
     )
 print('Created: aliases.py')
 with open(os.path.join(BASE_DIR, 'builtin.py'), 'w') as f:
     f.write(
-        '"""\nRegister all built-in providers into the registry.\n"""\n\nfrom app.providers import registry\n\n\ndef register_all() -> None:\n    """Import and register every built-in provider."""\n    from app.providers import (\n        anthropic, openai_api, gemini, deepseek, openrouter,\n        bedrock, azure, minimax, minimax_cn,\n        opencode_go, opencode_zen, kilo,\n        copilot, cline, xai, gmi, zai, xiaomi, stepfun,\n        alibaba, kimi, nvidia, nous, novita,\n        huggingface, arcee, ollama_cloud,\n        tokenrouter, ai_gateway,\n    )\n\n    modules = [\n        anthropic, openai_api, gemini, deepseek, openrouter,\n        bedrock, azure, minimax, minimax_cn,\n        opencode_go, opencode_zen, kilo,\n        copilot, cline, xai, gmi, zai, xiaomi, stepfun,\n        alibaba, kimi, nvidia, nous, novita,\n        huggingface, arcee, ollama_cloud,\n        tokenrouter, ai_gateway,\n    ]\n\n    for mod in modules:\n        registry.register(mod.INFO)\n'
+        '"""\nRegister all built-in providers into the registry.\n"""\n\nfrom app.providers import registry\n\n\ndef register_all() -> None:\n    """Import and register every built-in provider."""\n    from app.providers import (\n        anthropic, openai_api, deepseek, openrouter,\n        azure,\n        opencode_go, opencode_zen, kilo,\n        copilot, cline, xai, gmi, zai, xiaomi, stepfun,\n        alibaba, kimi, nvidia, nous, novita,\n        huggingface, arcee, ollama_cloud,\n        tokenrouter, ai_gateway,\n    )\n\n    modules = [\n        anthropic, openai_api, deepseek, openrouter,\n        azure,\n        opencode_go, opencode_zen, kilo,\n        copilot, cline, xai, gmi, zai, xiaomi, stepfun,\n        alibaba, kimi, nvidia, nous, novita,\n        huggingface, arcee, ollama_cloud,\n        tokenrouter, ai_gateway,\n    ]\n\n    for mod in modules:\n        registry.register(mod.INFO)\n'
     )
 print('Created: builtin.py')
 print(f'\\nDone: {len(PROVIDERS) + 2} files created')

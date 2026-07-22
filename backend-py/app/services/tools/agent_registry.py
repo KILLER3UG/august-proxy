@@ -228,17 +228,19 @@ def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | Non
 
 
 async def executeSubAgent(agentId: str, goal: str, context: str = '') -> dict[str, object]:
-    """Execute a sub-agent task."""
+    """Deprecated stub — prefer ``workbench.subagent.executeSubAgent``.
+
+    Kept for import compatibility; marks the job failed so callers do not
+    treat the synthetic string as a real completion.
+    """
     job = createJob(agentId, goal, context)
     jobId = as_str(job['id'])
-    updateJob(jobId, {'status': 'running'})
-    try:
-        result = f"Sub-agent '{agentId}' completed task: {goal[:100]}"
-        updateJob(jobId, {'status': 'completed', 'result': result})
-        return {'job': job, 'result': result}
-    except Exception as exc:
-        updateJob(jobId, {'status': 'failed', 'error': str(exc)})
-        return {'job': job, 'error': str(exc)}
+    msg = (
+        "agent_registry.executeSubAgent is a stub; use workbench.subagent.executeSubAgent "
+        "or POST /api/agents/jobs"
+    )
+    updateJob(jobId, {'status': 'failed', 'error': msg})
+    return {'job': job, 'error': msg}
 
 
 def _calculateDepth(parentId: str | None, agents: list[dict[str, object]]) -> int:

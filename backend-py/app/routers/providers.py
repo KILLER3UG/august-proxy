@@ -66,6 +66,12 @@ async def listTemplates():
     return []
 
 
+# Static `/health` must be registered before `/{providerId}` or "health" is captured as an id.
+@router.get('/health')
+async def providersHealth():
+    return {'status': 'ok'}
+
+
 @router.post('')
 async def createProvider(body: ProviderCreate):
     import hashlib
@@ -290,11 +296,6 @@ async def refreshModels(providerId: str):
         model_service.invalidate_cache()
         return {'added': added, 'updated': updated, 'removed': removed}
     raise HTTPException(status_code=404, detail='Provider not found')
-
-
-@router.get('/health')
-async def providersHealth():
-    return {'status': 'ok'}
 
 
 @router.post('/{providerId}/models')
