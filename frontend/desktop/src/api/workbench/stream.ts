@@ -38,7 +38,7 @@ export async function streamWorkbenchChat(
   params: StreamWorkbenchChatParams,
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal
-): Promise<{ sinceSeq?: number; consumedViaPost?: boolean; queued?: boolean; status?: string }> {
+): Promise<{ sinceSeq?: number; consumedViaPost?: boolean; queued?: boolean; status?: string; message?: string }> {
   const res = await fetch('/api/workbench/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
