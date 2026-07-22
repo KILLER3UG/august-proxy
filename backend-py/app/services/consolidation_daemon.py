@@ -211,72 +211,69 @@ async def runConsolidation() -> ConsolidationSummaryDict:
             dict(r) for r in conn.execute('SELECT * FROM auto_memories ORDER BY id DESC LIMIT 100').fetchall()
         ]
         heuristics = [dict(r) for r in conn.execute('SELECT * FROM learned_heuristics ORDER BY id DESC').fetchall()]
-        if not heuristics:
-            return stats
-        prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": []}}.\n"""
-        raw = await _callHippocampus(prompt)
-        if not raw:
-            return stats
-        try:
-            plan = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            return stats
-        if not isinstance(plan, dict):
-            return stats
-        recentIds = {
-            r['id']
-            for r in conn.execute(
-                'SELECT id FROM learned_heuristics ORDER BY id DESC LIMIT ?', (_RECENTProtectionCount,)
-            ).fetchall()
-        }
-        for mergeRaw in as_list(plan.get('merge'), []):
-            merge = as_dict(mergeRaw)
-            keepId = merge.get('keepId')
-            removeIds = as_list(merge.get('removeIds'), [])
-            mergedRule = merge.get('mergedRule')
-            if keepId is None or not removeIds:
-                continue
-            for rid in removeIds:
-                if rid == keepId:
-                    continue
+        if heuristics:
+            prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": []}}.\n"""
+            raw = await _callHippocampus(prompt)
+            if raw:
+                try:
+                    plan = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    plan = None
+                if isinstance(plan, dict):
+                    recentIds = {
+                        r['id']
+                        for r in conn.execute(
+                            'SELECT id FROM learned_heuristics ORDER BY id DESC LIMIT ?', (_RECENTProtectionCount,)
+                        ).fetchall()
+                    }
+                    for mergeRaw in as_list(plan.get('merge'), []):
+                        merge = as_dict(mergeRaw)
+                        keepId = merge.get('keepId')
+                        removeIds = as_list(merge.get('removeIds'), [])
+                        mergedRule = merge.get('mergedRule')
+                        if keepId is None or not removeIds:
+                            continue
+                        for rid in removeIds:
+                            if rid == keepId:
+                                continue
 
-                def _deleteMerged(i: object = rid) -> object:
-                    return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
+                            def _deleteMerged(i: object = rid) -> object:
+                                return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
 
-                await enqueue_write(_deleteMerged, must_succeed=True)
-            if mergedRule:
+                            await enqueue_write(_deleteMerged, must_succeed=True)
+                        if mergedRule:
 
-                def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
-                    return conn.execute(
-                        "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (m, k)
-                    )
+                            def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
+                                return conn.execute(
+                                    "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (m, k)
+                                )
 
-                await enqueue_write(_updateMerged, must_succeed=True)
-            stats['merged'] += 1
-        for promoRaw in as_list(plan.get('promote'), []):
-            promo = as_dict(promoRaw)
-            factKey = promo.get('factKey')
-            factValue = promo.get('factValue')
-            if not factKey or not factValue:
-                continue
+                            await enqueue_write(_updateMerged, must_succeed=True)
+                        stats['merged'] += 1
+                    for promoRaw in as_list(plan.get('promote'), []):
+                        promo = as_dict(promoRaw)
+                        factKey = promo.get('factKey')
+                        factValue = promo.get('factValue')
+                        if not factKey or not factValue:
+                            continue
 
-            def _insertFact(k: object = factKey, v: object = factValue) -> object:
-                return conn.execute(
-                    'INSERT INTO facts (fact_key, fact_value, category, source, confidence) VALUES (?, ?, ?, ?, ?)',
-                    (k, v, 'auto-promoted', 'consolidation', 0.8),
-                )
+                        def _insertFact(k: object = factKey, v: object = factValue) -> object:
+                            return conn.execute(
+                                'INSERT INTO facts (fact_key, fact_value, category, source, confidence) VALUES (?, ?, ?, ?, ?)',
+                                (k, v, 'auto-promoted', 'consolidation', 0.8),
+                            )
 
-            await enqueue_write(_insertFact, must_succeed=True)
-            stats['promoted'] += 1
-        for did in as_list(plan.get('delete'), []):
-            if did in recentIds:
-                continue
+                        await enqueue_write(_insertFact, must_succeed=True)
+                        stats['promoted'] += 1
+                    for did in as_list(plan.get('delete'), []):
+                        if did in recentIds:
+                            continue
 
-            def _deleteStale(i: object = did) -> object:
-                return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
+                        def _deleteStale(i: object = did) -> object:
+                            return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
 
-            await enqueue_write(_deleteStale, must_succeed=True)
-            stats['deleted_stale'] += 1
+                        await enqueue_write(_deleteStale, must_succeed=True)
+                        stats['deleted_stale'] += 1
     except Exception as exc:
         stats['errors'].append(str(exc))
         logger.error('Consolidation error: %s', exc)
@@ -304,18 +301,22 @@ async def runConsolidation() -> ConsolidationSummaryDict:
             'deleted_stale': stats['deleted_stale'],
         },
     )
-    # Skill genesis: optionally draft from the most recent workbench session.
+    # Skill genesis: draft even when heuristics were empty / Hippocampus skipped,
+    # so fresh installs can still evolve skills from recent sessions.
     try:
-        from app.services.workbench.sessions import list_workbench_sessions
+        from app.services.cognitive_config import get_features
 
-        sessions = list_workbench_sessions() or []
-        if sessions:
-            sid = ''
-            first = sessions[0]
-            if isinstance(first, dict):
-                sid = str(first.get('id') or '')
-            if sid:
-                await draftSkillForSession(sid)
+        if get_features().get('skill_genesis', True):
+            from app.services.workbench.sessions import list_workbench_sessions
+
+            sessions = list_workbench_sessions() or []
+            if sessions:
+                sid = ''
+                first = sessions[0]
+                if isinstance(first, dict):
+                    sid = str(first.get('id') or '')
+                if sid:
+                    await draftSkillForSession(sid)
     except Exception:
         logger.debug('skill genesis draft after consolidation skipped', exc_info=True)
     return stats

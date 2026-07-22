@@ -29,7 +29,10 @@ AUGUST_PLATFORM: str = (
     '- load_skill works for ALL catalogued skills: bundled AND evolving skills created through chat\n'
     '  (background review / approved genesis). Evolving entries are marked [evolving] in <skills>.\n'
     '- Save recurring user corrections/lessons as skills via skill_manage.\n'
-    '- Cross-session memory: memory_search(), fact_search(), context_read(), brain_query().\n'
+    '- Cross-session / recalled memory is ON-DEMAND only — do NOT assume past-session details are\n'
+    '  already in this prompt. When the user asks about a prior session, preference, or fact you may\n'
+    '  have stored, call memory_search(), fact_search(), context_read(), or brain_query() to retrieve it.\n'
+    '  Do not invent recalled memories; fetch them with tools when needed.\n'
     '- To discover or inspect a tool schema beyond the index: tool_describe(name) or tool_search(query).\n'
     '- Prefer unicode math symbols over LaTeX except for genuinely complex formulas.'
 )
@@ -327,8 +330,9 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
     primed = _get(session, 'primed_playbooks', 'primedPlaybooks')
     if primed:
         blocks.append(wrapTag('primed_playbooks', as_str(primed) or _fmt_jsonish(primed)))
-    # Prefetched auto-memories (Phase 0 proactive memory).
-    # Prefer human labels so the model reads "Chat: …" not "conv_summary_…".
+    # Optional auto-memories block — only when the caller explicitly set them
+    # (e.g. tests or a future on-demand inject). Workbench turns no longer
+    # FTS-prefetch every message; the model uses memory_* tools instead.
     autoMemories = as_list(_get(session, 'autoMemories', 'auto_memories'), [])
     if autoMemories:
         lines: list[str] = []

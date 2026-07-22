@@ -16,6 +16,8 @@ export function useChatUsage(
   sessionId: string | null,
   workbenchSessionId?: string | null,
   fallbackWorkbenchId?: string | null,
+  /** Bump when a turn finishes so the ring refreshes from server usage. */
+  refreshKey?: number | string | boolean,
 ) {
   const [sessionUsage, setSessionUsage] = useState<SessionUsageState>(null);
 
@@ -50,7 +52,7 @@ export function useChatUsage(
     return () => {
       cancelled = true;
     };
-  }, [sessionId, workbenchSessionId, fallbackWorkbenchId]);
+  }, [sessionId, workbenchSessionId, fallbackWorkbenchId, refreshKey]);
 
   return sessionUsage;
 }

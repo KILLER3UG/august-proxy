@@ -22,7 +22,6 @@ import logging
 import uuid
 from typing import Callable, cast
 from app.json_narrowing import as_str, as_dict, as_list, as_int, as_bool
-from app.type_aliases import JsonValue
 from app.services.workbench import sessions as _sessions_mod
 from app.services.workbench.sessions import (
     WorkbenchSession,
@@ -283,28 +282,10 @@ def buildSystemPrompt(
     if projects:
         memory['active_projects'] = projects
     session._last_recalled_memories = None
-    try:
-        from app.services.memory.auto_memory import getRelevantMemories
-
-        recentText = ''
-        if session.messages:
-            recent = session.messages[-6:] if len(session.messages) > 6 else session.messages
-            recentText = ' '.join(
-                (
-                    str(m.get('content', '') or '')
-                    for m in recent
-                    if isinstance(m, dict) and m.get('role') in ('user', 'assistant')
-                )
-            )
-        if recentText:
-            prefetched = getRelevantMemories(recentText, limit=5)
-            if prefetched:
-                memory['autoMemories'] = cast('list[JsonValue]', prefetched)
-                # Stashed for chatTurn() to emit as a `recalledMemories` SSE
-                # event — visibility into what auto-memory recall actually used.
-                session._last_recalled_memories = cast('list[dict[str, object]]', prefetched)
-    except Exception:
-        logger.debug('prompt: auto-memory prefetch failed', exc_info=True)
+    # Auto-memories are on-demand only: do not FTS-prefetch into the system
+    # prompt every turn. The model pulls past-session context via memory_search /
+    # fact_search / context_read / brain_query when the user asks about prior work.
+    # (Previously getRelevantMemories() injected <auto_memories> every turn.)
     try:
         from app.services.memory_store import _conn as brainConn
 

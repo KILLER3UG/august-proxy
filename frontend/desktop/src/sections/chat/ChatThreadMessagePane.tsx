@@ -143,7 +143,7 @@ export function ChatThreadMessagePane({
           visible={scrolledFromTop}
         />
         <AnimatePresence>
-          {scrolledFromBottom && showNewContentPill && (
+          {scrolledFromBottom && (
             <motion.button
               type="button"
               initial={{ opacity: 0, y: 6, scale: 0.96 }}
@@ -151,11 +151,15 @@ export function ChatThreadMessagePane({
               exit={{ opacity: 0, y: 6, scale: 0.96 }}
               transition={{ duration: 0.18 }}
               onClick={onScrollToBottom}
-              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-background/90 backdrop-blur-sm border border-border shadow-sm px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background transition-colors cursor-pointer"
-              aria-label="Jump to new content"
+              className={
+                showNewContentPill
+                  ? 'pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-background/90 backdrop-blur-sm border border-border shadow-sm px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background transition-colors cursor-pointer'
+                  : 'pointer-events-auto w-9 h-9 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-background/95 transition-colors cursor-pointer'
+              }
+              aria-label={showNewContentPill ? 'Jump to new content' : 'Scroll to bottom'}
             >
-              <ChevronDown className="size-3.5 shrink-0" />
-              New content
+              <ChevronDown className={showNewContentPill ? 'size-3.5 shrink-0' : 'size-4'} />
+              {showNewContentPill ? 'New content' : null}
             </motion.button>
           )}
         </AnimatePresence>

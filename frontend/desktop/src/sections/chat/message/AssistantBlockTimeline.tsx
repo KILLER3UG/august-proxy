@@ -274,11 +274,18 @@ export function AssistantBlockTimeline({
     splitProcessAndFinal(displayBlocks);
 
   // Id-keyed expand overrides; missing key → default from status.
-  // Tools: running → open, else collapsed. Thoughts: expanded by default
-  // (activity pack also opens by default whenever thoughts are present).
+  // Tools: running → open, else collapsed. Thoughts: open while generating,
+  // collapse once the final answer exists (unless the user overrode).
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>(
     {},
   );
+
+  // When the turn finishes, drop expand overrides so thoughts re-collapse.
+  useEffect(() => {
+    if (!streaming && hasFinalOutput) {
+      setExpandOverrides({});
+    }
+  }, [streaming, hasFinalOutput]);
 
   const toggleExpand = (id: string, next: boolean) => {
     setExpandOverrides((prev) => ({ ...prev, [id]: next }));
@@ -293,7 +300,8 @@ export function AssistantBlockTimeline({
 
   const isThoughtExpanded = (thoughtId: string) => {
     if (thoughtId in expandOverrides) return expandOverrides[thoughtId];
-    return true;
+    // Auto-expand only while this live turn is still in the process phase.
+    return !!(isLast && streaming && !hasFinalOutput);
   };
 
   const thinkingParts = processBlocks

@@ -32,19 +32,35 @@ describe('estimateContextBreakdown — messages', () => {
 });
 
 describe('estimateContextBreakdown — thinking (no double-count)', () => {
-  it('returns 0 thinking always — thinking text is already inside message content', () => {
+  it('returns 0 thinking when there is no separate thinking text', () => {
     const r = estimateContextBreakdown({
       messages: [{ role: 'user', content: 'a'.repeat(400) }],
       input: '',
       toolCount: 0,
     });
-    // Previously this returned ceil(messages*0.15)=15, double-counting the
-    // thinking text that is already part of message content (and of the
-    // provider-reported input_tokens when a ground truth exists).
+    // Message content alone must not invent a thinking surcharge (old 15% heuristic).
     expect(r.thinking).toBe(0);
   });
 
-  it('returns 0 thinking even with scaleToTotal (scaled 0 stays 0)', () => {
+  it('counts thinking field / thinking blocks separately from messages', () => {
+    const r = estimateContextBreakdown({
+      messages: [
+        {
+          role: 'assistant',
+          content: '',
+          thinking: 'a'.repeat(40),
+          blocks: [{ type: 'thinking', content: 'b'.repeat(40) }],
+        },
+      ],
+      input: '',
+      toolCount: 0,
+    });
+    // Prefer blocks when present: thinking block only (40 chars), not + thinking field.
+    expect(r.thinking).toBe(10);
+    expect(r.messages).toBe(0);
+  });
+
+  it('returns 0 thinking even with scaleToTotal when no thinking text', () => {
     const r = estimateContextBreakdown({
       messages: [{ role: 'user', content: 'a'.repeat(400) }],
       input: '',

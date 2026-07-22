@@ -236,18 +236,22 @@ def catalogue() -> list[dict[str, object]]:
 
 
 def _bust_prompt_skills_cache() -> None:
-    """Global bust of the workbench skills prompt segment cache.
+    """Global bust of skills-related prompt caches.
 
-    Global (not per-session) is acceptable here: August is single-user /
-    local-desktop scale, and skill create/approve/patch/delete is infrequent
-    enough that a full bust is simpler than scoped keys. Revisit scoped
-    invalidation if evolving-skill creation frequency climbs enough to hurt
-    cache hit rate.
+    Clears both the prompt-segments cache and the Tier 1/2 prompt cache so
+    newly created/patched evolving skills appear in the next turn's
+    ``<capabilities>`` block instead of waiting out the 5-minute TTL.
     """
     try:
         from app.services.workbench import prompt_segments_cache
 
         prompt_segments_cache.clear()
+    except Exception:
+        pass
+    try:
+        from app.services.workbench.prompt_cache import getCache
+
+        getCache().clear()
     except Exception:
         pass
 

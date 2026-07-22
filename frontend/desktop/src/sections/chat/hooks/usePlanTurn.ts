@@ -32,7 +32,7 @@ import { makeStreamHandlers } from '../makeStreamHandlers';
 import { persistMessages } from '../message-storage';
 import type { SubagentPromptMap } from './useSessionStream';
 
-const STREAM_UPDATE_INTERVAL_MS = 24;
+const STREAM_UPDATE_INTERVAL_MS = 32;
 
 type ToolProgressMap = Map<string, ReadonlyArray<ToolProgressEntry>>;
 

@@ -167,12 +167,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     userSelectedRef,
   } = useChatModels(sessionId, activeSession);
 
-  const sessionUsage = useChatUsage(
-    sessionId,
-    workbenchSession?.id,
-    activeSession?.workbenchSessionId,
-  );
-
   const {
     attachments,
     handleFileUpload,
@@ -201,6 +195,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     (!!workbenchStreamId && chatRuntime.isSessionStreaming(workbenchStreamId)) ||
     !!(sessionId && activeChatSessions[sessionId]) ||
     !!(workbenchStreamId && activeChatSessions[workbenchStreamId]);
+
+  const sessionUsage = useChatUsage(
+    sessionId,
+    workbenchSession?.id,
+    activeSession?.workbenchSessionId,
+    // Refresh after each turn so the context ring tracks session fill.
+    streaming ? 'streaming' : `idle-${messages.length}`,
+  );
 
   const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
   const [workbenchToolTokens, setWorkbenchToolTokens] = useState<number | null>(null);
@@ -778,10 +780,34 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     hasServerTruth || hasContentToSend
       ? (toolTokenEstimate ?? Math.ceil(toolCountForBreakdown * 180))
       : 0;
-  const fallbackEstimate =
-    Math.ceil((input.length + messages.reduce((s, m) => s + m.content.length, 0)) / 4) +
-    toolOverhead;
-  const estTokens = hasServerTruth ? serverContextTokens : fallbackEstimate;
+  // Prefer full transcript size (content + thinking + tool payloads), not
+  // just message.content — assistant turns often park most tokens in blocks.
+  // When blocks exist, use them as the source of truth to avoid double-counting
+  // against message.content / thinking mirrors.
+  const transcriptChars = messages.reduce((sum, m) => {
+    if (m.blocks?.length) {
+      let n = 0;
+      let hasThinkingBlock = false;
+      for (const b of m.blocks) {
+        n += b.content?.length ?? 0;
+        if (b.type === 'thinking') hasThinkingBlock = true;
+        if (b.tool) {
+          n += (b.tool.args?.length ?? 0) + (b.tool.preview?.length ?? 0) + (b.tool.summary?.length ?? 0);
+        }
+      }
+      if (!hasThinkingBlock) n += m.thinking?.length ?? 0;
+      return sum + n;
+    }
+    return sum + (m.content?.length ?? 0) + (m.thinking?.length ?? 0);
+  }, 0) + input.length;
+  const fallbackEstimate = Math.ceil(transcriptChars / 4) + toolOverhead;
+  // While a turn is still streaming, server usage is stale — blend the live
+  // transcript estimate so the ring moves as the session grows.
+  const estTokens = hasServerTruth
+    ? streaming
+      ? Math.max(serverContextTokens, fallbackEstimate)
+      : serverContextTokens
+    : fallbackEstimate;
   const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
   const contextBreakdown: ContextBreakdown = useMemo(
@@ -792,7 +818,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         toolCount: toolCountForBreakdown,
         toolTokenEstimate: toolTokenEstimate ?? undefined,
         scaleToTotal: hasServerTruth
-          ? serverContextTokens
+          ? estTokens
           : hasContentToSend
             ? undefined
             : 0,
@@ -803,7 +829,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       toolCountForBreakdown,
       toolTokenEstimate,
       hasServerTruth,
-      serverContextTokens,
+      estTokens,
       hasContentToSend,
     ],
   );

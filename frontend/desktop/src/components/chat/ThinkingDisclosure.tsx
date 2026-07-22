@@ -36,12 +36,12 @@ export function ThinkingDisclosure({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
-  // New thinking starts open so the user sees it as it streams. Once it stops
-  // streaming, auto-collapse it unless the user explicitly opened it.
+  // Auto-open while streaming; always collapse when generation finishes —
+  // even if the user expanded the section mid-stream.
   const open = userOpen ?? pending;
 
   useEffect(() => {
-    if (pending) setUserOpen(null);
+    setUserOpen(null);
   }, [pending]);
 
   const isPreview = pending && userOpen === null;

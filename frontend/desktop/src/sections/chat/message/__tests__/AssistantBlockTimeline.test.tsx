@@ -104,6 +104,11 @@ describe('AssistantBlockTimeline process UI', () => {
 
     expandActivitySummary();
     expect(document.querySelector('[data-slot="thought-step"]')).toBeTruthy();
+    // After final output, thoughts default collapsed — expand to see prose.
+    const thought = document.querySelector('[data-slot="thought-step"]');
+    expect(thought).toHaveAttribute('data-expanded', 'false');
+    const thoughtToggle = thought?.querySelector('button');
+    if (thoughtToggle) fireEvent.click(thoughtToggle);
     expect(document.querySelector('.process-thought-prose')).toBeTruthy();
     expect(document.querySelector('.process-thought-stem')).toBeTruthy();
     expect(screen.getByRole('button', { name: /system info/i })).toBeTruthy();
@@ -289,7 +294,7 @@ describe('AssistantBlockTimeline process UI', () => {
     expect(document.querySelectorAll('[data-slot="thought-step"]').length).toBe(1);
   });
 
-  it('expands thoughts by default inside the activity pack', () => {
+  it('collapses thoughts by default once final output exists', () => {
     renderTimeline([
       { id: 'th1', type: 'thinking', content: 'First thought.' },
       {
@@ -304,8 +309,13 @@ describe('AssistantBlockTimeline process UI', () => {
     expandActivitySummary();
     const thought = document.querySelector('[data-slot="thought-step"]');
     expect(thought).toBeTruthy();
-    expect(thought).toHaveAttribute('data-expanded', 'true');
+    expect(thought).toHaveAttribute('data-expanded', 'false');
     expect(thought).toHaveAttribute('data-done', 'true');
+    // Expand to inspect settled thought chrome.
+    const thoughtToggle = thought?.querySelector('button');
+    expect(thoughtToggle).toBeTruthy();
+    fireEvent.click(thoughtToggle!);
+    expect(thought).toHaveAttribute('data-expanded', 'true');
     expect(document.querySelector('.process-thought-prose')).toBeTruthy();
     expect(document.querySelector('.process-thought-clock')).toBeTruthy();
     expect(document.querySelector('.process-thought-stem')).toBeTruthy();

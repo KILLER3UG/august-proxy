@@ -7,7 +7,7 @@
  * Used only after final output exists so the chat is not a stack of sections.
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -102,6 +102,7 @@ export function ActivitySummary({
 }: ActivitySummaryProps) {
   const [open, setOpen] = useState(defaultOpen || live);
   const [bodyClip, setBodyClip] = useState(true);
+  const wasLiveRef = useRef(live);
   useEffect(() => {
     if (open) setBodyClip(true);
   }, [open]);
@@ -114,6 +115,12 @@ export function ActivitySummary({
   useEffect(() => {
     if (collapseWhen) setOpen(false);
   }, [collapseWhen]);
+  // If the user re-expanded during final generation, collapse again when
+  // the turn fully finishes.
+  useEffect(() => {
+    if (wasLiveRef.current && !live) setOpen(false);
+    wasLiveRef.current = live;
+  }, [live]);
   const segments = buildActivityCountSegments({
     thoughtCount,
     toolsCount,

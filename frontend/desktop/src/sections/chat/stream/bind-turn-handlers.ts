@@ -67,7 +67,7 @@ export function bindTurnStreamHandlers(opts: {
     },
     turn,
     gitApi,
-    streamUpdateIntervalMs: 24,
+    streamUpdateIntervalMs: 32,
     appendBlockEvent,
   });
 }

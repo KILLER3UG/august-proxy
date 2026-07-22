@@ -28,7 +28,16 @@ export interface ContextBreakdown {
  * the ring's numerator.
  */
 export function estimateContextBreakdown(args: {
-  messages: Array<{ content: string; role: string }>;
+  messages: Array<{
+    content: string;
+    role: string;
+    thinking?: string;
+    blocks?: Array<{
+      type?: string;
+      content?: string;
+      tool?: { args?: string; preview?: string; summary?: string };
+    }>;
+  }>;
   input: string;
   /** Number of available tool definitions the model can call. */
   toolCount: number;
@@ -43,14 +52,34 @@ export function estimateContextBreakdown(args: {
    *  (used when the backend reports the real current context fill). */
   scaleToTotal?: number;
 }): ContextBreakdown {
-  const messagesChars = args.messages.reduce((sum, m) => sum + m.content.length, 0) + args.input.length;
+  let messagesChars = args.input.length;
+  let thinkingChars = 0;
+  for (const m of args.messages) {
+    if (m.blocks?.length) {
+      let hasThinkingBlock = false;
+      for (const b of m.blocks) {
+        const len = b.content?.length ?? 0;
+        if (b.type === 'thinking') {
+          thinkingChars += len;
+          hasThinkingBlock = true;
+        } else {
+          messagesChars += len;
+        }
+        if (b.tool) {
+          messagesChars +=
+            (b.tool.args?.length ?? 0) +
+            (b.tool.preview?.length ?? 0) +
+            (b.tool.summary?.length ?? 0);
+        }
+      }
+      if (!hasThinkingBlock) thinkingChars += m.thinking?.length ?? 0;
+    } else {
+      messagesChars += m.content?.length ?? 0;
+      thinkingChars += m.thinking?.length ?? 0;
+    }
+  }
   const messages = Math.ceil(messagesChars / 4);
-  // Thinking tokens are NOT added on top: assistant thinking text is already
-  // part of the conversation content (and of the provider-reported
-  // input_tokens when a ground truth exists). Adding 15% of message tokens
-  // was a double-count and a major source of gauge inflation. Keep the slot
-  // in the breakdown so the tooltip can still show it as ~0 when unknown.
-  const thinking = 0;
+  const thinking = Math.ceil(thinkingChars / 4);
   // Use the backend's actual serialized tool token estimate when available;
   // fall back to ~180 tokens per tool definition (name + description + JSON schema).
   const systemTools = args.toolTokenEstimate ?? Math.ceil(args.toolCount * 180);

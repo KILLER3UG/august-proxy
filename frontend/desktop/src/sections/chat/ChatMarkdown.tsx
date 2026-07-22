@@ -79,11 +79,18 @@ function highlightCode(text: string, lang: string): string {
   }
 }
 
+/** When true, renderCode skips highlight.js (set only during live stream parses). */
+let liveMarkdownParse = false;
+
 function renderCode(token: Tokens.Code): string {
   const lang = (token.lang || '').trim();
   const langClass = lang ? ` class="hljs language-${escapeAttr(lang)}"` : ' class="hljs"';
   const code = escapeAttr(token.text);
-  const highlighted = highlightCode(token.text, lang);
+  // Skip highlight.js while streaming — full re-highlight every flush was the
+  // main cost of live markdown paints; colors apply once the turn settles.
+  const highlighted = liveMarkdownParse
+    ? escapeHtml(token.text)
+    : highlightCode(token.text, lang);
   return (
     `<div class="markdown-code-block relative group">` +
       `<pre${langClass}><code${langClass}>${highlighted}</code></pre>` +
@@ -311,8 +318,13 @@ export function Markdown({
     if (!content) return '';
     // v1.1: convert common LaTeX math to unicode before marked parsing
     const processed = convertLatexToUnicode(content);
-    return marked.parse(processed, { async: false });
-  }, [content]);
+    liveMarkdownParse = live;
+    try {
+      return marked.parse(processed, { async: false });
+    } finally {
+      liveMarkdownParse = false;
+    }
+  }, [content, live]);
 
   // Copy button handler
   useEffect(() => {
@@ -334,8 +346,8 @@ export function Markdown({
     return () => el.removeEventListener('click', handleClick);
   }, []);
 
-  // Syntax colors are applied in renderCode (highlight.js) so live streams
-  // keep colored tokens without a second DOM rewrite pass.
+  // Syntax colors are applied in renderCode (highlight.js). During live
+  // streams we skip highlight so each flush only escapes HTML.
 
   return (
     <div
