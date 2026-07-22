@@ -74,6 +74,48 @@ async def test_run_soft_echo(tmp_path: Path):
     assert result.sandboxed is True
 
 
+@pytest.mark.asyncio
+async def test_run_soft_timeout_is_not_sandbox_denial(tmp_path: Path):
+    """Timeouts must return an error, not a sandbox-escape 'Blocked' denial."""
+    root = tmp_path / 'ws'
+    root.mkdir()
+    sleeper = root / 'sleep.py'
+    sleeper.write_text('import time; time.sleep(30)\n', encoding='utf-8')
+    policy = SandboxPolicy(mode='workspace-write', workspace_root=str(root), network=False)
+    result = await run_soft('python sleep.py', policy, timeout=0.3)
+    assert result.ok is False
+    assert result.denial_reason is None
+    assert 'timed out' in (result.stderr or '').lower()
+    assert 'Blocked' not in result.as_tool_text()
+
+
+@pytest.mark.asyncio
+async def test_run_soft_cancel_kills_child(tmp_path: Path):
+    from app.lib.async_subprocess import current_subprocess_cancel
+
+    root = tmp_path / 'ws'
+    root.mkdir()
+    sleeper = root / 'sleep.py'
+    sleeper.write_text('import time; time.sleep(30)\n', encoding='utf-8')
+    policy = SandboxPolicy(mode='workspace-write', workspace_root=str(root), network=False)
+    cancel = asyncio.Event()
+    token = current_subprocess_cancel.set(cancel)
+
+    async def _fire() -> None:
+        await asyncio.sleep(0.15)
+        cancel.set()
+
+    fire = asyncio.create_task(_fire())
+    try:
+        result = await run_soft('python sleep.py', policy, timeout=30)
+        assert result.ok is False
+        assert result.denial_reason is None
+        assert 'cancelled' in (result.stderr or '').lower()
+    finally:
+        current_subprocess_cancel.reset(token)
+        fire.cancel()
+
+
 def test_policy_from_session_and_grant_key():
     p = policy_from_session(
         sandbox_mode='workspace-write',

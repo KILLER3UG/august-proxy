@@ -151,10 +151,13 @@ async def runJobNow(jobId: str) -> dict[str, object]:
         return {'error': 'Job not found'}
     job['status'] = 'running'
     try:
-        from app.lib.async_subprocess import communicate_or_kill
+        from app.lib.async_subprocess import SubprocessAborted, communicate_or_kill
 
         proc = await asyncio.create_subprocess_shell(
-            as_str(job['command'], ''), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            as_str(job['command'], ''),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
         )
         stdout, stderr = await communicate_or_kill(proc, timeout=300)
         job['lastRun'] = _now()
@@ -164,7 +167,7 @@ async def runJobNow(jobId: str) -> dict[str, object]:
             job['lastError'] = stderr.decode('utf-8', errors='replace')[:500]
         _saveJobs()
         return job
-    except asyncio.TimeoutError:
+    except SubprocessAborted:
         job['status'] = 'error'
         job['lastError'] = 'Timeout'
         return job

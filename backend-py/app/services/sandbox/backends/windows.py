@@ -133,14 +133,11 @@ async def _try_appcontainer_spawn(
 
 
 async def run_via_cmd(command: str, *, cwd: str, timeout: float) -> tuple[int, str, str]:
-    from app.lib.async_subprocess import communicate_or_kill
+    from app.lib.async_subprocess import agent_subprocess_kwargs, communicate_or_kill
 
     proc = await asyncio.create_subprocess_shell(
         command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=cwd or None,
-        env=os.environ.copy(),
+        **agent_subprocess_kwargs(cwd=cwd or None),
     )
     out_b, err_b = await communicate_or_kill(proc, timeout=timeout)
     return (

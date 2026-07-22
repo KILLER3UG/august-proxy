@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 from typing import Callable, cast
 from app.json_narrowing import as_str, as_dict, as_list, as_int, as_bool
@@ -1257,6 +1258,9 @@ async def _sendWorkbenchMessageStreamImpl(
     def _isCancelled() -> bool:
         return signal is not None and signal.is_set()
 
+    from app.lib.async_subprocess import current_subprocess_cancel
+
+    _cancel_token = current_subprocess_cancel.set(signal)
     try:
         from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
         from app.providers.clients.base import estimateTokens
@@ -1683,6 +1687,58 @@ async def _sendWorkbenchMessageStreamImpl(
                                     as_str(toolInput.get('url'), ''),
                                     on_progress=_on_web_progress,
                                 )
+                        elif toolName in (
+                            'run_command',
+                            'bash',
+                            'mcp__workspace__bash',
+                        ):
+                            # Heartbeat so long shell commands do not look stuck
+                            # (UI treats phase "running" as a no-op).
+                            async def _run_command_with_heartbeat() -> str:
+                                started = time.monotonic()
+                                stop = asyncio.Event()
+
+                                async def _beat() -> None:
+                                    while not stop.is_set():
+                                        try:
+                                            await asyncio.wait_for(stop.wait(), timeout=5.0)
+                                            break
+                                        except asyncio.TimeoutError:
+                                            if not emit or stop.is_set():
+                                                continue
+                                            elapsed = int(time.monotonic() - started)
+                                            emit(
+                                                {
+                                                    'type': 'tool_progress',
+                                                    'id': toolUseId,
+                                                    'name': toolName,
+                                                    'phase': 'reading',
+                                                    'message': f'Still running ({elapsed}s)…',
+                                                }
+                                            )
+
+                                if emit:
+                                    emit(
+                                        {
+                                            'type': 'tool_progress',
+                                            'id': toolUseId,
+                                            'name': toolName,
+                                            'phase': 'reading',
+                                            'message': 'Running command…',
+                                        }
+                                    )
+                                beat_task = asyncio.create_task(_beat())
+                                try:
+                                    return await _executeTool(toolName, toolInput, session)
+                                finally:
+                                    stop.set()
+                                    beat_task.cancel()
+                                    try:
+                                        await beat_task
+                                    except (asyncio.CancelledError, Exception):
+                                        pass
+
+                            result = await _run_command_with_heartbeat()
                         else:
                             result = await _executeTool(toolName, toolInput, session)
                     if isinstance(result, str) and result.startswith('Error:'):
@@ -1825,6 +1881,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 except Exception:
                     logger.exception('workbench record_usage failed')
     finally:
+        current_subprocess_cancel.reset(_cancel_token)
         if emit:
             emit({'type': 'done', 'sessionId': sessionId})
     review_model = _backgroundTaskModel('reviewModel', resolvedModel)

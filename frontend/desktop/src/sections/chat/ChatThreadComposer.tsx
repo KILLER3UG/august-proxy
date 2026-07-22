@@ -2,7 +2,7 @@
 /* Floating pill message box: attachments, @skills/tools, /commands,       */
 /* model/effort menu, send / mid-run steer, stop.                          */
 
-import { useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import type { WorkbenchSession } from '@/types/workbench';
@@ -153,6 +153,22 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     send,
   });
 
+  // Value-driven auto-grow so clearing input after send collapses height
+  // (onChange alone never fires for controlled setInput('')).
+  const MAX_COMPOSER_H = 360;
+  const resizeTextarea = useCallback(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const next = Math.min(el.scrollHeight, MAX_COMPOSER_H);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > MAX_COMPOSER_H ? 'auto' : 'hidden';
+  }, []);
+
+  useLayoutEffect(() => {
+    resizeTextarea();
+  }, [input, resizeTextarea]);
+
   return (
     <div className="relative pb-3" ref={popovers.composerRootRef}>
       <input
@@ -253,8 +269,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
               value={input}
               onChange={(e) => {
                 popovers.handleInputChange(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = Math.min(e.target.scrollHeight, 360) + 'px';
               }}
               onKeyDown={popovers.onKey}
               onPaste={handleComposerPaste}

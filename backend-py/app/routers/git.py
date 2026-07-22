@@ -78,7 +78,7 @@ def _resolve_workspace(session_id: str = '', repo_path: str = '') -> tuple[str |
 
 async def _run_git(repo_path: str, *args: str, check: bool = True) -> tuple[int, str, str]:
     """Run git; return (code, stdout, stderr). Raises only on missing git / timeout."""
-    from app.lib.async_subprocess import communicate_or_kill
+    from app.lib.async_subprocess import SubprocessAborted, communicate_or_kill
 
     cwd = Path(repo_path).resolve()
     try:
@@ -88,9 +88,10 @@ async def _run_git(repo_path: str, *args: str, check: bool = True) -> tuple[int,
             cwd=str(cwd),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
         )
         stdout_b, stderr_b = await communicate_or_kill(proc, timeout=30)
-    except asyncio.TimeoutError:
+    except SubprocessAborted:
         raise HTTPException(status_code=504, detail='Git command timed out') from None
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail='Git not found on system PATH') from None

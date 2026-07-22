@@ -153,14 +153,15 @@ async def _spawn(
 ) -> SandboxResult:
     started = time.monotonic()
     try:
-        from app.lib.async_subprocess import communicate_or_kill
+        from app.lib.async_subprocess import (
+            SubprocessAborted,
+            agent_subprocess_kwargs,
+            communicate_or_kill,
+        )
 
         proc = await asyncio.create_subprocess_shell(
             command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=cwd or None,
-            env=os.environ.copy(),
+            **agent_subprocess_kwargs(cwd=cwd),
         )
         stdout_b, stderr_b = await communicate_or_kill(proc, timeout=timeout)
         stdout = stdout_b.decode('utf-8', errors='replace') if stdout_b else ''
@@ -175,13 +176,23 @@ async def _spawn(
             sandboxed=sandboxed,
             elapsed_ms=int((time.monotonic() - started) * 1000),
         )
-    except asyncio.TimeoutError:
+    except SubprocessAborted as abort:
+        elapsed = int((time.monotonic() - started) * 1000)
+        if abort.reason == 'cancelled':
+            msg = 'Error: Command cancelled by user.'
+        else:
+            msg = (
+                f'Error: Command timed out after {int(timeout)}s and was killed. '
+                'Use non-interactive flags only (no pagers, REPLs, or password prompts).'
+            )
         return SandboxResult(
             ok=False,
-            denial_reason=f'Command timed out after {int(timeout)}s',
+            stdout='',
+            stderr=msg,
+            exit_code=-1,
             enforcement=enforcement,  # type: ignore[arg-type]
             sandboxed=sandboxed,
-            elapsed_ms=int((time.monotonic() - started) * 1000),
+            elapsed_ms=elapsed,
         )
     except Exception as exc:
         return SandboxResult(

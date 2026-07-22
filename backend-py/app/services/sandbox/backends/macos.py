@@ -63,12 +63,16 @@ async def run(command: str, policy: SandboxPolicy, *, timeout: float) -> Sandbox
     started = time.monotonic()
 
     profile_path: str | None = None
+    from app.lib.async_subprocess import (
+        SubprocessAborted,
+        agent_subprocess_kwargs,
+        communicate_or_kill,
+    )
+
     try:
         with tempfile.NamedTemporaryFile('w', suffix='.sb', delete=False, encoding='utf-8') as fh:
             fh.write(profile)
             profile_path = fh.name
-
-        from app.lib.async_subprocess import communicate_or_kill
 
         shell = os.environ.get('SHELL') or '/bin/bash'
         proc = await asyncio.create_subprocess_exec(
@@ -78,9 +82,7 @@ async def run(command: str, policy: SandboxPolicy, *, timeout: float) -> Sandbox
             shell,
             '-lc',
             command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=cwd,
+            **agent_subprocess_kwargs(cwd=cwd),
         )
         out_b, err_b = await communicate_or_kill(proc, timeout=timeout)
         return SandboxResult(
@@ -92,13 +94,24 @@ async def run(command: str, policy: SandboxPolicy, *, timeout: float) -> Sandbox
             sandboxed=True,
             elapsed_ms=int((time.monotonic() - started) * 1000),
         )
-    except asyncio.TimeoutError:
+    except SubprocessAborted as abort:
+        elapsed = int((time.monotonic() - started) * 1000)
+        msg = (
+            'Error: Command cancelled by user.'
+            if abort.reason == 'cancelled'
+            else (
+                f'Error: Command timed out after {int(timeout)}s and was killed. '
+                'Use non-interactive flags only (no pagers, REPLs, or password prompts).'
+            )
+        )
         return SandboxResult(
             ok=False,
-            denial_reason=f'Command timed out after {int(timeout)}s',
+            stdout='',
+            stderr=msg,
+            exit_code=-1,
             enforcement='seatbelt',
             sandboxed=True,
-            elapsed_ms=int((time.monotonic() - started) * 1000),
+            elapsed_ms=elapsed,
         )
     except Exception as exc:
         # Fall back to soft if seatbelt spawn fails

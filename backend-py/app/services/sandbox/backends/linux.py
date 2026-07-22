@@ -103,14 +103,17 @@ async def _run_bwrap(command: str, policy: SandboxPolicy, *, timeout: float) -> 
         args.extend(['--unshare-net'])
     args.extend(['--', 'bash', '-lc', command])
 
-    try:
-        from app.lib.async_subprocess import communicate_or_kill
+    from app.lib.async_subprocess import (
+        SubprocessAborted,
+        agent_subprocess_kwargs,
+        communicate_or_kill,
+    )
 
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+    try:
+        spawn_kwargs = agent_subprocess_kwargs(cwd=None)
+        # bwrap already sets --chdir; do not override with host cwd.
+        spawn_kwargs.pop('cwd', None)
+        proc = await asyncio.create_subprocess_exec(*args, **spawn_kwargs)
         out_b, err_b = await communicate_or_kill(proc, timeout=timeout)
         return SandboxResult(
             ok=proc.returncode == 0,
@@ -121,13 +124,24 @@ async def _run_bwrap(command: str, policy: SandboxPolicy, *, timeout: float) -> 
             sandboxed=True,
             elapsed_ms=int((time.monotonic() - started) * 1000),
         )
-    except asyncio.TimeoutError:
+    except SubprocessAborted as abort:
+        elapsed = int((time.monotonic() - started) * 1000)
+        msg = (
+            'Error: Command cancelled by user.'
+            if abort.reason == 'cancelled'
+            else (
+                f'Error: Command timed out after {int(timeout)}s and was killed. '
+                'Use non-interactive flags only (no pagers, REPLs, or password prompts).'
+            )
+        )
         return SandboxResult(
             ok=False,
-            denial_reason=f'Command timed out after {int(timeout)}s',
+            stdout='',
+            stderr=msg,
+            exit_code=-1,
             enforcement='bwrap',
             sandboxed=True,
-            elapsed_ms=int((time.monotonic() - started) * 1000),
+            elapsed_ms=elapsed,
         )
     except Exception as exc:
         from app.services.sandbox.backends.fallback import run_soft

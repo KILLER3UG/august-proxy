@@ -7,7 +7,12 @@ import sys
 
 import pytest
 
-from app.lib.async_subprocess import close_process, communicate_or_kill
+from app.lib.async_subprocess import (
+    SubprocessAborted,
+    close_process,
+    communicate_or_kill,
+    current_subprocess_cancel,
+)
 
 
 @pytest.mark.asyncio
@@ -33,7 +38,37 @@ async def test_communicate_or_kill_on_timeout() -> None:
         'import time; time.sleep(30)',
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        stdin=asyncio.subprocess.DEVNULL,
     )
-    with pytest.raises(asyncio.TimeoutError):
+    with pytest.raises(SubprocessAborted) as excinfo:
         await communicate_or_kill(proc, timeout=0.2)
+    assert excinfo.value.reason == 'timeout'
     assert proc.returncode is not None
+
+
+@pytest.mark.asyncio
+async def test_communicate_or_kill_on_cancel() -> None:
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        '-c',
+        'import time; time.sleep(30)',
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        stdin=asyncio.subprocess.DEVNULL,
+    )
+    cancel = asyncio.Event()
+    token = current_subprocess_cancel.set(cancel)
+
+    async def _fire() -> None:
+        await asyncio.sleep(0.1)
+        cancel.set()
+
+    fire = asyncio.create_task(_fire())
+    try:
+        with pytest.raises(SubprocessAborted) as excinfo:
+            await communicate_or_kill(proc, timeout=30)
+        assert excinfo.value.reason == 'cancelled'
+        assert proc.returncode is not None
+    finally:
+        current_subprocess_cancel.reset(token)
+        fire.cancel()

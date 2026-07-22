@@ -10,7 +10,7 @@ import os
 import platform
 import uuid
 from datetime import datetime, timezone
-from typing import Callable, Protocol, cast
+from typing import Protocol, cast
 from app.json_narrowing import as_bool, as_int, as_list, as_str
 from app.services.workbench.pty_io import PtyIO
 
@@ -140,7 +140,20 @@ def openExternalTerminal(cwd: str = '', shell: str = '') -> dict[str, object]:
 
 _sessions: dict[str, dict[str, object]] = {}
 _pendingApprovals: dict[str, dict[str, object]] = {}
-_wsSockets: dict[str, set[object]] = {}
+# Per-session set of asyncio.Queue subscribers for live PTY/pipe output.
+# Each WebSocket owns one queue; readers push chunks, handleTerminalConnection
+# drains into websocket.send_text. (Never store raw WebSocket objects here —
+# calling them as callables silently drops output.)
+_wsQueues: dict[str, set[asyncio.Queue[str | None]]] = {}
+
+
+def _broadcastTerminal(sessionId: str, text: str) -> None:
+    """Fan-out a chunk to all live WebSocket subscriber queues."""
+    for queue in list(_wsQueues.get(sessionId, set())):
+        try:
+            queue.put_nowait(text)
+        except Exception:
+            _wsQueues.get(sessionId, set()).discard(queue)
 
 
 class _WebSocketLike(Protocol):
@@ -233,7 +246,7 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
         session['status'] = 'running'
         session['pty'] = True
         _sessions[sessionId] = session
-        _wsSockets[sessionId] = set()
+        _wsQueues[sessionId] = set()
         task = asyncio.create_task(_pipePtyStdout(sessionId))
         session['reader_task'] = task
     except (FileNotFoundError, PermissionError, ImportError, OSError) as exc:
@@ -264,15 +277,11 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
             )
             session['buffer'] = notice
             _sessions[sessionId] = session
-            _wsSockets[sessionId] = set()
+            _wsQueues[sessionId] = set()
             task = asyncio.create_task(_pipeStdout(sessionId))
             session['reader_task'] = task
             # Broadcast notice to any early subscribers
-            for ws in list(_wsSockets.get(sessionId, set())):
-                try:
-                    cast(Callable[[object], None], ws)(notice)
-                except Exception:
-                    pass
+            _broadcastTerminal(sessionId, notice)
         except Exception as exc2:
             session['status'] = 'error'
             session['error'] = (
@@ -302,11 +311,7 @@ async def _pipeStdout(sessionId: str) -> None:
             text = chunk.decode('utf-8', errors='replace')
             session['buffer'] = (as_str(session.get('buffer'), '') + text)[-BUFFER_LIMIT:]
             session['updatedAt'] = _now()
-            for ws in list(_wsSockets.get(sessionId, set())):
-                try:
-                    cast(Callable[[object], None], ws)(text)
-                except Exception:
-                    _wsSockets.get(sessionId, set()).discard(ws)
+            _broadcastTerminal(sessionId, text)
     except (OSError, ValueError):
         pass
     finally:
@@ -339,11 +344,7 @@ async def _pipePtyStdout(sessionId: str) -> None:
             text = chunk.decode('utf-8', errors='replace')
             session['buffer'] = (as_str(session.get('buffer'), '') + text)[-BUFFER_LIMIT:]
             session['updatedAt'] = _now()
-            for ws in list(_wsSockets.get(sessionId, set())):
-                try:
-                    cast(Callable[[object], None], ws)(text)
-                except Exception:
-                    _wsSockets.get(sessionId, set()).discard(ws)
+            _broadcastTerminal(sessionId, text)
     except Exception:
         pass
     finally:
@@ -430,10 +431,15 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
             }
             return {'status': 'approval_required', 'requestId': reqId, 'reason': danger}
     try:
-        from app.lib.async_subprocess import communicate_or_kill
+        from app.lib.async_subprocess import (
+            SubprocessAborted,
+            agent_subprocess_kwargs,
+            communicate_or_kill,
+        )
 
         proc = await asyncio.create_subprocess_shell(
-            command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd
+            command,
+            **agent_subprocess_kwargs(cwd=cwd),
         )
         stdout, stderr = await communicate_or_kill(proc, timeout=timeoutMs / 1000)
         output = stdout.decode('utf-8', errors='replace')[-COMMAND_OUTPUT_LIMIT:]
@@ -449,8 +455,13 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
             'output': output,
             'timedOut': False,
         }
-    except asyncio.TimeoutError:
-        return {'status': 'error', 'command': command, 'error': 'Timed out', 'timedOut': True}
+    except SubprocessAborted as abort:
+        return {
+            'status': 'error',
+            'command': command,
+            'error': 'Cancelled' if abort.reason == 'cancelled' else 'Timed out',
+            'timedOut': abort.reason == 'timeout',
+        }
     except Exception as exc:
         return {'status': 'error', 'command': command, 'error': str(exc)}
 
@@ -482,10 +493,10 @@ async def closeTerminalSession(sessionId: str) -> bool:
     session = _sessions.pop(sessionId, None)
     if not session:
         return False
-    sockets = _wsSockets.pop(sessionId, set())
-    for ws in sockets:
+    queues = _wsQueues.pop(sessionId, set())
+    for queue in queues:
         try:
-            cast(Callable[[object], None], ws)(None)
+            queue.put_nowait(None)
         except Exception:
             pass
     readerTask = cast(asyncio.Task[None] | None, session.get('reader_task'))
@@ -527,9 +538,19 @@ async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
     if not session:
         await ws.close(code=4004)
         return
-    if terminalId not in _wsSockets:
-        _wsSockets[terminalId] = set()
-    _wsSockets[terminalId].add(websocket)
+    if terminalId not in _wsQueues:
+        _wsQueues[terminalId] = set()
+    out_queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=256)
+    _wsQueues[terminalId].add(out_queue)
+
+    async def _pump_output() -> None:
+        while True:
+            chunk = await out_queue.get()
+            if chunk is None:
+                break
+            await ws.send_text(chunk)
+
+    pump = asyncio.create_task(_pump_output())
     try:
         buffer = as_str(session.get('buffer'), '')
         if buffer:
@@ -544,7 +565,16 @@ async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
     except Exception:
         pass
     finally:
-        _wsSockets.get(terminalId, set()).discard(websocket)
+        _wsQueues.get(terminalId, set()).discard(out_queue)
+        try:
+            out_queue.put_nowait(None)
+        except Exception:
+            pass
+        pump.cancel()
+        try:
+            await pump
+        except (asyncio.CancelledError, Exception):
+            pass
         try:
             await ws.close()
         except Exception:

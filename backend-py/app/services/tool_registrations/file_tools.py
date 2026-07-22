@@ -16,6 +16,7 @@ from app.services.sandbox import (
 _MAXFileSize = 10 * 1024 * 1024
 _MAXSearchResults = 100
 _MAXCommandTimeout = 300
+_DEFAULTCommandTimeout = 120
 _ALLOWEDCommandPrefixes = [
     'git',
     'python',
@@ -202,7 +203,7 @@ async def _searchFiles(query: str, path: str = '.') -> str:
     if not searchPath.exists():
         return f'Error: Path not found: {path}'
     try:
-        from app.lib.async_subprocess import communicate_or_kill
+        from app.lib.async_subprocess import SubprocessAborted, communicate_or_kill
 
         proc = await asyncio.create_subprocess_exec(
             'rg',
@@ -214,11 +215,12 @@ async def _searchFiles(query: str, path: str = '.') -> str:
             str(searchPath),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
             limit=_MAXFileSize,
         )
         try:
             stdout, stderr = await communicate_or_kill(proc, timeout=30)
-        except asyncio.TimeoutError:
+        except SubprocessAborted:
             return 'Error: Search timed out'
         if proc.returncode == 0:
             output = stdout.decode('utf-8', errors='replace')
@@ -295,8 +297,20 @@ def _queue_sandbox_escape(session: object, command: str, denial: str) -> None:
         pass
 
 
-async def _runCommand(command: str) -> str:
-    """Run a shell command inside the Codex-like sandbox."""
+async def _runCommand(
+    command: str,
+    timeout: float | int | None = None,
+    timeout_s: float | int | None = None,
+    cwd: str | None = None,
+    **_extra: object,
+) -> str:
+    """Run a shell command inside the Codex-like sandbox.
+
+    Non-interactive only: stdin is closed, pagers/prompts are discouraged via
+    env. Unknown kwargs (e.g. proxy ``cwd``) are ignored so schema drift cannot
+    crash the tool — workspace cwd comes from the session policy.
+    """
+    _ = cwd  # workspace cwd is applied by the sandbox policy, not caller cwd
     firstWord = command.strip().split()[0].lower() if command.strip() else ''
     if firstWord.endswith('.exe'):
         firstWord = firstWord[:-4]
@@ -306,6 +320,13 @@ async def _runCommand(command: str) -> str:
     for pattern in dangerous:
         if pattern in command:
             return f'Error: Command contains dangerous pattern: {pattern}'
+
+    raw_timeout = timeout_s if timeout_s is not None else timeout
+    try:
+        timeout_val = float(raw_timeout) if raw_timeout is not None else float(_DEFAULTCommandTimeout)
+    except (TypeError, ValueError):
+        timeout_val = float(_DEFAULTCommandTimeout)
+    timeout_val = max(1.0, min(float(_MAXCommandTimeout), timeout_val))
 
     session = _session()
     allow_unsandboxed = False
@@ -329,7 +350,8 @@ async def _runCommand(command: str) -> str:
         allow_unsandboxed=allow_unsandboxed,
     )
 
-    result = await run_sandboxed(command, policy, timeout=float(_MAXCommandTimeout))
+    result = await run_sandboxed(command, policy, timeout=timeout_val)
+    # Only queue sandbox-escape approval for real policy denials — not timeouts/cancels.
     if result.denial_reason and session is not None and not allow_unsandboxed:
         _queue_sandbox_escape(session, command, result.denial_reason)
     return result.as_tool_text()
@@ -405,13 +427,28 @@ def register() -> None:
     )
     tool_registry.register(
         'run_command',
-        'Run a shell command inside the session sandbox (workspace-write by default, network off). '
+        'Run a non-interactive shell command in the session sandbox (workspace-write by default, network off). '
+        'Stdin is closed — never use pagers, REPLs, password prompts, or commands that wait for input. '
+        'Prefer flags like --yes / -y / --non-interactive; GIT_PAGER=cat is already applied. '
         'On Windows, prefer PowerShell/cmd (or use read_file instead of head/cat/tail). '
-        'Common Unix head/tail/cat/ls are auto-translated when possible. Timeout 300s.',
+        'Common Unix head/tail/cat/ls are auto-translated when possible. '
+        f'Default timeout {_DEFAULTCommandTimeout}s (max {_MAXCommandTimeout}s); optional timeout_s.',
         _runCommand,
         {
             'type': 'object',
-            'properties': {'command': {'type': 'string', 'description': 'The command to execute.'}},
+            'properties': {
+                'command': {
+                    'type': 'string',
+                    'description': 'The non-interactive command to execute.',
+                },
+                'timeout_s': {
+                    'type': 'number',
+                    'description': (
+                        f'Optional timeout in seconds (1–{_MAXCommandTimeout}, '
+                        f'default {_DEFAULTCommandTimeout}).'
+                    ),
+                },
+            },
             'required': ['command'],
         },
     )
