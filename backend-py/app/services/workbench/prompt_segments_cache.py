@@ -52,6 +52,17 @@ BULK_BLOCK = (
     '</bulk_tools>'
 )
 
+WEB_BLOCK = (
+    '<web_research>\n'
+    'Public web research (cite then fetch).\n'
+    '1. Call `web_search` for ranked titles, URLs, and snippets only — it does **not** download '
+    'page bodies.\n'
+    '2. Call `web_fetch` (or `web_fetch_many` / bulk `fetch_urls`) only for URLs you need in depth.\n'
+    '3. Prefer a few high-value fetches over scraping every search hit.\n'
+    '4. Use `browser_*` only when you need interaction (forms, JS apps), not for ordinary reading.\n'
+    '</web_research>'
+)
+
 
 def enabled() -> bool:
     v = os.environ.get('AUGUST_P1_PROMPT_CACHE', '1').strip().lower()

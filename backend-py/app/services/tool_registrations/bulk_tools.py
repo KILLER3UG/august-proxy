@@ -153,7 +153,7 @@ async def _bulk_fetch_urls(urls: object = None, url: str = '') -> str:
     ids = coerce_str_list(urls, single=url)
     if not ids:
         return 'Error: urls is required (array of URLs to fetch).'
-    # Parallel fetch — same pattern as web_search auto-fetch.
+    # Parallel fetch — selective page bodies after web_search snippets.
     results = await asyncio.gather(*[_webFetch(u) for u in ids], return_exceptions=True)
     blocks: list[str] = []
     ok: list[str] = []

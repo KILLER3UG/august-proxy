@@ -471,7 +471,11 @@ def buildSystemPrompt(
             logger.debug('prompt: T1/T2 cache write failed', exc_info=True)
     # Skills catalogue is inside Tier 1 <capabilities>; do not append a duplicate
     # markdown "## Available Skills" block.
-    extraParts: list[str] = [_seg_cache.CLARIFY_BLOCK, _seg_cache.BULK_BLOCK]
+    extraParts: list[str] = [
+        _seg_cache.CLARIFY_BLOCK,
+        _seg_cache.BULK_BLOCK,
+        _seg_cache.WEB_BLOCK,
+    ]
     return base + '\n\n' + '\n\n'.join(extraParts)
 
 
@@ -1621,8 +1625,15 @@ async def _sendWorkbenchMessageStreamImpl(
                     tracker.record_failure(toolName)
                 else:
                     with _trace.span('tool_exec', tool=toolName):
-                        if toolName in ('web_search', 'WebSearch', 'mcp__workspace__web_search'):
-                            # Progress events so the UI is not silent during DDG + page fetches.
+                        if toolName in (
+                            'web_search',
+                            'WebSearch',
+                            'mcp__workspace__web_search',
+                            'web_fetch',
+                            'WebFetch',
+                            'mcp__workspace__web_fetch',
+                        ):
+                            # Progress events so the UI is not silent during search/fetch.
                             async def _on_web_progress(
                                 phase: str, meta: dict[str, object] | None = None
                             ) -> None:
@@ -1643,7 +1654,7 @@ async def _sendWorkbenchMessageStreamImpl(
                                     if not msg and phase == 'reading':
                                         msg = 'Searching / fetching…'
                                     elif not msg and phase == 'done':
-                                        msg = 'Search complete'
+                                        msg = 'Complete'
                                     payload['message'] = msg
                                     if meta.get('paths') is not None:
                                         payload['paths'] = meta.get('paths')
@@ -1653,13 +1664,25 @@ async def _sendWorkbenchMessageStreamImpl(
                                         payload['path'] = meta.get('url')
                                 emit(payload)
 
-                            from app.services.tool_registrations.web_tools import _webSearch
+                            if toolName in (
+                                'web_search',
+                                'WebSearch',
+                                'mcp__workspace__web_search',
+                            ):
+                                from app.services.tool_registrations.web_tools import _webSearch
 
-                            result = await _webSearch(
-                                as_str(toolInput.get('query'), ''),
-                                maxResults=as_int(toolInput.get('maxResults'), 10),
-                                on_progress=_on_web_progress,
-                            )
+                                result = await _webSearch(
+                                    as_str(toolInput.get('query'), ''),
+                                    maxResults=as_int(toolInput.get('maxResults'), 10),
+                                    on_progress=_on_web_progress,
+                                )
+                            else:
+                                from app.services.tool_registrations.web_tools import _webFetch
+
+                                result = await _webFetch(
+                                    as_str(toolInput.get('url'), ''),
+                                    on_progress=_on_web_progress,
+                                )
                         else:
                             result = await _executeTool(toolName, toolInput, session)
                     if isinstance(result, str) and result.startswith('Error:'):

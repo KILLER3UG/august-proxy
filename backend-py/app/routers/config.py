@@ -359,6 +359,27 @@ async def putLiveConfig(body: dict[str, object]):
     return live_config_service.getLiveConfigWithStatus()
 
 
+@router.get('/web')
+async def getWebConfig():
+    """Return web search/extract config (backends + compress thresholds)."""
+    from app.services import web_config_service
+
+    return web_config_service.get_web_config_with_status()
+
+
+@router.put('/web')
+async def putWebConfig(body: dict[str, object]):
+    """Partial update of ``auxiliary.web`` (backend, keys, compress knobs)."""
+    from fastapi import HTTPException
+    from app.services import web_config_service
+
+    clean = {k: v for k, v in body.items() if k in web_config_service.DEFAULTS}
+    ok, err, _cfg = web_config_service.update_web_config(clean)
+    if not ok:
+        raise HTTPException(status_code=400, detail={'code': 'validation', 'message': err})
+    return web_config_service.get_web_config_with_status()
+
+
 def _resolve_gateway_key() -> tuple[str | None, str | None]:
     """Return (key, source) where source is env|config|None."""
     from app.lib.gateway_auth import resolve_gateway_api_key

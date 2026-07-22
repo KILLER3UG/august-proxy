@@ -31,7 +31,7 @@ def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
     return [
         {
             'name': 'WebSearch',
-            'description': 'Search the public web for relevant pages. Supports DuckDuckGo (default), Brave Search, and SearXNG backends. Use only for external/public information. Do not combine this tool with any other tool in the same turn.',
+            'description': 'Search the public web for ranked titles, URLs, and snippets only (does not download page bodies). Supports DuckDuckGo (default), Brave Search, and SearXNG. Then use WebFetch for pages you need. External/public information only. Do not combine this tool with any other tool in the same turn.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
@@ -47,7 +47,7 @@ def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
         },
         {
             'name': 'WebFetch',
-            'description': 'Fetch a public webpage by URL and convert it to clean Markdown. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.',
+            'description': 'Fetch a public webpage by URL and convert it to clean Markdown. Use after WebSearch when you need page content. Long pages may be summarized. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
@@ -62,7 +62,7 @@ def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
         },
         {
             'name': 'mcp__workspace__web_search',
-            'description': 'Search the public web for relevant pages. Supports DuckDuckGo (default), Brave Search, and SearXNG backends. Workspace-compatible alias for third-party Claude clients. Do not combine this tool with any other tool in the same turn.',
+            'description': 'Search the public web for ranked titles, URLs, and snippets only (does not download page bodies). Supports DuckDuckGo (default), Brave Search, and SearXNG. Workspace-compatible alias for third-party Claude clients. Do not combine this tool with any other tool in the same turn.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
@@ -78,7 +78,7 @@ def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
         },
         {
             'name': 'mcp__workspace__web_fetch',
-            'description': 'Fetch a public webpage by URL and convert it to clean Markdown. Workspace-compatible alias for third-party Claude clients. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.',
+            'description': 'Fetch a public webpage by URL and convert it to clean Markdown. Use after web search when you need page content. Long pages may be summarized. Workspace-compatible alias for third-party Claude clients. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
