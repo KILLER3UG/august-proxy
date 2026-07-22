@@ -16,6 +16,7 @@ map to camelCase wire keys where the on-disk format still uses them.
 """
 
 from __future__ import annotations
+
 from typing import TypedDict
 
 # PEP 695 ``type`` alias — requires Python 3.12+. This is intentional: the

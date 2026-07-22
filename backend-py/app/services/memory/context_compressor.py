@@ -6,8 +6,10 @@ Port of backend/services/memory/context-compressor.js (177 lines).
 """
 
 from __future__ import annotations
+
 import os
 from typing import Callable
+
 from app.json_narrowing import as_list, as_str
 from app.providers.clients.base import estimateTokens
 

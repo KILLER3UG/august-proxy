@@ -8,6 +8,7 @@ tools are NOT presented (they aren't dispatchable in the workbench).
 """
 
 from __future__ import annotations
+
 import pytest
 from app.services import tool_definitions as toolDefsModule
 from app.services import tool_registry

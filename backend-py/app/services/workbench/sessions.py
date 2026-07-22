@@ -18,10 +18,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Callable, cast
 
 from app.atomic_write import write_json_atomic
-from app.json_narrowing import as_str, as_dict, as_list, as_int, as_float, as_bool
+from app.json_narrowing import as_bool, as_dict, as_float, as_int, as_list, as_str
 
 if TYPE_CHECKING:
     import asyncio
@@ -255,7 +255,7 @@ def rename_workbench_session(session_id: str, title: str) -> WorkbenchSession | 
     except Exception:
         logger.exception('save_sessions failed after rename %s', sid)
     try:
-        from app.services.realtime_bus import emit_realtime, emit_invalidate
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
 
         emit_realtime(
             'session.updated',
@@ -564,7 +564,7 @@ def _emit_session_status(session_id: str) -> None:
             pass
     # Instant UI push (approval banner, sidebar pulse, plan gate, etc.)
     try:
-        from app.services.realtime_bus import emit_realtime, emit_invalidate
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
 
         emit_realtime(
             'session.status',

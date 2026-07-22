@@ -82,6 +82,103 @@ function highlightCode(text: string, lang: string): string {
 /** When true, renderCode skips highlight.js (set only during live stream parses). */
 let liveMarkdownParse = false;
 
+/**
+ * Fast live-stream markdown renderer. Avoids full marked.parse AST + KaTeX +
+ * hljs on every 32ms flush. Handles fenced code blocks as plain <pre>,
+ * converts line breaks (GFM), and applies minimal inline formatting.
+ * When streaming ends, a single full parse replaces this output.
+ */
+function renderLiveMarkdown(src: string): string {
+  const lines = src.split('\n');
+  const out: string[] = [];
+  let inCode = false;
+  let codeLang = '';
+  let codeLines: string[] = [];
+
+  const flushCode = () => {
+    const langClass = codeLang ? ` class="hljs language-${escapeAttr(codeLang)}"` : ' class="hljs"';
+    const code = escapeHtml(codeLines.join('\n'));
+    out.push(
+      `<div class="markdown-code-block relative group">` +
+        `<pre${langClass}><code${langClass}>${code}</code></pre>` +
+      `</div>`
+    );
+    codeLines = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!inCode && /^```/.test(line)) {
+      inCode = true;
+      codeLang = line.slice(3).trim();
+      continue;
+    }
+    if (inCode) {
+      if (/^```\s*$/.test(line)) {
+        inCode = false;
+        flushCode();
+      } else {
+        codeLines.push(line);
+      }
+      continue;
+    }
+    // Headings
+    const headingMatch = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      out.push(`<h${level}>${escapeHtml(headingMatch[2])}</h${level}>`);
+      continue;
+    }
+    // Horizontal rule
+    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      out.push('<hr>');
+      continue;
+    }
+    // Blockquote
+    if (/^>\s?/.test(line)) {
+      out.push(`<blockquote><p>${escapeHtml(line.replace(/^>\s?/, ''))}</p></blockquote>`);
+      continue;
+    }
+    // Unordered list item
+    if (/^\s*[-*+]\s+/.test(line)) {
+      out.push(`<li>${inlineFormat(escapeHtml(line.replace(/^\s*[-*+]\s+/, '')))}</li>`);
+      continue;
+    }
+    // Ordered list item
+    if (/^\s*\d+\.\s+/.test(line)) {
+      out.push(`<li>${inlineFormat(escapeHtml(line.replace(/^\s*\d+\.\s+/, '')))}</li>`);
+      continue;
+    }
+    // Empty line → paragraph break
+    if (line.trim() === '') {
+      out.push('<br>');
+      continue;
+    }
+    // Normal text with GFM line break
+    out.push(`<p>${inlineFormat(escapeHtml(line))}</p>`);
+  }
+  // Unterminated code block (stream still going)
+  if (inCode) {
+    flushCode();
+  }
+  return out.join('\n');
+}
+
+/** Minimal inline formatting: bold, italic, inline code, links. */
+function inlineFormat(escaped: string): string {
+  // Inline code (already HTML-escaped, wrap in <code>)
+  let s = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  // Italic
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  s = s.replace(/_(.+?)_/g, '<em>$1</em>');
+  // Links [text](url) — url was already escaped
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return s;
+}
+
 function renderCode(token: Tokens.Code): string {
   const lang = (token.lang || '').trim();
   const langClass = lang ? ` class="hljs language-${escapeAttr(lang)}"` : ' class="hljs"';
@@ -316,14 +413,14 @@ export function Markdown({
 
   const html = useMemo(() => {
     if (!content) return '';
-    // v1.1: convert common LaTeX math to unicode before marked parsing
-    const processed = convertLatexToUnicode(content);
-    liveMarkdownParse = live;
-    try {
-      return marked.parse(processed, { async: false });
-    } finally {
-      liveMarkdownParse = false;
+    if (live) {
+      // Fast path: skip full AST, KaTeX, and hljs during active streaming.
+      return renderLiveMarkdown(content);
     }
+    // Final render: full marked.parse with syntax highlighting + LaTeX.
+    const processed = convertLatexToUnicode(content);
+    liveMarkdownParse = false;
+    return marked.parse(processed, { async: false });
   }, [content, live]);
 
   // Copy button handler

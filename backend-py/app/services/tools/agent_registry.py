@@ -5,11 +5,13 @@ Port of backend/services/tools/agent-registry.js + agent-sessions.js + agent-job
 """
 
 from __future__ import annotations
+
 import uuid
 from datetime import datetime, timezone
 from typing import cast
-from app.services.memory_store import save_memory, get_memory, record_config_audit
+
 from app.json_narrowing import as_int, as_list, as_str
+from app.services.memory_store import get_memory, record_config_audit, save_memory
 from app.type_aliases import JsonValue
 
 _AGENTSKey = 'agent_registry'

@@ -5,7 +5,9 @@ Uses memory_store lifecycle events for persistence.
 """
 
 from __future__ import annotations
+
 from fastapi import APIRouter
+
 from app.services import memory_store
 
 router = APIRouter(prefix='/api/audit')

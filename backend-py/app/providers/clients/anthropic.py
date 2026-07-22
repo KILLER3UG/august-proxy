@@ -9,7 +9,9 @@ Handles:
 """
 
 from __future__ import annotations
+
 from typing import AsyncIterator
+
 from app.json_narrowing import as_str
 from app.providers.api_format import anthropic_host_base, join_provider_url
 from app.providers.clients.base import BaseProviderClient, ProviderResponse

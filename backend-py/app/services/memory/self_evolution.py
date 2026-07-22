@@ -13,10 +13,12 @@ by ``background_review.py`` which runs interval-gated.
 """
 
 from __future__ import annotations
+
 import re
 import time
-from app.services.memory_store import save_memory, get_memory
+
 from app.services.memory.auto_memory import saveAutoMemory
+from app.services.memory_store import get_memory, save_memory
 
 _REFLECTIONKey = 'self_evolution_log'
 _MAXReflections = 50

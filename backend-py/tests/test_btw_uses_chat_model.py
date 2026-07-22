@@ -35,8 +35,8 @@ def test_resolve_chat_llm_falls_back_to_session_model():
 @pytest.mark.asyncio
 async def test_btw_body_model_matches_chat_sticky(tmp_path, monkeypatch):
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    from app.lib import paths
     from app.config import settings
+    from app.lib import paths
     from app.services import memory_store
     from app.services.workbench import sessions as sess_mod
 

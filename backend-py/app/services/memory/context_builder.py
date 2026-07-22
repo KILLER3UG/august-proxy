@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.json_narrowing import as_str, as_dict, as_list, as_int
+from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services.memory_store import get_memory
 
 AUGUST_PLATFORM: str = (

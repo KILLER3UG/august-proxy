@@ -5,6 +5,7 @@ Port of backend/services/memory/fuzzy-match.js.
 """
 
 from __future__ import annotations
+
 import re
 
 

@@ -29,6 +29,7 @@ In-place modification with .bak backup.
 """
 
 from __future__ import annotations
+
 import argparse
 import difflib
 import json

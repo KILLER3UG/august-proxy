@@ -1,6 +1,7 @@
 """System/environment, heuristics, state, and scratchpad tools."""
 
 from __future__ import annotations
+
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services import tool_registry
 
@@ -74,7 +75,7 @@ async def _updateHeuristics(action: str, rule: str = '') -> str:
       clear  — Clear all rules
       list   — Return current rules
     """
-    from app.services.heuristics_service import addHeuristic, removeByRule, clearHeuristics, listHeuristics
+    from app.services.heuristics_service import addHeuristic, clearHeuristics, listHeuristics, removeByRule
 
     try:
         if action == 'add':

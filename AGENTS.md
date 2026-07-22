@@ -26,6 +26,28 @@
 
 **Still open (not fixed in 0.12.21):** OpenCode Zen lists all models via `GET …/models`, but each family needs a different wire path (`/chat/completions`, `/messages`, `/responses`, Gemini Google-style). One provider `apiFormat` cannot serve Claude+GPT+DeepSeek from the same Zen entry — expect **404 Not Found** for wrong-format models. See `docs/TROUBLESHOOTING.md` and `docs/CONFIGURATION.md`.
 
+## Directory map & validation routing
+
+| Area | Owns | Validate with |
+|------|------|---------------|
+| `backend-py/` | FastAPI proxy, workbench, Brain, MCP, tools | `cd backend-py && uv run pytest -q` |
+| `frontend/desktop/` | Tauri shell, React UI, Vite build | `npm run test:frontend` |
+| `frontend/mobile/` | Expo mobile app | `npm run test -w frontend/mobile` |
+| `scripts/` | Build/release orchestration (Node) | manual — no test suite |
+| `docs/` | User-facing docs, specs, troubleshooting | n/a |
+
+**High-risk coordination points** (touch carefully, validate both layers):
+
+- Version files (see below) — must stay in sync across 4 files.
+- `dump_openai_upstream_body` / `dump_anthropic_upstream_body` — upstream serialization; a wrong key breaks all chat.
+- `backend-py/app/services/sandbox/` — permission policy; changes affect tool execution safety.
+
+**Fast path for backend-only changes:**
+
+```bash
+cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q
+```
+
 ## Version files to bump together on desktop ship
 
 - `package.json`

@@ -7,10 +7,9 @@ works with action list (and camelCase upsert payloads).
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.main import app
 from app.routers.august import AliasManageItem, AliasManageRequest
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

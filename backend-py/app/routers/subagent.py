@@ -14,15 +14,18 @@ JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
 from typing import Any, Optional
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+
 from app.models.camel_base import CamelModel
 from app.services.subagent_orchestrator import SubagentOrchestrator
-from app.services.tools.spawn_subagents_tool import executeSpawnSubagents, approveProposal
+from app.services.tools.spawn_subagents_tool import approveProposal, executeSpawnSubagents
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/subagents')

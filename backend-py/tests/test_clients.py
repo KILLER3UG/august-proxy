@@ -1,16 +1,16 @@
 """Provider client unit tests."""
 
 import pytest
+from app.providers.clients import AnthropicClient, OpenAIClient, getClient
 from app.providers.clients.base import (
-    SseStreamParser,
     ProviderResponse,
+    SseStreamParser,
     estimateStringTokens,
     estimateTokens,
     formatTokenCount,
-    parseRetryAfterMs,
     isRetryableStatus,
+    parseRetryAfterMs,
 )
-from app.providers.clients import getClient, AnthropicClient, OpenAIClient
 
 
 class TestBaseClient:
@@ -101,8 +101,8 @@ class TestFactory:
         client = getClient({'name': 'DeepSeek', 'apiMode': 'openaiChat'})
         assert isinstance(client, OpenAIClient)
 
-    def testCodexResponses(self):
-        client = getClient({'name': 'OpenAI API', 'apiMode': 'codexResponses'})
+    def testOpenaiResponses(self):
+        client = getClient({'name': 'OpenAI API', 'apiMode': 'openaiResponses'})
         assert isinstance(client, OpenAIClient)
 
     def testLegacyGeminiModeMapsToOpenaiClient(self):

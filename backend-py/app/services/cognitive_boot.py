@@ -122,8 +122,9 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
 
     # 4) One Cognitive Scheduler: interval consolidation + idle hook (mutex-deduped)
     try:
-        from app.services.scheduler import Scheduler
         import os
+
+        from app.services.scheduler import Scheduler
 
         _cognitive_scheduler = Scheduler()
         if layers.get('consolidation'):
@@ -229,9 +230,10 @@ def attach_session_watcher(session_id: str, workspace_path: str) -> dict[str, ob
         return {'ok': True, 'already': True, 'session_id': session_id}
 
     try:
-        from app.services.environment_watcher import EnvironmentWatcher, recordChange
-        from app.services.brain_write_facade import save_kv
         import time
+
+        from app.services.brain_write_facade import save_kv
+        from app.services.environment_watcher import EnvironmentWatcher, recordChange
 
         def _on_event(e: object) -> None:
             path = getattr(e, 'path', '')

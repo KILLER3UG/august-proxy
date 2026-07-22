@@ -11,6 +11,7 @@ audit log via the underlying services.
 """
 
 from __future__ import annotations
+
 import json
 from typing import cast
 

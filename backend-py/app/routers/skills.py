@@ -1,8 +1,10 @@
 """Skill system API routes — list, read, author, and maintain skills."""
 
 from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import Field
+
 from app.models.camel_base import CamelModel
 from app.services import skill_service
 from app.services.skill_service import SkillValidationError

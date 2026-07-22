@@ -12,8 +12,10 @@ This is a pure function — trivially testable.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from app.services.tools.retrieval import buildToolCatalog, searchTools, buildQueryFromMessages
+
+from app.services.tools.retrieval import buildQueryFromMessages, buildToolCatalog, searchTools
 
 AUGUST_CORE_TOOLS: frozenset[str] = frozenset(
     {

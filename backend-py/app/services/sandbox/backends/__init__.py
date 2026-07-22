@@ -17,7 +17,7 @@ def select_backend_name() -> 'EnforcementBackend':
         if is_available():
             return 'seatbelt'
     elif sys.platform.startswith('linux'):
-        from app.services.sandbox.backends.linux import is_available, backend_kind
+        from app.services.sandbox.backends.linux import backend_kind, is_available
 
         if is_available():
             return backend_kind()

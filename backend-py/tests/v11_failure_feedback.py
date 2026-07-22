@@ -1,8 +1,8 @@
 """v1.1 — Test that tool errors populate session._failure_feedback with structured info."""
 
 import pytest
-from app.services.workbench.workbench import _executeTool
 from app.services import workbench as wbMod
+from app.services.workbench.workbench import _executeTool
 
 
 class FakeSession:

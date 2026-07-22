@@ -1,6 +1,7 @@
 """v2 — Test delta engine Hippocampus batch inference + env subscription."""
 
 import asyncio
+
 import pytest
 from app.services import delta_engine
 

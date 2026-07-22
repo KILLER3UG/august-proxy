@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from app.services import skill_service
 from app.services.tool_definitions import _loadSkill
 

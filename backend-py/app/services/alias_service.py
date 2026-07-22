@@ -30,14 +30,15 @@ the dropdown refreshes, and records every change to the config audit log.
 """
 
 from __future__ import annotations
+
 from typing import cast
 
+from app.atomic_write import write_json_atomic
 from app.config import settings
+from app.json_narrowing import as_dict, as_list, as_str
 from app.lib.paths import dataPath
 from app.services.memory_store import record_config_audit
 from app.type_aliases import AliasDict, JsonValue
-from app.json_narrowing import as_dict, as_list, as_str
-from app.atomic_write import write_json_atomic
 
 
 def alias_from_wire(raw: object) -> AliasDict:

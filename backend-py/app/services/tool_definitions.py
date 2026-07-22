@@ -8,34 +8,35 @@ entry point (``registerAll``) and re-exports handlers used by tests.
 
 from __future__ import annotations
 
-# Re-export handlers imported by tests / external callers
-from app.services.tool_registrations.skill_tools import (  # noqa: F401
-    _loadSkill,
-    _listSkills,
-    _skillManage,
+from app.services.tool_html import html_to_markdown, unescape_html  # noqa: F401
+from app.services.tool_registrations.agent_tools import (  # noqa: F401
+    _spawnDaemon,
+    _spawnSubagent,
 )
 from app.services.tool_registrations.file_tools import (  # noqa: F401
-    _readFile,
-    _writeFile,
     _listDirectory,
-    _searchFiles,
+    _readFile,
     _runCommand,
+    _searchFiles,
+    _writeFile,
+)
+from app.services.tool_registrations.memory_tools import (  # noqa: F401
+    _brainQuery,
+    _contextRead,
+    _factSearch,
+    _memorySearch,
+)
+
+# Re-export handlers imported by tests / external callers
+from app.services.tool_registrations.skill_tools import (  # noqa: F401
+    _listSkills,
+    _loadSkill,
+    _skillManage,
 )
 from app.services.tool_registrations.web_tools import (  # noqa: F401
     _webFetch,
     _webSearch,
 )
-from app.services.tool_registrations.memory_tools import (  # noqa: F401
-    _memorySearch,
-    _factSearch,
-    _contextRead,
-    _brainQuery,
-)
-from app.services.tool_registrations.agent_tools import (  # noqa: F401
-    _spawnSubagent,
-    _spawnDaemon,
-)
-from app.services.tool_html import html_to_markdown, unescape_html  # noqa: F401
 
 # Private aliases kept for any residual importers
 _htmlToMarkdown = html_to_markdown

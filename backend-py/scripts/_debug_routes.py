@@ -1,7 +1,7 @@
 from collections import Counter
 
-from app.routers import config, mcp, monitoring, workbench
 from app.main import app
+from app.routers import config, mcp, monitoring, workbench
 
 print('mcp routes', [(getattr(r, 'path', None), getattr(r, 'methods', None)) for r in mcp.router.routes])
 print('workbench count', len(workbench.router.routes))

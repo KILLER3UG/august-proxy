@@ -4,6 +4,7 @@ Port of backend/services/august-api/august-api.js.
 """
 
 from __future__ import annotations
+
 import os
 import platform
 

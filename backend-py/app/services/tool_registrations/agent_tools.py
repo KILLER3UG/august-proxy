@@ -1,6 +1,7 @@
 """Daemon, blackboard, and subagent tool handlers + registration."""
 
 from __future__ import annotations
+
 from app.json_narrowing import as_bool, as_dict, as_str
 from app.services import tool_registry
 
@@ -77,8 +78,8 @@ async def _writeBlackboard(key: str, value: str, priority: int = 0) -> str:
     Blackboard notes are visible to all agents in the session (main loop
     and daemons). They expire after a TTL or when acknowledged.
     """
-    from app.services.workbench.workbench import get_session
     from app.services.blackboard_service import writeNote
+    from app.services.workbench.workbench import get_session
 
     try:
         session = get_session()
@@ -92,8 +93,8 @@ async def _writeBlackboard(key: str, value: str, priority: int = 0) -> str:
 
 async def _readBlackboard(agent: str = '', key: str = '') -> str:
     """Read notes from the shared blackboard."""
-    from app.services.workbench.workbench import get_session
     from app.services.blackboard_service import readNotes
+    from app.services.workbench.workbench import get_session
 
     try:
         session = get_session()
@@ -111,8 +112,8 @@ async def _readBlackboard(agent: str = '', key: str = '') -> str:
 
 async def _clearBlackboard(agent: str = '') -> str:
     """Clear blackboard notes."""
-    from app.services.workbench.workbench import get_session
     from app.services.blackboard_service import clearNotes
+    from app.services.workbench.workbench import get_session
 
     try:
         session = get_session()
@@ -236,6 +237,7 @@ async def _spawnSubagents(
 ) -> str:
     """Spawn multiple sub-agents in parallel. See spawn_subagents tool schema."""
     import json
+
     from app.services import event_log
     from app.services.runtime_services import get_orchestrator
     from app.services.tools.spawn_subagents_tool import executeSpawnSubagents

@@ -6,6 +6,7 @@ never deletes (archives only); pinned skills are exempt from every auto-transiti
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -13,8 +14,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from app.json_narrowing import as_float, as_int, as_list, as_str
 from app.services import skill_service
-from app.json_narrowing import as_str, as_list, as_int, as_float
 
 log = logging.getLogger(__name__)
 _STALEAfterDays = 14

@@ -2,6 +2,7 @@
 
 import json
 from unittest.mock import patch
+
 import pytest
 
 
@@ -26,8 +27,8 @@ VALID_EXAM = [
 
 def testGenerateExamWithTopic():
     """POST /api/exam/generate with a topic returns an exam + first question (no correct_index)."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):
         client = TestClient(app)
@@ -43,8 +44,8 @@ def testGenerateExamWithTopic():
 
 def testGenerateExamRejectsNoTopicNoFiles():
     """Neither topic nor files → 400."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.post('/api/exam/generate', json={'count': 5, 'difficulty': 'easy'})
@@ -53,8 +54,8 @@ def testGenerateExamRejectsNoTopicNoFiles():
 
 def testGenerateExamRejectsMalformedOutput():
     """LLM returns 1 question with 1 option instead of 4 → 500."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     bad = [{'stem': 'Q', 'options': ['only one'], 'correct_index': 0, 'rationale': 'r'}]
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(bad)):
@@ -65,8 +66,8 @@ def testGenerateExamRejectsMalformedOutput():
 
 def testGenerateExamHandlesCodeFences():
     """LLM wraps JSON in ```json ... ``` fences — should still parse."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     wrapped = '```json\n' + json.dumps(VALID_EXAM) + '\n```'
     with patch('app.services.exam_service._call_prefrontal', return_value=wrapped):
@@ -78,8 +79,8 @@ def testGenerateExamHandlesCodeFences():
 
 def testFetchQuestionStripsCorrectIndex():
     """GET /api/exam/{id}/question/{pos} never leaks correct_index or rationale."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):
         client = TestClient(app)
@@ -94,9 +95,9 @@ def testFetchQuestionStripsCorrectIndex():
 
 def testAnswerRecordsAttempt():
     """POST /api/exam/{id}/answer records attempt + returns correctness."""
-    from fastapi.testclient import TestClient
     from app.main import app
     from app.services.memory_store import _conn
+    from fastapi.testclient import TestClient
 
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):
         client = TestClient(app)
@@ -119,8 +120,8 @@ def testAnswerRecordsAttempt():
 
 def testHelpReturnsExplanationWithoutCorrectness():
     """POST /api/exam/{id}/help returns explanation, does NOT reveal correctness in banner state."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     exam = [VALID_EXAM[0]]
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(exam)):
@@ -140,8 +141,8 @@ def testHelpReturnsExplanationWithoutCorrectness():
 
 def testAddQuestionAuthorsViaModel():
     """POST /api/exam/{id}/questions authors via Prefrontal, appends at next position."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     extra = {'stem': 'New Q', 'options': ['a', 'b', 'c', 'd'], 'correct_index': 0, 'rationale': 'r'}
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):

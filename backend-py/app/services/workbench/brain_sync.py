@@ -52,9 +52,9 @@ def _strict_default() -> bool:
 def _sync_once(session: WorkbenchSession) -> None:
     """Single attempt: upsert session + replace messages + timeline breadcrumb."""
     from app.services.memory_store import (
-        save_session,
         delete_session_messages,
         save_message,
+        save_session,
         write_timeline_event,
     )
 

@@ -8,8 +8,8 @@ fields are typed and message content passes through unchanged.
 from __future__ import annotations
 
 from typing import TypedDict
-from app.models.base import ExtraAllowBaseModel, JsonValue
 
+from app.models.base import ExtraAllowBaseModel, JsonValue
 
 # ── Strict models (the proxy reads/constructs these) ──────────────────────
 

@@ -1,8 +1,10 @@
 """brain_query tool domain (multi-store FTS/SQL)."""
 from __future__ import annotations
+
 import json
+
 from app.adapters.case_converters import camelToSnake
-from app.json_narrowing import as_str, as_list
+from app.json_narrowing import as_list, as_str
 from app.services.memory_conn import conn as _conn
 from app.services.memory_store.kv import _fts_match_query
 from app.services.memory_store.wire import _row_as_wire
@@ -200,6 +202,7 @@ def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
     try:
         import os as _os
         from pathlib import Path
+
         from app.lib.paths import dataPath
 
         candidates: list[Path] = []

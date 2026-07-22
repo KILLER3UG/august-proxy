@@ -3,6 +3,7 @@ Provider registry — in-memory store of all provider configs.
 """
 
 from __future__ import annotations
+
 from typing import Optional
 
 _registry: dict[str, dict[str, object]] = {}

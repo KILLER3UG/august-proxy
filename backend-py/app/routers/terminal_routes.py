@@ -11,7 +11,9 @@ keys on dumped dicts — use ``model_dump(by_alias=True)`` at that boundary.
 """
 
 from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+
 from app.models.camel_base import CamelModel
 from app.services.workbench import terminal_service
 

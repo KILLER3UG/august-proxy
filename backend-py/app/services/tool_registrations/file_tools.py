@@ -234,9 +234,12 @@ async def _searchFiles(query: str, path: str = '.') -> str:
         return await _pySearchFiles(query, searchPath)
 
 
-async def _pySearchFiles(query: str, searchPath: Path) -> str:
-    """Python fallback file search (no external deps)."""
-    results = []
+def _pySearchFilesSync(query: str, searchPath: Path) -> str:
+    """Synchronous Python fallback file search (no external deps).
+
+    Runs entirely on a worker thread — never call directly on the event loop.
+    """
+    results: list[str] = []
     try:
         for filePath in searchPath.rglob('*'):
             if not filePath.is_file():
@@ -253,9 +256,16 @@ async def _pySearchFiles(query: str, searchPath: Path) -> str:
                             break
             except (UnicodeDecodeError, OSError):
                 continue
+            if len(results) >= _MAXSearchResults:
+                break
         return '\n'.join(results) if results else 'No matches found.'
     except Exception as exc:
         return f'Error during search: {exc}'
+
+
+async def _pySearchFiles(query: str, searchPath: Path) -> str:
+    """Python fallback file search — offloaded to a thread so the event loop is never blocked."""
+    return await asyncio.to_thread(_pySearchFilesSync, query, searchPath)
 
 
 def _queue_sandbox_escape(session: object, command: str, denial: str) -> None:

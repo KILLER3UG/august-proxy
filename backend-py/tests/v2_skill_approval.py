@@ -2,7 +2,7 @@
 
 import pytest
 from app.services import consolidation_daemon
-from app.services.memory_store import init, _conn
+from app.services.memory_store import _conn, init
 
 
 @pytest.fixture(autouse=True)
@@ -64,6 +64,7 @@ def testSkillGenesisRespectsRateLimit(monkeypatch, tmp_path):
     staging.mkdir()
     monkeypatch.setattr(consolidation_daemon, '_staging_dir', str(staging))
     import time
+
     from app.services.memory_store import _conn
 
     conn = _conn()

@@ -6,6 +6,7 @@ Port of backend/services/memory/context-scrubber.js (189 lines).
 """
 
 from __future__ import annotations
+
 import re
 
 _PATTERN = re.compile('<memory_context>.*?</memory_context>', re.DOTALL)

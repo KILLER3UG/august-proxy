@@ -1,14 +1,16 @@
 """OpenAI Chat Completions / Responses API client.
 
 Covers all providers that use OpenAI-compatible API formats (``api_mode:
-openai_chat`` or ``codex_responses``). This includes ~22 providers such as
+openai_chat`` or ``openai_responses``). This includes ~22 providers such as
 DeepSeek, OpenRouter, Novita, Nvidia, xAI, Together, OpenCode, and more.
 
 Port of the HTTP transport portions of backend/adapters/openai.js.
 """
 
 from __future__ import annotations
+
 from typing import AsyncIterator
+
 from app.providers.api_format import join_provider_url, normalize_provider_base_url
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 

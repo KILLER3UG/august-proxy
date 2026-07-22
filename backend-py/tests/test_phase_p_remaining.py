@@ -7,11 +7,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from app.lib.batched_emit import BatchedEmit
-from app.services.workbench.parallel_tools import is_parallel_safe, PARALLEL_SAFE_TOOLS
-from app.providers.clients import getClient, clear_client_pool
+from app.providers.clients import clear_client_pool, getClient
 from app.services import memory_store
+from app.services.workbench.parallel_tools import PARALLEL_SAFE_TOOLS, is_parallel_safe
 
 
 def test_parallel_safe_allowlist():

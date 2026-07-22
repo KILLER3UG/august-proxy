@@ -15,10 +15,12 @@ listeners). ``dispatch`` is concrete here.
 """
 
 from __future__ import annotations
+
 import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
 from app.json_narrowing import as_bool
 
 if TYPE_CHECKING:

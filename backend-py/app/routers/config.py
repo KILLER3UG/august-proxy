@@ -6,14 +6,17 @@ JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
+
 from typing import cast
+
 from fastapi import APIRouter, HTTPException
-from app.models.camel_base import CamelModel
+
 from app.config import settings
-from app.providers import resolver as providerResolver
-from app.lib import secrets
-from app.services import config_service
 from app.json_narrowing import as_dict, as_list, as_str
+from app.lib import secrets
+from app.models.camel_base import CamelModel
+from app.providers import resolver as providerResolver
+from app.services import config_service
 from app.type_aliases import AliasDict
 
 router = APIRouter(prefix='/api/config')
@@ -76,6 +79,7 @@ class ProviderDetailsUpdate(CamelModel):
 async def providerDetails(provider: str = ''):
     """Return details for a user-configured provider (providers.json)."""
     import os
+
     from app.providers import resolver as providerResolver
 
     store = config_service.getProvidersStore()
@@ -142,8 +146,9 @@ async def configSafe():
     Used by the frontend to read the active provider and its model settings.
     Returns the full config dict from config.json.
     """
-    from app.lib.paths import dataPath
     import json
+
+    from app.lib.paths import dataPath
 
     cfgPath = dataPath('config.json')
     cfg = json.loads(cfgPath.read_text('utf-8')) if cfgPath.exists() else {}
@@ -271,6 +276,7 @@ async def putModelFleet(body: dict[str, object]):
     would 422 with a generic shape error).
     """
     from fastapi import HTTPException
+
     from app.services import model_fleet_service
 
     ok, err, fleet = model_fleet_service.updateFleet(body)
@@ -282,7 +288,7 @@ async def putModelFleet(body: dict[str, object]):
 @router.get('/cognitive')
 async def getCognitiveConfig():
     """Single cognitive config tree (boot, features, fleet, orchestrator)."""
-    from app.services.cognitive_config import to_public, ensure_defaults
+    from app.services.cognitive_config import ensure_defaults, to_public
 
     ensure_defaults()
     return to_public()
@@ -315,10 +321,11 @@ async def putSessionExportConfig(body: dict[str, object]):
     still overrides when set. Optional ``exportNow: true`` writes one snapshot.
     """
     from fastapi import HTTPException
+
     from app.services.workbench.sessions import (
-        set_session_json_export_enabled,
         export_sessions_json,
         get_session_json_export_status,
+        set_session_json_export_enabled,
     )
 
     if 'enabled' not in body or not isinstance(body.get('enabled'), bool):
@@ -350,6 +357,7 @@ async def getLiveConfig():
 async def putLiveConfig(body: dict[str, object]):
     """v4.2: Update Live config (partial). Response includes readiness flags."""
     from fastapi import HTTPException
+
     from app.services import live_config_service
 
     clean = {k: v for k, v in body.items() if k in live_config_service.FIELDS}
@@ -371,6 +379,7 @@ async def getWebConfig():
 async def putWebConfig(body: dict[str, object]):
     """Partial update of ``auxiliary.web`` (backend, keys, compress knobs)."""
     from fastapi import HTTPException
+
     from app.services import web_config_service
 
     clean = {k: v for k, v in body.items() if k in web_config_service.DEFAULTS}
@@ -382,8 +391,9 @@ async def putWebConfig(body: dict[str, object]):
 
 def _resolve_gateway_key() -> tuple[str | None, str | None]:
     """Return (key, source) where source is env|config|None."""
-    from app.lib.gateway_auth import resolve_gateway_api_key
     import os
+
+    from app.lib.gateway_auth import resolve_gateway_api_key
 
     env_key = (settings.gatewayApiKey or os.environ.get('GATEWAY_API_KEY') or '').strip()
     if env_key:

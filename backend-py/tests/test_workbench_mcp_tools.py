@@ -9,7 +9,9 @@ Two assertions:
 """
 
 from __future__ import annotations
+
 import asyncio
+
 import pytest
 from app.services import tool_definitions as toolDefsModule
 from app.services import tool_registry
@@ -163,8 +165,9 @@ def testAssembleToolDefsKeepsMcpToolsAsCore():
 
 def testGetMcpToolDefinitionsSyncTriggersLazyRefresh(monkeypatch):
     """When the cache is empty but servers are registered, lazy refresh kicks in."""
-    from app.services.tools import mcp_client
     import asyncio
+
+    from app.services.tools import mcp_client
 
     monkeypatch.setattr(mcp_client, '_servers', {'mcp_xyz': {'id': 'mcp_xyz', 'name': 'x'}})
     monkeypatch.setattr(mcp_client, '_toolsCache', {})

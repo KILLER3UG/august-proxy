@@ -17,6 +17,7 @@ import {
   resizeTerminalSession,
   type TerminalApproval,
 } from '@/api/api-client';
+import { whenReady } from '@/api/client';
 import { useSessionsStore } from '@/store/sessions';
 import { useParams } from 'react-router-dom';
 
@@ -37,6 +38,8 @@ export function RightDrawerTerminalSection() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const connectedRef = useRef(false);
   const autoSpawnRef = useRef(false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
 
   const { data, isLoading } = useQuery({
     queryKey: ['terminal-sessions'],
@@ -171,43 +174,76 @@ export function RightDrawerTerminalSection() {
     window.addEventListener('resize', syncSize);
 
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const socket = new WebSocket(`${protocol}://${window.location.host}/api/terminal/connect?id=${encodeURIComponent(activeId)}`);
-    socketRef.current = socket;
+    let disposed = false;
+    reconnectAttemptRef.current = 0;
+
+    const connectSocket = async () => {
+      if (disposed) return;
+      // Resolve the backend base URL (Tauri runs the backend on a separate port).
+      const apiBase = await whenReady();
+      if (disposed) return;
+      let wsUrl: string;
+      if (apiBase) {
+        const host = apiBase.replace(/^https?:\/\//, '');
+        wsUrl = `ws://${host}/api/terminal/connect?id=${encodeURIComponent(activeId)}`;
+      } else {
+        wsUrl = `${protocol}://${window.location.host}/api/terminal/connect?id=${encodeURIComponent(activeId)}`;
+      }
+      const socket = new WebSocket(wsUrl);
+      socketRef.current = socket;
+
+      socket.addEventListener('open', () => {
+        connectedRef.current = true;
+        setSocketReady(true);
+        reconnectAttemptRef.current = 0;
+        syncSize();
+        terminal.focus();
+      });
+      socket.addEventListener('message', (event) => {
+        if (typeof event.data === 'string') {
+          terminal.write(event.data);
+        } else if (event.data instanceof ArrayBuffer) {
+          terminal.write(new Uint8Array(event.data));
+        } else if (event.data instanceof Blob) {
+          void event.data.arrayBuffer().then((buffer) => terminal.write(new Uint8Array(buffer)));
+        }
+      });
+      socket.addEventListener('close', () => {
+        connectedRef.current = false;
+        setSocketReady(false);
+        // Auto-reconnect with exponential backoff (max 5 attempts)
+        if (!disposed && reconnectAttemptRef.current < 5) {
+          const delay = Math.min(1000 * 2 ** reconnectAttemptRef.current, 16000);
+          reconnectAttemptRef.current += 1;
+          terminal.write(`\r\n\x1b[90m[connection lost — reconnecting in ${Math.round(delay / 1000)}s…]\x1b[0m\r\n`);
+          reconnectTimerRef.current = setTimeout(() => void connectSocket(), delay);
+        }
+      });
+      socket.addEventListener('error', () => {
+        connectedRef.current = false;
+        setSocketReady(false);
+      });
+    };
 
     const onData = (data: string) => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(data);
+      const sock = socketRef.current;
+      if (sock && sock.readyState === WebSocket.OPEN) sock.send(data);
     };
     const onDataDisposable = terminal.onData(onData);
 
-    socket.addEventListener('open', () => {
-      connectedRef.current = true;
-      setSocketReady(true);
-      syncSize();
-      terminal.focus();
-    });
-    socket.addEventListener('message', (event) => {
-      if (typeof event.data === 'string') {
-        terminal.write(event.data);
-      } else if (event.data instanceof ArrayBuffer) {
-        terminal.write(new Uint8Array(event.data));
-      } else if (event.data instanceof Blob) {
-        void event.data.arrayBuffer().then((buffer) => terminal.write(new Uint8Array(buffer)));
-      }
-    });
-    socket.addEventListener('close', () => {
-      connectedRef.current = false;
-      setSocketReady(false);
-    });
-    socket.addEventListener('error', () => {
-      connectedRef.current = false;
-      setSocketReady(false);
-    });
+    void connectSocket();
 
     return () => {
+      disposed = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       onDataDisposable.dispose();
       observer.disconnect();
       window.removeEventListener('resize', syncSize);
-      if (socket.readyState <= WebSocket.OPEN) socket.close();
+      const sock = socketRef.current;
+      if (sock && sock.readyState <= WebSocket.OPEN) sock.close();
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;

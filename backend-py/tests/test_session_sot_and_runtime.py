@@ -9,8 +9,8 @@ from httpx import ASGITransport, AsyncClient
 @pytest.fixture
 async def client(tmp_path, monkeypatch):
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    from app.lib import paths
     from app.config import settings
+    from app.lib import paths
     from app.services import memory_store
     from app.services.workbench import sessions as sess_mod
 
@@ -19,8 +19,7 @@ async def client(tmp_path, monkeypatch):
     settings._config = {}
     # Reset in-memory session store between tests
     sess_mod._sessions.clear()
-    from app.services import automations_store
-    from app.services import runtime_services
+    from app.services import automations_store, runtime_services
 
     automations_store.reset_store()
     # Force runtime re-bind for new data dir
@@ -49,7 +48,7 @@ async def test_curator_and_subagents_no_longer_503(client):
 
 @pytest.mark.asyncio
 async def test_session_sot_sqlite_blob(client, tmp_path):
-    from app.services.memory_store import list_workbench_blobs, get_session
+    from app.services.memory_store import get_session, list_workbench_blobs
     from app.services.workbench import sessions as sess_mod
 
     sess_mod._sessions.clear()

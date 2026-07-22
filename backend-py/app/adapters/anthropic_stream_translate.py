@@ -9,6 +9,7 @@ import uuid
 from app.adapters.anthropic_sse import write_anthropic_sse_data
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 
+
 def createAnthropicNativeStreamState() -> dict[str, object]:
     """Create state for tracking an Anthropic native stream.
 

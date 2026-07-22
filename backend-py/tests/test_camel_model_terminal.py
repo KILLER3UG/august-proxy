@@ -6,10 +6,9 @@ Optional HTTP POST /api/terminal when isolatedData is available.
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.main import app
 from app.routers.terminal import TerminalCreate, TerminalWrite
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

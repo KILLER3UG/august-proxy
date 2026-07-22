@@ -11,10 +11,9 @@ import asyncio
 from typing import Any, AsyncIterator
 
 import pytest
-
 from app.lib.perf_timing import aggregate_summaries, clear_traces, recent_traces
+from app.services.workbench import prompt_segments_cache, tool_defs_cache
 from app.services.workbench import workbench as wb
-from app.services.workbench import tool_defs_cache, prompt_segments_cache
 
 
 class StubClient:
@@ -48,10 +47,10 @@ STUB_PROVIDER = {
 
 @pytest.fixture
 def stub_wb(monkeypatch, isolatedData):
-    from app.services.workbench import sessions as sessions_mod
-    from app.services import provider_credentials as providerCredsMod
     import app.providers.clients as clientsMod
+    from app.services import provider_credentials as providerCredsMod
     from app.services.tool_definitions import registerAll
+    from app.services.workbench import sessions as sessions_mod
 
     try:
         registerAll()

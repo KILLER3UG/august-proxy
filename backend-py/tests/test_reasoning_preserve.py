@@ -76,8 +76,8 @@ def test_anthropic_aggregator_captures_signature_delta():
 async def test_openai_workbench_preserves_reasoning_on_message_when_thinking_off(monkeypatch):
     """UI stays quiet when Thinking is off, but assistant message still carries
     reasoning_content for DeepSeek/Kimi tool-loop re-sends."""
-    from app.services.workbench.providers import call_openai_workbench
     import app.providers.clients as clients
+    from app.services.workbench.providers import call_openai_workbench
 
     class _FakeClient:
         def resolveApiKey(self):
@@ -131,8 +131,8 @@ async def test_openai_workbench_preserves_reasoning_on_message_when_thinking_off
 
 
 async def test_model_probe_requires_connected(monkeypatch):
-    from app.routers.providers import testModel
     import app.services.workbench.providers as wb_providers
+    from app.routers.providers import testModel
 
     async def fake_openai(*_a, **_k):
         return {'text': 'Connected!', 'choices': [{'message': {'content': 'Connected!'}}]}
@@ -152,8 +152,8 @@ async def test_model_probe_requires_connected(monkeypatch):
 
 
 async def test_model_probe_rejects_wrong_text(monkeypatch):
-    from app.routers.providers import testModel
     import app.services.workbench.providers as wb_providers
+    from app.routers.providers import testModel
 
     async def fake_openai(*_a, **_k):
         return {'text': 'Hello!', 'choices': [{'message': {'content': 'Hello!'}}]}

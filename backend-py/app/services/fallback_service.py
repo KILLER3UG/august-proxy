@@ -8,9 +8,10 @@ config is finally live.
 """
 
 from __future__ import annotations
+
+from app.atomic_write import write_json_atomic
 from app.config import settings
 from app.json_narrowing import as_str
-from app.atomic_write import write_json_atomic
 from app.lib.paths import dataPath
 from app.services.memory_store import record_config_audit
 

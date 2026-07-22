@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
+
 from app.models.camel_base import CamelModel
 from app.services import service_connections as sc
 

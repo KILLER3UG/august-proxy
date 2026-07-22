@@ -14,18 +14,21 @@ of ``/v1/*``.
 """
 
 from __future__ import annotations
+
 import time
 from typing import AsyncIterator
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
 from app.adapters import anthropic as anthropicAdapter
 from app.adapters import openai as openaiAdapter
-from app.json_narrowing import as_str, as_dict, as_list, as_int
+from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.lib.gateway_auth import require_gateway_key
 from app.providers import resolver as providerResolver
+from app.services import config_service
 from app.services import logger as trafficLogger
 from app.services.feature_flow import emit_feature_flow
-from app.services import config_service
 
 router = APIRouter()
 

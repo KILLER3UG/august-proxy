@@ -1,12 +1,15 @@
 """Session messages domain (hot path for chat open / pagination)."""
 from __future__ import annotations
+
 import asyncio
 import json
 from typing import cast
+
 from app.json_narrowing import as_int
 from app.services.memory_conn import conn as _conn
 from app.services.memory_store.wire import _json, _row_as_wire
 from app.type_aliases import JsonValue, MessageDict
+
 
 def save_message(sessionId: str, role: str, content: JsonValue) -> int:
     """Save a message to a session.

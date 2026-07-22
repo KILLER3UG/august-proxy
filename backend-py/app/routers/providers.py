@@ -4,11 +4,12 @@ Uses camelCase throughout matching the frontend convention.
 """
 
 from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException
-from app.models.config import ProviderConfig, ProviderCreate, ProviderUpdate, ModelCreate, ModelUpdate
+
 from app.json_narrowing import as_bool, as_dict, as_list, as_str
-from app.services import config_service
-from app.services import model_service
+from app.models.config import ModelCreate, ModelUpdate, ProviderConfig, ProviderCreate, ProviderUpdate
+from app.services import config_service, model_service
 
 router = APIRouter(prefix='/api/providers')
 

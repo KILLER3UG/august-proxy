@@ -15,7 +15,9 @@ from typing import Any
 
 from app.json_narrowing import as_dict, as_float
 from app.services import config_service
-from app.services.model_fleet_service import DEFAULTS as FLEET_DEFAULTS, ROLES as FLEET_ROLES, invalidate_cache as invalidate_fleet
+from app.services.model_fleet_service import DEFAULTS as FLEET_DEFAULTS
+from app.services.model_fleet_service import ROLES as FLEET_ROLES
+from app.services.model_fleet_service import invalidate_cache as invalidate_fleet
 
 DEFAULT_BOOT: dict[str, bool] = {
     'db_writer': True,

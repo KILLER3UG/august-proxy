@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from app.models.base import ExtraAllowBaseModel, JsonValue
 
-
 # ── Strict models (the proxy reads/constructs these) ──────────────────────
 
 

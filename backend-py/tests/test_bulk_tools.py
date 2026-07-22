@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-
-from app.services.tool_registrations.bulk_helpers import coerce_str_list, format_bulk_report
 from app.services.tool_registrations import bulk_tools
+from app.services.tool_registrations.bulk_helpers import coerce_str_list, format_bulk_report
 
 
 def test_coerce_str_list_array_and_csv():

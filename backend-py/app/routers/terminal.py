@@ -8,7 +8,9 @@ so JSON keys match attribute names.)
 """
 
 from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException
+
 from app.models.camel_base import CamelModel
 from app.services.workbench import terminal_service
 

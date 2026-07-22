@@ -130,9 +130,9 @@ async def testSkillManageToolValidationSurface(isolatedSkills):
 
 
 def _client():
+    from app.routers import skills as skillsRouter
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from app.routers import skills as skillsRouter
 
     app = FastAPI()
     app.include_router(skillsRouter.router)

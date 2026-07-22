@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from app.services.workbench.checkpoint_service import (
     create_checkpoint,
     list_checkpoints,

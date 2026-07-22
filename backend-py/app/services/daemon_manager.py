@@ -11,14 +11,16 @@ Design: docs/design/cognitive-architecture-v1.md §5.4
 """
 
 from __future__ import annotations
+
 import asyncio
 import hashlib
 import logging
 import time
 from dataclasses import dataclass
 from typing import cast
+
+from app.json_narrowing import as_float, as_int, as_str
 from app.type_aliases import DaemonStatusDict
-from app.json_narrowing import as_str, as_float, as_int
 
 logger = logging.getLogger(__name__)
 MAX_DAEMONS_PER_SESSION = 3

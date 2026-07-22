@@ -12,10 +12,11 @@ brain DB never touch the user's real data directory.
 """
 
 from __future__ import annotations
+
 import pytest
-from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.services.memory_store import list_config_audit
+from httpx import ASGITransport, AsyncClient
 
 _ALLCamelKeys = {
     'enabled',
@@ -60,6 +61,7 @@ async def testGetReturnsDefaultsWhenNoPersisted(client):
 async def testGetReflectsPersistedOverrides(client, isolatedData, monkeypatch):
     """Manually persist a snake_case override → source='persisted' + camelCase config."""
     import json
+
     from app.lib.paths import dataPath
 
     cfgPath = dataPath('config.json')

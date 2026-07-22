@@ -16,11 +16,10 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-import app.services.memory_store as memory_store
-import app.services.db_writer as db_writer
 import app.services.consolidation_daemon as consolidation_daemon
+import app.services.db_writer as db_writer
+import app.services.memory_store as memory_store
+import pytest
 
 
 @pytest.fixture

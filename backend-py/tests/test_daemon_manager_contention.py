@@ -14,9 +14,8 @@ import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 import app.services.daemon_manager as dm
+import pytest
 from app.services.daemon_manager import (
     BACKOFF_CAP,
     BACKOFF_SCHEDULE,

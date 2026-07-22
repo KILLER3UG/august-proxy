@@ -1,8 +1,8 @@
 """Test that Pydantic models correctly serialize snake_case fields as camelCase."""
 
 import pytest
-from app.models.anthropic import AnthropicRequest, ToolUseBlock, ToolResultBlock
-from app.models.openai import ChatCompletionRequest, ToolCall, FunctionDefinition
+from app.models.anthropic import AnthropicRequest, ToolResultBlock, ToolUseBlock
+from app.models.openai import ChatCompletionRequest, FunctionDefinition, ToolCall
 
 
 class TestAliasGenerator:

@@ -11,8 +11,8 @@ Usage:
 """
 
 import argparse
-import sqlite3
 import shutil
+import sqlite3
 import sys
 from pathlib import Path
 

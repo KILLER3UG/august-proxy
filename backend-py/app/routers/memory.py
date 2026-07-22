@@ -7,8 +7,11 @@ JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
+
 from typing import cast
+
 from fastapi import APIRouter, HTTPException
+
 from app.models.camel_base import CamelModel
 from app.services import memory_store
 from app.type_aliases import JsonValue

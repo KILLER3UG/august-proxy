@@ -5,8 +5,10 @@ Port of backend/services/memory/memory-quality.js.
 """
 
 from __future__ import annotations
+
 import re
-from app.json_narrowing import as_str, as_float
+
+from app.json_narrowing import as_float, as_str
 
 
 def scoreQuality(text: str) -> dict[str, object]:

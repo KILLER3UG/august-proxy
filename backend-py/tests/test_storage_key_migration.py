@@ -21,8 +21,8 @@ import sqlite3
 from pathlib import Path
 
 from app.lib.storage_key_migration import (
-    BLOB_KEY_RENAMES,
     _BUSY_TIMEOUT_MS,
+    BLOB_KEY_RENAMES,
     _connect,
     is_already_migrated,
     migrate_storage_keys,

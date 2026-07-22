@@ -13,6 +13,7 @@ on every startup (no-op if migration is already applied).
 """
 
 from __future__ import annotations
+
 import logging
 import sqlite3
 from pathlib import Path

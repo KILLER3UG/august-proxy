@@ -13,7 +13,6 @@ import time
 from typing import Any, AsyncIterator
 
 import pytest
-
 from app.lib.perf_timing import (
     aggregate_summaries,
     clear_traces,
@@ -75,9 +74,9 @@ STUB_PROVIDER = {
 @pytest.fixture
 def stub_workbench(monkeypatch, isolatedData):
     """Stub provider + empty session store; enable AUGUST_PERF_TIMING."""
-    from app.services.workbench import sessions as sessions_mod
-    from app.services import provider_credentials as providerCredsMod
     import app.providers.clients as clientsMod
+    from app.services import provider_credentials as providerCredsMod
+    from app.services.workbench import sessions as sessions_mod
 
     monkeypatch.setenv('AUGUST_PERF_TIMING', '1')
     empty: dict = {}

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 
+from app.adapters import openai as openai_adapter
 from app.adapters.openai_sse import (
     send_simulated_openai_stream,
     write_openai_sse_data,
@@ -10,7 +11,6 @@ from app.adapters.openai_sse import (
     write_openai_sse_error,
     write_openai_sse_headers,
 )
-from app.adapters import openai as openai_adapter
 
 
 def test_write_openai_sse_headers():

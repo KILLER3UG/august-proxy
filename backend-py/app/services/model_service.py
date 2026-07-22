@@ -12,11 +12,14 @@ Key functions:
 """
 
 from __future__ import annotations
+
 import asyncio
 import re
 import time
+
 import httpx
-from app.json_narrowing import as_str, as_list, as_dict, as_int
+
+from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.providers.clients import getClient
 from app.services.workbench.providers import supports_thinking
 
@@ -382,8 +385,8 @@ async def _aggregateModels() -> list[dict[str, object]]:
                 likely_reasoning = bool(
                     re.search(
                         r'(?:\b(?:o1|o3|o4|reasoner|thinking|reasoning)\b|'
-                        r'claude|gpt-5|deepseek|qwen3|qwq|minimax-m2|minimax-m3|'
-                        r'glm-4|glm-5|kimi-k2|grok-[34]|gemini-3)',
+                        r'claude|gpt-5|deepseek|qwen3|qwq|'
+                        r'glm-4|glm-5|kimi-k2|grok-[34])',
                         mid_l,
                         re.IGNORECASE,
                     )

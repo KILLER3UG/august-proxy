@@ -1,10 +1,11 @@
 """Tests for the sub-agent orchestrator."""
 
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from app.services.agent_message_bus import AgentMessageBus
-from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest, SubagentHandle
+from app.services.subagent_orchestrator import SubagentHandle, SubagentOrchestrator, SubagentSpawnRequest
 
 
 @pytest.fixture

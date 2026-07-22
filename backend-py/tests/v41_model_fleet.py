@@ -1,6 +1,7 @@
 """v4.1 — Test /api/config/model-fleet endpoints (Model Fleet UI gap)."""
 
 import json
+
 import pytest
 
 
@@ -19,8 +20,8 @@ def _isolated(tmp_path, monkeypatch):
 
 def testGetReturnsDefaultsWhenConfigIsEmpty():
     """GET returns the fleet merged with defaults if config.json has no model_fleet."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get('/api/config/model-fleet')
@@ -34,10 +35,11 @@ def testGetReturnsDefaultsWhenConfigIsEmpty():
 
 def testGetMergesUserOverridesWithDefaults():
     """A user-set value overrides the default; unset roles fall back to defaults."""
-    from fastapi.testclient import TestClient
-    from app.main import app
-    from app.lib.paths import dataPath
     import json
+
+    from app.lib.paths import dataPath
+    from app.main import app
+    from fastapi.testclient import TestClient
 
     cfgPath = dataPath('config.json')
     cfgPath.write_text(json.dumps({'auxiliary': {'model_fleet': {'cerebellum': 'gpt-4o-mini'}}}))
@@ -51,9 +53,9 @@ def testGetMergesUserOverridesWithDefaults():
 
 def testPutPartialUpdatePersists():
     """PUT with a single role persists to config.json; other roles keep their values."""
-    from fastapi.testclient import TestClient
-    from app.main import app
     from app.lib.paths import dataPath
+    from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.put('/api/config/model-fleet', json={'cerebellum': 'gpt-4o-mini'})
@@ -65,8 +67,8 @@ def testPutPartialUpdatePersists():
 
 def testPutAllowsEmptyCortex():
     """Empty cortex = "use session model" is valid."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.put('/api/config/model-fleet', json={'cortex': ''})
@@ -76,8 +78,8 @@ def testPutAllowsEmptyCortex():
 
 def testPutRejectsUnknownRole():
     """PUT must reject roles outside the four documented ones."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.put('/api/config/model-fleet', json={'thalamus': 'x'})
@@ -86,8 +88,8 @@ def testPutRejectsUnknownRole():
 
 def testPutRejectsNonStringValue():
     """Each role value must be a string (or omitted for partial-update semantics)."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.put('/api/config/model-fleet', json={'cerebellum': 42})

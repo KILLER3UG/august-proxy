@@ -1,6 +1,7 @@
 """Desktop asset updater — manages web-dist and other bundled assets."""
 
 from __future__ import annotations
+
 from pathlib import Path
 
 

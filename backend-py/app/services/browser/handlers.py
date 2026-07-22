@@ -9,17 +9,19 @@ Result shape: ``{ "status": "success" | "error", ... }``.
 """
 
 from __future__ import annotations
+
 import json
 import time
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
+
 from app.config import settings
+from app.json_narrowing import as_dict
 from app.lib.paths import dataPath
 from app.services.browser.element_resolver import resolveLocator
 from app.services.browser.session_manager import BrowserUnavailableError, getOrCreateSession
 from app.services.browser.snapshot import buildCompactSnapshot, runSnapshot
 from app.services.workbench.context import currentSessionId
-from app.json_narrowing import as_dict
 
 if TYPE_CHECKING:
     from playwright.async_api import Page

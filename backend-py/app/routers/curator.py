@@ -1,7 +1,9 @@
 """Curator API routes — usage telemetry, pin, archive, restore, and manual run."""
 
 from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException, Request
+
 from app.services.skills.curator import SkillCurator
 
 router = APIRouter(prefix='/api/curator')

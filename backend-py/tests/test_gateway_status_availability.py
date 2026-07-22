@@ -1,5 +1,5 @@
-from httpx import ASGITransport, AsyncClient
 from app.main import app
+from httpx import ASGITransport, AsyncClient
 
 
 async def test_gateway_status_includes_platforms_and_install_hint():

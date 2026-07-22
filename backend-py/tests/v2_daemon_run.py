@@ -1,9 +1,10 @@
 """v2 — Test that daemons actually invoke the Cerebellum model."""
 
 import asyncio
+
 import pytest
 from app.services import daemon_manager
-from app.services.tool_registry import setDaemonContext, clearDaemonContext
+from app.services.tool_registry import clearDaemonContext, setDaemonContext
 
 
 @pytest.fixture(autouse=True)

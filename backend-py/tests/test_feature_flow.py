@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
+from app.routers import config as config_router
+from app.routers import monitor_feature_flow
 from app.services.feature_flow import (
     FEATURE_INVENTORY,
     emit_feature_flow,
     feature_flow_bus,
     list_feature_inventory,
 )
-from app.routers import monitor_feature_flow, config as config_router
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def test_inventory_has_core_features():
@@ -112,7 +112,7 @@ def test_maybe_inject_aug_into_body_off_by_default(isolatedData):
 
 def test_maybe_inject_aug_into_body_when_enabled(isolatedData, tmp_path, monkeypatch):
     from app.routers import proxy as proxy_mod
-    from app.services import config_service, aug_directive_service
+    from app.services import aug_directive_service, config_service
 
     cfg = config_service.getConfig()
     cfg['injectAugOnProxy'] = True
@@ -212,9 +212,9 @@ def _enable_proxy_auth(isolatedData, monkeypatch, key: str = 'test-key') -> None
 
 def test_http_inject_aug_chat_completions(isolatedData, tmp_path, monkeypatch):
     """POST /v1/chat/completions injects AUG.md into the body seen by the adapter."""
-    from app.routers import proxy as proxy_mod
-    from app.services import config_service, aug_directive_service
     from app.adapters import openai as openai_adapter
+    from app.routers import proxy as proxy_mod
+    from app.services import aug_directive_service, config_service
 
     _enable_proxy_auth(isolatedData, monkeypatch)
     cfg = config_service.getConfig()
@@ -255,9 +255,9 @@ def test_http_inject_aug_chat_completions(isolatedData, tmp_path, monkeypatch):
 
 def test_http_inject_aug_messages(isolatedData, tmp_path, monkeypatch):
     """POST /v1/messages injects AUG.md into Anthropic system field."""
-    from app.routers import proxy as proxy_mod
-    from app.services import config_service, aug_directive_service
     from app.adapters import anthropic as anthropic_adapter
+    from app.routers import proxy as proxy_mod
+    from app.services import aug_directive_service, config_service
 
     _enable_proxy_auth(isolatedData, monkeypatch)
     cfg = config_service.getConfig()
@@ -308,9 +308,9 @@ def test_http_inject_aug_messages(isolatedData, tmp_path, monkeypatch):
 
 def test_http_no_inject_when_disabled(isolatedData, tmp_path, monkeypatch):
     """When injectAugOnProxy is false, chat completions body is unchanged."""
-    from app.routers import proxy as proxy_mod
-    from app.services import config_service, aug_directive_service
     from app.adapters import openai as openai_adapter
+    from app.routers import proxy as proxy_mod
+    from app.services import aug_directive_service, config_service
 
     _enable_proxy_auth(isolatedData, monkeypatch)
     cfg = config_service.getConfig()

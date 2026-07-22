@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+
 import pytest
 from app.services import consolidation_daemon
 from app.services.memory_store import _conn, init

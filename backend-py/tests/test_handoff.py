@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.main import app
 from app.services.workbench import sessions as wb_sessions
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

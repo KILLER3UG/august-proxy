@@ -10,7 +10,9 @@ one valid round-trip plus one missing-field test.
 """
 
 from __future__ import annotations
+
 import json
+
 import pytest
 from app.type_aliases import (
     AliasDict,

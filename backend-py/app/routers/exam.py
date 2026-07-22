@@ -6,11 +6,14 @@ client-supplied correct_index. Questions are served one at a time as banners.
 """
 
 from __future__ import annotations
+
 import json
+
 from fastapi import APIRouter, HTTPException
-from app.json_narrowing import as_str, as_int, as_list
-from app.services.memory_store import _conn
+
+from app.json_narrowing import as_int, as_list, as_str
 from app.services import exam_service
+from app.services.memory_store import _conn
 
 router = APIRouter(prefix='/api/exam')
 

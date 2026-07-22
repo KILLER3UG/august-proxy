@@ -68,8 +68,8 @@ def _iso(tmp_path, monkeypatch):
 
 
 def test_session_export_config_toggle(_iso, monkeypatch):
-    from app.services.workbench import sessions as sess
     from app.lib.paths import dataPath
+    from app.services.workbench import sessions as sess
 
     monkeypatch.delenv('AUGUST_SESSION_JSON_EXPORT', raising=False)
     assert sess.is_session_json_export_enabled() is False
@@ -105,8 +105,8 @@ def test_session_export_config_toggle(_iso, monkeypatch):
 
 
 def test_parallel_policy_single_stack():
-    from app.services.workbench.parallel_tools import is_parallel_safe
     from app.services.workbench.managed_tool_policy import is_parallel_safe as policy_safe
+    from app.services.workbench.parallel_tools import is_parallel_safe
 
     assert is_parallel_safe('web_search') is True
     assert is_parallel_safe('list_skills') is True

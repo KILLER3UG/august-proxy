@@ -3,10 +3,12 @@ Settings — loads config.json, providers.json, and .env into Pydantic models.
 """
 
 from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
 from typing import Dict
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

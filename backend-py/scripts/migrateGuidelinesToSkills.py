@@ -11,6 +11,7 @@ Environment: set AUGUST_DATA_DIR if needed (default: <project>/data).
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -18,8 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def main() -> None:
-    from app.services.memory_store import get_memory, save_memory
     from app.services import skill_service
+    from app.services.memory_store import get_memory, save_memory
 
     GUIDELINES_KEY = 'learned_guidelines'
     guidelines = get_memory(GUIDELINES_KEY) or []

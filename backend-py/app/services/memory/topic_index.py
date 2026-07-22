@@ -5,6 +5,7 @@ Port of backend/services/memory/topic-index.js (213 lines).
 """
 
 from __future__ import annotations
+
 from app.services.memory.brain_orchestrator import classifyTask
 from app.services.memory_store import index_session_topic as _index
 

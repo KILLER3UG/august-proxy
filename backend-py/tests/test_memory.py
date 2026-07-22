@@ -1,54 +1,54 @@
 """Memory system unit tests."""
 
 import pytest
-from app.services.memory_store import (
-    init,
-    close,
-    save_memory,
-    get_memory,
-    delete_memory,
-    list_memory,
-    search_memory,
-    save_fact,
-    get_fact,
-    search_facts,
-    list_facts,
-    delete_fact,
-    save_proposal,
-    get_proposal,
-    list_proposals,
-    decide_proposal,
-    record_lifecycle,
-    list_lifecycle,
-    index_session_topic,
-    get_session_topic,
-    list_topics,
-    save_session,
-    get_session,
-    list_sessions,
-    delete_session_cascade,
-    delete_session_record,
-    save_message,
-    get_messages,
-    record_usage,
-    get_usage,
-    get_stats,
-    vacuum,
-    write_timeline_event,
-)
-from app.services.memory.brain_orchestrator import getBrainConfig, classifyTask, riskForTask, extractTextFromMessages
 from app.adapters.anthropic import normalizeSystemBlocks, systemBlocksToText
+from app.services.memory.brain_orchestrator import classifyTask, extractTextFromMessages, getBrainConfig, riskForTask
 from app.services.memory.context_builder import buildSlimCoreContext
 from app.services.memory.context_compressor import (
+    DEFAULT_SUMMARY_MARKER,
+    _extractSummaryText,
+    _isSummaryMessage,
+    buildSummaryMessage,
     compressMessages,
     localSummarize,
-    buildSummaryMessage,
-    _isSummaryMessage,
-    _extractSummaryText,
-    DEFAULT_SUMMARY_MARKER,
 )
 from app.services.memory.context_scrubber import ContextScrubber, stripMemoryBlocks
 from app.services.memory.topic_index import classifyTopic
+from app.services.memory_store import (
+    close,
+    decide_proposal,
+    delete_fact,
+    delete_memory,
+    delete_session_cascade,
+    delete_session_record,
+    get_fact,
+    get_memory,
+    get_messages,
+    get_proposal,
+    get_session,
+    get_session_topic,
+    get_stats,
+    get_usage,
+    index_session_topic,
+    init,
+    list_facts,
+    list_lifecycle,
+    list_memory,
+    list_proposals,
+    list_sessions,
+    list_topics,
+    record_lifecycle,
+    record_usage,
+    save_fact,
+    save_memory,
+    save_message,
+    save_proposal,
+    save_session,
+    search_facts,
+    search_memory,
+    vacuum,
+    write_timeline_event,
+)
 
 
 @pytest.fixture(autouse=True)

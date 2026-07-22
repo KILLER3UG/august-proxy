@@ -5,9 +5,11 @@ Port of backend/services/memory/tool-failure-memory.js.
 """
 
 from __future__ import annotations
-from app.json_narrowing import as_str, as_dict
+
 from datetime import datetime, timezone
-from app.services.memory_store import save_memory, get_memory
+
+from app.json_narrowing import as_dict, as_str
+from app.services.memory_store import get_memory, save_memory
 
 _FAILURESKey = 'tool_failures'
 

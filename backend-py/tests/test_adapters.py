@@ -1,51 +1,51 @@
 """Adapter unit tests."""
 
 import pytest
-from app.adapters.tool_classification import (
-    getToolNameFromOpenaiTool,
-    getToolNameFromAnthropicTool,
-    classifyOpenaiToolCalls,
-    classifyAnthropicToolUses,
-)
-from app.adapters.proxy_tools import (
-    is_managed_web_tool_name,
-    is_managed_bash_tool_name,
-    openai_to_anthropic_tool_definition,
-    anthropic_to_openai_tool_definition,
-    get_managed_anthropic_web_tool_definitions,
-    sanitize_anthropic_tool_definition,
-    sanitize_tool_schema,
-    dedupe_and_canonicalize_anthropic_tools,
-    get_tool_definition_name,
-    append_missing_tools,
-    is_browser_automation_tool_name,
-    format_managed_web_result,
-)
 from app.adapters import proxy_tool_defs
-from app.adapters.openai import (
-    deriveSessionIdFromOpenai,
-    writeOpenaiSseData,
-    writeOpenaiSseDone,
-    createOpenaiStreamAccumulator,
-    accumulateOpenaiChunk,
-    buildOpenaiAggregatedFromStream,
-    isOpenaiToolResultError,
-)
 from app.adapters.anthropic import (
-    isClaudeFamilyModel,
-    resolveClaudePublicModelAlias,
-    resolveClaudeClientFacingModel,
-    normalizeSystemBlocks,
-    systemBlocksToText,
     buildAnthropicSystemBlocks,
-    translateMessages,
-    translateMessagesToAnthropic,
     buildOpenaiRequest,
-    writeAnthropicSseData,
-    sendSimulatedAnthropicStream,
-    streamOpenaiDeltaAsAnthropic,
     createOpenaiToAnthropicStreamState,
     handleCountTokens,
+    isClaudeFamilyModel,
+    normalizeSystemBlocks,
+    resolveClaudeClientFacingModel,
+    resolveClaudePublicModelAlias,
+    sendSimulatedAnthropicStream,
+    streamOpenaiDeltaAsAnthropic,
+    systemBlocksToText,
+    translateMessages,
+    translateMessagesToAnthropic,
+    writeAnthropicSseData,
+)
+from app.adapters.openai import (
+    accumulateOpenaiChunk,
+    buildOpenaiAggregatedFromStream,
+    createOpenaiStreamAccumulator,
+    deriveSessionIdFromOpenai,
+    isOpenaiToolResultError,
+    writeOpenaiSseData,
+    writeOpenaiSseDone,
+)
+from app.adapters.proxy_tools import (
+    anthropic_to_openai_tool_definition,
+    append_missing_tools,
+    dedupe_and_canonicalize_anthropic_tools,
+    format_managed_web_result,
+    get_managed_anthropic_web_tool_definitions,
+    get_tool_definition_name,
+    is_browser_automation_tool_name,
+    is_managed_bash_tool_name,
+    is_managed_web_tool_name,
+    openai_to_anthropic_tool_definition,
+    sanitize_anthropic_tool_definition,
+    sanitize_tool_schema,
+)
+from app.adapters.tool_classification import (
+    classifyAnthropicToolUses,
+    classifyOpenaiToolCalls,
+    getToolNameFromAnthropicTool,
+    getToolNameFromOpenaiTool,
 )
 
 

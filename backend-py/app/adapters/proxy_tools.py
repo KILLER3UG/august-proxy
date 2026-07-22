@@ -12,14 +12,15 @@ This module provides:
 """
 
 from __future__ import annotations
+
 import json
 import logging
 import threading
 from typing import Callable
 
 from app.adapters.proxy_tool_defs import (
-    append_missing_tools,
     anthropic_to_openai_tool_definition,
+    append_missing_tools,
     appendMissingAnthropicTools,
     appendMissingOpenaiTools,
     dedupe_and_canonicalize_anthropic_tools,

@@ -7,6 +7,7 @@ the frontend's ConversationsResponse type.
 """
 
 from __future__ import annotations
+
 from app.json_narrowing import as_str
 from app.services.logger import getFilteredRequests, getRequestDetail
 

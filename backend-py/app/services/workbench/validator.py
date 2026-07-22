@@ -6,6 +6,7 @@ Port of backend/services/workbench/validator.js (136 lines).
 """
 
 from __future__ import annotations
+
 import json
 import re
 

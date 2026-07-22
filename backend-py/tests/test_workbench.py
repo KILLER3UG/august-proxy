@@ -1,31 +1,31 @@
 """Workbench service unit tests."""
 
 import pytest
-from app.services.workbench.workbench import (
-    createWorkbenchSession,
-    getWorkbenchSession,
-    listWorkbenchSessions,
-    summarizeSession,
-    deleteWorkbenchSession,
-    normalizeGuardMode,
-    isPlanModeBlocked,
-    buildSystemPrompt,
-    submitPlan,
-    approveWorkbenchPlan,
-    rejectWorkbenchPlan,
-    createPendingMutation,
-    consumePendingMutation,
-    setWorkbenchGoal,
-    getWorkbenchGoalStatus,
-    getWorkbenchActivity,
-    resolveEffectiveEffort,
-    effortToThinkingBudget,
-    effortToOpenaiReasoningEffort,
-)
 from app.services.workbench.managed_tool_policy import isManagedToolParallelSafe, parseOpenaiToolArgs
+from app.services.workbench.selfheal import applySelfHealToMessages, buildHints, detectError, enhanceToolResult
 from app.services.workbench.tool_executor import executeToolBatch
-from app.services.workbench.selfheal import detectError, buildHints, enhanceToolResult, applySelfHealToMessages
-from app.services.workbench.validator import validateToolArguments, buildValidationErrorToolMessage
+from app.services.workbench.validator import buildValidationErrorToolMessage, validateToolArguments
+from app.services.workbench.workbench import (
+    approveWorkbenchPlan,
+    buildSystemPrompt,
+    consumePendingMutation,
+    createPendingMutation,
+    createWorkbenchSession,
+    deleteWorkbenchSession,
+    effortToOpenaiReasoningEffort,
+    effortToThinkingBudget,
+    getWorkbenchActivity,
+    getWorkbenchGoalStatus,
+    getWorkbenchSession,
+    isPlanModeBlocked,
+    listWorkbenchSessions,
+    normalizeGuardMode,
+    rejectWorkbenchPlan,
+    resolveEffectiveEffort,
+    setWorkbenchGoal,
+    submitPlan,
+    summarizeSession,
+)
 
 
 class TestSessionManagement:
@@ -451,8 +451,8 @@ class TestAnthropicWorkbenchStreaming:
 
     async def testModernClaudeGetsEffortBudgetTokens(self, monkeypatch):
         """Effort dropdown must size Anthropic thinking.budget_tokens."""
-        from app.services.workbench.workbench import _callAnthropicWorkbench
         from app.services.workbench.effort import resolve_completion_limits
+        from app.services.workbench.workbench import _callAnthropicWorkbench
 
         capturedBody: dict = {}
 
@@ -536,9 +536,8 @@ class TestOpenaiWorkbenchThinkingToggle:
         return _FakeClient()
 
     async def testReasoningDroppedWhenThinkingDisabled(self, monkeypatch):
-        from app.services.workbench.providers import call_openai_workbench
-
         import app.providers.clients as clients
+        from app.services.workbench.providers import call_openai_workbench
 
         monkeypatch.setattr(clients, 'getClient', lambda provider: self._fake_client('secret reasoning trace'))
         emitted: list[dict] = []
@@ -562,9 +561,8 @@ class TestOpenaiWorkbenchThinkingToggle:
         assert msg.get('reasoning') == 'secret reasoning trace'
 
     async def testReasoningKeptWhenThinkingEnabled(self, monkeypatch):
-        from app.services.workbench.providers import call_openai_workbench
-
         import app.providers.clients as clients
+        from app.services.workbench.providers import call_openai_workbench
 
         monkeypatch.setattr(clients, 'getClient', lambda provider: self._fake_client('visible reasoning trace'))
         emitted: list[dict] = []
@@ -624,7 +622,7 @@ class TestOpenaiWorkbenchThinkingToggle:
         context_tokens = the input_tokens of the FINAL provider sub-call in
         the turn (the true current context fill), not the cumulative sum."""
         from app.services.workbench import workbench as wb
-        from app.services.workbench.workbench import sendWorkbenchMessageStream, createWorkbenchSession
+        from app.services.workbench.workbench import createWorkbenchSession, sendWorkbenchMessageStream
 
         session = createWorkbenchSession(provider='anthropic', guardMode='full')
 

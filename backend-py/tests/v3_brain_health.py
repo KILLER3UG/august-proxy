@@ -13,8 +13,8 @@ def _initDb():
 
 def testHealthResponseHasPhasesArray():
     """/api/brain/health returns a 'phases' array covering the cognitive layers."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get('/api/brain/health')
@@ -27,8 +27,8 @@ def testHealthResponseHasPhasesArray():
 
 def testHealthEachPhaseHasRequiredFields():
     """Each phase has layer, flag, flag_value, status, detail, last_check_at."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get('/api/brain/health')
@@ -46,8 +46,8 @@ def testHealthEachPhaseHasRequiredFields():
 
 def testHealthCoversRequiredLayers():
     """All 12 expected layers from the design doc are present."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get('/api/brain/health')

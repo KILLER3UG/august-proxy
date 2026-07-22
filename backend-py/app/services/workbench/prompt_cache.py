@@ -5,6 +5,7 @@ Keyed by session ID with 5-minute TTL. Max 100 sessions.
 """
 
 from __future__ import annotations
+
 import time
 from collections import OrderedDict
 

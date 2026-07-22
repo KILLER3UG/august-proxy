@@ -27,7 +27,9 @@ Response shapes (match the frontend types):
 """
 
 from __future__ import annotations
+
 from typing import cast
+
 from app.config import settings
 from app.services import config_service
 from app.services.memory.brain_orchestrator import DEFAULT_FEATURES

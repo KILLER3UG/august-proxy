@@ -35,7 +35,7 @@ def test_save_auto_sets_source_and_user_cap_preference(brain_ready):
 
 
 def test_enrichment_never_uses_json_as_title():
-    from app.services.memory.auto_memory import present_memory_fields, enrich_memory_for_model
+    from app.services.memory.auto_memory import enrich_memory_for_model, present_memory_fields
 
     fields = present_memory_fields(
         'tool_failure_1',

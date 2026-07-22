@@ -102,6 +102,9 @@ nul
 # ZCode command cache (local only, never commit)
 .commandcode/
 
+# Qoder agent cache (local only, never commit)
+.qoder/
+
 frontend/desktop/src-tauri/resources/backend-runtime.json
 frontend/desktop/src-tauri/resources/backend-runtime.stamp
 

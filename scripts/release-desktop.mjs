@@ -7,6 +7,7 @@
 //   node scripts/release-desktop.mjs patch
 //   node scripts/release-desktop.mjs minor
 //   node scripts/release-desktop.mjs --publish
+//   node scripts/release-desktop.mjs patch --dry-run   (preview only, no changes)
 //
 // The script:
 //   1) builds the web UI
@@ -36,6 +37,7 @@ const manifestPath = join(releaseDir, 'august-desktop-manifest.json');
 const args = new Set(process.argv.slice(2));
 const publish = args.has('--publish');
 const buildTauri = args.has('--tauri');
+const dryRun = args.has('--dry-run');
 const bump = getBumpFromArgs();
 const version = getVersionFromArgs() || (bump ? bumpVersion(await readVersion(), bump) : await readVersion());
 
@@ -330,6 +332,29 @@ async function buildTauriApp() {
 }
 
 async function main() {
+    if (dryRun) {
+        console.log('[release] DRY RUN — no files will be modified, no builds executed.\n');
+        console.log(`  Version:        ${version}${bump ? ` (${bump} bump from ${await readVersion()})` : ''}`);
+        console.log(`  Publish:        ${publish ? 'yes (gh release create/upload)' : 'no'}`);
+        console.log(`  Tauri build:    ${buildTauri ? 'yes' : 'no'}`);
+        console.log(`  Release dir:   ${releaseDir}`);
+        console.log(`  Web zip:        ${join(releaseDir, `web-${version}.zip`)}`);
+        console.log(`  Manifest:       ${manifestPath}`);
+        if (existsSync(backendDir)) console.log(`  Backend zip:    ${join(releaseDir, `backend-${version}.zip`)}`);
+        console.log('\n  Steps that would run:');
+        if (bump || args.has('--version') || [...args].some((a) => a.startsWith('--version='))) {
+            console.log('    1. Sync version across package.json, desktop pkg, tauri.conf.json, Cargo.toml');
+        }
+        console.log('    2. npm run build:web (Vite production build)');
+        if (buildTauri) console.log('    3. Download node binaries + prepare backend + tauri build');
+        console.log('    4. Zip web-dist and compute sha256');
+        if (existsSync(backendDir)) console.log('    5. Zip legacy backend');
+        console.log('    6. Write august-desktop-manifest.json');
+        if (publish) console.log('    7. gh release create/upload with assets');
+        console.log('\n[release] DRY RUN complete. Remove --dry-run to execute.');
+        return;
+    }
+
     if (bump || args.has('--version') || [...args].some((a) => a.startsWith('--version='))) {
         await syncPackageVersions(version);
     }

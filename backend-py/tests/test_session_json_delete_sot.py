@@ -19,15 +19,15 @@ def _iso(tmp_path, monkeypatch):
 
 
 def test_json_delete_history_loads_from_sqlite():
+    from app.lib.paths import dataPath
     from app.services import memory_store
     from app.services.memory_store import save_workbench_session_sot
     from app.services.workbench.sessions import (
         WorkbenchSession,
-        reload_sessions_from_sot,
         _sessions,
+        reload_sessions_from_sot,
         save_sessions,
     )
-    from app.lib.paths import dataPath
 
     memory_store.init()
     sess = WorkbenchSession(
@@ -67,7 +67,7 @@ def test_vector_graph_sqlite_sot(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, 'dataDir', tmp_path)
     settings.reload()
     from app.services import memory_store
-    from app.services.memory import vector_db, graph_memory
+    from app.services.memory import graph_memory, vector_db
 
     memory_store.init()
     # Reset migration flags

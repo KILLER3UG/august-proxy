@@ -16,8 +16,9 @@ pass — rotate-token is the user-facing control if a token leaks.
 from __future__ import annotations
 
 from fastapi import APIRouter, Header, HTTPException, Request
-from app.models.camel_base import CamelModel
+
 from app.json_narrowing import as_str
+from app.models.camel_base import CamelModel
 from app.services import automations_store as store
 from app.services.automations_schedule import system_local_timezone
 

@@ -15,9 +15,10 @@ from __future__ import annotations
 async def takeScreenshot() -> dict[str, object]:
     """Capture the real desktop as a base64-encoded PNG."""
     try:
-        import pyautogui
-        import io
         import base64
+        import io
+
+        import pyautogui
 
         screenshot = pyautogui.screenshot()
         buf = io.BytesIO()

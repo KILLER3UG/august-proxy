@@ -1,6 +1,7 @@
 """v4.2 — Test /api/config/live endpoints (STT/TTS Live settings)."""
 
 import json
+
 import pytest
 
 
@@ -19,8 +20,8 @@ def _isolated(tmp_path, monkeypatch):
 
 def testGetReturnsDefaultsWhenConfigIsEmpty():
     """GET returns the live config merged with defaults."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get('/api/config/live')
@@ -34,9 +35,9 @@ def testGetReturnsDefaultsWhenConfigIsEmpty():
 
 
 def testGetMergesUserOverridesWithDefaults():
-    from fastapi.testclient import TestClient
-    from app.main import app
     from app.lib.paths import dataPath
+    from app.main import app
+    from fastapi.testclient import TestClient
 
     dataPath('config.json').parent.mkdir(exist_ok=True)
     dataPath('config.json').write_text(
@@ -51,9 +52,9 @@ def testGetMergesUserOverridesWithDefaults():
 
 
 def testPutPartialUpdatePersists():
-    from fastapi.testclient import TestClient
-    from app.main import app
     from app.lib.paths import dataPath
+    from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.put('/api/config/live', json={'ttsProvider': 'elevenlabs', 'ttsVoice': 'alloy'})
@@ -66,8 +67,8 @@ def testPutPartialUpdatePersists():
 
 def testPutAllowsEmptyProviderUseBrowserDefault():
     """Empty provider field = "use browser default" per spec §14."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.put('/api/config/live', json={'sttProvider': ''})
@@ -76,8 +77,8 @@ def testPutAllowsEmptyProviderUseBrowserDefault():
 
 
 def testPutRejectsUnknownField():
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.put('/api/config/live', json={'invented': 'x'})
@@ -85,8 +86,8 @@ def testPutRejectsUnknownField():
 
 
 def testPutRejectsNonStringValue():
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.put('/api/config/live', json={'sttProvider': 42})

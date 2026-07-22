@@ -3,6 +3,7 @@ Filesystem path access control.
 """
 
 from __future__ import annotations
+
 from pathlib import Path
 
 ALLOWED_ROOTS: list[Path] = []

@@ -20,9 +20,8 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
-
 import app.services.memory_store as memoryStore
+import pytest
 
 
 @pytest.fixture

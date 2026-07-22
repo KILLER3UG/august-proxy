@@ -10,7 +10,9 @@ Connection helpers: app.services.memory_conn
 """
 from __future__ import annotations
 
-from app.services.memory_conn import close, conn as _conn, db_path as _db_path
+from app.services.memory_conn import close
+from app.services.memory_conn import conn as _conn
+from app.services.memory_conn import db_path as _db_path
 from app.services.memory_store.brain import brain_query
 from app.services.memory_store.kv import (
     _fts_match_query,
@@ -42,9 +44,9 @@ from app.services.memory_store.rest import (
     list_lifecycle,
     list_proposals,
     list_topics,
+    list_usage,
     record_config_audit,
     record_lifecycle,
-    list_usage,
     record_usage,
     resolve_sot_session_id,
     save_fact,

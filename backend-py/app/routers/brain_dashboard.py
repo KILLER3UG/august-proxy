@@ -20,12 +20,14 @@ Endpoints (all GET):
 """
 
 from __future__ import annotations
+
 import time
+
 from fastapi import APIRouter, Query
-from app.services import memory_store
-from app.services.memory import context_builder
-from app.services.memory import vector_db
+
 from app.json_narrowing import as_dict, as_float, as_int, as_list, as_str
+from app.services import memory_store
+from app.services.memory import context_builder, vector_db
 
 router = APIRouter(prefix='/api/brain')
 
@@ -133,9 +135,9 @@ async def brainLearning() -> dict[str, object]:
     The legacy `{status, lastStartedAt, lastTopic}` shape is preserved
     as a top-level `backgroundReview` field for backward compatibility.
     """
-    from app.services.heuristics_service import listHeuristics
     from app.services import consolidation_daemon as _cd
     from app.services import delta_engine as _de
+    from app.services.heuristics_service import listHeuristics
 
     heuristics = listHeuristics()
     coreFacts = memory_store.get_memory('coreMemory')

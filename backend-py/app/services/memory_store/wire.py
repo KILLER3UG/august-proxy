@@ -1,10 +1,13 @@
 """Row/wire helpers for the brain SQLite store."""
 from __future__ import annotations
+
 import json
 import sqlite3
 from typing import cast
+
 from app.adapters.case_converters import snakeToCamel
 from app.type_aliases import JsonValue, SessionRecord
+
 
 def _q(value: object) -> str:
     """Quote a value for SQL (sync helper)."""

@@ -47,7 +47,7 @@ def test_messages_fts_on_write(_iso):
 
 def test_json_migrate_retires_file(_iso):
     from app.lib.paths import dataPath
-    from app.services.workbench.sessions import migrate_json_sessions_to_sqlite, _sessions
+    from app.services.workbench.sessions import _sessions, migrate_json_sessions_to_sqlite
 
     path = dataPath('workbench-sessions.json')
     path.write_text(
@@ -75,7 +75,8 @@ def test_json_migrate_retires_file(_iso):
 
 
 def test_delta_consent_persists(_iso):
-    from app.services import memory_store, delta_engine as de
+    from app.services import delta_engine as de
+    from app.services import memory_store
 
     memory_store.init()
     de._consent_granted = None
@@ -106,7 +107,7 @@ def test_automation_job_types(_iso):
 
 
 def test_proxy_silent_stats_exportable():
-    from app.adapters.proxy_tools import get_proxy_silent_stats, _bump_silent
+    from app.adapters.proxy_tools import _bump_silent, get_proxy_silent_stats
 
     before = get_proxy_silent_stats()
     _bump_silent('log_activity')
@@ -115,8 +116,8 @@ def test_proxy_silent_stats_exportable():
 
 
 def test_selfcheck_tables_exist(_iso):
-    from app.services import memory_store
     from app.routers.brain import _runSelfcheck
+    from app.services import memory_store
 
     memory_store.init()
     for key in ('execution_state', 'scratchpad', 'blackboard', 'vector_memory', 'graph_memory'):

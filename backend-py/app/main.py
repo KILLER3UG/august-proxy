@@ -6,15 +6,18 @@ This is the Python equivalent of the original Node.js index.js.
 """
 
 from __future__ import annotations
+
 import asyncio
 import logging
 import os
 import time
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
 from app.config import settings
 
 
@@ -214,45 +217,45 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
-from app.routers import config as configRoutes  # noqa: E402
-from app.routers import providers as providersRoutes  # noqa: E402
-from app.routers import skills as skillsRoutes  # noqa: E402
-from app.routers import models as modelsRoutes  # noqa: E402
-from app.routers import proxy as proxyRoutes  # noqa: E402
-from app.routers import workbench as workbenchRoutes  # noqa: E402
-from app.routers import sessions as sessionsRoutes  # noqa: E402
-from app.routers import memory as memoryRoutes  # noqa: E402
-from app.routers import audit as auditRoutes  # noqa: E402
-from app.routers import usage as usageRoutes  # noqa: E402
 from app.routers import agents as agentsRoutes  # noqa: E402
-from app.routers import mcp as mcpRoutes  # noqa: E402
-from app.routers import cron as cronRoutes  # noqa: E402
-from app.routers import git as gitRoutes  # noqa: E402
-from app.routers import desktop_automation as desktopAutomationRoutes  # noqa: E402
-from app.routers import browser as browserRoutes  # noqa: E402
-from app.routers import terminal as terminalRoutes  # noqa: E402
-from app.routers import terminal_routes as terminalWsRoutes  # noqa: E402
-from app.routers import manage as manageRoutes  # noqa: E402
-from app.routers import monitoring as monitoringRoutes  # noqa: E402
-from app.routers import monitor_feature_flow as monitorFeatureFlowRoutes  # noqa: E402
-from app.routers import august as augustRoutes  # noqa: E402
-from app.routers import gateway as gatewayRoutes  # noqa: E402
-from app.routers import curator as curatorRoutes  # noqa: E402
-from app.routers import brain_dashboard as brainDashboardRoutes  # noqa: E402
+from app.routers import audit as auditRoutes  # noqa: E402
 from app.routers import aug as augRoutes  # noqa: E402
+from app.routers import august as augustRoutes  # noqa: E402
+from app.routers import automations as automationsRoutes  # noqa: E402
 from app.routers import brain as brainRoutes  # noqa: E402
 from app.routers import brain_activity as brainActivityRoutes  # noqa: E402
 from app.routers import brain_config as brainConfigRoutes  # noqa: E402
-from app.routers import exam as examRoutes  # noqa: E402
-from app.routers import live as liveRoutes  # noqa: E402
+from app.routers import brain_dashboard as brainDashboardRoutes  # noqa: E402
+from app.routers import browser as browserRoutes  # noqa: E402
 from app.routers import calendar as calendarRoutes  # noqa: E402
-from app.routers import subagent as subagentRoutes  # noqa: E402
-from app.routers import service_connections as serviceConnectionsRoutes  # noqa: E402
-from app.routers import automations as automationsRoutes  # noqa: E402
+from app.routers import config as configRoutes  # noqa: E402
+from app.routers import cron as cronRoutes  # noqa: E402
+from app.routers import curator as curatorRoutes  # noqa: E402
+from app.routers import desktop_automation as desktopAutomationRoutes  # noqa: E402
+from app.routers import exam as examRoutes  # noqa: E402
+from app.routers import gateway as gatewayRoutes  # noqa: E402
+from app.routers import git as gitRoutes  # noqa: E402
+from app.routers import live as liveRoutes  # noqa: E402
+from app.routers import manage as manageRoutes  # noqa: E402
+from app.routers import mcp as mcpRoutes  # noqa: E402
+from app.routers import memory as memoryRoutes  # noqa: E402
+from app.routers import models as modelsRoutes  # noqa: E402
+from app.routers import monitor_feature_flow as monitorFeatureFlowRoutes  # noqa: E402
+from app.routers import monitoring as monitoringRoutes  # noqa: E402
 from app.routers import preview as previewRoutes  # noqa: E402
-from app.routers import security as securityRoutes  # noqa: E402
+from app.routers import providers as providersRoutes  # noqa: E402
+from app.routers import proxy as proxyRoutes  # noqa: E402
 from app.routers import realtime as realtimeRoutes  # noqa: E402
+from app.routers import security as securityRoutes  # noqa: E402
+from app.routers import service_connections as serviceConnectionsRoutes  # noqa: E402
+from app.routers import sessions as sessionsRoutes  # noqa: E402
+from app.routers import skills as skillsRoutes  # noqa: E402
+from app.routers import subagent as subagentRoutes  # noqa: E402
+from app.routers import terminal as terminalRoutes  # noqa: E402
+from app.routers import terminal_routes as terminalWsRoutes  # noqa: E402
+from app.routers import usage as usageRoutes  # noqa: E402
 from app.routers import whats_new as whatsNewRoutes  # noqa: E402
+from app.routers import workbench as workbenchRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
 app.include_router(providersRoutes.router)

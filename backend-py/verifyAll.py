@@ -1,9 +1,9 @@
 """Full end-to-end verification of all phases v1, v2, v3 backend."""
 
 import json
-import sys
-import sqlite3
 import py_compile as pyCompile
+import sqlite3
+import sys
 
 errors = []
 print('=' * 60)
@@ -15,7 +15,7 @@ from app.config import settings  # noqa: E402
 settings.reload()
 print('  CONFIG OK')
 print('\n2. Database initialization...')
-from app.services.memory_store import init, get_stats  # noqa: E402
+from app.services.memory_store import get_stats, init  # noqa: E402
 
 init()
 stats = get_stats()
@@ -91,7 +91,7 @@ if rid and n2 > n1:
 else:
     errors.append('heuristics CRUD')
 print('\n7. Blackboard CRUD...')
-from app.services.blackboard_service import writeNote, readNotes, clearNotes  # noqa: E402
+from app.services.blackboard_service import clearNotes, readNotes, writeNote  # noqa: E402
 
 writeNote('test_s', 'verify', 'k1', 'v1', priority=5)
 notes = readNotes('test_s')
@@ -106,7 +106,7 @@ if any((n['key'] == 'k1' for n in notes)):
 else:
     errors.append('blackboard write/read')
 print('\n8. Token budget...')
-from app.services.workbench.token_budget import estimateTokens, computeBudget, getCriticalThreshold  # noqa: E402
+from app.services.workbench.token_budget import computeBudget, estimateTokens, getCriticalThreshold  # noqa: E402
 
 t = estimateTokens('Hello world test')
 budget = computeBudget('Hello world test', model='gpt-4', provider='openai')

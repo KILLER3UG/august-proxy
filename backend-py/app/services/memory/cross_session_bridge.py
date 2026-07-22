@@ -5,9 +5,11 @@ Port of backend/services/memory/cross-session-bridge.js.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timezone
-from app.json_narrowing import as_list, as_dict
-from app.services.memory_store import save_memory, get_memory, search_memory
+
+from app.json_narrowing import as_dict, as_list
+from app.services.memory_store import get_memory, save_memory, search_memory
 
 _BRIDGEKey = 'session_bridges'
 

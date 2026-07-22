@@ -6,14 +6,16 @@ Uses ``isolated_skills`` + ``isolated_data`` fixtures.
 """
 
 from __future__ import annotations
+
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
+
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from app.services import skill_service
 from app.services.skills.curator import SkillCurator, make_background_curator
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture

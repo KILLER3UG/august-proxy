@@ -7,6 +7,7 @@ Name-pattern rules for managed/proxy/MCP tools. The workbench allowlist in
 """
 
 from __future__ import annotations
+
 import json
 import re
 

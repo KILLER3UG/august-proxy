@@ -7,12 +7,14 @@ for Tier 3 <environment> injection.
 """
 
 from __future__ import annotations
+
 import fnmatch
 import logging
 import os
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
+
 from app.json_narrowing import as_float
 
 if TYPE_CHECKING:
@@ -147,8 +149,8 @@ class EnvironmentWatcher:
     def start(self, rootPath: str) -> None:
         """v2: Begin watching the given directory. Falls back to no-op if watchdog unavailable."""
         try:
-            from watchdog.observers import Observer
             from watchdog.events import FileSystemEventHandler
+            from watchdog.observers import Observer
 
             class _Handler(FileSystemEventHandler):
                 def __init__(self, w: EnvironmentWatcher):

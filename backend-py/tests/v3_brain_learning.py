@@ -12,8 +12,8 @@ def _initDb():
 
 def testLearningResponseHasAutoMemories():
     """Response includes 'auto_memories' field."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get('/api/brain/learning')
@@ -25,8 +25,8 @@ def testLearningResponseHasAutoMemories():
 
 def testLearningResponseHasSleepCycle():
     """Response includes 'sleep_cycle' field with last_run_at."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get('/api/brain/learning')
@@ -40,8 +40,8 @@ def testLearningResponseHasSleepCycle():
 
 def testLearningResponseHasDeltaEngineLastFlush():
     """delta_engine includes last_flush_at."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get('/api/brain/learning')
@@ -52,10 +52,11 @@ def testLearningResponseHasDeltaEngineLastFlush():
 
 def testDeleteHeuristic():
     """DELETE /api/brain/heuristics/{id} removes a heuristic."""
-    from fastapi.testclient import TestClient
+    import uuid
+
     from app.main import app
     from app.services.heuristics_service import addHeuristic
-    import uuid
+    from fastapi.testclient import TestClient
 
     hId = addHeuristic(f'v3 test delete rule {uuid.uuid4().hex[:8]}', source='v3-test')
     assert hId is not None
@@ -67,10 +68,11 @@ def testDeleteHeuristic():
 
 def testEditHeuristic():
     """PATCH /api/brain/heuristics/{id} updates the rule."""
-    from fastapi.testclient import TestClient
+    import uuid
+
     from app.main import app
     from app.services.heuristics_service import addHeuristic
-    import uuid
+    from fastapi.testclient import TestClient
 
     rule = f'v3 original rule {uuid.uuid4().hex[:8]}'
     hId = addHeuristic(rule, source='v3-test')
@@ -84,8 +86,8 @@ def testEditHeuristic():
 
 def testRunConsolidationEndpoint():
     """POST /api/brain/run-consolidation triggers consolidation."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.post('/api/brain/run-consolidation')

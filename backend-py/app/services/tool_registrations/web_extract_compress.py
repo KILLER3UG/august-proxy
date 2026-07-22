@@ -30,9 +30,9 @@ async def _aux_summarize(text: str, *, max_out: int, timeout_s: float = 45.0) ->
 
     async def _call() -> str:
         try:
-            from app.services.workbench import model_fleet
             from app.providers import resolver as provider_resolver
             from app.providers.clients import getClient
+            from app.services.workbench import model_fleet
 
             model = model_fleet.getModelForRole('cerebellum') or model_fleet.getModelForRole(
                 'hippocampus'

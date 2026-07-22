@@ -1,9 +1,11 @@
 """Desktop automation tool registration (handlers live in desktop_automation)."""
 
 from __future__ import annotations
+
 from typing import cast
-from app.services import tool_registry
+
 from app.services import desktop_automation as _desktop
+from app.services import tool_registry
 
 
 def register() -> None:

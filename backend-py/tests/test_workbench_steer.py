@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.services.workbench.sessions import create_workbench_session
 from app.services.workbench.workbench import (
     _formatQueuedMessagesAsUserTurn,

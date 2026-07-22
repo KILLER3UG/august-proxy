@@ -10,6 +10,7 @@ Asserts the Claude-Code-style pattern:
 """
 
 from __future__ import annotations
+
 import pytest
 from app.services import skill_service
 from app.services.tool_registry import listTools

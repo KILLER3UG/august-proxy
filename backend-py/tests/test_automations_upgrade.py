@@ -173,9 +173,9 @@ async def test_tick_fires_due_noop_once(auto_iso):
 
 @pytest.mark.asyncio
 async def test_trigger_auth_and_rotate(auto_iso):
-    from httpx import ASGITransport, AsyncClient
     from app.main import app
     from app.services import automations_store as store
+    from httpx import ASGITransport, AsyncClient
 
     job = await store.upsert_job_async(
         {'name': 'hook', 'jobType': 'noop', 'prompt': 'ping', 'schedule': ''}
@@ -230,8 +230,8 @@ def test_auto_memory_blender_fts_recall(auto_iso):
 
 def test_cross_session_memory_inject_a_to_b(auto_iso):
     from app.services import memory_store
-    from app.services.memory.cross_session_context import sync_from_turn
     from app.services.memory.context_builder import buildSystemPrompt
+    from app.services.memory.cross_session_context import sync_from_turn
 
     memory_store.init()
     sync_from_turn(

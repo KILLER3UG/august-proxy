@@ -11,8 +11,11 @@ JSON from the frontend stays camelCase (``targetModel``, ``displayAlias``, etc.)
 """
 
 from __future__ import annotations
+
 from typing import cast
+
 from fastapi import APIRouter, HTTPException
+
 from app.models.camel_base import CamelModel
 from app.services import alias_service
 from app.services.memory_store import list_config_audit
@@ -212,10 +215,11 @@ async def manage_sessions(body: ActionBody):
 
 @router.post('/providers/manage')
 async def manage_providers(body: ActionBody):
-    from app.services.config_service import getProvidersStore, saveProvidersStore
-    from app.json_narrowing import as_list
-    from app.services.rollback_store import record_rollback
     import copy
+
+    from app.json_narrowing import as_list
+    from app.services.config_service import getProvidersStore, saveProvidersStore
+    from app.services.rollback_store import record_rollback
 
     store = getProvidersStore()
     providers = list(as_list(store.get('providers')))
@@ -270,11 +274,12 @@ async def manage_providers(body: ActionBody):
 
 @router.post('/agents/manage')
 async def manage_agents(body: ActionBody):
-    from app.services.tools import agent_registry
-    from app.services.config_service import getConfig, saveConfig
-    from app.json_narrowing import as_list, as_dict
-    from app.services.rollback_store import record_rollback
     import copy
+
+    from app.json_narrowing import as_dict, as_list
+    from app.services.config_service import getConfig, saveConfig
+    from app.services.rollback_store import record_rollback
+    from app.services.tools import agent_registry
 
     action = (body.action or '').lower()
     cfg = getConfig()
@@ -334,9 +339,10 @@ async def manage_agents(body: ActionBody):
 
 @router.post('/memory/manage')
 async def manage_memory(body: ActionBody):
+    import copy
+
     from app.services import memory_store
     from app.services.rollback_store import record_rollback
-    import copy
 
     action = (body.action or '').lower()
     key = body.key or ''
@@ -401,8 +407,8 @@ async def manage_tools(body: ActionBody):
 
 @router.post('/computer/app-policy')
 async def computer_app_policy(body: ActionBody):
-    from app.services.config_service import getConfig, saveConfig
     from app.json_narrowing import as_dict
+    from app.services.config_service import getConfig, saveConfig
 
     cfg = getConfig()
     policies = as_dict(cfg.get('appPolicies')) if cfg.get('appPolicies') is not None else {}

@@ -54,14 +54,11 @@ export function isLikelyReasoningModel(id: string): boolean {
     lower.includes('deepseek') ||
     lower.includes('qwen3') ||
     lower.includes('qwq') ||
-    lower.includes('minimax-m2') ||
-    lower.includes('minimax-m3') ||
     lower.includes('glm-4') ||
     lower.includes('glm-5') ||
     lower.includes('kimi-k2') ||
     lower.includes('grok-4') ||
-    lower.includes('grok-3') ||
-    lower.includes('gemini-3')
+    lower.includes('grok-3')
   );
 }
 

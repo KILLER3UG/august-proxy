@@ -5,10 +5,13 @@ Resources that don't fit existing routers: aliases, settings, snapshot.
 """
 
 from __future__ import annotations
+
 import json
+
 from fastapi import APIRouter, HTTPException
-from app.config import settings
+
 from app.atomic_write import write_json_atomic
+from app.config import settings
 from app.models.camel_base import CamelModel
 from app.providers import resolver as providerResolver
 from app.services.memory_store import get_stats

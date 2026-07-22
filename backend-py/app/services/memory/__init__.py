@@ -1,7 +1,12 @@
 """Memory subsystem — brain configuration, context building, compaction, and topic indexing."""
 
-from app.services.memory.brain_orchestrator import getBrainConfig, classifyTask, extractTextFromMessages, riskForTask  # noqa: F401
-from app.services.memory.context_builder import buildSystemPrompt, buildSlimCoreContext  # noqa: F401
+from app.services.memory.brain_orchestrator import (  # noqa: F401
+    classifyTask,
+    extractTextFromMessages,
+    getBrainConfig,
+    riskForTask,
+)
+from app.services.memory.context_builder import buildSlimCoreContext, buildSystemPrompt  # noqa: F401
 from app.services.memory.context_compressor import compressMessages, localSummarize  # noqa: F401
 from app.services.memory.context_scrubber import ContextScrubber  # noqa: F401
 from app.services.memory.topic_index import classifyTopic, indexSession  # noqa: F401

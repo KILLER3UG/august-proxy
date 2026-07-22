@@ -40,7 +40,7 @@ def _resolve_provider(provider_id: str) -> dict[str, object] | None:
             if not isinstance(p, dict):
                 continue
             mode = as_str(p.get('apiMode') or p.get('apiFormat'), 'openaiChat')
-            if mode in ('openaiChat', 'openai', 'codexResponses') and (p.get('api_key') or p.get('apiKey')):
+            if mode in ('openaiChat', 'openai', 'openaiResponses') and (p.get('api_key') or p.get('apiKey')):
                 if not provider_id or provider_id.lower() in (
                     as_str(p.get('id')).lower(),
                     as_str(p.get('name')).lower(),

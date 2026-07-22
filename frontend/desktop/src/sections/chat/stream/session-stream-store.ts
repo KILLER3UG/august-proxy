@@ -83,6 +83,42 @@ export function persistMessages(sessionId: string, messages: ChatMessage[]): voi
   persistMessagesToStorage(sessionId, messages);
 }
 
+/** Debounced persistence for active streaming — writes at most once per 1000ms.
+ *  Call `flushPersistMessages` on stream finalization for a guaranteed save. */
+const _persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const _persistPending = new Map<string, ChatMessage[]>();
+const _PERSIST_DEBOUNCE_MS = 1000;
+
+export function persistMessagesDebounced(sessionId: string, messages: ChatMessage[]): void {
+  _persistPending.set(sessionId, messages);
+  if (_persistTimers.has(sessionId)) return; // already scheduled
+  _persistTimers.set(
+    sessionId,
+    setTimeout(() => {
+      _persistTimers.delete(sessionId);
+      const pending = _persistPending.get(sessionId);
+      if (pending) {
+        _persistPending.delete(sessionId);
+        persistMessagesToStorage(sessionId, pending);
+      }
+    }, _PERSIST_DEBOUNCE_MS),
+  );
+}
+
+/** Immediately flush any pending debounced persist (call on stream end). */
+export function flushPersistMessages(sessionId: string): void {
+  const timer = _persistTimers.get(sessionId);
+  if (timer) {
+    clearTimeout(timer);
+    _persistTimers.delete(sessionId);
+  }
+  const pending = _persistPending.get(sessionId);
+  if (pending) {
+    _persistPending.delete(sessionId);
+    persistMessagesToStorage(sessionId, pending);
+  }
+}
+
 function emptyStreamState(workbenchSession: WorkbenchSession | null = null): SessionStreamState {
   return {
     messages: [],

@@ -12,6 +12,7 @@ executes tool calls via JSON-RPC.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -21,8 +22,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
+from app.json_narrowing import as_dict, as_list, as_str
 from app.lib.paths import dataPath
-from app.json_narrowing import as_str, as_list, as_dict
 
 logger = logging.getLogger(__name__)
 

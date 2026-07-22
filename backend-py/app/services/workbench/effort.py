@@ -173,14 +173,11 @@ def model_likely_accepts_reasoning_effort(model: str) -> bool:
             'gpt-5',
             'qwen3',
             'qwq',
-            'minimax-m2',
-            'minimax-m3',
             'glm-4',
             'glm-5',
             'kimi-k2',
             'grok-3',
             'grok-4',
-            'gemini-3',
             'nemotron',
         )
     )
@@ -192,7 +189,7 @@ def provider_accepts_reasoning_effort(
 ) -> bool:
     """Whether attaching ``reasoning_effort`` is likely to be understood.
 
-    Official OpenAI/Codex, DeepSeek, and common reasoner model ids accept it.
+    Official OpenAI, DeepSeek, and common reasoner model ids accept it.
     Unknown OpenAI-compatible gateways often reject unknown fields — skip those.
     OpenCode Zen/Go also skip: their Console path is sensitive to extras, and
     free models work without ``reasoning_effort``.
@@ -203,12 +200,12 @@ def provider_accepts_reasoning_effort(
     api_mode = as_str(
         provider.get('apiMode') or provider.get('api_mode') or provider.get('apiFormat')
     )
-    if api_mode == 'codexResponses':
+    if api_mode == 'openaiResponses':
         return True
     # OpenCode proxies many upstreams; don't infer from model id alone.
     if 'opencode' in pname or 'open-code' in pname:
         return False
-    if any(token in pname for token in ('openai', 'codex', 'deepseek', 'xai', 'grok')):
+    if any(token in pname for token in ('openai', 'deepseek', 'xai', 'grok')):
         return True
     return model_likely_accepts_reasoning_effort(model)
 

@@ -1,7 +1,7 @@
 """v2 — Test that daemon tool calls reject mutating commands."""
 
 import pytest
-from app.services.tool_registry import dispatch, setDaemonContext, clearDaemonContext, isDaemonContext, isCommandBlocked
+from app.services.tool_registry import clearDaemonContext, dispatch, isCommandBlocked, isDaemonContext, setDaemonContext
 
 
 @pytest.fixture(autouse=True)

@@ -6,10 +6,9 @@ JSON in (frontend contract), and that POST /api/git/command still works.
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.main import app
 from app.routers.git import GitCommand
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

@@ -7,6 +7,7 @@ correct_index, non-empty rationale) before being persisted.
 """
 
 from __future__ import annotations
+
 import json
 import logging
 
@@ -16,10 +17,10 @@ logger = logging.getLogger(__name__)
 async def _callPrefrontal(prompt: str, model: str = '', provider: str = '') -> str:
     """v3: Call the Prefrontal model. Returns raw text response (may include code fences)."""
     try:
-        from app.services.workbench import model_fleet
+        from app.config import settings
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
-        from app.config import settings
+        from app.services.workbench import model_fleet
 
         if model:
             aliasesCfg = settings.config.get('modelAliases', [])

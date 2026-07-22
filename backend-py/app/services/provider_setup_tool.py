@@ -19,11 +19,12 @@ result beyond a boolean ``needsApiKey`` flag.
 """
 
 from __future__ import annotations
+
 import hashlib
 import json
 import time
-from app.json_narrowing import as_dict, as_list
 
+from app.json_narrowing import as_dict, as_list
 from app.providers.api_format import normalize_api_format as _normalize_format
 
 

@@ -1,12 +1,15 @@
 """Key-value memory blob + FTS search domain."""
 from __future__ import annotations
+
 import json
 import sqlite3
 from typing import cast
+
 from app.services.memory_conn import conn as _conn
 from app.services.memory_schema import ensure_schema
 from app.services.memory_store.wire import _json, _row_as_wire
 from app.type_aliases import JsonValue, MemoryEntryDict
+
 
 def init() -> None:
     """Create all tables on first use (migrates camel→snake if needed)."""

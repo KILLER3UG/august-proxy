@@ -13,8 +13,10 @@ Endpoints:
 """
 
 from __future__ import annotations
+
 from fastapi import APIRouter
 from pydantic import Field
+
 from app.models.camel_base import CamelModel
 from app.services.desktop_automation import (
     getScreenSize,

@@ -10,7 +10,6 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-
 from app.services import memory_store
 from app.services.memory import auto_memory
 

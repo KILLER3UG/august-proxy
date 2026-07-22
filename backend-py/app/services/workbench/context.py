@@ -9,6 +9,7 @@ Set by ``workbench._execute_tool`` before dispatching a tool call.
 """
 
 from __future__ import annotations
+
 from contextvars import ContextVar
 
 currentSessionId: ContextVar[str] = ContextVar('workbench_session_id', default='default')

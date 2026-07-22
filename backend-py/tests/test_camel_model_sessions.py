@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.main import app
 from app.routers.sessions import MessageCreate
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

@@ -8,8 +8,10 @@ Hermes-style aux compression for long pages.
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+import json as _json_mod
+import sys
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 
 from app.json_narrowing import as_float, as_str
 from app.services import tool_registry
@@ -37,6 +39,53 @@ _DEFAULT_FETCH_TIMEOUT_S = 15.0
 
 # Dedicated pool so a stuck DDGS thread cannot starve the default executor.
 _search_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='web-search')
+
+# ── Subprocess-isolated DDGS search ─────────────────────────────────────
+# Runs DDGS in a child process so timed-out searches can be hard-killed
+# without starving or exhausting the thread pool.
+
+_DDGS_SUBPROCESS_SCRIPT = '''
+import json, sys
+from ddgs import DDGS
+query = sys.argv[1]
+max_results = int(sys.argv[2])
+with DDGS() as ddgs:
+    raw = list(ddgs.text(query, max_results=max_results))
+out = []
+for i, r in enumerate(raw):
+    if not isinstance(r, dict):
+        continue
+    title = (r.get("title") or "").strip()
+    url = (r.get("href") or "").strip()
+    snippet = (r.get("body") or "").strip()
+    if title and url:
+        out.append({"index": i + 1, "title": title, "url": url, "snippet": snippet})
+print(json.dumps(out))
+'''
+
+
+async def _ddgs_subprocess_search(
+    query: str, max_results: int, timeout: float
+) -> list[dict[str, object]]:
+    """Run DDGS search in an isolated subprocess; hard-kill on timeout."""
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, '-c', _DDGS_SUBPROCESS_SCRIPT, query, str(max_results),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        stdin=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        proc.kill()
+        try:
+            await proc.wait()
+        except Exception:
+            pass
+        raise
+    if proc.returncode != 0:
+        raise RuntimeError(f'DDGS subprocess exited with code {proc.returncode}')
+    return _json_mod.loads(stdout.decode('utf-8', errors='replace'))
 
 ProgressCb = Callable[[str, dict[str, object] | None], Awaitable[None] | None]
 
@@ -176,17 +225,11 @@ async def _webSearch(
 
     try:
         if backend == 'ddgs':
-            loop = asyncio.get_running_loop()
-
-            def _search() -> list[dict[str, object]]:
-                return search_ddgs(query, maxResults)
-
             try:
-                searchResults = await asyncio.wait_for(
-                    loop.run_in_executor(_search_pool, _search),
-                    timeout=_SEARCH_TIMEOUT_S,
+                searchResults = await _ddgs_subprocess_search(
+                    query, maxResults, _SEARCH_TIMEOUT_S
                 )
-            except asyncio.TimeoutError:
+            except (asyncio.TimeoutError, asyncio.CancelledError):
                 await _emit_progress(on_progress, 'done', {'message': 'Search timed out'})
                 return _json.dumps(
                     {
@@ -198,6 +241,30 @@ async def _webSearch(
                     },
                     ensure_ascii=False,
                 )
+            except Exception:
+                # Subprocess unavailable — fall back to thread pool
+                loop = asyncio.get_running_loop()
+
+                def _search() -> list[dict[str, object]]:
+                    return search_ddgs(query, maxResults)
+
+                try:
+                    searchResults = await asyncio.wait_for(
+                        loop.run_in_executor(_search_pool, _search),
+                        timeout=_SEARCH_TIMEOUT_S,
+                    )
+                except asyncio.TimeoutError:
+                    await _emit_progress(on_progress, 'done', {'message': 'Search timed out'})
+                    return _json.dumps(
+                        {
+                            'search_query': query,
+                            'backend': backend,
+                            'result_count': 0,
+                            'message': f'{label} search timed out after {_SEARCH_TIMEOUT_S:.0f}s',
+                            'error': 'timeout',
+                        },
+                        ensure_ascii=False,
+                    )
         else:
             try:
                 used_backend, searchResults = await asyncio.wait_for(

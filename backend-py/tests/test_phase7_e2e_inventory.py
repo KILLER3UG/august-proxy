@@ -8,18 +8,17 @@ elsewhere; this file is the permanent non-network inventory proof.
 from __future__ import annotations
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
+from app.routers import config as config_router
+from app.routers import monitor_feature_flow
+from app.routers import proxy as proxy_mod
 from app.services.feature_flow import (
     FEATURE_INVENTORY,
     emit_feature_flow,
     feature_flow_bus,
     list_feature_inventory,
 )
-from app.routers import monitor_feature_flow, config as config_router
-from app.routers import proxy as proxy_mod
-
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 # ── Inventory completeness ────────────────────────────────────────────
 
@@ -196,8 +195,9 @@ async def test_phase7_discord_normalize_and_connect_gate(monkeypatch):
     """
     discord = pytest.importorskip('discord', reason='discord.py optional; skip normalize if not installed')
 
-    from unittest.mock import MagicMock
     from datetime import datetime, timezone
+    from unittest.mock import MagicMock
+
     from app.services.gateway.platforms.discord import DiscordAdapter
 
     monkeypatch.delenv('AUGUST_DISCORD_BOT_TOKEN', raising=False)

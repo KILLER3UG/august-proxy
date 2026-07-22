@@ -23,11 +23,13 @@ Notes:
 """
 
 from __future__ import annotations
+
 import json
 import os
+
 import pytest
 
-from tests.v2RealLlm import EXTERNAL_API_URL, EXTERNAL_API_KEY, TEST_MODEL
+from tests.v2RealLlm import EXTERNAL_API_KEY, EXTERNAL_API_URL, TEST_MODEL
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get('RUN_REAL_LLM'),
@@ -85,6 +87,7 @@ def testNonStreamingChatCompletesThroughAdapter(externalProvider):
 def testStreamingChatYieldsContentThroughAdapter(externalProvider):
     """Full path: /v1/chat/completions (streaming) -> external LLM SSE -> Anthropic events."""
     import asyncio
+
     from app.adapters import openai as openaiAdapter
 
     body = {
@@ -111,6 +114,7 @@ def testManagedToolLoopRunsThroughAnthropicAdapter(externalProvider):
     without crashing (proves the multi-round loop in _streamOpenaiAsAnthropic
     / managed-tool interception works end-to-end against a real model)."""
     import asyncio
+
     from app.adapters import anthropic as anthropicAdapter
     from app.adapters.proxy_tools import get_managed_anthropic_web_tool_definitions
 

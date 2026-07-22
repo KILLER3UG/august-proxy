@@ -11,6 +11,7 @@ the *live tail* — what you'd see if you had a window into the brain.
 """
 
 from __future__ import annotations
+
 import asyncio
 import time
 import uuid

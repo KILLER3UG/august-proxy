@@ -165,6 +165,10 @@ async def communicate_or_kill(
         if cancel_task is not None and cancel_task in done:
             raise SubprocessAborted('cancelled')
         raise SubprocessAborted('timeout')
+    except asyncio.CancelledError:
+        # Outer task cancelled — guarantee child process teardown before propagating.
+        await close_process(proc, grace=1.0, kill_grace=1.0)
+        raise
     finally:
         for task in (timeout_task, cancel_task):
             if task is not None and not task.done():
@@ -274,6 +278,10 @@ async def _communicate_streaming(
         if cancel_task is not None and cancel_task in done:
             raise SubprocessAborted('cancelled')
         raise SubprocessAborted('timeout')
+    except asyncio.CancelledError:
+        # Outer task cancelled — guarantee child process teardown before propagating.
+        await close_process(proc, grace=1.0, kill_grace=1.0)
+        raise
     finally:
         for task in (timeout_task, cancel_task):
             if task is not None and not task.done():

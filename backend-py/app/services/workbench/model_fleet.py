@@ -9,14 +9,16 @@ from __future__ import annotations
 
 from app.services.model_fleet_service import (
     DEFAULTS as DEFAULT_FLEET,
+)
+from app.services.model_fleet_service import (
     ROLES,
+    _reset_cache,
+    _resetCache,
     getFleet,
     getModelForRole,
     invalidate_cache,
     updateFleet,
     validateRoles,
-    _reset_cache,
-    _resetCache,
 )
 
 __all__ = [

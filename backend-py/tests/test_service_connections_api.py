@@ -5,9 +5,8 @@ from __future__ import annotations
 import os
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.main import app
+from httpx import ASGITransport, AsyncClient
 
 _GOOGLE_ENV_KEYS = (
     'GOOGLE_OAUTH_CLIENT_ID',

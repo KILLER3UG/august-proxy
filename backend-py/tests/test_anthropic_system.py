@@ -18,7 +18,6 @@ from app.adapters.anthropic_system import (
     system_blocks_to_text,
 )
 
-
 # ── Claude family / alias resolution ─────────────────────────────────────────
 
 

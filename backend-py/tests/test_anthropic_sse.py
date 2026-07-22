@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 
+from app.adapters import anthropic as anthropic_adapter
 from app.adapters.anthropic_sse import (
     send_simulated_anthropic_stream,
     write_anthropic_sse_data,
     write_anthropic_sse_data_only,
 )
-from app.adapters import anthropic as anthropic_adapter
 
 
 def test_write_anthropic_sse_data_format():

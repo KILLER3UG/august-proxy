@@ -6,9 +6,12 @@ window into the brain.
 """
 
 from __future__ import annotations
+
 import json
+
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
+
 from app.services.brain_event_bus import brainBus
 
 router = APIRouter(prefix='/api/brain')

@@ -6,7 +6,6 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from app.services.agent_message_bus import AgentMessageBus
 from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest
 from app.services.tools.spawn_subagents_tool import executeSpawnSubagents

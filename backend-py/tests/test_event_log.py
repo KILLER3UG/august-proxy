@@ -1,6 +1,7 @@
 """EventLog fan-out tests."""
 
 import asyncio
+
 import pytest
 from app.services.event_log import EventLog
 

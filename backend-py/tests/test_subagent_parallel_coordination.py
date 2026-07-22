@@ -25,6 +25,7 @@ No network access or API credentials are required.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import re
@@ -32,16 +33,17 @@ import time
 from typing import Any
 
 import pytest
-
-from app.services.workbench import workbench as wb
+from app.services import (
+    memory_store,
+    tool_definitions,  # noqa: F401  (defines registerAll)
+)
+from app.services.agent_message_bus import AgentMessageBus
+from app.services.blackboard_service import readNotes
 from app.services.subagent_orchestrator import (
     SubagentOrchestrator,
     SubagentSpawnRequest,
 )
-from app.services.agent_message_bus import AgentMessageBus
-from app.services.blackboard_service import readNotes
-from app.services import memory_store
-from app.services import tool_definitions  # noqa: F401  (defines registerAll)
+from app.services.workbench import workbench as wb
 
 STUB_PROVIDER = {
     'name': 'stub-anthropic',
@@ -156,6 +158,7 @@ class CoordinationStub:
         and env are not in lockstep, which showed up as a CI flake on Linux.
         """
         import sqlite3
+
         from app.services.memory_store import _db_path
 
         try:
@@ -183,6 +186,7 @@ class CoordinationStub:
     def _claimed_ports(self, messages: list[dict[str, Any]]) -> set[int]:
         """Read claimed ports from the blackboard using a fresh DB connection."""
         import sqlite3
+
         from app.services.memory_store import _db_path
 
         ports: set[int] = set()

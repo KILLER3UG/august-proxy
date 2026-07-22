@@ -6,11 +6,10 @@ import asyncio
 from pathlib import Path
 
 import pytest
-
+from app.services.sandbox.backends.fallback import run_soft, soft_preflight
 from app.services.sandbox.paths import bind_path, is_within_root
-from app.services.sandbox.policy import normalize_sandbox_mode, SandboxPolicy
-from app.services.sandbox.backends.fallback import soft_preflight, run_soft
-from app.services.sandbox.runner import unsandboxed_grant_key, policy_from_session, active_backend
+from app.services.sandbox.policy import SandboxPolicy, normalize_sandbox_mode
+from app.services.sandbox.runner import active_backend, policy_from_session, unsandboxed_grant_key
 
 
 def test_normalize_sandbox_mode():

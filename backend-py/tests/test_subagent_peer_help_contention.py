@@ -14,9 +14,8 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from app.services.agent_message_bus import AgentMessageBus
 from app.services import subagent_orchestrator as orch_mod
+from app.services.agent_message_bus import AgentMessageBus
 from app.services.subagent_orchestrator import (
     PEER_HELP_WINDOW_SECONDS,
     SubagentOrchestrator,

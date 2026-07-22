@@ -1,8 +1,8 @@
 """Model fleet — single SoT via model_fleet_service (workbench re-export)."""
 
 import pytest
-from app.services.workbench import model_fleet
 from app.services import model_fleet_service
+from app.services.workbench import model_fleet
 
 
 @pytest.fixture(autouse=True)
@@ -39,8 +39,9 @@ def testGetModelForRoleUnknownReturnsCortexDefault():
 
 def testGetModelForRoleConfigOverride(tmp_path):
     """User config override takes precedence over defaults."""
-    from app.lib.paths import dataPath
     import json
+
+    from app.lib.paths import dataPath
 
     cfgPath = dataPath('config.json')
     cfgPath.parent.mkdir(parents=True, exist_ok=True)
@@ -55,8 +56,9 @@ def testGetModelForRoleConfigOverride(tmp_path):
 
 def testGetModelForRoleLegacyFleetMigrates(tmp_path):
     """Flat auxiliary.model_fleet migrates into cognitive.fleet once."""
-    from app.lib.paths import dataPath
     import json
+
+    from app.lib.paths import dataPath
 
     cfgPath = dataPath('config.json')
     cfgPath.parent.mkdir(parents=True, exist_ok=True)

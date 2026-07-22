@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from app.services import memory_store
 from app.services.workbench.brain_sync import sync_workbench_session_to_brain
 from app.services.workbench.sessions import (

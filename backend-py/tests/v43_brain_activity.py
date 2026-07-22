@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+
 import pytest
 
 
@@ -18,7 +19,7 @@ def _resetBus():
 
 def testEmitAppendsWithIdIsoTimestampAndDefaults():
     """emit() stores {id, category, layer, summary, at, meta}."""
-    from app.services.brain_event_bus import emitBrainEvent, brainBus
+    from app.services.brain_event_bus import brainBus, emitBrainEvent
 
     emitBrainEvent(category='heuristic', layer='delta_engine', summary="learned 'prefer tabs'")
     events = brainBus.recent(limit=10)
@@ -33,7 +34,7 @@ def testEmitAppendsWithIdIsoTimestampAndDefaults():
 
 
 def testRecentRespectsLimitAndCategoryFilter():
-    from app.services.brain_event_bus import emitBrainEvent, brainBus
+    from app.services.brain_event_bus import brainBus, emitBrainEvent
 
     emitBrainEvent(category='consolidation', layer='sleep_cycle', summary='merged 2')
     emitBrainEvent(category='heuristic', layer='delta_engine', summary='learned x')
@@ -47,9 +48,9 @@ def testRecentRespectsLimitAndCategoryFilter():
 
 def testGetEndpointReturnsEventsNewestFirst():
     """GET /api/brain/events returns recent events, newest first."""
-    from fastapi.testclient import TestClient
     from app.main import app
     from app.services.brain_event_bus import emitBrainEvent
+    from fastapi.testclient import TestClient
 
     emitBrainEvent(category='heuristic', layer='heuristics_service', summary='first')
     time.sleep(0.01)
@@ -75,7 +76,6 @@ def testSseEndpointModuleExportsStream():
 def testAddHeuristicPublishesBrainEvent():
     """add_heuristic() publishes a 'heuristic' event so the Activity tab sees it."""
     from app.services.brain_event_bus import brainBus
-
     from app.services.heuristics_service import addHeuristic, removeHeuristic
 
     rid = (

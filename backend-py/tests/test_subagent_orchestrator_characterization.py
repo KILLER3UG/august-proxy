@@ -18,15 +18,15 @@ Observed CURRENT behavior captured here:
 Run with:  python -m pytest tests/test_subagent_orchestrator_characterization.py -q
 """
 from __future__ import annotations
-import pytest
 
+import pytest
 from app.services.agent_message_bus import AgentMessageBus
 from app.services.subagent_orchestrator import (
+    MAX_CONCURRENT_WORKERS,
+    PEER_HELP_WINDOW_SECONDS,
     SubagentHandle,
     SubagentOrchestrator,
     SubagentSpawnRequest,
-    MAX_CONCURRENT_WORKERS,
-    PEER_HELP_WINDOW_SECONDS,
 )
 
 

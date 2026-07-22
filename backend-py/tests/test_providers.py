@@ -1,7 +1,7 @@
 """Provider endpoint tests — user-configured providers only (no templates)."""
 
-from httpx import AsyncClient, ASGITransport
 from app.main import app
+from httpx import ASGITransport, AsyncClient
 
 
 async def test_templates_endpoint_returns_empty():

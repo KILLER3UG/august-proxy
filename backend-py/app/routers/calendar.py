@@ -8,6 +8,7 @@ Spec: docs/superpowers/specs/2026-06-30-voice-subagent-provider-overhaul-design.
 from __future__ import annotations
 
 from fastapi import APIRouter
+
 from app.json_narrowing import as_bool, as_str
 
 router = APIRouter(prefix='/api/calendar')

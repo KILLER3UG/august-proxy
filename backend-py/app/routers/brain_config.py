@@ -21,7 +21,9 @@ Port of the deleted Node.js ``backend/index.js`` brain-config block
 """
 
 from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException, Query
+
 from app.services import brain_config_service
 
 router = APIRouter(prefix='/api/brain', tags=['brain-config'])

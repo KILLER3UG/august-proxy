@@ -13,11 +13,13 @@ are detected locally without any API call → source="local-diff".
 """
 
 from __future__ import annotations
+
 import hashlib
 import logging
 import os
 import time
 from difflib import unified_diff as unifiedDiff
+
 from app.json_narrowing import as_str
 from app.services.heuristics_service import addHeuristic
 
@@ -285,9 +287,9 @@ def _callHippocampus(diffText: str) -> str | None:
     model is configured.
     """
     try:
-        from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
+        from app.services.workbench import model_fleet
 
         model = model_fleet.getModelForRole('hippocampus')
         if not model:

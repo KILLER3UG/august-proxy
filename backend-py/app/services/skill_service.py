@@ -11,10 +11,12 @@ read by list_all/get so the model can load lessons as skills.
 """
 
 from __future__ import annotations
+
 import re
 import shutil
 from pathlib import Path
 from typing import Optional
+
 from app.json_narrowing import as_str
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'skills'

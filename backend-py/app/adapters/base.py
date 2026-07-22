@@ -3,9 +3,11 @@ Base adapter — shared utilities for upstream API translation.
 """
 
 from __future__ import annotations
-from typing import AsyncIterator, TYPE_CHECKING
-import httpx
+
 import json
+from typing import TYPE_CHECKING, AsyncIterator
+
+import httpx
 
 if TYPE_CHECKING:
     pass

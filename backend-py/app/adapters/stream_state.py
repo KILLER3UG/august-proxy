@@ -9,6 +9,7 @@ SSE line formatting lives in :mod:`app.adapters.sse_format` (Phase 3 extract).
 """
 
 from __future__ import annotations
+
 import json
 import time
 import uuid

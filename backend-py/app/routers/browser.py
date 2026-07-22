@@ -6,9 +6,12 @@ browser drawer section can render screenshots captured during tool runs.
 """
 
 from __future__ import annotations
+
 from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
+
 from app.lib.paths import dataPath
 
 router = APIRouter(prefix='/api/browser', tags=['browser'])

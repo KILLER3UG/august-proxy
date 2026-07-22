@@ -6,8 +6,9 @@ Safe approach: replaces only well-known annotation patterns.
 """
 
 from __future__ import annotations
-import re
+
 import os
+import re
 import sys
 
 ANNOTATION_REPLACEMENTS = [

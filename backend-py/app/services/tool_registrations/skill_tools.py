@@ -1,7 +1,9 @@
 """Skill load/list/manage tool handlers + registration."""
 
 from __future__ import annotations
+
 import json
+
 from app.json_narrowing import as_str
 from app.services import tool_registry
 

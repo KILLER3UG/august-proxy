@@ -6,6 +6,7 @@ Port of backend/services/workbench/selfheal.js (214 lines).
 """
 
 from __future__ import annotations
+
 import re
 
 ERROR_PATTERNS = [

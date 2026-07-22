@@ -5,12 +5,14 @@ Supports the /api/terminal/* REST API + WebSocket live I/O.
 """
 
 from __future__ import annotations
+
 import asyncio
 import os
 import platform
 import uuid
 from datetime import datetime, timezone
 from typing import Protocol, cast
+
 from app.json_narrowing import as_bool, as_int, as_list, as_str
 from app.services.workbench.pty_io import PtyIO
 
@@ -148,10 +150,29 @@ _wsQueues: dict[str, set[asyncio.Queue[str | None]]] = {}
 
 
 def _broadcastTerminal(sessionId: str, text: str) -> None:
-    """Fan-out a chunk to all live WebSocket subscriber queues."""
+    """Fan-out a chunk to all live WebSocket subscriber queues.
+
+    When a subscriber queue is full, drop the oldest chunk and insert a
+    visible gap marker so the user knows output was lost — rather than
+    silently discarding the subscriber.
+    """
     for queue in list(_wsQueues.get(sessionId, set())):
         try:
             queue.put_nowait(text)
+        except asyncio.QueueFull:
+            # Make room: pop oldest, push gap marker, then the new chunk.
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                queue.put_nowait('\r\n[...output dropped...]\r\n')
+            except asyncio.QueueFull:
+                pass
+            try:
+                queue.put_nowait(text)
+            except asyncio.QueueFull:
+                pass
         except Exception:
             _wsQueues.get(sessionId, set()).discard(queue)
 

@@ -10,9 +10,11 @@ emitted to the parent session's SSE stream as ``subagent_*`` events.
 """
 
 from __future__ import annotations
+
 import asyncio
 import uuid
 from typing import Callable, cast
+
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.services.tools.agent_registry import (
     _MAXAgentDepth,
@@ -113,6 +115,7 @@ async def executeSubAgent(
     from app.services.tool_registry import dispatch as dispatchTool
     from app.services.workbench.workbench import (
         MAX_MANAGED_TOOL_ROUNDS,
+        WorkbenchSession,
         _callAnthropicWorkbench,
         _callOpenaiWorkbench,
         _extractText,
@@ -120,7 +123,6 @@ async def executeSubAgent(
         _isOpenaiProvider,
         _resolveModel,
         _resolveWorkbenchProvider,
-        WorkbenchSession,
         openaiToolDefinitions,
         toolDefinitions,
     )

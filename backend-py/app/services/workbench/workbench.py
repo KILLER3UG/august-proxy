@@ -16,30 +16,32 @@ Key subsystems:
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import time
 import uuid
 from typing import Callable, cast
-from app.json_narrowing import as_str, as_dict, as_list, as_int, as_bool
+
+from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
+from app.services.workbench import providers as _providers_mod
 from app.services.workbench import sessions as _sessions_mod
+from app.services.workbench.effort import (
+    effort_to_openai_reasoning_effort,
+    effort_to_prompt_instruction,
+    effort_to_thinking_budget,
+    resolve_effective_effort,
+)
 from app.services.workbench.sessions import (
     WorkbenchSession,
-    _sessions,
-    _now,
-    saveSessions,
     _emitSessionStatus,
+    _now,
+    _sessions,
     createWorkbenchSession,
     getWorkbenchSession,
+    saveSessions,
 )
-from app.services.workbench.effort import (
-    resolve_effective_effort,
-    effort_to_thinking_budget,
-    effort_to_prompt_instruction,
-    effort_to_openai_reasoning_effort,
-)
-from app.services.workbench import providers as _providers_mod
 
 logger = logging.getLogger('workbench')
 # 0 = unlimited tool rounds by default. Safety nets: cancel signal, empty
@@ -320,7 +322,7 @@ def buildSystemPrompt(
             logger.debug('prompt: agent context failed', exc_info=True)
     brainPolicy = None
     try:
-        from app.services.memory.brain_orchestrator import extractTextFromMessages, classifyTask, policyForTask
+        from app.services.memory.brain_orchestrator import classifyTask, extractTextFromMessages, policyForTask
 
         msgs = []
         if hasattr(session, 'messages') and session.messages:
@@ -1262,8 +1264,8 @@ async def _sendWorkbenchMessageStreamImpl(
 
     _cancel_token = current_subprocess_cancel.set(signal)
     try:
-        from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
         from app.providers.clients.base import estimateTokens
+        from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
 
         if isFeatureEnabled():
             contextWindow = _resolveModelContextWindow(resolvedModel, resolvedProvider)
@@ -1750,6 +1752,7 @@ async def _sendWorkbenchMessageStreamImpl(
                                 stop = asyncio.Event()
 
                                 async def _idle_beat() -> None:
+                                    beat_count = 0
                                     while not stop.is_set():
                                         try:
                                             await asyncio.wait_for(stop.wait(), timeout=8.0)
@@ -1759,13 +1762,21 @@ async def _sendWorkbenchMessageStreamImpl(
                                                 continue
                                             if time.monotonic() - last_emit < 7.0:
                                                 continue
+                                            beat_count += 1
+                                            # First beat: warn about possible interactive prompt.
+                                            msg = (
+                                                'Command may be waiting for interactive input '
+                                                '(stdin is closed — consider adding --yes / -y flags)'
+                                                if beat_count == 1
+                                                else 'Still working…'
+                                            )
                                             emit(
                                                 {
                                                     'type': 'tool_progress',
                                                     'id': toolUseId,
                                                     'name': toolName,
                                                     'phase': 'running',
-                                                    'message': 'Still working…',
+                                                    'message': msg,
                                                 }
                                             )
 
@@ -1783,7 +1794,47 @@ async def _sendWorkbenchMessageStreamImpl(
 
                             result = await _run_command_with_stream()
                         else:
-                            result = await _executeTool(toolName, toolInput, session)
+                            # Generic tool: emit start + periodic heartbeat if slow.
+                            if emit:
+                                emit(
+                                    {
+                                        'type': 'tool_progress',
+                                        'id': toolUseId,
+                                        'name': toolName,
+                                        'phase': 'running',
+                                        'message': f'Running {toolName}…',
+                                    }
+                                )
+                            _tool_stop = asyncio.Event()
+
+                            async def _tool_heartbeat() -> None:
+                                while not _tool_stop.is_set():
+                                    try:
+                                        await asyncio.wait_for(_tool_stop.wait(), timeout=8.0)
+                                        break
+                                    except asyncio.TimeoutError:
+                                        if not emit or _tool_stop.is_set():
+                                            continue
+                                        emit(
+                                            {
+                                                'type': 'tool_progress',
+                                                'id': toolUseId,
+                                                'name': toolName,
+                                                'phase': 'running',
+                                                'message': f'Still working on {toolName}…',
+                                            }
+                                        )
+
+                            _hb_task = asyncio.create_task(_tool_heartbeat())
+                            try:
+                                result = await _executeTool(toolName, toolInput, session)
+                            finally:
+                                _tool_stop.set()
+                                _hb_task.cancel()
+                                try:
+                                    await _hb_task
+                                except (asyncio.CancelledError, Exception):
+                                    pass
                     if isinstance(result, str) and result.startswith('Error:'):
                         tracker.record_failure(toolName)
                     if guardStatus == 'warn':
@@ -1931,7 +1982,7 @@ async def _sendWorkbenchMessageStreamImpl(
     reflection_model = _backgroundTaskModel('reflectionModel', resolvedModel)
     auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
     try:
-        from app.services.memory.background_review import tryBackgroundReview, ReviewGates
+        from app.services.memory.background_review import ReviewGates, tryBackgroundReview
 
         asyncio.create_task(
             tryBackgroundReview(
@@ -1979,7 +2030,7 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
     the heavier LLM-based background_review. The ``model`` argument is
     the resolved auto-memory model (falls back to the chat model) used
     for audit/metadata on the saved memories."""
-    from app.services.memory.auto_memory import saveAutoMemory, extractAndSaveTodos
+    from app.services.memory.auto_memory import extractAndSaveTodos, saveAutoMemory
     from app.services.memory.cross_session_context import sync_from_turn
 
     try:

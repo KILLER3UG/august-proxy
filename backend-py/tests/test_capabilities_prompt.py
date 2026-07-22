@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import pytest
-
-from app.services.memory.capabilities_prompt import (
-    classify_tool,
-    format_tools_by_bucket,
-    format_skills_by_category,
-    build_capabilities_block,
-    unclassified_tools,
-    is_bulk_tagged,
-)
 from app.services import tool_definitions as toolDefsModule
+from app.services.memory.capabilities_prompt import (
+    build_capabilities_block,
+    classify_tool,
+    format_skills_by_category,
+    format_tools_by_bucket,
+    is_bulk_tagged,
+    unclassified_tools,
+)
 from app.services.tool_registry import listRaw, listTools
 
 

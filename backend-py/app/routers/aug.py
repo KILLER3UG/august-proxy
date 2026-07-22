@@ -11,11 +11,10 @@ Endpoints:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, Body, HTTPException, Query
 
 from app.json_narrowing import as_str
-from app.services import aug_directive_service
-from app.services import aug_artifact_service
+from app.services import aug_artifact_service, aug_directive_service
 
 router = APIRouter(prefix='/api/aug')
 

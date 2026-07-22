@@ -4,7 +4,9 @@ Port of backend/lib/host-agent.js.
 """
 
 from __future__ import annotations
+
 import os
+
 import httpx
 
 

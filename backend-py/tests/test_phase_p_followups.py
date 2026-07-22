@@ -10,7 +10,6 @@ from __future__ import annotations
 import time
 
 import pytest
-
 from app.lib.batched_emit import BatchedEmit
 from app.services import db_writer, memory_store
 

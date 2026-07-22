@@ -6,8 +6,6 @@ in (frontend contract), and that key memory POST routes still work.
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.main import app
 from app.routers.memory import (
     FactSave,
@@ -16,6 +14,7 @@ from app.routers.memory import (
     ProposalCreate,
     ProposalDecide,
 )
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

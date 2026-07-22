@@ -12,14 +12,16 @@ These tests use the existing ``isolatedData`` fixture from
 """
 
 from __future__ import annotations
+
 import json
 from pathlib import Path
+
 import pytest
-from fastapi import FastAPI, HTTPException
-from fastapi.testclient import TestClient
 from app.lib.gateway_auth import require_gateway_key
 from app.routers.config import router as configRouter
 from app.routers.proxy import router as proxyRouter
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)

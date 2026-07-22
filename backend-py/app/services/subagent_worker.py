@@ -12,12 +12,14 @@ Pipeline
 """
 
 from __future__ import annotations
+
 import asyncio
 import logging
 import time
 from typing import Any, Callable
-from app.services.agent_message_bus import AgentMessageBus
+
 from app.json_narrowing import as_str
+from app.services.agent_message_bus import AgentMessageBus
 
 logger = logging.getLogger(__name__)
 

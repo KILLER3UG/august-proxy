@@ -70,7 +70,7 @@ def updateFleet(patch: dict[str, object]) -> tuple[bool, str, dict[str, str]]:
     if not ok:
         return (False, err, getFleet())
     try:
-        from app.services.cognitive_config import update_cognitive, ensure_defaults
+        from app.services.cognitive_config import ensure_defaults, update_cognitive
 
         ensure_defaults()
         update_cognitive({'fleet': patch})

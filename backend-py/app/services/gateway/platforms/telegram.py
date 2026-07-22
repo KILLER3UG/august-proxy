@@ -24,12 +24,15 @@ For local dev, set the webhook manually via the Bot API or use polling.
 """
 
 from __future__ import annotations
+
 import asyncio
 import logging
 import os
 from typing import Optional
+
 import httpx
-from app.json_narrowing import as_str, as_dict, as_list, as_int
+
+from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 
 log = logging.getLogger(__name__)

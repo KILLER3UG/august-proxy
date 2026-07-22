@@ -13,13 +13,13 @@ Contract notes (observed against the real OpenAI adapter):
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
+import os
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-
-import sys
-import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -58,9 +58,10 @@ class Handler(BaseHTTPRequestHandler):
 srv = HTTPServer(('127.0.0.1', 8753), Handler)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 
-import pytest  # noqa: E402
 import tempfile  # noqa: E402
 from unittest import mock  # noqa: E402
+
+import pytest  # noqa: E402
 
 # Register provider pointing at local mock
 from app.services import config_service, provider_credentials  # noqa: E402

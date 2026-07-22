@@ -10,7 +10,6 @@ Do not "improve" assertions to preferred shapes without an approved behavior cha
 from __future__ import annotations
 
 import pytest
-
 from app.services import memory_store as ms
 
 

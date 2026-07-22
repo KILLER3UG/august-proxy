@@ -3,6 +3,7 @@ Resolve data directory paths. Respects AUGUST_DATA_DIR env var.
 """
 
 from __future__ import annotations
+
 import os
 from pathlib import Path
 

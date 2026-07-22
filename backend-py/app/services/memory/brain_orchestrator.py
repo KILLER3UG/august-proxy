@@ -6,6 +6,7 @@ Port of backend/services/memory/brain-orchestrator.js (255 lines).
 """
 
 from __future__ import annotations
+
 import re
 
 DEFAULT_FEATURES: dict[str, object] = {

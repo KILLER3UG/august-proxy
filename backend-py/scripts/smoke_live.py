@@ -77,28 +77,27 @@ def main() -> int:
 
     # --- In-process SoT + fleet + cognitive ---
     try:
-        from app.services import memory_store
-        from app.services.workbench.brain_sync import (
-            sync_workbench_session_to_brain,
-            backfill_workbench_json_to_brain,
-            get_sync_stats,
-        )
-        from app.services.workbench.sessions import WorkbenchSession
+        from app.services import memory_store, model_fleet_service
         from app.services.cognitive_boot import get_boot_status
         from app.services.cognitive_config import ensure_defaults
-        from app.services import model_fleet_service
-        from app.services.memory_store import save_workbench_session_sot, list_workbench_blobs
+        from app.services.memory_store import list_workbench_blobs, save_workbench_session_sot
+        from app.services.workbench.brain_sync import (
+            backfill_workbench_json_to_brain,
+            get_sync_stats,
+            sync_workbench_session_to_brain,
+        )
+        from app.services.workbench.sessions import WorkbenchSession
 
         memory_store.init()
         check('memory_store.init', True)
 
         # Session SoT: write blob, delete JSON, reload from SQLite only
-        from app.services.workbench.sessions import (
-            reload_sessions_from_sot,
-            _sessions_path,
-            _sessions,
-        )
         from app.lib.paths import dataPath
+        from app.services.workbench.sessions import (
+            _sessions,
+            _sessions_path,
+            reload_sessions_from_sot,
+        )
 
         sess = WorkbenchSession(
             id='smoke_wb_sot',
@@ -134,7 +133,7 @@ def main() -> int:
         _sessions.pop('smoke_wb_sot', None)
 
         # Vector/graph SQLite writers
-        from app.services.memory import vector_db, graph_memory
+        from app.services.memory import graph_memory, vector_db
 
         ve = vector_db.insert('smoke vector sentence', metadata={'src': 'smoke'}, namespace='smoke')
         check('vector.sqlite_insert', bool(ve.get('id')), ve.get('id'))
@@ -175,6 +174,7 @@ def main() -> int:
 
         # Proxy tools: no Stub: success
         import asyncio
+
         from app.adapters import proxy_tools
 
         async def _proxy_check() -> str:

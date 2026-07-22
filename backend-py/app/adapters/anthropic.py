@@ -17,40 +17,16 @@ Key responsibilities:
 """
 
 from __future__ import annotations
+
 import json
 import uuid
 from typing import AsyncIterator, Callable, cast
-from app.type_aliases import JsonValue
-from app.json_narrowing import as_str, as_dict, as_list, as_int
-from app.adapters.base import (
-    extractRequestHeaders as _extractRequestHeaders,
-)
-from app.adapters.stream_state import AnthropicNativeStreamState, OpenaiToAnthropicStreamState
-from app.providers.clients.base import BaseProviderClient
-from app.adapters.proxy_tools import (
-    format_managed_tool_result,
-    execute_managed_proxy_tool,
-    get_tool_definition_name,
-    dedupe_and_canonicalize_anthropic_tools,
-    get_managed_anthropic_web_tool_definitions,
-    anthropic_to_openai_tool_definition,
-    is_proxy_managed_local_tool_name,
-)
-from app.adapters.tool_classification import (
-    classifyAnthropicToolUses,
-)
-from app.models import (
-    AnthropicRequest,
-    AnthropicResponse,
-    AnthropicUsage,
-    ToolResultBlock,
-)
-from app.models.anthropic import dump_anthropic_upstream_body
-from app.adapters.case_converters import snakeToCamel, camelToSnake
+
+from app.adapters import anthropic_stream_translate as _anthropic_stream_translate
 from app.adapters.anthropic_sse import (
+    send_simulated_anthropic_stream,
     write_anthropic_sse_data,
     write_anthropic_sse_data_only,
-    send_simulated_anthropic_stream,
 )
 from app.adapters.anthropic_system import (
     AUGUST_REMINDER,
@@ -68,10 +44,36 @@ from app.adapters.anthropic_system import (
     should_inject_reminder_message,
     system_blocks_to_text,
 )
-from app.adapters import anthropic_stream_translate as _anthropic_stream_translate
+from app.adapters.base import (
+    extractRequestHeaders as _extractRequestHeaders,
+)
+from app.adapters.case_converters import camelToSnake, snakeToCamel
+from app.adapters.proxy_tools import (
+    anthropic_to_openai_tool_definition,
+    dedupe_and_canonicalize_anthropic_tools,
+    execute_managed_proxy_tool,
+    format_managed_tool_result,
+    get_managed_anthropic_web_tool_definitions,
+    get_tool_definition_name,
+    is_proxy_managed_local_tool_name,
+)
+from app.adapters.stream_state import AnthropicNativeStreamState, OpenaiToAnthropicStreamState
+from app.adapters.tool_classification import (
+    classifyAnthropicToolUses,
+)
+from app.json_narrowing import as_dict, as_int, as_list, as_str
+from app.models import (
+    AnthropicRequest,
+    AnthropicResponse,
+    AnthropicUsage,
+    ToolResultBlock,
+)
+from app.models.anthropic import dump_anthropic_upstream_body
 from app.providers import resolver as providerResolver
-from app.providers.model_resolver import resolve
 from app.providers.clients import getClient
+from app.providers.clients.base import BaseProviderClient
+from app.providers.model_resolver import resolve
+from app.type_aliases import JsonValue
 
 # Back-compat aliases (previous camelCase names on this module).
 writeAnthropicSseData = write_anthropic_sse_data

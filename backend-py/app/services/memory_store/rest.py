@@ -1,12 +1,16 @@
 """Facts, proposals, lifecycle, topics, usage, timeline, stats."""
 from __future__ import annotations
+
 import asyncio
 import json
 from typing import cast
+
 from app.json_narrowing import as_int
-from app.services.memory_conn import conn as _conn, db_path as _db_path
+from app.services.memory_conn import conn as _conn
+from app.services.memory_conn import db_path as _db_path
 from app.services.memory_store.wire import _json, _row_as_wire
 from app.type_aliases import FactDict, JsonValue, ProposalDict
+
 
 def save_fact(
     factKey: str, factValue: JsonValue, category: str = 'general', source: str = '', confidence: float = 1.0
@@ -479,9 +483,9 @@ def timeline_sweep() -> int:
         if not msgs:
             continue
         try:
-            from app.services.workbench import model_fleet
             from app.providers import resolver as providerResolver
             from app.providers.clients import getClient
+            from app.services.workbench import model_fleet
 
             model = model_fleet.getModelForRole('hippocampus')
             if not model:

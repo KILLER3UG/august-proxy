@@ -1,7 +1,7 @@
 """Health endpoint tests."""
 
-from httpx import AsyncClient, ASGITransport
 from app.main import app
+from httpx import ASGITransport, AsyncClient
 
 
 async def testHealthReturnsOk():

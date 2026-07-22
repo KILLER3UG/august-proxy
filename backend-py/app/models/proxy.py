@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import TypedDict
 
 
-
 class ToolClassificationResult(TypedDict, total=False):
     """Result of classifying tool calls/uses into managed and client-owned buckets."""
 

@@ -6,11 +6,14 @@ service for session management and chat loop.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import uuid
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services import event_log
 from app.services.workbench import workbench as wb
@@ -878,7 +881,7 @@ async def sandbox_python(request: Request):
     import ast
     import io
     import traceback
-    from contextlib import redirect_stdout, redirect_stderr
+    from contextlib import redirect_stderr, redirect_stdout
     from pathlib import Path
 
     body = await request.json()
@@ -973,8 +976,8 @@ async def sandbox_python(request: Request):
         'None': None,
     }
     # Allow a tiny stdlib subset
-    import math
     import json as _json
+    import math
     import re as _re
 
     globals_dict: dict = {
@@ -1226,7 +1229,7 @@ async def workbenchDoctor():
 
     # 5) Agent sandbox backend capability (Codex-like)
     try:
-        from app.services.sandbox import active_backend, DEFAULT_SANDBOX_MODE
+        from app.services.sandbox import DEFAULT_SANDBOX_MODE, active_backend
 
         backend = active_backend()
         detail_map = {
@@ -1393,8 +1396,9 @@ async def setGuardMode(request: Request):
     Full Access so the chat is not stuck on plan approval.
     """
     from datetime import datetime, timezone
-    from app.services.workbench.sessions import save_sessions
+
     from app.services.workbench.prompt_cache import getCache
+    from app.services.workbench.sessions import save_sessions
 
     body = await request.json()
     sessionId = body.get('sessionId', '')
@@ -1447,6 +1451,7 @@ async def setGuardMode(request: Request):
 
 async def _apply_sandbox_body(sessionId: str, body: dict) -> dict[str, object]:
     from datetime import datetime, timezone
+
     from app.services.sandbox import normalize_sandbox_mode
     from app.services.workbench.sessions import save_sessions
 
@@ -1520,12 +1525,12 @@ async def answerBtw(request: Request):
         raise HTTPException(status_code=400, detail='question is required')
 
     from app.services.workbench.providers import (
-        resolve_chat_llm,
-        is_anthropic_provider,
-        is_openai_provider,
         call_anthropic_workbench,
         call_openai_workbench,
         extract_text,
+        is_anthropic_provider,
+        is_openai_provider,
+        resolve_chat_llm,
     )
 
     # Hardcoded to chat session LLM — ignore any model/provider overrides on the body.

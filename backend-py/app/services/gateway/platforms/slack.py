@@ -25,11 +25,13 @@ and a Bot Token with ``chat:write``, ``channels:history``, ``groups:history``,
 """
 
 from __future__ import annotations
+
 import asyncio
 import logging
 import os
 from typing import Any, Optional
-from app.json_narrowing import as_str, as_dict
+
+from app.json_narrowing import as_dict, as_str
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 
 log = logging.getLogger(__name__)

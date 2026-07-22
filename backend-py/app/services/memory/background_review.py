@@ -17,14 +17,16 @@ Key design points (matching Hermes):
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
+
 from app.json_narrowing import as_dict, as_list, as_str
-from app.type_aliases import JsonValue
 from app.services import skill_service
+from app.type_aliases import JsonValue
 
 log = logging.getLogger(__name__)
 _TURNInterval = 3

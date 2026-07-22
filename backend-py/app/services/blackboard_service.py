@@ -9,10 +9,12 @@ on read to delete-on-read, and Tier 3 injection support.
 """
 
 from __future__ import annotations
+
 import json
 import time
 from datetime import datetime, timedelta, timezone
 from typing import cast
+
 from app.type_aliases import BlackboardNoteDict
 
 

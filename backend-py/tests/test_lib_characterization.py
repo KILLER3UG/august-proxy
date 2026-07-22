@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from app.lib import paths, secrets, tokens
 from app.lib.retry import retryWithBackoff
 

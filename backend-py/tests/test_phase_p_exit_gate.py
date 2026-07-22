@@ -54,8 +54,12 @@ def test_phase_p_modules_import():
     """Smoke: hot-path modules load (regression if package split breaks imports)."""
     from app.lib import batched_emit  # noqa: F401
     from app.services import db_writer, memory_store  # noqa: F401
-    from app.services.workbench import chat_stages, emit_types, parallel_tools  # noqa: F401
-    from app.services.workbench import stream_translate  # noqa: F401
+    from app.services.workbench import (  # noqa: F401
+        chat_stages,
+        emit_types,
+        parallel_tools,
+        stream_translate,  # noqa: F401
+    )
 
     assert callable(memory_store.search_memory)
     assert callable(memory_store.get_messages)

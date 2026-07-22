@@ -14,7 +14,6 @@ VALID_API_FORMATS = frozenset({
     'openaiChat',
     'anthropicMessages',
     'openaiResponses',
-    'codexResponses',
 })
 
 _FORMAT_ALIASES: dict[str, str] = {
@@ -32,11 +31,12 @@ _FORMAT_ALIASES: dict[str, str] = {
     'openai_responses': 'openaiResponses',
     'openairesponses': 'openaiResponses',
     'responses': 'openaiResponses',
-    'codex': 'codexResponses',
-    'codex-responses': 'codexResponses',
-    'codex_responses': 'codexResponses',
-    'codexresponses': 'codexResponses',
-    # Legacy ids → nearest user-configurable wire format
+    # Legacy codex alias → canonical openaiResponses
+    'codex': 'openaiResponses',
+    'codexresponses': 'openaiResponses',
+    'codex-responses': 'openaiResponses',
+    'codex_responses': 'openaiResponses',
+    # Legacy provider ids → nearest user-configurable wire format
     'gemini': 'openaiChat',
     'gemini-openai': 'openaiChat',
     'gemini_openai': 'openaiChat',
@@ -68,7 +68,7 @@ def normalize_api_format(api_format: object | None, *, default: str = 'openaiCha
 
 
 def is_openai_api_format(api_format: object | None) -> bool:
-    return normalize_api_format(api_format) in ('openaiChat', 'openaiResponses', 'codexResponses')
+    return normalize_api_format(api_format) in ('openaiChat', 'openaiResponses')
 
 
 def is_anthropic_api_format(api_format: object | None) -> bool:
@@ -184,7 +184,7 @@ def provider_endpoint_url(
     if kind == 'models':
         return join_provider_url(base, 'models')
 
-    if kind == 'responses' or fmt in ('openaiResponses', 'codexResponses'):
+    if kind == 'responses' or fmt == 'openaiResponses':
         return join_provider_url(base, 'responses')
 
     return join_provider_url(base, 'chat', 'completions')

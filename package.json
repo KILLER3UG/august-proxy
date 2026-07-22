@@ -25,7 +25,8 @@
     "test:backend": "cd backend-py && uv run pytest -q",
     "test:frontend": "npm run test -w frontend/desktop",
     "test:verify": "npm run test:backend && npm run test:frontend",
-    "test": "npm run test:verify"
+    "test": "npm run test:verify",
+    "doctor": "cd backend-py && uv run python scripts/doctor.py"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

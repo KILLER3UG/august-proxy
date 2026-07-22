@@ -153,8 +153,8 @@ async def model_aliases():
                 }
             )
     except Exception:
+        from app.json_narrowing import as_dict, as_list
         from app.services.config_service import getConfig
-        from app.json_narrowing import as_list, as_dict
 
         for raw in as_list(getConfig().get('modelAliases')):
             a = as_dict(raw)

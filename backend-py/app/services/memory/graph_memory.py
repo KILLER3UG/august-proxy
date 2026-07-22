@@ -191,8 +191,8 @@ def entity_description(name: str, metadata: Mapping[str, object] | None = None) 
 
 
 def _conn():
-    from app.services.memory_store import _conn as get_conn
     from app.services.memory_schema import create_vector_graph_tables
+    from app.services.memory_store import _conn as get_conn
 
     c = get_conn()
     create_vector_graph_tables(c)

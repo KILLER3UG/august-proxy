@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.services.workbench.title_generator import (
     count_user_messages,
     first_exchange_texts,
@@ -129,8 +128,8 @@ async def test_llm_title_uses_client_generate(monkeypatch):
 
 
 def test_is_fallback_title_matches_derived_snippet():
-    from app.services.workbench.title_generator import _is_fallback_title
     from app.services.workbench.sessions import derive_title_from_message
+    from app.services.workbench.title_generator import _is_fallback_title
 
     user = 'Please help me debug the flaky checkout test that fails intermittently'
     derived = derive_title_from_message(user)

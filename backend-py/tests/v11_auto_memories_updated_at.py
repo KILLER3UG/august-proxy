@@ -1,9 +1,10 @@
 """v1.1 — Test that save_auto_memory supports duplicate keys with updated_at."""
 
-import pytest
 import uuid
-from app.services.memory import auto_memory
+
+import pytest
 from app.services import memory_store
+from app.services.memory import auto_memory
 
 
 @pytest.fixture(autouse=True)

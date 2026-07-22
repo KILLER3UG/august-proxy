@@ -9,7 +9,9 @@ run consolidation) and the System Health fan-out.
 """
 
 from __future__ import annotations
+
 from fastapi import APIRouter
+
 from app.json_narrowing import as_int
 
 router = APIRouter(prefix='/api/brain')
@@ -87,8 +89,8 @@ async def runConsolidationEndpoint():
 @router.get('/sync-status')
 async def brainSyncStatus():
     """Workbench session sync and cognitive boot status."""
-    from app.services.workbench.brain_sync import get_sync_stats
     from app.services.cognitive_boot import get_boot_status
+    from app.services.workbench.brain_sync import get_sync_stats
 
     return {
         'brainSync': get_sync_stats(),
@@ -115,9 +117,9 @@ async def getHealth():
     import time
 
     from app.services.cognitive_boot import get_boot_status
-    from app.services.cognitive_config import ensure_defaults, get_features, get_boot_layers
-    from app.services.db_writer import get_stats as db_writer_stats
+    from app.services.cognitive_config import ensure_defaults, get_boot_layers, get_features
     from app.services.consolidation_daemon import get_last_run
+    from app.services.db_writer import get_stats as db_writer_stats
 
     ensure_defaults()
     features = get_features()

@@ -1,6 +1,7 @@
 """Browser tool tests — pure helpers + graceful degradation (no real browser)."""
 
 import json
+
 from app.services.browser import element_resolver, snapshot
 from app.services.browser.session_manager import BrowserUnavailableError
 
@@ -35,6 +36,7 @@ def testCompactSnapshotFormat():
 def testBrowserOpenWithoutEngineReturnsError(monkeypatch):
     """When Playwright is unavailable, browser tools return a clear error."""
     import asyncio
+
     from app.services.browser import handlers
     from app.services.browser.session_manager import _startEngine
 

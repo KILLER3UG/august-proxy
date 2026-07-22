@@ -20,8 +20,11 @@ env var. Same-origin SPA traffic is unaffected because it doesn't hit
 """
 
 from __future__ import annotations
+
 import logging
+
 from fastapi import Header, HTTPException
+
 from app.config import settings
 from app.json_narrowing import as_dict
 

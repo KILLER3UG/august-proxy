@@ -10,11 +10,13 @@ table instead of a JSON blob under one key in `memory_store`.
 """
 
 from __future__ import annotations
+
 import json
 import re
 import time
 from datetime import datetime, timezone
-from app.services.memory_store import save_memory, get_memory
+
+from app.services.memory_store import get_memory, save_memory
 
 _MAXMemories = 100
 _AREAS_CATEGORIES = frozenset({'correction', 'learning', 'preference', 'user'})
@@ -301,7 +303,7 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     """Find memories relevant to a query using FTS5 ranking."""
     conn = _conn()
     lim = max(1, min(int(limit), 50))
-    from app.services.memory_store import _row_as_wire, _fts_match_query
+    from app.services.memory_store import _fts_match_query, _row_as_wire
 
     cols = 't.id, t.key, t.content, t.category, t.importance, t.source, t.created_at, t.updated_at'
     try:

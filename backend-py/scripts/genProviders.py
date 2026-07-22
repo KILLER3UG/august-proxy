@@ -4,7 +4,7 @@ import os
 
 PROVIDERS = [
     ('anthropic', 'Anthropic', 'claude-sonnet-4-7', 8192, 'anthropicMessages', 'https://api.anthropic.com'),
-    ('openai_api', 'OpenAI API', 'gpt-4o', 16384, 'codexResponses', 'https://api.openai.com/v1'),
+    ('openai_api', 'OpenAI API', 'gpt-4o', 16384, 'openaiResponses', 'https://api.openai.com/v1'),
     ('deepseek', 'DeepSeek', 'deepseek-chat', 8192, 'openaiChat', 'https://api.deepseek.com/v1'),
     ('openrouter', 'OpenRouter', 'gpt-4o', 16384, 'openaiChat', 'https://openrouter.ai/api/v1'),
     ('azure', 'Azure AI Foundry', 'gpt-4o', 16384, 'openaiChat', None),
@@ -13,7 +13,7 @@ PROVIDERS = [
     ('kilo', 'KiloCode', 'deepseek-v4-flash', 64000, 'openaiChat', 'https://api.kilocode.ai/v1'),
     ('copilot', 'GitHub Copilot', 'gpt-4o', 8192, 'openaiChat', None),
     ('cline', 'Cline AI', 'gpt-4o', 8192, 'openaiChat', None),
-    ('xai', 'xAI', 'grok-2', 8192, 'codexResponses', 'https://api.x.ai/v1'),
+    ('xai', 'xAI', 'grok-2', 8192, 'openaiResponses', 'https://api.x.ai/v1'),
     ('gmi', 'GMI Cloud', 'gpt-4o', 8192, 'openaiChat', None),
     ('zai', 'Zhipu AI (GLM)', 'glm-5', 8192, 'openaiChat', 'https://open.bigmodel.cn/api/paas/v4'),
     ('xiaomi', 'Xiaomi MiMo', 'gpt-4o', 8192, 'openaiChat', None),

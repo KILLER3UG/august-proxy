@@ -8,13 +8,16 @@ Port of:
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import random
 import time
 from typing import AsyncIterator, Callable
+
 import httpx
-from app.json_narrowing import as_str, as_dict, as_list
+
+from app.json_narrowing import as_dict, as_list, as_str
 
 
 class SseStreamParser:
@@ -334,6 +337,7 @@ class BaseProviderClient:
         3. Env vars from provider's ``env_vars`` config
         """
         import os
+
         from app.config import settings
 
         providerName = as_str(self.config.get('name'), '')

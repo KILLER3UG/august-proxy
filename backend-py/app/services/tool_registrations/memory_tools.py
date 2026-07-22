@@ -1,16 +1,18 @@
 """Memory, facts, brain_query, and session-deletion tool handlers + registration."""
 
 from __future__ import annotations
+
 import asyncio
 import json
+
 from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
 
 
 async def _memorySearch(query: str) -> str:
     """Search past conversation memory across KV store and auto_memories."""
-    from app.services.memory_store import search_memory
     from app.services.memory.auto_memory import getRelevantMemories
+    from app.services.memory_store import search_memory
 
     try:
         lines = [f'Memory search results for: {query}\n']
@@ -45,8 +47,8 @@ async def _memorySearch(query: str) -> str:
 
 async def _factSearch(query: str) -> str:
     """Search semantic facts (KV + facts table) and include tagged auto_memories."""
-    from app.services.memory_store import search_memory, search_facts
     from app.services.memory.auto_memory import getRelevantMemories
+    from app.services.memory_store import search_facts, search_memory
 
     try:
         lines = [f'Fact search results for: {query}\n']
@@ -212,8 +214,8 @@ async def _deleteSessions(sessionIds: object = None, sessionId: str = '') -> str
 
 async def _renameSession(sessionId: str = '', title: str = '') -> str:
     """Rename a chat session so the sidebar shows a clear human title."""
-    from app.services.workbench.sessions import rename_workbench_session, get_workbench_session
     from app.services.workbench.context import currentSessionId
+    from app.services.workbench.sessions import get_workbench_session, rename_workbench_session
 
     sid = (sessionId or '').strip()
     new_title = (title or '').strip()

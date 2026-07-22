@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import json
 
-from app.adapters.sse_format import write_sse_data_only, write_sse_event
 from app.adapters import stream_state
+from app.adapters.sse_format import write_sse_data_only, write_sse_event
 
 
 def test_write_sse_event_format():

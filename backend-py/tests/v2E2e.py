@@ -2,12 +2,12 @@
 
 import asyncio
 import json
+
 import pytest
-from app.services import daemon_manager, blackboard_service, consolidation_daemon
-from app.services.memory_store import init, _conn
-from app.services.workbench import workbench
+from app.services import blackboard_service, consolidation_daemon, daemon_manager
 from app.services.memory import context_builder
-from app.services.workbench import model_fleet
+from app.services.memory_store import _conn, init
+from app.services.workbench import model_fleet, workbench
 
 
 @pytest.fixture(autouse=True)
@@ -106,7 +106,7 @@ def testPendingSkillsTableExists():
 
 def testDaemonContextBlocksMutatingCommands():
     """run_command blocked in daemon context (tool blocklist)."""
-    from app.services.tool_registry import setDaemonContext, clearDaemonContext, isCommandBlocked
+    from app.services.tool_registry import clearDaemonContext, isCommandBlocked, setDaemonContext
 
     setDaemonContext()
     assert isCommandBlocked('rm -rf /tmp') is True

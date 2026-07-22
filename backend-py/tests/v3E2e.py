@@ -2,6 +2,7 @@
 
 import json
 from unittest.mock import patch
+
 import pytest
 
 VALID_EXAM = [
@@ -25,9 +26,9 @@ def _initDb():
 
 def testBrainDashboardAggregatesRealData():
     """Learning + health endpoints surface real data; mutation flow works end-to-end."""
-    from fastapi.testclient import TestClient
     from app.main import app
     from app.services.heuristics_service import addHeuristic
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     learning = client.get('/api/brain/learning').json()
@@ -52,9 +53,9 @@ def testBrainDashboardAggregatesRealData():
 
 def testExamFullLifecycle():
     """Generate → fetch → answer → help — full /Exam flow with Prefrontal mocked."""
-    from fastapi.testclient import TestClient
     from app.main import app
     from app.services.memory_store import _conn
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):
@@ -88,8 +89,8 @@ def testExamFullLifecycle():
 
 def testAddQuestionAuthorsAndAppends():
     """User adds a custom question mid-exam; the model authors it."""
-    from fastapi.testclient import TestClient
     from app.main import app
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):

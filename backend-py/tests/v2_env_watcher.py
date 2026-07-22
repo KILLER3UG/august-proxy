@@ -1,14 +1,15 @@
 """v2 — Test environment watcher (ignore patterns, rate limit, ChangeEvent)."""
 
 import time
+
 import pytest
 from app.services import environment_watcher
 from app.services.environment_watcher import (
-    shouldIgnore,
-    EnvironmentWatcher,
     ChangeEvent,
-    recordChange,
+    EnvironmentWatcher,
     getRecentChanges,
+    recordChange,
+    shouldIgnore,
 )
 
 

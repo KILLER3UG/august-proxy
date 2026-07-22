@@ -24,12 +24,12 @@ below now pin down the CORRECT post-fix behavior:
 Run with:  python -m pytest tests/test_db_writer.py -q
 """
 from __future__ import annotations
+
 import asyncio
 import time
 
-import pytest
-
 import app.services.db_writer as dbw
+import pytest
 
 
 @pytest.fixture(autouse=True)

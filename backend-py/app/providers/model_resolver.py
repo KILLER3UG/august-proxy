@@ -21,13 +21,17 @@ active provider's model on any miss.
 """
 
 from __future__ import annotations
+
 import logging
+
 from app.services.alias_mapping_service import (
+    BUILTIN_PUBLIC_ALIASES,
+    list_alias_names,
     resolve_alias,
     resolve_alias_or_none,
+)
+from app.services.alias_mapping_service import (
     get_reverse_alias as _get_reverse_alias,
-    list_alias_names,
-    BUILTIN_PUBLIC_ALIASES,
 )
 
 logger = logging.getLogger(__name__)

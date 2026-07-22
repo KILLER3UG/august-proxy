@@ -12,7 +12,6 @@ import json
 import os
 
 import pytest
-
 from app.atomic_write import write_json_atomic
 
 

@@ -1,7 +1,8 @@
 """v1.1 — Test that brain_query returns correct shape for all 12 stores."""
 
-import pytest
 import json
+
+import pytest
 from app.services.memory_store import brain_query
 
 ALL_STORES = [

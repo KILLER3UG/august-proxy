@@ -3,14 +3,16 @@ Config service — read/write config.json and providers.json.
 """
 
 from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
 from typing import Optional
-from app.lib.paths import dataPath
-from app.json_narrowing import as_list, as_int
+
 from app.atomic_write import write_json_atomic
-from app.models.config import ProviderConfig, ModelConfig
+from app.json_narrowing import as_int, as_list
+from app.lib.paths import dataPath
+from app.models.config import ModelConfig, ProviderConfig
 
 
 def _readJson(path: Path) -> dict[str, object]:

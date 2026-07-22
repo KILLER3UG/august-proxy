@@ -10,6 +10,7 @@ Reserved names (registry rejects these):
 """
 
 from __future__ import annotations
+
 import json
 
 _RESERVEDNames = frozenset({'tool_search', 'tool_describe', 'tool_call'})
@@ -22,8 +23,8 @@ def isReserved(name: str) -> bool:
 
 async def handleToolSearch(query: str, limit: int = 5) -> str:
     """Search across ALL deferred tools using BM25."""
-    from app.services.tools.retrieval import buildToolCatalog, searchTools
     from app.services.tool_registry import listTools
+    from app.services.tools.retrieval import buildToolCatalog, searchTools
 
     allTools = listTools()
     catalog = buildToolCatalog(allTools)

@@ -5,7 +5,7 @@ underlying ``httpx.AsyncClient`` connection pool is shared across requests.
 ``BaseProviderClient`` already creates one HTTP client per instance; pooling
 here avoids constructing a new client object on every call.
 
-Only wire formats users configure: openaiChat / openaiResponses / codexResponses
+Only wire formats users configure: openaiChat / openaiResponses
 → OpenAIClient; anthropicMessages → AnthropicClient. No first-class Gemini /
 MiniMax / Bedrock clients — paste an OpenAI-compatible or Anthropic baseUrl.
 """
@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import threading
 
-from app.providers.clients.base import BaseProviderClient
 from app.providers.clients.anthropic import AnthropicClient
+from app.providers.clients.base import BaseProviderClient
 from app.providers.clients.openai import OpenAIClient
 
 _lock = threading.Lock()
@@ -48,7 +48,7 @@ def _make_client(providerConfig: dict[str, object]) -> BaseProviderClient:
     match mode:
         case 'anthropicMessages':
             return AnthropicClient(providerConfig)
-        case 'openaiChat' | 'openaiResponses' | 'codexResponses':
+        case 'openaiChat' | 'openaiResponses':
             return OpenAIClient(providerConfig)
         case _:
             return OpenAIClient(providerConfig)

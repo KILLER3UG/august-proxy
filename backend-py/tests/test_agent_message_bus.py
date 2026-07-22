@@ -1,6 +1,7 @@
 """Tests for the in-process async agent message bus."""
 
 import asyncio
+
 import pytest
 from app.services.agent_message_bus import AgentMessageBus
 

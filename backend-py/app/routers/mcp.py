@@ -8,6 +8,7 @@ subprocess start/stop, and tool discovery share one in-process registry
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+
 from app.models.camel_base import CamelModel
 from app.services.tools import mcp_client
 

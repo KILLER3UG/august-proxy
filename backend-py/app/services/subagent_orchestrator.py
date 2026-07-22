@@ -33,12 +33,14 @@ API
 """
 
 from __future__ import annotations
+
 import asyncio
 import logging
 import time
 import uuid
 from typing import Any
-from app.services.agent_message_bus import AgentMessageBus, Subscription, Handler
+
+from app.services.agent_message_bus import AgentMessageBus, Handler, Subscription
 
 logger = logging.getLogger(__name__)
 MAX_CONCURRENT_WORKERS = 5

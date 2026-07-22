@@ -11,14 +11,16 @@ bridge is unit-testable without touching real workbench state.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable
-from app.json_narrowing import as_dict, as_str
+
 from app.atomic_write import write_json_atomic
+from app.json_narrowing import as_dict, as_str
 
 log = logging.getLogger(__name__)
 WorkbenchRunner = Callable[..., Awaitable[None]]

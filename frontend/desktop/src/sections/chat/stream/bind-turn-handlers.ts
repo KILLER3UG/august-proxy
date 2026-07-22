@@ -13,6 +13,8 @@ import { setSessionStatus } from '@/store/sessions';
 import {
   applyUpdater,
   persistMessages,
+  persistMessagesDebounced,
+  flushPersistMessages,
   updateSessionStreamState,
 } from './session-stream-store';
 import { activeStreamControllers } from './active-stream-controllers';
@@ -33,7 +35,7 @@ export function bindTurnStreamHandlers(opts: {
     setMessages: (updater) => {
       updateSessionStreamState(sessionId, prev => {
         const nextMsgs = applyUpdater(updater, prev.messages);
-        persistMessages(sessionId, nextMsgs);
+        persistMessagesDebounced(sessionId, nextMsgs);
         return { messages: nextMsgs };
       });
     },
@@ -62,6 +64,7 @@ export function bindTurnStreamHandlers(opts: {
     },
     isTurnVisible: () => true,
     finishTurn: (t, status) => {
+      flushPersistMessages(sessionId);
       chatRuntime.finishTurn(t.turnId, status);
       activeStreamControllers.delete(sessionId);
     },

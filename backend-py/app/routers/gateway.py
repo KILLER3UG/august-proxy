@@ -1,8 +1,11 @@
 """Gateway API routes — webhook endpoints for platform adapters."""
 
 from __future__ import annotations
+
 import logging
+
 from fastapi import APIRouter, HTTPException, Request
+
 from app.services.gateway.base import BasePlatformAdapter
 from app.services.gateway.runner import GatewayRunner, registerAdapter
 

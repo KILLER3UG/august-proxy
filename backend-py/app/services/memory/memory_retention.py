@@ -5,9 +5,11 @@ Port of backend/services/memory/memory-retention.js.
 """
 
 from __future__ import annotations
+
 import time
 from datetime import datetime
-from app.services.memory_store import list_memory, delete_memory, list_facts, delete_fact
+
+from app.services.memory_store import delete_fact, delete_memory, list_facts, list_memory
 
 _RETENTION = {'transient': 86400 * 7, 'normal': 86400 * 30, 'important': 86400 * 90, 'critical': 86400 * 365}
 

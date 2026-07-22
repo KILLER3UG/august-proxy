@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+
 from app.json_narrowing import as_int, as_list
 from app.models.camel_base import CamelModel
 from app.services.workbench import workbench as wb
@@ -105,12 +106,12 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
 
     try:
         from app.services.workbench.providers import (
-            resolve_chat_llm,
-            is_anthropic_provider,
-            is_openai_provider,
             call_anthropic_workbench,
             call_openai_workbench,
             extract_text,
+            is_anthropic_provider,
+            is_openai_provider,
+            resolve_chat_llm,
         )
 
         provider, model = resolve_chat_llm(

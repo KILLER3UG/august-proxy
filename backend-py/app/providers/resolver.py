@@ -6,10 +6,11 @@ built-in template catalog — users define name, base URL, API format, and key.
 """
 
 from __future__ import annotations
+
 from typing import Optional
 
-from app.json_narrowing import as_str, as_list
 from app.config import settings
+from app.json_narrowing import as_list, as_str
 from app.providers import aliases
 
 

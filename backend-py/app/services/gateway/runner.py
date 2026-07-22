@@ -7,8 +7,10 @@ skeleton + base/bridge wiring so it is testable without a real platform.
 """
 
 from __future__ import annotations
+
 import logging
 from typing import Callable
+
 from app.json_narrowing import as_dict, as_str
 from app.services.gateway.base import BasePlatformAdapter
 from app.services.gateway.session_bridge import SessionBridge

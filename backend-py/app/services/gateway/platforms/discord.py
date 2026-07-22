@@ -23,11 +23,14 @@ with ``Message Content Intent`` enabled in the Discord Developer Portal.
 """
 
 from __future__ import annotations
+
 import asyncio
 import logging
 import os
 from typing import Optional
+
 import discord
+
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 
 log = logging.getLogger(__name__)

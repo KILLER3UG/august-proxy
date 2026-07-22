@@ -9,10 +9,12 @@ sessions (Phase 10.4) using the Prefrontal model.
 """
 
 from __future__ import annotations
+
 import json
 import logging
 import os
 import time
+
 from app.json_narrowing import as_dict, as_list
 from app.type_aliases import ConsolidationSummaryDict
 
@@ -92,9 +94,9 @@ async def _callHippocampus(prompt: str) -> str:
     no-op for environments without a configured LLM.
     """
     try:
-        from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
+        from app.services.workbench import model_fleet
 
         model = model_fleet.getModelForRole('hippocampus')
         if not model:
@@ -117,9 +119,9 @@ async def _callHippocampus(prompt: str) -> str:
 async def _callPrefrontal(prompt: str) -> str:
     """v2: Call the Prefrontal model. Returns raw text response."""
     try:
-        from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
+        from app.services.workbench import model_fleet
 
         model = model_fleet.getModelForRole('prefrontal')
         if not model:
@@ -203,8 +205,8 @@ async def runConsolidation() -> ConsolidationSummaryDict:
         summary=f'Sleep cycle started over {0} heuristics (will update on completion)',
     )
     try:
-        from app.services.memory_store import _conn
         from app.services.db_writer import enqueue_write
+        from app.services.memory_store import _conn
 
         conn = _conn()
         autoMemories = [
@@ -388,8 +390,8 @@ def approvePendingSkill(name: str) -> bool:
     except Exception:
         emitBrainEvent = None  # type: ignore[assignment]
     try:
-        from app.services.memory_store import _conn
         from app.services import skill_service
+        from app.services.memory_store import _conn
 
         conn = _conn()
         row = conn.execute(

@@ -1,10 +1,11 @@
 """v1.1 — End-to-end smoke test: a real chat session, no crashes."""
 
-import pytest
 import uuid
-from app.services.memory import context_builder, auto_memory
-from app.services.workbench import workbench
+
+import pytest
 from app.services import memory_store
+from app.services.memory import auto_memory, context_builder
+from app.services.workbench import workbench
 
 
 @pytest.fixture(autouse=True)
@@ -102,6 +103,7 @@ def testBrainQueryAllStoresNoException():
 def testFailureFeedbackRoundTrip():
     """Tool error populates session._failure_feedback and lands in the system prompt."""
     import asyncio
+
     from app.services.workbench.workbench import _executeTool
 
     class FakeSession:

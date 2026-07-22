@@ -10,6 +10,7 @@ the browser engine isn't installed; browser tools then return a clear error.
 """
 
 from __future__ import annotations
+
 import asyncio
 import logging
 from typing import TYPE_CHECKING

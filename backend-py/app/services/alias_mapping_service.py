@@ -39,10 +39,10 @@ from __future__ import annotations
 import logging
 
 from app.config import settings
+from app.json_narrowing import as_str
 from app.models.aliases import AliasMapping, AliasResolutionResult
 from app.providers import resolver as providerResolver
 from app.providers.route_resolver import resolve_for_model
-from app.json_narrowing import as_str
 
 logger = logging.getLogger(__name__)
 

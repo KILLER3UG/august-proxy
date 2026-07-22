@@ -18,10 +18,11 @@ On Windows, if ``pywinpty`` is not installed, the module raises
 """
 
 from __future__ import annotations
+
 import asyncio
+import logging
 import os
 import platform
-import logging
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -104,9 +105,9 @@ class PtyIO:
     async def _spawnUnix(
         self, shell: str, args: list[str], cwd: Optional[str], env: Optional[dict[str, str]], cols: int, rows: int
     ) -> None:
+        import fcntl
         import pty
         import struct
-        import fcntl
         import termios
 
         pid, fd = getattr(pty, 'fork')()
@@ -130,8 +131,8 @@ class PtyIO:
             os.write(self._proc.fd, data)
 
     def _resizeUnix(self, cols: int, rows: int) -> None:
-        import struct
         import fcntl
+        import struct
         import termios
 
         if self._proc and isinstance(self._proc, _UnixPtyProcess):

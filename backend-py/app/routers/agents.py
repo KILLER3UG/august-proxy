@@ -6,10 +6,12 @@ update route and a rooted-tree query used by the frontend AgentTree.
 """
 
 from __future__ import annotations
+
 import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
+
 from app.json_narrowing import as_str
 from app.models.camel_base import CamelModel
 from app.services.tools import agent_registry

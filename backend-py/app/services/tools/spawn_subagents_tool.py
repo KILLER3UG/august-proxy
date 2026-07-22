@@ -38,8 +38,10 @@ per-subagent results incrementally rather than after a blocking join.
 """
 
 from __future__ import annotations
+
 import logging
 from typing import Any, Callable
+
 from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest
 
 logger = logging.getLogger(__name__)

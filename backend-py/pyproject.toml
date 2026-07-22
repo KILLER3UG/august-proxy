@@ -91,16 +91,29 @@ src = ["app", "tests"]
 extend-exclude = ["*.bak", "**/__pycache__", "august_proxy.egg-info"]
 
 [tool.ruff.lint]
-# Start with syntax/undefined-name safety only. Expand gradually so we do not
-# churn the whole tree in one formatting pass.
-select = ["E4", "E7", "E9", "F"]
+# Syntax/undefined-name safety + security (bandit) + import sorting.
+# pep8-naming (N*) stays disabled — project uses camelCase by convention.
+select = ["E4", "E7", "E9", "F", "S", "I"]
 ignore = [
     "E501",  # line length handled by formatter / gradual cleanup
+    "S101",  # assert is standard in tests
+    "S108",  # /tmp paths are fine in a desktop proxy app
+    "S110",  # try-except-pass is intentional in fault-tolerant proxy code
+    "S112",  # try-except-continue — same rationale
+    "S310",  # urllib.request.urlopen — proxy fetches arbitrary user URLs by design
+    "S311",  # random.uniform for retry jitter — not cryptographic
+    "S324",  # hashlib.md5 for non-crypto slug ids
+    "S602",  # subprocess shell=True — automation jobs run user shell commands
+    "S603",  # subprocess call — intentional for tool execution
+    "S604",  # shell=True — same as S602
+    "S606",  # start process — intentional for PTY/shell spawning
+    "S607",  # partial exe path (git, etc.) — resolved via PATH by design
+    "S608",  # f-string SQL with internally-controlled table names (not user input)
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["F401", "F811"]
-"scripts/**" = ["E4", "F"]
+"tests/**" = ["F401", "F811", "S101", "S105", "S106", "S108"]
+"scripts/**" = ["E4", "F", "S"]
 
 [tool.ruff.format]
 quote-style = "single"

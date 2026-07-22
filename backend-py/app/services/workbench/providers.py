@@ -13,7 +13,7 @@ import json
 import uuid
 from typing import Callable
 
-from app.json_narrowing import as_str, as_dict, as_list, as_int, as_bool
+from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.models import AnthropicRequest, ChatCompletionRequest
 from app.services.workbench.effort import (
     effort_to_openai_reasoning_effort,
@@ -157,8 +157,7 @@ def resolve_workbench_provider(provider_name: str, model_hint: str = '') -> dict
     template (e.g. Anthropic) that has no credentials.
     """
     from app.providers import resolver as providerResolver
-    from app.services import provider_credentials
-    from app.services import config_service
+    from app.services import config_service, provider_credentials
 
     if provider_name:
         provider = providerResolver.resolve(provider_name)
@@ -400,8 +399,14 @@ async def call_anthropic_workbench(
     if thinking_budget > 0:
         body['thinking'] = {'type': 'enabled', 'budget_tokens': thinking_budget}
     agg = AnthropicWorkbenchStreamAggregator(emit=emit)
+    # Poll the workbench cancel signal during chunk iteration so Stop terminates promptly.
+    from app.lib.async_subprocess import current_subprocess_cancel
+
+    _cancel_event = current_subprocess_cancel.get()
     try:
         async for event in client.messages_stream(body):
+            if _cancel_event is not None and _cancel_event.is_set():
+                break
             agg.on_event(event)
             if agg.error:
                 return {'error': agg.error}
@@ -472,8 +477,14 @@ async def call_openai_workbench(
     toolCallsAccum: dict[int, dict[str, object]] = {}
     finishReason: str | None = None
     usage: dict[str, int] = {}
+    # Poll the workbench cancel signal during chunk iteration so Stop terminates promptly.
+    from app.lib.async_subprocess import current_subprocess_cancel
+
+    _cancel_event = current_subprocess_cancel.get()
     try:
         async for event in client.chat_completions_stream(body):
+            if _cancel_event is not None and _cancel_event.is_set():
+                break
             # Surface HTTP/provider errors instead of returning an empty "success".
             if as_str(event.get('type')) == 'error' or event.get('error') is not None:
                 msg = _extract_upstream_error_message(event)

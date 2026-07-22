@@ -6,13 +6,15 @@ real adapter that has its Bot API calls stubbed.
 """
 
 from __future__ import annotations
+
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from app.services.gateway.base import MessageEvent, SessionSource
 from app.services.gateway.runner import GatewayRunner
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 _TELEGRAMUpdate = {
     'update_id': 100,

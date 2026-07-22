@@ -13,36 +13,38 @@ Key responsibilities:
 """
 
 from __future__ import annotations
+
 import json
 import time
 import uuid
 from typing import AsyncIterator, Callable, cast
-from app.type_aliases import JsonValue
-from app.json_narrowing import as_str, as_dict, as_list
+
+from app.adapters.case_converters import camelToSnake, snakeToCamel
+from app.adapters.openai_sse import (
+    send_simulated_openai_stream,
+    write_openai_sse_data,
+    write_openai_sse_done,
+    write_openai_sse_error,
+    write_openai_sse_headers,
+)
 from app.adapters.proxy_tools import (
-    get_proxy_openai_tool_definitions,
     appendMissingOpenaiTools,
-    format_managed_tool_result,
-    execute_managed_proxy_tool,
     execute_managed_openai_tool_calls,
+    execute_managed_proxy_tool,
+    format_managed_tool_result,
+    get_proxy_openai_tool_definitions,
     get_tool_definition_name,
     is_proxy_managed_local_tool_name,
 )
-from app.adapters.tool_classification import classifyOpenaiToolCalls
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
-from app.adapters.case_converters import snakeToCamel, camelToSnake
-from app.adapters.openai_sse import (
-    write_openai_sse_headers,
-    write_openai_sse_data,
-    write_openai_sse_error,
-    write_openai_sse_done,
-    send_simulated_openai_stream,
-)
-from app.providers import resolver as providerResolver
-from app.providers.model_resolver import resolve
-from app.providers.clients import getClient, BaseProviderClient
+from app.adapters.tool_classification import classifyOpenaiToolCalls
+from app.json_narrowing import as_dict, as_list, as_str
 from app.models import ChatCompletionRequest, ChatMessage
 from app.models.openai import dump_openai_upstream_body
+from app.providers import resolver as providerResolver
+from app.providers.clients import BaseProviderClient, getClient
+from app.providers.model_resolver import resolve
+from app.type_aliases import JsonValue
 
 # Back-compat aliases (previous camelCase names on this module).
 writeOpenaiSseHeaders = write_openai_sse_headers
@@ -120,7 +122,7 @@ def getOpenaiCompatibleProfile(providerName: str | None, model: str) -> dict[str
     if not resolved:
         return None
     client = getClient(resolved)
-    if client and client.apiFormat in ('openaiChat', 'codexResponses'):
+    if client and client.apiFormat in ('openaiChat', 'openaiResponses'):
         return resolved
     return None
 

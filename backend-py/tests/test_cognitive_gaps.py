@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from app.services import memory_store
 from app.services.workbench.brain_sync import (
     backfill_workbench_json_to_brain,
@@ -102,7 +101,7 @@ def test_backfill_from_json(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_cognitive_boot_start_stop():
-    from app.services.cognitive_boot import start_cognitive_services, stop_cognitive_services, get_boot_status
+    from app.services.cognitive_boot import get_boot_status, start_cognitive_services, stop_cognitive_services
 
     # Force lightweight boot (skip long consolidation wait by default interval).
     status = await start_cognitive_services(None)

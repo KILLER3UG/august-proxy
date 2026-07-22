@@ -8,9 +8,10 @@ tools to execute locally vs. forward to the client.
 """
 
 from __future__ import annotations
-from app.json_narrowing import as_str
+
 from app.adapters.proxy_tools import is_proxy_managed_local_tool_name
-from app.models import ToolCall, ToolUseBlock, ToolClassificationResult
+from app.json_narrowing import as_str
+from app.models import ToolCall, ToolClassificationResult, ToolUseBlock
 
 
 def getToolNameFromOpenaiTool(tool: ToolCall | dict[str, object] | None) -> str | None:

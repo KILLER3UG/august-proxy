@@ -7,17 +7,19 @@ or workbench modifications — skill_service is isolated via the same
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 from pathlib import Path
+
 import pytest
 from app.services import skill_service
 from app.services.memory.background_review import (
     ReviewGates,
     _doReview,
+    _lastRelevantMessages,
     _parseRecommendations,
     _saveFact,
-    _lastRelevantMessages,
     tryBackgroundReview,
 )
 from app.services.memory_store import get_memory

@@ -6,7 +6,6 @@ import asyncio
 import sys
 
 import pytest
-
 from app.lib.async_subprocess import (
     SubprocessAborted,
     close_process,

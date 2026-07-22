@@ -6,10 +6,9 @@ in (frontend contract), and that agent create/update still work over HTTP.
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.main import app
 from app.routers.agents import AgentCreate, AgentJob, AgentUpdate
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

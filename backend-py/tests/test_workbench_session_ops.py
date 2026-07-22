@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.services.workbench.sessions import (
     branch_workbench_session,
     compact_workbench_session_now,

@@ -5,10 +5,12 @@ factory, and delete fn are all injected/test stubs.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
+
 import pytest
 from app.services.gateway.base import (
     BasePlatformAdapter,

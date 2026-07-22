@@ -11,9 +11,11 @@ Anthropic stream events so we can drive the loop deterministically.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 from typing import AsyncIterator
+
 import pytest
 from app.services.workbench import workbench as wb
 

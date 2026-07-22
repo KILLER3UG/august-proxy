@@ -2,7 +2,7 @@
 
 import pytest
 from app.services.workbench import workbench as wbMod
-from app.services.workbench.workbench import submitPlan, rejectWorkbenchPlan
+from app.services.workbench.workbench import rejectWorkbenchPlan, submitPlan
 
 
 class FakeSession:
