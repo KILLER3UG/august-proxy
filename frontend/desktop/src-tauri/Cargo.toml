@@ -1,6 +1,6 @@
 [package]
 name = "august-desktop"
-version = "0.12.32"
+version = "0.12.33"
 description = "August Proxy — desktop shell"
 edition = "2021"
 rust-version = "1.77"
