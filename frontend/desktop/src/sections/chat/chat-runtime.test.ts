@@ -28,16 +28,17 @@ describe('chat runtime session isolation', () => {
     expect(runtime.canStartTurn('a')).toBe(false);
   });
 
-  it('only aborts the requested session turn', () => {
+  it('force starts a new turn after aborting the previous one', () => {
     const runtime = createChatRuntime();
-    const a = runtime.startTurn({ sessionId: 'a', assistantMsgId: 'a1' });
-    const b = runtime.startTurn({ sessionId: 'b', assistantMsgId: 'b1' });
+    const first = runtime.startTurn({ sessionId: 'a', assistantMsgId: 'a1' });
+    const second = runtime.startTurn({
+      sessionId: 'a',
+      assistantMsgId: 'a2',
+      force: true,
+    });
 
-    runtime.abortTurn(a.turnId);
-
-    expect(a.controller.signal.aborted).toBe(true);
-    expect(b.controller.signal.aborted).toBe(false);
-    expect(runtime.isSessionStreaming('a')).toBe(false);
-    expect(runtime.isSessionStreaming('b')).toBe(true);
+    expect(first.controller.signal.aborted).toBe(true);
+    expect(second.turnId).not.toBe(first.turnId);
+    expect(runtime.getActiveTurn('a')?.assistantMsgId).toBe('a2');
   });
 });

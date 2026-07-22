@@ -70,6 +70,15 @@ describe('mutation helpers', () => {
 });
 
 describe('PermissionRequiredCard', () => {
+  it('confirms immediately when a choice is clicked', async () => {
+    const onConfirm = vi.fn();
+    render(
+      <PermissionRequiredCard description="Shell" onConfirm={onConfirm} />,
+    );
+    fireEvent.click(screen.getByTestId('permission-choice-deny'));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith('deny'));
+  });
+
   it('defaults to Allow and confirms with that choice', async () => {
     const onConfirm = vi.fn();
     render(
@@ -117,9 +126,10 @@ describe('PermissionRequiredCard', () => {
     await waitFor(() => expect(onConfirm).toHaveBeenCalledWith('deny'));
   });
 
-  it('selects by number keys', () => {
+  it('selects by number keys without confirming', () => {
+    const onConfirm = vi.fn();
     render(
-      <PermissionRequiredCard description="x" onConfirm={vi.fn()} />,
+      <PermissionRequiredCard description="x" onConfirm={onConfirm} />,
     );
     const card = screen.getByTestId('permission-required-card');
     fireEvent.keyDown(card, { key: '2' });
@@ -127,6 +137,7 @@ describe('PermissionRequiredCard', () => {
       'data-selected',
       'true',
     );
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });
 
@@ -159,11 +170,11 @@ describe('MutationDiffCards', () => {
     expect(screen.getByText('$', { exact: true })).toBeInTheDocument();
   });
 
-  it('posts once scope when Allow is confirmed', async () => {
+  it('posts once scope when Allow is clicked', async () => {
     renderWithQc(
       <MutationDiffCards sessionId="wb_1" status={shellStatus} />,
     );
-    fireEvent.click(screen.getByTestId('permission-confirm'));
+    fireEvent.click(screen.getByTestId('permission-choice-allow'));
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith('/api/workbench/confirm-mutation', {
         sessionId: 'wb_1',
@@ -175,12 +186,11 @@ describe('MutationDiffCards', () => {
     );
   });
 
-  it('posts always scope when Always is selected then confirmed', async () => {
+  it('posts always scope when Always is clicked', async () => {
     renderWithQc(
       <MutationDiffCards sessionId="wb_1" status={shellStatus} />,
     );
     fireEvent.click(screen.getByTestId('permission-choice-always'));
-    fireEvent.click(screen.getByTestId('permission-confirm'));
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith('/api/workbench/confirm-mutation', {
         sessionId: 'wb_1',
@@ -192,12 +202,11 @@ describe('MutationDiffCards', () => {
     );
   });
 
-  it('posts reject when Deny is confirmed', async () => {
+  it('posts reject when Deny is clicked', async () => {
     renderWithQc(
       <MutationDiffCards sessionId="wb_1" status={shellStatus} />,
     );
     fireEvent.click(screen.getByTestId('permission-choice-deny'));
-    fireEvent.click(screen.getByTestId('permission-confirm'));
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith('/api/workbench/confirm-mutation', {
         sessionId: 'wb_1',

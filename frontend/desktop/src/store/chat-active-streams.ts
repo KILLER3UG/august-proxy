@@ -4,14 +4,13 @@
  * backend generation is currently running, even if the user isn't viewing
  * that session.
  *
- * The poll interval is intentionally generous (3 s) — the active-state
- * endpoint is cheap (one map lookup) and the sidebar is the only consumer.
+ * The poll interval is intentionally generous (15 s) — live chat.active /
+ * chat.idle events update this store instantly; the poll is a safety net.
  */
 
 import { create } from 'zustand';
 import { api } from '@/api/client';
 
-// Fallback only — live chat.active / chat.idle events update this store instantly.
 const POLL_INTERVAL_MS = 15_000;
 
 interface ActiveChatStreamsState {
@@ -34,20 +33,43 @@ export const $activeChatSessions = {
   },
 };
 
+/** Optimistically clear one or more session ids (e.g. after Stop). */
+export function clearActiveChatStream(...sessionIds: Array<string | null | undefined>): void {
+  const ids = sessionIds.filter((id): id is string => !!id);
+  if (ids.length === 0) return;
+  const prev = useActiveChatStreamsStore.getState().active;
+  let changed = false;
+  const next = { ...prev };
+  for (const id of ids) {
+    if (next[id]) {
+      delete next[id];
+      changed = true;
+    }
+  }
+  if (changed) useActiveChatStreamsStore.setState({ active: next });
+}
+
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let inFlight = false;
+
+/** Accept only flat `{ sessionId: 'streaming' }` maps; ignore legacy counters. */
+export function normalizeActiveChatMap(raw: unknown): Record<string, 'streaming'> {
+  const next: Record<string, 'streaming'> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return next;
+  for (const [id, status] of Object.entries(raw as Record<string, unknown>)) {
+    if (id === 'sessions' || id === 'active' || id === 'pending_approvals') continue;
+    if (status === 'streaming') next[id] = 'streaming';
+  }
+  return next;
+}
 
 async function poll(): Promise<void> {
   if (inFlight) return;
   if (typeof window === 'undefined') return;
   inFlight = true;
   try {
-    const active = await api.get<Record<string, string>>('/api/workbench/chat/active');
-    const next: Record<string, 'streaming'> = {};
-    for (const [id, status] of Object.entries(active)) {
-      if (status === 'streaming') next[id] = 'streaming';
-    }
-    useActiveChatStreamsStore.setState({ active: next });
+    const active = await api.get<unknown>('/api/workbench/chat/active');
+    useActiveChatStreamsStore.setState({ active: normalizeActiveChatMap(active) });
   } catch (_e: unknown) {
     // Network errors are non-fatal — keep the last known state.
   } finally {
@@ -58,8 +80,6 @@ async function poll(): Promise<void> {
 export function startChatActiveStreamsPoller(): void {
   if (typeof window === 'undefined') return;
   if (pollHandle) return;
-  // Kick off an immediate poll so the first render after a page load
-  // shows the right state, then settle into the interval.
   void poll();
   pollHandle = setInterval(() => { void poll(); }, POLL_INTERVAL_MS);
 }

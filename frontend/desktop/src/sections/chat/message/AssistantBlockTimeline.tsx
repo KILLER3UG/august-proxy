@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import {
   ToolCallItemBody,
   extractAgentId,
+  extractCommand,
   extractFilename,
 } from '@/components/chat/ToolCallItem';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
@@ -367,8 +368,10 @@ export function AssistantBlockTimeline({
           bucket === 'view' || bucket === 'edit' || bucket === 'run' ? bucket : 'tool';
         const label = getToolLabel(block.tool.name, {
           status: block.tool.status,
+          command: extractCommand(block.tool.context) ?? undefined,
         });
         const detail =
+          block.tool.preview?.slice(-120) ||
           block.tool.summary ||
           block.tool.context?.slice(0, 100) ||
           undefined;
@@ -521,6 +524,7 @@ export function AssistantBlockTimeline({
         const label = getToolLabel(tool.name, {
           agentId: agentId ?? undefined,
           filename: filename ?? undefined,
+          command: isCommand ? extractCommand(tool.context) ?? undefined : undefined,
           status: tool.status,
         });
         const expanded = isToolExpanded(toolId, tool.status, tool.name);

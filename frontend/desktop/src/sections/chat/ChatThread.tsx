@@ -223,7 +223,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Keep the approval banner up whenever tokens remain — do not require
   // status === awaiting_approval alone (multi-approve used to clear status
   // after the first Accept and hide the rest of the stack).
+  // Full access never shows the permission banner (plan gate is already gated).
+  const effectiveGuardMode =
+    workbenchSession?.guardMode ||
+    sessionStatus?.guardMode ||
+    workbenchMode;
   const approvalPending =
+    effectiveGuardMode !== 'full' &&
     !!workbenchSessionId &&
     (!!sessionStatus?.pendingToken ||
       (Array.isArray(sessionStatus?.pendingMutations) &&

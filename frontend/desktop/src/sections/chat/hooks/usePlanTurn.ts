@@ -30,6 +30,7 @@ import {
 } from '../chat-stream-manager';
 import { makeStreamHandlers } from '../makeStreamHandlers';
 import { persistMessages } from '../message-storage';
+import { resolveWorkbenchSessionId } from '../stream/session-id-map';
 import type { SubagentPromptMap } from './useSessionStream';
 
 const STREAM_UPDATE_INTERVAL_MS = 32;
@@ -98,12 +99,22 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
       targetWorkbenchSessionId?: string,
     ) => {
       if (!sessionId) return;
+      // Approval / plan continuation must never reuse a stale aborted turn —
+      // that race left Allow looking successful while the model never resumed.
+      const existingCtrl = activeStreamControllers.get(sessionId);
+      if (existingCtrl) {
+        existingCtrl.abort();
+        activeStreamControllers.delete(sessionId);
+      }
+      chatRuntime.abortSession(sessionId);
+
       setSessionStatus(sessionId, 'working');
       const assistantMsgId = `a${Date.now()}`;
       const turn = chatRuntime.startTurn({
         sessionId,
         assistantMsgId,
         transport: 'none',
+        force: true,
       });
       const abortController = turn.controller;
       activeStreamControllers.set(sessionId, abortController);
@@ -332,9 +343,20 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
    */
   const handleMutationContinued = useCallback(
     async (sinceSeq: number) => {
-      if (!sessionId || !Number.isFinite(sinceSeq)) return;
-      const wbId = workbenchSession?.id;
-      if (!wbId) return;
+      if (!sessionId || !Number.isFinite(sinceSeq)) {
+        toast.error('Could not continue after approval', {
+          description: 'Missing session or stream cursor.',
+        });
+        return;
+      }
+      const wbId =
+        workbenchSession?.id || resolveWorkbenchSessionId(sessionId);
+      if (!wbId) {
+        toast.error('Could not continue after approval', {
+          description: 'Workbench session is not ready yet — try again.',
+        });
+        return;
+      }
       try {
         await streamPlanTurn(() => Promise.resolve({ sinceSeq }), undefined, wbId);
       } catch (e) {

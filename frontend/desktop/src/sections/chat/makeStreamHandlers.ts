@@ -373,7 +373,17 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         }
         return 'Read complete';
       })();
-      const summaryText = viewSummary ?? resultText.slice(0, 240);
+      const isCommandResult =
+        !!toolEntry &&
+        (toolEntry.name.startsWith('run_command') ||
+          toolEntry.name.startsWith('@run_command') ||
+          toolEntry.name === 'bash' ||
+          toolEntry.name.endsWith('__bash'));
+      // Commands keep a large output buffer for the live terminal pane;
+      // other tools stay compact in the disclosure summary.
+      const summaryText =
+        viewSummary ??
+        (isCommandResult ? resultText.slice(0, 80_000) : resultText.slice(0, 240));
       if (toolEntry && (toolEntry.name === 'web_search' || toolEntry.name === 'WebSearch')) {
         if (parsedResult && Array.isArray(parsedResult.results)) {
           searchHits = (parsedResult.results as Array<{ title?: string; url?: string; snippet?: string }>).map((r) => ({
@@ -495,12 +505,45 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         path: event.path,
       };
       setToolProgress(prev => applyToolProgress(prev, e));
-      // Surface web_search / long-tool status text on the running tool row.
+
+      const previewChunk = typeof event.preview === 'string' ? event.preview : '';
       const msg = typeof event.message === 'string' ? event.message.trim() : '';
-      if (msg && event.id) {
-        toolResults = toolResults.map((t) =>
-          t.id === event.id && t.status === 'running' ? { ...t, summary: msg } : t,
-        );
+      if (!event.id || (!previewChunk && !msg)) return;
+
+      const isCommandTool = (name: string) =>
+        name.startsWith('run_command') ||
+        name.startsWith('@run_command') ||
+        name === 'bash' ||
+        name.endsWith('__bash');
+
+      // Live shell output → append to preview (do not overwrite summary with noise).
+      if (previewChunk) {
+        const MAX_PREVIEW = 80_000;
+        toolResults = toolResults.map((t) => {
+          if (t.id !== event.id || t.status !== 'running') return t;
+          const next = (t.preview || '') + previewChunk;
+          return {
+            ...t,
+            preview: next.length > MAX_PREVIEW ? next.slice(next.length - MAX_PREVIEW) : next,
+          };
+        });
+        streamBlocks = appendBlockEvent(streamBlocks, {
+          type: 'tool_progress',
+          id: event.id,
+          status: 'running',
+          preview: previewChunk,
+        });
+        scheduleUpdate();
+        return;
+      }
+
+      // Status text: for commands keep it off the detail line when preview exists.
+      if (msg) {
+        toolResults = toolResults.map((t) => {
+          if (t.id !== event.id || t.status !== 'running') return t;
+          if (isCommandTool(t.name) && t.preview) return t;
+          return { ...t, summary: msg };
+        });
         streamBlocks = appendBlockEvent(streamBlocks, {
           type: 'tool_progress',
           id: event.id,

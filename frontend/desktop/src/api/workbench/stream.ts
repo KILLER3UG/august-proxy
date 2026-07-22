@@ -77,15 +77,10 @@ export async function streamWorkbenchChat(
         queuedMessageId?: string;
         message?: string;
       };
-      // Backend queues when another turn is already in flight — do not open
-      // a second SSE wait that looks like a hung empty response.
+      // Backend queues when another turn is already in flight — do not treat
+      // that as a workbench error (the message was accepted into the queue).
       if (body?.status === 'queued') {
-        handlers.onError?.({
-          message:
-            body.message ||
-            'A response is already in progress — your message was queued and will run next.',
-        });
-        return { queued: true, status: 'queued' };
+        return { queued: true, status: 'queued', message: body.message };
       }
       if (Number.isFinite(body?.sinceSeq)) {
         handlers.onStarted?.({ sinceSeq: body.sinceSeq });

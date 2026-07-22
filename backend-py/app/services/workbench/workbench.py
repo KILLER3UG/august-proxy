@@ -1692,30 +1692,27 @@ async def _sendWorkbenchMessageStreamImpl(
                             'bash',
                             'mcp__workspace__bash',
                         ):
-                            # Heartbeat so long shell commands do not look stuck
-                            # (UI treats phase "running" as a no-op).
-                            async def _run_command_with_heartbeat() -> str:
-                                started = time.monotonic()
-                                stop = asyncio.Event()
+                            # Stream live stdout/stderr into tool_progress.preview so
+                            # the chat shows download progress while the command runs.
+                            from app.lib.async_subprocess import current_command_output
 
-                                async def _beat() -> None:
-                                    while not stop.is_set():
-                                        try:
-                                            await asyncio.wait_for(stop.wait(), timeout=5.0)
-                                            break
-                                        except asyncio.TimeoutError:
-                                            if not emit or stop.is_set():
-                                                continue
-                                            elapsed = int(time.monotonic() - started)
-                                            emit(
-                                                {
-                                                    'type': 'tool_progress',
-                                                    'id': toolUseId,
-                                                    'name': toolName,
-                                                    'phase': 'reading',
-                                                    'message': f'Still running ({elapsed}s)…',
-                                                }
-                                            )
+                            async def _run_command_with_stream() -> str:
+                                last_emit = time.monotonic()
+
+                                async def _on_output(chunk: str) -> None:
+                                    nonlocal last_emit
+                                    if not emit or not chunk:
+                                        return
+                                    last_emit = time.monotonic()
+                                    emit(
+                                        {
+                                            'type': 'tool_progress',
+                                            'id': toolUseId,
+                                            'name': toolName,
+                                            'phase': 'running',
+                                            'preview': chunk,
+                                        }
+                                    )
 
                                 if emit:
                                     emit(
@@ -1723,22 +1720,47 @@ async def _sendWorkbenchMessageStreamImpl(
                                             'type': 'tool_progress',
                                             'id': toolUseId,
                                             'name': toolName,
-                                            'phase': 'reading',
-                                            'message': 'Running command…',
+                                            'phase': 'running',
+                                            'message': 'Running…',
                                         }
                                     )
-                                beat_task = asyncio.create_task(_beat())
+
+                                out_token = current_command_output.set(_on_output)
+                                stop = asyncio.Event()
+
+                                async def _idle_beat() -> None:
+                                    while not stop.is_set():
+                                        try:
+                                            await asyncio.wait_for(stop.wait(), timeout=8.0)
+                                            break
+                                        except asyncio.TimeoutError:
+                                            if not emit or stop.is_set():
+                                                continue
+                                            if time.monotonic() - last_emit < 7.0:
+                                                continue
+                                            emit(
+                                                {
+                                                    'type': 'tool_progress',
+                                                    'id': toolUseId,
+                                                    'name': toolName,
+                                                    'phase': 'running',
+                                                    'message': 'Still working…',
+                                                }
+                                            )
+
+                                beat_task = asyncio.create_task(_idle_beat())
                                 try:
                                     return await _executeTool(toolName, toolInput, session)
                                 finally:
                                     stop.set()
+                                    current_command_output.reset(out_token)
                                     beat_task.cancel()
                                     try:
                                         await beat_task
                                     except (asyncio.CancelledError, Exception):
                                         pass
 
-                            result = await _run_command_with_heartbeat()
+                            result = await _run_command_with_stream()
                         else:
                             result = await _executeTool(toolName, toolInput, session)
                     if isinstance(result, str) and result.startswith('Error:'):
@@ -2289,8 +2311,11 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
     """Check if a tool execution is blocked by guard mode or permissions.
 
     Returns None if allowed, or a string reason if blocked.
-    In ask mode, creates a pending mutation for the ApprovalBanner UI.
+    In ask/edit mode, creates a pending mutation for the ApprovalBanner UI.
+    Full Access never creates permission prompts — including for ``run_command``.
     """
+    mode = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+
     # Codex read-only sandbox: block mutating file tools. Shell still goes through
     # run_command soft/OS preflight (which denies redirects / mutating prefixes).
     sandbox_mode = (getattr(session, 'sandboxMode', None) or 'workspace-write').strip().lower()
@@ -2313,14 +2338,19 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
                 f"Tool '{toolName}' is blocked by read-only sandbox. "
                 'Switch sandbox mode to Workspace or Full access to make changes.'
             )
-    if session.guardMode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
+
+    # Full Access: never queue Ask/Edit permission banners (including run_command).
+    if mode == 'full':
+        return None
+
+    if mode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
         return (
             f"Tool '{toolName}' is destructive and cannot run in plan mode. "
             'Finish investigating with non-destructive tools, then call `submit_plan` '
             'and wait for the user to approve before executing.'
         )
     # Edit automatically: file edits proceed; shell/commands still need approval.
-    if session.guardMode == 'edit' and isShellMutationTool(toolName, args):
+    if mode == 'edit' and isShellMutationTool(toolName, args):
         if has_tool_grant(session, toolName, args):
             return None
         key = _mutation_grant_key(toolName, args)
@@ -2347,7 +2377,7 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
             'Do not retry. When the user accepts, the tool will be executed with the proposed arguments '
             'and you will receive the result automatically.'
         )
-    if session.guardMode == 'ask' and isPlanModeBlocked(toolName, args):
+    if mode == 'ask' and isPlanModeBlocked(toolName, args):
         if has_tool_grant(session, toolName, args):
             return None
         # Avoid stacking duplicate pending mutations for the same tool+path

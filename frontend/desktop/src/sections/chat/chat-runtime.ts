@@ -17,6 +17,8 @@ export interface StartTurnInput {
   sessionId: string | null;
   assistantMsgId: string;
   transport?: ChatTransport;
+  /** When true, abort any in-flight turn for this session and start fresh. */
+  force?: boolean;
 }
 
 export interface ChatRuntimeSnapshot {
@@ -83,8 +85,12 @@ export function createChatRuntime(): ChatRuntime {
     },
 
     startTurn(input) {
-      const existing = this.getActiveTurn(input.sessionId);
-      if (existing) return existing;
+      if (input.force) {
+        this.abortSession(input.sessionId);
+      } else {
+        const existing = this.getActiveTurn(input.sessionId);
+        if (existing) return existing;
+      }
 
       const controller = new AbortController();
       const now = Date.now();

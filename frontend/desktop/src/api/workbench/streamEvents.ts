@@ -82,6 +82,7 @@ export function dispatchWorkbenchEvent(
         paths: Array.isArray(p?.paths) ? (p.paths as string[]) : undefined,
         path: typeof p?.path === 'string' ? p.path : undefined,
         message: typeof p?.message === 'string' ? p.message : undefined,
+        preview: typeof p?.preview === 'string' ? p.preview : undefined,
       });
       break;
     }

@@ -18,6 +18,7 @@ import {
   FormattedResultSection,
   FormattedErrorSection,
 } from './sections';
+import { CommandOutputPane } from './CommandOutputPane';
 
 /** Pull the full prompt/task text out of a spawn_subagent tool's JSON args. */
 function extractSubagentPrompt(context?: string): string | null {
@@ -202,10 +203,26 @@ export function ToolCallItemBody({
   const isSubagent = isSubagentToolName(tool.name);
   const bucket = classifyTool(tool.name);
   const isView = bucket === 'view';
+  const isCommand =
+    tool.name.startsWith('@run_command') ||
+    tool.name.startsWith('run_command') ||
+    tool.name === 'bash' ||
+    tool.name.endsWith('__bash');
   const parts: ReactNode[] = [];
 
   if (isSubagent) {
     parts.push(<SubagentToolBody key="subagent" tool={tool} />);
+  } else if (isCommand) {
+    parts.push(
+      <CommandOutputPane
+        key="command"
+        toolName={tool.name}
+        context={tool.context}
+        preview={tool.preview}
+        summary={tool.summary || tool.error}
+        status={tool.status}
+      />,
+    );
   } else if (
     tool.context &&
     !isView &&
@@ -270,8 +287,9 @@ export function ToolCallItemBody({
     }
   }
 
-  // Streaming preview is useful for edits/commands, not for dumping file reads.
-  if (!isSubagent && !isView && tool.preview && tool.status === 'running') {
+  // Streaming preview is useful for edits, not for dumping file reads.
+  // Commands use CommandOutputPane (preview + final summary) instead.
+  if (!isSubagent && !isView && !isCommand && tool.preview && tool.status === 'running') {
     parts.push(
       <Section key="preview" label="streaming">
         {tool.preview}
@@ -302,10 +320,11 @@ export function ToolCallItemBody({
   }
 
   // View/read tools: no truncated content preview — path is on the row label.
-  // Edit tools route through DiffView above; other tools keep FormattedResult.
+  // Commands: output lives in CommandOutputPane. Edit tools use DiffView.
   if (
     !isSubagent &&
     !isView &&
+    !isCommand &&
     tool.summary &&
     !tool.searchHits &&
     !tool.providerSetup &&
@@ -320,7 +339,7 @@ export function ToolCallItemBody({
     parts.push(<ProviderSetupWidget key="provider" setup={tool.providerSetup} />);
   }
 
-  if (tool.error) {
+  if (!isSubagent && !isCommand && tool.error) {
     parts.push(
       <FormattedErrorSection key="error" toolName={tool.name} raw={tool.error} />,
     );

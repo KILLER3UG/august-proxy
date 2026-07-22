@@ -364,9 +364,21 @@ async def stopChat(request: Request):
 
 @router.get('/chat/active')
 async def activeChats():
-    """List active status for all sessions."""
-    activity = wb.getWorkbenchActivity()
-    return activity
+    """Map of workbench session ids currently generating → ``streaming``.
+
+    Sidebar / ChatThread poll this to keep the AUG pulse and ``streaming``
+    flag in sync. Must be a flat ``{ sessionId: 'streaming' }`` map — not
+    activity counters (those wipe the client store every poll).
+    """
+    active: dict[str, str] = {}
+    for sid, task in list(_activeStreams.items()):
+        if task is None:
+            continue
+        if task.done():
+            _activeStreams.pop(sid, None)
+            continue
+        active[sid] = 'streaming'
+    return active
 
 
 @router.post('/chat/queue')
@@ -1406,6 +1418,11 @@ async def setGuardMode(request: Request):
                 session.approved = False  # type: ignore[attr-defined]
             except Exception:
                 pass
+        # Drop ask/edit (and sandbox-escape) permission prompts — Full Access
+        # must not replace the composer with the approval banner.
+        session.pendingMutations = []
+        if as_str(getattr(session, 'status', '') or '') == 'awaiting_approval':
+            session.status = 'idle'
     session.updatedAt = datetime.now(timezone.utc).isoformat()
     # Invalidate cached Tier1/Tier2 so guard-mode barrier text refreshes.
     try:

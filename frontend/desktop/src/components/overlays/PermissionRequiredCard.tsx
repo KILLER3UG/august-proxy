@@ -164,7 +164,10 @@ export function PermissionRequiredCard({
                   : 'text-foreground/85 hover:bg-muted/40',
                 (disabled || confirming) && 'opacity-60',
               )}
-              onClick={() => setSelected(choice.id)}
+              onClick={() => {
+                setSelected(choice.id);
+                if (!disabled && !confirming) void onConfirm(choice.id);
+              }}
               onDoubleClick={() => {
                 setSelected(choice.id);
                 if (!disabled && !confirming) void onConfirm(choice.id);

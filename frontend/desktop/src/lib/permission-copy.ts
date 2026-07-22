@@ -10,7 +10,7 @@ export const PERMISSION_COPY = {
   alwaysHint: 'Do not ask again for the same command',
   deny: 'Deny',
   denyHint: 'Reject it for now',
-  confirmHint: 'Use Tab / arrow keys to choose, then press Enter to confirm',
+  confirmHint: 'Click Allow, Always, or Deny — or use ↑↓ and Enter',
   confirm: 'Confirm',
   /** @deprecated Prefer `allow` — kept for PermissionToast */
   once: 'Allow',

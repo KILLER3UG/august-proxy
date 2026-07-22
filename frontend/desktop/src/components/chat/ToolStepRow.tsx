@@ -39,8 +39,9 @@ export function ToolStepRow({
   const filename = !isCommand ? extractFilename(tool.context) : null;
   const isView = classifyTool(tool.name) === 'view';
   // View tools: no truncated file-body detail — path lives in the row label.
+  // Commands: detail lives in the terminal pane (avoid CONTEXT/RESULT noise).
   const friendlyCtx = tool.context ? formatToolContext(tool.name, tool.context) : null;
-  const detail = isView
+  const detail = isView || isCommand
     ? ''
     : (
         tool.summary?.trim() ||
@@ -125,7 +126,7 @@ export function ToolStepRow({
           className="process-tool-panel"
           aria-live={running ? 'polite' : undefined}
         >
-          <div className="process-tool-response-label">Response</div>
+          <div className="process-tool-response-label">{isCommand ? 'Terminal' : 'Response'}</div>
           {detail && !hasChildren ? (
             <div className="process-tool-response">{detail}</div>
           ) : null}

@@ -189,11 +189,14 @@ export function formatToolContext(toolName: string, contextJson?: string): Forma
     return { summary: 'Searching files', raw };
   }
 
-  // Run command / bash
+  // Run command / bash — short friendly line (full cmd lives in the terminal pane).
   if (canonical === 'run_command' || canonical === 'bash') {
     const cmd = parsed && pickString(parsed, ['command', 'cmd', 'shell_command', 'shellCommand', 'script']);
-    if (cmd) return { summary: `Executing command: ${truncate(cmd, 120)}`, raw };
-    return { summary: 'Executing command', raw };
+    if (cmd) {
+      const short = truncate(cmd.replace(/\s+/g, ' ').trim(), 100);
+      return { summary: `Running: ${short}`, raw };
+    }
+    return { summary: 'Running a command', raw };
   }
 
   // Memory ops

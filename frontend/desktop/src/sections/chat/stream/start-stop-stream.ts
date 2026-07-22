@@ -22,6 +22,7 @@ import {
   clearQueuedWorkbenchMessages,
 } from '@/api/workbench';
 import { setSessionStatus, clearSessionStatus } from '@/store/sessions';
+import { clearActiveChatStream } from '@/store/chat-active-streams';
 import { chatRuntime } from '../chat-runtime';
 import {
   getOrInitSessionStreamState,
@@ -34,6 +35,7 @@ import {
   getSessionSubscriberLastSeq,
   hasSessionSubscriber,
 } from './session-subscriber';
+import { resolveWorkbenchSessionId, resolveUiSessionId } from './session-id-map';
 import { clearQueuedMessages } from '../queue-store';
 import { takeHandoffSummary } from '../handoff-summary';
 
@@ -121,8 +123,7 @@ export async function startChatStream(
       handoffSummary,
     }, handlers, abortController.signal);
 
-    // Backend queued because another turn is active — finalize the empty
-    // assistant placeholder without hanging on SSE.
+    // Backend queued because another turn is active — keep a calm note, not an error.
     if (startResult?.queued) {
       updateSessionStreamState(sessionId, prev => ({
         messages: prev.messages
@@ -131,11 +132,10 @@ export async function startChatStream(
               ? {
                   ...msg,
                   content:
-                    '⏳ A response is already in progress. Your message was queued and will run when it finishes.',
+                    'Your message is queued and will run when the current response finishes.',
                 }
               : msg
           )
-          // Drop empty placeholder assistants if we added one
           .filter(msg => !(msg.id === assistantMsgId && !msg.content)),
       }));
       finalize('done');
@@ -199,25 +199,30 @@ export async function startChatStream(
 
 // Stop/abort generation for a session
 export async function stopChatStream(sessionId: string) {
-  const controller = activeStreamControllers.get(sessionId);
-  if (controller) {
-    controller.abort();
-    activeStreamControllers.delete(sessionId);
+  const uiSessionId = resolveUiSessionId(sessionId);
+  const wbSessionId = resolveWorkbenchSessionId(sessionId);
+
+  for (const id of new Set([sessionId, uiSessionId, wbSessionId].filter(Boolean))) {
+    const controller = activeStreamControllers.get(id);
+    if (controller) {
+      controller.abort();
+      activeStreamControllers.delete(id);
+    }
+    chatRuntime.abortSession(id);
+    if (hasSessionSubscriber(id)) {
+      detachSessionSubscriber(id);
+    }
   }
 
-  const activeTurnId = chatRuntime.getLatestActiveTurnId(sessionId);
-  const turn = activeTurnId ? chatRuntime.getTurn(activeTurnId) : null;
-  if (turn) {
-    chatRuntime.abortTurn(turn.turnId);
-  }
-
-  clearSessionStatus(sessionId);
-  clearQueuedMessages(sessionId);
+  clearSessionStatus(uiSessionId);
+  clearSessionStatus(wbSessionId);
+  clearQueuedMessages(uiSessionId);
+  clearQueuedMessages(wbSessionId);
+  clearActiveChatStream(sessionId, uiSessionId, wbSessionId);
 
   // Tell the backend to stop and free the in-flight slot immediately.
+  // Always prefer the workbench id — `_activeStreams` is keyed by wb_*.
   try {
-    const state = getOrInitSessionStreamState(sessionId);
-    const wbSessionId = state.workbenchSession?.id || sessionId;
     await workbenchClient.stopChat(wbSessionId);
     await clearQueuedWorkbenchMessages(wbSessionId).catch(() => undefined);
   } catch (err) {

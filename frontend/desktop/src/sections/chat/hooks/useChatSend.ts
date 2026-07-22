@@ -196,6 +196,10 @@ export function useChatSend(opts: UseChatSendOptions) {
       });
       if (result === 'error') {
         toast.error('Chat failed — check backend and model provider');
+      } else if (result === 'queued') {
+        toast.message('Message queued', {
+          description: 'It will run when the current response finishes.',
+        });
       }
     },
     [

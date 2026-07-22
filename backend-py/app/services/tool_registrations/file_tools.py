@@ -259,8 +259,15 @@ async def _pySearchFiles(query: str, searchPath: Path) -> str:
 
 
 def _queue_sandbox_escape(session: object, command: str, denial: str) -> None:
-    """Create an ApprovalBanner pending mutation for unsandboxed retry."""
+    """Create an ApprovalBanner pending mutation for unsandboxed retry.
+
+    Skipped in Full Access guard mode — that mode must not interrupt the
+    composer with permission prompts.
+    """
     try:
+        mode = str(getattr(session, 'guardMode', '') or '').strip().lower()
+        if mode in ('full', 'full-access', 'make-changes'):
+            return
         from app.services.workbench.sessions import save_sessions
         from app.services.workbench.workbench import (
             _emitSessionStatus,
@@ -330,10 +337,12 @@ async def _runCommand(
 
     session = _session()
     allow_unsandboxed = False
+    guard_full = False
     if session is not None:
         try:
-            from app.services.workbench.workbench import has_tool_grant
+            from app.services.workbench.workbench import has_tool_grant, normalizeGuardMode
 
+            guard_full = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full') == 'full'
             escape_args = {
                 'command': command,
                 'sandboxEscape': True,
@@ -351,8 +360,15 @@ async def _runCommand(
     )
 
     result = await run_sandboxed(command, policy, timeout=timeout_val)
-    # Only queue sandbox-escape approval for real policy denials — not timeouts/cancels.
+    # Only queue sandbox-escape approval outside Full Access — Full Access must
+    # never interrupt the chat with a permission banner for terminal commands.
     if result.denial_reason and session is not None and not allow_unsandboxed:
+        if guard_full:
+            return (
+                f'[sandbox:{result.enforcement}] Blocked: {result.denial_reason}\n'
+                'Sandbox policy blocked this command. Switch the sandbox control to '
+                'Full access (or enable network) if you need it to run unsandboxed.'
+            )
         _queue_sandbox_escape(session, command, result.denial_reason)
     return result.as_tool_text()
 

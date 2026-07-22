@@ -156,6 +156,7 @@ export interface WorkbenchEventHandlers {
     paths?: string[];
     path?: string;
     message?: string;
+    preview?: string;
   }) => void;
   onSession?: (data: WorkbenchSession) => void;
   onBtw?: (data: WorkbenchBtwResult) => void;

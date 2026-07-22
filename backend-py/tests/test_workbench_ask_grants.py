@@ -220,3 +220,53 @@ async def test_accept_continues_even_when_stream_still_active(monkeypatch):
             await stale
         except (asyncio.CancelledError, Exception):
             pass
+
+
+def test_full_access_never_pending_for_run_command():
+    """Full Access must run terminal tools without ApprovalBanner tokens."""
+    s = create_workbench_session(guardMode='full')
+    s.guardMode = 'full'
+    assert wb._checkToolGuard(s, 'run_command', {'command': 'pip install torch'}) is None
+    assert s.pendingMutations == []
+    assert s.status != 'awaiting_approval'
+
+
+def test_edit_mode_still_pending_for_run_command():
+    s = create_workbench_session(guardMode='edit')
+    s.guardMode = 'edit'
+    blocked = wb._checkToolGuard(s, 'run_command', {'command': 'npm install'})
+    assert blocked is not None
+    assert len(s.pendingMutations) == 1
+    assert s.pendingMutations[0]['toolName'] == 'run_command'
+
+
+def test_full_access_skips_sandbox_escape_banner():
+    from app.services.tool_registrations.file_tools import _queue_sandbox_escape
+
+    s = create_workbench_session(guardMode='full')
+    s.guardMode = 'full'
+    _queue_sandbox_escape(s, 'curl https://example.com', 'network disabled in sandbox')
+    assert s.pendingMutations == []
+
+
+def test_switching_to_full_clears_pending_mutations():
+    """setGuardMode(full) must clear leftover ask/edit terminal prompts."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.routers import workbench as wr
+
+    s = create_workbench_session(guardMode='ask')
+    s.guardMode = 'ask'
+    wb._checkToolGuard(s, 'run_command', {'command': 'ls'})
+    assert len(s.pendingMutations) == 1
+
+    req = MagicMock()
+    req.json = AsyncMock(return_value={'sessionId': s.id, 'guardMode': 'full'})
+
+    out = asyncio.run(wr.setGuardMode(req))
+    assert out.get('guardMode') == 'full'
+    s2 = wb.getWorkbenchSession(s.id)
+    assert s2 is not None
+    assert s2.pendingMutations == []
+    assert s2.status != 'awaiting_approval'
