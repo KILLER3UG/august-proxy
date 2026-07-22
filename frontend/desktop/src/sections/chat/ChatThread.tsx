@@ -44,6 +44,7 @@ import {
 } from './queue-store';
 import { buildHandoffSummary, markHandoffPending } from './handoff-summary';
 import { SavePointBanner } from '@/components/chat/SavePointChip';
+import { SkillEvolvedChip } from '@/components/chat/SkillEvolvedChip';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useStickToBottomScroll } from './hooks/useStickToBottomScroll';
@@ -933,6 +934,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       <ChatCheckpoints messages={messages} scrollRef={scrollRef} />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
         <SavePointBanner workbenchSessionId={workbenchSessionId} />
+        <SkillEvolvedChip />
         <CollaborationInsights />
         {examActive && (
           <ExamHost

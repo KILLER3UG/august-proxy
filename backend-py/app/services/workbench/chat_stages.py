@@ -62,9 +62,23 @@ async def run_regular_tools_stage(
             result = await run_one(name, inp, tid)
             ok = not (isinstance(result, dict) and result.get('is_error'))
             _emit_tool('result', name, 'ok' if ok else 'error', error=None if ok else 'tool error')
+            if not ok:
+                try:
+                    from app.services.memory.deterministic_signals import trackToolFailure
+
+                    error_text = str(result.get('content', ''))[:200] if isinstance(result, dict) else ''
+                    trackToolFailure(name, error_text)
+                except Exception:
+                    pass
             return result
         except Exception as exc:
             _emit_tool('result', name, 'error', error=str(exc)[:200])
+            try:
+                from app.services.memory.deterministic_signals import trackToolFailure
+
+                trackToolFailure(name, str(exc)[:200])
+            except Exception:
+                pass
             raise
 
     if len(pending) > 1 and all(is_parallel_safe(n) for n, _, _ in pending):
@@ -84,16 +98,18 @@ def schedule_post_turn_side_effects(
     session: object,
     messages: list[object],
     auto_memory_model: str | None,
-    reflection_model: str | None,
     sync_auto_memory: Callable[..., None],
-    reflect_on_turn: Callable[..., object],
 ) -> None:
-    """Kick off auto-memory and turn reflection without blocking the chat stream.
+    """Kick off auto-memory sync without blocking the chat stream.
 
     These jobs run on a worker thread (via ``asyncio.to_thread``) so they do not
     stall the event loop, delay the first streamed token, or hold the stream
     open while finishing. Failures are logged at debug and never raised to the
     caller. Safe to call after the final SSE event has been sent.
+
+    Note: The unified LLM reflection (corrections, facts, skills, frustration)
+    is handled by ``background_review.tryBackgroundReview`` which is called
+    separately from the workbench finalizer.
     """
     if auto_memory_model:
         try:
@@ -102,10 +118,3 @@ def schedule_post_turn_side_effects(
             )
         except Exception:
             logger.debug('schedule auto-memory failed', exc_info=True)
-    if reflection_model:
-        try:
-            asyncio.create_task(
-                asyncio.to_thread(reflect_on_turn, list(messages), reflection_model)
-            )
-        except Exception:
-            logger.debug('schedule reflection failed', exc_info=True)

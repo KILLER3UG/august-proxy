@@ -289,15 +289,26 @@ def buildSystemPrompt(
     # prompt every turn. The model pulls past-session context via memory_search /
     # fact_search / context_read / brain_query when the user asks about prior work.
     # (Previously getRelevantMemories() injected <auto_memories> every turn.)
+    _HEURISTIC_CAP = 50
     try:
         from app.services.memory_store import _conn as brainConn
 
         conn = brainConn()
         heuristicsRows = conn.execute(
-            'SELECT rule, source, category FROM learned_heuristics ORDER BY updated_at DESC'
+            'SELECT rule, source, category FROM learned_heuristics ORDER BY updated_at DESC LIMIT ?',
+            (_HEURISTIC_CAP,),
         ).fetchall()
         if heuristicsRows:
             memory['learnedHeuristics'] = [dict(r) for r in heuristicsRows]
+        totalHeuristics = conn.execute('SELECT COUNT(*) FROM learned_heuristics').fetchone()[0]
+        if totalHeuristics > _HEURISTIC_CAP:
+            from app.services.brain_event_bus import emitBrainEvent
+
+            emitBrainEvent(
+                category='heuristic',
+                layer='workbench.prompt_injection',
+                summary=f'Heuristic cap active: showing {_HEURISTIC_CAP} of {totalHeuristics} rules',
+            )
     except Exception:
         logger.debug('prompt: heuristics load failed', exc_info=True)
     coreFacts = get_memory('coreMemory')
@@ -1979,7 +1990,6 @@ async def _sendWorkbenchMessageStreamImpl(
         if emit:
             emit({'type': 'done', 'sessionId': sessionId})
     review_model = _backgroundTaskModel('reviewModel', resolvedModel)
-    reflection_model = _backgroundTaskModel('reflectionModel', resolvedModel)
     auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
     try:
         from app.services.memory.background_review import ReviewGates, tryBackgroundReview
@@ -1995,16 +2005,13 @@ async def _sendWorkbenchMessageStreamImpl(
     except Exception:
         pass
     try:
-        from app.services.memory.self_evolution import reflectOnTurn
         from app.services.workbench.chat_stages import schedule_post_turn_side_effects
 
         schedule_post_turn_side_effects(
             session=session,
             messages=list(currentMessages),
             auto_memory_model=auto_memory_model or None,
-            reflection_model=reflection_model or None,
             sync_auto_memory=_syncAutoMemory,
-            reflect_on_turn=reflectOnTurn,
         )
     except Exception:
         pass
@@ -2530,6 +2537,8 @@ def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> 
                 raw_choices = q.get('choices') or []
                 if isinstance(raw_choices, list):
                     item['choices'] = [str(c) for c in raw_choices[:MAX_CLARIFY_CHOICES]]
+                if q.get('multiSelect'):
+                    item['multiSelect'] = True
                 out.append(item)
             return out
         return []

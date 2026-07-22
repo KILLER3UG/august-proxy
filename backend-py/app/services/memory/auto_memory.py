@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from datetime import datetime, timezone
 
 from app.services.memory_store import get_memory, save_memory
@@ -531,34 +530,3 @@ def extractAndSaveTodos(messages: list[dict[str, object]]) -> list[str]:
     if todos:
         saveAutoMemory('todos', todos, category='tasks', importance=0.8, source='auto')
     return todos
-
-
-def backgroundReview(messages: list[dict[str, object]]) -> dict[str, object]:
-    """Run a lightweight background review of the conversation."""
-    if not messages:
-        return {'reviewed': False, 'reason': 'no_messages'}
-    toolErrors = sum((1 for m in messages if m.get('role') == 'tool' and 'Error' in str(m.get('content', ''))))
-    userMsgs = [m for m in messages if m.get('role') == 'user']
-    frustrationPatterns = [
-        '\\b(why|still|again|not working|fix this|wrong|incorrect)\\b',
-        '\\b(?!\\w+@\\w+)(frustrat|annoy|angry|disappoint)\\b',
-    ]
-    frustrated = False
-    for msg in userMsgs:
-        text = str(msg.get('content', '')).lower()
-        for pattern in frustrationPatterns:
-            if re.search(pattern, text):
-                frustrated = True
-                break
-    result: dict[str, object] = {
-        'reviewed': True,
-        'tool_errors': toolErrors,
-        'frustration_detected': frustrated,
-        'message_count': len(messages),
-        'needs_attention': toolErrors > 2 or frustrated,
-    }
-    if result['needs_attention']:
-        saveAutoMemory(
-            f'review_{time.time()}', result, category='review', importance=0.9, source='auto'
-        )
-    return result

@@ -30,7 +30,8 @@ CLARIFY_BLOCK = (
     'that would change your approach, DO NOT guess or invent requirements. Instead, call the '
     '`submit_clarify` tool with a concise `question` (1-2 sentences) and up to 5 short `choices` '
     '(options the user can pick from). You may also pass a `questions` array to ask several '
-    'related questions at once. The UI presents your choices as numbered options and adds its own '
+    'related questions at once. Set `multiSelect: true` on a question when the user should be '
+    'able to pick multiple options. The UI presents your choices as numbered options and adds its own '
     "free-text input for anything not covered, so do NOT include a 'something else' option yourself. "
     "Ask at most one round of clarifying questions unless the user's answer reveals new ambiguity. "
     'This applies in every guard mode, including plan mode.\n'

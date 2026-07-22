@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils';
 export interface ClarifyQuestion {
   question: string;
   choices?: string[];
+  /** Allow selecting multiple choices (default: false = single-select). */
+  multiSelect?: boolean;
 }
 
 export interface ClarifyPayload {
@@ -76,15 +78,23 @@ export function ClarifyTool({
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [draft, setDraft] = useState('');
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
+  const [multiSelections, setMultiSelections] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const current = questions[currentIndex];
   const isLast = currentIndex === totalQuestions - 1;
 
+  const isMultiSelect = current?.multiSelect ?? false;
+
   useEffect(() => {
     // Focus freeform field when the card mounts / question changes
     const id = window.setTimeout(() => inputRef.current?.focus(), 80);
     return () => window.clearTimeout(id);
+  }, [currentIndex]);
+
+  // Reset multi-selections when question changes
+  useEffect(() => {
+    setMultiSelections(new Set());
   }, [currentIndex]);
 
   // Keyboard: Esc / ← / → / 1-9
@@ -126,6 +136,17 @@ export function ClarifyTool({
   const pickChoice = useCallback(
     (choice: string) => {
       if (submitting) return;
+      if (isMultiSelect) {
+        // Toggle in multi-select mode
+        setMultiSelections((prev) => {
+          const next = new Set(prev);
+          if (next.has(choice)) next.delete(choice);
+          else next.add(choice);
+          return next;
+        });
+        return;
+      }
+      // Single-select: pick and advance/submit
       setSelectedChoice(choice);
       const next = { ...answers, [currentIndex]: choice };
       setAnswers(next);
@@ -139,8 +160,22 @@ export function ClarifyTool({
         }, 200);
       }
     },
-    [answers, currentIndex, isLast, onSubmit, submitting, totalQuestions]
+    [answers, currentIndex, isLast, isMultiSelect, onSubmit, submitting, totalQuestions]
   );
+
+  const submitMultiSelect = useCallback(() => {
+    if (submitting || multiSelections.size === 0) return;
+    const selected = Array.from(multiSelections).join(', ');
+    const next = { ...answers, [currentIndex]: selected };
+    setAnswers(next);
+    if (isLast) {
+      onSubmit(totalQuestions === 1 ? selected : JSON.stringify(next));
+    } else {
+      setCurrentIndex((i) => Math.min(totalQuestions - 1, i + 1));
+      setMultiSelections(new Set());
+      setDraft('');
+    }
+  }, [answers, currentIndex, isLast, multiSelections, onSubmit, submitting, totalQuestions]);
 
   const submitFreeform = useCallback(() => {
     const trimmed = draft.trim();
@@ -247,29 +282,46 @@ export function ClarifyTool({
                 disabled={submitting}
                 data-choice
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                  'flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-150',
                   'border-border/70 bg-muted/20 hover:bg-muted/50 hover:border-border',
                   'text-[15px] leading-snug text-foreground/90',
                   'disabled:cursor-not-allowed disabled:opacity-50',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  selectedChoice === choice &&
-                    'border-primary/50 bg-primary/10 text-foreground',
+                  (selectedChoice === choice || multiSelections.has(choice)) &&
+                    'border-primary/50 bg-primary/10 text-foreground scale-[0.99]',
                 )}
               >
                 <span
                   aria-hidden
                   className={cn(
-                    'grid size-8 shrink-0 place-items-center rounded-lg text-sm font-semibold tabular-nums',
-                    selectedChoice === choice
+                    'grid size-8 shrink-0 place-items-center rounded-lg text-sm font-semibold tabular-nums transition-colors duration-150',
+                    (selectedChoice === choice || multiSelections.has(choice))
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground',
                   )}
                 >
-                  {i + 1}
+                  {isMultiSelect && multiSelections.has(choice) ? '✓' : i + 1}
                 </span>
                 <span className="min-w-0 flex-1 wrap-anywhere">{choice}</span>
               </button>
             ))}
+            {/* Multi-select confirm button */}
+            {isMultiSelect && multiSelections.size > 0 && (
+              <button
+                type="button"
+                onClick={submitMultiSelect}
+                disabled={submitting}
+                className={cn(
+                  'mt-2 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5',
+                  'bg-primary text-primary-foreground text-sm font-medium',
+                  'hover:bg-primary/90 transition-colors',
+                  'disabled:cursor-not-allowed disabled:opacity-50',
+                )}
+              >
+                <Send className="size-3.5" />
+                Confirm ({multiSelections.size} selected)
+              </button>
+            )}
           </div>
         )}
 
@@ -322,7 +374,9 @@ export function ClarifyTool({
 
         <div className="mt-3 select-none text-[11px] text-muted-foreground/55">
           {current.choices && current.choices.length > 0
-            ? 'Tap a number key · Enter to send · Esc to skip'
+            ? isMultiSelect
+              ? 'Tap to select multiple · Confirm when done · Esc to skip'
+              : 'Tap a number key · Enter to send · Esc to skip'
             : 'Enter to send · Esc to skip'}
         </div>
       </div>

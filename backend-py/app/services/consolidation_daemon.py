@@ -1,11 +1,11 @@
 """
-Sleep Cycle — consolidation daemon (Phase 9a + 10.4).
+Sleep Cycle — consolidation daemon.
 
-v2: Background daemon triggered during idle or every 24 hours. Uses the
+Background daemon triggered during idle or every 24 hours. Uses the
 Hippocampus model to review recent auto_memories and learned_heuristics,
 then merges duplicates, promotes recurring patterns to facts, and deletes
-stale entries. Also drafts new SKILL.md files from successful complex
-sessions (Phase 10.4) using the Prefrontal model.
+stale entries. Skill creation is handled by background_review.py (unified
+reflection); this module only maintains legacy pending-skill approval.
 """
 
 from __future__ import annotations
@@ -21,10 +21,6 @@ from app.type_aliases import ConsolidationSummaryDict
 logger = logging.getLogger(__name__)
 _CONSOLIDATIONInterval = 86400
 _RECENTProtectionCount = 20
-_SKILLDraftRateLimit = 1
-_stagingDir = os.path.join('data', 'skills', 'staging')
-_staging_dir = _stagingDir
-_activeSkillsDir = os.path.join('skills')
 _lastRun: dict[str, object] | None = None
 _last_run = None  # kept in sync by _persist_last_run for tests
 _LAST_RUN_KEY = 'cognitive:consolidation:last_run'
@@ -116,75 +112,6 @@ async def _callHippocampus(prompt: str) -> str:
     return ''
 
 
-async def _callPrefrontal(prompt: str) -> str:
-    """v2: Call the Prefrontal model. Returns raw text response."""
-    try:
-        from app.providers import resolver as providerResolver
-        from app.providers.clients import getClient
-        from app.services.workbench import model_fleet
-
-        model = model_fleet.getModelForRole('prefrontal')
-        if not model:
-            return ''
-        provider = providerResolver.resolve(model)
-        if not provider:
-            available = [p for p in providerResolver.list_available() if p.get('api_key')]
-            provider = available[0] if available else None
-        if not provider:
-            return ''
-        client = getClient(provider)
-        if client and hasattr(client, 'generate'):
-            response = await client.generate(prompt)
-            return response or ''
-    except Exception:
-        pass
-    return ''
-
-
-def _getSessionSummary(sessionId: str) -> str:
-    """Summarize a workbench session for skill genesis drafting."""
-    if not sessionId:
-        return ''
-    try:
-        from app.services.workbench.sessions import get_workbench_session
-
-        session = get_workbench_session(sessionId)
-        if not session:
-            return ''
-        parts: list[str] = []
-        title = getattr(session, 'title', None) or ''
-        goal = getattr(session, 'goal', None) or ''
-        if title:
-            parts.append(f'Title: {title}')
-        if goal:
-            parts.append(f'Goal: {goal}')
-        msgs = getattr(session, 'messages', None) or []
-        snippets: list[str] = []
-        for m in msgs[-12:]:
-            if not isinstance(m, dict):
-                continue
-            role = m.get('role')
-            if role not in ('user', 'assistant'):
-                continue
-            content = m.get('content', '')
-            if isinstance(content, list):
-                texts = []
-                for block in content:
-                    if isinstance(block, dict) and block.get('type') == 'text':
-                        texts.append(str(block.get('text', '')))
-                    elif isinstance(block, str):
-                        texts.append(block)
-                content = ' '.join(texts)
-            text = str(content or '').strip()
-            if text:
-                snippets.append(f'{role}: {text[:400]}')
-        if snippets:
-            parts.append('Recent turns:\n' + '\n'.join(snippets[-8:]))
-        return '\n'.join(parts)[:4000]
-    except Exception:
-        return ''
-
-
 async def runConsolidation() -> ConsolidationSummaryDict:
     """Run one Hippocampus-driven consolidation cycle.
 
@@ -213,7 +140,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
             dict(r) for r in conn.execute('SELECT * FROM auto_memories ORDER BY id DESC LIMIT 100').fetchall()
         ]
         heuristics = [dict(r) for r in conn.execute('SELECT * FROM learned_heuristics ORDER BY id DESC').fetchall()]
-        if heuristics:
+        if heuristics or autoMemories:
             prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": []}}.\n"""
             raw = await _callHippocampus(prompt)
             if raw:
@@ -303,84 +230,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
             'deleted_stale': stats['deleted_stale'],
         },
     )
-    # Skill genesis: draft even when heuristics were empty / Hippocampus skipped,
-    # so fresh installs can still evolve skills from recent sessions.
-    try:
-        from app.services.cognitive_config import get_features
-
-        if get_features().get('skill_genesis', True):
-            from app.services.workbench.sessions import list_workbench_sessions
-
-            sessions = list_workbench_sessions() or []
-            if sessions:
-                sid = ''
-                first = sessions[0]
-                if isinstance(first, dict):
-                    sid = str(first.get('id') or '')
-                if sid:
-                    await draftSkillForSession(sid)
-    except Exception:
-        logger.debug('skill genesis draft after consolidation skipped', exc_info=True)
     return stats
-
-
-async def draftSkillForSession(sessionId: str) -> str | None:
-    """v2: Draft a SKILL.md from a successful session.
-
-    Returns the skill name or None if skipped.
-    Quality guard: skip if we already drafted a skill today.
-    """
-    try:
-        from app.services.memory_store import _conn
-
-        conn = _conn()
-        today = time.strftime('%Y-%m-%d')
-        recent = conn.execute(
-            "SELECT COUNT(*) as c FROM pending_skills WHERE created_at >= ? AND created_by = 'auto-gen'", (today,)
-        ).fetchone()
-        if recent['c'] >= _SKILLDraftRateLimit:
-            return None
-        summary = _getSessionSummary(sessionId)
-        if not summary:
-            return None
-        prompt = (
-            "This session completed a complex multi-step workflow. Is this workflow generic enough "
-            "to be turned into a reusable skill? If yes, draft a SKILL.md. Constraints: the 'name' "
-            "MUST be a valid kebab-case identifier (e.g., 'debug-python-script', 'user-preferences', "
-            "'jwt-auth-flow') — lowercase, hyphen-separated, no spaces, <= 50 chars. Return JSON: "
-            "{'name': str, 'description': str, 'trigger': str, 'body': str} or "
-            "{'skip': true, 'reason': str}.\n\nSession summary:\n"
-            f'{summary}\n'
-        )
-        raw = await _callPrefrontal(prompt)
-        try:
-            plan = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            return None
-        if plan.get('skip'):
-            return None
-        name = _sanitizeSkillName(plan.get('name', ''))
-        description = plan.get('description', '')
-        trigger = plan.get('trigger', '')
-        body = plan.get('body', '')
-        if not name or not body:
-            return None
-        os.makedirs(_stagingDir, exist_ok=True)
-        draftPath = os.path.join(_stagingDir, f'{name}.md')
-        content = (
-            f'---\nname: {name}\ndescription: {description}\ntrigger: {trigger}\ncreated_by: auto-gen\n---\n\n{body}\n'
-        )
-        with open(draftPath, 'w', encoding='utf-8') as f:
-            f.write(content)
-        conn.execute(
-            'INSERT INTO pending_skills (name, description, trigger_text, draft_path, source_session_id, source_workflow) VALUES (?, ?, ?, ?, ?, ?)',
-            (name, description, trigger, draftPath, sessionId, summary[:500]),
-        )
-        conn.commit()
-        return name
-    except Exception as exc:
-        logger.error('Skill drafting error: %s', exc)
-        return None
 
 
 def approvePendingSkill(name: str) -> bool:

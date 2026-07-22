@@ -1,19 +1,17 @@
-"""Background review — interval-gated after-turn reflection loop.
+"""Unified background reflection — the single post-turn learning owner.
 
-Modeled on Hermes ``agent/background_review.py`` which runs a daemon AIAgent
-that replays the conversation snapshot and asks whether any skill or memory
-should be saved or updated.
+Absorbs the former ``self_evolution.py`` (regex corrections/preferences) and
+``auto_memory.backgroundReview()`` (frustration detection) into one interval-
+gated LLM call that extracts corrections, facts, skills, and frustration.
 
-Key design points (matching Hermes):
-- Fires after a turn, **interval-gated** — not every turn (controlled by
-  ``ReviewGates.turn_interval`` and ``tool_round_interval``).
-- Runs as a background ``asyncio.Task`` (does not block the response).
-- Uses a **side LLM** call (separate from the main session's prompt cache;
-  configurable, defaults to no-op unless ``llm_client`` is provided).
-- Skill review: writes lessons into **agent-authored skills** via
-  ``skill_service.create_skill/patch_skill`` so the model loads them via
-  ``load_skill`` (the Hermes model — replacing the learned-guidelines store).
-- Memory review: stores user facts in the core memory KV store.
+Design:
+- Fires after a turn, **interval-gated** (``ReviewGates.turn_interval``).
+- Runs as a background ``asyncio.Task`` (never blocks the response).
+- Uses a side LLM call; falls back to the main chat model via providers.py.
+- Corrections -> ``learned_heuristics`` (injected into prompt every turn).
+- Facts -> ``coreMemory`` KV store.
+- Skills -> ``skill_service`` (autonomous creation, no approval gate).
+- Frustration -> brain event for attention flagging.
 """
 
 from __future__ import annotations
@@ -73,13 +71,36 @@ async def tryBackgroundReview(
     asyncio.create_task(_doReview(messagesSnapshot, llm_client=llm_client))
 
 
+async def tryEndOfSessionReview(
+    session: object,
+    messagesSnapshot: list[dict[str, object]],
+    *,
+    llm_client: ReviewClient = None,
+) -> None:
+    """Fire one final reflection when a session goes idle, if unreviewed turns exist.
+
+    Cheap gate: only fires when turns-since-last-review > 0. Prevents
+    corrections/facts in short 1-2 turn conversations from being lost.
+    """
+    if not messagesSnapshot:
+        return
+    lastTurn = getattr(session, '_last_reviewed_at_turn', 0)
+    sessionTurns = getattr(session, 'messageCount', 0) // 2
+    if sessionTurns <= 0 or sessionTurns - lastTurn <= 0:
+        return
+    setattr(session, '_last_reviewed_at_turn', sessionTurns)
+    asyncio.create_task(_doReview(messagesSnapshot, llm_client=llm_client))
+
+
 async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: ReviewClient = None) -> dict[str, object]:
-    """Run the actual review — call the side LLM, parse recommendations, apply."""
+    """Run the unified reflection: corrections, facts, skills, frustration."""
     result: dict[str, object] = {
         'reviewed': False,
+        'corrections_added': [],
         'skills_created': [],
         'skills_patched': [],
         'facts_added': [],
+        'frustration': False,
         'errors': [],
     }
     if llm_client is None:
@@ -90,7 +111,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
         emitBrainEvent(
             category='review',
             layer='background_review._do_review',
-            summary=f'Background review started over {len(messagesSnapshot)} message(s)',
+            summary=f'Unified reflection started over {len(messagesSnapshot)} message(s)',
         )
     except Exception:
         pass
@@ -103,20 +124,39 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
         return result
     recommendations = _parseRecommendations(raw)
     result['reviewed'] = True
-    try:
-        from app.services.brain_event_bus import emitBrainEvent
 
-        emitBrainEvent(
-            category='review',
-            layer='background_review._do_review',
-            summary=f'Background review done: {len(as_list(recommendations.get("skills"), []))} skill recs, {len(as_list(recommendations.get("facts"), []))} fact recs',
-            meta={
-                'skills': len(as_list(recommendations.get('skills'), [])),
-                'facts': len(as_list(recommendations.get('facts'), [])),
-            },
-        )
-    except Exception:
-        pass
+    # --- Corrections -> learned_heuristics + graph ---
+    for correction in as_list(recommendations.get('corrections'), []):
+        rule = as_str(correction) if not isinstance(correction, dict) else as_str(as_dict(correction).get('rule'), '')
+        if not rule:
+            continue
+        try:
+            from app.services.heuristics_service import addHeuristic
+
+            added = addHeuristic(rule, source='reflection', category='correction')
+            if added is not None:
+                as_list(result['corrections_added']).append(rule[:80])
+                _syncCorrectionToGraph(rule)
+        except Exception as exc:
+            as_list(result['errors']).append(f'correction: {exc}')
+
+    # --- Frustration -> brain event ---
+    frustration = recommendations.get('frustration', False)
+    if frustration:
+        result['frustration'] = True
+        try:
+            from app.services.brain_event_bus import emitBrainEvent
+
+            emitBrainEvent(
+                category='review',
+                layer='background_review.frustration',
+                summary='User frustration detected in recent turns',
+                meta={'frustration': True},
+            )
+        except Exception:
+            pass
+
+    # --- Skills -> skill_service (autonomous, no approval) ---
     for rec in as_list(recommendations.get('skills'), []):
         recDict = as_dict(rec)
         try:
@@ -130,31 +170,11 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
                     as_str(recDict.get('description'), ''),
                     as_str(recDict.get('body'), ''),
                     trigger=as_str(recDict.get('trigger'), ''),
-                    category=as_str(recDict.get('category'), 'uncategorized'),
+                    category=as_str(recDict.get('category'), 'evolving'),
+                    createdBy='agent',
                 )
                 as_list(result['skills_created']).append(name)
-                try:
-                    from app.services.skills.curator import SkillCurator
-
-                    SkillCurator().bump_use(name)
-                except Exception:
-                    pass
-                try:
-                    from app.services.feature_flow import emit_feature_flow
-
-                    emit_feature_flow(
-                        feature='skills',
-                        stage='apply',
-                        summary=f'Evolving skill created for you: {name}',
-                        status='ok',
-                        meta={
-                            'name': name,
-                            'action': 'create',
-                            'description': as_str(recDict.get('description'), '')[:120],
-                        },
-                    )
-                except Exception:
-                    pass
+                _emitSkillEvent(name, 'create', as_str(recDict.get('description'), ''))
             elif action == 'patch':
                 skill_service.patchSkill(
                     name,
@@ -162,46 +182,117 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
                     description=as_str(recDict.get('description')) if 'description' in recDict else None,
                 )
                 as_list(result['skills_patched']).append(name)
-                try:
-                    from app.services.skills.curator import SkillCurator
-
-                    SkillCurator().bump_use(name)
-                except Exception:
-                    pass
-                try:
-                    from app.services.feature_flow import emit_feature_flow
-
-                    emit_feature_flow(
-                        feature='skills',
-                        stage='apply',
-                        summary=f'Evolving skill updated: {name}',
-                        status='ok',
-                        meta={'name': name, 'action': 'patch'},
-                    )
-                except Exception:
-                    pass
+                _emitSkillEvent(name, 'patch', '')
         except Exception as exc:
             log.warning("background_review: skill '%s' failed: %s", as_str(recDict.get('name')), exc)
             as_list(result['errors']).append(str(exc))
-    for fact in as_list(recommendations.get('memory'), []):
-        factDict = as_dict(fact)
-        try:
+
+    # --- Facts -> coreMemory + graph ---
+    for fact in as_list(recommendations.get('facts'), []):
+        if isinstance(fact, str):
+            content = fact
+            action = 'add'
+        else:
+            factDict = as_dict(fact)
             action = as_str(factDict.get('action'), 'add')
             content = as_str(factDict.get('fact'), '')
-            if not content:
-                continue
+        if not content:
+            continue
+        try:
             _saveFact(action, content)
             as_list(result['facts_added']).append(content[:80])
+            _syncFactToGraph(content)
         except Exception as exc:
             as_list(result['errors']).append(str(exc))
+
+    # --- Summary brain event ---
+    try:
+        from app.services.brain_event_bus import emitBrainEvent
+
+        parts = []
+        if result['corrections_added']:
+            parts.append(f"{len(result['corrections_added'])} correction(s)")
+        if result['skills_created']:
+            parts.append(f"{len(result['skills_created'])} skill(s) created")
+        if result['skills_patched']:
+            parts.append(f"{len(result['skills_patched'])} skill(s) updated")
+        if result['facts_added']:
+            parts.append(f"{len(result['facts_added'])} fact(s)")
+        if result['frustration']:
+            parts.append('frustration flagged')
+        summary = f"Reflection done: {', '.join(parts)}" if parts else 'Reflection done: nothing to save'
+        emitBrainEvent(category='review', layer='background_review._do_review', summary=summary)
+    except Exception:
+        pass
     return result
 
 
+def _emitSkillEvent(name: str, action: str, description: str) -> None:
+    """Emit brain event + feature flow for skill creation/update."""
+    try:
+        from app.services.brain_event_bus import emitBrainEvent
+
+        emitBrainEvent(
+            category='skill_genesis',
+            layer=f'background_review.{action}',
+            summary=f"Skill {'created' if action == 'create' else 'updated'}: {name}",
+            meta={'name': name, 'action': action},
+        )
+    except Exception:
+        pass
+    try:
+        from app.services.feature_flow import emit_feature_flow
+
+        emit_feature_flow(
+            feature='skills',
+            stage='apply',
+            summary=f"Evolving skill {'created' if action == 'create' else 'updated'}: {name}",
+            status='ok',
+            meta={'name': name, 'action': action, 'description': description[:120]},
+        )
+    except Exception:
+        pass
+    try:
+        from app.services.skills.curator import SkillCurator
+
+        SkillCurator().bump_use(name)
+    except Exception:
+        pass
+
+
 def _buildReviewPrompt(messagesSnapshot: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Build an OpenAI-format message list for the review LLM."""
+    """Build an OpenAI-format message list for the unified reflection LLM."""
     systemMsg: dict[str, object] = {
         'role': 'system',
-        'content': 'You are reviewing a conversation between a user and an AI assistant. Identify any lessons, corrections, or recurring patterns that should be saved for future interactions.\n\nRespond with a JSON object only (no markdown, no code fences):\n{\n  "skills": [\n    {\n      "action": "create" | "patch",\n      "name": "lowercase-dotted-name",\n      "description": "≤60 chars, one sentence",\n      "body": "Full SKILL.md body markdown (sections: When to Use, Prerequisites, How to Run, Quick Reference, Procedure, Pitfalls, Verification)",\n      "trigger": "optional trigger phrase",\n      "category": "optional-category"\n    }\n  ],\n  "memory": [\n    {\n      "action": "add" | "replace",\n      "fact": "User prefers short answers."\n    }\n  ]\n}\n\nOnly include skills/memory that are genuinely new or corrective. Do NOT create a skill for every turn — be selective.',
+        'content': (
+            'You are reviewing a conversation between a user and an AI assistant. '
+            'Extract what should be learned for future interactions.\n\n'
+            'Respond with a JSON object only (no markdown, no code fences):\n'
+            '{\n'
+            '  "corrections": ["User prefers X over Y", "Never do Z in this project"],\n'
+            '  "facts": ["User is a backend developer", "Project uses Python 3.12"],\n'
+            '  "skills": [\n'
+            '    {\n'
+            '      "action": "create" | "patch",\n'
+            '      "name": "lowercase-dotted-name",\n'
+            '      "description": "<=60 chars, one sentence",\n'
+            '      "body": "Full SKILL.md body markdown",\n'
+            '      "trigger": "optional trigger phrase",\n'
+            '      "category": "optional-category"\n'
+            '    }\n'
+            '  ],\n'
+            '  "frustration": false\n'
+            '}\n\n'
+            'Rules:\n'
+            '- corrections: behavioral rules the user stated or implied ("don\'t X", "always Y", "prefer Z"). '
+            'Each becomes a persistent rule injected into future prompts. Be precise and actionable.\n'
+            '- facts: stable user/project facts worth remembering (identity, stack, preferences). '
+            'Do NOT save transient task details.\n'
+            '- skills: ONLY create when a multi-step workflow was completed successfully and is genuinely reusable. '
+            'Do NOT create a skill for simple Q&A or single-step tasks.\n'
+            '- frustration: set true if the user showed repeated frustration, corrections, or dissatisfaction.\n'
+            '- Return empty arrays/false when nothing qualifies. Silence is better than noise.'
+        ),
     }
     return [systemMsg] + _lastRelevantMessages(messagesSnapshot, maxLen=60)
 
@@ -229,7 +320,7 @@ def _parseRecommendations(raw: str) -> dict[str, object]:
             return json.loads(text)
         except json.JSONDecodeError:
             log.warning('background_review: could not parse: %.200s', text)
-            return {'skills': [], 'memory': []}
+            return {'corrections': [], 'facts': [], 'skills': [], 'frustration': False}
 
 
 def _saveFact(action: str, content: str) -> None:
@@ -254,3 +345,74 @@ def _saveFact(action: str, content: str) -> None:
                 return
         facts.append(newFact)
     save_memory(KEY, facts)
+
+
+def _syncCorrectionToGraph(rule: str) -> None:
+    """Write a learned correction to the knowledge graph as a workflowRule entity."""
+    try:
+        from app.services.cognitive_config import get_features
+
+        if not get_features().get('graph_memory', True):
+            return
+        from app.services.memory import graph_memory
+
+        key = f'correction_{graph_memory.entityKey(rule[:60])}'
+        graph_memory.addEntity(
+            key,
+            entityType='workflowRule',
+            metadata={
+                'importance': 0.8,
+                'label': rule[:48],
+                'preview': rule[:240],
+                'source': 'reflection',
+            },
+        )
+        # Link to a 'Corrections' category node
+        graph_memory.addEntity(
+            'learned_corrections',
+            entityType='category',
+            metadata={'label': 'Learned Corrections'},
+        )
+        graph_memory.addRelation('learned_corrections', key, 'contains')
+    except Exception:
+        pass
+
+
+def _syncFactToGraph(fact: str) -> None:
+    """Write a learned fact to the knowledge graph as a userDetail/concept entity."""
+    try:
+        from app.services.cognitive_config import get_features
+
+        if not get_features().get('graph_memory', True):
+            return
+        from app.services.memory import graph_memory
+
+        key = f'fact_{graph_memory.entityKey(fact[:60])}'
+        # Classify: user-related facts get userDetail, others get concept
+        lower = fact.lower()
+        if any(w in lower for w in ('user', 'i am', 'i\'m', 'my ', 'prefer', 'name')):
+            entity_type = 'userDetail'
+            category_key = 'user_facts'
+            category_label = 'User Facts'
+        else:
+            entity_type = 'concept'
+            category_key = 'project_facts'
+            category_label = 'Project Facts'
+        graph_memory.addEntity(
+            key,
+            entityType=entity_type,
+            metadata={
+                'importance': 0.7,
+                'label': fact[:48],
+                'preview': fact[:240],
+                'source': 'reflection',
+            },
+        )
+        graph_memory.addEntity(
+            category_key,
+            entityType='category',
+            metadata={'label': category_label},
+        )
+        graph_memory.addRelation(category_key, key, 'contains')
+    except Exception:
+        pass
