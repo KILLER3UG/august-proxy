@@ -24,7 +24,6 @@ import { WorkspaceMemorySection } from '@/sections/workspace/WorkspaceMemorySect
 import { WorkspaceInspectorSection } from '@/sections/workspace/WorkspaceInspectorSection';
 import { WorkspaceModelsSection } from '@/sections/workspace/WorkspaceModelsSection';
 import { WorkspaceGeneralSection } from '@/sections/workspace/WorkspaceGeneralSection';
-import { BrainSettings } from '@/sections/overview/BrainSettings';
 import { SystemHealthSection } from './SystemHealthSection';
 import { IntegrationsSection } from './IntegrationsSection';
 import { ConversationsHistorySection } from './ConversationsHistorySection';
@@ -134,7 +133,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'added-memory': AddedMemoryWrapper,
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
-  'brain-orchestrator': BrainWrapper,
   account: AccountWrapper,
   'profile-preferences': GeneralWrapper,
   'ui-designer': UiDesignerWrapper,
@@ -175,7 +173,6 @@ function RecalledMemoryWrapper() { return <RecalledMemorySection />; }
 function AddedMemoryWrapper() { return <AddedMemorySection />; }
 function InspectorWrapper() { return <WorkspaceInspectorSection />; }
 function ModelsWrapper() { return <WorkspaceModelsSection />; }
-function BrainWrapper() { return <BrainSettings />; }
 function AccountWrapper() { return <AccountSection />; }
 function GeneralWrapper() { return <WorkspaceGeneralSection />; }
 function UiDesignerWrapper() { return <UiDesignerSection />; }

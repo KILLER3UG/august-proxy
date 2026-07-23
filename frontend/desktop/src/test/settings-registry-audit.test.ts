@@ -149,8 +149,6 @@ describe('legacy alias resolution', () => {
     // model-providers aliases
     ['models',          'model-providers'],
     ['providers',       'model-providers'],
-    // brain-orchestrator aliases
-    ['brain',           'brain-orchestrator'],
     // conversations-history aliases
     ['archive',         'conversations-history'],
     ['conversations',   'conversations-history'],

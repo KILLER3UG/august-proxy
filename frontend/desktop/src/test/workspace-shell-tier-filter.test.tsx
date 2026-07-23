@@ -3,7 +3,7 @@
  *   • when showAdvanced = false, only basic-tier sections render in the rail
  *   • when showAdvanced = true, every section renders
  *   • the active section is always rendered even when advanced is hidden
- *     (deep-link case, e.g. /settings/brain)
+ *     (deep-link case, e.g. /settings/memory-knowledge)
  *   • search bypasses the tier filter so users can find advanced sections
  *     by keyword even when advanced is hidden
  *
@@ -25,10 +25,6 @@ vi.mock('@/hooks/useAppUpdate', () => ({
   useAppUpdate: () => ({ available: false, installing: false, progress: null }),
 }));
 
-vi.mock('@/hooks/useBrainLearningPulse', () => ({
-  useBrainLearningPulse: () => ({ enabled: false, learning: false }),
-}));
-
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
 import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
 
@@ -43,7 +39,7 @@ const ADV_KEY = 'august-settings-advanced';
 // test exercises the same id/label/icon/category/tier wiring production
 // uses. Cover both tiers and both security + activity categories.
 const BASIC_IDS = ['system-health', 'skills', 'api-access'];
-const ADVANCED_IDS = ['brain-orchestrator', 'computer-access', 'developer-console'];
+const ADVANCED_IDS = ['memory-knowledge', 'computer-access', 'developer-console'];
 
 function pickSections(): WorkspaceSectionMeta[] {
   const ids = [...BASIC_IDS, ...ADVANCED_IDS];
@@ -104,18 +100,18 @@ describe('WorkspaceShell — tier filter', () => {
   });
 
   it('the active advanced section is always rendered even when advanced is hidden (deep-link case)', () => {
-    // localStorage empty → showAdvanced=false. But active=brain-orchestrator
-    // is advanced. Deep links like /settings/brain must still resolve so
-    // the user lands somewhere sensible.
+    // localStorage empty → showAdvanced=false. But active=memory-knowledge
+    // is advanced. Deep links like /settings/memory-knowledge must still
+    // resolve so the user lands somewhere sensible.
     localStorage.clear();
     renderShell(
-      <WorkspaceShell sections={pickSections()} active="brain-orchestrator">
+      <WorkspaceShell sections={pickSections()} active="memory-knowledge">
         <div>main</div>
       </WorkspaceShell>,
     );
     const labels = visibleRailLabels();
-    const brain = SETTINGS_SECTIONS.find((s) => s.id === 'brain-orchestrator')!;
-    expect(labels.some((l) => l.includes(brain.label)), 'active advanced section must render').toBe(true);
+    const mem = SETTINGS_SECTIONS.find((s) => s.id === 'memory-knowledge')!;
+    expect(labels.some((l) => l.includes(mem.label)), 'active advanced section must render').toBe(true);
     // Other advanced items still hidden.
     const dev = SETTINGS_SECTIONS.find((s) => s.id === 'developer-console')!;
     expect(labels.some((l) => l.includes(dev.label))).toBe(false);
@@ -174,7 +170,7 @@ describe('WorkspaceShell — tier filter', () => {
     expect(hide.getAttribute('aria-pressed')).toBe('true');
     // And now an advanced section shows up.
     const labels = visibleRailLabels();
-    const brain = SETTINGS_SECTIONS.find((s) => s.id === 'brain-orchestrator')!;
-    expect(labels.some((l) => l.includes(brain.label))).toBe(true);
+    const mem = SETTINGS_SECTIONS.find((s) => s.id === 'memory-knowledge')!;
+    expect(labels.some((l) => l.includes(mem.label))).toBe(true);
   });
 });
