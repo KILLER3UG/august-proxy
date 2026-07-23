@@ -19,6 +19,14 @@ export interface AppUpdateInfo {
   date?: string;
 }
 
+/** GitHub repo hosting the desktop releases (NSIS setup + latest.json). */
+const RELEASE_DOWNLOAD_BASE = 'https://github.com/KILLER3UG/august-proxy/releases';
+
+/** Windows desktop builds ship an NSIS `August_<version>_x64-setup.exe`. */
+function isWindowsDesktop(): boolean {
+  return typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent);
+}
+
 function formatBytes(n: number): string {
   if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   if (n >= 1024) return `${Math.round(n / 1024)} KB`;
@@ -89,6 +97,7 @@ export function useAppUpdate() {
     if (!isTauri || !query.data) return;
     if (useAppUpdateInstallStore.getState().installing) return;
 
+    const version = query.data.version;
     setInstalling(true);
     setProgress({
       percent: 0,
@@ -96,6 +105,76 @@ export function useAppUpdate() {
       totalBytes: null,
       phase: 'downloading',
     });
+
+    if (isWindowsDesktop()) {
+      // Full-installer flow: download the real NSIS setup from the latest
+      // GitHub release, then run it with its normal wizard — the same
+      // experience as installing August for the first time. This replaces
+      // the quiet in-place patch, which could miss bundled backend changes.
+      let unlisten: (() => void) | undefined;
+      let downloaded = 0;
+      let total: number | null = null;
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        unlisten = await listen<{ downloadedBytes: number; totalBytes: number | null }>(
+          'update-download-progress',
+          ({ payload }) => {
+            downloaded = payload.downloadedBytes;
+            total = payload.totalBytes;
+            setProgress({
+              percent:
+                total && total > 0
+                  ? Math.min(100, Math.round((downloaded / total) * 100))
+                  : null,
+              downloadedBytes: downloaded,
+              totalBytes: total,
+              phase: 'downloading',
+            });
+          },
+        );
+
+        const filename = `August_${version}_x64-setup.exe`;
+        const installerPath = await invoke<string>('download_release_installer', {
+          url: `${RELEASE_DOWNLOAD_BASE}/latest/download/${filename}`,
+          filename,
+        });
+
+        setProgress({
+          percent: 100,
+          downloadedBytes: downloaded,
+          totalBytes: total ?? downloaded,
+          phase: 'installing',
+        });
+        await stopBackendBeforeInstall();
+
+        // Paint the full-screen overlay before the process exits so users
+        // see what is happening instead of a sudden quit.
+        setProgress({
+          percent: 100,
+          downloadedBytes: downloaded,
+          totalBytes: total ?? downloaded,
+          phase: 'restarting',
+        });
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            window.setTimeout(resolve, 450);
+          });
+        });
+
+        // Spawns the setup wizard and exits August — rarely returns.
+        await invoke<string>('launch_installer_and_exit', { path: installerPath });
+        toast.success('Installer launched — follow the setup wizard to finish updating.');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        toast.error(message || 'Failed to download the installer');
+        resetInstall();
+      } finally {
+        unlisten?.();
+      }
+      return;
+    }
+
+    // Non-Windows: keep the in-place updater plugin path.
     try {
       const { check } = await import('@tauri-apps/plugin-updater');
       const update = await check();

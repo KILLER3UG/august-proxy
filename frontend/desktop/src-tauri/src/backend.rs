@@ -1122,6 +1122,140 @@ pub fn schedule_post_update_relaunch() -> Result<String, String> {
     }
 }
 
+/// Progress payload emitted while streaming a release installer to disk.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallerDownloadProgress {
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+}
+
+/// Stream a GitHub release installer into `{temp}/august-updates/{filename}`,
+/// emitting `update-download-progress` events for the webview progress bar.
+/// Returns the absolute path of the downloaded installer.
+///
+/// Used by the full-installer update flow: instead of a quiet in-place patch,
+/// the app downloads the real NSIS setup from the latest GitHub release and
+/// runs it with its normal wizard — the same experience as a first install,
+/// so bundled backend changes always land.
+#[tauri::command]
+pub async fn download_release_installer(
+    app: AppHandle,
+    url: String,
+    filename: String,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir().join("august-updates");
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("could not prepare the download folder: {e}"))?;
+        let safe: String = filename
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+            .collect();
+        let dest = dir.join(if safe.is_empty() {
+            "august-setup.exe".to_string()
+        } else {
+            safe
+        });
+        if dest.exists() {
+            let _ = std::fs::remove_file(&dest);
+        }
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(900))
+            .user_agent("august-desktop-updater")
+            .build()
+            .map_err(|e| e.to_string())?;
+        let mut resp = client
+            .get(&url)
+            .send()
+            .map_err(|e| format!("download failed: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!(
+                "download failed: release file not found (HTTP {})",
+                resp.status()
+            ));
+        }
+        let total = resp.content_length();
+        let mut file = File::create(&dest)
+            .map_err(|e| format!("could not create {}: {e}", dest.display()))?;
+
+        let emit = |downloaded: u64, total: Option<u64>| {
+            let _ = app.emit(
+                "update-download-progress",
+                InstallerDownloadProgress {
+                    downloaded_bytes: downloaded,
+                    total_bytes: total,
+                },
+            );
+        };
+        emit(0, total);
+
+        let mut downloaded: u64 = 0;
+        let mut last_emit = std::time::Instant::now();
+        loop {
+            let chunk = resp
+                .chunk()
+                .map_err(|e| format!("download interrupted: {e}"))?;
+            let Some(bytes) = chunk else { break };
+            file.write_all(&bytes)
+                .map_err(|e| format!("could not write the installer file: {e}"))?;
+            downloaded += bytes.len() as u64;
+            if last_emit.elapsed() >= Duration::from_millis(150) {
+                emit(downloaded, total);
+                last_emit = std::time::Instant::now();
+            }
+        }
+        let _ = file.flush();
+        emit(downloaded, total.or(Some(downloaded)));
+
+        // A real installer is tens of MB — anything tiny is an error page.
+        if downloaded < 1024 * 1024 {
+            let _ = std::fs::remove_file(&dest);
+            return Err(
+                "downloaded file is too small — the release asset may be missing".into(),
+            );
+        }
+        log::info!(
+            "[update] installer downloaded → {} ({} bytes)",
+            dest.display(),
+            downloaded
+        );
+        Ok(dest.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("download task failed: {e}"))?
+}
+
+/// Launch the downloaded installer with its normal UI (the same wizard as a
+/// first-time install), then exit August so the installer can replace files.
+///
+/// No silent flags: the user walks through the setup exactly like the first
+/// install. NSIS PREINSTALL also sweeps stray August/python processes, and the
+/// finish page offers to relaunch August when the install succeeds.
+#[tauri::command]
+pub fn launch_installer_and_exit(app: AppHandle, path: String) -> Result<String, String> {
+    let installer = PathBuf::from(&path);
+    if !installer.is_file() {
+        return Err(format!("installer not found: {path}"));
+    }
+    // Release python/.pyd locks before NSIS copies over the install dir.
+    stopBackendForUpdate(&app);
+    Command::new(&installer)
+        .spawn()
+        .map_err(|e| format!("could not launch the installer: {e}"))?;
+    log::info!(
+        "[update] installer launched ({}) — exiting August",
+        installer.display()
+    );
+    // Give the installer process a beat to start before we release our handles.
+    std::thread::sleep(Duration::from_millis(600));
+    app.exit(0);
+    Ok("exiting".into())
+}
+
 #[tauri::command]
 pub fn select_directory(app: AppHandle) -> Option<String> {
     use tauri_plugin_dialog::DialogExt;

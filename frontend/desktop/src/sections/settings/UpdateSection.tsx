@@ -92,9 +92,9 @@ export function UpdateSection() {
                 {installing && (
                   <span className="shrink-0 text-xs font-medium text-primary">
                     {progress.phase === 'restarting'
-                      ? 'Restarting…'
+                      ? 'Installing…'
                       : progress.phase === 'installing'
-                        ? 'Installing…'
+                        ? 'Launching…'
                         : progress.percent != null
                           ? `Downloading ${progress.percent}%`
                           : 'Downloading…'}
@@ -110,17 +110,17 @@ export function UpdateSection() {
                 <div>
                   <p className="text-sm font-medium text-foreground">
                     {progress.phase === 'restarting'
-                      ? 'Restarting August…'
+                      ? 'Installing August…'
                       : progress.phase === 'installing'
-                        ? 'Installing update…'
+                        ? 'Launching installer…'
                         : 'Downloading update…'}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {progress.phase === 'restarting'
-                      ? 'The app will close briefly and reopen on the new version.'
+                      ? 'August will close while the setup wizard runs — just like the first install.'
                       : progress.phase === 'installing'
-                        ? 'Almost done — the app will restart shortly.'
-                        : 'The app will restart after installation.'}
+                        ? 'The setup window will appear in a moment.'
+                        : 'The installer opens after the download finishes.'}
                   </p>
                 </div>
                 <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">

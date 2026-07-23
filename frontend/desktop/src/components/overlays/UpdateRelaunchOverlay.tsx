@@ -56,15 +56,15 @@ export function UpdateRelaunchOverlay() {
                   id="update-relaunch-title"
                   className="text-base font-semibold tracking-tight text-foreground"
                 >
-                  {restarting ? 'Restarting August…' : 'Installing update…'}
+                  {restarting ? 'Installing August…' : 'Launching installer…'}
                 </h2>
                 <p
                   id="update-relaunch-desc"
                   className="mt-1 text-sm text-muted-foreground leading-relaxed"
                 >
                   {restarting
-                    ? 'The app will close briefly and reopen on the new version. This can take a moment — please wait.'
-                    : 'Finishing the install. August will restart automatically when ready.'}
+                    ? 'August is closing so the setup wizard can apply the update — walk through it just like the first install. August reopens when the install finishes.'
+                    : 'Preparing the installer. The setup window will appear in a moment.'}
                 </p>
               </div>
             </div>
@@ -77,7 +77,7 @@ export function UpdateRelaunchOverlay() {
                     className="size-1.5 rounded-full bg-primary animate-pulse"
                     aria-hidden
                   />
-                  {restarting ? 'Relaunching…' : 'Preparing restart…'}
+                  {restarting ? 'Setup wizard opening…' : 'Preparing…'}
                 </span>
                 <span className="tabular-nums font-medium text-foreground/80">
                   {restarting ? 'Almost there' : '100%'}
