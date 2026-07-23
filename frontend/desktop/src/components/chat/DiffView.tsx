@@ -133,6 +133,38 @@ export interface DiffViewProps {
   className?: string;
 }
 
+/** Tally added/removed lines from an already-parsed diff. */
+export function countDiffLines(lines: DiffLine[]): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const l of lines) {
+    if (l.kind === 'added') added++;
+    else if (l.kind === 'removed') removed++;
+  }
+  return { added, removed };
+}
+
+/**
+ * Addition/deletion stats for a DiffView-shaped payload, without rendering
+ * the full diff — feeds the "+N -M" summary on tool-call Task rows.
+ * Returns null when there is nothing to diff.
+ */
+export function diffStats(
+  diffData: Pick<DiffViewProps, 'diff' | 'oldContent' | 'newContent'> | null | undefined,
+): { added: number; removed: number } | null {
+  if (!diffData) return null;
+  let lines: DiffLine[];
+  if (diffData.diff) {
+    lines = parseUnifiedDiff(diffData.diff);
+  } else if (diffData.oldContent !== undefined && diffData.newContent !== undefined) {
+    lines = diffLines(diffData.oldContent, diffData.newContent);
+  } else {
+    return null;
+  }
+  if (lines.length === 0) return null;
+  return countDiffLines(lines);
+}
+
 export function DiffView({ diff, oldContent, newContent, maxLines = 40, className }: DiffViewProps) {
   const lines = useMemo<DiffLine[]>(() => {
     if (diff) return parseUnifiedDiff(diff);
@@ -142,15 +174,7 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
     return [];
   }, [diff, oldContent, newContent]);
 
-  const counts = useMemo(() => {
-    let added = 0;
-    let removed = 0;
-    for (const l of lines) {
-      if (l.kind === 'added') added++;
-      else if (l.kind === 'removed') removed++;
-    }
-    return { added, removed };
-  }, [lines]);
+  const counts = useMemo(() => countDiffLines(lines), [lines]);
 
   const [expanded, setExpanded] = useState(false);
 

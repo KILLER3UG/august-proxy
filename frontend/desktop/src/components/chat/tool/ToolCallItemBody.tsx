@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Check, Loader2, FileSearch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DiffView } from '@/components/chat/DiffView';
+import { SearchResultsList } from '@/components/chat/SearchResultsCard';
 import { confirmWorkbenchMutation } from '@/api/workbench';
 import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
 import { formatToolContext } from '@/lib/tool-context-format';
@@ -98,104 +99,22 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
 }
 
 
-type SearchHit = { title: string; url: string; snippet?: string };
-
-function searchResultsSummary(hits: SearchHit[]): string {
-  if (hits.length === 1) {
-    const hit = hits[0];
-    if (hit.title) return hit.title;
-    if (hit.url) {
-      try {
-        return new URL(hit.url).hostname;
-      } catch {
-        return hit.url;
-      }
-    }
-    return '1 result';
-  }
-  const first = hits[0];
-  const lead = first?.title || (first?.url ? (() => {
-    try { return new URL(first.url).hostname; } catch { return first.url; }
-  })() : null);
-  return lead ? `${hits.length} results · ${lead}` : `${hits.length} results`;
-}
-
-/**
- * Search results — rendered directly (no second-level disclosure). This is
- * only ever mounted inside an already-expanded tool body, so requiring a
- * separate click to reveal the URLs just doubles the number of clicks
- * needed to read a search result with no benefit.
- */
-function SearchResultsCard({ hits }: { hits: SearchHit[] }) {
-  const summary = searchResultsSummary(hits);
-
-  return (
-    <div className="mt-1.5 max-w-full">
-      <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground">
-        <FileSearch className="size-3 shrink-0 opacity-70" />
-        <span className="min-w-0 flex-1 truncate">{summary}</span>
-      </div>
-      <div
-        className="tool-result-scroll mt-1 max-w-2xl min-h-0 max-h-52 overflow-y-auto overscroll-contain rounded-lg border border-white/[0.05] bg-white/[0.02] px-2.5 py-2"
-        onWheel={(e) => {
-          if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
-        }}
-      >
-        <ol className="m-0 grid list-none gap-2.5 p-0">
-          {hits.map((hit, i) => (
-            <li key={i} className="grid min-w-0 gap-1">
-              <div className="flex items-start gap-2">
-                {hit.url && (
-                  <img
-                    src={`https://www.google.com/s2/favicons?domain=${new URL(hit.url).hostname}&sz=16`}
-                    alt=""
-                    className="size-4 shrink-0 mt-0.5 rounded"
-                    width={16}
-                    height={16}
-                    loading="lazy"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  {hit.url ? (
-                    <a
-                      href={hit.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-medium text-primary hover:underline truncate block"
-                    >
-                      {hit.title || new URL(hit.url).hostname}
-                    </a>
-                  ) : (
-                    <span className="text-xs font-medium text-foreground/90">{hit.title}</span>
-                  )}
-                  {hit.url && (
-                    <p className="text-[10px] text-muted-foreground/60 truncate mt-0.5">
-                      {hit.url}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {hit.snippet && (
-                <p className="text-[10px] text-muted-foreground line-clamp-3 m-0 pl-6">{hit.snippet}</p>
-              )}
-            </li>
-          ))}
-        </ol>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Expanded tool-call body — context, progress, diffs, search hits, errors,
  * approval. Shared by ToolCallItem (legacy path) and ToolSummary drill-down.
+ *
+ * `hideProgress`: the Task-based timeline rows (ToolStepRow) render progress
+ * entries themselves — pass true there so files aren't listed twice.
  */
 export function ToolCallItemBody({
   tool,
   progress,
+  hideProgress = false,
 }: {
   tool: ToolEntry;
   progress?: ReadonlyArray<ProgressEntry>;
+  /** Progress entries are rendered as Task rows by the timeline chrome. */
+  hideProgress?: boolean;
   /** Reserved for callers that need subagent labeling in nested chrome. */
   agentIdOverride?: string;
 }) {
@@ -240,7 +159,7 @@ export function ToolCallItemBody({
     );
   }
 
-  if (!isSubagent) {
+  if (!isSubagent && !hideProgress) {
     const visible = progress ? visibleProgress(progress) : [];
     const total = progress?.length ?? 0;
     const overflow = Math.max(0, total - visible.length);
@@ -316,7 +235,7 @@ export function ToolCallItemBody({
   }
 
   if (!isSubagent && tool.searchHits && tool.searchHits.length > 0) {
-    parts.push(<SearchResultsCard key="search" hits={tool.searchHits} />);
+    parts.push(<SearchResultsList key="search" hits={tool.searchHits} />);
   }
 
   // View/read tools: no truncated content preview — path is on the row label.

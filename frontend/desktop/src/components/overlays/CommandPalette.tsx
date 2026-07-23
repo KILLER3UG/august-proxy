@@ -14,7 +14,6 @@ import {
   Shield,
   ListTodo,
   FileDiff,
-  History,
   FileDown,
   Keyboard,
   StickyNote,
@@ -107,15 +106,6 @@ export function CommandPalette() {
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
               <Shrink className="size-3.5" /> Free up chat memory
-            </Command.Item>
-            <Command.Item
-              value="action restore save point checkpoint undo files"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'restore_checkpoint', target: 'latest' }),
-              )}
-              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
-            >
-              <History className="size-3.5" /> Restore last save point
             </Command.Item>
             <Command.Item
               value="action export conversation download markdown transcript"

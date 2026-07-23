@@ -1,7 +1,7 @@
 /* ── TeamAgentsStrip — active sub-agents + cancel-all ──── */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bot, Loader2, Shield, X, ScrollText } from 'lucide-react';
+import { Bot, Loader2, X, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   listWorkbenchSessionAgents,
@@ -44,13 +44,11 @@ export function TeamAgentsStrip({
   const agents = (q.data?.agents ?? []).filter(
     (a) => a.status === 'pending' || a.status === 'running',
   );
-  const lastCk = q.data?.meta?.lastCheckpointLabel;
-  const lastCkId = q.data?.meta?.lastCheckpointId;
 
   // Rough cost signal: elapsed seconds as proxy when real cost isn't on the row
   const totalElapsed = agents.reduce((sum, a) => sum + (a.elapsed ?? 0), 0);
 
-  if (agents.length === 0 && !lastCk) return null;
+  if (agents.length === 0) return null;
 
   return (
     <div
@@ -131,16 +129,6 @@ export function TeamAgentsStrip({
             Logs
           </button>
         </>
-      )}
-
-      {lastCk && (
-        <span
-          className="ml-auto inline-flex items-center gap-1 text-muted-foreground"
-          title={lastCkId ? `Checkpoint ${lastCkId}` : lastCk}
-        >
-          <Shield className="size-3" />
-          {lastCk}
-        </span>
       )}
     </div>
   );

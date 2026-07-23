@@ -10,7 +10,10 @@ export const PERMISSION_COPY = {
   alwaysHint: 'Do not ask again for the same command',
   deny: 'Deny',
   denyHint: 'Reject it for now',
-  confirmHint: 'Click Allow, Always, or Deny — or use ↑↓ and Enter',
+  instructions: 'Give instructions instead',
+  instructionsHint: 'Type what the AI should do rather than running this',
+  instructionsPlaceholder: 'e.g. Skip this and edit README.md instead…',
+  confirmHint: 'Use Tab / arrow keys to choose, then press Enter to confirm',
   confirm: 'Confirm',
   /** @deprecated Prefer `allow` — kept for PermissionToast */
   once: 'Allow',

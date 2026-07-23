@@ -33,6 +33,7 @@ import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
 import { classifyTool } from '@/lib/tool-classify';
+import { pathBasename } from '@/lib/tool-labels';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { playReceiveChime } from '@/lib/chat-chime';
 import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
@@ -369,8 +370,11 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
             (typeof parsed?.target_file === 'string' && parsed.target_file) ||
             '';
           const lines = resultText ? resultText.split(/\r?\n/).length : 0;
-          if (path && lines > 0) return `${path} · ${lines} line${lines === 1 ? '' : 's'}`;
-          if (path) return path;
+          // Basename only — this summary surfaces in the live-activity line
+          // and tool cards, which must never show full absolute paths.
+          const shortPath = path ? pathBasename(path) : '';
+          if (shortPath && lines > 0) return `${shortPath} · ${lines} line${lines === 1 ? '' : 's'}`;
+          if (shortPath) return shortPath;
         } catch {
           /* ignore */
         }
@@ -576,19 +580,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
           return [...prev.slice(0, idx), notice, ...prev.slice(idx)];
         }
         return [...prev, notice];
-      });
-      scheduleUpdate();
-    },
-    onCheckpoint: (info) => {
-      // Structured chip block — keeps "Save point created" notices out of
-      // the assistant prose (older builds appended raw text here).
-      streamBlocks = appendBlockEvent(streamBlocks, {
-        type: 'checkpoint',
-        checkpoint: {
-          id: info.id,
-          label: info.label,
-          fileCount: info.fileCount,
-        },
       });
       scheduleUpdate();
     },

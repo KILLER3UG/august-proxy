@@ -14,8 +14,6 @@ import {
   undoWorkbenchLastTurn,
   compactWorkbenchSession,
   branchWorkbenchSession,
-  listWorkbenchCheckpoints,
-  restoreWorkbenchCheckpoint,
 } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import {
@@ -173,31 +171,6 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
               `Could not branch: ${err instanceof Error ? err.message : String(err)}`,
             );
           });
-        return;
-      }
-
-      if (e.action === 'restore_checkpoint') {
-        const wbId = resolveWbId();
-        if (!wbId) {
-          toast.message('Start a chat first.');
-          return;
-        }
-        void (async () => {
-          try {
-            const list = await listWorkbenchCheckpoints(wbId);
-            const latest = list[0];
-            if (!latest?.id) {
-              toast.message('No save points yet — they appear before file changes.');
-              return;
-            }
-            const res = await restoreWorkbenchCheckpoint(wbId, latest.id);
-            toast.success(res.message || 'Save point restored');
-          } catch (err: unknown) {
-            toast.error(
-              `Could not restore: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
-        })();
         return;
       }
 

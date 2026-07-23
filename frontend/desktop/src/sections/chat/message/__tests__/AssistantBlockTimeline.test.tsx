@@ -172,13 +172,16 @@ describe('AssistantBlockTimeline process UI', () => {
 
     const toggle = screen.getByRole('button', { name: /diagnos/i });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(document.querySelector('.process-tool-panel')).toBeNull();
-    expect(screen.queryByText('Response')).not.toBeInTheDocument();
+    expect(
+      document.querySelector('[data-slot="tool-step-row"] [data-state="open"]'),
+    ).toBeNull();
 
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(document.querySelector('.process-tool-panel')).toBeTruthy();
-    expect(screen.getByText('Response')).toBeInTheDocument();
+    // The Task block's CollapsibleContent is now open.
+    const row = document.querySelector('[data-slot="tool-step-row"]');
+    expect(row).toHaveAttribute('data-expanded', 'true');
+    expect(row!.querySelector('[data-state="open"]')).toBeTruthy();
   });
 
   it('keeps running edit-tool expand/shimmer state across streaming re-render', () => {

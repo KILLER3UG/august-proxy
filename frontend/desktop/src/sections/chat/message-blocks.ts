@@ -3,15 +3,6 @@
 
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 
-/** Older builds appended a "💾 Save point created…" line to assistant prose
- *  on every checkpoint. Newer builds render a structured checkpoint block
- *  instead — strip the baked-in text so historical messages render clean. */
-const LEGACY_SAVE_POINT_RE = /\n*[ \t]*💾 Save point created[^\n]*/g;
-
-export function stripLegacySavePointNotices(text: string): string {
-  return text.replace(LEGACY_SAVE_POINT_RE, '');
-}
-
 export function parseSequentialText(
   text: string,
 ): { type: 'thinking' | 'finalOutput'; content: string }[] {
@@ -81,7 +72,7 @@ export function getDisplayBlocks(
       for (const block of blocks) {
         if (block.type === 'finalOutput' && block.content) {
           hasFinalContent = true;
-          const parsed = parseSequentialText(stripLegacySavePointNotices(block.content));
+          const parsed = parseSequentialText(block.content);
           for (const [subIndex, sub] of parsed.entries()) {
             result.push({
               id: `${block.id}_sub_${subIndex}_${sub.type}`,
@@ -95,7 +86,7 @@ export function getDisplayBlocks(
       }
 
       if (!hasFinalContent && content && content.trim()) {
-        const parsed = parseSequentialText(stripLegacySavePointNotices(content));
+        const parsed = parseSequentialText(content);
         for (const [subIndex, sub] of parsed.entries()) {
           result.push({
             id: `safety_content_sub_${subIndex}_${sub.type}`,
@@ -130,7 +121,7 @@ export function getDisplayBlocks(
     }
 
     if (content && content.trim()) {
-      const parsed = parseSequentialText(stripLegacySavePointNotices(content));
+      const parsed = parseSequentialText(content);
       for (const [subIndex, sub] of parsed.entries()) {
         resultFallback.push({
           id: `fallback_content_sub_${subIndex}_${sub.type}`,
@@ -149,7 +140,7 @@ export function getDisplayBlocks(
     {
       id: 'fallback_raw',
       type: 'finalOutput',
-      content: stripLegacySavePointNotices(content || ''),
+      content: content || '',
     },
   ];
 }

@@ -182,6 +182,7 @@
 
   /* Foregrounds */
   .text-foreground               { color: var(--dt-foreground); }
+  .text-background               { color: var(--dt-background); }
   .text-card-foreground          { color: var(--dt-card-foreground); }
   .text-muted-foreground         { color: var(--dt-muted-foreground); }
   .text-popover-foreground       { color: var(--dt-popover-foreground); }
@@ -212,6 +213,7 @@
 
   /* Borders */
   .border-border          { border-color: var(--dt-border); }
+  .border-muted           { border-color: var(--dt-muted); }
   .border-input           { border-color: var(--dt-input); }
   .border-sidebar-border  { border-color: var(--dt-sidebar-border); }
   .border-success         { border-color: var(--dt-success); }

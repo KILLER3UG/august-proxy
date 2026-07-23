@@ -15,7 +15,6 @@ export type UiAction =
   | 'undo_last_turn'
   | 'compact_now'
   | 'branch_session'
-  | 'restore_checkpoint'
   | 'export_conversation';
 
 export interface UiActionEvent {

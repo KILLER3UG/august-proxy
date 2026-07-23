@@ -104,14 +104,6 @@ export function dispatchWorkbenchEvent(
         contextWindow: Number(p?.contextWindow) || undefined,
       });
       break;
-    case 'checkpoint':
-      handlers.onCheckpoint?.({
-        id: typeof p?.id === 'string' ? p.id : undefined,
-        label: typeof p?.label === 'string' ? p.label : undefined,
-        fileCount: Number(p?.fileCount) || undefined,
-        toolName: typeof p?.toolName === 'string' ? p.toolName : undefined,
-      });
-      break;
     case 'prompt':
       handlers.onPrompt?.({
         content: typeof p?.content === 'string' ? p.content : JSON.stringify(p?.content ?? ''),

@@ -13,6 +13,7 @@ import type { GrantScope } from '@/components/overlays/PermissionToast';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { getToolLabel, pathBasename } from '@/lib/tool-labels';
 import type { PendingMutationItem, SessionStatus } from '@/hooks/useSessionStatus';
 
 type Props = {
@@ -63,19 +64,22 @@ function descriptionFromMutation(m: PendingMutationItem): string {
     const v = args[key];
     if (typeof v === 'string' && v.trim()) return v.trim();
   }
+  // Same phrasing convention as the chat TaskTrigger titles: tool name +
+  // primary target (basename / command), never the raw function name.
   const cmd = commandFromMutation(m);
   if (cmd) {
-    const short = cmd.length > 80 ? `${cmd.slice(0, 77)}…` : cmd;
-    return `Run \`${short}\``;
+    return getToolLabel('run_command', { command: cmd, status: 'running' });
   }
   const path = pathFromMutation(m);
   if (path.startsWith('sandbox:unsandboxed:')) {
     return 'Unsandboxed command';
   }
   const tool = m.toolName || 'tool';
-  if (path && path !== tool) {
-    return `${tool} → ${path}`;
-  }
+  const label = getToolLabel(tool, {
+    filename: path && path !== tool ? path : undefined,
+    status: 'running',
+  });
+  if (label && !/executing tool/i.test(label)) return label;
   const preview = (m.preview || '').trim();
   if (preview) {
     const first = preview.split('\n').find((l) => l.trim()) || preview;
@@ -128,10 +132,11 @@ function diffPropsFromMutation(m: PendingMutationItem): {
 function previewFromMutation(m: PendingMutationItem): ReactNode {
   const cmd = commandFromMutation(m);
   if (cmd) {
+    // Terminal-style block: `$ command` on its own line, output below it.
     return (
-      <div className="px-3 py-2.5 font-mono text-[12px] leading-relaxed text-foreground/90">
+      <div className="px-3 py-2.5 font-mono text-[12px] leading-relaxed">
         <div className="whitespace-pre-wrap break-all">
-          <span className="text-muted-foreground">$ </span>
+          <span className="select-none text-muted-foreground">$ </span>
           {cmd}
         </div>
         <div className="mt-2 text-[11px] text-muted-foreground">No output.</div>
@@ -140,13 +145,18 @@ function previewFromMutation(m: PendingMutationItem): ReactNode {
   }
 
   const diff = diffPropsFromMutation(m);
-  if (diff) {
+  if (
+    diff &&
+    ((diff.diff ?? '').length > 0 ||
+      (diff.newContent ?? '').length > 0 ||
+      (diff.oldContent ?? '').length > 0)
+  ) {
     return <DiffView {...diff} maxLines={80} />;
   }
 
   if (m.preview) {
     return (
-      <pre className="px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/90">
+      <pre className="whitespace-pre-wrap px-3 py-2 font-mono text-[11px] leading-relaxed">
         {m.preview}
       </pre>
     );
@@ -163,7 +173,9 @@ function choiceToDecision(choice: PermissionChoice): {
   reject: boolean;
   scope: GrantScope;
 } {
-  if (choice === 'deny') return { reject: true, scope: 'once' };
+  if (choice === 'deny' || choice === 'instructions') {
+    return { reject: true, scope: 'once' };
+  }
   if (choice === 'always') return { reject: false, scope: 'always' };
   return { reject: false, scope: 'once' };
 }
@@ -173,10 +185,11 @@ async function postDecision(
   token: string,
   reject: boolean,
   scope: GrantScope = 'once',
+  instructions?: string,
 ) {
   return api.post<DecisionResult>(
     '/api/workbench/confirm-mutation',
-    { sessionId, token, reject, scope, continue: true },
+    { sessionId, token, reject, scope, continue: true, instructions },
   );
 }
 
@@ -199,17 +212,20 @@ function MutationCard({
   );
   const preview = useMemo(() => previewFromMutation(mutation), [mutation]);
 
-  const handleConfirm = async (choice: PermissionChoice) => {
+  const handleConfirm = async (choice: PermissionChoice, instructions?: string) => {
     if (!token || confirming) return;
     const { reject, scope } = choiceToDecision(choice);
     setConfirming(true);
     try {
-      const res = await postDecision(sessionId, token, reject, scope);
+      const res = await postDecision(sessionId, token, reject, scope, instructions);
       void qc.invalidateQueries({ queryKey: ['session-status', sessionId] });
-      if (reject) {
-        toast.message(`Denied ${path}`);
+      const shortPath = pathBasename(path);
+      if (choice === 'instructions') {
+        toast.success('Instructions sent');
+      } else if (reject) {
+        toast.message(`Denied ${shortPath}`);
       } else {
-        toast.success(res?.executed ? `Applied ${path}` : `Allowed ${path}`);
+        toast.success(res?.executed ? `Applied ${shortPath}` : `Allowed ${shortPath}`);
       }
       if (res?.continued && Number.isFinite(res.sinceSeq)) {
         onContinued?.(res.sinceSeq as number);

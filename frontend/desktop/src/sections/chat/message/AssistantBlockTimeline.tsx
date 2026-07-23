@@ -13,9 +13,9 @@ import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { SubagentLaunchList } from '@/components/chat/SubagentLaunchList';
 import { RecalledMemoryStep } from '@/components/chat/RecalledMemoryStep';
-import { SavePointChip } from '@/components/chat/SavePointChip';
+import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
-import { classifyTool } from '@/lib/tool-classify';
+import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { SubagentBlockState } from '../chat-stream-manager';
@@ -28,7 +28,7 @@ import {
 } from '@/store/liveActivity';
 import { getToolLabel } from '@/lib/tool-labels';
 import { modelDisplayParts } from '../model-display';
-import { resolveUiSessionId, resolveWorkbenchSessionId } from '../stream/session-id-map';
+import { resolveUiSessionId } from '../stream/session-id-map';
 
 type DisplayBlock = MessageBlock;
 
@@ -203,6 +203,33 @@ function isFinalOutput(block: DisplayBlock): boolean {
   );
 }
 
+/** Pull the search query out of a web_search tool's JSON args. */
+function extractSearchQuery(context?: string): string {
+  if (!context) return 'Search';
+  try {
+    const parsed = JSON.parse(context) as Record<string, unknown>;
+    for (const key of ['query', 'q', 'searchQuery', 'search_query', 'search_terms']) {
+      const v = parsed?.[key];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+      if (Array.isArray(v) && v.length > 0 && typeof v[0] === 'string' && v[0].trim()) {
+        return v[0].trim();
+      }
+    }
+  } catch {
+    /* not JSON */
+  }
+  return 'Search';
+}
+
+/** "6s" / "1m 06s" — total elapsed for a tool-execution sequence. */
+function formatSequenceDuration(ms: number): string {
+  const totalSec = Math.max(1, Math.round(ms / 1000));
+  if (totalSec < 60) return `${totalSec}s`;
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m ${String(s).padStart(2, '0')}s`;
+}
+
 /** Split blocks into process (thinking/tools) vs final answer. */
 function splitProcessAndFinal(blocks: DisplayBlock[]): {
   processBlocks: DisplayBlock[];
@@ -275,11 +302,6 @@ export function AssistantBlockTimeline({
   const { processBlocks, finalBlocks, hasFinalOutput } =
     splitProcessAndFinal(displayBlocks);
 
-  // Save-point chips: rendered between the process summary and the final
-  // answer so they stay visible after the activity rail collapses.
-  const checkpointBlocks = processBlocks.filter((b) => b.type === 'checkpoint');
-  const wbSessionId = resolveWorkbenchSessionId(routeSessionId || message.id);
-
   // Id-keyed expand overrides; missing key → default from status.
   // Tools: running → open, else collapsed. Thoughts: open while generating,
   // collapse once the final answer exists (unless the user overrode).
@@ -298,10 +320,10 @@ export function AssistantBlockTimeline({
     setExpandOverrides((prev) => ({ ...prev, [id]: next }));
   };
 
-  const isToolExpanded = (toolId: string, status: string | undefined, toolName?: string) => {
+  const isToolExpanded = (toolId: string, status: string | undefined) => {
     if (toolId in expandOverrides) return expandOverrides[toolId];
-    // View/read tools stay collapsed — no content preview to expand into.
-    if (toolName && classifyTool(toolName) === 'view') return false;
+    // Open while running; once complete the block keeps whatever state the
+    // user left it in (ToolStepRow never force-collapses on completion).
     return status === 'running';
   };
 
@@ -321,16 +343,47 @@ export function AssistantBlockTimeline({
   let editedCount = 0;
   let ranCount = 0;
   let usedCount = 0;
+  let searchesCount = 0;
+  let commandsCount = 0;
+  let errorsCount = 0;
+  let anyToolRunning = false;
+  const filesTouched = new Set<string>();
+  let seqStart = Number.POSITIVE_INFINITY;
+  let seqEnd = 0;
   for (const block of processBlocks) {
     if ((block.type === 'toolCall' || block.type === 'command') && block.tool) {
+      const tool = block.tool;
       toolsCount += 1;
-      const bucket = classifyTool(block.tool.name);
+      const bucket = classifyTool(tool.name);
       if (bucket === 'view') viewedCount += 1;
       else if (bucket === 'edit') editedCount += 1;
       else if (bucket === 'run') ranCount += 1;
       else usedCount += 1;
+      // §9 completion tally — files touched, searches run, commands executed.
+      if (bucket === 'view' || bucket === 'edit') {
+        const path = extractFilename(tool.context);
+        if (path) filesTouched.add(path.toLowerCase());
+      }
+      if (
+        (tool.searchHits && tool.searchHits.length > 0) ||
+        normalizeToolName(tool.name).includes('web_search')
+      ) {
+        searchesCount += 1;
+      }
+      if (block.type === 'command' || bucket === 'run') commandsCount += 1;
+      if (tool.status === 'error') errorsCount += 1;
+      if (tool.status === 'running') anyToolRunning = true;
+      if (tool.startedAt) {
+        seqStart = Math.min(seqStart, tool.startedAt);
+        seqEnd = Math.max(seqEnd, tool.startedAt + (tool.duration ?? 0));
+      }
     }
   }
+  // Total elapsed for the whole tool-execution sequence (not per-tool).
+  const sequenceDurationLabel =
+    !anyToolRunning && Number.isFinite(seqStart) && seqEnd > seqStart
+      ? formatSequenceDuration(seqEnd - seqStart)
+      : null;
   // Coalesced consecutive thoughts count as one ThoughtStep in the UI.
   const coalescedThoughtCount = (() => {
     let n = 0;
@@ -533,7 +586,23 @@ export function AssistantBlockTimeline({
           command: isCommand ? extractCommand(tool.context) ?? undefined : undefined,
           status: tool.status,
         });
-        const expanded = isToolExpanded(toolId, tool.status, tool.name);
+        const expanded = isToolExpanded(toolId, tool.status);
+
+        // Web-search results render as their own specialized Task block
+        // (query trigger + scroll-capped hit list) instead of a generic row.
+        if (!isCommand && tool.searchHits && tool.searchHits.length > 0) {
+          nodes.push(
+            <SearchResultsTask
+              key={toolId}
+              query={extractSearchQuery(tool.context)}
+              hits={tool.searchHits}
+              expanded={expanded}
+              onToggle={(next) => toggleExpand(toolId, next)}
+            />,
+          );
+          ti++;
+          continue;
+        }
 
         nodes.push(
           <ToolStepRow
@@ -542,7 +611,8 @@ export function AssistantBlockTimeline({
             label={label}
             isCommand={isCommand}
             expanded={expanded}
-            onToggle={() => toggleExpand(toolId, !expanded)}
+            onToggle={(next) => toggleExpand(toolId, next)}
+            progress={tool.id ? toolProgress?.get(tool.id) : undefined}
             afterRow={
               promptEntries.length > 0 ? (
                 <div className="mt-1.5 flex flex-col gap-1">
@@ -565,6 +635,7 @@ export function AssistantBlockTimeline({
             <ToolCallItemBody
               tool={tool}
               progress={tool.id ? toolProgress?.get(tool.id) : undefined}
+              hideProgress
             />
           </ToolStepRow>,
         );
@@ -632,11 +703,17 @@ export function AssistantBlockTimeline({
           editedCount={editedCount}
           ranCount={ranCount}
           usedCount={usedCount}
+          filesTouched={filesTouched.size}
+          searches={searchesCount}
+          commands={commandsCount}
+          errors={errorsCount}
           summary={processSummary}
           live={livePacked}
           liveDetail={liveDetail || null}
           defaultOpen={livePacked && !hasFinalOutput}
           collapseWhen={hasFinalOutput}
+          mode={toolsCount > 0 ? 'completion' : 'activity'}
+          durationLabel={sequenceDurationLabel}
         >
           {showPendingThinking && (
             <ThoughtStep
@@ -653,19 +730,6 @@ export function AssistantBlockTimeline({
           )}
           {renderProcessBlocks(processBlocks)}
         </ActivitySummary>
-      )}
-      {checkpointBlocks.length > 0 && (
-        <div className="flex flex-col items-start gap-1">
-          {checkpointBlocks.map((block) => (
-            <SavePointChip
-              key={block.id}
-              workbenchSessionId={wbSessionId}
-              checkpointId={block.checkpoint?.id}
-              label={block.checkpoint?.label}
-              fileCount={block.checkpoint?.fileCount}
-            />
-          ))}
-        </div>
       )}
       {hasFinalOutput && renderFinal(finalBlocks)}
     </div>

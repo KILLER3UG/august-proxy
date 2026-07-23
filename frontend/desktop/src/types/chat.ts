@@ -28,7 +28,7 @@ export interface ProviderSetupResult {
  *  narrow on `type` before relying on a specific field shape. */
 export interface MessageBlock {
   id: string;
-  type: 'thinking' | 'toolCall' | 'command' | 'finalOutput' | 'recalledMemories' | 'checkpoint';
+  type: 'thinking' | 'toolCall' | 'command' | 'finalOutput' | 'recalledMemories';
   content?: string;
   tool?: MessageBlockToolCall;
   /** Set on toolCall blocks whose context represents a revised plan
@@ -37,16 +37,6 @@ export interface MessageBlock {
   /** For type === 'recalledMemories': the auto-memory rows that
    *  getRelevantMemories() prefetched into the system prompt this turn. */
   memories?: RecalledMemoryItem[];
-  /** For type === 'checkpoint': save point created before file mutations.
-   *  Rendered as an inline chip — never as prose in the assistant reply. */
-  checkpoint?: CheckpointNotice;
-}
-
-/** Save point metadata surfaced by the `checkpoint` SSE event. */
-export interface CheckpointNotice {
-  id?: string;
-  label?: string;
-  fileCount?: number;
 }
 
 /** One auto-memory row surfaced by the `recalledMemories` SSE event. */
@@ -246,8 +236,7 @@ export interface AppendBlockEvent {
     | 'command'
     | 'tool_progress'
     | 'toolResult'
-    | 'recalledMemories'
-    | 'checkpoint';
+    | 'recalledMemories';
   content?: string;
   name?: string;
   id?: string;
@@ -264,6 +253,4 @@ export interface AppendBlockEvent {
   providerSetup?: ProviderSetupResult;
   /** For type === 'recalledMemories': the recalled auto-memory rows. */
   memories?: RecalledMemoryItem[];
-  /** For type === 'checkpoint': save point metadata rendered as an inline chip. */
-  checkpoint?: CheckpointNotice;
 }

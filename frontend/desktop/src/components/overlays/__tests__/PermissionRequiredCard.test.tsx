@@ -35,10 +35,11 @@ function renderWithQc(ui: ReactElement) {
 }
 
 describe('choiceToDecision', () => {
-  it('maps Allow / Always / Deny to confirm-mutation payload fields', () => {
+  it('maps Allow / Always / Deny / Instructions to confirm-mutation payload fields', () => {
     expect(choiceToDecision('allow')).toEqual({ reject: false, scope: 'once' });
     expect(choiceToDecision('always')).toEqual({ reject: false, scope: 'always' });
     expect(choiceToDecision('deny')).toEqual({ reject: true, scope: 'once' });
+    expect(choiceToDecision('instructions')).toEqual({ reject: true, scope: 'once' });
   });
 });
 
@@ -70,13 +71,21 @@ describe('mutation helpers', () => {
 });
 
 describe('PermissionRequiredCard', () => {
-  it('confirms immediately when a choice is clicked', async () => {
+  it('clicking a choice selects it; Confirm button confirms', async () => {
     const onConfirm = vi.fn();
     render(
       <PermissionRequiredCard description="Shell" onConfirm={onConfirm} />,
     );
     fireEvent.click(screen.getByTestId('permission-choice-deny'));
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith('deny'));
+    expect(screen.getByTestId('permission-choice-deny')).toHaveAttribute(
+      'data-selected',
+      'true',
+    );
+    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('permission-confirm'));
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith('deny', undefined),
+    );
   });
 
   it('defaults to Allow and confirms with that choice', async () => {
@@ -99,7 +108,9 @@ describe('PermissionRequiredCard', () => {
     );
 
     fireEvent.click(screen.getByTestId('permission-confirm'));
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith('allow'));
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith('allow', undefined),
+    );
   });
 
   it('moves selection with arrow keys and confirms with Enter', async () => {
@@ -123,7 +134,9 @@ describe('PermissionRequiredCard', () => {
       'true',
     );
     fireEvent.keyDown(card, { key: 'Enter' });
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith('deny'));
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith('deny', undefined),
+    );
   });
 
   it('selects by number keys without confirming', () => {
@@ -138,6 +151,27 @@ describe('PermissionRequiredCard', () => {
       'true',
     );
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('option 4 reveals an instructions input; Enter submits the text', async () => {
+    const onConfirm = vi.fn();
+    render(
+      <PermissionRequiredCard description="x" onConfirm={onConfirm} />,
+    );
+    const card = screen.getByTestId('permission-required-card');
+    fireEvent.keyDown(card, { key: '4' });
+    const input = screen.getByTestId('permission-instructions-input');
+    expect(input).toBeInTheDocument();
+    // Confirm stays disabled until instructions are non-empty.
+    expect(screen.getByTestId('permission-confirm')).toBeDisabled();
+    fireEvent.change(input, { target: { value: 'Skip this and edit README.md' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith(
+        'instructions',
+        'Skip this and edit README.md',
+      ),
+    );
   });
 });
 
@@ -170,11 +204,12 @@ describe('MutationDiffCards', () => {
     expect(screen.getByText('$', { exact: true })).toBeInTheDocument();
   });
 
-  it('posts once scope when Allow is clicked', async () => {
+  it('posts once scope when Allow is confirmed', async () => {
     renderWithQc(
       <MutationDiffCards sessionId="wb_1" status={shellStatus} />,
     );
     fireEvent.click(screen.getByTestId('permission-choice-allow'));
+    fireEvent.click(screen.getByTestId('permission-confirm'));
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith('/api/workbench/confirm-mutation', {
         sessionId: 'wb_1',
@@ -182,15 +217,17 @@ describe('MutationDiffCards', () => {
         reject: false,
         scope: 'once',
         continue: true,
+        instructions: undefined,
       }),
     );
   });
 
-  it('posts always scope when Always is clicked', async () => {
+  it('posts always scope when Always is confirmed', async () => {
     renderWithQc(
       <MutationDiffCards sessionId="wb_1" status={shellStatus} />,
     );
     fireEvent.click(screen.getByTestId('permission-choice-always'));
+    fireEvent.click(screen.getByTestId('permission-confirm'));
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith('/api/workbench/confirm-mutation', {
         sessionId: 'wb_1',
@@ -198,15 +235,17 @@ describe('MutationDiffCards', () => {
         reject: false,
         scope: 'always',
         continue: true,
+        instructions: undefined,
       }),
     );
   });
 
-  it('posts reject when Deny is clicked', async () => {
+  it('posts reject when Deny is confirmed', async () => {
     renderWithQc(
       <MutationDiffCards sessionId="wb_1" status={shellStatus} />,
     );
     fireEvent.click(screen.getByTestId('permission-choice-deny'));
+    fireEvent.click(screen.getByTestId('permission-confirm'));
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith('/api/workbench/confirm-mutation', {
         sessionId: 'wb_1',
@@ -214,6 +253,28 @@ describe('MutationDiffCards', () => {
         reject: true,
         scope: 'once',
         continue: true,
+        instructions: undefined,
+      }),
+    );
+  });
+
+  it('posts reject with instructions when the free-form option is confirmed', async () => {
+    renderWithQc(
+      <MutationDiffCards sessionId="wb_1" status={shellStatus} />,
+    );
+    fireEvent.click(screen.getByTestId('permission-choice-instructions'));
+    fireEvent.change(screen.getByTestId('permission-instructions-input'), {
+      target: { value: 'Use --stat instead' },
+    });
+    fireEvent.click(screen.getByTestId('permission-confirm'));
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith('/api/workbench/confirm-mutation', {
+        sessionId: 'wb_1',
+        token: 'tok_shell',
+        reject: true,
+        scope: 'once',
+        continue: true,
+        instructions: 'Use --stat instead',
       }),
     );
   });
@@ -225,8 +286,8 @@ describe('MutationDiffCards', () => {
       pendingTool: 'search_replace',
       pendingArgs: {
         path: 'src/a.ts',
-        old_string: 'foo',
-        new_string: 'bar',
+        'old_string': 'foo',
+        'new_string': 'bar',
       },
       pendingPath: 'src/a.ts',
     };

@@ -1,7 +1,7 @@
 /* ── DiffView.test.ts ─ unit tests for the diff/parser helpers ─────── */
 
 import { describe, it, expect } from 'vitest';
-import { diffLines, parseUnifiedDiff } from '../DiffView';
+import { diffLines, parseUnifiedDiff, diffStats } from '../DiffView';
 
 describe('diffLines — same content', () => {
   it('returns all context lines for identical text', () => {
@@ -173,5 +173,34 @@ describe('parseUnifiedDiff — basic', () => {
     ].join('\n');
     const lines = parseUnifiedDiff(diff);
     expect(lines[0]).toMatchObject({ kind: 'context', text: 'context' });
+  });
+});
+
+describe('diffStats — +N -M summary for Task rows', () => {
+  it('counts additions and removals from old/new content', () => {
+    expect(diffStats({ oldContent: 'a\nb\nc', newContent: 'a\nX\nY\nc' })).toEqual({
+      added: 2,
+      removed: 1,
+    });
+  });
+
+  it('counts from a unified diff string', () => {
+    const diff = [
+      '--- a/foo.ts',
+      '+++ b/foo.ts',
+      '@@ -1,3 +1,4 @@',
+      ' a',
+      '-b',
+      '+B',
+      '+B2',
+      ' c',
+    ].join('\n');
+    expect(diffStats({ diff })).toEqual({ added: 2, removed: 1 });
+  });
+
+  it('returns null for null/empty payloads', () => {
+    expect(diffStats(null)).toBeNull();
+    expect(diffStats({})).toBeNull();
+    expect(diffStats({ oldContent: 'same', newContent: 'same' })?.added).toBe(0);
   });
 });

@@ -238,7 +238,15 @@ export function formatToolContext(toolName: string, contextJson?: string): Forma
       .join(' ') || 'Executing tool';
     const firstScalar = Object.values(parsed).find(v => typeof v === 'string' && v.length > 0) as string | undefined;
     if (firstScalar) {
-      return { summary: `${human}: ${truncate(firstScalar, 100)}`, raw };
+      // Path-shaped values (separators present, no whitespace, no URL
+      // scheme) collapse to their basename — cards never show full
+      // absolute paths.
+      const looksLikePath =
+        /[/\\]/.test(firstScalar) &&
+        !firstScalar.includes('://') &&
+        !/\s/.test(firstScalar);
+      const display = looksLikePath ? pathBasename(firstScalar) : firstScalar;
+      return { summary: `${human}: ${truncate(display, 100)}`, raw };
     }
     return { summary: human, raw };
   }

@@ -618,19 +618,23 @@ async def updateTodosRoute(request: Request):
 async def respondMutation(request: Request):
     """Respond to a pending mutation (accept/reject — pre-apply).
 
-    Body: { token, reject?, scope?: 'once'|'session'|'always', continue?: bool }
+    Body: { token, reject?, scope?: 'once'|'session'|'always', continue?: bool,
+            instructions?: str }
 
     On **accept**: records a grant, **executes the tool with the stored args**,
     then optionally starts a continuation turn that feeds the real tool result
     to the model (no blind retry).
 
     On **reject**: discards the pending change without running the tool.
+    When `instructions` accompanies a reject, the continuation turn carries
+    the user's free-form instructions instead of the generic rejection notice.
     """
     body = await request.json()
     token = str(body.get('token') or '')
     reject = bool(body.get('reject', False))
     scope = str(body.get('scope') or 'once')
     do_continue = body.get('continue', True) is not False
+    instructions = str(body.get('instructions') or '').strip()
     result = wb.consumePendingMutation(token, reject=reject, scope=scope)
     if result is None:
         raise HTTPException(status_code=404, detail='Mutation token not found')
@@ -698,10 +702,18 @@ async def respondMutation(request: Request):
 
         session = wb.getWorkbenchSession(session_id)
         if reject:
-            msg = (
-                f'The user **rejected** the pending tool `{tool_name}`. '
-                'Do not run that change. Acknowledge briefly and ask how they want to proceed.'
-            )
+            if instructions:
+                msg = (
+                    f'The user **declined** the pending tool `{tool_name}` and gave '
+                    'these instructions instead:\n\n'
+                    f'{instructions[:4000]}\n\n'
+                    'Do **not** run the declined change. Follow the instructions above.'
+                )
+            else:
+                msg = (
+                    f'The user **rejected** the pending tool `{tool_name}`. '
+                    'Do not run that change. Acknowledge briefly and ask how they want to proceed.'
+                )
         else:
             result_snip = (exec_result or as_str(result.get('toolResult'), ''))[:6000]
             msg = (

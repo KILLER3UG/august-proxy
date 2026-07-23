@@ -180,12 +180,6 @@ export interface WorkbenchEventHandlers {
     threshold?: number;
     contextWindow?: number;
   }) => void;
-  onCheckpoint?: (data: {
-    id?: string;
-    label?: string;
-    fileCount?: number;
-    toolName?: string;
-  }) => void;
   onBrowserAction?: (data: {
     id: string;
     name: string;
