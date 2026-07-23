@@ -112,7 +112,6 @@ import {
   parseThinkingAndContent,
 } from './message-blocks';
 import { ChatEmptyState } from './ChatEmptyState';
-import { StarterPrompts } from './StarterPrompts';
 import { ChatThreadMessagePane } from './ChatThreadMessagePane';
 
 export {
@@ -1106,16 +1105,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         }}
                       />
                     )
-                    : (
-                      <>
-                        <StarterPrompts
-                          onPick={(prompt) => {
-                            void send(prompt);
-                          }}
-                        />
-                        {composer}
-                      </>
-                    )}
+                    : composer}
               </ChatEmptyState>
             ) : (
               <ChatThreadMessagePane
