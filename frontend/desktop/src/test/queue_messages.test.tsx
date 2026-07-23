@@ -238,9 +238,11 @@ describe('chat-stream-manager subscriber wires queue events to the queue-store',
     expect(src).toMatch(/onUserMessageQueued:/);
     expect(src).toMatch(/onUserMessageDequeued:/);
     expect(src).toMatch(/onUserMessageInjected:/);
-    // And each one should hit the queue-store helper.
-    expect(src).toMatch(/upsertQueuedMessage\(data\.sessionId/);
-    expect(src).toMatch(/removeQueuedMessage\(data\.sessionId/);
+    // And each one should hit the queue-store helper, keyed by the resolved
+    // UI session id (SSE arrives keyed by the workbench wb_* id, so the
+    // handler resolves it via resolveUiSessionId before touching the store).
+    expect(src).toMatch(/upsertQueuedMessage\(queueUiId/);
+    expect(src).toMatch(/removeQueuedMessage\((?:resolveUiSessionId\(data\.sessionId\)|queueUiId)/);
     // onUserMessageInjected should also append a synthetic user bubble
     // to the per-session message log via updateSessionStreamState.
     expect(src).toMatch(/queued:\s*true/);
