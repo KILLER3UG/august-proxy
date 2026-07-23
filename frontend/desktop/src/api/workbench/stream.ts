@@ -1,7 +1,7 @@
 /* Workbench chat streaming — POST /chat, SSE reconnect, plan decision streams.
  * Reads named SSE frames and dispatches them via streamEvents. */
 
-import type { WorkbenchEventHandlers, WorkbenchGuardMode } from '@/types/workbench';
+import type { WorkbenchEventHandlers, WorkbenchGuardMode, WorkbenchTurnUsage } from '@/types/workbench';
 import { dispatchWorkbenchEvent } from './streamEvents';
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -255,9 +255,9 @@ export async function streamWorkbenchReconnect(
       let terminalSeen = false;
       const streamHandlers = {
         ...wrappedHandlers,
-        onDone: () => {
+        onDone: (data?: { usage?: WorkbenchTurnUsage }) => {
           terminalSeen = true;
-          wrappedHandlers.onDone?.();
+          wrappedHandlers.onDone?.(data);
         },
         onError: (err: unknown) => {
           // If we see a terminal error from the backend, we don't auto-retry.

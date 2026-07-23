@@ -31,6 +31,7 @@ export function MessageBubble({
   onRevert,
   onEdit,
   onRegenerate,
+  onFork,
   onClarifyAnswer,
   toolProgress,
   subagentPrompts,
@@ -45,6 +46,8 @@ export function MessageBubble({
   onRevert?: () => void;
   onEdit?: (text: string) => void;
   onRegenerate?: () => void;
+  /** Fork the conversation from this message into a new chat. */
+  onFork?: () => void;
   onClarifyAnswer?: (answer: string) => void;
   toolProgress?: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
   /** Sub-agent prompt disclosures keyed by the parent toolUse id. Only
@@ -321,6 +324,7 @@ export function MessageBubble({
           onSpeak={handleSpeak}
           onCopy={() => { void handleCopy(); }}
           onRegen={() => { void handleRegenClick(); }}
+          onFork={onFork}
         />
       )}
       {/* Rendered after the assistant's final output (not above it) so the

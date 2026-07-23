@@ -36,6 +36,7 @@ export function ChatThreadMessagePane({
   onRevert,
   onEdit,
   onRegenerate,
+  onFork,
   onClarifyAnswer,
   footerSlot,
 }: {
@@ -58,6 +59,7 @@ export function ChatThreadMessagePane({
   onRevert: (index: number) => void;
   onEdit: (index: number, text: string) => void;
   onRegenerate: (index: number) => void | Promise<void>;
+  onFork: (index: number) => void;
   onClarifyAnswer: (msgId: string, answer: string) => void;
   /** Composer or plan banner under the list. */
   footerSlot: ReactNode;
@@ -112,6 +114,7 @@ export function ChatThreadMessagePane({
                   onRegenerate={() => {
                     void onRegenerate(realIndex);
                   }}
+                  onFork={() => onFork(realIndex)}
                   onClarifyAnswer={(ans) => onClarifyAnswer(m.id, ans)}
                   toolProgress={toolProgress}
                   subagentPrompts={subagentPrompts}

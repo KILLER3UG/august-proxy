@@ -127,6 +127,14 @@ export interface WorkbenchBtwResult {
   confidence?: number;
 }
 
+/** Token usage for a single turn, attached to the `done` SSE event so the
+ *  chat UI can render a per-turn usage chip. */
+export interface WorkbenchTurnUsage {
+  inputTokens: number;
+  outputTokens: number;
+  contextTokens: number;
+}
+
 export type WorkbenchEvent =
   | { type: 'thinking'; data: { content: string } }
   | { type: 'text'; data: { content: string } }
@@ -137,7 +145,7 @@ export type WorkbenchEvent =
   | { type: 'session'; data: WorkbenchSession }
   | { type: 'btw'; data: WorkbenchBtwResult }
   | { type: 'compaction'; data: { headCount: number; tailCount: number; compressedCount: number; originalTokens: number; compressedTokens: number; underThreshold?: boolean; threshold?: number; contextWindow?: number } }
-  | { type: 'done'; data: Record<string, never> }
+  | { type: 'done'; data: { usage?: WorkbenchTurnUsage } }
   | { type: 'error'; data: { message: string } }
   | {
       type: 'recalledMemories';
@@ -299,7 +307,7 @@ export interface WorkbenchEventHandlers {
     text: string;
     queuedAt: string;
   }) => void;
-  onDone?: () => void;
+  onDone?: (data?: { usage?: WorkbenchTurnUsage }) => void;
   onError?: (data: { message: string }) => void;
   /** The model asked a clarifying question because it was uncertain. The
    *  chat thread renders a `ClarifyTool` popup anchored to the assistant

@@ -47,6 +47,17 @@ export interface GitCommitResult {
   output: string;
 }
 
+export interface GitLogResult {
+  workspace: string | null;
+  /** `git log --oneline` output (one commit per line). */
+  log: string;
+}
+
+export interface GitCommandResult {
+  workspace: string | null;
+  output: string;
+}
+
 function gitQuery(sessionId?: string, repoPath?: string): string {
   const qs = new URLSearchParams();
   if (sessionId) qs.set('sessionId', sessionId);
@@ -74,6 +85,20 @@ export const gitApi = {
     api.post<GitCommitResult>('/api/git/checkout', {
       sessionId: sessionId || '',
       branch,
+      ...(repoPath ? { repoPath } : {}),
+    }),
+  log:      (sessionId?: string, count = 10, repoPath?: string) => {
+    const qs = new URLSearchParams();
+    if (sessionId) qs.set('sessionId', sessionId);
+    if (repoPath) qs.set('repoPath', repoPath);
+    qs.set('count', String(count));
+    return api.get<GitLogResult>(`/api/git/log?${qs.toString()}`);
+  },
+  /** Run an arbitrary git command (e.g. `['restore', '.']`) in the workspace. */
+  command:  (args: string[], sessionId?: string, repoPath?: string) =>
+    api.post<GitCommandResult>('/api/git/command', {
+      args,
+      sessionId: sessionId || '',
       ...(repoPath ? { repoPath } : {}),
     }),
 };

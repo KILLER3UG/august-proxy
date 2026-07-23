@@ -1274,6 +1274,11 @@ async def _sendWorkbenchMessageStreamImpl(
     from app.lib.async_subprocess import current_subprocess_cancel
 
     _cancel_token = current_subprocess_cancel.set(signal)
+    # Pre-initialize so the `finally` usage emit is safe even if the turn
+    # aborts before the tool loop re-declares these counters.
+    totalInputTokens = 0
+    totalOutputTokens = 0
+    finalContextTokens = 0
     try:
         from app.providers.clients.base import estimateTokens
         from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
@@ -1988,7 +1993,19 @@ async def _sendWorkbenchMessageStreamImpl(
     finally:
         current_subprocess_cancel.reset(_cancel_token)
         if emit:
-            emit({'type': 'done', 'sessionId': sessionId})
+            # Surface this turn's token usage so the UI can render a per-turn
+            # chip (early-exit `done` events above carry no usage).
+            emit(
+                {
+                    'type': 'done',
+                    'sessionId': sessionId,
+                    'usage': {
+                        'inputTokens': totalInputTokens,
+                        'outputTokens': totalOutputTokens,
+                        'contextTokens': finalContextTokens,
+                    },
+                }
+            )
     review_model = _backgroundTaskModel('reviewModel', resolvedModel)
     auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
     try:

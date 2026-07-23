@@ -28,7 +28,7 @@
 
 import type { ChatMessage, MessageBlock, WorkbenchBtwState, AppendBlockEvent, ProviderSetupResult } from '@/types/chat';
 import type { ChatTurnRecord } from './chat-runtime';
-import type { WorkbenchEventHandlers, WorkbenchSession } from '@/types/workbench';
+import type { WorkbenchEventHandlers, WorkbenchSession, WorkbenchTurnUsage } from '@/types/workbench';
 import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
@@ -136,6 +136,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   const pendingConfirmations = new Map<string, { message?: string; detail?: string; confirmationToken?: string }>();
   let streamBlocks: MessageBlock[] = [];
   let changedFiles: GitDiffResult | null = null;
+  let turnUsage: WorkbenchTurnUsage | undefined;
   const beforeMutationCount = initialMutationCount ?? 0;
   let latestMutationCount = 0;
   let latestWorkbenchTodos: NonNullable<ChatMessage['todos']> = [];
@@ -172,6 +173,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         blocks: streamBlocks,
         todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
         changedFiles: changedFiles || undefined,
+        usage: turnUsage,
       } : msg
     ));
   };
@@ -234,6 +236,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         blocks: streamBlocks,
         todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
         changedFiles: changedFiles || undefined,
+        usage: turnUsage,
       } : msg
     ));
     if (status === 'done' || status === 'error') {
@@ -601,7 +604,8 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: info });
       scheduleUpdate();
     },
-    onDone: () => {
+    onDone: (data) => {
+      turnUsage = data?.usage;
       void (async () => {
         if (latestMutationCount > beforeMutationCount && sessionId) {
           try {

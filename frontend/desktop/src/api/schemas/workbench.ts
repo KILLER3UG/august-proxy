@@ -134,7 +134,14 @@ export const WorkbenchCompactionEventSchema = WorkbenchBaseSchema.extend({
 export const WorkbenchDoneEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('done'),
   sessionId: z.string().optional(),
-  data: z.record(z.never()).optional(),
+  /** Per-turn token usage (absent on early-exit done events). */
+  usage: z
+    .object({
+      inputTokens: z.number(),
+      outputTokens: z.number(),
+      contextTokens: z.number(),
+    })
+    .optional(),
 });
 
 export const WorkbenchErrorEventSchema = WorkbenchBaseSchema.extend({

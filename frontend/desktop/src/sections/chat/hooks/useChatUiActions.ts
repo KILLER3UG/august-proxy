@@ -24,6 +24,7 @@ import {
 } from '@/components/chat/WorkbenchModeSelector';
 import { onUiAction } from '@/api/ui-events';
 import type { ChatMessage } from '@/types/chat';
+import { downloadConversation } from '@/lib/export-conversation';
 import { persistMessages } from '../message-storage';
 
 export interface UseChatUiActionsOptions {
@@ -197,6 +198,22 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
             );
           }
         })();
+        return;
+      }
+
+      if (e.action === 'export_conversation') {
+        if (messages.length === 0) {
+          toast.message('Nothing to export yet.');
+          return;
+        }
+        try {
+          const filename = downloadConversation(messages, activeSession?.title);
+          toast.success(`Exported ${filename}`);
+        } catch (err: unknown) {
+          toast.error(
+            `Export failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
     });
     return unsub;
@@ -210,5 +227,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
     setMessages,
     activeSession?.workbenchSessionId,
     activeSession?.workspacePath,
+    activeSession?.folderId,
+    activeSession?.title,
   ]);
 }

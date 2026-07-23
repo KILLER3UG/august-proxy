@@ -1,19 +1,31 @@
 /* ── RightDrawerDiffSection ─ full diff view ──────────────────────── */
 
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileText, RefreshCw, ArrowRight } from 'lucide-react';
+import { FileText, RefreshCw, ArrowRight, Check, Undo2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { gitApi } from '@/api/git';
+import {
+  listWorkbenchCheckpoints,
+  restoreWorkbenchCheckpoint,
+} from '@/api/workbench';
 import { DiffView } from '@/components/chat/DiffView';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { useRightDrawer } from './RightDrawerState';
+import {
+  useRightDrawer,
+  closeRightDrawerSection,
+  clearRightDrawerDiff,
+} from './RightDrawerState';
+import { resolveWorkbenchSessionId } from '@/sections/chat/stream/session-id-map';
 
 export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null }) {
   const qc = useQueryClient();
   const drawer = useRightDrawer();
   const storedDiff = drawer.diff;
+  const [reverting, setReverting] = useState(false);
 
   const query = useQuery({
     queryKey: ['git', 'diff', sessionId],
@@ -26,6 +38,54 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
   const files = diff?.files?.filter((file) => file.added > 0 || file.removed > 0 || file.status || file.diff?.trim()) ?? [];
   const added = diff?.added ?? files.reduce((sum, file) => sum + file.added, 0);
   const removed = diff?.removed ?? files.reduce((sum, file) => sum + file.removed, 0);
+
+  const refreshDiff = () => {
+    void qc.invalidateQueries({ queryKey: ['git', 'diff', sessionId] });
+  };
+
+  /** Keep every change: nothing to do on disk — dismiss the review pane. */
+  const handleKeepAll = () => {
+    clearRightDrawerDiff();
+    closeRightDrawerSection('diff');
+    toast.success('Changes kept');
+  };
+
+  /** Revert every change: restore the latest save point (falls back to
+   *  `git restore .` for tracked files when no save point exists). */
+  const handleRevertAll = () => {
+    if (!sessionId || files.length === 0 || reverting) return;
+    const wbId = resolveWorkbenchSessionId(sessionId);
+    void (async () => {
+      setReverting(true);
+      try {
+        const list = await listWorkbenchCheckpoints(wbId).catch(() => []);
+        const latest = list[0];
+        if (latest?.id) {
+          const ok = window.confirm(
+            `Revert all ${files.length} changed file${files.length === 1 ? '' : 's'} back to the last save point?`,
+          );
+          if (!ok) return;
+          const res = await restoreWorkbenchCheckpoint(wbId, latest.id);
+          toast.success(res.message || 'Reverted to last save point');
+        } else {
+          const ok = window.confirm(
+            `No save point found. Discard changes to ${files.length} tracked file${files.length === 1 ? '' : 's'} with git restore?`,
+          );
+          if (!ok) return;
+          await gitApi.command(['restore', '--', '.'], sessionId);
+          toast.success('Working tree restored');
+        }
+        clearRightDrawerDiff();
+        refreshDiff();
+      } catch (err) {
+        toast.error(
+          `Revert failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      } finally {
+        setReverting(false);
+      }
+    })();
+  };
 
   return (
     <div className="h-full space-y-3 drawer-section-text">
@@ -40,15 +100,46 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
             {!added && !removed && <span className="text-muted-foreground/60">0</span>}
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!sessionId || query.isFetching}
-          onClick={() => { void qc.invalidateQueries({ queryKey: ['git', 'diff', sessionId] }); }}
-        >
-          <RefreshCw className={cn('size-3', query.isFetching && 'animate-spin')} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!sessionId || query.isFetching}
+            onClick={refreshDiff}
+            title="Reload the working-tree diff"
+          >
+            <RefreshCw className={cn('size-3', query.isFetching && 'animate-spin')} />
+            Refresh
+          </Button>
+          {files.length > 0 && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleKeepAll}
+                title="Keep all changes and close the review"
+              >
+                <Check className="size-3" />
+                Keep all
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!sessionId || reverting}
+                onClick={handleRevertAll}
+                className="text-danger hover:text-danger"
+                title="Revert all changes to the last save point"
+              >
+                {reverting ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Undo2 className="size-3" />
+                )}
+                Revert all
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {!diff && query.isLoading && (

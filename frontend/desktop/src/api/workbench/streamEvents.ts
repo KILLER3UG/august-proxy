@@ -224,9 +224,19 @@ export function dispatchWorkbenchEvent(
         status: p?.status === 'error' ? 'error' : 'success',
       });
       break;
-    case 'done':
-      handlers.onDone?.();
+    case 'done': {
+      const u = p?.usage;
+      handlers.onDone?.({
+        usage: u
+          ? {
+              inputTokens: Number((u as Record<string, unknown>).inputTokens) || 0,
+              outputTokens: Number((u as Record<string, unknown>).outputTokens) || 0,
+              contextTokens: Number((u as Record<string, unknown>).contextTokens) || 0,
+            }
+          : undefined,
+      });
       break;
+    }
     case 'error':
       handlers.onError?.({ message: typeof p?.message === 'string' ? p.message : JSON.stringify(p?.message ?? 'Unknown error') });
       break;

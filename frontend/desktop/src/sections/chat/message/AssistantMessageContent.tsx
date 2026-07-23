@@ -13,6 +13,12 @@ import { AssistantMessageActions } from './AssistantMessageActions';
 
 type DisplayBlock = MessageBlock;
 
+/** Compact token count for the usage chip: 1234 → "1.2k". */
+function formatTokenCount(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return `${n}`;
+}
+
 /** Assistant message body: blocks timeline, recap, and action footer. */
 export function AssistantMessageContent({
   message,
@@ -33,6 +39,7 @@ export function AssistantMessageContent({
   onSpeak,
   onCopy,
   onRegen,
+  onFork,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -52,6 +59,7 @@ export function AssistantMessageContent({
   onSpeak: () => void;
   onCopy: () => void;
   onRegen: () => void;
+  onFork?: () => void;
 }) {
   return (
     <>
@@ -101,6 +109,24 @@ export function AssistantMessageContent({
             }}
           />
         )}
+        {/* Per-turn token usage chip (from the `done` SSE event). */}
+        {!(isLast && streaming) &&
+          message.usage &&
+          (message.usage.inputTokens > 0 || message.usage.outputTokens > 0) && (
+            <div
+              className="text-[10px] tabular-nums text-muted-foreground/60"
+              title={`Input ${message.usage.inputTokens.toLocaleString()} tokens · Output ${message.usage.outputTokens.toLocaleString()} tokens${
+                message.usage.contextTokens
+                  ? ` · Context ${message.usage.contextTokens.toLocaleString()} tokens`
+                  : ''
+              }`}
+            >
+              ↑{formatTokenCount(message.usage.inputTokens)} · ↓
+              {formatTokenCount(message.usage.outputTokens)}
+              {message.usage.contextTokens > 0 &&
+                ` · ctx ${formatTokenCount(message.usage.contextTokens)}`}
+            </div>
+          )}
       </div>
       <AssistantMessageActions
         showActions={showActions}
@@ -114,6 +140,7 @@ export function AssistantMessageContent({
         onSpeak={onSpeak}
         onCopy={onCopy}
         onRegen={onRegen}
+        onFork={onFork}
       />
     </>
   );

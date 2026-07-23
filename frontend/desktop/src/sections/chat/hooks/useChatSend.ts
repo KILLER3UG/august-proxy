@@ -19,6 +19,7 @@ import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage, FileAttachment } from '@/types/chat';
 import { ChatAttachmentService } from '../services/ChatAttachmentService';
 import { updateSessionModel } from '@/store/sessions';
+import { buildGitContextBlock } from '@/lib/git-context';
 import {
   WORKBENCH_GUARD_MODES,
   applyWorkbenchGuardMode,
@@ -177,8 +178,16 @@ export function useChatSend(opts: UseChatSendOptions) {
         return;
       }
 
+      // @git mention: attach a compact git snapshot to the request only
+      // (the displayed bubble keeps the typed text clean).
+      let requestText = latestText;
+      if (/@git\b/.test(latestText)) {
+        const gitContext = await buildGitContextBlock(sessionId);
+        if (gitContext) requestText = `${latestText}\n\n${gitContext}`;
+      }
+
       const result = await startChatStream(turnSessionId, {
-        message: applyWorkbenchGuardMode(workbenchMode, latestText),
+        message: applyWorkbenchGuardMode(workbenchMode, requestText),
         chatHistory,
         workbenchMode,
         effort,

@@ -5,6 +5,7 @@ export const COMPOSER_TOOLS = [
   { name: '@read_file', desc: 'Read a local file contents' },
   { name: '@run_command', desc: 'Propose shell command execution' },
   { name: '@fetch_url', desc: 'Fetch web content' },
+  { name: '@git', desc: 'Attach current git state (branch, changes, recent commits)' },
 ] as const;
 
 export type MentionItem = {

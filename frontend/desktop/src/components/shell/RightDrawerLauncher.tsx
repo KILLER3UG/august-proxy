@@ -13,6 +13,7 @@ import {
   Play,
   Check,
   Globe,
+  StickyNote,
 } from 'lucide-react';
 import { useRightDrawer, type RightDrawerSectionId } from './RightDrawerState';
 
@@ -50,6 +51,11 @@ const SECTION_META: Record<
     hint: 'Pages August opened for research',
     Icon: Globe,
   },
+  notes: {
+    label: 'Notepad',
+    hint: 'Scratch notes for this chat (autosaved)',
+    Icon: StickyNote,
+  },
 };
 
 const OPTIONS: RightDrawerSectionId[] = [
@@ -59,6 +65,7 @@ const OPTIONS: RightDrawerSectionId[] = [
   'tasks',
   'preview',
   'browser',
+  'notes',
 ];
 
 export function RightDrawerDropdown({ drawerOpen, onSelect }: {

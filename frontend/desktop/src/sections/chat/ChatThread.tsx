@@ -15,9 +15,11 @@ import {
 import { mockChatThread } from '@/lib/mock';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
+import { UploadCloud } from 'lucide-react';
 import {
   useSessionsStore,
   isPlaceholderTitle,
+  createSession,
   updateSessionModel,
   updateSessionWorkbenchMetadata,
 } from '@/store/sessions';
@@ -66,6 +68,7 @@ import {
   getWorkbenchSession,
   listWorkbenchCapabilities,
   getQueuedWorkbenchMessages,
+  branchWorkbenchSession,
 } from '@/api/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import {
@@ -110,6 +113,7 @@ import {
   parseThinkingAndContent,
 } from './message-blocks';
 import { ChatEmptyState } from './ChatEmptyState';
+import { StarterPrompts } from './StarterPrompts';
 import { ChatThreadMessagePane } from './ChatThreadMessagePane';
 
 export {
@@ -170,6 +174,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const {
     attachments,
+    attachFiles,
     handleFileUpload,
     handleComposerPaste,
     removeAttachment,
@@ -183,6 +188,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [input, setInput] = useState(() => loadComposerDraft(sessionId));
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
   const [_runtimeVersion, _setRuntimeVersion] = useState(0);
+  /** True while files are dragged over the pane — shows the drop overlay. */
+  const [dragOver, setDragOver] = useState(false);
 
   // Backend active-stream map is keyed by workbench SoT id; local turns use the
   // UI session id. OR both so the AUG indicator stays visible across tab/session switches.
@@ -595,6 +602,57 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     generateAIResponse,
   });
 
+  /** Fork the conversation from a message: branch the backend session up to
+   *  that index, seed the new UI transcript with the visible prefix, and open
+   *  the fork. (Backend index ≈ UI index; after compaction the backend copy
+   *  may keep a few extra turns, the UI transcript is always the prefix.) */
+  const handleFork = useCallback(
+    (index: number) => {
+      if (streaming) {
+        toast.message('Stop August first, then fork the chat.');
+        return;
+      }
+      const wbId =
+        workbenchSessionId ||
+        activeSession?.workbenchSessionId ||
+        (sessionId?.startsWith('wb_') ? sessionId : null);
+      if (!wbId) {
+        toast.message('Start a chat first, then fork it.');
+        return;
+      }
+      void branchWorkbenchSession(wbId, index)
+        .then((branched) => {
+          const ui = createSession(
+            activeSession?.folderId ?? null,
+            branched.title || 'Chat (fork)',
+            activeSession?.workspacePath || null,
+          );
+          updateSessionWorkbenchMetadata(ui.id, {
+            workbenchSessionId: branched.id,
+            workbenchAgentId: branched.agentId,
+            workbenchProvider: branched.provider,
+          });
+          persistMessages(ui.id, messages.slice(0, index + 1));
+          toast.success('Forked chat — opening the copy…');
+          window.location.href = `/c/${ui.id}`;
+        })
+        .catch((err: unknown) => {
+          toast.error(
+            `Could not fork: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+    },
+    [
+      streaming,
+      workbenchSessionId,
+      activeSession?.workbenchSessionId,
+      activeSession?.folderId,
+      activeSession?.workspacePath,
+      sessionId,
+      messages,
+    ],
+  );
+
   // Session switch / first load: always land at bottom once messages are ready.
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
@@ -1000,7 +1058,42 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             onClose={() => setWorkbenchBtw(null)}
           />
         )}
-        <div className="flex-grow flex flex-col min-h-0 relative">
+        <div
+          className="flex-grow flex flex-col min-h-0 relative"
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes('Files')) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            if (!dragOver) setDragOver(true);
+          }}
+          onDragLeave={(e) => {
+            // Only clear when the drag leaves the pane, not when it enters a child.
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              setDragOver(false);
+            }
+          }}
+          onDrop={(e) => {
+            const files = e.dataTransfer.files;
+            if (!files || files.length === 0) return;
+            e.preventDefault();
+            setDragOver(false);
+            void attachFiles(files);
+            toast.message(
+              `Attached ${files.length} file${files.length === 1 ? '' : 's'}`,
+            );
+          }}
+        >
+          {dragOver && (
+            <div
+              className="pointer-events-none absolute inset-2 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/50 bg-primary/5 backdrop-blur-[1px]"
+              aria-hidden
+            >
+              <div className="flex items-center gap-2 rounded-xl bg-card/90 px-4 py-2.5 text-sm font-medium text-foreground shadow-lg">
+                <UploadCloud className="size-4 text-primary" />
+                Drop files to attach
+              </div>
+            </div>
+          )}
           <AnimatePresence initial={false}>
             {messages.length === 0 ? (
               <ChatEmptyState workspacePath={activeSession?.workspacePath}>
@@ -1015,7 +1108,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         }}
                       />
                     )
-                    : composer}
+                    : (
+                      <>
+                        <StarterPrompts
+                          onPick={(prompt) => {
+                            void send(prompt);
+                          }}
+                        />
+                        {composer}
+                      </>
+                    )}
               </ChatEmptyState>
             ) : (
               <ChatThreadMessagePane
@@ -1037,6 +1139,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onRevert={handleRevert}
                 onEdit={handleEdit}
                 onRegenerate={handleRegenerate}
+                onFork={handleFork}
                 onClarifyAnswer={handleClarifyAnswer}
                 footerSlot={inputSlot}
               />

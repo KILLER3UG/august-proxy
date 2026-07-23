@@ -15,6 +15,7 @@ import { RightDrawerPlanSection } from './RightDrawerPlanSection';
 import { RightDrawerTerminalSection } from './RightDrawerTerminalSection';
 import { RightDrawerPreviewSection } from './RightDrawerPreviewSection';
 import { RightDrawerBrowserSection } from './RightDrawerBrowserSection';
+import { RightDrawerNotesSection } from './RightDrawerNotesSection';
 import type { WorkbenchSession } from '@/types/workbench';
 
 const DEFAULT_BASE_WIDTH = 320;   // 1-2 sections
@@ -241,6 +242,8 @@ function renderSection(
       );
     case 'browser':
       return <RightDrawerBrowserSection />;
+    case 'notes':
+      return <RightDrawerNotesSection sessionId={ctx.sessionId} />;
   }
 }
 

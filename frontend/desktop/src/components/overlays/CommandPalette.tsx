@@ -15,11 +15,15 @@ import {
   ListTodo,
   FileDiff,
   History,
+  FileDown,
+  Keyboard,
+  StickyNote,
 } from "lucide-react";
 import {
   useCommandPaletteStore,
   closeCommandPalette,
 } from "@/store/command-palette";
+import { openShortcutsModal } from "@/store/shortcuts-modal";
 import { useResolvedThemeStore, toggleTheme } from "@/store/theme";
 import { SECTION_NAV_ITEMS, SETTINGS_TABS } from '@/routes';
 import { Backdrop } from "./Backdrop";
@@ -114,6 +118,15 @@ export function CommandPalette() {
               <History className="size-3.5" /> Restore last save point
             </Command.Item>
             <Command.Item
+              value="action export conversation download markdown transcript"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'export_conversation', target: 'active' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <FileDown className="size-3.5" /> Export conversation
+            </Command.Item>
+            <Command.Item
               value="mode ask before changes"
               onSelect={run(() =>
                 dispatchUiAction({ action: 'set_guard_mode', target: 'ask' }),
@@ -185,6 +198,18 @@ export function CommandPalette() {
             >
               <FileDiff className="size-3.5" /> Open diffs panel
             </Command.Item>
+            <Command.Item
+              value="open notepad notes scratch panel drawer"
+              onSelect={run(() =>
+                dispatchUiAction({
+                  action: 'set_drawer_section',
+                  target: 'notes',
+                }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <StickyNote className="size-3.5" /> Open notepad
+            </Command.Item>
           </Command.Group>
 
           <Command.Separator className="my-2 border-t border-border" />
@@ -227,6 +252,13 @@ export function CommandPalette() {
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
               <Copy className="size-3.5" /> Copy current path
+            </Command.Item>
+            <Command.Item
+              value="action keyboard shortcuts hotkeys help"
+              onSelect={run(openShortcutsModal)}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Keyboard className="size-3.5" /> Keyboard shortcuts
             </Command.Item>
           </Command.Group>
 

@@ -1,7 +1,7 @@
-import { Check, RefreshCw, Play, Pause, Bug } from 'lucide-react';
+import { Check, RefreshCw, Play, Pause, Bug, GitBranch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-/** Speak / copy / regenerate / raw-debug controls under an assistant message. */
+/** Speak / copy / regenerate / fork / raw-debug controls under an assistant message. */
 export function AssistantMessageActions({
   showActions,
   copied,
@@ -14,6 +14,7 @@ export function AssistantMessageActions({
   onSpeak,
   onCopy,
   onRegen,
+  onFork,
 }: {
   showActions: boolean;
   copied: boolean;
@@ -26,6 +27,7 @@ export function AssistantMessageActions({
   onSpeak: () => void;
   onCopy: () => void;
   onRegen: () => void;
+  onFork?: () => void;
 }) {
   return (
     <div className={cn(
@@ -73,6 +75,16 @@ export function AssistantMessageActions({
           <RefreshCw
             className={cn("size-3", isRegenerating && "animate-spin")}
           />
+        </button>
+      )}
+      {onFork && (
+        <button
+          onClick={onFork}
+          disabled={streaming}
+          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+          title="Fork conversation from here"
+        >
+          <GitBranch className="size-3" />
         </button>
       )}
       <button

@@ -5,6 +5,8 @@
  * orthogonal to the WorkbenchEvent SSE union.
  */
 
+import type { WorkbenchTurnUsage } from './workbench';
+
 /** Structured provider-setup config carried by `setup_provider`-style tool
  *  results so the UI can render an inline config/API-key form. Shape inferred
  *  from `ProviderSetupWidget` (id/name/baseUrl/apiFormat/status/error). */
@@ -182,6 +184,9 @@ export interface ChatMessage {
   /** Inline clarify/question */
   clarify?: ChatMessageClarify;
   blocks?: MessageBlock[];
+  /** Token usage for this turn (from the `done` SSE event). Rendered as a
+   *  muted chip in the assistant message footer. */
+  usage?: WorkbenchTurnUsage;
 }
 
 /** Per-session sub-agent container rendered nested under the parent
