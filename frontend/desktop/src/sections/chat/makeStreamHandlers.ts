@@ -586,32 +586,50 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onWarning: ({ message }) => {
       const warning = `\n\n⚠️ ${message || 'Warning'}`;
       assistantContent += warning;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: warning });
+      // Append to the live final-answer block instead of pushing a new one:
+      // splitProcessAndFinal keeps only the LAST finalOutput block as the
+      // "final answer", so a trailing warning block would demote the real
+      // answer into the (collapsed) thinking pack and the user would see
+      // only the warning rendered as the response.
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: warning });
       scheduleUpdate();
     },
     onInfo: ({ message }) => {
       const info = `\n\nℹ️ ${message || ''}`;
       assistantContent += info;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: info });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: info });
       scheduleUpdate();
     },
     onDone: (data) => {
       turnUsage = data?.usage;
+      // Finalize FIRST — synchronously capture the complete assistantContent
+      // / streamBlocks snapshot before any async work. The old code awaited
+      // gitApi.diff() before calling finalize, so a slow/hanging diff fetch
+      // delayed the final content write (and the streaming flag flip),
+      // leaving the tail of the response unpainted under the streaming mask.
+      finalize('done');
       void (async () => {
         if (latestMutationCount > beforeMutationCount && sessionId) {
           try {
             const diff = await gitApi.diff(sessionId);
-            if (diff.files.length > 0) changedFiles = diff;
+            if (diff.files.length > 0) {
+              changedFiles = diff;
+              // Patch the already-finalized message with the changed-files
+              // side-panel data (non-critical; the answer is already painted).
+              setMessages(prev => prev.map(msg =>
+                msg.id === assistantMsgId ? { ...msg, changedFiles } : msg
+              ));
+            }
           } catch (e) {
             console.warn('[makeStreamHandlers] Failed to load changed files:', e);
           }
         }
-        finalize('done');
       })();
     },
     onError: ({ message }) => {
-      assistantContent += `\n\n⚠️ Workbench error: ${message}`;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: `\n\n⚠️ Workbench error: ${message}` });
+      const errText = `\n\n⚠️ Workbench error: ${message}`;
+      assistantContent += errText;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: errText });
       scheduleUpdate();
       finalize('error');
     },

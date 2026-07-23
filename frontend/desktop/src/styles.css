@@ -475,19 +475,12 @@ input::placeholder {
   font-variant-ligatures: none;
   font-synthesis-weight: none;
   text-rendering: optimizeSpeed;
-  /* Soft trailing edge so new tokens feel inked-in rather than snapped. */
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    #000 calc(100% - 12px),
-    rgba(0, 0, 0, 0.78) 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    #000 calc(100% - 12px),
-    rgba(0, 0, 0, 0.78) 100%
-  );
+  /* The trailing-edge mask that used to live here faded the bottom ~12px of
+     the live answer to make new tokens feel "inked in". It also faded the
+     tail of the COMPLETE final answer during the brief window between the
+     last onText flush and `streaming` flipping to false — so the end of
+     the response looked cut off. Removed; the streaming cursor already
+     signals liveness without hiding content. */
 }
 
 /* One-shot rise when the final answer block mounts — not on every token flush. */
