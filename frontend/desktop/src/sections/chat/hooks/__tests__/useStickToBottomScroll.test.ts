@@ -111,4 +111,55 @@ describe('useStickToBottomScroll', () => {
     expect(pinnedToBottomRef.current).toBe(true);
     expect(el.classList.contains('chat-scroll--free')).toBe(false);
   });
+
+  it('immediate scroll re-snaps while the page height settles (virtualized re-measure)', async () => {
+    const el = makeScrollEl();
+
+    const { result } = renderHook(() => {
+      const scrollRef = useRef<HTMLDivElement | null>(el);
+      const pinnedToBottomRef = useRef(true);
+      return useStickToBottomScroll({
+        scrollRef,
+        pinnedToBottomRef,
+        streaming: false,
+        sessionId: 's1',
+        loadedSessionId: 's1',
+        messagesVersion: 1,
+      });
+    });
+
+    result.current.scrollToBottomImmediate();
+    expect(el.scrollTop).toBe(800);
+
+    // Rows entering the viewport measure taller → the page grows after the snap.
+    Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+    await new Promise((r) => setTimeout(r, 120));
+    expect(el.scrollTop).toBe(1000);
+  });
+
+  it('settle stops fighting a user who scrolls away mid-settle', async () => {
+    const el = makeScrollEl();
+    const pinnedToBottomRef = { current: true };
+
+    const { result } = renderHook(() => {
+      const scrollRef = useRef<HTMLDivElement | null>(el);
+      return useStickToBottomScroll({
+        scrollRef,
+        pinnedToBottomRef,
+        streaming: false,
+        sessionId: 's1',
+        loadedSessionId: 's1',
+        messagesVersion: 1,
+      });
+    });
+
+    result.current.scrollToBottomImmediate();
+    // User wheels up before the next frame — pin releases.
+    pinnedToBottomRef.current = false;
+    el.scrollTop = 100;
+    Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+    await new Promise((r) => setTimeout(r, 120));
+    // The settle pass must not have yanked the viewport back down.
+    expect(el.scrollTop).toBe(100);
+  });
 });

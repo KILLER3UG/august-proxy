@@ -210,15 +210,21 @@ export function ActivitySummary({
             />
             <span className="activity-summary-counts flex min-w-0 items-center gap-1.5">
               <span className="shrink-0 font-semibold text-foreground">
-                Task completed
+                {live ? 'Working…' : 'Task completed'}
               </span>
-              {errors > 0 ? (
+              {!live && errors > 0 ? (
                 <AlertCircle
                   className="size-3.5 shrink-0 text-danger"
                   aria-label="Some steps failed"
                 />
               ) : null}
-              {completionText ? (
+              {live ? (
+                liveLine ? (
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    {liveLine}
+                  </span>
+                ) : null
+              ) : completionText ? (
                 <span
                   className="min-w-0 truncate text-muted-foreground"
                   title={hasProse ? prose : undefined}
@@ -227,7 +233,7 @@ export function ActivitySummary({
                 </span>
               ) : null}
             </span>
-            {live && !open ? (
+            {live ? (
               <span
                 className="activity-summary-header-live"
                 data-testid="activity-summary-live-indicator"
@@ -236,7 +242,7 @@ export function ActivitySummary({
                 <span className="activity-summary-live-dot" aria-hidden />
               </span>
             ) : null}
-            {durationLabel ? (
+            {!live && durationLabel ? (
               <span className="activity-summary-duration" aria-hidden>
                 {durationLabel}
               </span>

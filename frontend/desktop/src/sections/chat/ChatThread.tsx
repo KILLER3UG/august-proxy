@@ -299,7 +299,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const {
     getScrollTarget,
-    scrollToBottomSmooth: scrollToBottomSmoothRaw,
     scrollToBottomImmediate,
     programmaticScrollRef,
     setPinned,
@@ -316,11 +315,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     },
   });
 
-  const scrollToBottomSmooth = useCallback(() => {
+  // The jump-to-bottom button snaps instantly: a smooth animation is
+  // interrupted by content growth ("stops midway"), and while the viewport is
+  // moving the scroll-to-top control can mount/unmount in the same button
+  // stack — so a fast second click lands on it and shoots to the top.
+  const scrollToBottom = useCallback(() => {
     setScrolledFromBottom(false);
     setHasNewContentWhileUnpinned(false);
-    scrollToBottomSmoothRaw();
-  }, [scrollToBottomSmoothRaw]);
+    scrollToBottomImmediate();
+  }, [scrollToBottomImmediate]);
 
   // Track pin state from user scrolls only — do not rebind on every stream flush.
   // Re-attach when the message pane mounts (empty → messages); scrollRef is null
@@ -1123,7 +1126,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 scrolledFromBottom={scrolledFromBottom}
                 showNewContentPill={hasNewContentWhileUnpinned}
                 scrollRef={scrollRef}
-                onScrollToBottom={scrollToBottomSmooth}
+                onScrollToBottom={scrollToBottom}
                 onRevert={handleRevert}
                 onEdit={handleEdit}
                 onRegenerate={handleRegenerate}

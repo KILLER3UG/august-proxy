@@ -1,4 +1,4 @@
-import { useRef, type ComponentType, type ReactNode, type SVGProps } from 'react';
+import { type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { motion, type Variants } from 'framer-motion';
 
 import {
@@ -35,10 +35,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { t } from '@/lib/motion';
 import { cn } from '@/lib/utils';
-import {
-  BrainIndicator,
-  type BrainIndicatorHandle,
-} from '@/components/shell/BrainIndicator';
 
 
 export type UserStatus = 'online' | 'focus' | 'offline' | 'busy';
@@ -235,8 +231,6 @@ export function UserDropdown({
   triggerClassName,
   updateAvailable = null,
 }: UserDropdownProps) {
-  const brainRef = useRef<BrainIndicatorHandle>(null);
-
   const profileItems: MenuItemBase[] = MENU_ITEMS.profile.map((item) => {
     if (item.action === 'notifications' && updateAvailable) {
       return {
@@ -485,20 +479,6 @@ export function UserDropdown({
 
           <DropdownMenuSeparator />
           <DropdownMenuGroup>{profileItems.map(renderMenuItem)}</DropdownMenuGroup>
-
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            <DropdownMenuItem
-              className="august-menu-item p-0 focus:bg-accent/60 cursor-pointer"
-              style={{ animationDelay: '160ms' }}
-              onSelect={(e) => {
-                e.preventDefault();
-                brainRef.current?.toggle();
-              }}
-            >
-              <BrainIndicator ref={brainRef} variant="menu" />
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
 
           <DropdownMenuSeparator />
           <DropdownMenuGroup>{supportItems.map(renderMenuItem)}</DropdownMenuGroup>

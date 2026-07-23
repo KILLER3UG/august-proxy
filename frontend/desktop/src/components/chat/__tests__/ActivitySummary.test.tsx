@@ -135,4 +135,24 @@ describe('ActivitySummary completion mode (§9 bar)', () => {
     );
     expect(screen.getByLabelText('Some steps failed')).toBeInTheDocument();
   });
+
+  it('says Working… instead of Task completed while the turn is still live', () => {
+    render(
+      <ActivitySummary
+        thoughtCount={0}
+        toolsCount={1}
+        filesTouched={1}
+        mode="completion"
+        live
+        liveDetail="Reading config.yaml"
+      >
+        <div>task blocks</div>
+      </ActivitySummary>,
+    );
+    expect(screen.getByText('Working…')).toBeInTheDocument();
+    expect(screen.queryByText('Task completed')).toBeNull();
+    // The live detail renders both in the header and in the live line.
+    expect(screen.getAllByText('Reading config.yaml').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId('activity-summary-live-indicator')).toBeInTheDocument();
+  });
 });

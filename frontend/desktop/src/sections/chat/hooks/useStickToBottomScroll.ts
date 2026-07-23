@@ -105,8 +105,39 @@ export function useStickToBottomScroll({
     const target = getScrollTarget();
     if (!target) return;
     setPinned(true);
-    applyScrollTop(target, target.scrollHeight);
-  }, [getScrollTarget, applyScrollTop, setPinned]);
+    // Snap now, then keep re-snapping for up to ~400ms while the page height
+    // settles: virtualized rows re-measure as they enter the viewport and
+    // late content (images, collapsibles) can grow the transcript after the
+    // first snap. Without the settle pass the jump lands above the true
+    // bottom ("stops midway"). The programmatic guard stays up for the whole
+    // settle so pin tracking never sees these writes as user scrolls.
+    programmaticScrollRef.current = true;
+    target.scrollTop = target.scrollHeight;
+    let lastHeight = target.scrollHeight;
+    let stableFrames = 0;
+    const deadline = performance.now() + 400;
+    const settle = () => {
+      const el = getScrollTarget();
+      // User scrolled away mid-settle — stop fighting them.
+      if (!el || !pinnedToBottomRef.current) {
+        programmaticScrollRef.current = false;
+        return;
+      }
+      el.scrollTop = el.scrollHeight;
+      if (el.scrollHeight === lastHeight) {
+        stableFrames += 1;
+      } else {
+        stableFrames = 0;
+        lastHeight = el.scrollHeight;
+      }
+      if (stableFrames >= 2 || performance.now() >= deadline) {
+        programmaticScrollRef.current = false;
+        return;
+      }
+      requestAnimationFrame(settle);
+    };
+    requestAnimationFrame(settle);
+  }, [getScrollTarget, pinnedToBottomRef, setPinned]);
 
   // User intent to read earlier content: release pin immediately.
   useEffect(() => {
