@@ -126,6 +126,66 @@ def _parse_porcelain(output: str) -> list[dict[str, object]]:
     return files
 
 
+# Untracked files larger than this are treated as binary/omitted.
+UNTRACKED_MAX_BYTES = 1024 * 1024
+
+
+def _attach_patches(files: list[dict[str, object]], combined: str) -> None:
+    """Split a unified diff into per-file patch bodies and attach to files."""
+    chunks = combined.split('diff --git ')
+    for chunk in chunks[1:]:
+        header_end = chunk.find('\n')
+        header = chunk[:header_end] if header_end >= 0 else chunk
+        # b/path
+        path_token = ''
+        if ' b/' in header:
+            path_token = header.split(' b/', 1)[1].strip()
+        elif header.startswith('b/'):
+            path_token = header[2:].strip()
+        body = 'diff --git ' + chunk
+        for f in files:
+            if f['path'] == path_token or str(f['path']).endswith(path_token):
+                f['diff'] = body
+                break
+
+
+async def _attach_untracked_diff(repo_path: str, file: dict[str, object]) -> None:
+    """Synthesize a diff for an untracked file (never present in `git diff`).
+
+    Skips files >1MB or with NUL bytes in the first 8KB (treated as binary).
+    For text files, runs `git diff --no-index -- /dev/null <path>`; Git for
+    Windows translates `/dev/null` internally. Exit code 1 means differences
+    were found (expected); codes >=2 are real errors.
+    """
+    rel = str(file['path'])
+    full = Path(repo_path) / rel
+    try:
+        size = full.stat().st_size
+    except OSError:
+        file['diff'] = ''
+        return
+    if size > UNTRACKED_MAX_BYTES:
+        file['diff'] = 'Binary file \u2014 diff omitted'
+        file['added'] = 0
+        return
+    try:
+        with open(full, 'rb') as fh:
+            head = fh.read(8192)
+    except OSError:
+        file['diff'] = ''
+        return
+    if b'\0' in head:
+        file['diff'] = 'Binary file \u2014 diff omitted'
+        file['added'] = 0
+        return
+    code, out, _ = await _run_git(repo_path, 'diff', '--no-index', '--', '/dev/null', rel, check=False)
+    if code >= 2:
+        file['diff'] = ''
+        return
+    file['diff'] = out
+    file['added'] = sum(1 for ln in out.splitlines() if ln.startswith('+') and not ln.startswith('+++'))
+
+
 def _apply_numstat(files: list[dict[str, object]], numstat: str) -> tuple[int, int]:
     by_path = {str(f['path']): f for f in files}
     total_added = 0
@@ -227,33 +287,23 @@ async def git_diff(sessionId: str = '', repoPath: str = '', target: str = 'HEAD'
 
     _, porcelain, _ = await _run_git(path, 'status', '--porcelain', check=False)
     files = _parse_porcelain(porcelain)
+    # numstat: unstaged and staged are disjoint sets, so summing is correct.
     _, unstaged_ns, _ = await _run_git(path, 'diff', '--numstat', check=False)
     _, staged_ns, _ = await _run_git(path, 'diff', '--cached', '--numstat', check=False)
     added, removed = _apply_numstat(files, unstaged_ns + staged_ns)
 
-    # Attach per-file patch when cheap; full tree diff as fallback text per file.
+    # `git diff HEAD` already merges staged + unstaged tracked changes; the old
+    # concatenation with `git diff --cached` overwrote combined-state entries.
     _, full_diff, _ = await _run_git(path, 'diff', target, check=False)
-    _, staged_diff, _ = await _run_git(path, 'diff', '--cached', check=False)
-    combined = (full_diff or '') + (staged_diff or '')
     for f in files:
         f['diff'] = ''
-    # Simple split by diff --git headers
-    if combined.strip():
-        chunks = combined.split('diff --git ')
-        for chunk in chunks[1:]:
-            header_end = chunk.find('\n')
-            header = chunk[:header_end] if header_end >= 0 else chunk
-            # b/path
-            path_token = ''
-            if ' b/' in header:
-                path_token = header.split(' b/', 1)[1].strip()
-            elif header.startswith('b/'):
-                path_token = header[2:].strip()
-            body = 'diff --git ' + chunk
-            for f in files:
-                if f['path'] == path_token or str(f['path']).endswith(path_token):
-                    f['diff'] = body
-                    break
+    if full_diff.strip():
+        _attach_patches(files, full_diff)
+
+    # Untracked files (`??`) never appear in `git diff`; synthesize per-file.
+    for f in files:
+        if str(f.get('status')) == '??' and not str(f.get('diff') or '').strip():
+            await _attach_untracked_diff(path, f)
 
     return {
         'workspace': path,

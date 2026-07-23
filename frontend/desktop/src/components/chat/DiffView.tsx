@@ -13,7 +13,7 @@
 /*   2. an `oldContent` / `newContent` pair (computes the diff inline),  */
 /*   3. a `null` / `undefined` (renders nothing).                        */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 export type DiffLineKind = 'context' | 'added' | 'removed';
@@ -152,9 +152,11 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
     return { added, removed };
   }, [lines]);
 
+  const [expanded, setExpanded] = useState(false);
+
   if (lines.length === 0) return null;
 
-  const visible = lines.slice(0, maxLines);
+  const visible = expanded ? lines : lines.slice(0, maxLines);
   const hidden = lines.length - visible.length;
 
   return (
@@ -171,9 +173,22 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
         <DiffLineRow key={i} line={line} />
       ))}
       {hidden > 0 && (
-        <div className="text-[10px] text-zinc-500 text-center py-1.5 select-none">
-          ─── {hidden} more line{hidden === 1 ? '' : 's'} ───
-        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="w-full text-[10px] text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
+        >
+          ─── Show {hidden} more line{hidden === 1 ? '' : 's'} ───
+        </button>
+      )}
+      {expanded && lines.length > maxLines && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="w-full text-[10px] text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
+        >
+          ─── Show less ───
+        </button>
       )}
     </div>
   );

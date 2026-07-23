@@ -62,13 +62,18 @@ def _getShell() -> str:
 
 
 def _defaultShellArgs(shell: str) -> list[str]:
-    """Shell-appropriate interactive flags (``-i`` breaks PowerShell)."""
+    """Shell-appropriate interactive flags (``-i`` breaks PowerShell).
+
+    ``-NoExit`` / ``/k`` keep the shell alive in pipe-fallback mode (no TTY),
+    where PowerShell/cmd would otherwise read empty stdin and exit instantly.
+    Harmless in PTY mode since the shell stays open on its TTY anyway.
+    """
     base = os.path.basename(shell).lower()
     if base in ('pwsh.exe', 'pwsh', 'powershell.exe', 'powershell'):
         # Interactive login shell; do not pass -i (bash-only).
-        return ['-NoLogo']
+        return ['-NoLogo', '-NoExit']
     if base in ('cmd.exe', 'cmd'):
-        return []
+        return ['/k']
     # bash, zsh, fish, etc.
     return ['-i']
 
@@ -175,6 +180,20 @@ def _broadcastTerminal(sessionId: str, text: str) -> None:
                 pass
         except Exception:
             _wsQueues.get(sessionId, set()).discard(queue)
+
+
+def _broadcastExit(sessionId: str) -> None:
+    """Push a ``None`` sentinel to every subscriber queue on process exit.
+
+    Mirrors the sentinel ``closeTerminalSession`` uses so each connection's
+    ``_pump_output`` loop unblocks from ``queue.get()`` and closes the WS
+    instead of hanging forever after the shell process exits.
+    """
+    for queue in list(_wsQueues.get(sessionId, set())):
+        try:
+            queue.put_nowait(None)
+        except Exception:
+            pass
 
 
 class _WebSocketLike(Protocol):
@@ -340,6 +359,9 @@ async def _pipeStdout(sessionId: str) -> None:
             s = _sessions[sessionId]
             if as_str(s.get('status')) == 'running':
                 s['status'] = 'exited'
+        # Signal all live subscribers that output has ended so their
+        # _pump_output loops unblock and close the WebSocket.
+        _broadcastExit(sessionId)
 
 
 async def _pipePtyStdout(sessionId: str) -> None:
@@ -373,6 +395,9 @@ async def _pipePtyStdout(sessionId: str) -> None:
             s = _sessions[sessionId]
             if as_str(s.get('status')) == 'running':
                 s['status'] = 'exited'
+        # Signal all live subscribers that output has ended so their
+        # _pump_output loops unblock and close the WebSocket.
+        _broadcastExit(sessionId)
 
 
 def readTerminalBuffer(sessionId: str) -> dict[str, object]:
@@ -559,6 +584,17 @@ async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
     if not session:
         await ws.close(code=4004)
         return
+    # Reject connections to a dead session: flush any buffered output + an
+    # exit notice, then close so the client stops the reconnect loop.
+    status = as_str(session.get('status'), '')
+    if status in ('error', 'exited'):
+        buffer = as_str(session.get('buffer'), '')
+        if buffer:
+            await ws.send_text(buffer)
+        err = as_str(session.get('error'), '')
+        await ws.send_text(f'\r\n[Shell {status}{": " + err if err else ""}]\r\n')
+        await ws.close(code=4001)
+        return
     if terminalId not in _wsQueues:
         _wsQueues[terminalId] = set()
     out_queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=256)
@@ -568,6 +604,11 @@ async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
         while True:
             chunk = await out_queue.get()
             if chunk is None:
+                # Process exited (sentinel from reader task) — tell the client.
+                try:
+                    await ws.close(code=4001)
+                except Exception:
+                    pass
                 break
             await ws.send_text(chunk)
 

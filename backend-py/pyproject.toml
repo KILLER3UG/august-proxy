@@ -18,6 +18,9 @@ dependencies = [
     "playwright>=1.49.0",
     "ddgs>=9.14.0",
     "html2text>=2025.0.0",
+    # Full-TTY terminal on Windows; ensures the drawer shell never falls back
+    # to the exit-immediately pipe mode. No-op on non-Windows platforms.
+    "pywinpty>=2.0.0; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -42,9 +45,6 @@ desktop = [
     # `uv sync --extra desktop` when desktop computer-use is desired.
     "pyautogui>=0.9.54",
     "pygetwindow>=0.0.9; sys_platform == 'win32'",
-]
-pty = [
-    "pywinpty>=2.0.0; sys_platform == 'win32'",
 ]
 gateway = [
     # Platform bot adapters (Telegram uses httpx already in core deps).

@@ -3,6 +3,43 @@ import { describe, it, expect } from 'vitest';
 import { Markdown } from '../ChatMarkdown';
 
 describe('ChatMarkdown Component', () => {
+  it('does not paint an incomplete trailing table row while streaming (live=true)', () => {
+    // Mid-stream: header + separator + one full row are newline-terminated, but
+    // the last row is still arriving (no trailing newline).
+    const streamingTable =
+      '| Header 1 | Header 2 |\n| --- | --- |\n| Row 1 Col 1 | Row 1 Col 2 |\n| Row 2 Col 1';
+
+    const { container } = render(<Markdown content={streamingTable} live={true} />);
+
+    // The table renders with only the completed row; the half-received row is held back.
+    const table = container.querySelector('table');
+    expect(table).not.toBeNull();
+    const rows = container.querySelectorAll('tbody tr');
+    expect(rows.length).toBe(1);
+    expect(container.textContent).not.toContain('Row 2 Col 1');
+  });
+
+  it('renders the previously-held row once it is newline-terminated (live=true)', () => {
+    const completedTable =
+      '| Header 1 | Header 2 |\n| --- | --- |\n| Row 1 Col 1 | Row 1 Col 2 |\n| Row 2 Col 1 | Row 2 Col 2 |\n';
+
+    const { container } = render(<Markdown content={completedTable} live={true} />);
+
+    const rows = container.querySelectorAll('tbody tr');
+    expect(rows.length).toBe(2);
+    expect(container.textContent).toContain('Row 2 Col 1');
+  });
+
+  it('does not trim a trailing pipe line inside an unclosed code fence (live=true)', () => {
+    // Streaming a bash pipeline inside an open fence — must not be treated as a table row.
+    const streamingCode = '```bash\ncat logs.txt | grep ERROR';
+
+    const { container } = render(<Markdown content={streamingCode} live={true} />);
+
+    expect(container.querySelector('table')).toBeNull();
+    expect(container.textContent).toContain('cat logs.txt | grep ERROR');
+  });
+
   it('renders GFM markdown tables cleanly during live streaming (live=true)', () => {
     const tableMarkdown = `
 | Header 1 | Header 2 |

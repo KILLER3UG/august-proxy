@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ExternalLink, Loader2, Plus, ShieldAlert, Trash2, X, Inbox, AlertCircle } from 'lucide-react';import { Button } from '@/components/ui/button';
+import { Check, ExternalLink, Loader2, Plus, RefreshCw, ShieldAlert, Trash2, X, Inbox, AlertCircle } from 'lucide-react';import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Terminal as XTerm } from 'xterm';
@@ -57,6 +57,10 @@ export function RightDrawerTerminalSection() {
       resizeTerminalSession(sessionId, cols, rows),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['terminal-sessions'] }); },
   });
+  // Stable ref so the socket effect can call resize without listing the
+  // useMutation object (new identity every render) in its dependency array.
+  const resizeRef = useRef(resize);
+  resizeRef.current = resize;
 
   const createSession = useMutation({
     mutationFn: () =>
@@ -166,7 +170,7 @@ export function RightDrawerTerminalSection() {
       const cols = Math.max(20, Math.floor(bounds.width / 7.5));
       const rows = Math.max(5, Math.floor(bounds.height / 16));
       terminalInstance.resize(cols, rows);
-      resize.mutate({ sessionId: activeId, cols, rows });
+      resizeRef.current.mutate({ sessionId: activeId, cols, rows });
     };
 
     const observer = new ResizeObserver(syncSize);
@@ -208,9 +212,19 @@ export function RightDrawerTerminalSection() {
           void event.data.arrayBuffer().then((buffer) => terminal.write(new Uint8Array(buffer)));
         }
       });
-      socket.addEventListener('close', () => {
+      socket.addEventListener('close', (event: CloseEvent) => {
         connectedRef.current = false;
         setSocketReady(false);
+        // 4001 = shell process exited, 4004 = session not found. Neither is
+        // recoverable by reconnecting — surface an error instead of looping.
+        if (event.code === 4001 || event.code === 4004) {
+          setSpawnError(
+            event.code === 4004
+              ? 'Terminal session no longer exists. Start a new shell.'
+              : 'Shell process exited. Start a new shell or open an external terminal.',
+          );
+          return;
+        }
         // Auto-reconnect with exponential backoff (max 5 attempts)
         if (!disposed && reconnectAttemptRef.current < 5) {
           const delay = Math.min(1000 * 2 ** reconnectAttemptRef.current, 16000);
@@ -251,10 +265,24 @@ export function RightDrawerTerminalSection() {
       connectedRef.current = false;
       setSocketReady(false);
     };
-  }, [activeId, resize]);
+  }, [activeId]);
+
+  // Surface a spawn/exit error reported by session polling even if the initial
+  // createSession.onSuccess missed it.
+  useEffect(() => {
+    if (active?.error && !spawnError) {
+      setSpawnError(active.error);
+    }
+  }, [active?.error, spawnError]);
+
+  const inErrorState =
+    !!spawnError || active?.status === 'error' || active?.status === 'exited';
 
   const showConnectingOverlay =
-    !socketReady && !connectedRef.current && (isLoading || createSession.isPending || !!active);
+    !socketReady &&
+    !connectedRef.current &&
+    !inErrorState &&
+    (isLoading || createSession.isPending || !!active);
 
   return (
     <div className="relative h-full min-h-0 w-full">
@@ -308,19 +336,37 @@ export function RightDrawerTerminalSection() {
         )}
       </div>
 
-      {spawnError && (
-        <div className="absolute left-1 right-12 top-9 z-10 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-[10px] text-destructive">
-          <AlertCircle className="size-3.5 shrink-0 mt-0.5" />
-          <div className="min-w-0">
-            <p className="font-medium">Shell failed to start</p>
-            <p className="mt-0.5 whitespace-pre-wrap break-words opacity-90">{spawnError}</p>
-            <button
-              type="button"
-              className="mt-1 underline"
-              onClick={() => openExternal.mutate()}
+      {inErrorState && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-lg bg-[#020617]/95 p-6 text-center">
+          <AlertCircle className="size-8 text-destructive" />
+          <div className="max-w-xs">
+            <p className="text-sm font-medium text-foreground">Shell failed to start</p>
+            <p className="mt-1 whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
+              {spawnError || active?.error || 'The shell process exited unexpectedly.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => { setSpawnError(null); createSession.mutate(); }}
+              disabled={createSession.isPending}
             >
-              Open external terminal instead
-            </button>
+              {createSession.isPending ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <RefreshCw className="size-3" />
+              )}
+              Retry Shell
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openExternal.mutate()}
+              disabled={openExternal.isPending}
+            >
+              <ExternalLink className="size-3" />
+              Open System Terminal
+            </Button>
           </div>
         </div>
       )}

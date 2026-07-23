@@ -319,6 +319,27 @@ marked.use({
   extensions: [mathInlineExtension, mathBlockExtension],
 });
 
+/**
+ * While streaming, the final table row arrives one character at a time and is
+ * not yet newline-terminated. marked's GFM parser renders that half-received
+ * line as a short/partial row, so the table paints with "cut" borders that
+ * only settle once the turn finishes. During a live parse we hold back the
+ * trailing incomplete table row (the line reappears next flush once complete),
+ * so only fully-received rows are ever painted. Never trims inside an open code
+ * fence — a `|` line there is code, not a table.
+ */
+function stabilizeLiveTables(src: string): string {
+  if (src.endsWith('\n')) return src;
+  // Odd number of fences => we're inside an unclosed code block; leave as-is.
+  if (((src.match(/```/g) || []).length) % 2 === 1) return src;
+  const nlIdx = src.lastIndexOf('\n');
+  const lastLine = src.slice(nlIdx + 1);
+  if (/^\s*\|/.test(lastLine)) {
+    return src.slice(0, nlIdx + 1);
+  }
+  return src;
+}
+
 export function Markdown({
   content,
   variant = 'default',
@@ -334,7 +355,10 @@ export function Markdown({
 
   const html = useMemo(() => {
     if (!content) return '';
-    const processed = convertLatexToUnicode(content);
+    // During a live stream, hold back an incomplete trailing table row so the
+    // table never paints half-formed rows with cut borders.
+    const stabilized = live ? stabilizeLiveTables(content) : content;
+    const processed = convertLatexToUnicode(stabilized);
     liveMarkdownParse = live;
     const res = marked.parse(processed, { async: false });
     liveMarkdownParse = false;
