@@ -1145,7 +1145,7 @@ pub async fn download_release_installer(
     filename: String,
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        use std::io::Write;
+        use std::io::{Read, Write};
 
         let dir = std::env::temp_dir().join("august-updates");
         std::fs::create_dir_all(&dir)
@@ -1195,14 +1195,19 @@ pub async fn download_release_installer(
 
         let mut downloaded: u64 = 0;
         let mut last_emit = std::time::Instant::now();
+        // reqwest's blocking Response implements std::io::Read — the async
+        // `.chunk()` API does not exist on it, so read into a fixed buffer.
+        let mut buf = [0u8; 64 * 1024];
         loop {
-            let chunk = resp
-                .chunk()
+            let n = resp
+                .read(&mut buf)
                 .map_err(|e| format!("download interrupted: {e}"))?;
-            let Some(bytes) = chunk else { break };
-            file.write_all(&bytes)
+            if n == 0 {
+                break;
+            }
+            file.write_all(&buf[..n])
                 .map_err(|e| format!("could not write the installer file: {e}"))?;
-            downloaded += bytes.len() as u64;
+            downloaded += n as u64;
             if last_emit.elapsed() >= Duration::from_millis(150) {
                 emit(downloaded, total);
                 last_emit = std::time::Instant::now();
