@@ -3,6 +3,7 @@ import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { GitDiffResult } from '@/api/git';
 import type { SubagentBlockState } from '../chat-stream-manager';
+import { stripLegacySavePointNotices } from '../message-blocks';
 import {
   AssistantBlockTimeline,
   type SubagentPromptEntry,
@@ -89,13 +90,14 @@ export function AssistantMessageContent({
               changedFiles: message.changedFiles as {
                 files?: Array<{ path: string; added?: number; removed?: number; status?: string }>;
               } | undefined,
-              finalText:
+              finalText: stripLegacySavePointNotices(
                 message.blocks
                   ?.filter((b) => b.type === 'finalOutput' && b.content)
                   .map((b) => b.content || '')
                   .join('\n') ||
-                message.content ||
-                '',
+                  message.content ||
+                  '',
+              ),
             }}
           />
         )}

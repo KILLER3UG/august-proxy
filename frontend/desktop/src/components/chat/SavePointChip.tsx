@@ -64,10 +64,12 @@ export function SavePointChip({
   workbenchSessionId,
   label,
   checkpointId,
+  fileCount,
 }: {
   workbenchSessionId: string | null | undefined;
   label?: string | null;
   checkpointId?: string | null;
+  fileCount?: number | null;
 }) {
   const [busy, setBusy] = useState(false);
   if (!workbenchSessionId || (!label && !checkpointId)) return null;
@@ -106,6 +108,7 @@ export function SavePointChip({
       <Shield className="size-3 text-emerald-400" />
       <span className="text-foreground/85">
         Save point{label ? `: ${label}` : ''}
+        {fileCount ? ` · ${fileCount} file${fileCount === 1 ? '' : 's'}` : ''}
       </span>
       <Button
         size="sm"

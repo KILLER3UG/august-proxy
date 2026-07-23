@@ -577,10 +577,16 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onCheckpoint: (info) => {
-      const n = info.fileCount ?? 0;
-      const notice = `\n\n💾 Save point created${info.label ? ` — ${info.label}` : ''}${n ? ` (${n} file${n === 1 ? '' : 's'})` : ''}. Ctrl+K → “Restore last save point” to undo file changes.`;
-      assistantContent += notice;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: notice });
+      // Structured chip block — keeps "Save point created" notices out of
+      // the assistant prose (older builds appended raw text here).
+      streamBlocks = appendBlockEvent(streamBlocks, {
+        type: 'checkpoint',
+        checkpoint: {
+          id: info.id,
+          label: info.label,
+          fileCount: info.fileCount,
+        },
+      });
       scheduleUpdate();
     },
     onWarning: ({ message }) => {

@@ -117,6 +117,14 @@ export function appendBlockEvent(
         memories: event.memories,
       });
     }
+  } else if (event.type === 'checkpoint') {
+    // Save point created before file mutations — rendered as an inline
+    // chip by the timeline, never as prose in the assistant reply.
+    blocks.push({
+      id: `b_ckpt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'checkpoint',
+      checkpoint: event.checkpoint ?? {},
+    });
   } else if (event.type === 'toolResult') {
     const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
     if (targetIdx !== -1) {

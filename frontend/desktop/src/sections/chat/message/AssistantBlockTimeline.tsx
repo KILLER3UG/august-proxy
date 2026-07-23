@@ -13,6 +13,7 @@ import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { SubagentLaunchList } from '@/components/chat/SubagentLaunchList';
 import { RecalledMemoryStep } from '@/components/chat/RecalledMemoryStep';
+import { SavePointChip } from '@/components/chat/SavePointChip';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { classifyTool } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
@@ -27,7 +28,7 @@ import {
 } from '@/store/liveActivity';
 import { getToolLabel } from '@/lib/tool-labels';
 import { modelDisplayParts } from '../model-display';
-import { resolveUiSessionId } from '../stream/session-id-map';
+import { resolveUiSessionId, resolveWorkbenchSessionId } from '../stream/session-id-map';
 
 type DisplayBlock = MessageBlock;
 
@@ -273,6 +274,11 @@ export function AssistantBlockTimeline({
 
   const { processBlocks, finalBlocks, hasFinalOutput } =
     splitProcessAndFinal(displayBlocks);
+
+  // Save-point chips: rendered between the process summary and the final
+  // answer so they stay visible after the activity rail collapses.
+  const checkpointBlocks = processBlocks.filter((b) => b.type === 'checkpoint');
+  const wbSessionId = resolveWorkbenchSessionId(routeSessionId || message.id);
 
   // Id-keyed expand overrides; missing key → default from status.
   // Tools: running → open, else collapsed. Thoughts: open while generating,
@@ -647,6 +653,19 @@ export function AssistantBlockTimeline({
           )}
           {renderProcessBlocks(processBlocks)}
         </ActivitySummary>
+      )}
+      {checkpointBlocks.length > 0 && (
+        <div className="flex flex-col items-start gap-1">
+          {checkpointBlocks.map((block) => (
+            <SavePointChip
+              key={block.id}
+              workbenchSessionId={wbSessionId}
+              checkpointId={block.checkpoint?.id}
+              label={block.checkpoint?.label}
+              fileCount={block.checkpoint?.fileCount}
+            />
+          ))}
+        </div>
       )}
       {hasFinalOutput && renderFinal(finalBlocks)}
     </div>
