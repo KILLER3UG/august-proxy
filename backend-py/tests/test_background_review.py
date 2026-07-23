@@ -203,7 +203,9 @@ class TestParseRecommendations:
     def testGarbageReturnsEmpty(self):
         parsed = _parseRecommendations('not json at all')
         assert parsed['skills'] == []
-        assert parsed['memory'] == []
+        # Fallback shape carries the current schema keys (no legacy 'memory').
+        assert parsed['facts'] == []
+        assert parsed['corrections'] == []
 
 
 class TestSaveFact:

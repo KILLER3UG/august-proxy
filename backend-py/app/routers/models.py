@@ -38,9 +38,9 @@ class ModelInfo(CamelModel):
         extra="allow",
         alias_generator=to_camel,
         populate_by_name=True,
-        # Ensure /api/models always emits contextWindow (camelCase) so the
-        # desktop catalog does not fall back to a generic 128k estimate.
-        ser_json_by_alias=True,
+        # /api/models emits contextWindow (camelCase) via by_alias at the
+        # dump boundary — `ser_json_by_alias` was never a valid pydantic 2.x
+        # config key (silent no-op), so it was removed.
     )
 
 

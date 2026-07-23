@@ -63,6 +63,8 @@ def stub_wb(monkeypatch, isolatedData):
     monkeypatch.setattr(wb, '_sessions', empty)
     monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: STUB_PROVIDER)
     monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
+    # Current stream path resolves provider+model through _resolveChatLlm.
+    monkeypatch.setattr(wb, '_resolveChatLlm', lambda *a, **kw: (STUB_PROVIDER, 'stub-claude'))
     monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
     holder: dict[str, Any] = {'client': StubClient()}
 
@@ -127,7 +129,17 @@ async def test_p1_before_after_prompt_build(stub_wb, monkeypatch):
     assert b_tot is not None and a_tot is not None
     # Allow small noise; expect improvement or near-parity (not large regression)
     assert a_pb <= b_pb * 1.15 + 5.0, f'prompt_build regressed: before={b_pb} after={a_pb}'
-    assert a_tot <= b_tot * 1.15 + 5.0, f'total_ms regressed: before={b_tot} after={a_tot}'
+    # Compare in-process span time (prompt_build + persist) rather than
+    # wall-clock total: total_ms includes scheduler gaps between spans
+    # (asyncio jitter on a loaded machine), which the caches do not influence
+    # and which made the old total_ms guard flaky in full-suite runs.
+    b_persist = before['spans'].get('persist', {}).get('p50_ms') or 0.0
+    a_persist = after['spans'].get('persist', {}).get('p50_ms') or 0.0
+    b_overhead = b_pb + b_persist
+    a_overhead = a_pb + a_persist
+    assert a_overhead <= b_overhead * 1.15 + 5.0, (
+        f'in-process overhead regressed: before={b_overhead} after={a_overhead}'
+    )
     # Cache should have hits on after path
     assert tool_defs_cache.stats()['hits'] >= 1
     assert prompt_segments_cache.stats()['hits'] >= 1

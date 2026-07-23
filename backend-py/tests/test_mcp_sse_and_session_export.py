@@ -97,7 +97,9 @@ def test_session_export_config_toggle(_iso, monkeypatch):
     )
     sess._sessions[s.id] = s
     sess.set_session_json_export_enabled(True)
-    sess.save_sessions()
+    # save_sessions() is debounced onto a daemon thread; the test must
+    # observe the write synchronously.
+    sess.save_sessions(immediate=True)
     path = dataPath('workbench-sessions.json')
     assert path.exists()
     data = json.loads(path.read_text('utf-8'))

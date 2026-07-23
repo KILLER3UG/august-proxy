@@ -122,11 +122,11 @@ def undo_entry(entry_id: str) -> dict[str, object]:
     rtype = as_str(entry.get('type'))
     try:
         if rtype in ('restore_file', 'restore_checkpoint', 'checkpoint'):
-            before = as_dict(entry.get('before'))
-            session_id = as_str(before.get('sessionId')) or as_str(entry.get('sessionId'))
+            before_dict = as_dict(entry.get('before'))
+            session_id = as_str(before_dict.get('sessionId')) or as_str(entry.get('sessionId'))
             checkpoint_id = (
-                as_str(before.get('checkpointId'))
-                or as_str(before.get('id'))
+                as_str(before_dict.get('checkpointId'))
+                or as_str(before_dict.get('id'))
                 or as_str(entry.get('checkpointId'))
             )
             if not session_id or not checkpoint_id:

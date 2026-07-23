@@ -193,9 +193,9 @@ class SubagentOrchestrator:
         while pending:
             done, _ = await asyncio.wait(set(pending.keys()), return_when=asyncio.FIRST_COMPLETED)
             for fut in done:
-                h = pending.pop(fut, None)
-                if h is not None:
-                    yield h.toDict()
+                # done ⊆ pending.keys(), so the pop always hits.
+                h = pending.pop(fut)
+                yield h.toDict()
 
     def getHandle(self, taskId: str) -> SubagentHandle | None:
         """Get a handle by taskId."""

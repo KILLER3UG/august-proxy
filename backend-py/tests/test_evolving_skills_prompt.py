@@ -99,7 +99,6 @@ class TestGenesisApprove:
 
         fake = FakeConn()
         monkeypatch.setattr('app.services.memory_store._conn', lambda: fake)
-        monkeypatch.setattr(cd, '_stagingDir', str(staging))
 
         ok = cd.approvePendingSkill('debug-python-script')
         assert ok is True

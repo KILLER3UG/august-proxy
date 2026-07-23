@@ -12,12 +12,12 @@ vi.mock('@/lib/tauri-detect', () => ({
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(async (_event: string, handler: (event: unknown) => void) => {
+  listen: vi.fn((_event: string, handler: (event: unknown) => void) => {
     listenHandlers.push(handler);
-    return () => {
+    return Promise.resolve(() => {
       const idx = listenHandlers.indexOf(handler);
       if (idx >= 0) listenHandlers.splice(idx, 1);
-    };
+    });
   }),
 }));
 

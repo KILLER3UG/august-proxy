@@ -84,6 +84,8 @@ def stub_workbench(monkeypatch, isolatedData):
     monkeypatch.setattr(wb, '_sessions', empty)
     monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: STUB_PROVIDER)
     monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
+    # Current stream path resolves provider+model through _resolveChatLlm.
+    monkeypatch.setattr(wb, '_resolveChatLlm', lambda *a, **kw: (STUB_PROVIDER, 'stub-claude'))
     # Keep real buildSystemPrompt / tool defs so prompt_build is realistic.
     monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
     holder: dict[str, Any] = {}

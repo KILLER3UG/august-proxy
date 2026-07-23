@@ -20,7 +20,7 @@ describe('useStickToBottomScroll', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'requestAnimationFrame',
-      (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16) as unknown as number,
+      (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16),
     );
     vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id));
   });
@@ -50,6 +50,8 @@ describe('useStickToBottomScroll', () => {
     expect(el.scrollTop).toBe(800);
 
     result.current.scrollToBottomSmooth();
+    // el.scrollTo is a vi.fn() assigned in makeScrollEl — no this-binding risk.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(el.scrollTo).toHaveBeenCalledWith(
       expect.objectContaining({ top: 800, behavior: 'smooth' }),
     );

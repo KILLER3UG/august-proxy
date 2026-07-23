@@ -161,7 +161,10 @@ def compute_next_run_at(
     tz = resolve_tz(timezone_name)
     base = after.astimezone(tz) if after else datetime.now(tz)
     if parsed['kind'] == 'interval':
-        nxt = base + timedelta(seconds=int(parsed['everySeconds']))
+        every_seconds = parsed['everySeconds']
+        if not isinstance(every_seconds, (int, float)):
+            return None
+        nxt = base + timedelta(seconds=int(every_seconds))
         return nxt.astimezone(timezone.utc).isoformat()
     expr = str(parsed['expr'])
     cursor = (base + timedelta(minutes=1)).replace(second=0, microsecond=0)

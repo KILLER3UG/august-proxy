@@ -66,7 +66,17 @@ export function useSubagentStream(sessionId: string | null): UseSubagentStreamRe
         setAgents((prev) =>
           prev.map((a) =>
             a.taskId === event.taskId
-              ? { ...a, status: 'failed', finishedAt: Date.now(), error: String(event.error || '') }
+              ? {
+                  ...a,
+                  status: 'failed',
+                  finishedAt: Date.now(),
+                  error:
+                    event.error instanceof Error
+                      ? event.error.message
+                      : typeof event.error === 'string'
+                        ? event.error
+                        : '',
+                }
               : a,
           ),
         );

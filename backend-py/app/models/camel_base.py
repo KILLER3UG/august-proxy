@@ -28,5 +28,9 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        ser_json_by_alias=True,
+        # camelCase JSON out is handled at dump boundaries (model_dump /
+        # FastAPI response serialization use by_alias). Note: the old
+        # `ser_json_by_alias` key was never valid in pydantic 2.x (the 2.11+
+        # key is `serialize_by_alias`) and was a silent no-op — do not
+        # re-add; a global default would change every dump site at once.
     )

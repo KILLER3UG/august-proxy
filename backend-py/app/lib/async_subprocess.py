@@ -255,7 +255,8 @@ async def _communicate_streaming(
     gather_task = asyncio.gather(*readers)
     timeout_task: asyncio.Task[None] | None = None
     cancel_task: asyncio.Task[bool] | None = None
-    waiters: list[asyncio.Task[Any]] = [gather_task]
+    # gather() returns a Future (not a Task); Tasks appended later are Futures too.
+    waiters: list[asyncio.Future[Any]] = [gather_task]
 
     try:
         if timeout is not None and timeout > 0:

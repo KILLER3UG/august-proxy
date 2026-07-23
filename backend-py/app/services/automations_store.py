@@ -373,7 +373,7 @@ async def recover_stuck_running(
             n += 1
         return n
 
-    return int(await _mutate(mut))  # type: ignore[arg-type]
+    return int(await _mutate(mut))  # type: ignore[call-overload]
 
 
 def due_job_ids(*, now: datetime | None = None) -> list[str]:

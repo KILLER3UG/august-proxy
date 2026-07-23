@@ -133,6 +133,17 @@ export default tseslint.config(
             'web_fetch', 'web_search', 'write_file',
             // BackendMonitorSection category keys
             'auto_memory',
+            // Tool names / wire identifiers emitted literally by providers
+            // (tool-label maps, classifiers, model-route fields).
+            'brain_query', 'clear_blackboard', 'configure_fallback', 'context_read', 'delegate_task', 'delete_file',
+            'describe_environment', 'diagnose_proxy', 'execute_url', 'fact_search', 'from_model', 'get_activity',
+            'get_agent_job', 'get_fallback', 'grep_search', 'invoke_subagent', 'kill_daemon', 'learn_subagent',
+            'list_agent_jobs', 'list_agent_registry', 'list_agents', 'list_aliases', 'list_daemons', 'list_dir',
+            'list_directory', 'list_proxy_capabilities', 'list_skills', 'load_skill', 'memory_search', 'memory_write',
+            'read_blackboard', 'read_url_content', 'replace_text', 'run_team', 'search_files', 'search_web',
+            'skill_manage', 'spawn_daemon', 'spawn_subagent', 'spawn_subagents', 'submit_plan', 'system_info',
+            'to_model', 'update_state', 'update_todos', 'view_file', 'write_blackboard', 'write_scratchpad',
+            'write_to_file',
           ],
         },
       ],

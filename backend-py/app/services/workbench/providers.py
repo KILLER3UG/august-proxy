@@ -80,7 +80,7 @@ def make_review_llm_client(
         if not apiKey:
             return None
         _client = client
-        _reviewModel = review_model or 'claude-sonnet-4-20250514'
+        _reviewModel = as_str(review_model) or 'claude-sonnet-4-20250514'
 
         async def reviewLlm(prompt: list[dict[str, object]]) -> str:
             """Call a cheap/fast model for background review."""

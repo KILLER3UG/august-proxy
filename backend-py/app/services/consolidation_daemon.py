@@ -301,7 +301,7 @@ def approvePendingSkill(name: str) -> bool:
             pass
         conn.execute("UPDATE pending_skills SET status = 'approved' WHERE name = ?", (name,))
         conn.commit()
-        if emitBrainEvent:
+        if emitBrainEvent is not None:
             emitBrainEvent(
                 category='skill_genesis',
                 layer='consolidation_daemon.approved_pending_skill',

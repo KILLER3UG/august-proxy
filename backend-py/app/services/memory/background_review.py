@@ -212,13 +212,13 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
 
         parts = []
         if result['corrections_added']:
-            parts.append(f"{len(result['corrections_added'])} correction(s)")
+            parts.append(f"{len(as_list(result['corrections_added']))} correction(s)")
         if result['skills_created']:
-            parts.append(f"{len(result['skills_created'])} skill(s) created")
+            parts.append(f"{len(as_list(result['skills_created']))} skill(s) created")
         if result['skills_patched']:
-            parts.append(f"{len(result['skills_patched'])} skill(s) updated")
+            parts.append(f"{len(as_list(result['skills_patched']))} skill(s) updated")
         if result['facts_added']:
-            parts.append(f"{len(result['facts_added'])} fact(s)")
+            parts.append(f"{len(as_list(result['facts_added']))} fact(s)")
         if result['frustration']:
             parts.append('frustration flagged')
         summary = f"Reflection done: {', '.join(parts)}" if parts else 'Reflection done: nothing to save'

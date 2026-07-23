@@ -67,7 +67,7 @@ export function SkillEvolvedChip() {
 
   const goToSkills = () => {
     dismiss();
-    navigate('/skills');
+    void navigate('/skills');
   };
 
   return (

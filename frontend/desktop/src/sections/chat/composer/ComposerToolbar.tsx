@@ -261,7 +261,7 @@ export function ComposerToolbar({
                 // Model change after a prior cancel — still attach handoff if pending empty.
                 const { peekHandoffPending, buildHandoffSummary, markHandoffPending } =
                   await import('@/sections/chat/handoff-summary');
-                if (!peekHandoffPending(sessionId!)) {
+                if (!peekHandoffPending(sessionId)) {
                   const last = msgs[msgs.length - 1];
                   const incomplete =
                     last?.role === 'assistant' &&
@@ -273,9 +273,9 @@ export function ComposerToolbar({
                       ));
                   if (incomplete) {
                     markHandoffPending(
-                      sessionId!,
-                      buildHandoffSummary(msgs, prev!.name || prev!.id),
-                      prev!.id,
+                      sessionId,
+                      buildHandoffSummary(msgs, prev.name || prev.id),
+                      prev.id,
                     );
                   }
                 }
@@ -285,20 +285,20 @@ export function ComposerToolbar({
               // messages — runs non-blocking, upgrades the pending summary
               // once resolved, and drops a collapsed card in the transcript.
               if (modelChanged && msgs.length > 0) {
-                const sid = sessionId!;
-                const fromLabel = prev!.name || prev!.id;
+                const sid = sessionId;
+                const fromLabel = prev.name || prev.id;
                 setHandoffPreparing(true);
                 void (async () => {
                   try {
                     const { requestSessionHandoff } = await import('@/api/workbench');
-                    const record = await requestSessionHandoff(sid, prev!.id, m.id);
+                    const record = await requestSessionHandoff(sid, prev.id, m.id);
                     const { markHandoffPending, buildHandoffNoticeMessage } = await import(
                       '@/sections/chat/handoff-summary'
                     );
                     markHandoffPending(
                       sid,
                       `Previous model (${fromLabel}) context handoff:\n${record.summary}`,
-                      prev!.id,
+                      prev.id,
                     );
                     setMessages?.((list) => [
                       ...list,
@@ -312,7 +312,7 @@ export function ComposerToolbar({
                     const { peekHandoffPending, buildHandoffSummary, markHandoffPending } =
                       await import('@/sections/chat/handoff-summary');
                     if (!peekHandoffPending(sid)) {
-                      markHandoffPending(sid, buildHandoffSummary(msgs, fromLabel), prev!.id);
+                      markHandoffPending(sid, buildHandoffSummary(msgs, fromLabel), prev.id);
                     }
                   } finally {
                     setHandoffPreparing(false);

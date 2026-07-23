@@ -10,6 +10,9 @@ import { Loader2, TerminalSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { extractCommand } from './extractors';
 
+// Strips ANSI escape sequences (CSI + OSC) from terminal output — the
+// control characters are the point, so the lint is disabled deliberately.
+// eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
 const SANDBOX_TAG_RE = /^\[sandbox:[^\]]*\]\s*/i;
 const STDERR_HEADER_RE = /^STDERR:\s*$/im;
@@ -66,7 +69,7 @@ export function CommandOutputPane({
   context?: string;
   preview?: string;
   summary?: string;
-  status: 'running' | 'done' | 'error' | string;
+  status: string;
 }) {
   const scrollRef = useRef<HTMLPreElement>(null);
   const command = extractCommand(context) || toolName.replace(/^@/, '');

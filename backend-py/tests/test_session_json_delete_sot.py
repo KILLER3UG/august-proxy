@@ -40,7 +40,8 @@ def test_json_delete_history_loads_from_sqlite():
         startedAt='2026-01-01T00:00:00Z',
     )
     _sessions[sess.id] = sess
-    save_sessions()  # SQLite only (export off)
+    # save_sessions() is debounced; the reload below must observe the write.
+    save_sessions(immediate=True)  # SQLite only (export off)
 
     json_path = dataPath('workbench-sessions.json')
     assert not json_path.exists() or 'wb_json_del_test' not in json_path.read_text()

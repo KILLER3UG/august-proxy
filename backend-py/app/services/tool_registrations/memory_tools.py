@@ -32,11 +32,11 @@ async def _memorySearch(query: str) -> str:
             auto_results = getRelevantMemories(query, limit=8) or []
         except Exception:
             auto_results = []
-        for r in auto_results:
+        for m in auto_results:
             found = True
-            origin = as_str(r.get('origin') or r.get('source'), 'auto')
-            title = as_str(r.get('title') or r.get('label'), as_str(r.get('key'), ''))
-            desc = as_str(r.get('summary') or r.get('description') or r.get('content'), '')
+            origin = as_str(m.get('origin') or m.get('source'), 'auto')
+            title = as_str(m.get('title') or m.get('label'), as_str(m.get('key'), ''))
+            desc = as_str(m.get('summary') or m.get('description') or m.get('content'), '')
             lines.append(f'  [{origin}:{title}]: {desc[:500]}')
         if not found:
             return f'No memory results for: {query}'
@@ -64,22 +64,22 @@ async def _factSearch(query: str) -> str:
         except Exception:
             pass
         try:
-            for r in search_facts(query) or []:
+            for f in search_facts(query) or []:
                 found = True
-                if isinstance(r, dict):
-                    fk = as_str(r.get('factKey') or r.get('fact_key') or r.get('key'), '')
-                    fv = r.get('factValue') or r.get('fact_value') or r.get('value') or r
+                if isinstance(f, dict):
+                    fk = as_str(f.get('factKey') or f.get('fact_key') or f.get('key'), '')
+                    fv = f.get('factValue') or f.get('fact_value') or f.get('value') or f
                     lines.append(f'  [fact:{fk}]: {str(fv)[:500]}')
                 else:
-                    lines.append(f'  [fact]: {str(r)[:500]}')
+                    lines.append(f'  [fact]: {str(f)[:500]}')
         except Exception:
             pass
         try:
-            for r in getRelevantMemories(query, limit=5) or []:
+            for m in getRelevantMemories(query, limit=5) or []:
                 found = True
-                origin = as_str(r.get('origin') or r.get('source'), 'auto')
-                title = as_str(r.get('title') or r.get('label'), as_str(r.get('key'), ''))
-                desc = as_str(r.get('summary') or r.get('description') or r.get('content'), '')
+                origin = as_str(m.get('origin') or m.get('source'), 'auto')
+                title = as_str(m.get('title') or m.get('label'), as_str(m.get('key'), ''))
+                desc = as_str(m.get('summary') or m.get('description') or m.get('content'), '')
                 lines.append(f'  [autoMemories/{origin}:{title}]: {desc[:500]}')
         except Exception:
             pass

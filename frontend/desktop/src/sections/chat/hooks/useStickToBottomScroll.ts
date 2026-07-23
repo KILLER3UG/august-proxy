@@ -57,6 +57,10 @@ export function useStickToBottomScroll({
   const getScrollTarget = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return null;
+    // closest() returns Element; the scroll container is an HTMLElement and
+    // callers rely on that (scrollTop/scrollTo). The assertion is required
+    // for tsc even though eslint's type service calls it unnecessary.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     return (el.closest('.overflow-y-auto') as HTMLElement | null) ?? el;
   }, [scrollRef]);
 

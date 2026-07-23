@@ -20,7 +20,7 @@ export interface AutoMemoryRow {
   title?: string;
   summary?: string;
   details?: string[];
-  section?: 'topics' | 'areas' | string;
+  section?: string;
   createdAt?: string;
   updatedAt?: string;
 }

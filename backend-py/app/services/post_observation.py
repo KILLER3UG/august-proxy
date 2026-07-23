@@ -90,7 +90,7 @@ async def capture_after_tool(tool_name: str, tool_result: str = '') -> dict[str,
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / f'{obs_id}.png'
         path.write_bytes(raw)
-        meta = {
+        meta: dict[str, object] = {
             'id': obs_id,
             'screenshotPath': str(path),
             'capturedAt': datetime.now(timezone.utc).isoformat(),

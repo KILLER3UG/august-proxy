@@ -60,7 +60,8 @@ export function useLearningData() {
         userProfile: json.userProfile ?? null,
         autoMemories: (json.autoMemories ?? []) as AutoMemory[],
         activeProjects: (json.activeProjects ?? []) as ActiveProject[],
-        currentContext: String(json.currentContext ?? ''),
+        currentContext:
+          typeof json.currentContext === 'string' ? json.currentContext : '',
         sleepCycle: {
           lastRunAt: ((json.sleepCycle as Record<string, unknown>)?.lastRunAt ?? null) as string | null,
           lastMerged: ((json.sleepCycle as Record<string, unknown>)?.lastMerged ?? 0) as number,

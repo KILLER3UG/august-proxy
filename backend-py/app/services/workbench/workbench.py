@@ -42,6 +42,7 @@ from app.services.workbench.sessions import (
     getWorkbenchSession,
     saveSessions,
 )
+from app.type_aliases import JsonValue
 
 logger = logging.getLogger('workbench')
 # 0 = unlimited tool rounds by default. Safety nets: cancel signal, empty
@@ -322,7 +323,7 @@ def buildSystemPrompt(
 
         added = list_user_added_memories(limit=40)
         if added:
-            memory['addedMemories'] = added
+            memory['addedMemories'] = cast(list[JsonValue], added)
     except Exception:
         logger.debug('prompt: added memories load failed', exc_info=True)
     agentContext = None
@@ -1460,7 +1461,9 @@ async def _sendWorkbenchMessageStreamImpl(
                     stop_reason or 'unknown',
                     len(thinkingContent),
                 )
-                if stop_reason in ('max_tokens', 'length') or len(thinkingContent) > 2000:
+                if emit and (
+                    stop_reason in ('max_tokens', 'length') or len(thinkingContent) > 2000
+                ):
                     emit(
                         {
                             'type': 'finalOutput',

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 from app.json_narrowing import as_dict, as_list, as_str
 from app.services.memory_store import get_memory, save_memory
+from app.type_aliases import JsonValue
 
 MAX_ACTIVE_PROJECTS = 5
 
@@ -46,7 +48,7 @@ def upsert_active_project(
         'lastActiveAt': _now(),
     }
     merged = [entry, *rest][:MAX_ACTIVE_PROJECTS]
-    save_memory('active_projects', merged)
+    save_memory('active_projects', cast(JsonValue, merged))
     return merged
 
 

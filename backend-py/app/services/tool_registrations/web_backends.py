@@ -47,7 +47,7 @@ async def search_brave(query: str, max_results: int, api_key: str) -> list[dict[
         'Accept': 'application/json',
         'X-Subscription-Token': api_key,
     }
-    params = {'q': query, 'count': min(max_results, 20)}
+    params: dict[str, str | int] = {'q': query, 'count': min(max_results, 20)}
     async with httpx.AsyncClient(timeout=12.0) as client:
         resp = await client.get(
             'https://api.search.brave.com/res/v1/web/search',
