@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services import tool_registry
 
@@ -136,6 +138,45 @@ async def _writeScratchpad(text: str) -> str:
         return f'Error writing scratchpad: {exc}'
 
 
+_EXIT_CODE_RE = re.compile(r'exit code:\s*(-?\d+)', re.IGNORECASE)
+# Order matters: explicit clean-run signals first, then failure markers, then
+# weak pass markers — so "2 failed, 10 passed" fails and "0 failed" passes.
+_STRONG_PASS_MARKERS = ('0 failed', 'no failures', 'all checks passed', 'build succeeded')
+_FAIL_MARKERS = ('failed', 'failure', 'traceback', 'error:', 'assertionerror')
+_WEAK_PASS_MARKERS = ('passed', '✓')
+
+
+def _verificationVerdict(receipts: list[object]) -> tuple[str, str]:
+    """Judge this turn's command receipts for the verifier gate.
+
+    Returns (verdict, detail): 'pass' | 'fail' | 'unclear' | 'none'.
+    Most recent receipt wins on exit codes; unclear output falls through to
+    older receipts, and pure-unclear history is given the benefit of the
+    doubt (the gate must not strand tasks whose verification output is
+    unconventional).
+    """
+    if not receipts:
+        return ('none', '')
+    for receipt in reversed(receipts):
+        text = as_str(as_dict(receipt).get('content'), '').lower() if isinstance(receipt, dict) else ''
+        if not text:
+            continue
+        name = as_str(as_dict(receipt).get('name'), 'command') if isinstance(receipt, dict) else 'command'
+        m = _EXIT_CODE_RE.search(text)
+        if m:
+            code = int(m.group(1))
+            if code == 0:
+                return ('pass', f'{name} exited 0')
+            return ('fail', f'{name} exited {code}')
+        if any(marker in text for marker in _STRONG_PASS_MARKERS):
+            return ('pass', f'clean-run markers in {name} output')
+        if any(marker in text for marker in _FAIL_MARKERS):
+            return ('fail', f'failure markers in {name} output')
+        if any(marker in text for marker in _WEAK_PASS_MARKERS):
+            return ('pass', f'pass markers in {name} output')
+    return ('unclear', '')
+
+
 async def _updateState(
     phase: str = '', step: int = 1, completed: str = '', blockers: str = '', verificationCommand: str = ''
 ) -> str:
@@ -152,10 +193,32 @@ async def _updateState(
         session = get_session()
         if not session:
             return 'Error: no active workbench session.'
+        prevState = getattr(session, '_execution_state', None)
+        currentPhase = as_str(as_dict(prevState).get('phase'), 'research') if prevState else 'research'
+        targetPhase = (phase or currentPhase).strip().lower()
+        # Verifier gate (enforced, not honor-system): entering review/complete
+        # requires a command run THIS turn whose output looks like a pass.
+        # Receipts are recorded by the workbench tool loop for command tools
+        # and cleared at turn start.
+        if targetPhase in ('review', 'complete') and currentPhase not in ('review', 'complete'):
+            verdict, detail = _verificationVerdict(
+                as_list(getattr(session, '_verification_receipts', None), [])
+            )
+            if verdict == 'none':
+                return (
+                    'Verifier gate: no command was run this turn. Run the relevant test / lint / '
+                    'build command first (via run_command), confirm it passes, then call '
+                    'update_state again.'
+                )
+            if verdict == 'fail':
+                return (
+                    f'Verifier gate: the verification run did not pass ({detail}). Fix the '
+                    'failures, re-run the command, then call update_state again.'
+                )
         completedList = [c.strip() for c in completed.split('\n') if c.strip()] if completed else []
         blockersList = [b.strip() for b in blockers.split('\n') if b.strip()] if blockers else []
         state: dict[str, object] = {
-            'phase': phase or getattr(session, '_execution_phase', 'research'),
+            'phase': targetPhase,
             'step': step,
             'completed': completedList,
             'blockers': blockersList,

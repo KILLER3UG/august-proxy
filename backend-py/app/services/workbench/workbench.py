@@ -285,11 +285,13 @@ def buildSystemPrompt(
     if projects:
         memory['active_projects'] = projects
     session._last_recalled_memories = None
+    # Fresh verifier gate receipts for this turn (see system_tools._updateState).
+    session._verification_receipts = None
     # Auto-memories are on-demand only: do not FTS-prefetch into the system
     # prompt every turn. The model pulls past-session context via memory_search /
     # fact_search / context_read / brain_query when the user asks about prior work.
     # (Previously getRelevantMemories() injected <auto_memories> every turn.)
-    _HEURISTIC_CAP = 50
+    _HEURISTIC_CAP = 15
     try:
         from app.services.memory_store import _conn as brainConn
 
@@ -1858,6 +1860,20 @@ async def _sendWorkbenchMessageStreamImpl(
             except Exception:
                 with _trace.span('tool_exec', tool=toolName):
                     result = await _executeTool(toolName, toolInput, session)
+            # Verifier gate receipt: keep the tail of command output for this turn
+            # so update_state can require a real verification run before it allows
+            # a review/complete transition (see system_tools._updateState).
+            if 'run_command' in toolName or toolName in ('bash', 'safe_python'):
+                try:
+                    receipts = getattr(session, '_verification_receipts', None)
+                    if receipts is None:
+                        receipts = []
+                        setattr(session, '_verification_receipts', receipts)
+                    receipts.append({'name': toolName, 'content': as_str(result, '')[-3000:]})
+                    if len(receipts) > 12:
+                        del receipts[: len(receipts) - 12]
+                except Exception:
+                    logger.debug('verifier receipt record failed', exc_info=True)
             MAX_SSE_CONTENT = 100 * 1024
             contentTruncated = len(result) > MAX_SSE_CONTENT
             sseContent = result[:MAX_SSE_CONTENT]

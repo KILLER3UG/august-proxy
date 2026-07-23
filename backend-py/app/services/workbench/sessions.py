@@ -89,6 +89,10 @@ class WorkbenchSession:
     # buildSystemPrompt() call — surfaced to the frontend as a `recalledMemories`
     # SSE event (see workbench.chatTurn). Cleared/replaced every turn.
     _last_recalled_memories: list[dict[str, object]] | None = None
+    # Verifier gate receipts: tails of command tool outputs executed this turn.
+    # update_state requires a passing receipt before allowing review/complete
+    # (see system_tools._updateState). Cleared every turn in chatTurn.
+    _verification_receipts: list[dict[str, object]] | None = None
 
     def toDict(self) -> dict[str, object]:
         return {
