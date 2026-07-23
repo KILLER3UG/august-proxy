@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { hasPendingWorkbenchPlan, isNonEmptyPlan } from '@/lib/workbench-plan';
+import { hasPendingWorkbenchPlan, isNonEmptyPlan, planBodyText } from '@/lib/workbench-plan';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { WorkbenchSession, WorkbenchTodo } from '@/types/workbench';
 
@@ -19,6 +19,7 @@ export function WorkbenchPlanPanel({
 
   const plan = session.plan;
   const approved = !hasPendingWorkbenchPlan(session);
+  const body = planBodyText(plan);
 
   return (
     <Card className="mx-auto max-w-3xl border-warning/40 bg-warning/5">
@@ -42,9 +43,9 @@ export function WorkbenchPlanPanel({
           </div>
         ) : (
           <>
-            {plan.summary && (
+            {body && (
               <div className="text-foreground/90">
-                <Markdown content={plan.summary} />
+                <Markdown content={body} />
               </div>
             )}
 

@@ -12,6 +12,20 @@ export function isNonEmptyPlan(plan: unknown): plan is WorkbenchPlan {
   );
 }
 
+/**
+ * Best-effort body text for a plan. The backend stores whatever the model
+ * submitted via `submit_plan` — commonly `{ plan: "..." }` — while older UI
+ * shapes used `markdown` / `summary`. Return the richest non-empty field so the
+ * drawer/panel never paint a blank card for a validly-submitted plan.
+ */
+export function planBodyText(plan: WorkbenchPlan | null | undefined): string | null {
+  if (!plan) return null;
+  for (const text of [plan.markdown, plan.summary, plan.plan]) {
+    if (typeof text === 'string' && text.trim()) return text;
+  }
+  return null;
+}
+
 type PlanGateSession = Pick<WorkbenchSession, 'plan' | 'approved' | 'approvedAt'> & {
   planApproved?: boolean;
 };

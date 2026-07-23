@@ -523,9 +523,29 @@ async def submitPlanRoute(request: Request):
     return {'status': 'ok'}
 
 
+async def _readSessionId(request: Request) -> str:
+    """Read ``sessionId`` from the JSON body, falling back to the query string.
+
+    The plan approve/reject endpoints historically declared ``sessionId`` as a
+    query param while the desktop client sends it in the JSON body (matching the
+    ``/plan`` submit route). Accept both so neither client style 404s.
+    """
+    sessionId = ''
+    try:
+        body = await request.json()
+        if isinstance(body, dict):
+            sessionId = str(body.get('sessionId') or '')
+    except Exception:
+        sessionId = ''
+    if not sessionId:
+        sessionId = request.query_params.get('sessionId') or ''
+    return sessionId
+
+
 @router.post('/plan/approve')
-async def approvePlan(sessionId: str = Query('')):
+async def approvePlan(request: Request):
     """Approve a pending plan."""
+    sessionId = await _readSessionId(request)
     if not wb.approveWorkbenchPlan(sessionId):
         raise HTTPException(status_code=404, detail='Session not found or no plan pending')
     try:
@@ -539,8 +559,9 @@ async def approvePlan(sessionId: str = Query('')):
 
 
 @router.post('/plan/reject')
-async def rejectPlan(sessionId: str = Query('')):
+async def rejectPlan(request: Request):
     """Reject a pending plan."""
+    sessionId = await _readSessionId(request)
     if not wb.rejectWorkbenchPlan(sessionId):
         raise HTTPException(status_code=404, detail='Session not found')
     try:

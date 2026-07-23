@@ -9,6 +9,8 @@ export interface WorkbenchTodo {
 export interface WorkbenchPlan {
   id: string;
   summary: string;
+  /** Raw plan text the model submitted via `submit_plan` (backend stores it under `plan`). */
+  plan?: string;
   steps: string[];
   files: string[];
   risks: string[];

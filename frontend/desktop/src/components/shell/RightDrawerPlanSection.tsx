@@ -6,6 +6,7 @@
 
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { WorkbenchSession } from '@/types/workbench';
+import { planBodyText } from '@/lib/workbench-plan';
 import { FileText, FolderOpen, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -39,11 +40,13 @@ export function RightDrawerPlanSection({
     );
   }
 
+  const body = planBodyText(plan);
+
   return (
     <div className="h-full p-3 space-y-4 chat-message-text text-foreground/90 max-w-none">
-      {plan.summary && (
+      {body && (
         <div className="text-foreground/90">
-          <Markdown content={plan.summary} />
+          <Markdown content={body} />
         </div>
       )}
 
