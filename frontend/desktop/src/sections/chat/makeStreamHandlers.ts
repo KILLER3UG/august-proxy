@@ -584,20 +584,15 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onWarning: ({ message }) => {
-      const warning = `\n\n⚠️ ${message || 'Warning'}`;
-      assistantContent += warning;
-      // Append to the live final-answer block instead of pushing a new one:
-      // splitProcessAndFinal keeps only the LAST finalOutput block as the
-      // "final answer", so a trailing warning block would demote the real
-      // answer into the (collapsed) thinking pack and the user would see
-      // only the warning rendered as the response.
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: warning });
+      const warning = `⚠️ ${message || 'Warning'}`;
+      // Push as a THINKING block with system:true — it collapses into the
+      // thinking pack but does NOT demote the real final answer.
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: warning, system: true });
       scheduleUpdate();
     },
     onInfo: ({ message }) => {
-      const info = `\n\nℹ️ ${message || ''}`;
-      assistantContent += info;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: info });
+      const info = `ℹ️ ${message || ''}`;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: info, system: true });
       scheduleUpdate();
     },
     onDone: (data) => {
@@ -627,9 +622,8 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       })();
     },
     onError: ({ message }) => {
-      const errText = `\n\n⚠️ Workbench error: ${message}`;
-      assistantContent += errText;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: errText });
+      const errText = `⚠️ Workbench error: ${message}`;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: errText, system: true });
       scheduleUpdate();
       finalize('error');
     },

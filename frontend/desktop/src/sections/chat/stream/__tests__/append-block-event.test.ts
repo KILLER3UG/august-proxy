@@ -19,6 +19,27 @@ describe('appendBlockEvent thinking vs final', () => {
     expect(blocks[blocks.length - 1].content).toBe('Real final');
   });
 
+  it('system thinking (warnings/info/errors) does NOT demote the final answer', () => {
+    let blocks = appendBlockEvent([], { type: 'thinking', content: 'plan…' });
+    blocks = appendBlockEvent(blocks, { type: 'text', content: 'The real answer' });
+    expect(blocks.map((b) => b.type)).toEqual(['thinking', 'finalOutput']);
+
+    // A system notice arrives after the answer — it must collapse into
+    // thinking WITHOUT displacing the real final answer.
+    blocks = appendBlockEvent(blocks, {
+      type: 'thinking',
+      content: '⚠️ Context window approaching limit',
+      system: true,
+    });
+    // The answer block is still finalOutput (not demoted to thinking).
+    const finalBlocks = blocks.filter((b) => b.type === 'finalOutput');
+    expect(finalBlocks).toHaveLength(1);
+    expect(finalBlocks[0].content).toBe('The real answer');
+    // The warning is in the thinking pack.
+    const thinking = blocks.filter((b) => b.type === 'thinking');
+    expect(thinking.some((b) => b.content?.includes('⚠️'))).toBe(true);
+  });
+
   it('keeps thinking segments separated by tools', () => {
     let blocks = appendBlockEvent([], { type: 'thinking', content: 'a' });
     blocks = appendBlockEvent(blocks, {

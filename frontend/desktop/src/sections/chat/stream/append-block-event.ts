@@ -32,20 +32,24 @@ export function appendBlockEvent(
     const text = event.content || '';
     // Model wrote "answer" then kept thinking — that prose was provisional.
     // Demote it into thinking so it cannot stack into the true final reply.
+    // Skip demotion for system notices (warnings/info/errors) — those should
+    // collapse into the thinking pack WITHOUT displacing the real answer.
     let demoted = false;
-    for (let i = 0; i < blocks.length; i++) {
-      if (blocks[i].type === 'finalOutput') {
-        blocks[i] = {
-          ...blocks[i],
-          type: 'thinking',
-        };
-        demoted = true;
+    if (!event.system) {
+      for (let i = 0; i < blocks.length; i++) {
+        if (blocks[i].type === 'finalOutput') {
+          blocks[i] = {
+            ...blocks[i],
+            type: 'thinking',
+          };
+          demoted = true;
+        }
       }
-    }
-    if (demoted) {
-      const coalesced = coalesceAdjacentThinking(blocks);
-      blocks.length = 0;
-      blocks.push(...coalesced);
+      if (demoted) {
+        const coalesced = coalesceAdjacentThinking(blocks);
+        blocks.length = 0;
+        blocks.push(...coalesced);
+      }
     }
     const last = blocks[blocks.length - 1];
     if (last && last.type === 'thinking') {

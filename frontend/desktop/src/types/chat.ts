@@ -253,4 +253,12 @@ export interface AppendBlockEvent {
   providerSetup?: ProviderSetupResult;
   /** For type === 'recalledMemories': the recalled auto-memory rows. */
   memories?: RecalledMemoryItem[];
+  /**
+   * Marks a `thinking` event as a system notice (warning / info / error)
+   * rather than model reasoning. System thinking events append to the
+   * thinking pack WITHOUT demoting prior `finalOutput` blocks — so a
+   * post-answer warning collapses into thinking but never displaces the
+   * real final answer.
+   */
+  system?: boolean;
 }
