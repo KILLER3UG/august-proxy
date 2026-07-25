@@ -112,7 +112,14 @@ export function getModelDisplayName(id: string): string {
   return stripProviderPrefix(id);
 }
 
-/** Best-effort context window from the model id when catalog/profile is missing. */
+/** Best-effort context window from the model id when catalog/profile is missing.
+ *
+ * This is a UI PLACEHOLDER only — used by `modelFromSession` before the
+ * `/api/models` catalog hydrates. Once the catalog loads, `useChatModels`
+ * overrides `contextWindow` with the server-resolved value (which honors the
+ * per-model entry from providers.json). The heuristics below are a sensible
+ * default for the brief pre-hydration window, NOT the source of truth.
+ */
 export function estimateContextWindow(id?: string | null): number {
   const mid = (id || '').toLowerCase();
   if (!mid) return 128000;

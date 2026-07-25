@@ -49,7 +49,15 @@ def test_wildcard_does_not_mask_family_heuristic():
     assert ms._getContextWindow('deepseek-v4-flash', provider) == 1_000_000
 
 
-def test_fetched_128k_stamp_does_not_mask_heuristic():
+def test_fetched_128k_stamp_is_respected():
+    """A stored contextWindow is the user's intent — always honored.
+
+    The previous carve-out treated ``128000 + source:'fetched'`` as unset and
+    fell through to family heuristics. That made deepseek/kimi/gpt-4o families
+    look permanently stuck at 128k (the heuristic also returns 128000 for
+    them), and made a manual edit indistinguishable from the boilerplate stamp.
+    A stored value is now returned as-is; the user can edit it in Model Providers.
+    """
     provider = {
         'name': 'Opencode Zen',
         'models': [
@@ -60,7 +68,29 @@ def test_fetched_128k_stamp_does_not_mask_heuristic():
             }
         ],
     }
-    assert ms._getContextWindow('deepseek-v4-flash', provider) == 1_000_000
+    assert ms._getContextWindow('deepseek-v4-flash', provider) == 128000
+
+
+def test_edited_context_window_survives_read():
+    """A user edit (source='manual') to a non-128k value is returned verbatim."""
+    provider = {
+        'name': 'Custom',
+        'models': [
+            {'id': 'any-model', 'contextWindow': 512000, 'source': 'manual'}
+        ],
+    }
+    assert ms._getContextWindow('any-model', provider) == 512000
+
+
+def test_fetched_non_128k_is_respected():
+    """A fetched model with a real (non-128k) context window is honored."""
+    provider = {
+        'name': 'Opencode Zen',
+        'models': [
+            {'id': 'gemini-pro', 'contextWindow': 1_000_000, 'source': 'fetched'}
+        ],
+    }
+    assert ms._getContextWindow('gemini-pro', provider) == 1_000_000
 
 
 def test_manual_128k_is_respected():

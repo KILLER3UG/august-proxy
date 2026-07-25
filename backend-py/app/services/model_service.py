@@ -92,11 +92,14 @@ def _getContextWindow(
             if as_str(m.get('id')) == modelId:
                 n = _context_from_model_entry(m)
                 if n > 0:
-                    # Historical refresh stamped every fetched model with 128k.
-                    # Treat that boilerplate as unset so heuristics/profiles apply
-                    # until the user explicitly edits the model (source → manual).
-                    if n == 128000 and as_str(m.get('source')) == 'fetched':
-                        break
+                    # A stored contextWindow is the user's intent — whether it
+                    # came from auto-discovery (source='fetched') or a manual
+                    # edit (source='manual'). Always honor it. The previous
+                    # carve-out treated 128000+fetched as "unset" and fell
+                    # through to heuristics that *also* return 128000 for
+                    # deepseek/kimi/gpt-4o — making those families look
+                    # permanently stuck regardless of edits. See A1 in
+                    # test_context_window_resolution.py.
                     return n
                 break
 

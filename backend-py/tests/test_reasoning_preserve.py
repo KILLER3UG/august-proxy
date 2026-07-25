@@ -130,7 +130,8 @@ async def test_openai_workbench_preserves_reasoning_on_message_when_thinking_off
     assert msg.get('tool_calls')
 
 
-async def test_model_probe_requires_connected(monkeypatch):
+async def test_model_probe_accepts_connected_reply(monkeypatch):
+    """A ``Connected!`` reply is success — content is surfaced verbatim."""
     import app.services.workbench.providers as wb_providers
     from app.routers.providers import testModel
 
@@ -151,12 +152,40 @@ async def test_model_probe_requires_connected(monkeypatch):
     assert ok['content'] == 'Connected!'
 
 
-async def test_model_probe_rejects_wrong_text(monkeypatch):
+async def test_model_probe_accepts_non_connected_reply(monkeypatch):
+    """Any non-empty reply counts as success — the endpoint answered.
+
+    The probe asks for ``Connected!``, but reasoning models often emit
+    thinking-only or a prefixed reply. A reachable model that talks is
+    connected; the strict exact-match false-failed such models.
+    """
     import app.services.workbench.providers as wb_providers
     from app.routers.providers import testModel
 
     async def fake_openai(*_a, **_k):
-        return {'text': 'Hello!', 'choices': [{'message': {'content': 'Hello!'}}]}
+        return {'text': 'Hello! How can I help?', 'choices': [{'message': {'content': 'Hello!'}}]}
+
+    monkeypatch.setattr(wb_providers, 'resolve_chat_llm', lambda **_k: (
+        {'id': 'p1', 'name': 'deepseek', 'apiMode': 'openaiChat'},
+        'deepseek-v4',
+    ))
+    monkeypatch.setattr(wb_providers, 'is_openai_provider', lambda _p: True)
+    monkeypatch.setattr(wb_providers, 'is_anthropic_provider', lambda _p: False)
+    monkeypatch.setattr(wb_providers, 'call_openai_workbench', fake_openai)
+
+    ok = await testModel('deepseek', 'deepseek-v4')
+    assert ok['success'] is True
+    assert ok['error'] is None
+    assert 'Hello' in ok['content']
+
+
+async def test_model_probe_rejects_empty_reply(monkeypatch):
+    """An empty reply is a distinct failure — reachable but produced no text."""
+    import app.services.workbench.providers as wb_providers
+    from app.routers.providers import testModel
+
+    async def fake_openai(*_a, **_k):
+        return {'text': '', 'choices': [{'message': {'content': ''}}]}
 
     monkeypatch.setattr(wb_providers, 'resolve_chat_llm', lambda **_k: (
         {'id': 'p1', 'name': 'deepseek', 'apiMode': 'openaiChat'},
@@ -168,4 +197,25 @@ async def test_model_probe_rejects_wrong_text(monkeypatch):
 
     bad = await testModel('deepseek', 'deepseek-v4')
     assert bad['success'] is False
-    assert 'Connected!' in (bad.get('error') or '')
+    assert 'empty' in (bad.get('error') or '').lower()
+
+
+async def test_model_probe_rejects_upstream_error(monkeypatch):
+    """A real upstream error stays a failure with the error message surfaced."""
+    import app.services.workbench.providers as wb_providers
+    from app.routers.providers import testModel
+
+    async def fake_openai(*_a, **_k):
+        return {'error': '[404] model not found', 'text': '', 'choices': []}
+
+    monkeypatch.setattr(wb_providers, 'resolve_chat_llm', lambda **_k: (
+        {'id': 'p1', 'name': 'deepseek', 'apiMode': 'openaiChat'},
+        'deepseek-v4',
+    ))
+    monkeypatch.setattr(wb_providers, 'is_openai_provider', lambda _p: True)
+    monkeypatch.setattr(wb_providers, 'is_anthropic_provider', lambda _p: False)
+    monkeypatch.setattr(wb_providers, 'call_openai_workbench', fake_openai)
+
+    bad = await testModel('deepseek', 'deepseek-v4')
+    assert bad['success'] is False
+    assert '404' in (bad.get('error') or '')

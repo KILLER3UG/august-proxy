@@ -103,9 +103,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let code = 'unknown';
     let message = res.statusText;
     try {
-      const data = (await res.json()) as { error?: { code?: string; message?: string } };
-      code = data?.error?.code ?? code;
-      message = data?.error?.message ?? message;
+      const data = (await res.json()) as {
+        error?: string | { code?: string; message?: string };
+        detail?: string;
+      };
+      const err = data?.error;
+      if (typeof err === 'string') {
+        // August's own 404 fallback returns { error: 'Not found', path }
+        // (string, not object). Surface it instead of bare res.statusText.
+        message = err;
+      } else if (err && typeof err === 'object') {
+        code = err.code ?? code;
+        message = err.message ?? message;
+      } else if (typeof data?.detail === 'string') {
+        // FastAPI HTTPException(detail=...) shape.
+        message = data.detail;
+      }
     } catch {
       /* keep defaults */
     }

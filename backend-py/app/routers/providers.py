@@ -325,7 +325,7 @@ async def addModel(providerId: str, body: ModelCreate):
     raise HTTPException(status_code=404, detail='Provider not found')
 
 
-@router.patch('/{providerId}/models/{modelId}')
+@router.patch('/{providerId}/models/{modelId:path}')
 async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
     store = config_service.getProvidersStore()
     providers_list = as_list(store.get('providers', []))
@@ -362,7 +362,7 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
     raise HTTPException(status_code=404, detail='Provider not found')
 
 
-@router.delete('/{providerId}/models/{modelId}')
+@router.delete('/{providerId}/models/{modelId:path}')
 async def deleteModel(providerId: str, modelId: str):
     store = config_service.getProvidersStore()
     providers_list = as_list(store.get('providers', []))
@@ -384,7 +384,7 @@ async def deleteModel(providerId: str, modelId: str):
     raise HTTPException(status_code=404, detail='Provider not found')
 
 
-@router.post('/{providerId}/models/{modelId}/test')
+@router.post('/{providerId}/models/{modelId:path}/test')
 async def testModel(providerId: str, modelId: str):
     """Probe a model with a real chat request.
 
@@ -455,6 +455,11 @@ async def testModel(providerId: str, modelId: str):
                 'low',
                 provider=provider,
                 emit=None,
+                # Connectivity probe — disable thinking/reasoning extras so the
+                # body mirrors a minimal chat request. Some gateways reject
+                # `thinking.budget_tokens` / `reasoning_effort` even when they
+                # accept the chat path's richer body.
+                thinking_enabled=False,
             )
         elif is_openai_provider(provider):
             resp = await call_openai_workbench(
@@ -465,6 +470,8 @@ async def testModel(providerId: str, modelId: str):
                 'low',
                 provider=provider,
                 emit=None,
+                # Connectivity probe — disable thinking/reasoning extras (see above).
+                thinking_enabled=False,
             )
         else:
             return {
@@ -515,22 +522,15 @@ async def testModel(providerId: str, modelId: str):
             'content': None,
         }
 
-    # Accept exact match, or a short reply that is only Connected! (trim quotes/spaces).
-    normalized = text.strip().strip('"').strip("'")
-    if normalized != 'Connected!':
-        return {
-            'success': False,
-            'latencyMs': latency_ms,
-            'error': (
-                f'Model "{modelId}" responded with {text[:80]!r} instead of Connected!. '
-                'The endpoint is reachable, but the reply was not the expected probe text.'
-            ),
-            'content': text[:200],
-        }
-
+    # Connectivity is proven by a non-empty reply. The probe asks for exactly
+    # "Connected!", but many models prefix/punctuate, and reasoning models may
+    # emit thinking-only or a short `content`. A reachable model that answers
+    # is connected — accept any non-empty reply as success and surface the text
+    # for transparency. The distinct empty-reply and upstream-error branches
+    # above keep real failures clearly labeled.
     return {
         'success': True,
         'latencyMs': latency_ms,
-        'content': 'Connected!',
+        'content': text[:200],
         'error': None,
     }
