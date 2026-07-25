@@ -115,13 +115,29 @@ async def usage_stats(range: str = Query('30d')):
         fav = max(model_tokens.items(), key=lambda kv: kv[1])
         fav_share = (fav[1] / total_tokens) if total_tokens else 0.0
         fav_model = fav[0]
+    # Current streak: consecutive days (ending today or yesterday) with usage.
+    # Today is allowed to be empty so an active streak isn't reset before the
+    # day's first event; counting stops at the first gap or the range window.
+    today = datetime.now(timezone.utc).date()
+    streak = 0
+    max_days = _range_days(range)
+    offset = 0
+    while offset <= max_days:
+        day = (today - timedelta(days=offset)).isoformat()
+        if day in days:
+            streak += 1
+            offset += 1
+        elif offset == 0:
+            offset += 1
+        else:
+            break
     return {
         'range': '7d' if _range_days(range) == 7 else '30d',
         'totalTokens': total_tokens,
         'sessions': len(sessions),
         'messages': len(events),
         'activeDays': len(days),
-        'currentStreak': 0,
+        'currentStreak': streak,
         'favoriteModel': fav_model,
         'favoriteModelShare': fav_share,
         'at': datetime.now(timezone.utc).isoformat(),

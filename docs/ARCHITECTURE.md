@@ -172,6 +172,31 @@ and emits SSE events.
 Plan submission / approve / reject is never itself blocked as a “destructive”
 mutation of the plan gate.
 
+### Execution state & verifier gate
+
+Alongside guard modes, the workbench tracks a multi-phase **execution state**
+per session via the `update_state` system tool (`tool_registrations/system_tools.py`):
+
+| Phase | Meaning |
+|-------|---------|
+| `research` | Gathering context (default) |
+| `plan` | Drafting an approach |
+| `implement` | Making changes |
+| `review` | Verifying the change |
+| `complete` | Done |
+
+State is injected into the next turn's system prompt so the model resumes where
+it left off. The **verifier gate** is enforced (not honor-system) on transitions
+into `review` / `complete`: if no `run_command` / `bash` / `safe_python` receipt
+was recorded for the turn, or the recorded command's verdict is `fail`, the
+transition is blocked with an actionable error. Receipts are cleared at the
+start of each turn.
+
+> Caveat: the gate only fires when the model actually calls `update_state`. A
+> model that skips `update_state` and emits a final response directly is not
+> blocked — see [`GAPS_AND_BUGS.md`](GAPS_AND_BUGS.md) for the advisory-vs-hard
+> gap and the same-turn `review → complete` bypass.
+
 ### Sub-agents
 
 [`services/workbench/subagent.py`](../backend-py/app/services/workbench/subagent.py)
@@ -250,6 +275,10 @@ system backed by `data/august_brain.sqlite` (via
 
 HTTP: `/api/memory/*`, `/api/brain/*` (dashboard, config, activity, heuristics,
 consolidation), plus workbench brain sync.
+
+> The Brain Orchestrator **Settings panel** was removed (its controls now live
+> in the session sidebar); the `brain_orchestrator.py` backend module and the
+> `/api/brain/config*` endpoints remain.
 
 ### Unified connectivity (session / config / cognitive SoT)
 

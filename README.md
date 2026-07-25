@@ -93,6 +93,18 @@ product UI (`npm run dev:desktop`). `web-dist/` is only the packaged SPA build.
 
 ### Run locally (development)
 
+**One-shot backend setup** (creates `backend-py/.venv` with Python ≥ 3.12 and
+installs the backend as an editable package — run once after cloning):
+
+```bash
+# macOS / Linux
+./install.sh
+# Windows (PowerShell)
+.\install.ps1
+```
+
+Then start the backend:
+
 ```bash
 cd backend-py
 # Recommended
@@ -113,6 +125,9 @@ uv run uvicorn app.main:app --reload --port 8085
 npm install
 npm run dev:desktop      # Tauri shell + backend — preferred for UI / workbench QA
 ```
+
+The desktop app auto-updates by downloading the full GitHub-release installer on
+Windows (see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)).
 
 `npm run build:web` produces `web-dist/` for packaging into the desktop installer
 (and optional FastAPI static serve). Do not treat browser-only Vite as the
@@ -186,4 +201,4 @@ tests never touch live `data/`. See [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_G
 
 ## License
 
-MIT.
+MIT — see [`LICENSE`](LICENSE).

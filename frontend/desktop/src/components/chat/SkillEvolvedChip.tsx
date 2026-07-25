@@ -1,7 +1,7 @@
 /* ── SkillEvolvedChip — transient notification when a skill is evolved ──── */
 /* Listens to brain event SSE for skill_genesis events and shows a small     */
 /* inline chip that auto-dismisses after 8 seconds. Clicking navigates to    */
-/* the /skills page. Style consistent with SavePointChip.                    */
+/* the /skills page.                                              */
 
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles, X } from 'lucide-react';

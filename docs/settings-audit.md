@@ -12,17 +12,17 @@ Source of truth for section **ids** and categories:
 
 ---
 
-## Current IA (verified 2026-07-15)
+## Current IA (verified 2026-07-25)
 
-**22 sections across 5 categories.** Some sections use `tier: 'advanced'`
+**26 sections across 5 categories.** Some sections use `tier: 'advanced'`
 and are hidden until the user enables “Show advanced.”
 
 | Category | Sections | Owner concern |
 |----------|---------:|---------------|
-| **General** (4) | System & Health, Profile & Preferences, UI Designer, Conversations | App chrome, history |
-| **Intelligence** (3) | Model Providers, Brain Orchestrator, Memory & Knowledge | Providers + cognitive + memory |
-| **Tools & Skills** (6) | Integrations (MCP & OAuth), Skills, Computer Use, Agents & Automation, Agent Board, Python Sandbox | Agent capabilities |
-| **Activity** (5) | Observability, Conversation Inspector, Backend Monitor, Feature Flow, Plans & Todos | Telemetry and artifacts |
+| **General** (6) | System & Health, Account, Profile & Preferences, UI Designer, Conversations, Updates | App chrome, profiles, history, app updates |
+| **Intelligence** (4) | Model Providers, Memory & Knowledge, Recalled Memory, Added Memory | Providers + cognitive + memory planes |
+| **Tools & Skills** (7) | Integrations, Skills, Computer Use, Agents & Automation, Agent Board, Tool Reach, Python Sandbox | Agent capabilities |
+| **Activity** (5) | Observability, Conversation Inspector, Backend Monitor, Feature Flow, Artifacts | Telemetry and artifacts |
 | **Security & Access** (4) | Path Permissions, Computer Access, API Access, Developer Console | Gating surfaces |
 
 ### Section id inventory
@@ -30,23 +30,27 @@ and are hidden until the user enables “Show advanced.”
 | id | Label | category | tier |
 |----|-------|----------|------|
 | `system-health` | System & Health | general | basic |
+| `account` | Account | general | basic |
 | `profile-preferences` | Profile & Preferences | general | basic |
 | `ui-designer` | UI Designer | general | basic |
 | `conversations-history` | Conversations | general | basic |
+| `app-updates` | Updates | general | basic |
 | `model-providers` | Model Providers | intelligence | basic |
-| `brain-orchestrator` | Brain Orchestrator | intelligence | advanced |
 | `memory-knowledge` | Memory & Knowledge | intelligence | advanced |
+| `recalled-memory` | Recalled Memory | intelligence | advanced |
+| `added-memory` | Added Memory | intelligence | advanced |
 | `tools-connections` | Integrations | tools | basic |
 | `skills` | Skills | tools | basic |
 | `computer-use` | Computer Use | tools | advanced |
 | `agents-automation` | Agents & Automation | tools | advanced |
 | `agent-board` | Agent Board | tools | basic |
+| `agent-sandbox` | Tool Reach | tools | basic |
 | `python-sandbox` | Python Sandbox | tools | advanced |
 | `observability` | Observability | activity | advanced |
 | `conversation-inspector` | Conversation Inspector | activity | advanced |
 | `backend-monitor` | Backend Monitor | activity | advanced |
 | `feature-flow` | Feature Flow | activity | advanced |
-| `plans` | Plans & Todos | activity | advanced |
+| `plans` | Artifacts | activity | advanced |
 | `tool-grants` | Path Permissions | security | basic |
 | `computer-access` | Computer Access | security | advanced |
 | `api-access` | API Access | security | basic |
@@ -54,6 +58,22 @@ and are hidden until the user enables “Show advanced.”
 
 **Note:** Section `id` values are immutable (deep links + `legacyAliases`).
 Rename via `label` only; add old labels to `legacyAliases`.
+
+### Removed since the v3 audit
+
+| id | Notes |
+|----|-------|
+| `brain-orchestrator` | Removed (commit `4b90257d`) — controls now live in the session sidebar; backend `brain_orchestrator.py` + `/api/brain/config*` remain |
+
+### Added since the v3 audit
+
+| id | Notes |
+|----|-------|
+| `account` | Local August profiles |
+| `app-updates` | GitHub-release desktop updater (Windows full-installer flow) |
+| `recalled-memory` | Agent-captured auto-memory browsable by Topic / Area |
+| `added-memory` | Facts the user explicitly saves (injected every turn) |
+| `agent-sandbox` | Shell/filesystem reach (seatbelt / landlock / appcontainer) |
 
 ---
 

@@ -151,6 +151,12 @@ Env override: `AUGUST_SESSION_JSON_EXPORT=1`. Status: `GET/PUT /api/config/sessi
 Controls browser vs server STT/TTS preferences and provider binding for
 `/api/live/*`. Unconfigured server speech returns 501.
 
+### Web search / extract (`/api/config/web`)
+
+Controls `auxiliary.web` — search/extract backends, API keys, and response
+compress thresholds used by the web search / web fetch managed tools.
+`GET/PUT /api/config/web`; PUT accepts a partial body filtered to known fields.
+
 ### External access
 
 ```json

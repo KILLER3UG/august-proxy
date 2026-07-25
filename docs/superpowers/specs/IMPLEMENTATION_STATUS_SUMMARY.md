@@ -1,6 +1,16 @@
 # August Proxy — Implementation Status Summary
+
+> **⚠ Point-in-time snapshot (2026-06-30) — not current status.** The "100%
+> complete / PRODUCTION READY" claim was contradicted nine days later by the
+> 2026-07-09 plan documenting that the desktop app still failed to boot
+> reliably. The body also cites the fictional voice files `intent.ts` and
+> `dispatch.ts` (real: `api/voice/registry.ts`, `builtins.ts`,
+> `registry-events.ts`). Open items are tracked in
+> [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md) and
+> [`../../design/tracker-v4.md`](../../design/tracker-v4.md).
+
 **Date:** June 30, 2026  
-**Status:** ✅ PRODUCTION READY — All v1 features complete and verified
+**Status:** ✅ PRODUCTION READY — All v1 features complete and verified *(as claimed 2026-06-30; see caveat above)*
 
 ---
 

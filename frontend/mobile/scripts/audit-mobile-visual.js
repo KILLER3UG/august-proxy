@@ -1,5 +1,14 @@
 #!/usr/bin/env node
 
+/**
+ * Mobile visual audit. Uses Playwright to capture screenshots of the desktop
+ * SPA served by the Python FastAPI backend (default http://127.0.0.1:8085).
+ *
+ * Note: this repo no longer has an `apps/host-agent/` monorepo layout. The
+ * desktop frontend lives in `frontend/desktop/`; Playwright must be installed
+ * at the repo root (`npm install playwright`) or under `frontend/desktop/`.
+ */
+
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -10,7 +19,8 @@ const artifactDir = path.join(appRoot, 'artifacts');
 
 function loadPlaywright() {
   const candidates = [
-    path.join(repoRoot, 'apps', 'host-agent', 'node_modules', 'playwright'),
+    path.join(repoRoot, 'node_modules', 'playwright'),
+    path.join(repoRoot, 'frontend', 'desktop', 'node_modules', 'playwright'),
     'playwright',
   ];
   for (const candidate of candidates) {
@@ -20,7 +30,7 @@ function loadPlaywright() {
       // Try the next known install location.
     }
   }
-  throw new Error('Playwright is not installed. Expected it in apps/host-agent/node_modules/playwright.');
+  throw new Error('Playwright is not installed. Install it at the repo root (`npm install playwright`) or under frontend/desktop/.');
 }
 
 function assert(condition, message) {

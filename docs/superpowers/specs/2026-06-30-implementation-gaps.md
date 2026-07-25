@@ -1,9 +1,19 @@
 # Implementation Gaps — June 30, 2026
 
+> **⚠ Point-in-time snapshot (2026-06-30).** This was the most honest of the
+> 2026-06-30 reports (it admitted gaps), but its voice-command inventory is
+> still fictional: lines below cite `src/api/voice/intent.ts` (149 lines),
+> `dispatch.ts` (158 lines), and `test/voice-intent.test.ts` — **none exist.**
+> The real voice implementation is `api/voice/registry.ts`,
+> `registry-events.ts`, `builtins.ts`, `registry.test.ts`. Also note: the
+> v4.4.2 / v4.4.3 release notes referenced elsewhere were never written, and
+> the corresponding brain-popup features were later rolled back. Current
+> status lives in [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md).
+
 **Purpose:** Consolidated list of missing/unverified features from cognitive architecture v1 and voice command specs.
 
 **Last Updated:** 2026-06-30  
-**Status:** Gap Analysis
+**Status:** Gap Analysis *(point-in-time)*
 
 ---
 

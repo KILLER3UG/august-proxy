@@ -345,3 +345,15 @@ They should not — `isolatedData` is **autouse**. If you see writes under
 Dependency install is not run synchronously on every Tauri start — use
 `install.ps1` / `install.sh` once, or the background sync when the version stamp
 is stale.
+
+### Auto-update downloads the full installer (Windows)
+
+Desktop **0.12.x** on Windows updates by downloading the full GitHub-release
+NSIS setup (`August_<version>_x64-setup.exe`) and launching it — the user
+walks through the setup wizard like a first install. This deliberately
+replaced the earlier quiet in-place patch, which could miss bundled backend
+changes. The download streams via the `download_release_installer` Tauri
+command with `update-download-progress` events; the app then stops the backend
+and calls `launch_installer_and_exit`. Non-Windows keeps the in-place
+`@tauri-apps/plugin-updater` path. If the download stalls, check the GitHub
+Releases URL in `frontend/desktop/src/hooks/useAppUpdate.ts`.

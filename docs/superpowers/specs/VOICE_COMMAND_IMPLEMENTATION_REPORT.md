@@ -1,8 +1,15 @@
 # Voice Command UI Infrastructure — Implementation Complete! 🎉
 
+> **⚠ Point-in-time snapshot (2026-06-30) — not current status.** The body
+> claims `src/api/voice/intent.ts` (149 lines) and `src/api/voice/dispatch.ts`
+> (158 lines) were created with fabricated line counts — **neither file
+> exists.** The real voice implementation is `api/voice/registry.ts`,
+> `registry-events.ts`, `builtins.ts`, `registry.test.ts`. See
+> [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md).
+
 **Date:** June 30, 2026  
 **Spec:** `docs/superpowers/specs/2026-06-30-voice-command-ui-infrastructure-design.md`  
-**Status:** ✅ **100% IMPLEMENTED**
+**Status:** ✅ **100% IMPLEMENTED** *(as claimed 2026-06-30; see caveat above)*
 
 ---
 

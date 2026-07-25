@@ -1,8 +1,16 @@
 # ✅ Implementation Complete - Ready for Testing
 
+> **⚠ Point-in-time snapshot (2026-06-30) — not current status.** The "ready
+> for testing" framing was never followed by a recorded pass. The voice
+> command file inventory below lists `src/api/voice/intent.ts`,
+> `dispatch.ts`, and `voice-intent.test.ts` — **none of these exist** in the
+> repo. The real voice implementation is `api/voice/registry.ts`,
+> `registry-events.ts`, `builtins.ts`, `registry.test.ts`. See
+> [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md) for current status.
+
 **Date:** June 30, 2026  
 **Implementation Time:** ~6 hours  
-**Status:** 🎉 **ALL CODE COMPLETE - READY FOR BROWSER TESTING**
+**Status:** 🎉 **ALL CODE COMPLETE - READY FOR BROWSER TESTING** *(as of 2026-06-30)*
 
 ---
 

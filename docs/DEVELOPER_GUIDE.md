@@ -248,6 +248,14 @@ snake_case parameters; routers may keep camelCase path params to match URLs.
 8. Add tests under `tests/`. Tool JSON caches invalidate via
    `tool_registry.generation()`.
 
+> **Execution state & verifier gate:** the `update_state` system tool
+> (`tool_registrations/system_tools.py`) tracks a multi-phase state
+> (`research → plan → implement → review → complete`) and enforces a verifier
+> gate on entry to `review`/`complete` (blocks if no command receipt or a
+> failing verdict — see [`ARCHITECTURE.md`](ARCHITECTURE.md)). Token usage is
+> recorded per turn and surfaced via `/api/usage/*`; the `done` SSE event
+> carries a `usage` field when tracking is on.
+
 ---
 
 ## Adding a new gateway platform

@@ -1,5 +1,19 @@
 # 🎉 Implementation Complete — Final Report
 
+> **⚠ Point-in-time snapshot (2026-06-30) — not current status.** This report
+> claimed "ALL FEATURES IMPLEMENTED AND TESTED," but later work contradicted
+> that framing:
+> - The **voice command file inventory** below cites `src/api/voice/intent.ts`
+>   and `src/api/voice/dispatch.ts` with fabricated line counts — **neither
+>   file exists.** The real implementation is `api/voice/registry.ts`,
+>   `registry-events.ts`, `builtins.ts`, `registry.test.ts`.
+> - Nine days later, `2026-07-09-setup-live-monitor-auto-update.md` documented
+>   that the desktop app still did not boot reliably (health/WS path breakers).
+> - Open items (unsigned security review, v4.4.x rollbacks) are tracked in
+>   [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md) and
+>   [`../../design/tracker-v4.md`](../../design/tracker-v4.md).
+> Treat the body below as a historical record, not a live status claim.
+
 **Date:** June 30, 2026  
 **Session:** Spec Implementation & Gap Analysis
 

@@ -1,7 +1,7 @@
 // scripts/release-desktop.mjs
 //
 // Builds the desktop release assets and writes a GitHub-release manifest used
-// by the custom asset updater.
+// by the desktop auto-updater.
 //
 // Usage:
 //   node scripts/release-desktop.mjs patch
@@ -17,8 +17,11 @@
 //   5) writes august-desktop-manifest.json
 //   6) optionally publishes to GitHub Releases via gh
 //
-// The generated manifest is intended for the custom sidecar updater in
-// backend/services/desktop/asset-updater.js.
+// Note (2026-07-25): the manifest this script writes is no longer consumed by
+// a custom sidecar updater. Desktop 0.12.x on Windows now downloads the full
+// GitHub-release NSIS setup via the Rust `download_release_installer` command
+// (see frontend/desktop/src/hooks/useAppUpdate.ts and src-tauri/src/backend.rs).
+// The manifest + checksums are retained for non-Windows / fallback paths.
 
 import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { existsSync, createReadStream, readdirSync } from 'node:fs';

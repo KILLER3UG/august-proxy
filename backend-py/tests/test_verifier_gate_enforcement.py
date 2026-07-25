@@ -119,3 +119,41 @@ async def testGateSkippedWhenAlreadyInReview(patchedSession):
     patchedSession['session'] = _FakeSession(phase='review', receipts=None)
     result = await system_tools._updateState(phase='review', step=3)
     assert result.startswith('State updated')
+
+
+@pytest.mark.asyncio
+async def testGateSkippedWhenAlreadyInComplete(patchedSession):
+    # Re-calling complete while already complete (e.g. bumping step) is a
+    # no-op update, not a fresh transition — must not re-gate.
+    patchedSession['session'] = _FakeSession(phase='complete', receipts=None)
+    result = await system_tools._updateState(phase='complete', step=2)
+    assert result.startswith('State updated')
+
+
+@pytest.mark.asyncio
+async def testGateBlocksReviewToCompleteWithoutRun(patchedSession):
+    # NEW-3 regression: a same-turn review → complete transition must be
+    # re-verified. Previously `currentPhase not in ('review','complete')`
+    # let review→complete skip the gate entirely.
+    patchedSession['session'] = _FakeSession(phase='review', receipts=None)
+    result = await system_tools._updateState(phase='complete', step=1)
+    assert 'Verifier gate' in result
+    assert 'state' not in patchedSession  # never persisted
+
+
+@pytest.mark.asyncio
+async def testGateBlocksReviewToCompleteOnFailedRun(patchedSession):
+    receipts = [{'name': 'run_command', 'content': '2 failed\nExit code: 1'}]
+    patchedSession['session'] = _FakeSession(phase='review', receipts=receipts)
+    result = await system_tools._updateState(phase='complete', step=1)
+    assert 'did not pass' in result
+    assert 'state' not in patchedSession
+
+
+@pytest.mark.asyncio
+async def testGateAllowsReviewToCompleteAfterPassingRun(patchedSession):
+    receipts = [{'name': 'run_command', 'content': '12 passed\nExit code: 0'}]
+    patchedSession['session'] = _FakeSession(phase='review', receipts=receipts)
+    result = await system_tools._updateState(phase='complete', step=1)
+    assert result.startswith('State updated')
+    assert patchedSession['state']['phase'] == 'complete'

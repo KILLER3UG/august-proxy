@@ -1,7 +1,14 @@
 # Voice Command Implementation - Testing Guide
 
+> **⚠ Point-in-time snapshot (2026-06-30).** The "Files to Verify Exist"
+> checklist below points at `src/api/voice/intent.ts`, `dispatch.ts`, and
+> `voice-intent.test.ts` — **none of these exist** in the repo. The real
+> voice files to verify are `frontend/desktop/src/api/voice/registry.ts`,
+> `registry-events.ts`, `builtins.ts`, and `registry.test.ts`. See
+> [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md).
+
 **Date:** June 30, 2026  
-**Status:** Ready for testing
+**Status:** Ready for testing *(as of 2026-06-30; file list above is outdated)*
 
 ---
 

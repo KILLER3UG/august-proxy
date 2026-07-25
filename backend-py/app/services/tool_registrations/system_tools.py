@@ -200,7 +200,18 @@ async def _updateState(
         # requires a command run THIS turn whose output looks like a pass.
         # Receipts are recorded by the workbench tool loop for command tools
         # and cleared at turn start.
-        if targetPhase in ('review', 'complete') and currentPhase not in ('review', 'complete'):
+        #
+        # Gate triggers:
+        #   • entering `review` from an earlier phase (research/plan/implement)
+        #   • entering `complete` from anything other than `complete` itself —
+        #     this closes the same-turn bypass where `review → complete` in one
+        #     turn skipped re-verification (the model could claim completion
+        #     without a fresh passing run).
+        # No-op updates within the same gated phase (e.g. `review → review` to
+        # bump step/blockers) are NOT re-gated.
+        entering_review = targetPhase == 'review' and currentPhase not in ('review', 'complete')
+        entering_complete = targetPhase == 'complete' and currentPhase != 'complete'
+        if entering_review or entering_complete:
             verdict, detail = _verificationVerdict(
                 as_list(getattr(session, '_verification_receipts', None), [])
             )

@@ -1,5 +1,20 @@
 # Implementation Tracker — v2 (Phases 8–10)
 
+> **Historical completion record — not a live status doc.** Phase checkboxes
+> reflect the state at sign-off. For current runtime behavior see
+> [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and the code under
+> `backend-py/app/services/`. Later-discovered caveats are tracked in
+> [`../GAPS_AND_BUGS.md`](../GAPS_AND_BUGS.md).
+
+> **Reconciliation note (2026-07-25):** an earlier
+> `superpowers/specs/2026-06-30-implementation-gaps.md` flagged Phase 10.2 /
+> 10.3 / 10.4 as "status unclear — needs audit." That was a point-in-time
+> concern during bring-up. Current code confirms: `environment_watcher.py`
+> (10.2), the verifier gate in `system_tools.py` (10.3 — enforced, not
+> honor-system), and `consolidation_daemon.py` skill drafting (10.4) all
+> exist and run. Caveats around the verifier gate being advisory-only and
+> same-turn-bypassable are recorded in `GAPS_AND_BUGS.md`, not here.
+
 > **Spec:** [`cognitive-architecture-v1.md`](./cognitive-architecture-v1.md)
 > **Scope:** Autonomous layers — subconscious daemons, cognitive maintenance
 > (sleep cycle / delta engine / timeline), and advanced frontiers

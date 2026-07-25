@@ -1,5 +1,10 @@
 # Implementation Tracker — v3 (Brain Access, Brain Dashboard, /Exam)
 
+> **Historical completion record — not a live status doc.** Phase checkboxes
+> reflect the state at sign-off. For current runtime behavior see
+> [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and the code under
+> `backend-py/app/routers/brain*.py` and `backend-py/app/routers/exam.py`.
+
 > **Spec:** [`cognitive-architecture-v1.md`](./cognitive-architecture-v1.md) — Sections 11, 12, 13
 > **Scope:** User-facing layer on top of the cognitive engine —
 > full model brain access (§11), the combined **Brain dashboard** (§12), and the

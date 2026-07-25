@@ -1,5 +1,29 @@
 # Setup Script, Live Monitor, Backend Supervisor & Auto-Update — Implementation Plan
 
+> **Status note (2026-07-25):** The checkboxes in this plan were never
+> ticked, but the work largely landed in code:
+> - **Live monitor WS** — `WS /api/logs/stream` + `GET /api/logs/recent`
+>   are implemented (`monitoring.py:162,285`) and wired into the Backend
+>   Monitor UI (`useLogStream.ts`).
+> - **Auto-update approach changed after this plan.** Commit `8e798541`
+>   (2026-07-23) "feat(desktop): update via full GitHub release installer
+>   instead of quiet patch" replaced the plan's quiet-patch / sidecar
+>   framing. Windows now downloads the full NSIS setup
+>   (`August_<version>_x64-setup.exe`) via the Rust
+>   `download_release_installer` command, stops the backend, and calls
+>   `launch_installer_and_exit` (user walks through setup). Non-Windows
+>   keeps the in-place `@tauri-apps/plugin-updater` path. See
+>   `frontend/desktop/src/hooks/useAppUpdate.ts:109-175` and
+>   `src-tauri/src/backend.rs:1142-1262`.
+> - The plan's reference to a "custom sidecar updater in
+>   `backend/services/desktop/asset-updater.js`" is now stale — that file
+>   never existed; `backend-py/app/services/asset_updater.py` is a real but
+>   minimal asset-info helper that is now orphaned (see
+>   [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md)).
+>
+> Treat the body below as the original plan; the notes above supersede its
+> auto-update framing.
+
 > **For agentic workers:** Use subagent-driven development or execute task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Do not bundle `backend-py/**/*` or `.venv` into Tauri resources.
 
 **Goal:** Make first-run and desktop startup reliable, stream real backend events into Settings → Backend Monitor, keep Python deps in sync with the app version, and fix latent supervisor / schema / packaging bugs that would still break the product after the first revised plan.

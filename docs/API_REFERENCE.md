@@ -91,7 +91,14 @@ aliases/cost helpers under `/api/models/*`).
 | `GET /api/perf/recent` | Perf ring buffer (when `AUGUST_PERF_TIMING=1`) |
 | `GET /api/perf/db-writer` | db_writer lag stats |
 | `GET /api/audit` / `GET /api/audit/stats` | Audit listing |
-| `GET /api/usage` | Usage endpoints (see `routers/usage.py`) |
+| `POST /api/usage` | Record a usage event |
+| `GET /api/usage/session?sessionId=` | Per-session usage |
+| `GET /api/usage/stats?period=` | Aggregate usage (totals, sessions, messages, activeDays, favoriteModel…) — `currentStreak` is a placeholder, see [`GAPS_AND_BUGS.md`](GAPS_AND_BUGS.md) |
+| `GET /api/usage/heatmap?period=` | Usage heatmap |
+| `GET /api/usage/by-model?period=` | Usage grouped by model |
+| `GET /api/usage/by-day?period=` | Usage grouped by day |
+| `GET /api/usage` | List-all usage records |
+| `GET /api/whats-new` | Changelog / what's-new feed for the dashboard |
 
 > Historical note: an earlier dual registration of `/api/health` dropped the
 > `python` field. That collision is **fixed** — only `main.py` defines health,
@@ -127,6 +134,9 @@ All paths below are relative to `/api/workbench`.
 | `POST /sessions/{id}/undo-last-turn` | Undo last turn |
 | `POST /sessions/{id}/branch` | Branch session |
 | `POST /sessions/{id}/compact` | Force context compact |
+| `POST /sessions/{id}/handoff` | Hand a session off (used by Live / agent flows) |
+| `POST /sandbox-mode` | Toggle sandbox mode for the active session |
+| `PATCH /sessions/{id}/sandbox` | Per-session sandbox override |
 
 ### Chat
 
@@ -179,6 +189,7 @@ All paths below are relative to `/api/workbench`.
 | `GET/PUT /cognitive` | Cognitive config tree |
 | `GET/PUT /session-export` | JSON session export toggle / status |
 | `GET/PUT /live` | Live / speech config |
+| `GET/PUT /web` | Web search / extract config (`auxiliary.web` backends + compress thresholds) |
 | `GET/PUT /external-access` · `POST …/generate-key` | External gateway access |
 | `GET/PUT /inject-aug-on-proxy` | Inject AUG.md on `/v1/*` path |
 
@@ -196,7 +207,12 @@ All paths below are relative to `/api/workbench`.
 | `POST /api/providers/import-config` | Import config |
 | `GET/PUT/PATCH/DELETE /api/providers/{id}` | CRUD |
 | `POST /api/providers/{id}/models/refresh` | Refresh model list |
-| `POST/PATCH/DELETE …/models…` | Model CRUD / test |
+| `POST /api/providers/{id}/models` · `PATCH/DELETE …/models/{modelId}` | Model add / edit / delete |
+| `POST /api/providers/{id}/models/{modelId}/test` | Probe a model (accepts any non-empty reply as success) |
+
+> `GET /api/providers/{id}/models` (collection) and `POST /api/providers/{id}/discover`
+> are **not implemented** — listed here as a known gap. See
+> [`GAPS_AND_BUGS.md`](GAPS_AND_BUGS.md).
 
 ### `/api/models`
 
@@ -342,7 +358,7 @@ Enablement: `config.json → gateway` + platform bot tokens.
 | `/api/terminal` · terminal WS routes | PTY sessions, buffer, I/O |
 | `/api/browser/screenshot` | Screenshot fetch |
 | `/api/desktop-automation/health` · `/config` · `/action` | Desktop control |
-| `/api/git/*` | status, log, branch, diff, checkout, commit, command |
+| `/api/git/*` | status, log, branches, diff, checkout, commit, command |
 
 ---
 
@@ -447,7 +463,7 @@ Common event types:
 | `session_status` | Status changed | guard/status fields |
 | `error` | Error | `{message}` |
 | `aborted` | Cancelled | `{}` |
-| `done` | Generation complete | `{sessionId}` |
+| `done` | Generation complete | `{sessionId, usage?}` — `usage` is `{inputTokens, outputTokens, contextTokens}` when token tracking is on |
 | `keepalive` | Idle | comment line `: keepalive` |
 
 The stream terminates after `done`, `error`, or `aborted`. Pass the last `id`
