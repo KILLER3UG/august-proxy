@@ -10,6 +10,7 @@
 
 import { createWriteStream } from 'node:fs';
 import { mkdir, rm, cp, access, writeFile, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -21,6 +22,20 @@ const pythonDir = join(resourcesDir, 'python');
 const backendOut = join(resourcesDir, 'backend-py');
 const wheelsOut = join(resourcesDir, 'wheels');
 const skipDownload = process.argv.includes('--skip-download');
+
+// On Windows, GNU tar (MSYS /usr/bin/tar) mishandles drive-letter paths like
+// `C:\…`: it reads `C:` as a remote rsh host and fails with
+// "Cannot connect to C: resolve failed". Prefer the System32 BSD tar
+// (bsdtar) which understands native Windows paths natively. Fall back to
+// GNU tar with --force-local only if the System32 binary is unavailable.
+const SYSTEM32_TAR = 'C:\\Windows\\System32\\tar.exe';
+function resolveTarBinary() {
+  if (process.platform === 'win32' && existsSync(SYSTEM32_TAR)) {
+    return { cmd: SYSTEM32_TAR, extraArgs: [] };
+  }
+  const extraArgs = process.platform === 'win32' ? ['--force-local'] : [];
+  return { cmd: 'tar', extraArgs };
+}
 
 // python-build-standalone — relocatable CPython for Windows x64
 const PYTHON_VERSION = '3.12.9';
@@ -61,12 +76,8 @@ async function download(url, dest) {
 
 async function extractTarGz(archive, dest) {
   await mkdir(dest, { recursive: true });
-  if (process.platform === 'win32') {
-    // Prefer tar.exe (Windows 10+) — handles .tar.gz
-    run('tar', ['-xzf', archive, '-C', dest]);
-  } else {
-    run('tar', ['-xzf', archive, '-C', dest]);
-  }
+  const { cmd, extraArgs } = resolveTarBinary();
+  run(cmd, [...extraArgs, '-xzf', archive, '-C', dest]);
 }
 
 async function ensurePython() {
