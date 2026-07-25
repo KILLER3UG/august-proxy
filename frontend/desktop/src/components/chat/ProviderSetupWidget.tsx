@@ -14,11 +14,20 @@ import { Eye, EyeOff, Key, Check, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
+import { API_FORMATS } from '@/sections/workspace/models/modelSettingsShared';
 import type { ProviderSetupResult } from '@/types/chat';
 
 function formatLabel(value?: string): string {
   if (!value) return '—';
   return value;
+}
+
+/** Map a canonical apiFormat id (openaiChat, anthropicMessages, …) to the
+ *  friendly wire-path label used in the provider dropdowns; fall back to the
+ *  raw value for anything unrecognized. */
+function formatApiLabel(value?: string): string {
+  if (!value) return '—';
+  return API_FORMATS.find((f) => f.value === value)?.label ?? value;
 }
 
 export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
@@ -77,7 +86,7 @@ export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
         </div>
         <div className="flex items-center justify-between gap-2">
           <span className="text-muted-foreground">API format</span>
-          <span className="font-mono text-foreground/90 truncate">{formatLabel(setup.apiFormat)}</span>
+          <span className="font-mono text-foreground/90 truncate">{formatApiLabel(setup.apiFormat)}</span>
         </div>
       </div>
 

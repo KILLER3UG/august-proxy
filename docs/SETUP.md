@@ -324,7 +324,7 @@ npm run dev:desktop
 # SPA build used by the desktop installer (and optional FastAPI static serve)
 npm run build:web
 
-# Mobile companion (Expo) — see frontend/mobile/README / AGENTS.md
+# Mobile companion (Expo) — see frontend/mobile/AGENTS.md
 cd frontend/mobile && npm start
 ```
 
