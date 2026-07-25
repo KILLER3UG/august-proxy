@@ -50,6 +50,15 @@ The adapter resolves the model alias, injects the August system reminder
 the upstream is OpenAI-format — translates the request and response. Managed
 proxy tools are executed locally in a multi-round loop.
 
+### `POST /v1/messages/count_tokens`
+
+Estimated input-token count for the supplied messages/tools without making a
+model call. Returns a local heuristic (no upstream `count_tokens` request):
+
+```json
+{ "input_tokens": 147, "estimated": true }
+```
+
 ### `POST /v1/chat/completions`
 
 OpenAI Chat Completions API. Passthrough with system-prompt injection, context
@@ -208,11 +217,9 @@ All paths below are relative to `/api/workbench`.
 | `GET/PUT/PATCH/DELETE /api/providers/{id}` | CRUD |
 | `POST /api/providers/{id}/models/refresh` | Refresh model list |
 | `POST /api/providers/{id}/models` · `PATCH/DELETE …/models/{modelId}` | Model add / edit / delete |
+| `GET /api/providers/{id}/models` | List stored models for a provider |
+| `POST /api/providers/{id}/discover` | Probe live `/models` endpoint (read-only — store not mutated) |
 | `POST /api/providers/{id}/models/{modelId}/test` | Probe a model (accepts any non-empty reply as success) |
-
-> `GET /api/providers/{id}/models` (collection) and `POST /api/providers/{id}/discover`
-> are **not implemented** — listed here as a known gap. See
-> [`GAPS_AND_BUGS.md`](GAPS_AND_BUGS.md).
 
 ### `/api/models`
 

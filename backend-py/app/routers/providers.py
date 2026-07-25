@@ -228,6 +228,20 @@ async def refreshModels(providerId: str):
 
     Returns added/updated/removed model ID arrays for the frontend.
     """
+    added, updated, removed, _live = await _discoverProviderModels(providerId, persist=True)
+    return {'added': added, 'updated': updated, 'removed': removed}
+
+
+async def _discoverProviderModels(
+    providerId: str, *, persist: bool = False
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Fetch a provider's live model list from its /models endpoint.
+
+    Returns ``(added, updated, removed, liveModels)`` relative to the
+    currently-stored models. When ``persist`` is True, newly seen models are
+    appended to the store (the refresh behavior); when False (discover), the
+    store is left untouched and the caller gets the diff prospectively.
+    """
     store = config_service.getProvidersStore()
     providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
@@ -278,25 +292,59 @@ async def refreshModels(providerId: str):
         added = sorted(liveIds - currentIds)
         removed = sorted(currentIds - liveIds)
         updated = sorted(currentIds & liveIds)
-        for mid in liveModels:
-            if mid not in currentIds:
-                # Prefer family heuristics / profiles over a hardcoded 128k —
-                # that default made every refreshed model look identical in chat.
-                currentModels.append(
-                    {
-                        'id': mid,
-                        'name': mid,
-                        'contextWindow': model_service._getContextWindow(mid, p),
-                        'reasoning': False,
-                        'free': ':free' in mid or '-free' in mid,
-                        'source': 'fetched',
-                    }
-                )
-        p['models'] = currentModels
-        config_service.saveProvidersStore(store)
-        model_service.invalidate_cache()
-        return {'added': added, 'updated': updated, 'removed': removed}
+        if persist:
+            for mid in liveModels:
+                if mid not in currentIds:
+                    # Prefer family heuristics / profiles over a hardcoded 128k —
+                    # that default made every refreshed model look identical in chat.
+                    currentModels.append(
+                        {
+                            'id': mid,
+                            'name': mid,
+                            'contextWindow': model_service._getContextWindow(mid, p),
+                            'reasoning': False,
+                            'free': ':free' in mid or '-free' in mid,
+                            'source': 'fetched',
+                        }
+                    )
+            p['models'] = currentModels
+            config_service.saveProvidersStore(store)
+            model_service.invalidate_cache()
+        return (added, updated, removed, liveModels)
     raise HTTPException(status_code=404, detail='Provider not found')
+
+
+@router.get('/{providerId}/models')
+async def listProviderModels(providerId: str):
+    """List the models currently stored for a provider.
+
+    Returns the provider's stored ``models`` array (the configured set, not a
+    live fetch). For a live refresh use ``POST /{providerId}/models/refresh``;
+    for a read-only live preview use ``POST /{providerId}/discover``.
+    """
+    store = config_service.getProvidersStore()
+    providers_list = as_list(store.get('providers', []))
+    if not isinstance(providers_list, list):
+        providers_list = []
+    for p in providers_list:
+        if not isinstance(p, dict):
+            continue
+        if as_str(p.get('id', '')) == providerId:
+            models = as_list(p.get('models', []))
+            return {'models': models, 'count': len(models)}
+    raise HTTPException(status_code=404, detail='Provider not found')
+
+
+@router.post('/{providerId}/discover')
+async def discoverProviderModels(providerId: str):
+    """Probe a provider's live /models endpoint without persisting changes.
+
+    Returns the prospective added/updated/removed diff plus the live model IDs,
+    so the UI can preview what ``models/refresh`` would apply. The store is
+    left untouched.
+    """
+    added, updated, removed, liveModels = await _discoverProviderModels(providerId, persist=False)
+    return {'added': added, 'updated': updated, 'removed': removed, 'live': liveModels}
 
 
 @router.post('/{providerId}/models')

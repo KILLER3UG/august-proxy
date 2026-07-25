@@ -400,6 +400,24 @@ async def anthropicMessages(request: Request, _auth: bool = Depends(require_gate
     return result
 
 
+@router.post('/v1/messages/count_tokens')
+async def anthropicCountTokens(request: Request, _auth: bool = Depends(require_gateway_key)):
+    """Anthropic count_tokens proxy.
+
+    Returns an estimated input-token count for the supplied messages/tools
+    without making a model call. Delegates to the Anthropic adapter's
+    ``handleCountTokens`` (heuristic estimation via ``estimateTokens``).
+    """
+    body = await _readJsonBody(request, 'messages/count_tokens')
+    if isinstance(body, JSONResponse):
+        return body
+    body = _maybe_inject_aug_into_body(body, 'messages/count_tokens')
+    reqId = await _trackRequest('messages/count_tokens', body, request)
+    result = await anthropicAdapter.handleCountTokens(body, request)
+    trafficLogger.endRequest(reqId, {})
+    return result
+
+
 @router.post('/v1/chat/completions')
 async def openaiChat(request: Request, _auth: bool = Depends(require_gateway_key)):
     """OpenAI Chat Completions API proxy.

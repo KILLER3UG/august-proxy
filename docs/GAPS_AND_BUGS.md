@@ -30,6 +30,8 @@ Living list. Prefer fixing code first, then ticking items off here.
 | `release-desktop.mjs` "custom sidecar updater" framing | Header note (2026-07-25) clarifies the manifest is no longer consumed by a sidecar updater and points to `download_release_installer`; `asset-updater.js` path reference removed |
 | v4.4.2 / v4.4.3 release notes missing | `docs/releases/v4.4.2-brain-popup-drag-resize.md` + `v4.4.3-portal-fix.md` added as rollback stubs citing commit `1b796ffe` |
 | v0.12.22–v0.12.36 release notes missing | Consolidated `docs/releases/0.12.22-36.md` added covering the 15 desktop releases (context-window fix, auto-update switch, tar-extraction build fix, chat truncation/warning-collapse fixes) |
+| `POST /v1/messages/count_tokens` had no route (unwired handler) | Wired as `@router.post('/v1/messages/count_tokens')` in `routers/proxy.py`; delegates to `anthropicAdapter.handleCountTokens` (local estimation, no upstream call). 3 tests added to `test_missing_endpoints.py` |
+| `GET /api/providers/{id}/models` + `POST /api/providers/{id}/discover` missing | Implemented in `routers/providers.py`. `GET /{id}/models` returns stored model list; `POST /{id}/discover` is a read-only live-probe (extracted from refresh into shared `_discoverProviderModels` helper). 3 tests added |
 
 ## Closed (2026-07-20)
 
@@ -57,30 +59,11 @@ Living list. Prefer fixing code first, then ticking items off here.
 
 ### OpenCode Zen: models list ≠ usable chat path — **OPEN**
 
-Zen’s `GET /models` returns Claude, GPT, DeepSeek, etc., but each family uses a
+Zen's `GET /models` returns Claude, GPT, DeepSeek, etc., but each family uses a
 different endpoint (`/messages`, `/responses`, `/chat/completions`, Gemini).
 August binds one `apiFormat` per provider, so Test/chat **404** for
 wrong-format models. Desktop **0.12.21** fixed null `session_id` dumps; this
 routing gap remains.
-
-### `POST /v1/messages/count_tokens` has no route — **OPEN (documented)**
-
-`adapters/anthropic.py:839` defines `handleCountTokens` and the Anthropic
-client even calls the upstream `count_tokens` URL, but **no FastAPI route**
-registers `POST /v1/messages/count_tokens`. Clients hitting it get 404.
-`API_REFERENCE.md` now documents this as unsupported and points here. Wiring
-the handler to a route is the remaining fix.
-
-### Missing provider model endpoints — **OPEN**
-
-- `GET /api/providers/{id}/models` (collection) — not implemented. Model list
-  comes via `GET /api/providers/{id}` (provider detail) or `…/models/refresh`.
-- `POST /api/providers/{id}/discover` — not implemented anywhere in
-  `routers/providers.py`.
-
-### `currentStreak` hardcoded to 0 — **CLOSED** (moved to Closed table above)
-
-### Dangling `SavePointChip` comment — **CLOSED** (moved to Closed table above)
 
 ### Verifier gate is advisory w.r.t. final-response emission — **OPEN (architecture)**
 
@@ -110,14 +93,6 @@ The three `done`/`finalOutput` emits inside `workbench.py` (lines 1177, 1222,
 1469) are **error / edge-case early-exits** (no provider, no API key,
 thinking-only after max-tokens), not the normal final-answer path — gating
 those would break error messaging, not enforce completion.
-
-### `asset_updater.py` is orphaned dead code — **CLOSED** (moved to Closed table above)
-
-### `release-desktop.mjs` dangling comment — **CLOSED** (moved to Closed table above)
-
-### v4.4.2 / v4.4.3 release notes missing — **CLOSED** (moved to Closed table above)
-
-### v0.12.22–v0.12.36 release notes missing — **CLOSED** (moved to Closed table above)
 
 ### Dual naming (Python params vs camelCase wire) — **DEFERRED by design**
 
