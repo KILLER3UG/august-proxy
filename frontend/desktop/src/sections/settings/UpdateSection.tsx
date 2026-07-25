@@ -117,7 +117,7 @@ export function UpdateSection() {
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {progress.phase === 'restarting'
-                      ? 'August will close while the setup wizard runs — just like the first install.'
+                      ? 'August is updating. The old version is removed automatically; you’ll see the install wizard, then August reopens.'
                       : progress.phase === 'installing'
                         ? 'The setup window will appear in a moment.'
                         : 'The installer opens after the download finishes.'}

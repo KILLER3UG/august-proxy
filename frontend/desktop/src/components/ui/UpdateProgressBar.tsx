@@ -27,7 +27,7 @@ export function UpdateProgressBar({
   return (
     <div
       className={cn(
-        'relative h-7 w-full overflow-hidden rounded-lg border border-border/50 bg-muted/70',
+        'relative h-7 w-full overflow-hidden rounded-lg border border-border/50 bg-muted/80',
         className,
       )}
       role="progressbar"
@@ -62,7 +62,7 @@ export function UpdateProgressBar({
       </motion.div>
 
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="select-none text-[11px] font-bold tracking-[0.28em] text-foreground/90 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]">
+        <span className="select-none text-[11px] font-bold tracking-[0.28em] text-foreground/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]">
           {restarting ? '…' : 'AUG'}
         </span>
       </div>

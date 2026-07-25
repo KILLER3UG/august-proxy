@@ -10,24 +10,35 @@
   :root {
     /* Surface palette — warmer, quieter neutrals (off the blue tint) */
     --dt-background: #fbfbfa;
+    --dt-background-hsl: 60 11.11% 98.24%;
     --dt-foreground: #1c1c1e;
+    --dt-foreground-hsl: 240 3.45% 11.37%;
     --dt-card: #ffffff;
+    --dt-card-hsl: 0 0% 100%;
     --dt-card-foreground: #1c1c1e;
+    --dt-card-foreground-hsl: 240 3.45% 11.37%;
     --dt-muted: #f4f4f3;
+    --dt-muted-hsl: 60 4.35% 95.49%;
     --dt-muted-foreground: #6b6b70;
+    --dt-muted-foreground-hsl: 240 2.28% 42.94%;
     --dt-popover: #ffffff;
+    --dt-popover-hsl: 0 0% 100%;
     --dt-popover-foreground: #1c1c1e;
+    --dt-popover-foreground-hsl: 240 3.45% 11.37%;
     --dt-elevated: #ffffff;
     --dt-overlay: rgba(15, 23, 42, 0.55);
 
     /* Brand — desaturated, reserved for action/focus */
     --dt-primary: #2f6df6;
+    --dt-primary-hsl: 221.31 91.71% 57.45%;
     --dt-primary-foreground: #ffffff;
+    --dt-primary-foreground-hsl: 0 0% 100%;
     --dt-secondary: #eef3ff;
     --dt-secondary-foreground: #1e293b;
     --dt-accent: #eef3ff;
     --dt-accent-foreground: #1e3a8a;
     --dt-border: #ececea;
+    --dt-border-hsl: 60 5% 92.16%;
     --dt-input: #dededa;
     --dt-ring: #2f6df6;
 
@@ -68,24 +79,35 @@
 
     /* Surface palette — true-neutral charcoal, three clear tiers */
     --dt-background: #0e0e10;
+    --dt-background-hsl: 240 6.67% 5.88%;
     --dt-foreground: #ececee;
+    --dt-foreground-hsl: 240 5.56% 92.94%;
     --dt-card: #161618;
+    --dt-card-hsl: 240 4.35% 9.02%;
     --dt-card-foreground: #ececee;
+    --dt-card-foreground-hsl: 240 5.56% 92.94%;
     --dt-muted: #1d1d20;
+    --dt-muted-hsl: 240 4.92% 11.96%;
     --dt-muted-foreground: #9a9aa2;
+    --dt-muted-foreground-hsl: 240 4.12% 61.96%;
     --dt-popover: #1d1d20;
+    --dt-popover-hsl: 240 4.92% 11.96%;
     --dt-popover-foreground: #ececee;
+    --dt-popover-foreground-hsl: 240 5.56% 92.94%;
     --dt-elevated: #1a1c22;
     --dt-overlay: rgba(0, 0, 0, 0.65);
 
     /* Brand — bright enough for AAA on charcoal, still restrained */
     --dt-primary: #6f9bff;
+    --dt-primary-hsl: 221.67 100% 71.76%;
     --dt-primary-foreground: #0e0e10;
+    --dt-primary-foreground-hsl: 240 6.67% 5.88%;
     --dt-secondary: #1a2238;
     --dt-secondary-foreground: #dbeafe;
     --dt-accent: #1a2238;
     --dt-accent-foreground: #dbeafe;
     --dt-border: #262629;
+    --dt-border-hsl: 240 3.8% 15.49%;
     --dt-input: #2a2a2e;
     --dt-ring: #6f9bff;
 

@@ -6,6 +6,33 @@ module.exports = {
   ],
   theme: {
     extend: {
+      colors: {
+        // Design tokens backed by `--dt-*-hsl` channels (see src/styles.css).
+        // The `<alpha-value>` slot lets Tailwind alpha modifiers work:
+        //   bg-card/95, bg-muted/70, border-border/60, text-foreground/90, …
+        // Without this registration those `/NN` classes silently failed to
+        // apply alpha (the tokens were only plain opaque `.bg-*` CSS classes),
+        // which was the root cause of the update overlay appearing transparent.
+        background: 'hsl(var(--dt-background-hsl) / <alpha-value>)',
+        foreground: 'hsl(var(--dt-foreground-hsl) / <alpha-value>)',
+        card: {
+          DEFAULT: 'hsl(var(--dt-card-hsl) / <alpha-value>)',
+          foreground: 'hsl(var(--dt-card-foreground-hsl) / <alpha-value>)',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--dt-muted-hsl) / <alpha-value>)',
+          foreground: 'hsl(var(--dt-muted-foreground-hsl) / <alpha-value>)',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--dt-popover-hsl) / <alpha-value>)',
+          foreground: 'hsl(var(--dt-popover-foreground-hsl) / <alpha-value>)',
+        },
+        primary: {
+          DEFAULT: 'hsl(var(--dt-primary-hsl) / <alpha-value>)',
+          foreground: 'hsl(var(--dt-primary-foreground-hsl) / <alpha-value>)',
+        },
+        border: 'hsl(var(--dt-border-hsl) / <alpha-value>)',
+      },
       fontFamily: {
         sans: [
           'Inter Variable',

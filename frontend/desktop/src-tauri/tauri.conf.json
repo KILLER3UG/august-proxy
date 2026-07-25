@@ -46,7 +46,8 @@
     "longDescription": "August Proxy — local AI gateway, chat, and provider routing.",
     "windows": {
       "nsis": {
-        "installerHooks": "./windows/hooks.nsh"
+        "installerHooks": "./windows/hooks.nsh",
+        "template": "./windows/installer.nsi"
       }
     }
   },

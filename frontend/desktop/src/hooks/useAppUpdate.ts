@@ -92,7 +92,6 @@ export function useAppUpdate() {
     refetchOnWindowFocus: true,
     retry: false,
   });
-
   const install = useCallback(async () => {
     if (!isTauri || !query.data) return;
     if (useAppUpdateInstallStore.getState().installing) return;
@@ -108,9 +107,12 @@ export function useAppUpdate() {
 
     if (isWindowsDesktop()) {
       // Full-installer flow: download the real NSIS setup from the latest
-      // GitHub release, then run it with its normal wizard — the same
-      // experience as installing August for the first time. This replaces
-      // the quiet in-place patch, which could miss bundled backend changes.
+      // GitHub release, then run it in `/UPDATE` mode. The old version is
+      // removed automatically (NSIS `PageLeaveReinstall` skips the uninstaller
+      // under `$UpdateMode`), with NO uninstall wizard or maintenance popup —
+      // the install wizard stays visible (see `windows/installer.nsi` +
+      // `launch_installer_and_exit`). This replaces the quiet in-place patch,
+      // which could miss bundled backend changes.
       let unlisten: (() => void) | undefined;
       let downloaded = 0;
       let total: number | null = null;
@@ -163,7 +165,7 @@ export function useAppUpdate() {
 
         // Spawns the setup wizard and exits August — rarely returns.
         await invoke<string>('launch_installer_and_exit', { path: installerPath });
-        toast.success('Installer launched — follow the setup wizard to finish updating.');
+        toast.success('Update started — the installer will guide you through the final step.');
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         toast.error(message || 'Failed to download the installer');
@@ -288,4 +290,23 @@ export function useAppUpdate() {
     refresh: () => queryClient.invalidateQueries({ queryKey: ['app-update'] }),
     install,
   };
+}
+
+/**
+ * Read-only access to the target update version (for the relaunch overlay).
+ * Reuses the same React Query cache key `useAppUpdate` populates, so it stays
+ * in sync without a new prop chain through App.tsx. Returns `null` while the
+ * check is loading or no update is available. (Reactive — re-renders when the
+ * underlying query cache updates, unlike a one-shot `getQueryData` call.)
+ */
+export function useAppUpdateVersion(): string | null {
+  const query = useQuery({
+    queryKey: ['app-update'],
+    queryFn: checkForAppUpdate,
+    enabled: isTauri,
+    staleTime: 30 * 60_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+  return query.data?.version ?? null;
 }

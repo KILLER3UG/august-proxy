@@ -1234,12 +1234,21 @@ pub async fn download_release_installer(
     .map_err(|e| format!("download task failed: {e}"))?
 }
 
-/// Launch the downloaded installer with its normal UI (the same wizard as a
-/// first-time install), then exit August so the installer can replace files.
+/// Launch the downloaded installer in **update mode**, then exit August so the
+/// installer can replace files.
 ///
-/// No silent flags: the user walks through the setup exactly like the first
-/// install. NSIS PREINSTALL also sweeps stray August/python processes, and the
-/// finish page offers to relaunch August when the install succeeds.
+/// Passes `/UPDATE` (no `/S`, no `/P`) so that:
+///   - NSIS `PageLeaveReinstall` hits `${If} $UpdateMode = 1` → `Goto reinst_done`
+///     and the OLD `uninstall.exe` is never invoked — no uninstall wizard, no
+///     clicks, no `ExecWait` on the previous uninstaller.
+///   - `$PassiveMode` stays 0, so `SkipIfPassive` does NOT hide the install pages
+///     — the user still sees the install wizard (welcome / directory / instfiles)
+///     exactly like a first-time install. See the checked-in
+///     `windows/installer.nsi` template, which also auto-skips the maintenance
+///     radio page under `$UpdateMode = 1`.
+///
+/// NSIS PREINSTALL (in `windows/hooks.nsh`) still sweeps stray August/python
+/// processes so locked `resources/python/*.pyd` files don't abort the copy.
 #[tauri::command]
 pub fn launch_installer_and_exit(app: AppHandle, path: String) -> Result<String, String> {
     let installer = PathBuf::from(&path);
@@ -1249,6 +1258,7 @@ pub fn launch_installer_and_exit(app: AppHandle, path: String) -> Result<String,
     // Release python/.pyd locks before NSIS copies over the install dir.
     stopBackendForUpdate(&app);
     Command::new(&installer)
+        .arg("/UPDATE")
         .spawn()
         .map_err(|e| format!("could not launch the installer: {e}"))?;
     log::info!(
