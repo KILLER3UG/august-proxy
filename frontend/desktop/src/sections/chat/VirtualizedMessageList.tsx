@@ -30,6 +30,10 @@ export function VirtualizedMessageList({
     count: messages.length,
     getScrollElement: () => scrollParentRef.current,
     estimateSize: () => ESTIMATE_ROW_PX,
+    // Key measurements by message id, not index: the virtualizer instance
+    // survives session switches, and index keys would apply the previous
+    // session's measured row heights to the new transcript's layout.
+    getItemKey: (index) => messages[index]?.id ?? index,
     overscan: 8,
     enabled: useVirt,
   });

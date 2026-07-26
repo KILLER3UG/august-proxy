@@ -137,6 +137,35 @@ describe('useStickToBottomScroll', () => {
     expect(el.scrollTop).toBe(1000);
   });
 
+  it('settle survives quiet gaps between measurement waves (long transcript switch)', async () => {
+    const el = makeScrollEl();
+
+    const { result } = renderHook(() => {
+      const scrollRef = useRef<HTMLDivElement | null>(el);
+      const pinnedToBottomRef = useRef(true);
+      return useStickToBottomScroll({
+        scrollRef,
+        pinnedToBottomRef,
+        streaming: false,
+        sessionId: 's1',
+        loadedSessionId: 's1',
+        messagesVersion: 1,
+      });
+    });
+
+    result.current.scrollToBottomImmediate();
+    // First measurement wave: bottom rows render taller than estimated.
+    Object.defineProperty(el, 'scrollHeight', { value: 1200, configurable: true });
+
+    // Quiet gap longer than the old 2-frame tolerance but well inside the
+    // new one — the old loop exited here and missed the second wave.
+    await new Promise((r) => setTimeout(r, 80));
+    Object.defineProperty(el, 'scrollHeight', { value: 2000, configurable: true });
+
+    await new Promise((r) => setTimeout(r, 220));
+    expect(el.scrollTop).toBe(2000);
+  });
+
   it('settle stops fighting a user who scrolls away mid-settle', async () => {
     const el = makeScrollEl();
     const pinnedToBottomRef = { current: true };

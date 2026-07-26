@@ -9,14 +9,9 @@ import {
   type ToolProgressMap,
 } from './AssistantBlockTimeline';
 import { AssistantMessageActions } from './AssistantMessageActions';
+import { formatTokenCount } from './token-display';
 
 type DisplayBlock = MessageBlock;
-
-/** Compact token count for the usage chip: 1234 → "1.2k". */
-function formatTokenCount(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return `${n}`;
-}
 
 /** Assistant message body: blocks timeline, recap, and action footer. */
 export function AssistantMessageContent({

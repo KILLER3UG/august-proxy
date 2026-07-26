@@ -105,17 +105,23 @@ export function useStickToBottomScroll({
     const target = getScrollTarget();
     if (!target) return;
     setPinned(true);
-    // Snap now, then keep re-snapping for up to ~400ms while the page height
-    // settles: virtualized rows re-measure as they enter the viewport and
-    // late content (images, collapsibles) can grow the transcript after the
+    // Snap now, then keep re-snapping while the page height settles:
+    // virtualized rows re-measure as they enter the viewport and late
+    // content (images, collapsibles) can grow the transcript after the
     // first snap. Without the settle pass the jump lands above the true
-    // bottom ("stops midway"). The programmatic guard stays up for the whole
-    // settle so pin tracking never sees these writes as user scrolls.
+    // bottom ("stops midway"). The programmatic guard stays up for the
+    // whole settle so pin tracking never sees these writes as user scrolls.
+    //
+    // The measurement cascade arrives in waves with quiet gaps between them
+    // (heavy markdown / code highlighting can stall a frame or several), so
+    // the loop only gives up after ~8 consecutive unchanged frames, and runs
+    // up to 1.5s overall. A tighter tolerance exited mid-cascade on long
+    // transcripts and left session switches stranded near the top.
     programmaticScrollRef.current = true;
     target.scrollTop = target.scrollHeight;
     let lastHeight = target.scrollHeight;
     let stableFrames = 0;
-    const deadline = performance.now() + 400;
+    const deadline = performance.now() + 1500;
     const settle = () => {
       const el = getScrollTarget();
       // User scrolled away mid-settle — stop fighting them.
@@ -130,7 +136,7 @@ export function useStickToBottomScroll({
         stableFrames = 0;
         lastHeight = el.scrollHeight;
       }
-      if (stableFrames >= 2 || performance.now() >= deadline) {
+      if (stableFrames >= 8 || performance.now() >= deadline) {
         programmaticScrollRef.current = false;
         return;
       }
