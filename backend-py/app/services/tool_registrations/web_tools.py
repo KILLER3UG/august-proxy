@@ -210,7 +210,7 @@ async def _webSearch(
     cfg = get_web_config()
     backend = resolve_search_backend(cfg)
     label = {
-        'ddgs': 'DuckDuckGo',
+        'ddgs': 'Search',
         'brave': 'Brave Search',
         'searxng': 'SearXNG',
     }.get(backend, backend)
@@ -218,7 +218,7 @@ async def _webSearch(
     await _emit_progress(
         on_progress,
         'reading',
-        {'paths': [f'{label} search'], 'message': f'Searching via {label}…'},
+        {'paths': ['Searching web'], 'message': 'Searching…'},
     )
 
     searchResults: list[dict[str, object]] = []
@@ -372,7 +372,7 @@ def register() -> None:
     tool_registry.register(
         'web_search',
         (
-            'Search the public web (DuckDuckGo by default; Brave or SearXNG if configured). '
+            'Search the public web (Brave or SearXNG if configured; otherwise the default backend). '
             'Returns ranked titles, URLs, and snippets only — does not download page bodies. '
             'Then call web_fetch / web_fetch_many on the URLs you need. Max 20 results (default 10).'
         ),

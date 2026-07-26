@@ -1,6 +1,7 @@
 /* ── SubagentPanel ───────────────────────────────────────────────────── */
 /* Top-level card showing parallel sub-agent progress. Collapsed shows
-   "X/Y agents complete" + Expand button. Expanded lists SubagentRows.
+   "X/Y agents complete" + Expand button. Expanded lists SubagentRows
+   with an inline chat area showing thinking, tool calls, and results.
    Auto-dismisses 3 seconds after all agents complete. */
 
 import { useState, useEffect, useRef } from 'react';
@@ -9,6 +10,8 @@ import { cn } from '@/lib/utils';
 import { useSubagentStream } from '@/hooks/useSubagentStream';
 import { useSubagentViewPreference } from '@/hooks/useSubagentViewPreference';
 import { SubagentRow } from '@/components/chat/SubagentRow';
+import { useSessionStreamStore } from '@/sections/chat/stream/session-stream-store';
+import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
 
 interface SubagentPanelProps {
   sessionId: string | null;
@@ -17,6 +20,9 @@ interface SubagentPanelProps {
 export function SubagentPanel({ sessionId }: SubagentPanelProps) {
   const { agents, loading, error } = useSubagentStream(sessionId);
   const { view, toggle } = useSubagentViewPreference();
+  const subagentBlocks = useSessionStreamStore(
+    (s) => (sessionId ? s.bySession[sessionId]?.subagentBlocks : null),
+  );
   const [dismissed, setDismissed] = useState(false);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -86,7 +92,11 @@ export function SubagentPanel({ sessionId }: SubagentPanelProps) {
       {isExpanded && (
         <div className="space-y-1.5 px-3 pb-3">
           {agents.map((agent) => (
-            <SubagentRow key={agent.taskId} agent={agent} />
+            <SubagentRow
+              key={agent.taskId}
+              agent={agent}
+              subagentBlock={subagentBlocks?.get(agent.taskId)}
+            />
           ))}
         </div>
       )}

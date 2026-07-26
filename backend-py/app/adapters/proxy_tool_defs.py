@@ -31,7 +31,7 @@ def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
     return [
         {
             'name': 'WebSearch',
-            'description': 'Search the public web for ranked titles, URLs, and snippets only (does not download page bodies). Supports DuckDuckGo (default), Brave Search, and SearXNG. Then use WebFetch for pages you need. External/public information only. Do not combine this tool with any other tool in the same turn.',
+            'description': 'Search the public web for ranked titles, URLs, and snippets only (does not download page bodies). Supports Brave Search, SearXNG, and the default search backend. Then use WebFetch for pages you need. External/public information only. Do not combine this tool with any other tool in the same turn.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
@@ -62,7 +62,7 @@ def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
         },
         {
             'name': 'mcp__workspace__web_search',
-            'description': 'Search the public web for ranked titles, URLs, and snippets only (does not download page bodies). Supports DuckDuckGo (default), Brave Search, and SearXNG. Workspace-compatible alias for third-party Claude clients. Do not combine this tool with any other tool in the same turn.',
+            'description': 'Search the public web for ranked titles, URLs, and snippets only (does not download page bodies). Supports Brave Search, SearXNG, and the default search backend. Workspace-compatible alias for third-party Claude clients. Do not combine this tool with any other tool in the same turn.',
             'input_schema': {
                 'type': 'object',
                 'properties': {

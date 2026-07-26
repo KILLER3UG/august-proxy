@@ -104,7 +104,7 @@ export async function streamWorkbenchChat(
   }
 
   try {
-    const receivedTerminalEvent = await readSseStream(reader, handlers, signal);
+    const receivedTerminalEvent = await readSseStream(reader, handlers, signal, 30_000);
     if (!receivedTerminalEvent) {
       handlers.onError?.({ message: 'Stream ended without completion event — response may be incomplete' });
     }
@@ -118,20 +118,37 @@ export async function streamWorkbenchChat(
 }
 
 /** Parse a ReadableStream of SSE frames and dispatch each event.
- *  Returns true if a terminal event (done / error / aborted) was seen. */
+ *  Returns true if a terminal event (done / error / aborted) was seen.
+ *  Throws if no data arrives within `idleTimeoutMs` (prevents hanging
+ *  when the backend stops sending events but leaves the connection open). */
 async function readSseStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   handlers: WorkbenchEventHandlers,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  idleTimeoutMs = 60_000
 ): Promise<boolean> {
   const decoder = new TextDecoder();
   let buffer = '';
   let currentEvent = '';
   let receivedTerminalEvent = false;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function resetIdleTimer(): void {
+    if (idleTimer !== null) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (idleTimer !== null) {
+        idleTimer = null;
+        reader.cancel().catch(() => {});
+      }
+    }, idleTimeoutMs);
+  }
+
+  resetIdleTimer();
 
   while (true) {
     throwIfAborted(signal);
     const { done, value } = await reader.read();
+    resetIdleTimer();
     throwIfAborted(signal);
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -172,6 +189,11 @@ async function readSseStream(
       }
     }
     buffer = buffer.slice(lineStart);
+  }
+
+  if (idleTimer !== null) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
   }
 
   return receivedTerminalEvent;
@@ -272,7 +294,7 @@ export async function streamWorkbenchReconnect(
         }
       };
 
-      const receivedTerminalEvent = await readSseStream(reader, streamHandlers, signal);
+      const receivedTerminalEvent = await readSseStream(reader, streamHandlers, signal, 120_000);
 
       // If we saw a terminal event (either returned true from readSseStream or flag was set),
       // we stop retrying and return.
