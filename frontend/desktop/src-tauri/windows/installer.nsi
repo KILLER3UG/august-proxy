@@ -7,7 +7,7 @@
 ;    971 lines.)
 ;
 ; Registered via `bundle.windows.nsis.template` in `tauri.conf.json`.
-; Tauri renders this as a Handlebars template ({{...}} tokens) then runs
+; Tauri renders this as a Handlebars template (double-brace tokens) then runs
 ; makensis on the result — see `tauri-bundler/src/bundle/windows/nsis/mod.rs`
 ; (`register_template_string` → `handlebars.render`).
 ;
@@ -32,7 +32,7 @@
 ; ─── UPGRADING TAURI ─────────────────────────────────────────────────────
 ; When you bump `@tauri-apps/cli`, re-download the upstream file at the new
 ; tag, diff against this one, and re-apply the single "AUGUST-EDIT" line.
-; Tauri may add new {{...}} tokens, resources loops, or webview2 logic that
+; Tauri may add new double-brace tokens, resource loops, or webview2 logic that
 ; a stale template would silently miss. The only intentional divergence from
 ; upstream is the `${OrIf} $UpdateMode = 1` line marked AUGUST-EDIT below.
 ; ─────────────────────────────────────────────────────────────────────────
