@@ -177,6 +177,9 @@ export interface ChatMessage {
   /** Token usage for this turn (from the `done` SSE event). Rendered as a
    *  muted chip in the assistant message footer. */
   usage?: WorkbenchTurnUsage;
+  /** Transient "retrying after rate limit" notice while the backend backs
+   *  off (from `retrying` SSE events). Cleared when the turn finalizes. */
+  retryNotice?: string;
 }
 
 /** Per-session sub-agent container rendered nested under the parent

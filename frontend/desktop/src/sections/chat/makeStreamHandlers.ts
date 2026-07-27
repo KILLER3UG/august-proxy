@@ -138,6 +138,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   let streamBlocks: MessageBlock[] = [];
   let changedFiles: GitDiffResult | null = null;
   let turnUsage: WorkbenchTurnUsage | undefined;
+  let retryNotice: string | undefined;
   const beforeMutationCount = initialMutationCount ?? 0;
   let latestMutationCount = 0;
   let latestWorkbenchTodos: NonNullable<ChatMessage['todos']> = [];
@@ -175,6 +176,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
         changedFiles: changedFiles || undefined,
         usage: turnUsage,
+        retryNotice,
       } : msg
     ));
   };
@@ -223,6 +225,16 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     finished = true;
     cancelPendingUpdate();
     streamPerfEnd(sessionId);
+    // Reconcile orphaned tools: when the stream ends (abort / crash / backend
+    // error) while a tool is still running, its toolResult never arrives.
+    // Mark those failed so the card stops spinning instead of loading forever.
+    if (toolResults.some((t) => t.status === 'running')) {
+      toolResults = toolResults.map((t) =>
+        t.status === 'running'
+          ? { ...t, status: 'error' as const, error: t.error || 'Tool did not complete (stream ended).' }
+          : t,
+      );
+    }
     setMessages(prev => prev.map(msg =>
       msg.id === assistantMsgId ? {
         ...msg,
@@ -238,6 +250,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
         changedFiles: changedFiles || undefined,
         usage: turnUsage,
+        retryNotice: undefined,
       } : msg
     ));
     if (status === 'done' || status === 'error') {
@@ -634,6 +647,14 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
           }
         }
       })();
+    },
+    onRetrying: ({ attempt, maxRetries, delayMs, reason }) => {
+      // Self-updating notice (single field, replaced on each attempt) so the
+      // user sees the backoff instead of a dead stream. Kept short — the full
+      // upstream message is noise once the retry count is visible.
+      const shortReason = reason.length > 80 ? `${reason.slice(0, 77)}…` : reason;
+      retryNotice = `⏳ ${shortReason} — retrying ${attempt}/${maxRetries} in ${Math.max(1, Math.ceil(delayMs / 1000))}s…`;
+      scheduleUpdate();
     },
     onError: ({ message }) => {
       const errText = `⚠️ Workbench error: ${message}`;

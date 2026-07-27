@@ -234,6 +234,18 @@ export function dispatchWorkbenchEvent(
     case 'error':
       handlers.onError?.({ message: typeof p?.message === 'string' ? p.message : JSON.stringify(p?.message ?? 'Unknown error') });
       break;
+    case 'retrying': {
+      const attempt = Number(p?.attempt) || 0;
+      const maxRetries = Number(p?.maxRetries) || 0;
+      const delayMs = Number(p?.delayMs) || 0;
+      handlers.onRetrying?.({
+        attempt,
+        maxRetries,
+        delayMs,
+        reason: typeof p?.reason === 'string' ? p.reason : 'Provider error',
+      });
+      break;
+    }
     case 'clarifyProposed': {
       const c = (p?.clarify ?? {}) as Record<string, unknown>;
       handlers.onClarifyProposed?.({

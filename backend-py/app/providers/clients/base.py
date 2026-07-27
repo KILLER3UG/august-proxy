@@ -469,6 +469,8 @@ class BaseProviderClient:
                             'type': 'error',
                             'status': resp.status_code,
                             'body': errorBody.decode('utf-8', errors='replace'),
+                            # Let turn-level retry honor the provider's backoff hint.
+                            'retryAfterMs': parseRetryAfterMs(resp.headers.get('retry-after')),
                         }
                         return
                     queue: asyncio.Queue[dict[str, object] | None] = asyncio.Queue()

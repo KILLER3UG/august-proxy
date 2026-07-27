@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import time
 import uuid
 from typing import Callable, cast
@@ -130,6 +131,73 @@ def normalizeGuardMode(mode: str) -> str:
         'make-changes': 'full',
     }
     return aliases.get(lower, 'full')
+
+
+# ── Model-call retry policy (rate limits & transient upstream failures) ──
+
+_MODEL_RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
+_MODEL_RETRY_MARKERS = (
+    'rate limit',
+    'rate_limit',
+    'too many requests',
+    'timeout',
+    'timed out',
+    'temporarily',
+    'connection',
+    'overloaded',
+    'service unavailable',
+    'bad gateway',
+)
+
+
+def _isRetryableModelError(response: dict[str, object]) -> bool:
+    """True when a failed model sub-call is worth retrying (429/5xx/network)."""
+    if not response.get('error'):
+        return False
+    status = response.get('errorStatus')
+    if isinstance(status, int) and status in _MODEL_RETRY_STATUSES:
+        return True
+    msg = as_str(response.get('error')).lower()
+    return any((marker in msg for marker in _MODEL_RETRY_MARKERS))
+
+
+def _modelRetryPolicy() -> dict[str, int]:
+    """Retry policy with optional config.json overrides (workbench.retry)."""
+    policy = {'maxRetries': 10, 'baseDelayMs': 1000, 'maxDelayMs': 30000}
+    try:
+        from app.services import config_service
+
+        cfg = as_dict(as_dict(config_service.getConfig().get('workbench')).get('retry'))
+        for key in policy:
+            val = cfg.get(key)
+            if isinstance(val, int) and val >= 0:
+                policy[key] = val
+    except Exception:
+        pass
+    return policy
+
+
+def _modelRetryDelayMs(attempt: int, response: dict[str, object], policy: dict[str, int]) -> int:
+    """Backoff before retry ``attempt`` (1-based): honor Retry-After, else exponential."""
+    retryAfter = response.get('retryAfterMs')
+    if isinstance(retryAfter, int) and retryAfter > 0:
+        return min(retryAfter, policy['maxDelayMs'])
+    base = min(policy['baseDelayMs'] * 2 ** max(0, attempt - 1), policy['maxDelayMs'])
+    return base + random.randint(0, 400)
+
+
+async def _interruptibleSleep(seconds: float) -> None:
+    """Sleep that returns early when the turn is cancelled (Stop button)."""
+    from app.lib.async_subprocess import current_subprocess_cancel
+
+    event = current_subprocess_cancel.get()
+    if event is None:
+        await asyncio.sleep(seconds)
+        return
+    try:
+        await asyncio.wait_for(event.wait(), timeout=seconds)
+    except asyncio.TimeoutError:
+        pass
 
 
 def isShellMutationTool(toolName: str, args: dict[str, object] | None = None) -> bool:
@@ -1447,33 +1515,61 @@ async def _sendWorkbenchMessageStreamImpl(
                 else [as_dict(t.get('function', {})).get('name') for t in openaiTools]
             )
             logger.debug('workbench presenting %d tools to model: %s', len(toolNames), toolNames)
-        _llmT0 = time.monotonic()
-        with _trace.span('llm_wait', round=toolRound):
-            if isAnthropic:
-                response = await _callAnthropicWorkbench(
-                    currentMessages,
-                    systemText,
-                    resolvedModel,
-                    tools,
-                    effectiveEffort,
-                    provider=resolvedProvider,
-                    emit=emit,
-                    thinking_enabled=thinking_enabled,
+        retryPolicy = _modelRetryPolicy()
+        for retryAttempt in range(retryPolicy['maxRetries'] + 1):
+            _llmT0 = time.monotonic()
+            with _trace.span('llm_wait', round=toolRound, attempt=retryAttempt):
+                if isAnthropic:
+                    response = await _callAnthropicWorkbench(
+                        currentMessages,
+                        systemText,
+                        resolvedModel,
+                        tools,
+                        effectiveEffort,
+                        provider=resolvedProvider,
+                        emit=emit,
+                        thinking_enabled=thinking_enabled,
+                    )
+                elif isOpenai:
+                    response = await _callOpenaiWorkbench(
+                        currentMessages,
+                        systemText,
+                        resolvedModel,
+                        openaiTools,
+                        effectiveEffort,
+                        provider=resolvedProvider,
+                        emit=emit,
+                        thinking_enabled=thinking_enabled,
+                    )
+                else:
+                    response = {'error': f'Unknown provider format for {resolvedProvider}'}
+            totalGenerationMs += (time.monotonic() - _llmT0) * 1000
+            # Retry transient upstream failures (429 rate limits, 5xx, network)
+            # instead of killing the turn — up to maxRetries, then surface the
+            # error as before.
+            if not _isRetryableModelError(response):
+                break
+            if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():
+                break
+            delayMs = _modelRetryDelayMs(retryAttempt + 1, response, retryPolicy)
+            logger.warning(
+                'workbench model call failed (retry %d/%d in %dms): %s',
+                retryAttempt + 1,
+                retryPolicy['maxRetries'],
+                delayMs,
+                as_str(response.get('error')),
+            )
+            if emit:
+                emit(
+                    {
+                        'type': 'retrying',
+                        'attempt': retryAttempt + 1,
+                        'maxRetries': retryPolicy['maxRetries'],
+                        'delayMs': delayMs,
+                        'reason': as_str(response.get('error')),
+                    }
                 )
-            elif isOpenai:
-                response = await _callOpenaiWorkbench(
-                    currentMessages,
-                    systemText,
-                    resolvedModel,
-                    openaiTools,
-                    effectiveEffort,
-                    provider=resolvedProvider,
-                    emit=emit,
-                    thinking_enabled=thinking_enabled,
-                )
-            else:
-                response = {'error': f'Unknown provider format for {resolvedProvider}'}
-        totalGenerationMs += (time.monotonic() - _llmT0) * 1000
+            await _interruptibleSleep(delayMs / 1000)
         if not isAnthropic and not isOpenai:
             if emit:
                 emit({'type': 'error', 'message': f'Unknown provider format for {resolvedProvider}'})

@@ -32,6 +32,9 @@ class AnthropicWorkbenchStreamAggregator:
         self.current_tool_input_parts: list[str] = []
         self.usage: dict[str, int] = {}
         self.error: str | None = None
+        # Upstream failure metadata so the turn loop can retry rate limits.
+        self.error_status: int | None = None
+        self.error_retry_after_ms: int | None = None
         self.stop_reason: str | None = None
 
     def on_event(self, event: dict[str, object]) -> None:
@@ -41,6 +44,11 @@ class AnthropicWorkbenchStreamAggregator:
         if event.get('type') == 'error' or (not event_type and event.get('error')):
             status = event.get('status')
             body = as_str(event.get('body') or event.get('error') or event.get('message'))
+            if isinstance(status, int):
+                self.error_status = status
+            retryAfter = event.get('retryAfterMs')
+            if isinstance(retryAfter, int) and retryAfter > 0:
+                self.error_retry_after_ms = retryAfter
             if status:
                 self.error = f'Stream error HTTP {status}: {body[:800]}'
             else:

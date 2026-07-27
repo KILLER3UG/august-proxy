@@ -311,6 +311,9 @@ export interface WorkbenchEventHandlers {
     queuedAt: string;
   }) => void;
   onDone?: (data?: { usage?: WorkbenchTurnUsage }) => void;
+  /** Backend is backing off before retrying a failed model call (429/5xx).
+   *  The chat shows a self-updating notice instead of dying mid-turn. */
+  onRetrying?: (data: { attempt: number; maxRetries: number; delayMs: number; reason: string }) => void;
   onError?: (data: { message: string }) => void;
   /** The model asked a clarifying question because it was uncertain. The
    *  chat thread renders a `ClarifyTool` popup anchored to the assistant

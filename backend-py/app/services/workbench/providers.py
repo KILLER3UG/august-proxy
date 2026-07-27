@@ -409,7 +409,12 @@ async def call_anthropic_workbench(
                 break
             agg.on_event(event)
             if agg.error:
-                return {'error': agg.error}
+                errResp: dict[str, object] = {'error': agg.error}
+                if agg.error_status is not None:
+                    errResp['errorStatus'] = agg.error_status
+                if agg.error_retry_after_ms is not None:
+                    errResp['retryAfterMs'] = agg.error_retry_after_ms
+                return errResp
     except Exception as exc:
         return {'error': str(exc)}
     return agg.result()
@@ -488,7 +493,14 @@ async def call_openai_workbench(
             # Surface HTTP/provider errors instead of returning an empty "success".
             if as_str(event.get('type')) == 'error' or event.get('error') is not None:
                 msg = _extract_upstream_error_message(event)
-                return {'error': msg or 'Upstream provider error'}
+                errResp: dict[str, object] = {'error': msg or 'Upstream provider error'}
+                status = event.get('status')
+                if isinstance(status, int):
+                    errResp['errorStatus'] = status
+                retryAfter = event.get('retryAfterMs')
+                if isinstance(retryAfter, int) and retryAfter > 0:
+                    errResp['retryAfterMs'] = retryAfter
+                return errResp
 
             eventType = event.get('_event_type', '')
             if eventType not in ('chat.completion.chunk', ''):
