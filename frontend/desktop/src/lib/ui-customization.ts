@@ -22,6 +22,9 @@ export type UiTokenId =
   | 'primaryForeground'
   | 'border'
   | 'input'
+  | 'chatBackground'
+  | 'chatInputBackground'
+  | 'userBubble'
   | 'sidebar'
   | 'sidebarForeground'
   | 'sidebarAccent'
@@ -89,6 +92,27 @@ export const UI_TOKEN_DEFS: readonly UiTokenDef[] = [
     label: 'Chat input / fields',
     group: 'chat',
     description: 'Composer and form field borders / fills',
+  },
+  {
+    id: 'chatBackground',
+    cssVar: '--dt-chat-background',
+    label: 'Chat area background',
+    group: 'chat',
+    description: 'Background behind the conversation thread',
+  },
+  {
+    id: 'chatInputBackground',
+    cssVar: '--dt-chat-input-bg',
+    label: 'Chat input background',
+    group: 'chat',
+    description: 'Composer card surface (where you type)',
+  },
+  {
+    id: 'userBubble',
+    cssVar: '--dt-user-bubble',
+    label: 'Your message bubble',
+    group: 'chat',
+    description: 'Background of the messages you send',
   },
   {
     id: 'sidebar',
@@ -293,6 +317,22 @@ export function hydrateUiCustomization(): void {
   const applied = loadAppliedFromStorage();
   useUiCustomizationStore.setState({ applied, draft: { ...applied } });
   paintAppliedToDocument(applied);
+}
+
+/** Apply a customization map from outside the designer — the backend
+ *  `customize_ui` tool (via the realtime bridge) or the startup server sync.
+ *  Replaces the current overrides wholesale, same semantics as Apply. */
+export function applyExternalCustomization(raw: unknown): void {
+  const cleaned: UiCustomizationMap = {};
+  if (raw && typeof raw === 'object') {
+    for (const def of UI_TOKEN_DEFS) {
+      const v = (raw as Record<string, unknown>)[def.id];
+      if (typeof v === 'string' && isHexColor(v)) cleaned[def.id] = v.trim();
+    }
+  }
+  useUiCustomizationStore.setState({ applied: cleaned, draft: { ...cleaned } });
+  paintAppliedToDocument(cleaned);
+  persistApplied(cleaned);
 }
 
 /** Read current computed default for a token (theme baseline when not overridden). */

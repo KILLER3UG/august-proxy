@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  UI_TOKEN_DEFS,
   useUiCustomizationStore,
   setDraftToken,
   applyDraftCustomization,
   resetAppliedCustomization,
+  applyExternalCustomization,
   draftIsDirty,
   toColorInputValue,
 } from '../ui-customization';
@@ -34,5 +36,28 @@ describe('ui-customization', () => {
     resetAppliedCustomization();
     expect(useUiCustomizationStore.getState().applied).toEqual({});
     expect(useUiCustomizationStore.getState().draft).toEqual({});
+  });
+
+  it('exposes dedicated chat surface tokens', () => {
+    const byId = Object.fromEntries(UI_TOKEN_DEFS.map((d) => [d.id, d.cssVar]));
+    expect(byId.chatBackground).toBe('--dt-chat-background');
+    expect(byId.chatInputBackground).toBe('--dt-chat-input-bg');
+    expect(byId.userBubble).toBe('--dt-user-bubble');
+  });
+
+  it('applyExternalCustomization paints valid tokens and drops junk', () => {
+    applyExternalCustomization({
+      chatBackground: '#000000',
+      chatInputBackground: 'not-a-color',
+      fakeToken: '#ffffff',
+    });
+
+    const applied = useUiCustomizationStore.getState().applied;
+    expect(applied.chatBackground).toBe('#000000');
+    expect(applied.chatInputBackground).toBeUndefined();
+    expect(Object.keys(applied)).not.toContain('fakeToken');
+    expect(document.documentElement.style.getPropertyValue('--dt-chat-background')).toBe(
+      '#000000',
+    );
   });
 });

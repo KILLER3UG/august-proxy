@@ -173,6 +173,28 @@ async def listAgents() -> str:
     return _ok(agents=agent_registry.listAgents())
 
 
+async def customizeUi(changes: object = None, reset: bool = False) -> str:
+    """Recolor the app's UI from chat ("make the chat input gray")."""
+    from app.services import ui_customization_service
+
+    if reset:
+        applied = ui_customization_service.clearCustomization(actor='agent')
+        return _ok(applied=applied, message='UI customization reset to theme defaults.')
+    if not isinstance(changes, dict) or not changes:
+        return _err(
+            "Provide 'changes' as a token→color map, e.g. "
+            '{"chatInputBackground": "gray"} or {"chatBackground": "#000000"}.'
+        )
+    applied, errors = ui_customization_service.replaceCustomization(changes, actor='agent')
+    if errors and not applied:
+        return _err('; '.join(errors))
+    return _ok(
+        applied=applied,
+        errors=errors,
+        message='UI colors updated — the app recolored live.',
+    )
+
+
 def register() -> None:
     """Register all self-configuration tools (alias + fallback).
 
@@ -247,6 +269,34 @@ def register() -> None:
         'Get the current sub-agent fallback configuration.',
         getFallback,
         {'type': 'object', 'properties': {}, 'required': []},
+    )
+    tool_registry.register(
+        'customize_ui',
+        "Change the app's UI colors from chat (e.g. user says 'change the chat "
+        "input to gray' or 'make the chat area black'). Pass a token→color map; "
+        "colors may be hex (#rrggbb) or named (black, white, gray, red, blue, "
+        "green, purple, …). Tokens: chatBackground (conversation area), "
+        "chatInputBackground (composer/typing box), userBubble (sent messages), "
+        "input (input borders), background (whole app), foreground (text), card "
+        "(panels), muted, mutedForeground, border, sidebar, sidebarForeground, "
+        "sidebarAccent, sidebarBorder, primary (buttons/accents), "
+        "primaryForeground, accent, ring. Pass reset=true to restore defaults.",
+        customizeUi,
+        {
+            'type': 'object',
+            'properties': {
+                'changes': {
+                    'type': 'object',
+                    'description': 'Map of UI token id → color (hex or named). Empty/null value removes an override.',
+                    'additionalProperties': {'type': 'string'},
+                },
+                'reset': {
+                    'type': 'boolean',
+                    'description': 'True to clear ALL custom colors and restore theme defaults.',
+                },
+            },
+            'required': [],
+        },
     )
     tool_registry.register(
         'create_agent',

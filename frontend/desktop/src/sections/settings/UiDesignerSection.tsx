@@ -32,10 +32,11 @@ import {
   type UiTokenId,
   type UiTokenDef,
 } from '@/lib/ui-customization';
+import { updateUiCustomization } from '@/api/api-client';
 
 const GROUPS: { id: UiTokenDef['group']; label: string; hint: string }[] = [
   { id: 'app', label: 'App & settings', hint: 'Background, cards, text, borders' },
-  { id: 'chat', label: 'Chat', hint: 'Composer / input chrome' },
+  { id: 'chat', label: 'Chat', hint: 'Chat area, composer input, message bubbles' },
   { id: 'sidebar', label: 'Session sidebar', hint: 'Left rail colors' },
   { id: 'brand', label: 'Brand & focus', hint: 'Primary buttons and rings' },
 ];
@@ -55,6 +56,12 @@ export function UiDesignerSection() {
 
   const onApply = () => {
     applyDraftCustomization();
+    // Mirror the full map to the server (reset + set) so chat-driven and
+    // designer-driven colors share one source of truth.
+    const appliedNow = useUiCustomizationStore.getState().applied;
+    void updateUiCustomization({ ...appliedNow }, { reset: true }).catch(() => {
+      /* offline: local apply already succeeded */
+    });
     toast.success('UI theme applied', {
       description: 'Colors are live across the app and saved for next launch.',
     });
@@ -62,6 +69,9 @@ export function UiDesignerSection() {
 
   const onResetAll = () => {
     resetAppliedCustomization();
+    void updateUiCustomization({}, { reset: true }).catch(() => {
+      /* offline: local reset already succeeded */
+    });
     toast.message('UI theme reset', {
       description: 'Restored default light/dark theme tokens.',
     });
@@ -266,12 +276,12 @@ export function UiDesignerSection() {
                 </aside>
 
                 {/* Main / chat mock */}
-                <div className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--dt-background)' }}>
+                <div className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--dt-chat-background)' }}>
                   <div className="flex-1 space-y-2 overflow-hidden p-3">
                     <div
                       className="ml-auto max-w-[85%] rounded-xl border px-3 py-2 text-[11px]"
                       style={{
-                        background: 'var(--dt-card)',
+                        background: 'var(--dt-user-bubble)',
                         borderColor: 'var(--dt-border)',
                         color: 'var(--dt-foreground)',
                       }}
@@ -306,7 +316,7 @@ export function UiDesignerSection() {
                       className="rounded-xl border px-3 py-2.5 text-[11px]"
                       style={{
                         borderColor: 'var(--dt-input)',
-                        background: 'var(--dt-card)',
+                        background: 'var(--dt-chat-input-bg)',
                         color: 'var(--dt-muted-foreground)',
                         boxShadow: '0 0 0 1px var(--dt-ring)',
                       }}

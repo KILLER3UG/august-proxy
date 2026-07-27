@@ -187,15 +187,6 @@ export function ComposerToolbar({
           onVoice={onVoice}
           extras={
             <div className="flex items-center gap-2 px-1.5 flex-wrap pt-0.5">
-              <ContextRing
-                pct={pct}
-                estTokens={estTokens}
-                maxContext={maxContext}
-                modelName={modelForRequest?.name}
-                size={18}
-                breakdown={contextBreakdown}
-                serverTokens={sessionUsage}
-              />
               {sessionUsage && (sessionUsage.totalCost ?? 0) > 0 && (
                 <span
                   className="text-[10px] tabular-nums text-muted-foreground font-mono"
@@ -218,6 +209,17 @@ export function ComposerToolbar({
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
+        {/* Context gauge beside the model dropdown — always visible, like
+            Claude/Codex; hover for the full breakdown. */}
+        <ContextRing
+          pct={pct}
+          estTokens={estTokens}
+          maxContext={maxContext}
+          modelName={modelForRequest?.name}
+          size={20}
+          breakdown={contextBreakdown}
+          serverTokens={sessionUsage}
+        />
         <ModelEffortMenu
           models={models}
           visibleModels={visibleModels}

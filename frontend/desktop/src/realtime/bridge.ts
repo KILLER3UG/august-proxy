@@ -21,6 +21,7 @@ import {
   type SessionStatus,
 } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
+import { applyExternalCustomization } from '@/lib/ui-customization';
 
 export type RealtimeEvent = {
   id?: string;
@@ -215,6 +216,11 @@ function handleEvent(ev: RealtimeEvent): void {
       break;
     case 'invalidate':
       applyInvalidate(ev);
+      break;
+    case 'ui.customization':
+      // Model (customize_ui tool) or another client changed UI colors —
+      // repaint immediately so the whole app recolors live.
+      applyExternalCustomization(ev.customization);
       break;
     case 'keepalive':
       break;

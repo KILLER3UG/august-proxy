@@ -7,11 +7,14 @@ import { BackendBootstrapGate } from '@/components/overlays/BackendBootstrapGate
 import { QuitConfirmModal } from '@/components/overlays/QuitConfirmModal';
 import { UpdateRelaunchOverlay } from '@/components/overlays/UpdateRelaunchOverlay';
 import { useStartupProviderRefresh } from '@/hooks/useStartupProviderRefresh';
+import { useUiCustomizationSync } from '@/hooks/useUiCustomizationSync';
 
 export default function App() {
   // Sync provider model lists from upstream once per launch so the model
   // dropdown reflects models added/removed since the app last ran.
   useStartupProviderRefresh();
+  // Server-stored UI colors (model's customize_ui tool) win over the local cache.
+  useUiCustomizationSync();
   return (
     <>
       <BackendBootstrapGate>

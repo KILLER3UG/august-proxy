@@ -436,6 +436,36 @@ async def getExternalAccess():
     }
 
 
+class UiCustomizationUpdate(CamelModel):
+    changes: dict[str, object] = {}
+    reset: bool = False
+
+
+@router.get('/ui-customization')
+async def getUiCustomization():
+    """Current UI color-token overrides (token id → hex)."""
+    from app.services import ui_customization_service
+
+    return {'customization': ui_customization_service.getCustomization()}
+
+
+@router.put('/ui-customization')
+async def putUiCustomization(body: UiCustomizationUpdate):
+    """Merge UI color-token overrides; null/empty value removes a token.
+
+    With ``reset: true`` every existing override is cleared first (the
+    designer's Apply sends reset + the full map so the server mirrors the
+    client exactly). Values may be hex or named colors (resolved server-side).
+    Connected clients recolor live via the ``ui.customization`` realtime event.
+    """
+    from app.services import ui_customization_service
+
+    if body.reset:
+        ui_customization_service.clearCustomization(actor='ui')
+    applied, errors = ui_customization_service.replaceCustomization(body.changes, actor='ui')
+    return {'customization': applied, 'errors': errors}
+
+
 class ExternalAccessUpdate(CamelModel):
     enabled: bool
 

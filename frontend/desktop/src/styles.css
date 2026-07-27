@@ -69,6 +69,12 @@
     --dt-sidebar-border: #ececea;
     --dt-sidebar-ring: #2f6df6;
 
+    /* Chat surfaces — derived from the base palette so they track the theme
+       until the user overrides them (Settings → Design UI / customize_ui). */
+    --dt-chat-background: var(--dt-background);
+    --dt-chat-input-bg: color-mix(in srgb, var(--dt-card) 95%, transparent);
+    --dt-user-bubble: color-mix(in srgb, var(--dt-muted) 35%, transparent);
+
     /* Base font-size — overridden by data-text-size for scaling */
     font-size: 16px;
   }
@@ -195,6 +201,11 @@
   .bg-elevated       { background-color: var(--dt-elevated); }
   .bg-sidebar        { background-color: var(--dt-sidebar); }
   .bg-sidebar-accent { background-color: var(--dt-sidebar-accent); }
+
+  /* Chat surfaces (user-customizable) */
+  .bg-chat-area      { background-color: var(--dt-chat-background); }
+  .bg-chat-input     { background-color: var(--dt-chat-input-bg); }
+  .bg-user-bubble    { background-color: var(--dt-user-bubble); }
 
   /* Status backgrounds */
   .bg-success        { background-color: var(--dt-success); }

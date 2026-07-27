@@ -991,7 +991,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   return (
     <div className="flex h-full min-h-0 relative w-full">
       <ChatCheckpoints messages={messages} scrollRef={scrollRef} />
-      <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
+      <div className="flex-1 flex flex-col min-w-0 bg-chat-area h-full overflow-hidden relative">
         <SkillEvolvedChip />
         <CollaborationInsights />
         {examActive && (
