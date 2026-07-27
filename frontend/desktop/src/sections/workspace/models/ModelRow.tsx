@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import {
   Pencil,
+  Pin,
   Trash2,
   Plug,
   Loader2,
@@ -175,7 +176,12 @@ export function ModelRow({
     <div className="px-3 py-2.5 text-sm">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <span className="font-medium truncate">{model.name || model.id}</span>
+          <span className="font-medium truncate">
+            {model.pinned && (
+              <Pin className="size-3 inline mr-1 -mt-0.5 text-primary" aria-label="Pinned" />
+            )}
+            {model.name || model.id}
+          </span>
         </div>
         <span
           className={cn(
@@ -210,6 +216,27 @@ export function ModelRow({
             <span className="text-[10px] font-mono text-muted-foreground w-8">{ctxLabel}</span>
           )}
         </label>
+        <button
+          onClick={() => {
+            void providersApi
+              .updateModel(providerId, model.id, { pinned: !model.pinned })
+              .then(onChanged);
+          }}
+          aria-label={model.pinned ? `Unpin ${model.id}` : `Pin ${model.id} to top`}
+          title={
+            model.pinned
+              ? 'Unpin — remove from top'
+              : 'Pin — always on top here and in the model dropdown'
+          }
+          className={cn(
+            'grid size-7 place-items-center rounded transition',
+            model.pinned
+              ? 'text-primary hover:bg-white/[0.06]'
+              : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
+          )}
+        >
+          <Pin className="size-3.5" />
+        </button>
         <button
           onClick={() => connect.mutate()}
           disabled={connect.isPending}

@@ -54,8 +54,8 @@ export function estimateModelCost(
   });
 }
 
-/* Aggregated models (/api/models — all configured providers). Free models
- * already sort first server-side; isFree badges them in the UI. */
+/* Aggregated models (/api/models — all configured providers). Server sorts
+ * pinned first, then free; isFree/pinned badge and rank them in the UI. */
 export interface AggregatedModel {
   id: string;
   name?: string;
@@ -64,6 +64,7 @@ export interface AggregatedModel {
   supportsReasoning?: boolean;
   supportsThinking?: boolean;
   isFree?: boolean;
+  pinned?: boolean;
 }
 
 export interface AggregatedModelsResponse {

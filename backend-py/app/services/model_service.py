@@ -412,6 +412,7 @@ async def _aggregateModels() -> list[dict[str, object]]:
                         'supportsReasoning': reasoning,
                         'supportsThinking': reasoning,
                         'isFree': m.get('free', False) or _isFreeModelId(mid),
+                        'pinned': bool(m.get('pinned', False)),
                     }
                 )
     except Exception:
@@ -427,10 +428,25 @@ async def _aggregateModels() -> list[dict[str, object]]:
     seen: dict[str, dict[str, object]] = {}
     for m in allModels:
         mid = as_str(m['id'])
-        if mid not in seen or (m.get('isFree') and (not seen[mid].get('isFree'))):
+        if mid not in seen:
             seen[mid] = m
+            continue
+        # Dedupe keeps the best entry: free wins over non-free, and a model
+        # pinned on ANY provider shows as pinned in the aggregated list.
+        existing = seen[mid]
+        if m.get('isFree') and not existing.get('isFree'):
+            seen[mid] = {**m, 'pinned': bool(existing.get('pinned') or m.get('pinned'))}
+        elif m.get('pinned') and not existing.get('pinned'):
+            seen[mid] = {**m, 'isFree': bool(existing.get('isFree') or m.get('isFree'))}
     result = list(seen.values())
-    result.sort(key=lambda m: (0 if m.get('isFree') else 1, as_str(m.get('id'), '')))
+    # Pinned first, then free, then alphabetical — mirrored by the UI.
+    result.sort(
+        key=lambda m: (
+            0 if m.get('pinned') else 1,
+            0 if m.get('isFree') else 1,
+            as_str(m.get('id'), ''),
+        )
+    )
     return result
 
 

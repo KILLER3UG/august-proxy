@@ -35,6 +35,7 @@ def _provider_to_dict(p: object) -> dict:
                     'contextWindow': m.context_window,
                     'reasoning': m.reasoning,
                     'free': m.free,
+                    'pinned': m.pinned,
                     'source': m.source,
                 }
                 for m in p.models
@@ -421,6 +422,7 @@ async def addModel(providerId: str, body: ModelCreate):
                 'contextWindow': body.context_window if body.context_window and body.context_window > 0 else 128000,
                 'reasoning': body.reasoning or False,
                 'free': body.free or False,
+                'pinned': body.pinned or False,
                 'source': 'manual',
             }
             p_models.append(entry)
@@ -460,6 +462,8 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                         m['reasoning'] = body.reasoning
                     if body.free is not None:
                         m['free'] = body.free
+                    if body.pinned is not None:
+                        m['pinned'] = body.pinned
                     config_service.saveProvidersStore(store)
                     model_service.invalidate_cache()
                     return {'updated': True}

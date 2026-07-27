@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Boxes,
+  Pin,
   Search,
   Sparkles,
   Server,
@@ -27,6 +28,7 @@ interface AllModelRow {
   contextWindow?: number;
   reasoning?: boolean;
   free?: boolean;
+  pinned?: boolean;
   source: 'manual' | 'fetched';
   providerId: string;
   providerName: string;
@@ -54,6 +56,7 @@ export function AllModelsTab() {
           contextWindow: m.contextWindow,
           reasoning: !!m.reasoning,
           free: !!m.free,
+          pinned: !!m.pinned,
           source: m.source,
           providerId: p.id,
           providerName: p.name,
@@ -63,7 +66,12 @@ export function AllModelsTab() {
         });
       }
     }
+    // Pinned first, then free, then provider/id — matches the chat dropdown.
     out.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      if (a.free && !b.free) return -1;
+      if (!a.free && b.free) return 1;
       if (a.providerName !== b.providerName) return a.providerName.localeCompare(b.providerName);
       return a.id.localeCompare(b.id);
     });
@@ -256,16 +264,45 @@ export function AllModelsTab() {
 }
 
 function AllModelCard({ row }: { row: AllModelRow }) {
+  const qc = useQueryClient();
   const ctx = fmtContextWindow(row.contextWindow);
+  const togglePin = () => {
+    void providersApi
+      .updateModel(row.providerId, row.id, { pinned: !row.pinned })
+      .then(() => refreshProviderCatalog(qc));
+  };
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 transition hover:border-white/[0.12] hover:bg-card">
-      <p className="text-sm font-medium font-mono text-foreground break-all leading-snug">
+    <div className="group relative rounded-xl border border-white/[0.06] bg-card/60 p-4 transition hover:border-white/[0.12] hover:bg-card">
+      <button
+        type="button"
+        onClick={togglePin}
+        aria-label={row.pinned ? `Unpin ${row.id}` : `Pin ${row.id} to top`}
+        title={
+          row.pinned
+            ? 'Unpin — remove from top'
+            : 'Pin — always on top here and in the model dropdown'
+        }
+        className={cn(
+          'absolute right-2 top-2 rounded-md p-1 transition',
+          row.pinned
+            ? 'text-primary'
+            : 'text-muted-foreground/30 hover:text-muted-foreground/70 opacity-0 group-hover:opacity-100',
+        )}
+      >
+        <Pin className="size-3.5" />
+      </button>
+      <p className="text-sm font-medium font-mono text-foreground break-all leading-snug pr-6">
         {row.name || row.id}
       </p>
       {row.name && row.name !== row.id && (
         <p className="mt-0.5 text-[10px] font-mono text-muted-foreground/70 truncate">{row.id}</p>
       )}
       <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {row.pinned && (
+          <span className="rounded-md border border-primary/30 px-1.5 py-0.5 text-[10px] text-primary">
+            pinned
+          </span>
+        )}
         {ctx && (
           <span className="rounded-md bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
             {ctx} ctx

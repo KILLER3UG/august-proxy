@@ -8,6 +8,8 @@ export interface ModelItem {
   /** Tokens; defaults to 128k when the provider model has no override. */
   contextWindow: number;
   isFree?: boolean;
+  /** User-pinned models always sort to the top (settings + dropdown). */
+  pinned?: boolean;
   supportsReasoning?: boolean;
   supportsThinking?: boolean;
 }
@@ -110,6 +112,20 @@ export function modelDisplayParts(id: string): { name: string; tag: string } {
 
 export function getModelDisplayName(id: string): string {
   return stripProviderPrefix(id);
+}
+
+/** Shared model ranking: pinned first, then free, then display name.
+ *  Used by the composer dropdown and the model settings lists so pinning
+ *  a model has the same effect everywhere. */
+export function compareModelsRanked(
+  a: { id: string; isFree?: boolean; pinned?: boolean },
+  b: { id: string; isFree?: boolean; pinned?: boolean },
+): number {
+  if (a.pinned && !b.pinned) return -1;
+  if (!a.pinned && b.pinned) return 1;
+  if (a.isFree && !b.isFree) return -1;
+  if (!a.isFree && b.isFree) return 1;
+  return getModelDisplayName(a.id).localeCompare(getModelDisplayName(b.id));
 }
 
 /** Best-effort context window from the model id when catalog/profile is missing.

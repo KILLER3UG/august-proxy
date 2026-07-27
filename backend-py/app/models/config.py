@@ -18,6 +18,7 @@ class ModelConfig(ExtraAllowBaseModel):
     context_window: int = 128000
     reasoning: bool = False
     free: bool = False
+    pinned: bool = False
     source: str = 'manual'
 
 
@@ -65,6 +66,7 @@ class ModelCreate(ExtraAllowBaseModel):
     context_window: int | None = None
     reasoning: bool | None = None
     free: bool | None = None
+    pinned: bool | None = None
 
 
 class ModelUpdate(ExtraAllowBaseModel):
@@ -74,3 +76,4 @@ class ModelUpdate(ExtraAllowBaseModel):
     context_window: int | None = None
     reasoning: bool | None = None
     free: bool | None = None
+    pinned: bool | None = None

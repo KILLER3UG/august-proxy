@@ -3,8 +3,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Pin, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import {
   chipTrigger,
@@ -16,11 +17,14 @@ import {
   menuPanel,
 } from '@/lib/motion';
 import { useFlyoutHover } from '@/hooks/useFlyoutHover';
+import { providersApi } from '@/api/providers';
+import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import type { ModelItem } from '../model-display';
 import {
   modelDisplayParts,
   formatContextWindow,
   getModelDisplayName,
+  compareModelsRanked,
 } from '../model-display';
 import type { EffortLevel } from '../hooks/useChatSend';
 
@@ -104,6 +108,29 @@ export function ModelEffortMenu({
   onThinkingChange: (v: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+
+  // Pin/unpin straight from the dropdown: resolve the provider entry behind
+  // the aggregated model (provider name → provider id), flip its `pinned`
+  // flag, then refresh the catalog so every list re-ranks.
+  const queryClient = useQueryClient();
+  const { data: providersList } = useQuery({
+    queryKey: ['ws-providers'],
+    queryFn: () => providersApi.list(),
+    staleTime: 30_000,
+  });
+  const toggleModelPin = useCallback(
+    (m: ModelItem) => {
+      const provider = (providersList ?? []).find(
+        (p) => p.name === m.provider && p.models.some((mm) => mm.id === m.id),
+      );
+      const entry = provider?.models.find((mm) => mm.id === m.id);
+      if (!provider) return;
+      void providersApi
+        .updateModel(provider.id, m.id, { pinned: !entry?.pinned })
+        .then(() => refreshProviderCatalog(queryClient));
+    },
+    [providersList, queryClient],
+  );
   const {
     flyout,
     setFlyout,
@@ -279,11 +306,8 @@ export function ModelEffortMenu({
       {} as Record<string, ModelItem[]>,
     ),
   ).map(([provider, list]) => {
-    const sorted = [...list].sort((a, b) => {
-      if (a.isFree && !b.isFree) return -1;
-      if (!a.isFree && b.isFree) return 1;
-      return getModelDisplayName(a.id).localeCompare(getModelDisplayName(b.id));
-    });
+    // Pinned first, then free, then name — same ranking as the settings lists.
+    const sorted = [...list].sort(compareModelsRanked);
     const isSearching = searchQuery.trim().length > 0;
     const isExpanded = expandedProviders.has(provider);
     const visible = isSearching || isExpanded ? sorted : sorted.slice(0, 5);
@@ -557,7 +581,7 @@ export function ModelEffortMenu({
                                     closeAll();
                                   }}
                                   className={cn(
-                                    'w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition',
+                                    'group w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition',
                                     isSelected
                                       ? 'text-primary bg-primary/10 font-medium'
                                       : 'text-foreground/85 hover:bg-muted/40',
@@ -570,6 +594,23 @@ export function ModelEffortMenu({
                                         {tag}
                                       </span>
                                     )}
+                                  </span>
+                                  {/* Pin to top — visible on hover, always when pinned */}
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleModelPin(m);
+                                    }}
+                                    aria-label={m.pinned ? `Unpin ${m.id}` : `Pin ${m.id} to top`}
+                                    title={m.pinned ? 'Unpin model' : 'Pin model to top'}
+                                    className={cn(
+                                      'shrink-0 rounded p-0.5 transition-opacity',
+                                      m.pinned
+                                        ? 'text-primary opacity-100'
+                                        : 'text-muted-foreground/40 hover:text-muted-foreground/80 opacity-0 group-hover:opacity-100',
+                                    )}
+                                  >
+                                    <Pin className="size-3" />
                                   </span>
                                   {isSelected && (
                                     <Check className="size-3.5 shrink-0" />

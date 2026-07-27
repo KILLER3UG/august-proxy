@@ -4,9 +4,9 @@
  * providersApi.update / refreshModels and call onChanged for catalog sync.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Pencil, Trash2, Plus, Eye, EyeOff } from 'lucide-react';
+import { Pencil, Trash2, Plus, Eye, EyeOff, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { providersApi, type Provider, type ApiFormat } from '@/api/providers';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
@@ -36,6 +36,7 @@ export function ProviderDetailForm({
   const [showKey, setShowKey] = useState(false);
   const [autoFetch, setAutoFetch] = useState(!!provider.autoFetch);
   const [editingName, setEditingName] = useState(false);
+  const [modelQuery, setModelQuery] = useState('');
 
   // Re-sync local state when the selected provider changes.
   useEffect(() => {
@@ -45,7 +46,28 @@ export function ProviderDetailForm({
     setApiKey(provider.apiKey ?? '');
     setAutoFetch(!!provider.autoFetch);
     setShowAddModel(false);
+    setModelQuery('');
   }, [provider.id, provider.name, provider.baseUrl, provider.apiFormat, provider.apiKey, provider.autoFetch, setShowAddModel]);
+
+  // Model list: search by id/name, ranked pinned → free → name so the most
+  // relevant models sit at the top for editing.
+  const visibleModels = useMemo(() => {
+    const q = modelQuery.trim().toLowerCase();
+    const list = q
+      ? provider.models.filter(
+          (m) =>
+            m.id.toLowerCase().includes(q) ||
+            (m.name ?? '').toLowerCase().includes(q),
+        )
+      : [...provider.models];
+    return list.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      if (a.free && !b.free) return -1;
+      if (!a.free && b.free) return 1;
+      return (a.name || a.id).localeCompare(b.name || b.id);
+    });
+  }, [provider.models, modelQuery]);
 
   const update = useMutation({
     mutationFn: (patch: Partial<{ name: string; baseUrl: string; apiFormat: ApiFormat; apiKey: string; enabled: boolean; autoFetch: boolean }>) =>
@@ -215,11 +237,25 @@ export function ProviderDetailForm({
 
         <div>
           <p className="text-sm font-medium mb-2">Model list</p>
+          {provider.models.length > 0 && (
+            <div className="relative mb-2">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/40 pointer-events-none" />
+              <Input
+                value={modelQuery}
+                onChange={(e) => setModelQuery(e.target.value)}
+                placeholder="Search models to edit…"
+                aria-label="Search models"
+                className="pl-8 h-8 text-xs"
+              />
+            </div>
+          )}
           {provider.models.length === 0 ? (
             <p className="text-xs text-muted-foreground italic py-4">No models yet. Add one below or enable Model discovery.</p>
+          ) : visibleModels.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic py-4">No models match “{modelQuery.trim()}”.</p>
           ) : (
             <div className="rounded-lg border border-white/[0.06] divide-y divide-white/[0.06] overflow-hidden">
-              {provider.models.map((m) => (
+              {visibleModels.map((m) => (
                 <ModelRow
                   key={m.id}
                   providerId={provider.id}

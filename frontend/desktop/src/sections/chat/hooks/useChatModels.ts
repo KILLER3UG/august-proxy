@@ -14,6 +14,7 @@ import {
   loadLastModel,
   isLikelyReasoningModel,
   estimateContextWindow,
+  compareModelsRanked,
 } from '../model-display';
 import { updateSessionModel, type Session } from '@/store/sessions';
 
@@ -63,6 +64,7 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
         provider: m.provider,
         contextWindow: ctx,
         isFree: m.isFree,
+        pinned: m.pinned,
         supportsReasoning: !!(m.supportsReasoning || likely),
         supportsThinking: !!(m.supportsThinking || likely),
       };
@@ -77,7 +79,7 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
   const userSelectedRef = useRef<string | null>(null);
 
   const visibleModels = useMemo(
-    () => models.filter((m) => !hiddenModels.has(m.id)),
+    () => models.filter((m) => !hiddenModels.has(m.id)).sort(compareModelsRanked),
     [models, hiddenModels],
   );
 

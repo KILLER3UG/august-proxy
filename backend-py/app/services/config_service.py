@@ -74,6 +74,7 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                         ),
                         reasoning=bool(m.get('reasoning', False)),
                         free=bool(m.get('free', False)),
+                        pinned=bool(m.get('pinned', False)),
                         source=str(m.get('source', 'manual')),
                     )
                 )

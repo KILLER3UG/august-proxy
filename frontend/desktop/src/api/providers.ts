@@ -20,6 +20,7 @@ export interface ProviderModel {
   contextWindow?: number;
   reasoning?: boolean;
   free?: boolean;
+  pinned?: boolean;
   source: 'manual' | 'fetched';
   createdAt?: string;
   updatedAt?: string;
@@ -57,6 +58,7 @@ export interface ModelCreate {
   contextWindow?: number | null;
   reasoning?: boolean;
   free?: boolean;
+  pinned?: boolean;
 }
 
 export interface RefreshResult {
