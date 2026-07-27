@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import {
   UI_TOKEN_DEFS,
+  THEME_PRESETS,
   useUiCustomizationStore,
   setDraftToken,
   resetDraftToken,
@@ -139,6 +140,35 @@ export function UiDesignerSection() {
         <div className="grid gap-4 p-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] lg:items-start">
           {/* Controls */}
           <div className="space-y-4 min-w-0">
+            {/* One-click theme presets — load into the draft, then Apply. */}
+            <SettingsCard
+              icon={Palette}
+              title="Theme presets"
+              description="Curated palettes — pick one, tweak if you like, then Apply."
+              inert
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                {THEME_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.id}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      useUiCustomizationStore.setState({ draft: { ...preset.map } })
+                    }
+                    title={
+                      Object.keys(preset.map).length === 0
+                        ? 'Restore the light/dark theme defaults'
+                        : `Load the ${preset.name} palette into the draft`
+                    }
+                  >
+                    {preset.name}
+                  </Button>
+                ))}
+              </div>
+            </SettingsCard>
+
             {GROUPS.map((g) => {
               const tokens = UI_TOKEN_DEFS.filter((t) => t.group === g.id);
               return (

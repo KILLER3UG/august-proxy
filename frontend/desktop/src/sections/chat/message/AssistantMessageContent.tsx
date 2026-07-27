@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { RecapCard } from '@/components/chat/RecapCard';
 import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
@@ -56,6 +57,30 @@ export function AssistantMessageContent({
   onFork?: () => void;
 }) {
   const tokensPerSecond = message.usage ? formatTokensPerSecond(message.usage) : null;
+
+  // Live generation-rate estimate while the last message streams: output
+  // tokens ≈ chars/4 over elapsed time (same heuristic ChatThread blends).
+  // Replaced by the real chip once the `done` event lands usage+durationMs.
+  const isStreamingThis = Boolean(isLast && streaming);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isStreamingThis) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isStreamingThis]);
+  let liveRate: string | null = null;
+  if (isStreamingThis) {
+    const startMs = Date.parse(message.timestamp);
+    const elapsedS = Math.max(1, (now - startMs) / 1000);
+    const chars = (message.content || '').length;
+    if (Number.isFinite(startMs) && chars >= 20) {
+      const rate = chars / 4 / elapsedS;
+      if (Number.isFinite(rate) && rate > 0) {
+        liveRate = rate >= 100 ? String(Math.round(rate)) : (Math.round(rate * 10) / 10).toString();
+      }
+    }
+  }
+
   return (
     <>
       <div className="flex flex-col w-full gap-2">
@@ -102,6 +127,23 @@ export function AssistantMessageContent({
                 '',
             }}
           />
+        )}
+        {/* Live generation-rate estimate while streaming (tilde = estimate). */}
+        {isStreamingThis && liveRate && (
+          <div
+            className="text-[10px] tabular-nums text-muted-foreground/60"
+            title="Estimated live generation rate (final rate shows when the turn completes)"
+            data-testid="live-rate-chip"
+          >
+            ~{liveRate} t/s
+          </div>
+        )}
+        {/* Transient provider-retry notice (429/5xx backoff) — replaced on
+            each attempt, cleared when the turn finalizes. */}
+        {message.retryNotice && (
+          <div className="text-[11px] text-warning/90 animate-pulse" data-testid="retry-notice">
+            {message.retryNotice}
+          </div>
         )}
         {/* Per-turn token usage chip (from the `done` SSE event). */}
         {!(isLast && streaming) &&

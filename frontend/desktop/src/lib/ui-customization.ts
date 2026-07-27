@@ -174,6 +174,98 @@ export const UI_TOKEN_DEFS: readonly UiTokenDef[] = [
 
 export type UiCustomizationMap = Partial<Record<UiTokenId, string>>;
 
+/** One-click theme presets for the UI Designer. Each is a plain token map —
+ *  empty map means "theme defaults". Colors are hand-tuned dark palettes. */
+export interface ThemePreset {
+  id: string;
+  name: string;
+  map: UiCustomizationMap;
+}
+
+export const THEME_PRESETS: readonly ThemePreset[] = [
+  { id: 'default', name: 'Default', map: {} },
+  {
+    id: 'midnight',
+    name: 'Midnight',
+    map: {
+      background: '#0b1020',
+      foreground: '#e6e9f5',
+      card: '#131a30',
+      muted: '#1c2440',
+      mutedForeground: '#8b93b8',
+      border: '#232c4d',
+      primary: '#7aa2ff',
+      chatBackground: '#0b1020',
+      chatInputBackground: '#131a30',
+      userBubble: '#273257',
+    },
+  },
+  {
+    id: 'carbon',
+    name: 'Carbon',
+    map: {
+      background: '#101012',
+      foreground: '#ececec',
+      card: '#17171a',
+      muted: '#202024',
+      mutedForeground: '#9a9aa2',
+      border: '#2a2a2f',
+      primary: '#f5a524',
+      chatBackground: '#101012',
+      chatInputBackground: '#17171a',
+      userBubble: '#2a2620',
+    },
+  },
+  {
+    id: 'rose',
+    name: 'Rosé',
+    map: {
+      background: '#171017',
+      foreground: '#f3e8ef',
+      card: '#20161f',
+      muted: '#2a1d29',
+      mutedForeground: '#b398ab',
+      border: '#3a2838',
+      primary: '#f472b6',
+      chatBackground: '#171017',
+      chatInputBackground: '#20161f',
+      userBubble: '#3a2436',
+    },
+  },
+  {
+    id: 'solarized',
+    name: 'Solarized',
+    map: {
+      background: '#002b36',
+      foreground: '#93a1a1',
+      card: '#073642',
+      muted: '#0a4050',
+      mutedForeground: '#657b83',
+      border: '#0f4a5c',
+      primary: '#268bd2',
+      chatBackground: '#002b36',
+      chatInputBackground: '#073642',
+      userBubble: '#0f4a5c',
+    },
+  },
+  {
+    id: 'forest',
+    name: 'Forest',
+    map: {
+      background: '#0c1310',
+      foreground: '#dcefe4',
+      card: '#121d17',
+      muted: '#1a2a21',
+      mutedForeground: '#87a695',
+      border: '#22382c',
+      primary: '#34d399',
+      chatBackground: '#0c1310',
+      chatInputBackground: '#121d17',
+      userBubble: '#1e3529',
+    },
+  },
+];
+
 interface UiCustomizationState {
   /** Live editor draft (preview only until Apply) */
   draft: UiCustomizationMap;
@@ -186,7 +278,7 @@ export const useUiCustomizationStore = create<UiCustomizationState>(() => ({
   applied: {},
 }));
 
-function isHexColor(value: string): boolean {
+export function isHexColor(value: string): boolean {
   return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value.trim());
 }
 

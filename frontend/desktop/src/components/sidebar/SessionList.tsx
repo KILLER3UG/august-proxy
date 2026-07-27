@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { Settings } from "lucide-react";
+import { Search, Settings, X } from "lucide-react";
 import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
 import { isTauri } from "@/lib/tauri-detect";
 import { t } from "@/lib/motion";
@@ -97,6 +97,7 @@ export function SessionList({
   const [uncategorizedCollapsed, setUncategorizedCollapsed] = useState(
     () => localStorage.getItem("august-uncategorized-collapsed") === "1",
   );
+  const [searchQuery, setSearchQuery] = useState("");
 
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
@@ -391,6 +392,16 @@ export function SessionList({
     onDelete: () => confirmDeleteSession(s),
   });
 
+  // ── Session search — client-side title filter across every section ──
+  const searchTrim = searchQuery.trim().toLowerCase();
+  const searching = searchTrim.length > 0;
+  const matchesSearch = (s: Session) =>
+    !searching || (s.title || "").toLowerCase().includes(searchTrim);
+  const visiblePinned = pinned.filter(matchesSearch);
+  const searchMatchCount = searching
+    ? sessions.filter((s) => !s.isArchived && matchesSearch(s)).length
+    : 0;
+
   return (
     <div ref={rootRef} className="flex h-full text-sm relative select-none bg-sidebar">
       <input
@@ -408,16 +419,49 @@ export function SessionList({
           onToggleCollapsed={onToggleCollapsed}
         />
 
+        {/* Session search — filters titles across Pinned / folders / Other chats */}
+        <div className="px-1.5 pt-1.5">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-sidebar-foreground/30 pointer-events-none" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setSearchQuery("");
+              }}
+              placeholder="Search sessions…"
+              aria-label="Search sessions"
+              className="w-full rounded-md bg-white/[0.04] border border-sidebar-border/50 pl-7 pr-7 py-1 text-xs text-sidebar-foreground/80 placeholder:text-sidebar-foreground/25 outline-none focus:border-sidebar-ring/70 transition-colors"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors"
+                title="Clear search"
+              >
+                <X className="size-3" />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Scrollable sessions area — Recents-first */}
         <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2.5">
+          {searching && searchMatchCount === 0 && (
+            <p className="py-4 text-center text-xs text-sidebar-foreground/30 italic">
+              No sessions match “{searchQuery.trim()}”
+            </p>
+          )}
+          {(!searching || visiblePinned.length > 0) && (
           <Section
             title="Pinned"
-            count={pinned.length}
+            count={visiblePinned.length}
             empty="Shift-click a chat to pin"
           >
             <LayoutGroup id="pinned-sessions">
               <AnimatePresence initial={false} mode="popLayout">
-                {pinned.map((s) => (
+                {visiblePinned.map((s) => (
                   <SessionRow
                     key={s.id}
                     session={s}
@@ -431,10 +475,11 @@ export function SessionList({
               </AnimatePresence>
             </LayoutGroup>
           </Section>
+          )}
 
           <Section
             title="Repositories"
-            count={others.length}
+            count={searching ? others.filter(matchesSearch).length : others.length}
             onNewFolder={handleCreateFolder}
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
           >
@@ -442,8 +487,10 @@ export function SessionList({
               {/* Collapsible folders and their sessions */}
               {folders.map((folder) => {
                 const folderSessions = others.filter(
-                  (s) => s.folderId === folder.id,
+                  (s) => s.folderId === folder.id && matchesSearch(s),
                 );
+                // While searching, hide folders without matches and force-expand the rest.
+                if (searching && folderSessions.length === 0) return null;
                 const isCollapsed = folder.isCollapsed ?? false;
 
                 return (
@@ -462,7 +509,7 @@ export function SessionList({
                       onDelete={() => handleDeleteFolder(folder.id)}
                     />
 
-                    {!isCollapsed && (
+                    {(!isCollapsed || searching) && (
                       <div className="pl-1 ml-4 space-y-px">
                         <AnimatePresence initial={false} mode="popLayout">
                           {folderSessions.map((s) => (
@@ -477,7 +524,7 @@ export function SessionList({
                             />
                           ))}
                         </AnimatePresence>
-                        {folderSessions.length === 0 && (
+                        {folderSessions.length === 0 && !searching && (
                           <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
                             Empty folder
                           </p>
@@ -490,7 +537,8 @@ export function SessionList({
 
               {/* Sessions with no folder assignment */}
               {(() => {
-                const uncategorizedSessions = others.filter((s) => !s.folderId);
+                const uncategorizedSessions = others.filter((s) => !s.folderId && matchesSearch(s));
+                if (searching && uncategorizedSessions.length === 0) return null;
 
                 return (
                   <div className="space-y-0.5">
@@ -502,7 +550,7 @@ export function SessionList({
                       onDelete={handleDeleteUncategorized}
                     />
 
-                    {!uncategorizedCollapsed && (
+                    {(!uncategorizedCollapsed || searching) && (
                       <div className="pl-1 ml-4 space-y-px">
                         <AnimatePresence initial={false} mode="popLayout">
                           {uncategorizedSessions.map((s) => (
@@ -517,7 +565,7 @@ export function SessionList({
                             />
                           ))}
                         </AnimatePresence>
-                        {uncategorizedSessions.length === 0 && (
+                        {uncategorizedSessions.length === 0 && !searching && (
                           <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
                             No other chats
                           </p>

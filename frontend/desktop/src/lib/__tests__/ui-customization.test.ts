@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   UI_TOKEN_DEFS,
+  THEME_PRESETS,
   useUiCustomizationStore,
   setDraftToken,
   applyDraftCustomization,
@@ -8,6 +9,7 @@ import {
   applyExternalCustomization,
   draftIsDirty,
   toColorInputValue,
+  isHexColor,
 } from '../ui-customization';
 
 beforeEach(() => {
@@ -59,5 +61,19 @@ describe('ui-customization', () => {
     expect(document.documentElement.style.getPropertyValue('--dt-chat-background')).toBe(
       '#000000',
     );
+  });
+
+  it('theme presets only use valid tokens and hex colors', () => {
+    const validIds = new Set<string>(UI_TOKEN_DEFS.map((d) => d.id));
+    expect(THEME_PRESETS.length).toBeGreaterThanOrEqual(5);
+    for (const preset of THEME_PRESETS) {
+      for (const [tokenId, color] of Object.entries(preset.map)) {
+        expect(validIds.has(tokenId), `${preset.id}: unknown token ${tokenId}`).toBe(true);
+        expect(isHexColor(color as string), `${preset.id}: ${tokenId} not hex`).toBe(true);
+      }
+    }
+    // Default preset restores theme defaults (empty map).
+    const defaultPreset = THEME_PRESETS.find((p) => p.id === 'default');
+    expect(Object.keys(defaultPreset?.map ?? { x: 1 })).toHaveLength(0);
   });
 });
