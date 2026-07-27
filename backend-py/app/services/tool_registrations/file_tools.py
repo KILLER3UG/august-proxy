@@ -15,6 +15,27 @@ from app.services.sandbox import (
 
 _MAXFileSize = 10 * 1024 * 1024
 _MAXSearchResults = 100
+# Python fallback search bounds — rg isn't bundled on Windows, so the fallback
+# is the common path; it must stay fast and interruptible instead of hanging
+# the whole turn on a large tree.
+_SEARCH_SKIP_DIRS = {
+    'node_modules',
+    'git',
+    'venv',
+    '__pycache__',
+    'mypy_cache',
+    'ruff_cache',
+    'web-dist',
+    'dist',
+    'build',
+    'releases',
+    'target',
+    'coverage',
+    'next',
+    'turbo',
+}
+_SEARCH_MAX_FILES = 25000
+_SEARCH_FALLBACK_TIMEOUT_S = 20
 _MAXCommandTimeout = 300
 _DEFAULTCommandTimeout = 120
 _ALLOWEDCommandPrefixes = [
@@ -222,34 +243,62 @@ async def _searchFiles(query: str, path: str = '.') -> str:
             stdout, stderr = await communicate_or_kill(proc, timeout=30)
         except SubprocessAborted:
             return 'Error: Search timed out'
+        # rg exit codes: 0 = matches, 1 = no matches (still success!), 2+ = error.
+        # Treating 1 as failure used to dump every empty search into the slow
+        # Python fallback.
+        if proc.returncode == 1:
+            return 'No matches found.'
         if proc.returncode == 0:
             output = stdout.decode('utf-8', errors='replace')
-            lines = output.split('\n')
-            if len(lines) > _MAXSearchResults:
+            lines = [ln for ln in output.split('\n') if ln.strip()]
+            total = len(lines)
+            if total > _MAXSearchResults:
                 lines = lines[:_MAXSearchResults]
-                lines.append(f'... and {len(lines) - _MAXSearchResults} more results')
-            return '\n'.join(lines)
+                lines.append(f'... and {total - _MAXSearchResults} more results')
+            return '\n'.join(lines) if lines else 'No matches found.'
         return await _pySearchFiles(query, searchPath)
     except Exception:
         return await _pySearchFiles(query, searchPath)
 
 
-def _pySearchFilesSync(query: str, searchPath: Path) -> str:
-    """Synchronous Python fallback file search (no external deps).
+def _pySearchFilesSync(query: str, searchPath: Path, cancelEvent: object | None = None) -> str:
+    """Bounded synchronous Python fallback search (no external deps).
 
-    Runs entirely on a worker thread — never call directly on the event loop.
+    Runs on a worker thread — never call directly on the event loop. Skips
+    VCS/build/dependency directories, caps the number of files scanned, and
+    checks the turn cancel event so Stop actually interrupts it.
     """
     results: list[str] = []
+    filesScanned = 0
+    needle = query.lower()
+    isCancelled = getattr(cancelEvent, 'is_set', None)
     try:
         for filePath in searchPath.rglob('*'):
-            if not filePath.is_file():
+            if callable(isCancelled) and isCancelled():
+                if results:
+                    results.append('(Search cancelled — partial results.)')
+                    return '\n'.join(results)
+                return 'Search cancelled.'
+            if filePath.is_dir():
                 continue
+            # Prune heavy/VCS dirs (rglob can't skip descent, so filter parts);
+            # hidden dirs (.git, .venv, caches) are skipped by the dot check.
+            parts = filePath.relative_to(searchPath).parts[:-1]
+            if any((p.startswith('.') or p in _SEARCH_SKIP_DIRS for p in parts)):
+                continue
+            filesScanned += 1
+            if filesScanned > _SEARCH_MAX_FILES:
+                results.append(
+                    f'... stopped after scanning {filesScanned} files '
+                    '(workspace too large for the fallback search — install ripgrep for full coverage).'
+                )
+                break
             try:
                 if filePath.stat().st_size > _MAXFileSize:
                     continue
                 text = filePath.read_text('utf-8', errors='replace')
                 for i, line in enumerate(text.split('\n'), 1):
-                    if query.lower() in line.lower():
+                    if needle in line.lower():
                         rel = filePath.relative_to(searchPath)
                         results.append(f'{rel}:{i}:{line[:200].strip()}')
                         if len(results) >= _MAXSearchResults:
@@ -264,8 +313,21 @@ def _pySearchFilesSync(query: str, searchPath: Path) -> str:
 
 
 async def _pySearchFiles(query: str, searchPath: Path) -> str:
-    """Python fallback file search — offloaded to a thread so the event loop is never blocked."""
-    return await asyncio.to_thread(_pySearchFilesSync, query, searchPath)
+    """Python fallback search — offloaded to a thread with a hard timeout so a
+    huge tree can never hang the turn (and the tool card) indefinitely."""
+    from app.lib.async_subprocess import current_subprocess_cancel
+
+    cancelEvent = current_subprocess_cancel.get()
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_pySearchFilesSync, query, searchPath, cancelEvent),
+            timeout=_SEARCH_FALLBACK_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        return (
+            f'Error: Search timed out after {_SEARCH_FALLBACK_TIMEOUT_S}s — '
+            'narrow the query or search a smaller path.'
+        )
 
 
 def _queue_sandbox_escape(session: object, command: str, denial: str) -> None:
