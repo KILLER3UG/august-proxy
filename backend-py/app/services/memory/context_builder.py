@@ -156,16 +156,20 @@ def _guard_mode_barrier_lines(mode: str) -> list[str]:
     if mode == 'full':
         return [
             '   Full access: execute tools (writes, edits, deletes, shell) immediately when',
-            '   needed. Do NOT call submit_plan, do NOT pause for plan approval, do NOT present',
-            '   multi-step plans as gated workflows — just do the work. A brief prose outline of',
-            '   intent is fine, then act with tools. The plan-approval UI must not be used here.',
+            '   needed. Simple or clearly-scoped tasks: just do the work — no plan approval.',
+            '   For non-trivial multi-step changes (multiple files, architectural decisions,',
+            '   risky or destructive operations), call enter_plan_mode FIRST, investigate with',
+            '   read-only tools, write the plan to .aug/plans/plan.md, and present it via',
+            '   submit_plan for approval. Never use the plan flow for trivial requests.',
         ]
     if mode == 'plan':
         return [
             '   Plan mode: investigate with non-destructive tools only. Destructive tools',
             '   (write/edit/delete/shell/install) are blocked until the user approves a plan.',
-            '   When ready, call submit_plan with concrete steps, then wait. After approval,',
-            '   execute only the approved steps.',
+            '   The ONLY file you may write is the plan itself: .aug/plans/plan.md in the',
+            '   workspace (fixed path — do not pick another name). Write the full plan there',
+            '   as clean markdown — it is shown to the user exactly as written — then call',
+            '   submit_plan and wait. After approval, execute only the approved steps.',
         ]
     return [
         '   Ask before changes: mutating tools require user confirmation before execution.',

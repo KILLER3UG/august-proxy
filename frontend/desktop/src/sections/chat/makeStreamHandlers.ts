@@ -488,6 +488,20 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
+    onGuardModeChanged: ({ guardMode, agentId }) => {
+      // Model switched itself into plan mode (enter_plan_mode) — flip the
+      // composer chip immediately; the realtime invalidation refetches the
+      // full session as a backstop.
+      setWorkbenchSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          guardMode: guardMode as typeof prev.guardMode,
+          agentId: agentId ?? prev.agentId,
+        };
+      });
+      scheduleUpdate();
+    },
     onBrowserAction: (data) => {
       pushBrowserAction({
         id: data.id,

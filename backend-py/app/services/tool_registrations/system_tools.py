@@ -242,6 +242,18 @@ async def _updateState(
         return f'Error updating state: {exc}'
 
 
+async def _enterPlanModeFallback() -> str:
+    """Defensive fallback — the workbench turn loop intercepts enter_plan_mode
+    before dispatch and performs the actual mode switch."""
+    return 'enter_plan_mode is handled by the workbench turn loop; this fallback should never run.'
+
+
+async def _submitPlanFallback(planPath: str = '') -> str:
+    """Defensive fallback — the workbench turn loop intercepts submit_plan
+    before dispatch and loads the plan markdown file."""
+    return 'submit_plan is handled by the workbench turn loop; this fallback should never run.'
+
+
 def register() -> None:
     """Register system and workbench-state tools."""
     tool_registry.register(
@@ -312,5 +324,35 @@ def register() -> None:
                 }
             },
             'required': ['text'],
+        },
+    )
+    tool_registry.register(
+        'enter_plan_mode',
+        'Switch this session into Plan mode before a non-trivial multi-step change '
+        '(multiple files, architectural decisions, risky or destructive operations). '
+        'In Plan mode you investigate with read-only tools and write your plan as '
+        'markdown to .aug/plans/plan.md — the only file you may write — then present '
+        'it with submit_plan for user approval. Do NOT call this for simple, '
+        'clearly-scoped requests; just do the work. No effect if already in Plan mode.',
+        _enterPlanModeFallback,
+        {'type': 'object', 'properties': {}, 'required': []},
+    )
+    tool_registry.register(
+        'submit_plan',
+        'Submit your plan for user approval. First write the plan as clean markdown '
+        'to .aug/plans/plan.md in the workspace (fixed path — the only file writable '
+        'in Plan mode), then call this tool; the file is shown to the user exactly as '
+        'written. Optional planPath overrides the plan file location (must stay '
+        'inside the workspace).',
+        _submitPlanFallback,
+        {
+            'type': 'object',
+            'properties': {
+                'planPath': {
+                    'type': 'string',
+                    'description': 'Path to the plan markdown file (default: .aug/plans/plan.md).',
+                },
+            },
+            'required': [],
         },
     )

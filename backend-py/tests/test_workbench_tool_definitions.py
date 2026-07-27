@@ -28,12 +28,21 @@ def session() -> WorkbenchSession:
     return WorkbenchSession(id='wb_test_tooldefs')
 
 
+# Plan-gating tools are deliberately filtered per guard mode (Full Access must
+# never expose plan approval; plan mode hides the now-redundant mode switch),
+# so "every registered tool is present" skips exactly these.
+FULL_MODE_BLOCKED = {'submit_plan', 'submitPlan', 'approve_plan', 'reject_plan'}
+PLAN_MODE_BLOCKED = {'enter_plan_mode', 'request_plan_mode'}
+
+
 class TestAnthropicFormat:
     def testAllRegistryToolsPresentAnthropic(self, session):
         tools = toolDefinitions(session)
         names = {t['name'] for t in tools}
         for reg in tool_registry.listTools():
             expected = reg['function']['name']
+            if expected in FULL_MODE_BLOCKED:
+                continue  # session fixture runs in full mode
             assert expected in names, f'{expected} missing from anthropic tool list'
 
     def testAnthropicShape(self, session):
@@ -54,7 +63,10 @@ class TestOpenAIFormat:
         tools = openaiToolDefinitions(session)
         names = {t['function']['name'] for t in tools}
         for reg in tool_registry.listTools():
-            assert reg['function']['name'] in names
+            expected = reg['function']['name']
+            if expected in FULL_MODE_BLOCKED:
+                continue  # session fixture runs in full mode
+            assert expected in names
 
     def testOpenaiShape(self, session):
         for t in openaiToolDefinitions(session):
@@ -101,3 +113,20 @@ def testToolSchemaSurvivesConversion(session, toolName):
     origReq = reg['function'].get('parameters', {}).get('required', [])
     assert anth['input_schema'].get('required', []) == origReq
     assert oai['function']['parameters'].get('required', []) == origReq
+
+
+class TestPlanModeToolFiltering:
+    def testFullModeHidesPlanApprovalButOffersEnterPlanMode(self, session):
+        names = {t['name'] for t in toolDefinitions(session)}
+        assert 'submit_plan' not in names
+        assert 'enter_plan_mode' in names
+
+    def testPlanModeHidesEnterPlanModeButOffersSubmitPlan(self, session):
+        session.guardMode = 'plan'
+        names = {t['name'] for t in toolDefinitions(session)}
+        assert 'enter_plan_mode' not in names
+        assert 'submit_plan' in names
+        # OpenAI format mirrors the same filtering.
+        oaiNames = {t['function']['name'] for t in openaiToolDefinitions(session)}
+        assert 'enter_plan_mode' not in oaiNames
+        assert 'submit_plan' in oaiNames

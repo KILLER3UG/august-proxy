@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { ArrowRight, Check, CheckCircle2, Circle, FileText, FolderOpen, ShieldAlert, Wrench } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, Check, CheckCircle2, Circle, ShieldAlert, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -37,24 +37,9 @@ export function WorkbenchPlanPanel({
         </div>
       </CardHeader>
       <CardContent className="chat-message-text text-foreground/90 space-y-3 max-w-none">
-        {plan.markdown ? (
-          <div className="text-foreground/90">
-            <Markdown content={plan.markdown} />
-          </div>
-        ) : (
-          <>
-            {body && (
-              <div className="text-foreground/90">
-                <Markdown content={body} />
-              </div>
-            )}
-
-            <PlanList title="Steps" icon={<FileText className="size-3" />} items={plan.steps} />
-            <PlanList title="Files" icon={<FolderOpen className="size-3" />} items={plan.files} />
-            <PlanList title="Risks" icon={<ShieldAlert className="size-3" />} items={plan.risks} />
-            <PlanList title="Verification" icon={<CheckCircle2 className="size-3" />} items={plan.verification} />
-          </>
-        )}
+        {/* The plan is the model's own markdown — render it as-is, with the
+            same formatting as assistant chat messages. */}
+        <Markdown content={plan.markdown ?? body ?? ''} variant="assistant" />
 
         <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-muted-foreground">
           <span><Wrench className="inline size-3 mr-1" />{session.mutationCount} mutations</span>
@@ -62,6 +47,12 @@ export function WorkbenchPlanPanel({
           <span>{session.agentId}</span>
           <span>·</span>
           <span>{session.provider}</span>
+          {plan.planPath && (
+            <>
+              <span>·</span>
+              <span>{plan.planPath}</span>
+            </>
+          )}
         </div>
 
         {!approved && (
@@ -73,29 +64,6 @@ export function WorkbenchPlanPanel({
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function PlanList({ title, icon, items }: { title: string; icon: ReactNode; items?: string[] }) {
-  if (!items?.length) return null;
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-        {icon}
-        {title}
-      </div>
-      <ul className="space-y-1">
-        {items.map((item, index) => (
-          <li key={`${title}-${index}`} className={cn(
-            'rounded-md border border-border/60 bg-card/70 px-2.5 py-2 chat-message-text text-foreground/90 space-y-3 max-w-none',
-            title === 'Risks' && 'border-warning/30 bg-warning/5'
-          )}>
-            <Markdown content={item} />
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 

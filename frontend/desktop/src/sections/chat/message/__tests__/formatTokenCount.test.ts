@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatTokenCount } from '../token-display';
+import { formatTokenCount, formatTokensPerSecond } from '../token-display';
 
 describe('formatTokenCount', () => {
   it('shows raw counts below 1k', () => {
@@ -17,5 +17,19 @@ describe('formatTokenCount', () => {
     expect(formatTokenCount(1_000_000)).toBe('1.0M');
     expect(formatTokenCount(1_720_600)).toBe('1.7M');
     expect(formatTokenCount(12_340_000)).toBe('12.3M');
+  });
+});
+
+describe('formatTokensPerSecond', () => {
+  it('returns null without timing or output (old persisted turns)', () => {
+    expect(formatTokensPerSecond({ outputTokens: 500 })).toBeNull();
+    expect(formatTokensPerSecond({ outputTokens: 0, durationMs: 5000 })).toBeNull();
+    expect(formatTokensPerSecond({ outputTokens: 500, durationMs: 0 })).toBeNull();
+  });
+
+  it('computes output tokens per generation-second', () => {
+    expect(formatTokensPerSecond({ outputTokens: 500, durationMs: 10_000 })).toBe('50.0');
+    expect(formatTokensPerSecond({ outputTokens: 1200, durationMs: 10_000 })).toBe('120');
+    expect(formatTokensPerSecond({ outputTokens: 45, durationMs: 1000 })).toBe('45.0');
   });
 });

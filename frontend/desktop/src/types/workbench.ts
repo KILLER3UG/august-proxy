@@ -11,11 +11,15 @@ export interface WorkbenchPlan {
   summary: string;
   /** Raw plan text the model submitted via `submit_plan` (backend stores it under `plan`). */
   plan?: string;
+  /** Legacy structured fields — the backend passes the model's raw payload
+   *  through, but the UI renders the model's own markdown only. */
   steps: string[];
   files: string[];
   risks: string[];
   verification: string[];
   markdown?: string;
+  /** Workspace-relative path of the plan file the model wrote (e.g. `.aug/plans/plan.md`). */
+  planPath?: string;
   createdAt: string;
 }
 
@@ -135,6 +139,9 @@ export interface WorkbenchTurnUsage {
   inputTokens: number;
   outputTokens: number;
   contextTokens: number;
+  /** Wall time spent generating model output (tool rounds excluded) — the
+   *  denominator for the chip's tokens/sec. Absent on old persisted turns. */
+  durationMs?: number;
 }
 
 export type WorkbenchEvent =
@@ -317,6 +324,10 @@ export interface WorkbenchEventHandlers {
   }) => void;
   /** Model submitted a plan via submit_plan — show the proposal banner. */
   onPlanProposed?: (data: { plan: unknown }) => void;
+  /** Model switched the session into plan mode itself (enter_plan_mode) —
+   *  merge guardMode/agentId into the workbench session so the composer
+   *  chip flips without waiting for the REST refetch. */
+  onGuardModeChanged?: (data: { guardMode: string; agentId?: string }) => void;
   /** Emitted once per turn when auto-memory recall (`getRelevantMemories`)
    *  prefetched rows into the system prompt. The chat thread renders a
    *  collapsed "Recalled: {category} — {snippet}" card, same style as a

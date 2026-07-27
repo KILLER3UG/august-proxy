@@ -253,6 +253,58 @@ def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> b
     return any((marker in name for marker in destructiveMarkers))
 
 
+# The single file the model may write in plan mode: the plan markdown that
+# submit_plan hands to the user. Fixed path — the model never picks a name.
+PLAN_FILE_RELPATH = '.aug/plans/plan.md'
+
+_PLAN_FILE_WRITE_TOOLS = {
+    'write_file',
+    'edit_file',
+    'create_file',
+    'str_replace',
+    'str_replace_editor',
+    'apply_patch',
+    'patch_file',
+}
+
+
+def plan_file_path(workspacePath: str | None) -> str | None:
+    """Absolute path of the workspace's plan markdown file (None without a workspace)."""
+    import os
+
+    workspace = as_str(workspacePath or '').strip()
+    if not workspace:
+        return None
+    return os.path.normpath(os.path.join(workspace, *PLAN_FILE_RELPATH.split('/')))
+
+
+def is_plan_file_write(
+    workspacePath: str | None, toolName: str, args: dict[str, object] | None
+) -> bool:
+    """True only if this call writes exactly the plan markdown file.
+
+    This is the sole write allowed in plan mode. Fails closed: any tool we
+    cannot prove targets ``<workspace>/.aug/plans/plan.md`` stays blocked.
+    """
+    import os
+
+    if (toolName or '').lower() not in _PLAN_FILE_WRITE_TOOLS:
+        return False
+    allowed = plan_file_path(workspacePath)
+    if not allowed:
+        return False
+    a = as_dict(args or {})
+    raw = as_str(a.get('path') or a.get('file_path') or a.get('filePath'))
+    if not raw:
+        return False
+    workspace = as_str(workspacePath or '').strip()
+    target = raw if os.path.isabs(raw) else os.path.join(workspace, raw)
+    try:
+        return os.path.normcase(os.path.normpath(target)) == os.path.normcase(allowed)
+    except Exception:
+        return False
+
+
 def buildSystemPrompt(
     session: WorkbenchSession,
     tools: list[dict[str, object]] | None = None,
@@ -641,6 +693,10 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     if mode == 'full':
         blocked = {'submit_plan', 'submitPlan', 'approve_plan', 'reject_plan'}
         tools = [t for t in tools if as_str(t.get('name')) not in blocked]
+    if mode == 'plan':
+        # Already in plan mode — the mode-switch tool has done its job.
+        blocked_in_plan = {'enter_plan_mode', 'request_plan_mode'}
+        tools = [t for t in tools if as_str(t.get('name')) not in blocked_in_plan]
     return tools
 
 
@@ -686,6 +742,14 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             return as_str(fn.get('name') or t.get('name'))
 
         tools = [t for t in tools if _tool_name(t) not in blocked]
+    if mode == 'plan':
+        blocked_in_plan = {'enter_plan_mode', 'request_plan_mode'}
+
+        def _tool_name_plan(t: dict[str, object]) -> str:
+            fn = as_dict(t.get('function'))
+            return as_str(fn.get('name') or t.get('name'))
+
+        tools = [t for t in tools if _tool_name_plan(t) not in blocked_in_plan]
     return tools
 
 
@@ -1282,6 +1346,9 @@ async def _sendWorkbenchMessageStreamImpl(
     totalInputTokens = 0
     totalOutputTokens = 0
     finalContextTokens = 0
+    # Wall time spent inside model sub-calls only (tool execution excluded) —
+    # the denominator for the per-turn tokens/sec shown in the chat chip.
+    totalGenerationMs = 0.0
     try:
         from app.providers.clients.base import estimateTokens
         from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
@@ -1380,6 +1447,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 else [as_dict(t.get('function', {})).get('name') for t in openaiTools]
             )
             logger.debug('workbench presenting %d tools to model: %s', len(toolNames), toolNames)
+        _llmT0 = time.monotonic()
         with _trace.span('llm_wait', round=toolRound):
             if isAnthropic:
                 response = await _callAnthropicWorkbench(
@@ -1405,6 +1473,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 )
             else:
                 response = {'error': f'Unknown provider format for {resolvedProvider}'}
+        totalGenerationMs += (time.monotonic() - _llmT0) * 1000
         if not isAnthropic and not isOpenai:
             if emit:
                 emit({'type': 'error', 'message': f'Unknown provider format for {resolvedProvider}'})
@@ -1491,6 +1560,20 @@ async def _sendWorkbenchMessageStreamImpl(
             toolName = as_str(tu.get('name', ''))
             toolInput = as_dict(tu.get('input', {}))
             toolUseId = as_str(tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}'))
+            if toolName in ('enter_plan_mode', 'request_plan_mode'):
+                msg = enterPlanMode(session, emit=emit)
+                if emit:
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': msg,
+                            'status': 'done',
+                        }
+                    )
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
+                continue
             if toolName in ('submit_plan', 'submitPlan'):
                 mode_now = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
                 # Full Access is a hard barrier: never open plan-approval UI.
@@ -1511,8 +1594,26 @@ async def _sendWorkbenchMessageStreamImpl(
                         )
                     toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
                     continue
-                planPayload = toolInput.get('plan') or toolInput.get('steps') or toolInput
-                submitPlan(session, planPayload if isinstance(planPayload, dict) else {'plan': planPayload})
+                planPayload = _loadPlanPayload(session, toolInput)
+                if planPayload is None:
+                    msg = (
+                        f'Plan not found. Write your plan as markdown to {PLAN_FILE_RELPATH} '
+                        'in the workspace (the only file you may write in plan mode), '
+                        'then call submit_plan again.'
+                    )
+                    if emit:
+                        emit(
+                            {
+                                'type': 'toolResult',
+                                'id': toolUseId,
+                                'name': toolName,
+                                'content': msg,
+                                'status': 'done',
+                            }
+                        )
+                    toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
+                    continue
+                submitPlan(session, planPayload)
                 if emit:
                     emit({'type': 'planProposed', 'plan': session.plan})
                     emit(
@@ -2014,6 +2115,8 @@ async def _sendWorkbenchMessageStreamImpl(
         if emit:
             # Surface this turn's token usage so the UI can render a per-turn
             # chip (early-exit `done` events above carry no usage).
+            # durationMs covers model generation only (tool rounds excluded)
+            # so the chip's tokens/sec reflects raw model throughput.
             emit(
                 {
                     'type': 'done',
@@ -2022,6 +2125,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         'inputTokens': totalInputTokens,
                         'outputTokens': totalOutputTokens,
                         'contextTokens': finalContextTokens,
+                        'durationMs': int(totalGenerationMs),
                     },
                 }
             )
@@ -2466,10 +2570,14 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
         return None
 
     if mode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
+        if is_plan_file_write(getattr(session, 'workspacePath', None), toolName, args):
+            # The plan markdown is the only file writable in plan mode.
+            return None
         return (
             f"Tool '{toolName}' is destructive and cannot run in plan mode. "
-            'Finish investigating with non-destructive tools, then call `submit_plan` '
-            'and wait for the user to approve before executing.'
+            'The only file you may write is the plan itself (.aug/plans/plan.md). '
+            'Finish investigating with non-destructive tools, write the plan to that '
+            'file, call `submit_plan`, and wait for the user to approve before executing.'
         )
     # Edit automatically: file edits proceed; shell/commands still need approval.
     if mode == 'edit' and isShellMutationTool(toolName, args):
@@ -2544,6 +2652,94 @@ def submitPlan(session: WorkbenchSession, planData: dict[str, object]) -> None:
     except Exception:
         pass
     _emitSessionStatus(session.id)
+
+
+def enterPlanMode(session: WorkbenchSession, emit: object | None = None) -> str:
+    """Switch a session into plan mode (model-initiated via enter_plan_mode).
+
+    Only ever makes the session MORE restrictive: destructive tools stay
+    blocked until the user approves a plan. Leaving plan mode remains
+    user-controlled (plan approval or a manual mode switch).
+    """
+    mode_now = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+    if mode_now == 'plan':
+        return (
+            'Already in Plan mode. Investigate with non-destructive tools, write your '
+            f'plan to {PLAN_FILE_RELPATH}, then call submit_plan and wait for approval.'
+        )
+    session.guardMode = 'plan'
+    session.agentId = 'plan'
+    session.updatedAt = _now()
+    # Mirror the guard-mode router: refresh barrier text + persist + notify UI.
+    try:
+        from app.services.workbench.prompt_cache import getCache
+
+        getCache().invalidate(session.id)
+    except Exception:
+        pass
+    try:
+        from app.services.workbench.sessions import save_sessions
+
+        save_sessions()
+    except Exception:
+        pass
+    _emitSessionStatus(session.id)
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime('session.updated', sessionId=session.id, guardMode='plan', agentId='plan')
+        emit_invalidate('workbench-session', 'session-status', session_id=session.id)
+    except Exception:
+        pass
+    if callable(emit):
+        emit({'type': 'guardModeChanged', 'guardMode': 'plan', 'agentId': 'plan'})
+    return (
+        'Plan mode enabled — destructive tools are now blocked. Investigate with '
+        f'read-only tools, write your plan as markdown to {PLAN_FILE_RELPATH} (the '
+        'only file you may write), then call submit_plan and wait for the user to approve.'
+    )
+
+
+_MAX_PLAN_BYTES = 200_000
+
+
+def _loadPlanPayload(
+    session: WorkbenchSession, toolInput: dict[str, object]
+) -> dict[str, object] | None:
+    """Resolve the plan payload for submit_plan.
+
+    Preference: explicit ``planPath`` argument → the fixed plan file
+    (``.aug/plans/plan.md``) → legacy inline ``plan``/``steps`` payload. The
+    file's content becomes ``plan.markdown``, which the plan drawer renders
+    as-is. Returns None when nothing usable was found so the caller can tell
+    the model to write the plan file first.
+    """
+    import os
+    from pathlib import Path
+
+    workspace = as_str(getattr(session, 'workspacePath', None) or '').strip()
+    rawPath = as_str(toolInput.get('planPath') or toolInput.get('path'))
+    target: str | None = None
+    if rawPath and workspace:
+        candidate = rawPath if os.path.isabs(rawPath) else os.path.join(workspace, rawPath)
+        root = os.path.normcase(os.path.normpath(workspace))
+        # Containment check — never read a plan outside the workspace.
+        if os.path.normcase(os.path.normpath(candidate)).startswith(root + os.sep):
+            target = candidate
+    if not target:
+        target = plan_file_path(workspace)
+    if target and os.path.isfile(target):
+        try:
+            content = Path(target).read_text('utf-8', errors='replace')[:_MAX_PLAN_BYTES]
+        except Exception:
+            content = ''
+        if content.strip():
+            rel = os.path.relpath(target, workspace) if workspace else target
+            return {'markdown': content, 'planPath': rel.replace(os.sep, '/')}
+    inline = toolInput.get('plan') or toolInput.get('steps')
+    if inline:
+        return inline if isinstance(inline, dict) else {'plan': inline}
+    return None
 
 
 def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> None:

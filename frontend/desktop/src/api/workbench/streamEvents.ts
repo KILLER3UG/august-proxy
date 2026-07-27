@@ -218,12 +218,14 @@ export function dispatchWorkbenchEvent(
       break;
     case 'done': {
       const u = p?.usage;
+      const durationRaw = Number((u as Record<string, unknown> | undefined)?.durationMs);
       handlers.onDone?.({
         usage: u
           ? {
               inputTokens: Number((u as Record<string, unknown>).inputTokens) || 0,
               outputTokens: Number((u as Record<string, unknown>).outputTokens) || 0,
               contextTokens: Number((u as Record<string, unknown>).contextTokens) || 0,
+              durationMs: Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : undefined,
             }
           : undefined,
       });
@@ -247,6 +249,14 @@ export function dispatchWorkbenchEvent(
     }
     case 'planProposed':
       handlers.onPlanProposed?.({ plan: p?.plan });
+      break;
+    case 'guardModeChanged':
+      if (typeof p?.guardMode === 'string' && p.guardMode) {
+        handlers.onGuardModeChanged?.({
+          guardMode: p.guardMode,
+          agentId: typeof p?.agentId === 'string' ? p.agentId : undefined,
+        });
+      }
       break;
     case 'recalledMemories': {
       const items = Array.isArray(p?.items) ? (p.items as Record<string, unknown>[]) : [];

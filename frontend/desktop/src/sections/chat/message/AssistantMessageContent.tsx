@@ -9,7 +9,7 @@ import {
   type ToolProgressMap,
 } from './AssistantBlockTimeline';
 import { AssistantMessageActions } from './AssistantMessageActions';
-import { formatTokenCount } from './token-display';
+import { formatTokenCount, formatTokensPerSecond } from './token-display';
 
 type DisplayBlock = MessageBlock;
 
@@ -55,6 +55,7 @@ export function AssistantMessageContent({
   onRegen: () => void;
   onFork?: () => void;
 }) {
+  const tokensPerSecond = message.usage ? formatTokensPerSecond(message.usage) : null;
   return (
     <>
       <div className="flex flex-col w-full gap-2">
@@ -112,10 +113,15 @@ export function AssistantMessageContent({
                 message.usage.contextTokens
                   ? ` · Context ${message.usage.contextTokens.toLocaleString()} tokens`
                   : ''
+              }${
+                message.usage.durationMs
+                  ? ` · Generated in ${(message.usage.durationMs / 1000).toFixed(1)}s`
+                  : ''
               }`}
             >
               ↑{formatTokenCount(message.usage.inputTokens)} · ↓
               {formatTokenCount(message.usage.outputTokens)}
+              {tokensPerSecond && ` · ${tokensPerSecond} t/s`}
               {message.usage.contextTokens > 0 &&
                 ` · ctx ${formatTokenCount(message.usage.contextTokens)}`}
             </div>
