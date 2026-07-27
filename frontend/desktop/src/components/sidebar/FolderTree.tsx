@@ -163,11 +163,13 @@ export function UncategorizedHeader({
   count,
   isCollapsed,
   onToggleCollapse,
+  onNewSession,
   onDelete,
 }: {
   count: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  onNewSession?: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -193,20 +195,36 @@ export function UncategorizedHeader({
           </span>
         )}
       </div>
-      {count > 0 && (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete();
-          }}
-          className="p-0.5 rounded text-destructive/70 hover:bg-white/[0.06] hover:text-destructive"
-          title="Delete all other chats"
-          aria-label="Delete all other chats"
-        >
-          <Trash2 className="size-2.5" />
-        </button>
-      )}
+      <div className="flex items-center gap-0.5 shrink-0">
+        {onNewSession && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onNewSession();
+            }}
+            className="p-0.5 rounded text-sidebar-foreground/40 hover:bg-white/[0.06] hover:text-sidebar-foreground/70"
+            title="New chat in Other chats"
+            aria-label="New chat in Other chats"
+          >
+            <Plus className="size-2.5" />
+          </button>
+        )}
+        {count > 0 && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+            className="p-0.5 rounded text-destructive/70 hover:bg-white/[0.06] hover:text-destructive"
+            title="Delete all other chats"
+            aria-label="Delete all other chats"
+          >
+            <Trash2 className="size-2.5" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

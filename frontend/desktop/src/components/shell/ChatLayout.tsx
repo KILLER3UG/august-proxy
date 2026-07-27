@@ -277,6 +277,15 @@ export function ChatLayout() {
 
     const folders = useSessionsStore.getState().folders;
 
+    // Explicit "Other chats" target — the "+" on the Other chats header passes
+    // null on purpose. Bypass the workspace divert below so the new chat stays
+    // uncategorized instead of landing in a Repositories folder.
+    if (folderId === null) {
+      const newSess = getOrCreateEmptySession(null, defaultSessionTitle(), null);
+      void navigate(`/c/${newSess.id}`);
+      return;
+    }
+
     // Codex-style: "+" on a project folder → new thread in that folder/workspace.
     if (folderId) {
       const folder = folders.find((f) => f.id === folderId);

@@ -75,7 +75,7 @@ interface Props {
   onToggleCollapsed: () => void;
   onSelect: (s: Session) => void;
   onNew: () => void;
-  onNewInFolder?: (folderId: string) => void;
+  onNewInFolder?: (folderId: string | null) => void;
   onNavigate: (path: string) => void;
 }
 
@@ -498,6 +498,7 @@ export function SessionList({
                       count={uncategorizedSessions.length}
                       isCollapsed={uncategorizedCollapsed}
                       onToggleCollapse={toggleUncategorizedCollapse}
+                      onNewSession={() => onNewInFolder?.(null)}
                       onDelete={handleDeleteUncategorized}
                     />
 
