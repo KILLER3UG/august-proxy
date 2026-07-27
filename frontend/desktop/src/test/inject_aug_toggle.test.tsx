@@ -15,9 +15,9 @@ const EXTERNAL = {
   keyPreview: 'AUG••••',
   source: 'env',
   endpoints: {
-    anthropic: 'http://localhost:8085/v1/messages',
-    openai: 'http://localhost:8085/v1/chat/completions',
-    models: 'http://localhost:8085/v1/models',
+    anthropic: 'http://127.0.0.1:8085/v1/messages',
+    openai: 'http://127.0.0.1:8085/v1/chat/completions',
+    models: 'http://127.0.0.1:8085/v1/models',
   },
 };
 

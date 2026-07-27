@@ -120,9 +120,9 @@ export function Health() {
             </div>
           ) : (
             <div className="space-y-2">
-              <CopyableUrl url={`http://localhost:${port}/v1/messages`} label="Anthropic (Claude Code)" />
-              <CopyableUrl url={`http://localhost:${port}/v1/chat/completions`} label="OpenAI Chat Completions" />
-              <CopyableUrl url={`http://localhost:${port}/v1/models`} label="Model list" />
+              <CopyableUrl url={`http://127.0.0.1:${port}/v1/messages`} label="Anthropic (Claude Code)" />
+              <CopyableUrl url={`http://127.0.0.1:${port}/v1/chat/completions`} label="OpenAI Chat Completions" />
+              <CopyableUrl url={`http://127.0.0.1:${port}/v1/models`} label="Model list" />
             </div>
           )}
 

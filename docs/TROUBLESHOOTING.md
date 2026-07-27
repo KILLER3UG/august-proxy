@@ -54,11 +54,11 @@ and cognitive snapshots.
 
 ### A client can't reach the proxy
 
-- Confirm listening: `curl http://localhost:8085/api/health`.
+- Confirm listening: `curl http://127.0.0.1:8085/api/health`.
 - Docker host port is `8085`.
 - From WSL to a Windows host, use the Windows LAN IP, not always `localhost`.
 - Some clients append `/v1` themselves — set base URL to
-  `http://localhost:8085` (no trailing `/v1`).
+  `http://127.0.0.1:8085` (no trailing `/v1`).
 - If external access is enabled, supply the gateway API key as required by
   Settings → API Access.
 

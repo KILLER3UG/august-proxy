@@ -425,10 +425,13 @@ async def getExternalAccess():
         'hasKey': bool(apiKey),
         'keyPreview': secrets.mask(apiKey) if apiKey else None,
         'source': source,
+        # 127.0.0.1 (not localhost): uvicorn binds IPv4 loopback, and on some
+        # machines `localhost` resolves to ::1 first — external harnesses
+        # handed a localhost URL then fail to connect.
         'endpoints': {
-            'anthropic': f'http://localhost:{settings.port}/v1/messages',
-            'openai': f'http://localhost:{settings.port}/v1/chat/completions',
-            'models': f'http://localhost:{settings.port}/v1/models',
+            'anthropic': f'http://127.0.0.1:{settings.port}/v1/messages',
+            'openai': f'http://127.0.0.1:{settings.port}/v1/chat/completions',
+            'models': f'http://127.0.0.1:{settings.port}/v1/models',
         },
     }
 

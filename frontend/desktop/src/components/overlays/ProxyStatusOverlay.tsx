@@ -109,7 +109,7 @@ export function ProxyStatusOverlay() {
         <h2 className="text-base font-semibold">Proxy is offline</h2>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{message}</p>
         <div className="mt-4 flex justify-center gap-2">
-          <Button variant="outline" onClick={() => window.open('http://localhost:8085/', '_blank')}>
+          <Button variant="outline" onClick={() => window.open('http://127.0.0.1:8085/', '_blank')}>
             Open in browser
           </Button>
           <Button disabled={retrying} onClick={() => { void onRetry(); }}>

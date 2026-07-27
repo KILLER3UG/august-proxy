@@ -47,7 +47,7 @@ docker ps            # expect: august-proxy   Up
 docker logs august-proxy --tail 30
 ```
 
-The API listens on **http://localhost:8085**. Compose maps host port
+The API listens on **http://127.0.0.1:8085**. Compose maps host port
 `8085` to container port `8085` (see `docker-compose.yml` and `Dockerfile` `EXPOSE 8085`).
 
 `data/` is bind-mounted, so `config.json`, `providers.json`, the brain DB, and
@@ -85,7 +85,7 @@ uv run pytest -q
 # or from repo root: npm run test:backend
 ```
 
-The server listens on **http://localhost:8085**. Use the **desktop app** for the
+The server listens on **http://127.0.0.1:8085**. Use the **desktop app** for the
 product UI (`npm run dev:desktop`). If `web-dist/` exists, FastAPI may serve that
 SPA at `/` for backend-only runs — that is packaging support, not the product QA path.
 
@@ -175,7 +175,7 @@ Completions API from the same port.
 ### Claude Code / Anthropic clients
 
 ```bash
-export ANTHROPIC_BASE_URL=http://localhost:8085
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8085
 # The proxy resolves the real key from your config; the client value is ignored.
 export ANTHROPIC_API_KEY=dummy
 claude
@@ -184,14 +184,14 @@ claude
 ### OpenAI clients (Codex, Cline, Continue.dev, etc.)
 
 ```bash
-export OPENAI_BASE_URL=http://localhost:8085
+export OPENAI_BASE_URL=http://127.0.0.1:8085
 export OPENAI_API_KEY=dummy
 codex
 ```
 
 ### Any "OpenAI-compatible" tool
 
-Set base URL to `http://localhost:8085` and use any non-empty API key. The
+Set base URL to `http://127.0.0.1:8085` and use any non-empty API key. The
 proxy resolves the upstream key from `config.json` / `providers.json` / `.env`.
 
 If **external access** is enabled (Settings → API Access), clients may need the
@@ -204,17 +204,17 @@ gateway API key (`GATEWAY_API_KEY` / generated key) — see
 
 ```bash
 # Health check (single endpoint — status, version, python, port, uptime)
-curl http://localhost:8085/api/health
+curl http://127.0.0.1:8085/api/health
 # -> {"status":"ok","version":"0.1.0","python":true,"port":8085,"uptime":...}
 
 # Detailed health (mode, data dir, external access, brain sync, …)
-curl http://localhost:8085/api/health/detailed
+curl http://127.0.0.1:8085/api/health/detailed
 
 # List models the proxy advertises
-curl http://localhost:8085/v1/models
+curl http://127.0.0.1:8085/v1/models
 
 # Send a test chat completion
-curl http://localhost:8085/v1/chat/completions \
+curl http://127.0.0.1:8085/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"sonnet","messages":[{"role":"user","content":"hi"}]}'
 ```
