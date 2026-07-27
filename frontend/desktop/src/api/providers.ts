@@ -65,6 +65,13 @@ export interface RefreshResult {
   removed: string[];
 }
 
+export interface RefreshAllResult {
+  refreshed: number;
+  failed: number;
+  added: number;
+  removed: number;
+}
+
 export interface ConnectModelResult {
   success: boolean;
   content?: string;
@@ -97,6 +104,9 @@ export const providersApi = {
     api.delete<void>(p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}`)),
   refreshModels: (id: string) =>
     api.post<RefreshResult>(p(`/${encodeURIComponent(id)}/models/refresh`)),
+  /** Bulk startup sync: refresh model lists for every enabled, keyed provider
+   *  from its upstream /models endpoint (best-effort per provider). */
+  refreshAllModels: () => api.post<RefreshAllResult>(p('/refresh-all')),
   /** Test whether a model is reachable + returns "WORKING" to a minimal prompt. */
   connectModel: (id: string, modelId: string) =>
     api.post<ConnectModelResult>(

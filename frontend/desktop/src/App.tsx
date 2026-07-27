@@ -6,8 +6,12 @@ import { ProviderOnboardingModal } from '@/components/overlays/ProviderOnboardin
 import { BackendBootstrapGate } from '@/components/overlays/BackendBootstrapGate';
 import { QuitConfirmModal } from '@/components/overlays/QuitConfirmModal';
 import { UpdateRelaunchOverlay } from '@/components/overlays/UpdateRelaunchOverlay';
+import { useStartupProviderRefresh } from '@/hooks/useStartupProviderRefresh';
 
 export default function App() {
+  // Sync provider model lists from upstream once per launch so the model
+  // dropdown reflects models added/removed since the app last ran.
+  useStartupProviderRefresh();
   return (
     <>
       <BackendBootstrapGate>

@@ -73,6 +73,49 @@ async def providersHealth():
     return {'status': 'ok'}
 
 
+@router.post('/refresh-all')
+async def refreshAllModels():
+    """Refresh stored model lists from every enabled provider's /models endpoint.
+
+    Best-effort per provider: one unreachable provider never aborts the rest.
+    The desktop app calls this once at startup so the model selection dropdown
+    reflects models added or removed upstream since the last run.
+    """
+    store = config_service.getProvidersStore()
+    providers_list = as_list(store.get('providers', []))
+    refreshed = 0
+    failed = 0
+    addedTotal = 0
+    removedTotal = 0
+    for raw in providers_list:
+        entry = as_dict(raw)
+        if not as_bool(entry.get('enabled', False)):
+            continue
+        providerId = as_str(entry.get('id', ''))
+        if not providerId or not as_str(entry.get('baseUrl', '')) or not as_str(entry.get('apiKey', '')):
+            continue
+        try:
+            added, _updated, removed, live = await _discoverProviderModels(providerId, persist=True)
+        except Exception:
+            failed += 1
+            continue
+        if not live:
+            # Upstream unreachable or empty — nothing was synced (and the prune
+            # guard kept the stored list intact). Report it as failed.
+            failed += 1
+            continue
+        refreshed += 1
+        addedTotal += len(added)
+        removedTotal += len(removed)
+    try:
+        from app.services.realtime_bus import emit_invalidate
+
+        emit_invalidate('models', 'providers', 'provider-health')
+    except Exception:
+        pass
+    return {'refreshed': refreshed, 'failed': failed, 'added': addedTotal, 'removed': removedTotal}
+
+
 @router.post('')
 async def createProvider(body: ProviderCreate):
     import hashlib
@@ -307,6 +350,20 @@ async def _discoverProviderModels(
                             'source': 'fetched',
                         }
                     )
+            # Drop auto-discovered models that vanished upstream so deleted
+            # models leave the selection dropdown. Manually added models are
+            # never pruned, and an empty live list (failed/unreachable fetch)
+            # prunes nothing so a flaky upstream can't wipe a provider's list.
+            if liveIds:
+                currentModels = [
+                    m
+                    for m in currentModels
+                    if not (
+                        isinstance(m, dict)
+                        and as_str(m.get('source', '')) == 'fetched'
+                        and as_str(m.get('id', '')) not in liveIds
+                    )
+                ]
             p['models'] = currentModels
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()
