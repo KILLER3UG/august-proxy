@@ -107,12 +107,12 @@ export function useAppUpdate() {
 
     if (isWindowsDesktop()) {
       // Full-installer flow: download the real NSIS setup from the latest
-      // GitHub release, then run it in `/UPDATE` mode. The old version is
-      // removed automatically (NSIS `PageLeaveReinstall` skips the uninstaller
-      // under `$UpdateMode`), with NO uninstall wizard or maintenance popup —
-      // the install wizard stays visible (see `windows/installer.nsi` +
-      // `launch_installer_and_exit`). This replaces the quiet in-place patch,
-      // which could miss bundled backend changes.
+      // GitHub release, then run it in `/UPDATE` mode. The template routes
+      // update mode through the previous version's uninstaller FIRST (the
+      // uninstall wizard pops up), then continues with the install wizard —
+      // see `windows/installer.nsi` + `launch_installer_and_exit`. This
+      // replaces the quiet in-place patch, which could miss bundled backend
+      // changes, and guarantees a clean swap to the latest version.
       let unlisten: (() => void) | undefined;
       let downloaded = 0;
       let total: number | null = null;

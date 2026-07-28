@@ -1238,14 +1238,17 @@ pub async fn download_release_installer(
 /// installer can replace files.
 ///
 /// Passes `/UPDATE` (no `/S`, no `/P`) so that:
-///   - NSIS `PageLeaveReinstall` hits `${If} $UpdateMode = 1` → `Goto reinst_done`
-///     and the OLD `uninstall.exe` is never invoked — no uninstall wizard, no
-///     clicks, no `ExecWait` on the previous uninstaller.
-///   - `$PassiveMode` stays 0, so `SkipIfPassive` does NOT hide the install pages
-///     — the user still sees the install wizard (welcome / directory / instfiles)
-///     exactly like a first-time install. See the checked-in
-///     `windows/installer.nsi` template, which also auto-skips the maintenance
-///     radio page under `$UpdateMode = 1`.
+///   - NSIS `PageLeaveReinstall` hits `${If} $UpdateMode = 1` → `Goto
+///     reinst_uninstall` and `ExecWait`s the OLD `uninstall.exe` — the
+///     uninstall wizard pops up first (confirm + progress pages). `/UPDATE`
+///     is forwarded to it so it never deletes app data, and its app-data
+///     checkbox is hidden in update mode.
+///   - `$PassiveMode` stays 0, so `SkipIfPassive` does NOT hide the install
+///     pages — after the uninstall wizard finishes, the user sees the install
+///     wizard (welcome / directory / instfiles) exactly like a first-time
+///     install. See the checked-in `windows/installer.nsi` template, which
+///     also auto-skips the maintenance radio page under `$UpdateMode = 1`
+///     and quits the update if the uninstall is cancelled.
 ///
 /// NSIS PREINSTALL (in `windows/hooks.nsh`) still sweeps stray August/python
 /// processes so locked `resources/python/*.pyd` files don't abort the copy.

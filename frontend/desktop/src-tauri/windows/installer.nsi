@@ -11,30 +11,38 @@
 ; makensis on the result — see `tauri-bundler/src/bundle/windows/nsis/mod.rs`
 ; (`register_template_string` → `handlebars.render`).
 ;
-; ─── THE ONLY LOCAL EDIT (search for "AUGUST-EDIT") ───────────────────────
-; In `Function PageReinstall`, the passive-mode auto-skip now also fires under
-; update mode (`$UpdateMode = 1`):
-;     ${If} $PassiveMode = 1
-;     ${OrIf} $UpdateMode = 1
-;       Call PageLeaveReinstall
-;     ${Else} ...
+; ─── LOCAL EDITS (search for "AUGUST-EDIT") ────────────────────────────
+; Update flow = UNINSTALL wizard first, then INSTALL wizard:
 ;
-; Why: `launch_installer_and_exit` (see `src/backend.rs`) now passes `/UPDATE`
-; to the setup .exe. Under `/UPDATE`, `PageLeaveReinstall` already does
-; `Goto reinst_done` (skips the OLD uninstaller entirely — no uninstall
-; wizard, no clicks). But the maintenance radio page itself was still shown
-; (it only auto-skipped under `/P`). This edit auto-skips it under `/UPDATE`
-; too, WITHOUT setting `$PassiveMode` — so `SkipIfPassive` (which only checks
-; `$PassiveMode`) still leaves the install pages (welcome / directory /
-; instfiles / finish) fully visible. Net result: the old version is removed
-; automatically with no popups, and the user still sees the install wizard.
+; 1. `Function PageReinstall` auto-skips the maintenance radio page under
+;    update mode (`$UpdateMode = 1`) in addition to passive mode:
+;        ${If} $PassiveMode = 1
+;        ${OrIf} $UpdateMode = 1
+;          Call PageLeaveReinstall
+;        ${Else} ...
+; 2. `Function PageLeaveReinstall` routes `$UpdateMode = 1` to
+;    `reinst_uninstall` (upstream sent it to `reinst_done`), so the previous
+;    version's `uninstall.exe` IS invoked via `ExecWait` — its confirm +
+;    instfiles pages show as a real uninstall wizard. `/UPDATE` is appended
+;    to it, which (a) keeps its "delete app data" section disabled and
+;    (b) hides its app-data checkbox (see `un.ConfirmShow` edit below).
+;    If the user cancels that uninstall, the whole update quits (there is
+;    no radio page to return to).
+;
+; Why: `launch_installer_and_exit` (see `src/backend.rs`) passes `/UPDATE`
+; to the setup .exe. `$PassiveMode` stays 0, so `SkipIfPassive` (which only
+; checks `$PassiveMode`) leaves the install pages (welcome / directory /
+; instfiles / finish) fully visible AFTER the uninstall wizard completes.
+; Net result: the user sees the uninstall wizard pop up, then the install
+; wizard — a clean replace with the latest version.
 ;
 ; ─── UPGRADING TAURI ─────────────────────────────────────────────────────
 ; When you bump `@tauri-apps/cli`, re-download the upstream file at the new
-; tag, diff against this one, and re-apply the single "AUGUST-EDIT" line.
+; tag, diff against this one, and re-apply the "AUGUST-EDIT" blocks.
 ; Tauri may add new double-brace tokens, resource loops, or webview2 logic that
-; a stale template would silently miss. The only intentional divergence from
-; upstream is the `${OrIf} $UpdateMode = 1` line marked AUGUST-EDIT below.
+; a stale template would silently miss. Intentional divergences from upstream
+; are the `${OrIf} $UpdateMode = 1` page skip, the `$UpdateMode = 1` route to
+; `reinst_uninstall` (+ quit-on-cancel), and the hidden app-data checkbox.
 ; ─────────────────────────────────────────────────────────────────────────
 
 Unicode true
@@ -298,8 +306,8 @@ Function PageReinstall
   ; related to current installed version if detected and whether
   ; we are downgrading or not.
   ;
-  ; AUGUST-EDIT: also auto-skip under update mode. `/UPDATE` makes
-  ; PageLeaveReinstall `Goto reinst_done` (old uninstaller skipped), but
+  ; AUGUST-EDIT: also auto-skip under update mode. Update mode routes
+  ; `PageLeaveReinstall` to `reinst_uninstall` (uninstall wizard first), and
   ; $PassiveMode stays 0 so the install pages below remain visible.
   ${If} $PassiveMode = 1
   ${OrIf} $UpdateMode = 1
@@ -353,9 +361,13 @@ Function PageLeaveReinstall
     Goto reinst_uninstall
   ${EndIf}
 
-  ; In update mode, always proceeds without uninstalling
+  ; AUGUST-EDIT: in update mode, run the previous version's uninstaller
+  ; FIRST (its wizard pops up), then continue with the install wizard.
+  ; Upstream skipped straight to reinst_done here. `/UPDATE` is appended
+  ; to the uninstaller command in reinst_uninstall below, which keeps the
+  ; app-data deletion off and hides that checkbox.
   ${If} $UpdateMode = 1
-    Goto reinst_done
+    Goto reinst_uninstall
   ${EndIf}
 
   ; $R0 holds whether same(0)/upgrading(1)/downgrading(-1) version
@@ -404,6 +416,14 @@ Function PageLeaveReinstall
 
     ${If} $0 <> 0
     ${OrIf} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
+      ; AUGUST-EDIT: update mode has no maintenance radio page to return to —
+      ; a cancelled or failed uninstall aborts the whole update.
+      ${If} $UpdateMode = 1
+        BringToFront
+        MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"
+        Quit
+      ${EndIf}
+
       ; User cancelled wix uninstaller? return to select un/reinstall page
       ${If} $WixMode = 1
       ${AndIf} $0 = 1602
@@ -492,6 +512,12 @@ Function un.ConfirmShow ; Add add a `Delete app data` check box
   Pop $DeleteAppDataCheckbox
   SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $1
   SendMessage $DeleteAppDataCheckbox ${WM_SETFONT} $1 1
+  ; AUGUST-EDIT: during an update-driven uninstall, app data is never deleted
+  ; (Section Uninstall guards on $UpdateMode) — hide the choice entirely so
+  ; the uninstall wizard shown before an update can't scare users with it.
+  ${If} $UpdateMode = 1
+    ShowWindow $DeleteAppDataCheckbox ${SW_HIDE}
+  ${EndIf}
 FunctionEnd
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.ConfirmLeave
 Function un.ConfirmLeave

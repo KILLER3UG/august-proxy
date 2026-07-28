@@ -33,8 +33,8 @@ export function UpdateRelaunchOverlay() {
     : 'Preparing installer…';
 
   const subtitle = restarting
-    ? 'August is closing so the installer can apply the update. The old version is removed automatically — you’ll see the install wizard, then August reopens.'
-    : 'The setup window will appear in a moment. The old version is removed automatically.';
+    ? 'August is closing so the update can apply. The uninstall wizard pops up first, then the install wizard — August reopens once it’s done.'
+    : 'The setup window will appear in a moment. You’ll see the uninstall wizard first, then the install wizard.';
 
   return (
     <AnimatePresence>
