@@ -714,6 +714,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
   }, [workbenchMode]);
 
+  // Backend-initiated mode switches (the model calls enter_plan_mode) arrive
+  // via guardModeChanged and update only workbenchSession — sync the composer
+  // selector so the plan-gate banner can appear. Intentionally keyed on the
+  // session mode alone: including workbenchMode would fight in-flight
+  // user-initiated switches before the backend round-trip lands.
+  const sessionGuardMode = workbenchSession?.guardMode;
+  useEffect(() => {
+    if (
+      sessionGuardMode &&
+      WORKBENCH_GUARD_MODES[sessionGuardMode] &&
+      sessionGuardMode !== workbenchMode
+    ) {
+      setWorkbenchMode(sessionGuardMode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only when the session mode changes
+  }, [sessionGuardMode]);
+
   useEffect(() => {
     void (async () => {
       try {

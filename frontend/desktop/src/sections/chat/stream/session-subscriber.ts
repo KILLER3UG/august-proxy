@@ -24,7 +24,7 @@ import { streamWorkbenchReconnect } from '@/api/workbench';
 import { chatRuntime } from '../chat-runtime';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { upsertQueuedMessage, removeQueuedMessage } from '../queue-store';
-import { updateSessionStreamState } from './session-stream-store';
+import { updateSessionStreamState, useSessionStreamStore } from './session-stream-store';
 import { makeSubagentEventHandlers } from './apply-subagent-event';
 import { activeStreamControllers } from './active-stream-controllers';
 import {
@@ -192,11 +192,24 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
       }
     })
     .finally(() => {
-      if (!controller.signal.aborted) {
-        sessionSubscribers.delete(wbId);
-      }
       if (dummyTurnId) {
         chatRuntime.finishTurn(dummyTurnId, 'done');
+      }
+      if (!controller.signal.aborted) {
+        sessionSubscribers.delete(wbId);
+        // Background subagents often settle after the turn's `done`, when
+        // this subscriber has already closed. If any containers are still
+        // running, re-attach so their late subagentDone events (already in
+        // the backend event log) still reach the chat UI. The backend tail
+        // only breaks on done|error|aborted, so the fresh stream idles
+        // until the completions arrive.
+        const state = useSessionStreamStore.getState().bySession[uiSessionId];
+        const hasRunningSubagents = state
+          ? Array.from(state.subagentBlocks.values()).some((b) => b.status === 'running')
+          : false;
+        if (hasRunningSubagents) {
+          ensureSessionSubscriber(wbId);
+        }
       }
     });
 }

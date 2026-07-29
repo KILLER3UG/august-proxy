@@ -2,8 +2,8 @@
 /* Shows when the user has not completed or skipped the checklist.        */
 /* Tracks provider, workspace, Google, plus doctor (backend/MCP/disk).    */
 
-import { useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { providersApi, type Provider } from '@/api/providers';
 import { getWorkbenchDoctor, type DoctorReport } from '@/api/workbench';
 import { useSessionsStore } from '@/store/sessions';
@@ -21,8 +21,6 @@ export type SetupCheckItem = {
 };
 
 export function useProviderOnboardingState() {
-  const qc = useQueryClient();
-
   const providersQ = useQuery<Provider[]>({
     queryKey: ['providers'],
     queryFn: () => providersApi.list(),
@@ -65,9 +63,14 @@ export function useProviderOnboardingState() {
     doctor?.summary ||
     (doctorQ.isError ? 'Could not reach doctor endpoint' : 'Checking health…');
 
-  const dismissed =
-    typeof localStorage !== 'undefined' &&
-    (localStorage.getItem(SKIP_KEY) === 'true' || localStorage.getItem(DONE_KEY) === 'true');
+  // Reactive dismissal flag — localStorage alone does not trigger a
+  // re-render, so skip()/markDone() must flip this state to close the
+  // modal immediately (seeded from storage on first mount).
+  const [dismissed, setDismissed] = useState(
+    () =>
+      typeof localStorage !== 'undefined' &&
+      (localStorage.getItem(SKIP_KEY) === 'true' || localStorage.getItem(DONE_KEY) === 'true'),
+  );
 
   const checks: SetupCheckItem[] = useMemo(
     () => [
@@ -109,8 +112,7 @@ export function useProviderOnboardingState() {
   const allCoreDone = hasProvider && hasWorkspace;
 
   // Show until user skips/completes, or while core setup is incomplete on first load
-  const shouldShow =
-    !dismissed && !providersQ.isLoading && (!hasProvider || !localStorage.getItem(DONE_KEY));
+  const shouldShow = !dismissed && !providersQ.isLoading;
 
   // Prefer showing whenever provider list is empty OR checklist not marked done and incomplete
   const shouldShowChecklist =
@@ -120,18 +122,19 @@ export function useProviderOnboardingState() {
 
   const skip = () => {
     localStorage.setItem(SKIP_KEY, 'true');
-    void qc.invalidateQueries({ queryKey: ['providers'] });
+    setDismissed(true);
   };
 
   const markDone = () => {
     localStorage.setItem(DONE_KEY, 'true');
     localStorage.setItem(SKIP_KEY, 'true');
-    void qc.invalidateQueries({ queryKey: ['providers'] });
+    setDismissed(true);
   };
 
   const resetDismissed = () => {
     localStorage.removeItem(SKIP_KEY);
     localStorage.removeItem(DONE_KEY);
+    setDismissed(false);
   };
 
   return {

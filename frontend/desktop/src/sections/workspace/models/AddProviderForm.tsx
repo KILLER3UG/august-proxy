@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Plus, Check, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Plus, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { providersApi, type Provider, type ApiFormat } from '@/api/providers';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
@@ -114,16 +114,11 @@ export function AddProviderForm({
 
         <div className="flex items-center justify-end gap-2 pt-4">
           <Button
-            variant="outline"
             onClick={() => create.mutate()}
             disabled={!valid || create.isPending}
           >
             {create.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
             Add provider
-          </Button>
-          <Button onClick={() => create.mutate()} disabled={!valid || create.isPending}>
-            {create.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-            Create
           </Button>
         </div>
       </div>

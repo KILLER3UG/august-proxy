@@ -63,7 +63,21 @@ export function applySubagentEvent(
         : event.status === 'cancelled' ? 'cancelled'
         : 'completed';
       let inner = current.blocks;
-      const resultText = (event.result || '').trim();
+      // Defensive coercion: the backend is supposed to send a string, but a
+      // dict payload here used to throw on .trim() and the SSE reader
+      // swallowed the error — silently dropping subagentDone forever.
+      const raw = event.result as unknown;
+      let resultRaw = '';
+      if (typeof raw === 'string') {
+        resultRaw = raw;
+      } else if (raw && typeof raw === 'object') {
+        const nested = (raw as Record<string, unknown>).result
+          ?? (raw as Record<string, unknown>).output;
+        resultRaw = typeof nested === 'string'
+          ? nested
+          : nested != null ? JSON.stringify(nested) : '';
+      }
+      const resultText = resultRaw.trim();
       if (resultText) {
         const hasFinal = inner.some(
           (b) => b.type === 'finalOutput' && (b.content || '').trim(),

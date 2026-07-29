@@ -207,6 +207,23 @@ async def approveProposal(orchestrator: SubagentOrchestrator, proposalId: str) -
     )
 
 
+def _doneResultText(result: dict[str, Any]) -> str:
+    """Flatten a worker handle dict to the text payload for ``subagentDone``.
+
+    ``waitForEach`` yields ``handle.toDict()`` whose ``result`` is the whole
+    worker dict (``{'taskId', 'agentId', 'status', 'result': text}``), not a
+    string. The frontend calls ``.trim()`` on ``subagentDone.result`` — a dict
+    there throws and silently kills the event, leaving the chat container
+    stuck at "running". Mirrors ``SubagentOrchestrator._result_payload_text``.
+    """
+    payload = result.get('result')
+    if isinstance(payload, str):
+        return payload
+    if isinstance(payload, dict):
+        return str(payload.get('result') or payload.get('output') or '')
+    return '' if payload is None else str(payload)
+
+
 async def _doSpawn(
     orchestrator: SubagentOrchestrator,
     session: object,
@@ -260,7 +277,7 @@ async def _doSpawn(
                                 'type': 'subagentDone',
                                 'jobId': result.get('taskId'),
                                 'status': result.get('status'),
-                                'result': result.get('result'),
+                                'result': _doneResultText(result),
                                 'message': result.get('error') or '',
                             }
                         )
@@ -292,7 +309,7 @@ async def _doSpawn(
                     'type': 'subagentDone',
                     'jobId': result.get('taskId'),
                     'status': result.get('status'),
-                    'result': result.get('result'),
+                    'result': _doneResultText(result),
                     'message': result.get('error') or '',
                 }
             )

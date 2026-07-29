@@ -117,3 +117,55 @@ async def test_background_spawn_returns_started_and_enqueues():
 
 def as_str_kind(entry: dict) -> str:
     return str(entry.get('kind') or '')
+
+
+def test_done_result_text_flattens_worker_dict():
+    """subagentDone.result must be a string — the frontend calls .trim() on it."""
+    from app.services.tools.spawn_subagents_tool import _doneResultText
+
+    assert _doneResultText({'result': 'plain'}) == 'plain'
+    # waitForEach yields handle.toDict() whose 'result' is the whole worker dict
+    assert _doneResultText({'result': {'taskId': 't', 'result': 'inner'}}) == 'inner'
+    assert _doneResultText({'result': {'output': 'out'}}) == 'out'
+    assert _doneResultText({'result': None}) == ''
+    assert _doneResultText({}) == ''
+
+
+@pytest.mark.asyncio
+async def test_subagent_done_event_result_is_string():
+    """Regression: subagentDone.result used to be the whole worker dict; the
+    frontend .trim() throw was swallowed by the SSE reader, silently dropping
+    the event and leaving the chat container stuck at 'running'."""
+    bus = AgentMessageBus()
+    orch = SubagentOrchestrator(bus, max_workers=4)
+    session = create_workbench_session()
+    emitted: list[dict] = []
+
+    async def fake_run(**kwargs):
+        return {
+            'status': 'completed',
+            'result': 'final report text',
+            'taskId': kwargs.get('taskId'),
+            'agentId': kwargs.get('agentId'),
+        }
+
+    with patch('app.services.subagent_worker.runSubagent', new=AsyncMock(side_effect=fake_run)):
+        await executeSpawnSubagents(
+            orch,
+            session,
+            [{'goal': 'explore', 'agentId': 'explore'}],
+            mode='auto',
+            emit=emitted.append,
+            background=True,
+        )
+        # Let the background watch task settle and emit subagentDone.
+        for _ in range(50):
+            if any(e.get('type') == 'subagentDone' for e in emitted):
+                break
+            await asyncio.sleep(0.02)
+
+    done = [e for e in emitted if e.get('type') == 'subagentDone']
+    assert len(done) == 1
+    assert done[0]['result'] == 'final report text'
+    assert done[0]['status'] == 'completed'
+    await orch.close()

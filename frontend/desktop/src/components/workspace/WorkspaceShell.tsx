@@ -201,8 +201,10 @@ export function WorkspaceShell({
         </div>
       </aside>
 
-      {/* Main content — each section renders its own h1 inside */}
-      <div className="flex-1 min-w-0 overflow-auto">{children}</div>
+      {/* Main content — each section renders its own h1 inside.
+          overflow-x-hidden: wide children (tables, pre) must not give the
+          whole settings pane a horizontal scrollbar. */}
+      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">{children}</div>
     </div>
   );
 }
