@@ -151,24 +151,34 @@ def _active_guard_mode(session: dict[str, object] | None) -> str:
     return 'full'
 
 
-def _guard_mode_barrier_lines(mode: str) -> list[str]:
-    """Indented sub-lines for the active agent mode (hard rule #1)."""
+def _guard_mode_barrier_lines(mode: str, sessionId: str = '') -> list[str]:
+    """Indented sub-lines for the active agent mode (hard rule #1).
+
+    ``sessionId`` scopes the plan-file path so sessions sharing a workspace
+    never write or read each other's plans.
+    """
+    if sessionId:
+        from app.services.workbench.workbench import plan_file_relpath
+
+        planPath = plan_file_relpath(sessionId)
+    else:
+        planPath = '.aug/plans/<sessionId>.md'
     if mode == 'full':
         return [
             '   Full access: execute tools (writes, edits, deletes, shell) immediately when',
             '   needed. Simple or clearly-scoped tasks: just do the work — no plan approval.',
             '   For non-trivial multi-step changes (multiple files, architectural decisions,',
             '   risky or destructive operations), call enter_plan_mode FIRST, investigate with',
-            '   read-only tools, write the plan to .aug/plans/plan.md, and present it via',
+            f'   read-only tools, write the plan to {planPath}, and present it via',
             '   submit_plan for approval. Never use the plan flow for trivial requests.',
         ]
     if mode == 'plan':
         return [
             '   Plan mode: investigate with non-destructive tools only. Destructive tools',
             '   (write/edit/delete/shell/install) are blocked until the user approves a plan.',
-            '   The ONLY file you may write is the plan itself: .aug/plans/plan.md in the',
-            '   workspace (fixed path — do not pick another name). Write the full plan there',
-            '   as clean markdown — it is shown to the user exactly as written — then call',
+            f'   The ONLY file you may write is the plan itself: {planPath} in the',
+            '   workspace (session-scoped path — do not pick another name). Write the full plan',
+            '   there as clean markdown — it is shown to the user exactly as written — then call',
             '   submit_plan and wait. After approval, execute only the approved steps.',
         ]
     return [
@@ -191,7 +201,7 @@ def buildTier1(session: dict[str, object] | None = None) -> str:
         + mode
         + ' — hard constraint, not a suggestion. Never invent another mode; follow ONLY its rules.',
     ]
-    constraints.extend(_guard_mode_barrier_lines(mode))
+    constraints.extend(_guard_mode_barrier_lines(mode, as_str(_get(session, 'id', 'sessionId'))))
     constraints.extend(
         [
             '2. Never fabricate history: cross-session memory is ON-DEMAND. When the user refers to',

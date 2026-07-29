@@ -18,7 +18,7 @@ export interface WorkbenchPlan {
   risks: string[];
   verification: string[];
   markdown?: string;
-  /** Workspace-relative path of the plan file the model wrote (e.g. `.aug/plans/plan.md`). */
+  /** Workspace-relative path of the plan file the model wrote (session-scoped, e.g. `.aug/plans/<sessionId>.md`). */
   planPath?: string;
   createdAt: string;
 }

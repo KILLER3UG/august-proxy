@@ -322,8 +322,21 @@ def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> b
 
 
 # The single file the model may write in plan mode: the plan markdown that
-# submit_plan hands to the user. Fixed path — the model never picks a name.
-PLAN_FILE_RELPATH = '.aug/plans/plan.md'
+# submit_plan hands to the user. Session-scoped (.aug/plans/<sessionId>.md)
+# so sessions sharing a workspace never see each other's plans — the old
+# fixed plan.md leaked one session's plan into every other session that
+# entered plan mode. The model learns its exact path from the
+# enter_plan_mode tool result.
+PLAN_FILE_DIR = '.aug/plans'
+
+
+def plan_file_relpath(sessionId: str) -> str:
+    """Workspace-relative plan markdown path for one session."""
+    import re
+
+    safe = re.sub(r'[^A-Za-z0-9_.-]', '_', as_str(sessionId or '').strip()) or 'session'
+    return f'{PLAN_FILE_DIR}/{safe}.md'
+
 
 _PLAN_FILE_WRITE_TOOLS = {
     'write_file',
@@ -336,36 +349,38 @@ _PLAN_FILE_WRITE_TOOLS = {
 }
 
 
-def plan_file_path(workspacePath: str | None) -> str | None:
-    """Absolute path of the workspace's plan markdown file (None without a workspace)."""
+def plan_file_path(workspacePath: str | None, sessionId: str) -> str | None:
+    """Absolute path of the session's plan markdown file (None without a workspace)."""
     import os
 
     workspace = as_str(workspacePath or '').strip()
     if not workspace:
         return None
-    return os.path.normpath(os.path.join(workspace, *PLAN_FILE_RELPATH.split('/')))
+    return os.path.normpath(os.path.join(workspace, *plan_file_relpath(sessionId).split('/')))
 
 
 def is_plan_file_write(
-    workspacePath: str | None, toolName: str, args: dict[str, object] | None
+    session: object, toolName: str, args: dict[str, object] | None
 ) -> bool:
-    """True only if this call writes exactly the plan markdown file.
+    """True only if this call writes exactly this session's plan markdown file.
 
     This is the sole write allowed in plan mode. Fails closed: any tool we
-    cannot prove targets ``<workspace>/.aug/plans/plan.md`` stays blocked.
+    cannot prove targets ``<workspace>/.aug/plans/<sessionId>.md`` stays blocked.
     """
     import os
 
     if (toolName or '').lower() not in _PLAN_FILE_WRITE_TOOLS:
         return False
-    allowed = plan_file_path(workspacePath)
+    allowed = plan_file_path(
+        getattr(session, 'workspacePath', None), as_str(getattr(session, 'id', None) or '')
+    )
     if not allowed:
         return False
     a = as_dict(args or {})
     raw = as_str(a.get('path') or a.get('file_path') or a.get('filePath'))
     if not raw:
         return False
-    workspace = as_str(workspacePath or '').strip()
+    workspace = as_str(getattr(session, 'workspacePath', None) or '').strip()
     target = raw if os.path.isabs(raw) else os.path.join(workspace, raw)
     try:
         return os.path.normcase(os.path.normpath(target)) == os.path.normcase(allowed)
@@ -1693,7 +1708,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 planPayload = _loadPlanPayload(session, toolInput)
                 if planPayload is None:
                     msg = (
-                        f'Plan not found. Write your plan as markdown to {PLAN_FILE_RELPATH} '
+                        f'Plan not found. Write your plan as markdown to {plan_file_relpath(session.id)} '
                         'in the workspace (the only file you may write in plan mode), '
                         'then call submit_plan again.'
                     )
@@ -2666,12 +2681,12 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
         return None
 
     if mode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
-        if is_plan_file_write(getattr(session, 'workspacePath', None), toolName, args):
+        if is_plan_file_write(session, toolName, args):
             # The plan markdown is the only file writable in plan mode.
             return None
         return (
             f"Tool '{toolName}' is destructive and cannot run in plan mode. "
-            'The only file you may write is the plan itself (.aug/plans/plan.md). '
+            f'The only file you may write is the plan itself ({plan_file_relpath(session.id)}). '
             'Finish investigating with non-destructive tools, write the plan to that '
             'file, call `submit_plan`, and wait for the user to approve before executing.'
         )
@@ -2761,7 +2776,7 @@ def enterPlanMode(session: WorkbenchSession, emit: object | None = None) -> str:
     if mode_now == 'plan':
         return (
             'Already in Plan mode. Investigate with non-destructive tools, write your '
-            f'plan to {PLAN_FILE_RELPATH}, then call submit_plan and wait for approval.'
+            f'plan to {plan_file_relpath(session.id)}, then call submit_plan and wait for approval.'
         )
     session.guardMode = 'plan'
     session.agentId = 'plan'
@@ -2791,7 +2806,7 @@ def enterPlanMode(session: WorkbenchSession, emit: object | None = None) -> str:
         emit({'type': 'guardModeChanged', 'guardMode': 'plan', 'agentId': 'plan'})
     return (
         'Plan mode enabled — destructive tools are now blocked. Investigate with '
-        f'read-only tools, write your plan as markdown to {PLAN_FILE_RELPATH} (the '
+        f'read-only tools, write your plan as markdown to {plan_file_relpath(session.id)} (the '
         'only file you may write), then call submit_plan and wait for the user to approve.'
     )
 
@@ -2804,26 +2819,32 @@ def _loadPlanPayload(
 ) -> dict[str, object] | None:
     """Resolve the plan payload for submit_plan.
 
-    Preference: explicit ``planPath`` argument → the fixed plan file
-    (``.aug/plans/plan.md``) → legacy inline ``plan``/``steps`` payload. The
-    file's content becomes ``plan.markdown``, which the plan drawer renders
-    as-is. Returns None when nothing usable was found so the caller can tell
-    the model to write the plan file first.
+    Preference: explicit ``planPath`` argument (only honored when it points
+    at this session's own plan file — plans are session-private) → the
+    session plan file (``.aug/plans/<sessionId>.md``) → legacy inline
+    ``plan``/``steps`` payload. The file's content becomes ``plan.markdown``,
+    which the plan drawer renders as-is. Returns None when nothing usable was
+    found so the caller can tell the model to write the plan file first.
     """
     import os
     from pathlib import Path
 
     workspace = as_str(getattr(session, 'workspacePath', None) or '').strip()
+    own = plan_file_path(workspace, as_str(getattr(session, 'id', None) or ''))
     rawPath = as_str(toolInput.get('planPath') or toolInput.get('path'))
     target: str | None = None
-    if rawPath and workspace:
+    if rawPath and workspace and own:
         candidate = rawPath if os.path.isabs(rawPath) else os.path.join(workspace, rawPath)
-        root = os.path.normcase(os.path.normpath(workspace))
-        # Containment check — never read a plan outside the workspace.
-        if os.path.normcase(os.path.normpath(candidate)).startswith(root + os.sep):
-            target = candidate
+        # Session-scoped: only this session's own plan file is readable.
+        # Any other path (another session's plan, arbitrary workspace file)
+        # is ignored so plans never leak across sessions.
+        try:
+            if os.path.normcase(os.path.normpath(candidate)) == os.path.normcase(own):
+                target = candidate
+        except Exception:
+            target = None
     if not target:
-        target = plan_file_path(workspace)
+        target = own
     if target and os.path.isfile(target):
         try:
             content = Path(target).read_text('utf-8', errors='replace')[:_MAX_PLAN_BYTES]

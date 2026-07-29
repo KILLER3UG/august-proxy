@@ -3,9 +3,10 @@
 /* Plan actions (Reject / Revise / Accept / Accept and allow edits) live in  */
 /* the PlanProposalBanner at the bottom of the chat thread. The drawer card  */
 /* here is read-only: it renders the plan exactly as the model wrote it.     */
-/* The plan is the model's own markdown (written to .aug/plans/plan.md and   */
-/* handed over via submit_plan) — no app-imposed structure, rendered with    */
-/* the same Markdown component + variant as assistant chat messages.         */
+/* The plan is the model's own markdown (written to the session-scoped      */
+/* .aug/plans/<sessionId>.md and handed over via submit_plan) — no           */
+/* app-imposed structure, rendered with the same Markdown component +        */
+/* variant as assistant chat messages.                                       */
 
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { WorkbenchSession } from '@/types/workbench';

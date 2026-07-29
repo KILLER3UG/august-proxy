@@ -331,26 +331,30 @@ def register() -> None:
         'Switch this session into Plan mode before a non-trivial multi-step change '
         '(multiple files, architectural decisions, risky or destructive operations). '
         'In Plan mode you investigate with read-only tools and write your plan as '
-        'markdown to .aug/plans/plan.md — the only file you may write — then present '
-        'it with submit_plan for user approval. Do NOT call this for simple, '
-        'clearly-scoped requests; just do the work. No effect if already in Plan mode.',
+        'markdown to this session\'s plan file under .aug/plans/ (the exact path is '
+        'returned by this tool) — the only file you may write — then present it with '
+        'submit_plan for user approval. Do NOT call this for simple, clearly-scoped '
+        'requests; just do the work. No effect if already in Plan mode.',
         _enterPlanModeFallback,
         {'type': 'object', 'properties': {}, 'required': []},
     )
     tool_registry.register(
         'submit_plan',
         'Submit your plan for user approval. First write the plan as clean markdown '
-        'to .aug/plans/plan.md in the workspace (fixed path — the only file writable '
-        'in Plan mode), then call this tool; the file is shown to the user exactly as '
-        'written. Optional planPath overrides the plan file location (must stay '
-        'inside the workspace).',
+        'to this session\'s plan file (.aug/plans/<sessionId>.md — the exact path is '
+        'returned by enter_plan_mode; it is the only file writable in Plan mode and '
+        'is private to this session), then call this tool; the file is shown to the '
+        'user exactly as written.',
         _submitPlanFallback,
         {
             'type': 'object',
             'properties': {
                 'planPath': {
                     'type': 'string',
-                    'description': 'Path to the plan markdown file (default: .aug/plans/plan.md).',
+                    'description': (
+                        'Optional path to the plan markdown file. Only this session\'s own '
+                        'plan file (.aug/plans/<sessionId>.md) is accepted; other paths are ignored.'
+                    ),
                 },
             },
             'required': [],
