@@ -2353,8 +2353,52 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
 
         if isMcpToolName(toolName):
             return str(await executeMcpToolCall(toolName, args))
+
+        # Lifecycle hooks: PRE_TOOL_USE (can deny or modify)
+        try:
+            from app.services.hooks import HookContext, HookEvent
+            from app.services.hooks import registry as hook_registry
+
+            pre_ctx = HookContext(
+                event=HookEvent.PRE_TOOL_USE,
+                session_id=session.id,
+                tool_name=toolName,
+                tool_args=args,
+                workspace_path=getattr(session, 'workspace_path', None),
+            )
+            pre_results = await hook_registry.emit(HookEvent.PRE_TOOL_USE, pre_ctx)
+            for r in pre_results:
+                if r.action == 'deny':
+                    return f'[BLOCKED by hook] {r.message or "Tool call denied by policy."}'
+                if r.action == 'modify' and r.modified_args is not None:
+                    args = r.modified_args
+        except Exception:
+            pass  # Hooks must never break tool execution
+
         result = await dispatchTool(toolName, args)
         result_str = str(result)
+
+        # Lifecycle hooks: POST_TOOL_USE (can modify result)
+        try:
+            from app.services.hooks import HookContext as HC2
+            from app.services.hooks import HookEvent as HE2
+            from app.services.hooks import registry as hr2
+
+            post_ctx = HC2(
+                event=HE2.POST_TOOL_USE,
+                session_id=session.id,
+                tool_name=toolName,
+                tool_args=args,
+                tool_result=result_str,
+                workspace_path=getattr(session, 'workspace_path', None),
+            )
+            post_results = await hr2.emit(HE2.POST_TOOL_USE, post_ctx)
+            for r in post_results:
+                if r.action == 'modify' and r.modified_result is not None:
+                    result_str = r.modified_result
+        except Exception:
+            pass  # Hooks must never break tool execution
+
         try:
             from app.services.post_observation import capture_after_tool
 

@@ -89,6 +89,19 @@ class WebSocketLogHandler(logging.Handler):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Structured logging must be first — all subsequent log calls benefit.
+    from app.lib.logging_config import setup_logging
+
+    setup_logging()
+
+    # Register lifecycle hooks (secret guard, blast radius, test mapping, sensitive code).
+    try:
+        from app.services.hooks.builtin import register_builtin_hooks
+
+        register_builtin_hooks()
+    except Exception as exc:
+        logger.warning('Hook registration failed (non-fatal): %s', exc)
+
     settings.reload()
     # Mirror Google OAuth keys from .env / process env into durable mcpGlobalEnv
     # so Integrations UI and MCP subprocesses keep them across restarts.
@@ -235,6 +248,7 @@ from app.routers import desktop_automation as desktopAutomationRoutes  # noqa: E
 from app.routers import exam as examRoutes  # noqa: E402
 from app.routers import gateway as gatewayRoutes  # noqa: E402
 from app.routers import git as gitRoutes  # noqa: E402
+from app.routers import hooks as hooksRoutes  # noqa: E402
 from app.routers import live as liveRoutes  # noqa: E402
 from app.routers import manage as manageRoutes  # noqa: E402
 from app.routers import mcp as mcpRoutes  # noqa: E402
@@ -258,6 +272,7 @@ from app.routers import whats_new as whatsNewRoutes  # noqa: E402
 from app.routers import workbench as workbenchRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
+app.include_router(hooksRoutes.router)
 app.include_router(providersRoutes.router)
 app.include_router(skillsRoutes.router)
 app.include_router(curatorRoutes.router)
