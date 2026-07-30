@@ -21,7 +21,7 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ('Slack token', re.compile(r'xox[bpras]-[a-zA-Z0-9\-]{10,}')),
     ('Private key', re.compile(r'-----BEGIN (?:RSA |EC )?PRIVATE KEY-----')),
     ('Generic secret assignment', re.compile(
-        r'[a-zA-Z_]*(?:key|secret|token|password|passwd)[a-zA-Z_]*\s*[:=]\s*[\'"][^\'"]{8,}[\'"]',
+        r'\b(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|password|passwd)\b\s*[:=]\s*[\'"][^\'"]{8,}[\'"]',
         re.IGNORECASE,
     )),
 ]

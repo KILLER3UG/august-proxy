@@ -37,7 +37,7 @@ def detect_providers() -> list[dict]:
                 'envVar': provider['envVar'],
                 'baseUrl': provider['baseUrl'],
                 'format': provider['format'],
-                'keyPrefix': key_value[:8] + '...',  # Safe preview only
+                'keyPrefix': key_value[:4] + '****',  # Safe preview only (4 chars max)
                 'keyLength': len(key_value),
             })
     return detected

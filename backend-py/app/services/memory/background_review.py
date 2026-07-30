@@ -241,14 +241,24 @@ def _queue_pending_skill(
     The skill is NOT active until the user approves it via the Brain UI.
     """
     import os
+    import re as _re
 
     from app.services.memory_store import _conn
 
-    # Write draft file so approval can activate it later
-    data_dir = os.environ.get('AUGUST_DATA_DIR', 'data')
-    skills_dir = os.path.join(data_dir, 'skills')
+    # Sanitize name to prevent path traversal
+    safe_name = _re.sub(r'[^a-z0-9._-]', '', name.lower())[:64]
+    if not safe_name:
+        return
+
+    # Use canonical data path
+    try:
+        from app.lib.paths import dataPath
+        skills_dir = str(dataPath('skills'))
+    except Exception:
+        data_dir = os.environ.get('AUGUST_DATA_DIR', 'data')
+        skills_dir = os.path.join(data_dir, 'skills')
     os.makedirs(skills_dir, exist_ok=True)
-    draft_path = os.path.join(skills_dir, f'.pending_{name}.md')
+    draft_path = os.path.join(skills_dir, f'.pending_{safe_name}.md')
     with open(draft_path, 'w', encoding='utf-8') as f:
         f.write(f'---\nname: {name}\ndescription: {description}\ntrigger: {trigger}\ncategory: {category}\n---\n\n{body}\n')
 

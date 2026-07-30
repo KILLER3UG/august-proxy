@@ -330,16 +330,22 @@ def upsert(text: str, metadata: dict[str, object] | None = None, namespace: str 
     If metadata contains a 'key' field, any existing entry with the same
     key in the same namespace is deleted before inserting. This prevents
     stale duplicate embeddings when a memory is updated.
+
+    The delete+insert is atomic (single lock acquisition) to prevent races.
     """
     meta = metadata or {}
     key = meta.get('key')
-    if key:
-        with _db_lock:
-            conn = _conn()
-            # Delete existing entries with same key in this namespace
+    ns = namespace or 'auto_memory'
+
+    with _db_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+
+        # Delete existing entries with same key in this namespace
+        if key:
             existing = conn.execute(
                 'SELECT id, metadata FROM vector_entries WHERE namespace = ?',
-                (namespace or 'auto_memory',),
+                (ns,),
             ).fetchall()
             for row in existing:
                 try:
@@ -348,8 +354,36 @@ def upsert(text: str, metadata: dict[str, object] | None = None, namespace: str 
                         conn.execute('DELETE FROM vector_entries WHERE id = ?', (row['id'],))
                 except (json.JSONDecodeError, TypeError):
                     pass
-            conn.commit()
-    return insert(text, metadata, namespace)
+
+        # Insert new entry (inline to stay within the same lock)
+        entry_id = f'v_{uuid.uuid4().hex[:12]}'
+        emb = _embed(text)
+        created = _now()
+        conn.execute(
+            """
+            INSERT INTO vector_entries (id, text, embedding, metadata, namespace, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (entry_id, text[:5000], json.dumps(emb), json.dumps(meta), ns, created),
+        )
+        # Cap table size
+        conn.execute(
+            """
+            DELETE FROM vector_entries WHERE id NOT IN (
+                SELECT id FROM vector_entries ORDER BY created_at DESC LIMIT ?
+            )
+            """,
+            (_MAXEntries,),
+        )
+        conn.commit()
+
+    return {
+        'id': entry_id,
+        'text': text[:5000],
+        'metadata': meta,
+        'namespace': ns,
+        'createdAt': created,
+    }
 
 
 def migrate_default_namespace() -> int:

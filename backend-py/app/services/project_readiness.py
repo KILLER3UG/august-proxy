@@ -252,9 +252,14 @@ def _score_change_safety(workspace: str, project_type: str) -> dict:
         level = 1
         evidence.append('Git version control')
 
-    if _exists(workspace, '.git/hooks/') and len(os.listdir(os.path.join(workspace, '.git', 'hooks'))) > 1:
-        level = max(level, 2)
-        evidence.append('Git hooks active')
+    if _exists(workspace, '.git/hooks/'):
+        try:
+            hooks = os.listdir(os.path.join(workspace, '.git', 'hooks'))
+            if len(hooks) > 1:
+                level = max(level, 2)
+                evidence.append('Git hooks active')
+        except OSError:
+            pass
 
     if _exists(workspace, '.pre-commit-config.yaml') or _exists(workspace, '.husky/'):
         level = max(level, 2)

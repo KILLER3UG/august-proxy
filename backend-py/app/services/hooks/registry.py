@@ -199,7 +199,7 @@ class HookRegistry:
         if matcher == '*':
             return True
         for part in matcher.split('|'):
-            if fnmatch.fnmatch(tool_name, part.strip()):
+            if fnmatch.fnmatchcase(tool_name, part.strip()):
                 return True
         return False
 

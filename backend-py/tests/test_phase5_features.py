@@ -139,7 +139,7 @@ class TestProviderDetect:
         assert len(result) >= 1
         openai = next(p for p in result if p['name'] == 'OpenAI')
         assert openai['baseUrl'] == 'https://api.openai.com/v1'
-        assert openai['keyPrefix'] == 'sk-test1...'
+        assert openai['keyPrefix'] == 'sk-t****'
         assert 'sk-test123456789012345678901234' not in str(result)  # Full key never exposed
 
     def test_detects_multiple(self, monkeypatch):

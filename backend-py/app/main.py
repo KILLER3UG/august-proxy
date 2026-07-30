@@ -102,6 +102,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning('Hook registration failed (non-fatal): %s', exc)
 
+    # One-time vector namespace migration (default → auto_memory).
+    try:
+        from app.services.memory.vector_db import migrate_default_namespace
+
+        migrated = migrate_default_namespace()
+        if migrated:
+            logger.info('Migrated %d vector entries to auto_memory namespace', migrated)
+    except Exception:
+        pass
+
     settings.reload()
     # Mirror Google OAuth keys from .env / process env into durable mcpGlobalEnv
     # so Integrations UI and MCP subprocesses keep them across restarts.
@@ -230,6 +240,23 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+
+
+# Request correlation ID middleware (Phase 1.2)
+@app.middleware('http')
+async def _request_id_middleware(request, call_next):
+    import uuid
+
+    from app.lib.logging_config import request_id_var
+
+    rid = request.headers.get('x-august-request-id') or uuid.uuid4().hex[:16]
+    token = request_id_var.set(rid)
+    try:
+        response = await call_next(request)
+        response.headers['X-August-Request-Id'] = rid
+        return response
+    finally:
+        request_id_var.reset(token)
 from app.routers import agents as agentsRoutes  # noqa: E402
 from app.routers import audit as auditRoutes  # noqa: E402
 from app.routers import aug as augRoutes  # noqa: E402
