@@ -92,7 +92,7 @@ def ensure_queue():
 
 async def shutdown():
     """Cancel the worker and drain remaining items."""
-    global _worker_task
+    global _worker_task, _write_queue
     if _worker_task and (not _worker_task.done()):
         _worker_task.cancel()
         try:
@@ -100,6 +100,30 @@ async def shutdown():
         except asyncio.CancelledError:
             pass
         _worker_task = None
+    # Drain any items still in the queue so writes are not silently lost.
+    queue = _write_queue
+    if queue is not None:
+        drained = 0
+        while not queue.empty():
+            try:
+                item: QueueItem = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            try:
+                result = item.fn()
+                if isinstance(result, Exception):
+                    logger.error('Drain write fn raised: %s', result)
+                    _bump(errors=1)
+                else:
+                    _bump(executed=1)
+                    drained += 1
+            except Exception as exc:
+                logger.error('Drain write fn raised: %s', exc)
+                _bump(errors=1)
+            queue.task_done()
+        if drained:
+            logger.info('DB write queue drained %d remaining items on shutdown', drained)
+    _write_queue = None
 
 
 def get_stats() -> dict[str, object]:

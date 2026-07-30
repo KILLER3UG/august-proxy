@@ -17,6 +17,7 @@ import {
 import { ChatThread } from '@/sections/chat/ChatThread';
 import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
 import { PageLoader } from '@/components/PageLoader';
+import { SectionBoundary } from '@/components/SectionBoundary';
 
 // Lazy-load heavy non-chat surfaces so the chat shell stays on the critical path.
 const SettingsPage = lazy(() =>
@@ -43,6 +44,15 @@ const DesignRoute = lazy(() =>
 
 function Lazy({ children }: { children: ReactNode }) {
   return React.createElement(Suspense, { fallback: React.createElement(PageLoader) }, children);
+}
+
+/** Lazy + SectionBoundary: prevents one crashed section from taking down the app. */
+function LazySection({ name, children }: { name: string; children?: ReactNode }) {
+  return React.createElement(
+    SectionBoundary,
+    { name },
+    React.createElement(Suspense, { fallback: React.createElement(PageLoader) }, children),
+  );
 }
 
 export interface SectionRoute {
@@ -80,28 +90,28 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     path: '/brain',
     label: 'Brain',
     Icon: Brain,
-    element: React.createElement(Lazy, null, React.createElement(BrainDashboard)),
+    element: React.createElement(LazySection, { name: 'Brain' }, React.createElement(BrainDashboard)),
     nav: true,
   },
   {
     path: '/automations',
     label: 'Automations',
     Icon: Bot,
-    element: React.createElement(Lazy, null, React.createElement(AutomationsPage)),
+    element: React.createElement(LazySection, { name: 'Automations' }, React.createElement(AutomationsPage)),
     nav: true,
   },
   {
     path: '/skills',
     label: 'Skills & Tools',
     Icon: Wrench,
-    element: React.createElement(Lazy, null, React.createElement(SkillsPage)),
+    element: React.createElement(LazySection, { name: 'Skills' }, React.createElement(SkillsPage)),
     nav: true,
   },
   {
     path: '/artifacts',
     label: 'Artifacts',
     Icon: Package,
-    element: React.createElement(Lazy, null, React.createElement(ArtifactsPage)),
+    element: React.createElement(LazySection, { name: 'Artifacts' }, React.createElement(ArtifactsPage)),
     nav: true,
   },
   {
@@ -109,8 +119,8 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     label: 'Live',
     Icon: Mic,
     element: React.createElement(
-      Lazy,
-      null,
+      LazySection,
+      { name: 'Live' },
       React.createElement(LiveSurface, { onSwitchToChat: () => { window.location.href = '/'; } }),
     ),
     nav: true,

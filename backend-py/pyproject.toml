@@ -27,6 +27,7 @@ dependencies = [
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=6.0.0",
     "httpx>=0.28.0",
     "watchfiles>=1.0.0",
     "mypy>=1.13.0",
@@ -60,6 +61,7 @@ where = ["app"]
 asyncio_mode = "auto"
 python_files = ["test_*.py", "*_test.py", "test*.py"]
 python_functions = "test*"
+addopts = "--cov=app --cov-report=term-missing --cov-fail-under=55"
 
 # Keep dependency-groups in sync with [project.optional-dependencies].dev
 # so `uv sync --group dev` and `pip install -e ".[dev]"` install the same set.
@@ -67,6 +69,7 @@ python_functions = "test*"
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=6.0.0",
     "httpx>=0.28.0",
     "watchfiles>=1.0.0",
     "mypy>=1.13.0",

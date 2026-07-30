@@ -41,6 +41,11 @@ backend/services/**/debug.txt
 __pycache__/
 *.pyc
 *.egg-info/
+.venv/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 # setuptools / pip wheel output from prepare-desktop-backend
 backend-py/build/
 backend-py/dist/

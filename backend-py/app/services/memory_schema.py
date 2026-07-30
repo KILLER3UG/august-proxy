@@ -499,6 +499,49 @@ def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
                 )
 
 
+_FTS_SYNC_MAP: tuple[tuple[str, str], ...] = (
+    ('memory_store_fts', 'memory_store'),
+    ('auto_memories_fts', 'auto_memories'),
+    ('messages_fts', 'messages'),
+)
+
+
+def _run_migrations_safe(conn: sqlite3.Connection) -> None:
+    """Run versioned migrations, swallowing errors so app still boots."""
+    try:
+        from app.lib.migrations import run_migrations
+
+        run_migrations(conn)
+    except Exception as exc:
+        logging.warning('Migration runner failed (non-fatal): %s', exc)
+
+
+def repair_fts_sync(conn: sqlite3.Connection) -> None:
+    """Rebuild any FTS index whose docsize count diverges from its base table.
+
+    ``count(*)`` on an external-content FTS table reads the *content* table,
+    so stale index entries (left behind by pre-trigger deletes) are invisible
+    to naive checks. Compare against the ``<fts>_docsize`` shadow table (one
+    row per indexed document) to detect desync.
+
+    Cost: 6 tiny count queries per boot. Self-heals any future desync.
+    """
+    for fts, base in _FTS_SYNC_MAP:
+        try:
+            idx_n = conn.execute(f'SELECT count(*) FROM {fts}_docsize').fetchone()[0]
+            base_n = conn.execute(f'SELECT count(*) FROM {base}').fetchone()[0]
+            if idx_n == base_n:
+                continue
+            logging.warning(
+                'FTS desync %s: index=%s base=%s — rebuilding', fts, idx_n, base_n
+            )
+            conn.execute(f"INSERT INTO {fts}({fts}) VALUES('rebuild')")
+            conn.commit()
+        except Exception as exc:
+            # Shadow table may not exist if FTS table was never created; skip.
+            logging.debug('FTS repair skipped for %s: %s', fts, exc)
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """Idempotently migrate camel→snake (if needed) then create the full brain schema.
 
@@ -522,11 +565,15 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
             create_vector_graph_tables(conn)
             _ensure_messages_fts(conn)
+            repair_fts_sync(conn)
+            _run_migrations_safe(conn)
             conn.commit()
             return
     migrate_camel_to_snake(conn)
     create_core_schema(conn)
     create_extended_tables(conn)
     _ensure_messages_fts(conn)
+    repair_fts_sync(conn)
+    _run_migrations_safe(conn)
     conn.execute(f'PRAGMA user_version={_SCHEMA_USER_VERSION}')
     conn.commit()
