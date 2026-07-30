@@ -70,6 +70,13 @@ async def run_regular_tools_stage(
                     trackToolFailure(name, error_text)
                 except Exception:
                     pass
+                try:
+                    from app.services.memory.friction import record_tool_friction
+                    from app.services.workbench.context import currentSessionId
+
+                    record_tool_friction(currentSessionId.get(''), name, str(result.get('content', ''))[:200] if isinstance(result, dict) else '')
+                except Exception:
+                    pass
             return result
         except Exception as exc:
             _emit_tool('result', name, 'error', error=str(exc)[:200])
@@ -77,6 +84,13 @@ async def run_regular_tools_stage(
                 from app.services.memory.deterministic_signals import trackToolFailure
 
                 trackToolFailure(name, str(exc)[:200])
+            except Exception:
+                pass
+            try:
+                from app.services.memory.friction import record_tool_friction
+                from app.services.workbench.context import currentSessionId
+
+                record_tool_friction(currentSessionId.get(''), name, str(exc)[:200])
             except Exception:
                 pass
             raise
