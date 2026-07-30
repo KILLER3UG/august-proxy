@@ -287,6 +287,9 @@ def _callHippocampus(diffText: str) -> str | None:
     model is configured.
     """
     try:
+        import asyncio
+        import concurrent.futures
+
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
         from app.services.workbench import model_fleet
@@ -300,7 +303,9 @@ def _callHippocampus(diffText: str) -> str | None:
         client = getClient(provider)
         if client and hasattr(client, 'generate'):
             prompt = f"Review these diffs between the assistant's output and the user's edits. Infer up to 3 behavioral rules. Return JSON: {{'rules': [{{'rule': str, 'category': str}}]}} or {{'rules': []}}.\n\nDiffs:\n{diffText}\n"
-            response = client.generate(prompt)
+            # client.generate() is async — bridge from sync context via thread.
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                response = pool.submit(asyncio.run, client.generate(prompt)).result(timeout=30)
             return response if isinstance(response, str) else None
     except Exception:
         pass

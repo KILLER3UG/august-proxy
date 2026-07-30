@@ -150,7 +150,7 @@ def _maybe_migrate_json() -> None:
         pass
 
 
-def insert(text: str, metadata: dict[str, object] | None = None, namespace: str = 'default') -> dict[str, object]:
+def insert(text: str, metadata: dict[str, object] | None = None, namespace: str = 'auto_memory') -> dict[str, object]:
     """Insert a text entry with its embedding into SQLite."""
     with _db_lock:
         _maybe_migrate_json()
@@ -164,7 +164,7 @@ def insert(text: str, metadata: dict[str, object] | None = None, namespace: str 
             INSERT INTO vector_entries (id, text, embedding, metadata, namespace, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (entry_id, text[:5000], json.dumps(emb), json.dumps(meta), namespace or 'default', created),
+            (entry_id, text[:5000], json.dumps(emb), json.dumps(meta), namespace or 'auto_memory', created),
         )
         # Cap table size
         conn.execute(
@@ -186,14 +186,14 @@ def insert(text: str, metadata: dict[str, object] | None = None, namespace: str 
         }
 
 
-def search(query: str, namespace: str = 'default', top_k: int = 10) -> list[dict[str, object]]:
+def search(query: str, namespace: str = 'auto_memory', top_k: int = 10) -> list[dict[str, object]]:
     """Search for similar texts by embedding similarity (SQLite load + cosine)."""
     with _db_lock:
         _maybe_migrate_json()
         conn = _conn()
         rows = conn.execute(
             'SELECT id, text, embedding, metadata, namespace FROM vector_entries WHERE namespace = ?',
-            (namespace or 'default',),
+            (namespace or 'auto_memory',),
         ).fetchall()
     queryVec = _embed(query)
     scored: list[tuple[float, dict[str, object]]] = []
@@ -324,15 +324,43 @@ def listCollections() -> list[dict[str, object]]:
     return [as_dict(v) for v in cols.values()]
 
 
-def addToCollection(
-    collectionName: str, text: str, metadata: dict[str, object] | None = None
-) -> dict[str, object] | None:
-    col = getCollection(collectionName)
-    if not col:
-        return None
-    return insert(text, {**(metadata or {}), 'collection': collectionName}, namespace='semantic')
+def upsert(text: str, metadata: dict[str, object] | None = None, namespace: str = 'auto_memory') -> dict[str, object]:
+    """Insert or replace a vector entry by metadata key.
+
+    If metadata contains a 'key' field, any existing entry with the same
+    key in the same namespace is deleted before inserting. This prevents
+    stale duplicate embeddings when a memory is updated.
+    """
+    meta = metadata or {}
+    key = meta.get('key')
+    if key:
+        with _db_lock:
+            conn = _conn()
+            # Delete existing entries with same key in this namespace
+            existing = conn.execute(
+                'SELECT id, metadata FROM vector_entries WHERE namespace = ?',
+                (namespace or 'auto_memory',),
+            ).fetchall()
+            for row in existing:
+                try:
+                    row_meta = json.loads(row['metadata'] or '{}')
+                    if row_meta.get('key') == key:
+                        conn.execute('DELETE FROM vector_entries WHERE id = ?', (row['id'],))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            conn.commit()
+    return insert(text, metadata, namespace)
 
 
-def searchCollection(collectionName: str, query: str, top_k: int = 5) -> list[dict[str, object]]:
-    results = search(query, namespace='semantic', top_k=top_k)
-    return [r for r in results if as_str(as_dict(r.get('metadata'), {}).get('collection')) == collectionName]
+def migrate_default_namespace() -> int:
+    """One-time migration: move entries from 'default' to 'auto_memory'.
+
+    Returns count of migrated entries.
+    """
+    with _db_lock:
+        conn = _conn()
+        cursor = conn.execute(
+            "UPDATE vector_entries SET namespace = 'auto_memory' WHERE namespace = 'default'"
+        )
+        conn.commit()
+        return cursor.rowcount

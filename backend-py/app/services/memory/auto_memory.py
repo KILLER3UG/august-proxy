@@ -163,7 +163,7 @@ def saveAutoMemory(
             try:
                 from app.services.memory import vector_db
 
-                vector_db.insert(
+                vector_db.upsert(
                     text,
                     metadata={'key': key, 'category': category, 'source': src},
                     namespace='auto_memory',

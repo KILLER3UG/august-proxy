@@ -156,7 +156,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
         except Exception:
             pass
 
-    # --- Skills -> skill_service (autonomous, no approval) ---
+    # --- Skills -> pending_skills (requires user approval before activation) ---
     for rec in as_list(recommendations.get('skills'), []):
         recDict = as_dict(rec)
         try:
@@ -165,16 +165,16 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
             if not name:
                 continue
             if action == 'create':
-                skill_service.createSkill(
+                # Route through pending_skills for user approval (Phase 3.6)
+                _queue_pending_skill(
                     name,
                     as_str(recDict.get('description'), ''),
                     as_str(recDict.get('body'), ''),
                     trigger=as_str(recDict.get('trigger'), ''),
                     category=as_str(recDict.get('category'), 'evolving'),
-                    createdBy='agent',
                 )
                 as_list(result['skills_created']).append(name)
-                _emitSkillEvent(name, 'create', as_str(recDict.get('description'), ''))
+                _emitSkillEvent(name, 'pending', as_str(recDict.get('description'), ''))
             elif action == 'patch':
                 skill_service.patchSkill(
                     name,
@@ -226,6 +226,40 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
     except Exception:
         pass
     return result
+
+
+def _queue_pending_skill(
+    name: str,
+    description: str,
+    body: str,
+    trigger: str = '',
+    category: str = 'evolving',
+    session_id: str | None = None,
+) -> None:
+    """Insert a skill into pending_skills for user approval (Phase 3.6).
+
+    The skill is NOT active until the user approves it via the Brain UI.
+    """
+    import os
+
+    from app.services.memory_store import _conn
+
+    # Write draft file so approval can activate it later
+    data_dir = os.environ.get('AUGUST_DATA_DIR', 'data')
+    skills_dir = os.path.join(data_dir, 'skills')
+    os.makedirs(skills_dir, exist_ok=True)
+    draft_path = os.path.join(skills_dir, f'.pending_{name}.md')
+    with open(draft_path, 'w', encoding='utf-8') as f:
+        f.write(f'---\nname: {name}\ndescription: {description}\ntrigger: {trigger}\ncategory: {category}\n---\n\n{body}\n')
+
+    conn = _conn()
+    conn.execute(
+        '''INSERT OR REPLACE INTO pending_skills (name, description, trigger_text, draft_path, source_session_id, status)
+           VALUES (?, ?, ?, ?, ?, 'pending')''',
+        (name, description, trigger, draft_path, session_id),
+    )
+    conn.commit()
+    log.info('Queued pending skill for approval: %s', name)
 
 
 def _emitSkillEvent(name: str, action: str, description: str) -> None:

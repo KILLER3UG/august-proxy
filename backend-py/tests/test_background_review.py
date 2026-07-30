@@ -97,9 +97,13 @@ async def testTryBackgroundReviewSpawnsWhenDue(isolatedSkills):
     messages = [{'role': 'user', 'content': 'fix this'}, {'role': 'assistant', 'content': 'done'}]
     await tryBackgroundReview(session, messages, llm_client=stubLlm)
     await asyncio.sleep(0.1)
-    fetched = skill_service.get('review-skill')
-    assert fetched is not None, 'background review should have created the skill'
-    assert fetched.get('created_by') == 'agent'
+    # Phase 3.6: skills now go through pending_skills for approval
+    from app.services.memory_store import _conn
+
+    conn = _conn()
+    row = conn.execute("SELECT name, status FROM pending_skills WHERE name = 'review-skill'").fetchone()
+    assert row is not None, 'background review should have queued the skill for approval'
+    assert row['status'] == 'pending'
 
 
 @pytest.mark.asyncio
@@ -133,7 +137,13 @@ async def testDoReviewCreatesSkillFromRecommendation(isolatedSkills):
     result = await _doReview([{'role': 'user'}], llm_client=stubLlm)
     assert result['reviewed'] is True
     assert 'stub-skill' in result['skills_created']
-    assert skill_service.get('stub-skill') is not None
+    # Phase 3.6: skills now go through pending_skills for approval, not direct creation
+    from app.services.memory_store import _conn
+
+    conn = _conn()
+    row = conn.execute("SELECT name, status FROM pending_skills WHERE name = 'stub-skill'").fetchone()
+    assert row is not None
+    assert row['status'] == 'pending'
 
 
 @pytest.mark.asyncio

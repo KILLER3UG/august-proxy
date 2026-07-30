@@ -167,15 +167,19 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                                 continue
 
                             def _deleteMerged(i: object = rid) -> object:
-                                return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
+                                conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
+                                conn.commit()
+                                return None
 
                             await enqueue_write(_deleteMerged, must_succeed=True)
                         if mergedRule:
 
                             def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
-                                return conn.execute(
+                                conn.execute(
                                     "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (m, k)
                                 )
+                                conn.commit()
+                                return None
 
                             await enqueue_write(_updateMerged, must_succeed=True)
                         stats['merged'] += 1
@@ -187,10 +191,12 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                             continue
 
                         def _insertFact(k: object = factKey, v: object = factValue) -> object:
-                            return conn.execute(
+                            conn.execute(
                                 'INSERT INTO facts (fact_key, fact_value, category, source, confidence) VALUES (?, ?, ?, ?, ?)',
                                 (k, v, 'auto-promoted', 'consolidation', 0.8),
                             )
+                            conn.commit()
+                            return None
 
                         await enqueue_write(_insertFact, must_succeed=True)
                         stats['promoted'] += 1
@@ -199,7 +205,9 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                             continue
 
                         def _deleteStale(i: object = did) -> object:
-                            return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
+                            conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
+                            conn.commit()
+                            return None
 
                         await enqueue_write(_deleteStale, must_succeed=True)
                         stats['deleted_stale'] += 1
@@ -315,8 +323,11 @@ def approvePendingSkill(name: str) -> bool:
 
 def rejectPendingSkill(name: str) -> bool:
     """v2: Reject a pending skill — delete the staging file."""
+    emitBrainEvent = None
     try:
-        from app.services.brain_event_bus import emitBrainEvent
+        from app.services.brain_event_bus import emitBrainEvent as _emit
+
+        emitBrainEvent = _emit
     except Exception:
         pass
     try:
@@ -331,11 +342,12 @@ def rejectPendingSkill(name: str) -> bool:
             os.remove(draftPath)
         conn.execute("UPDATE pending_skills SET status = 'rejected' WHERE name = ?", (name,))
         conn.commit()
-        emitBrainEvent(
-            category='skill_genesis',
-            layer='consolidation_daemon.rejected_pending_skill',
-            summary=f'Rejected skill: {name[:80]}',
-        )
+        if emitBrainEvent is not None:
+            emitBrainEvent(
+                category='skill_genesis',
+                layer='consolidation_daemon.rejected_pending_skill',
+                summary=f'Rejected skill: {name[:80]}',
+            )
         return True
     except Exception as exc:
         logger.error('Skill rejection error: %s', exc)
