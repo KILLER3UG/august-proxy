@@ -87,6 +87,19 @@ def isolatedData(tmp_path, monkeypatch):
     memory_store.close()
     memory_store.init()
     yield tmp_path
+    # Cancel leaked background tasks before closing SQLite to prevent
+    # 'database is locked' errors from fire-and-forget workbench tasks.
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+        tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task() and not t.done()]
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+    except RuntimeError:
+        pass  # No running loop (sync test)
     memory_store.close()
     try:
         settings.reload()

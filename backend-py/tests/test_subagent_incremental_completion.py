@@ -56,7 +56,7 @@ async def test_wait_for_each_yields_incrementally():
 
     async def fake_run(**kwargs):
         tid = kwargs.get('taskId') or ''
-        delay = 0.05 if 'fast' in (kwargs.get('goal') or '') else 0.15
+        delay = 0.01 if 'fast' in (kwargs.get('goal') or '') else 0.3
         await asyncio.sleep(delay)
         return {'status': 'completed', 'result': f'done-{tid}', 'taskId': tid}
 
