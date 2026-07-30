@@ -5,7 +5,7 @@
  * reports "unsupported" (no native supervisor).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '@/lib/tauri-detect';
 
@@ -32,6 +32,12 @@ const INITIAL: BackendStatus = {
 export function useBackendStatus() {
     const [status, setStatus] = useState<BackendStatus>(INITIAL);
     const tauri = isTauri;
+    const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Clear pending sync-refresh timeout on unmount
+    useEffect(() => {
+        return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
+    }, []);
 
     const refresh = useCallback(async () => {
         if (!tauri) return;
@@ -71,7 +77,7 @@ export function useBackendStatus() {
                 setStatus((s) => ({ ...s, sync: 'needs_setup' }));
             } else if (res === 'syncing' || res === 'synced') {
                 setStatus((s) => ({ ...s, sync: res === 'synced' ? 'up-to-date' : 'syncing' }));
-                setTimeout(() => { void refresh(); }, res === 'synced' ? 500 : 4000);
+                syncTimerRef.current = setTimeout(() => { void refresh(); }, res === 'synced' ? 500 : 4000);
             } else {
                 setStatus((s) => ({ ...s, sync: 'up-to-date' }));
             }

@@ -373,7 +373,11 @@ export function KnowledgeGraph({ className }: { className?: string }) {
                 <g
                   key={node.id}
                   onClick={() => setSelectedNode(isSelected ? null : node.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedNode(isSelected ? null : node.id); } }}
                   className="cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Graph node: ${node.label || node.id}`}
                 >
                   <circle
                     cx={node.x}

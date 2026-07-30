@@ -331,11 +331,14 @@ export function ChatLayout() {
   };
 
   // /new slash command + voice "new chat" land here.
+  // Use a ref to avoid stale closure — handleNewSession captures active/sessions state.
+  const handleNewSessionRef = useRef(handleNewSession);
+  handleNewSessionRef.current = handleNewSession;
   useEffect(() => {
-    const onNew = () => handleNewSession();
+    const onNew = () => handleNewSessionRef.current();
     window.addEventListener('august:new-session', onNew);
     return () => window.removeEventListener('august:new-session', onNew);
-  }, [currentWorkspacePath]);
+  }, []);
 
   const approvePlan = async () => {
     if (!active?.workbenchSessionId) return;

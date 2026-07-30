@@ -84,6 +84,12 @@ def isolatedData(tmp_path, monkeypatch):
         pass
     # reload() can rehydrate GATEWAY_API_KEY from a local .env — clear again.
     settings.gatewayApiKey = None
+    # Invalidate model cache so per-test providers.json is picked up (M7 fix).
+    try:
+        from app.services.model_service import invalidate_cache
+        invalidate_cache()
+    except Exception:
+        pass
     memory_store.close()
     memory_store.init()
     yield tmp_path

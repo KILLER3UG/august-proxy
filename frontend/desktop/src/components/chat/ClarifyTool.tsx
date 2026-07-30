@@ -80,6 +80,12 @@ export function ClarifyTool({
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
   const [multiSelections, setMultiSelections] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const advanceTimerRef = useRef<number | null>(null);
+
+  // Clear pending advance timeout on unmount (prevents setState on unmounted component)
+  useEffect(() => {
+    return () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current); };
+  }, []);
 
   const current = questions[currentIndex];
   const isLast = currentIndex === totalQuestions - 1;
@@ -153,7 +159,7 @@ export function ClarifyTool({
       if (isLast) {
         onSubmit(totalQuestions === 1 ? choice : JSON.stringify(next));
       } else {
-        window.setTimeout(() => {
+        advanceTimerRef.current = window.setTimeout(() => {
           setCurrentIndex((i) => Math.min(totalQuestions - 1, i + 1));
           setSelectedChoice(null);
           setDraft('');
