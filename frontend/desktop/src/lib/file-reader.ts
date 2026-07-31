@@ -3,7 +3,7 @@
 /* attached files. Supports plain text, PDF, DOCX, XLSX, and images.  */
 
 import mammoth from 'mammoth';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 // ── Limits ──────────────────────────────────────────────────────────────────
 const TEXT_MAX_CHARS = 100_000;   // 100 KB of extracted text
