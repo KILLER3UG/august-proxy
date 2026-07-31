@@ -41,6 +41,8 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
   const [lastError, setLastError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [readyFlash, setReadyFlash] = useState(false);
+  // Graceful degradation: track how long we've been waiting (Phase 5.1)
+  const [waitPhase, setWaitPhase] = useState<'normal' | 'slow' | 'critical'>('normal');
   // Once the backend has been healthy this session, never re-show the first-launch
   // plan for brief proxy blips or React remounts (e.g. folder/session switches).
   const [unlocked, setUnlocked] = useState(() => readUnlocked());
@@ -119,6 +121,14 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(t);
   }, [proxyUp, setup.phase]);
 
+  // Graceful degradation timers (Phase 5.1): escalate wait phase when backend is slow.
+  useEffect(() => {
+    if (proxyUp || unlocked) { setWaitPhase('normal'); return; }
+    const t1 = window.setTimeout(() => setWaitPhase('slow'), 10_000);
+    const t2 = window.setTimeout(() => setWaitPhase('critical'), 30_000);
+    return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
+  }, [proxyUp, unlocked]);
+
   const onRetry = useCallback(async () => {
     if (!isTauri) return;
     setRetrying(true);
@@ -163,7 +173,11 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
     lastError ||
     (proxyUp
       ? 'You can start chatting.'
-      : 'Please wait — August opens after the backend is ready.');
+      : waitPhase === 'critical'
+        ? 'The backend is taking much longer than expected. Try the diagnostics below.'
+        : waitPhase === 'slow'
+          ? 'Taking longer than usual. Common fixes are listed below.'
+          : 'Please wait — August opens after the backend is ready.');
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background">
@@ -184,6 +198,18 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
               {lastError}
             </p>
           ) : null}
+          {/* Graceful degradation: common fixes (Phase 5.1) */}
+          {waitPhase !== 'normal' && !proxyUp && (
+            <div className="mx-auto mt-3 max-w-sm rounded-lg border border-border/50 bg-muted/30 p-3 text-left text-xs text-muted-foreground">
+              <p className="mb-1.5 font-medium text-foreground/80">Common fixes:</p>
+              <ul className="list-inside list-disc space-y-1">
+                <li>Port 8085 already in use — close other apps using it</li>
+                <li>Python version mismatch — requires Python 3.12+</li>
+                <li>Antivirus blocking uvicorn — add an exception</li>
+                <li>First launch — dependency install can take 1-2 minutes</li>
+              </ul>
+            </div>
+          )}
           <div className="mt-5 flex justify-center gap-2">
             <Button disabled={retrying} onClick={() => { void onRetry(); }}>
               {retrying ? (
