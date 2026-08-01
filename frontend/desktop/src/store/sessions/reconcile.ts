@@ -96,17 +96,27 @@ export async function reconcileSessionsFromBackend(
       if (pendingIndexes.length === 1) {
         const pendingIdx = pendingIndexes[0].i;
         const pending = merged[pendingIdx];
-        claimed.add(bs.id);
-        merged[pendingIdx] = {
-          ...pending,
-          workbenchSessionId: bs.id,
-          title: preferSessionTitle(pending.title, bs.title),
-          messageCount: Math.max(bs.messageCount ?? 0, pending.messageCount ?? 0),
-          provider: bs.provider || pending.provider,
-          model: (bs.model) || pending.model,
-          workbenchProvider: bs.provider || pending.workbenchProvider,
-        };
-        continue;
+        // Refuse to bind a backend session to a draft whose folder differs: the
+        // backend workspacePath wins at send time, so linking a path-B draft to
+        // a path-A session would silently run B's turns in A's directory. Leave
+        // the backend session as its own row (the push below) and the draft
+        // unlinked; they reconcile once the draft's own session appears.
+        const pendingWs = pending.workspacePath || '';
+        const backendWs = bs.workspacePath || '';
+        const pathMismatch = !!pendingWs && !!backendWs && pendingWs !== backendWs;
+        if (!pathMismatch) {
+          claimed.add(bs.id);
+          merged[pendingIdx] = {
+            ...pending,
+            workbenchSessionId: bs.id,
+            title: preferSessionTitle(pending.title, bs.title),
+            messageCount: Math.max(bs.messageCount ?? 0, pending.messageCount ?? 0),
+            provider: bs.provider || pending.provider,
+            model: (bs.model) || pending.model,
+            workbenchProvider: bs.provider || pending.workbenchProvider,
+          };
+          continue;
+        }
       }
       merged.push({
         id: bs.id,

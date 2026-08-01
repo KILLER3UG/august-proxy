@@ -454,7 +454,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         let loaded = await getWorkbenchSession(existingId);
         // Keep sandbox workspace root in sync with the UI folder session.
         const uiWs = activeSession?.workspacePath || '';
-        if (uiWs && !loaded.workspacePath) {
+        // Correct the backend workspace when it is missing OR stale/wrong — not
+        // only when empty. A session switch can leave the workbench session
+        // bound to a previous folder (e.g. via workspace-blind draft linking);
+        // the per-turn chat body carries no path, so this sync is the only place
+        // the UI's folder reaches the backend. The backend invalidates its
+        // cached system prompt on this change, so the model and the tools agree.
+        if (uiWs && loaded.workspacePath !== uiWs) {
           try {
             const res = await fetch('/api/workbench/sandbox-mode', {
               method: 'POST',

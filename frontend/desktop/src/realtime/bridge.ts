@@ -73,7 +73,17 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
           s.id.startsWith('sess_'),
       );
     if (pendingIndexes.length === 1) {
-      idx = pendingIndexes[0].i;
+      // Don't auto-link a draft whose folder differs from the incoming
+      // session's folder: the backend workspacePath wins at send time, so this
+      // would run the draft's turns in the wrong directory. Let the incoming
+      // session become its own row (the created-row branch below) instead.
+      const candidate = sessions[pendingIndexes[0].i];
+      const draftWs = candidate.workspacePath || '';
+      const eventWs = ev.workspacePath || '';
+      const pathMismatch = !!draftWs && !!eventWs && draftWs !== eventWs;
+      if (!pathMismatch) {
+        idx = pendingIndexes[0].i;
+      }
     }
   }
 

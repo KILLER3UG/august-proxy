@@ -1535,12 +1535,28 @@ async def _apply_sandbox_body(sessionId: str, body: dict) -> dict[str, object]:
         session.sandboxMode = normalize_sandbox_mode(str(body.get('sandboxMode')))
     if 'sandboxNetwork' in body:
         session.sandboxNetwork = bool(body.get('sandboxNetwork'))
+    prev_workspace_path = str(getattr(session, 'workspacePath', '') or '')
     if 'workspacePath' in body or 'workspace_path' in body:
         session.workspacePath = str(body.get('workspacePath') or body.get('workspace_path') or '')
     if session.sandboxMode == 'danger-full-access':
         session.sandboxNetwork = True
     session.updatedAt = datetime.now(timezone.utc).isoformat()
     save_sessions()
+    # The workspace path — and the VCS branch / AUG.md derived from it — is
+    # baked into the cached Tier-1/Tier-2 system prompt (keyed by session id,
+    # 5-min TTL; a cache hit skips rebuilding Tier 2 entirely). If the path
+    # changed, drop that cache so the next turn's prompt names the new
+    # directory. Without this, a session switch leaves the model "thinking" it
+    # is still in the previous folder (stale `Path:` line, stale branch, stale
+    # AUG.md) while the file/shell tools already execute in the new one — the
+    # cross-session path leak seen when switching between folders.
+    if str(getattr(session, 'workspacePath', '') or '') != prev_workspace_path:
+        try:
+            from app.services.workbench.prompt_cache import getCache
+
+            getCache().invalidate(sessionId)
+        except Exception:
+            pass
     try:
         from app.services.realtime_bus import emit_invalidate, emit_realtime
         from app.services.workbench.sessions import _emit_session_status
