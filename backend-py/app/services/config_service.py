@@ -76,6 +76,7 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                         free=bool(m.get('free', False)),
                         pinned=bool(m.get('pinned', False)),
                         source=str(m.get('source', 'manual')),
+                        api_format=str(m.get('apiFormat') or m.get('api_format') or '') or None,
                     )
                 )
         from app.providers.api_format import normalize_api_format

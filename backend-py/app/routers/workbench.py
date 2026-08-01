@@ -38,6 +38,9 @@ async def createSession(request: Request):
         workspacePath=body.get('workspacePath', '') or body.get('workspace_path', ''),
         sandboxMode=body.get('sandboxMode', '') or body.get('sandbox_mode', ''),
         sandboxNetwork=body.get('sandboxNetwork') if 'sandboxNetwork' in body else body.get('sandbox_network'),
+        verifierEnforced=body.get('verifierEnforced')
+        if 'verifierEnforced' in body
+        else body.get('verifier_enforced'),
     )
     return session.toDict()
 
@@ -79,6 +82,9 @@ async def createSessionDirect(request: Request):
         workspacePath=body.get('workspacePath', '') or body.get('workspace_path', ''),
         sandboxMode=body.get('sandboxMode', '') or body.get('sandbox_mode', ''),
         sandboxNetwork=body.get('sandboxNetwork') if 'sandboxNetwork' in body else body.get('sandbox_network'),
+        verifierEnforced=body.get('verifierEnforced')
+        if 'verifierEnforced' in body
+        else body.get('verifier_enforced'),
     )
     return session.toDict()
 
@@ -1475,6 +1481,40 @@ async def setGuardMode(request: Request):
             sessionId=sessionId,
             guardMode=session.guardMode,
             agentId=session.agentId,
+        )
+        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
+    except Exception:
+        pass
+    return session.toDict()
+
+
+@router.post('/verifier')
+async def setVerifierEnforced(request: Request):
+    """Toggle opt-in verifier enforcement on a workbench session.
+
+    When on, the final answer is withheld until the model calls
+    ``update_state(phase='complete')`` and the verifier gate passes.
+    """
+    from datetime import datetime, timezone
+
+    from app.services.workbench.sessions import save_sessions
+
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    verifierEnforced = bool(body.get('verifierEnforced', False))
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    session.verifierEnforced = verifierEnforced
+    session.updatedAt = datetime.now(timezone.utc).isoformat()
+    save_sessions()
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime(
+            'session.updated',
+            sessionId=sessionId,
+            verifierEnforced=session.verifierEnforced,
         )
         emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
     except Exception:

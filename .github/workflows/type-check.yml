@@ -38,6 +38,10 @@ jobs:
       - name: Run mypy
         run: python -m mypy app/
 
+      - name: Naming guardrail (no new camelCase service params)
+        working-directory: ../
+        run: node scripts/check-naming.mjs
+
       # Full suite includes Phase 7 inventory E2E, feature_flow live-backend
       # emission during tool stages, proxy inject HTTP, SSRF gates, gateway
       # normalize paths (no live bot credentials required).

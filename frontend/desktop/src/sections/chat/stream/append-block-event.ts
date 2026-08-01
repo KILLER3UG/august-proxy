@@ -121,6 +121,14 @@ export function appendBlockEvent(
         memories: event.memories,
       });
     }
+  } else if (event.type === 'verifierBlocked') {
+    // Opt-in verifier enforcement: the model tried to answer before
+    // update_state(phase='complete') passed — the answer was withheld.
+    blocks.push({
+      id: `b_verifier_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'verifierBlocked',
+      content: event.content || 'Verification required: the final answer was withheld.',
+    });
   } else if (event.type === 'toolResult') {
     const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
     if (targetIdx !== -1) {

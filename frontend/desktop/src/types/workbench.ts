@@ -64,6 +64,10 @@ export interface WorkbenchSession {
   /** Codex-like sandbox axis (orthogonal to guardMode). */
   sandboxMode?: WorkbenchSandboxMode;
   sandboxNetwork?: boolean;
+  /** Opt-in verifier enforcement: while true, the final answer is withheld
+   *  until the model passes update_state(phase='complete') (see the
+   *  `verifierBlocked` SSE event). */
+  verifierEnforced?: boolean;
   workspacePath?: string;
 }
 
@@ -331,6 +335,9 @@ export interface WorkbenchEventHandlers {
    *  merge guardMode/agentId into the workbench session so the composer
    *  chip flips without waiting for the REST refetch. */
   onGuardModeChanged?: (data: { guardMode: string; agentId?: string }) => void;
+  /** Opt-in verifier enforcement: the model answered before
+   *  update_state(phase='complete') passed — the final answer was withheld. */
+  onVerifierBlocked?: (data: { message: string }) => void;
   /** Emitted once per turn when auto-memory recall (`getRelevantMemories`)
    *  prefetched rows into the system prompt. The chat thread renders a
    *  collapsed "Recalled: {category} — {snippet}" card, same style as a

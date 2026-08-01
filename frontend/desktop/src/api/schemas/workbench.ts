@@ -268,6 +268,14 @@ export const WorkbenchRecalledMemoriesEventSchema = WorkbenchBaseSchema.extend({
   ),
 });
 
+/** Opt-in verifier enforcement (session.verifierEnforced): emitted once per
+ *  turn when the model tries to answer before update_state(phase='complete')
+ *  passed the verifier gate — the final answer text is withheld. */
+export const WorkbenchVerifierBlockedEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('verifierBlocked'),
+  message: z.string().optional(),
+});
+
 export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchStartedEventSchema,
   WorkbenchThinkingEventSchema,
@@ -293,6 +301,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchWarningEventSchema,
   WorkbenchUserMessageInjectedEventSchema,
   WorkbenchRecalledMemoriesEventSchema,
+  WorkbenchVerifierBlockedEventSchema,
 ]);
 
 /** Inferred TypeScript type — should match `WorkbenchEvent` from

@@ -658,6 +658,28 @@ export function AssistantBlockTimeline({
         continue;
       }
 
+      if (block.type === 'verifierBlocked') {
+        // Opt-in verifier enforcement: final answer withheld until the model
+        // passes update_state(phase='complete'). Amber notice, not final text.
+        nodes.push(
+          <div
+            key={block.id || `verifier_${ti}`}
+            role="alert"
+            data-testid="verifier-blocked-banner"
+            className="mx-3 my-1.5 flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-300"
+          >
+            <span className="shrink-0" aria-hidden="true">
+              ⚠
+            </span>
+            <span className="min-w-0 break-words">
+              {block.content || 'Verification required: the final answer was withheld.'}
+            </span>
+          </div>,
+        );
+        ti++;
+        continue;
+      }
+
       // Non-process leftovers inside process list (ignore)
       ti++;
     }

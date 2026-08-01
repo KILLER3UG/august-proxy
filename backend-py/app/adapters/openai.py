@@ -38,7 +38,7 @@ from app.adapters.proxy_tools import (
 )
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
 from app.adapters.tool_classification import classifyOpenaiToolCalls
-from app.json_narrowing import as_dict, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.models import ChatCompletionRequest, ChatMessage
 from app.models.openai import dump_openai_upstream_body
 from app.providers import resolver as providerResolver
@@ -437,9 +437,21 @@ async def handleChatCompletions(
     provider = providerResolver.resolve(providerName or model)
     if not provider:
         return ({'error': 'No provider available for model', 'model': model}, None)
+    # Per-model format override (multi-format gateways like OpenCode Zen): the
+    # model's own apiFormat wins over the provider-level format.
+    from app.providers.resolver import apply_model_format_override
+
+    provider = apply_model_format_override(provider, model)
+    if provider is None:
+        return ({'error': 'No provider available for model', 'model': model}, None)
     client = getClient(provider)
     if not client:
         return ({'error': f'No client for provider: {provider.get("name")}'}, None)
+    # A model whose own format is Anthropic Messages speaks the Anthropic wire
+    # protocol — translate the OpenAI request body and translate the upstream
+    # stream back to OpenAI SSE for the client.
+    if getattr(client, 'apiFormat', '') == 'anthropicMessages':
+        return await _handleOpenaiBodyToAnthropicUpstream(client, model, raw_body)
     apiKey = client.resolveApiKey()
     if not apiKey:
         return ({'error': 'API key not configured for provider'}, None)
@@ -532,6 +544,259 @@ async def handleChatCompletions(
 
 
 _stream_client: BaseProviderClient | None = None
+
+
+# --- OpenAI-format request → Anthropic Messages upstream --------------------
+# Used when a model entry overrides the provider format to 'anthropicMessages'
+# (multi-format gateways like OpenCode Zen serve Claude models at /v1/messages).
+# Scope: text + tool definitions; tool_use responses stream as text only
+# (managed tool execution is not available on this translated path).
+
+
+def _openaiContentToText(content: object) -> str:
+    """OpenAI message content → plain text (string or text parts)."""
+    if isinstance(content, str):
+        return content
+    out: list[str] = []
+    for part in as_list(content, []):
+        p = as_dict(part, {})
+        if as_str(p.get('type'), 'text') == 'text':
+            out.append(as_str(p.get('text'), ''))
+    return '\n'.join(out)
+
+
+def _openaiContentToAnthropic(content: object) -> object:
+    """OpenAI message content → Anthropic content (string or text/image blocks)."""
+    if isinstance(content, str):
+        return content
+    parts = as_list(content, [])
+    if not parts:
+        return ''
+    blocks: list[dict[str, object]] = []
+    for part in parts:
+        p = as_dict(part, {})
+        ptype = as_str(p.get('type'), 'text')
+        if ptype == 'text':
+            blocks.append({'type': 'text', 'text': as_str(p.get('text'), '')})
+        elif ptype == 'image_url':
+            url = as_str(as_dict(p.get('image_url'), {}).get('url'), '')
+            if url:
+                blocks.append({'type': 'image', 'source': {'type': 'url', 'url': url}})
+    return blocks
+
+
+def _openaiToolToAnthropic(tool: dict[str, object]) -> dict[str, object]:
+    fn = as_dict(tool.get('function'), {})
+    return {
+        'name': as_str(fn.get('name'), ''),
+        'description': as_str(fn.get('description'), ''),
+        'input_schema': fn.get('parameters') or {'type': 'object', 'properties': {}},
+    }
+
+
+def _openaiToAnthropicBody(body: dict[str, object]) -> dict[str, object]:
+    """Translate an OpenAI chat-completions request body to Anthropic messages."""
+    system_parts: list[str] = []
+    messages: list[dict[str, object]] = []
+    for raw in as_list(body.get('messages'), []):
+        msg = as_dict(raw, {})
+        role = as_str(msg.get('role'), 'user')
+        content = msg.get('content')
+        if role == 'system':
+            system_parts.append(_openaiContentToText(content))
+            continue
+        if role == 'tool':
+            messages.append(
+                {
+                    'role': 'user',
+                    'content': [
+                        {
+                            'type': 'tool_result',
+                            'tool_use_id': as_str(msg.get('tool_call_id'), ''),
+                            'content': _openaiContentToText(content),
+                        }
+                    ],
+                }
+            )
+            continue
+        if role == 'assistant':
+            blocks: list[dict[str, object]] = []
+            text = _openaiContentToText(content)
+            has_tool_calls = False
+            for tc in as_list(msg.get('tool_calls'), []):
+                has_tool_calls = True
+                tcd = as_dict(tc, {})
+                fn = as_dict(tcd.get('function'), {})
+                args_raw = as_str(fn.get('arguments'), '')
+                args: dict[str, object] = {}
+                if args_raw:
+                    try:
+                        parsed = json.loads(args_raw)
+                        if isinstance(parsed, dict):
+                            args = parsed
+                    except (TypeError, ValueError):
+                        args = {}
+                blocks.append(
+                    {
+                        'type': 'tool_use',
+                        'id': as_str(tcd.get('id'), ''),
+                        'name': as_str(fn.get('name'), ''),
+                        'input': args,
+                    }
+                )
+            if has_tool_calls:
+                if text:
+                    blocks.insert(0, {'type': 'text', 'text': text})
+                messages.append({'role': 'assistant', 'content': blocks})
+            else:
+                messages.append({'role': 'assistant', 'content': text})
+            continue
+        messages.append({'role': role, 'content': _openaiContentToAnthropic(content)})
+    out: dict[str, object] = {
+        'model': as_str(body.get('model'), ''),
+        'max_tokens': as_int(body.get('max_tokens'), 4096),
+        'messages': messages,
+    }
+    if system_parts:
+        out['system'] = '\n\n'.join(system_parts)
+    for key in ('temperature', 'top_p', 'stop'):
+        if body.get(key) is not None:
+            out[key] = body[key]
+    tools = as_list(body.get('tools'), [])
+    if tools:
+        out['tools'] = [_openaiToolToAnthropic(t) for t in tools if isinstance(t, dict)]
+    return out
+
+
+def _anthropicStopToOpenaiFinish(stop_reason: str) -> str | None:
+    """Map an Anthropic stop_reason to an OpenAI finish_reason."""
+    if stop_reason in ('end_turn', 'stop_sequence'):
+        return 'stop'
+    if stop_reason == 'max_tokens':
+        return 'length'
+    if stop_reason == 'tool_use':
+        return 'tool_calls'
+    return None
+
+
+def _anthropicUsageToOpenai(usage: object) -> dict[str, int]:
+    u = as_dict(usage, {})
+    prompt = as_int(u.get('input_tokens'), 0)
+    completion = as_int(u.get('output_tokens'), 0)
+    return {'prompt_tokens': prompt, 'completion_tokens': completion, 'total_tokens': prompt + completion}
+
+
+async def _streamAnthropicAsOpenai(
+    client: BaseProviderClient,
+    model: str,
+    body: dict[str, object],
+    apiKey: str | None,
+) -> AsyncIterator[str]:
+    """Stream an Anthropic Messages response and translate it to OpenAI SSE."""
+    created = int(time.time())
+    chunk_id = f'chatcmpl-{uuid.uuid4().hex[:12]}'
+    done = False
+    try:
+        async for event in client.messages_stream(body, apiKey):
+            etype = as_str(event.get('type'), '')
+            if etype == 'message_start':
+                yield write_openai_sse_data(
+                    {
+                        'id': chunk_id,
+                        'object': 'chat.completion.chunk',
+                        'created': created,
+                        'model': model,
+                        'choices': [{'index': 0, 'delta': {'role': 'assistant'}, 'finish_reason': None}],
+                    }
+                )
+            elif etype == 'content_block_delta':
+                delta = as_dict(event.get('delta'), {})
+                text = as_str(delta.get('text'), '')
+                if text:
+                    yield write_openai_sse_data(
+                        {
+                            'id': chunk_id,
+                            'object': 'chat.completion.chunk',
+                            'created': created,
+                            'model': model,
+                            'choices': [{'index': 0, 'delta': {'content': text}, 'finish_reason': None}],
+                        }
+                    )
+            elif etype == 'message_delta':
+                delta = as_dict(event.get('delta'), {})
+                finish = _anthropicStopToOpenaiFinish(as_str(delta.get('stop_reason'), ''))
+                if finish:
+                    yield write_openai_sse_data(
+                        {
+                            'id': chunk_id,
+                            'object': 'chat.completion.chunk',
+                            'created': created,
+                            'model': model,
+                            'choices': [{'index': 0, 'delta': {}, 'finish_reason': finish}],
+                        }
+                    )
+                if event.get('usage') is not None:
+                    yield write_openai_sse_data({'choices': [], 'usage': _anthropicUsageToOpenai(event.get('usage'))})
+            elif etype == 'error':
+                yield write_openai_sse_error(as_str(event.get('body'), as_str(event.get('error'), 'Upstream error')))
+                done = True
+                yield write_openai_sse_done()
+                break
+    except Exception as exc:
+        yield write_openai_sse_error(str(exc))
+    if not done:
+        yield write_openai_sse_done()
+
+
+def _anthropicJsonToOpenaiResponse(resp_body: object, model: str) -> dict[str, object]:
+    """Translate a non-streaming Anthropic Messages response to OpenAI shape."""
+    body = as_dict(resp_body, {})
+    text_parts: list[str] = []
+    for b in as_list(body.get('content'), []):
+        if isinstance(b, dict) and as_str(b.get('type'), '') == 'text':
+            text_parts.append(as_str(b.get('text'), ''))
+    finish = _anthropicStopToOpenaiFinish(as_str(body.get('stop_reason'), '')) or 'stop'
+    return {
+        'id': as_str(body.get('id'), f'chatcmpl-{uuid.uuid4().hex[:12]}'),
+        'object': 'chat.completion',
+        'created': int(time.time()),
+        'model': model,
+        'choices': [
+            {
+                'index': 0,
+                'message': {'role': 'assistant', 'content': ''.join(text_parts)},
+                'finish_reason': finish,
+            }
+        ],
+        'usage': _anthropicUsageToOpenai(body.get('usage')),
+    }
+
+
+async def _handleOpenaiBodyToAnthropicUpstream(
+    client: BaseProviderClient,
+    model: str,
+    raw_body: dict[str, object],
+) -> tuple[dict[str, object] | AsyncIterator[str], dict[str, str] | None]:
+    """Route an OpenAI-format chat request to an Anthropic-format upstream.
+
+    Triggered when the resolved model's own ``apiFormat`` is
+    ``anthropicMessages`` (e.g. a Claude model on OpenCode Zen).
+    """
+    if as_str(raw_body.get('_endpoint'), '') == 'responses':
+        return (
+            {'error': f'Model {model} uses the Anthropic messages format; call /v1/messages instead'},
+            None,
+        )
+    apiKey = client.resolveApiKey()
+    if not apiKey:
+        return ({'error': 'API key not configured for provider'}, None)
+    body = _openaiToAnthropicBody(raw_body)
+    if as_bool(raw_body.get('stream'), False):
+        return (_streamAnthropicAsOpenai(client, model, body, apiKey), write_openai_sse_headers())
+    resp = await client.messages(body, apiKey)
+    if resp.is_error:
+        return ({'error': f'Upstream error (status {resp.status})'}, None)
+    return (_anthropicJsonToOpenaiResponse(resp.body, model), None)
 
 
 def _getClient() -> BaseProviderClient:

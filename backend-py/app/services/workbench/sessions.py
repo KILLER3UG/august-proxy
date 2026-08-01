@@ -56,6 +56,10 @@ class WorkbenchSession:
     # Codex-like sandbox axis (orthogonal to Plan/Ask/Full).
     sandboxMode: str = 'workspace-write'
     sandboxNetwork: bool = False
+    # Opt-in final-answer gate: while true, finalOutput text is withheld until
+    # update_state(phase='complete') passes the verifier gate (see the
+    # _verifier_gated_emit wrapper in the workbench chat loop).
+    verifierEnforced: bool = False
     createdAt: str = ''
     updatedAt: str = ''
     startedAt: str = ''
@@ -104,6 +108,7 @@ class WorkbenchSession:
             'guardMode': self.guardMode,
             'sandboxMode': self.sandboxMode,
             'sandboxNetwork': self.sandboxNetwork,
+            'verifierEnforced': self.verifierEnforced,
             'createdAt': self.createdAt,
             'updatedAt': self.updatedAt,
             'startedAt': self.startedAt,
@@ -138,6 +143,7 @@ class WorkbenchSession:
             guardMode=as_str(d.get('guardMode', 'full')),
             sandboxMode=as_str(d.get('sandboxMode', 'workspace-write') or 'workspace-write'),
             sandboxNetwork=as_bool(d.get('sandboxNetwork', False)),
+            verifierEnforced=as_bool(d.get('verifierEnforced', False)),
             createdAt=as_str(d.get('createdAt', '')),
             updatedAt=as_str(d.get('updatedAt', '')),
             startedAt=as_str(d.get('startedAt', '')),
@@ -559,6 +565,7 @@ def _emit_session_status(session_id: str) -> None:
         'guardMode': session.guardMode,
         'sandboxMode': getattr(session, 'sandboxMode', 'workspace-write'),
         'sandboxNetwork': bool(getattr(session, 'sandboxNetwork', False)),
+        'verifierEnforced': bool(getattr(session, 'verifierEnforced', False)),
         'pendingMutations': len(session.pendingMutations) > 0,
     }
     for cb in _status_subscribers:
@@ -577,6 +584,7 @@ def _emit_session_status(session_id: str) -> None:
             guardMode=session.guardMode,
             sandboxMode=getattr(session, 'sandboxMode', 'workspace-write'),
             sandboxNetwork=bool(getattr(session, 'sandboxNetwork', False)),
+            verifierEnforced=bool(getattr(session, 'verifierEnforced', False)),
             pendingMutations=len(session.pendingMutations) > 0,
             plan=session.plan is not None,
             planApproved=session.planApproved,
@@ -658,6 +666,7 @@ def create_workbench_session(
     workspacePath: str = '',
     sandboxMode: str = '',
     sandboxNetwork: bool | None = None,
+    verifierEnforced: bool | None = None,
 ) -> WorkbenchSession:
     """Create a new workbench session.
 
@@ -680,6 +689,7 @@ def create_workbench_session(
         guardMode=normalizeGuardMode(guardMode or 'full'),
         sandboxMode=normalize_sandbox_mode(sandboxMode or DEFAULT_SANDBOX_MODE),
         sandboxNetwork=bool(sandboxNetwork) if sandboxNetwork is not None else False,
+        verifierEnforced=bool(verifierEnforced) if verifierEnforced is not None else False,
         workspacePath=str(workspacePath or ''),
         goal=goal,
         createdAt=now,

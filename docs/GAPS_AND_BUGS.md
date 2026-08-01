@@ -4,6 +4,14 @@ Living list. Prefer fixing code first, then ticking items off here.
 
 ---
 
+## Closed (2026-08-01)
+
+| Item | Resolution |
+|------|------------|
+| OpenCode Zen: models list ≠ usable chat path | **Per-model `apiFormat` override** — a model entry can carry its own format, which wins over the provider-level format. Honored by workbench chat, Test button, Live/BTW, and the `/v1` proxy adapters (OpenAI→Anthropic body + SSE translation added for Claude models reached via `/v1/chat/completions`). UI: model row → Wire format dropdown with family hint. See `CONFIGURATION.md`. Tests: `test_model_format_override.py` (21) |
+| Verifier gate advisory w.r.t. final-response emission | **Opt-in per-session `verifierEnforced` flag** (chosen over guard-mode scoping to keep casual chat untouched). While on, `finalOutput` text is withheld until `update_state(phase='complete')` passes; a `verifierBlocked` SSE event + amber banner explains why. Toggle: composer shield button; also settable at session creation. Tests: `test_verifier_enforced_flag.py` |
+| Naming debt guardrail | New `scripts/check-naming.mjs` + checked-in `scripts/naming-baseline.json` — CI fails only on **new** camelCase params in service signatures (221 legacy entries grandfathered; 4 renamed: `terminal_service.requestId`, `validator.toolCallId/toolName/errorMsg`, `delta_engine.filePath`). Bulk rename remains deferred (see below) |
+
 ## Closed (2026-07-25)
 
 | Item | Resolution |
@@ -57,44 +65,7 @@ Living list. Prefer fixing code first, then ticking items off here.
 
 ## Open / deferred
 
-### OpenCode Zen: models list ≠ usable chat path — **OPEN**
-
-Zen's `GET /models` returns Claude, GPT, DeepSeek, etc., but each family uses a
-different endpoint (`/messages`, `/responses`, `/chat/completions`, Gemini).
-August binds one `apiFormat` per provider, so Test/chat **404** for
-wrong-format models. Desktop **0.12.21** fixed null `session_id` dumps; this
-routing gap remains.
-
-### Verifier gate is advisory w.r.t. final-response emission — **OPEN (architecture)**
-
-The verifier gate (`system_tools.py:203`) only fires when the model calls
-`update_state(phase='review'|'complete')`. It does **not** bind the final
-response to the `complete` phase: a model can skip `update_state` and still
-emit a final answer. (The same-turn `review`→`complete` bypass this used to
-enable is now closed — see the Closed table above.)
-
-**Why this is deferred, not a localized fix:** the real final answer is
-streamed token-by-token as `finalOutput` chunks from
-`services/workbench/providers.py:522` and `stream_translate.py:65,83` — the
-chat hot path for *every* conversation. `_execution_state` defaults to `None`
-(`sessions.py:85`), so casual chat never calls `update_state` and has no
-phase. A naive `phase == 'complete'` check on the streaming path would block
-all normal conversation. Guard modes (`plan/ask/edit/full`, `workbench.py:114`)
-and execution phases (`research/plan/implement/review/complete`) are
-orthogonal systems — there is no existing per-session flag that says "this is
-a guarded task where the verifier should bind the final answer."
-
-Closing this requires an architecture decision: either an opt-in per-session
-`verifierEnforced` flag (gates streaming `finalOutput` on `complete` only when
-set), or scoping the gate to restrictive guard modes (`plan`/`ask`). Either
-touches the chat hot path and needs its own design + tests.
-
-The three `done`/`finalOutput` emits inside `workbench.py` (lines 1177, 1222,
-1469) are **error / edge-case early-exits** (no provider, no API key,
-thinking-only after max-tokens), not the normal final-answer path — gating
-those would break error messaging, not enforce completion.
-
-### Dual naming (Python params vs camelCase wire) — **DEFERRED by design**
+### Dual naming (Python params vs camelCase wire) — **DEFERRED by design (guarded)**
 
 | Layer | Convention |
 |-------|------------|
@@ -106,7 +77,10 @@ those would break error messaging, not enforce completion.
 A bulk camel→snake param rewrite was attempted and **reverted** after ~125
 test failures (incomplete body renames + path/param mismatches). Fixing this
 requires a purpose-built codemod (AST-aware, skip string keys / path templates),
-not a regex pass.
+not a regex pass. Since 2026-08-01 a guardrail (`scripts/check-naming.mjs`,
+wired into CI) blocks **new** camelCase params, and small modules are renamed
+incrementally with tests green after each (`terminal_service`, `validator`,
+`delta_engine` done).
 
 ### Mobile companion docs — partial
 

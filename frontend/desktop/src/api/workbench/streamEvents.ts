@@ -216,6 +216,14 @@ export function dispatchWorkbenchEvent(
         status: p?.status === 'error' ? 'error' : 'success',
       });
       break;
+    case 'verifierBlocked':
+      handlers.onVerifierBlocked?.({
+        message:
+          typeof p?.message === 'string'
+            ? p.message
+            : 'Verification required before the final answer is shown',
+      });
+      break;
     case 'done': {
       const u = p?.usage;
       const durationRaw = Number((u as Record<string, unknown> | undefined)?.durationMs);

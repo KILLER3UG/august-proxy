@@ -46,6 +46,40 @@ def entry_to_provider_dict(entry: dict[str, object]) -> dict[str, object]:
 _customEntryToProviderDict = entry_to_provider_dict
 
 
+def apply_model_format_override(
+    provider: Optional[dict[str, object]],
+    model_id: str,
+) -> Optional[dict[str, object]]:
+    """Return a provider dict whose ``apiMode`` follows the model's own format.
+
+    Multi-format gateways (e.g. OpenCode Zen) list Claude, GPT, and DeepSeek
+    models from one ``/models`` endpoint, but each family needs a different
+    wire path. A model entry may carry its own ``apiFormat``; when present it
+    overrides the provider-level format for that model. Models without an
+    override keep the provider format (unchanged behavior).
+    """
+    if not provider or not model_id:
+        return provider
+    from app.providers.api_format import normalize_api_format
+
+    target = str(model_id).lower()
+    for m in as_list(provider.get('models'), []):
+        if not isinstance(m, dict):
+            continue
+        if as_str(m.get('id', '')).lower() != target:
+            continue
+        fmt = as_str(m.get('apiFormat') or m.get('api_format'), '')
+        if not fmt:
+            return provider
+        out = dict(provider)
+        out['apiMode'] = normalize_api_format(
+            fmt,
+            default=as_str(provider.get('apiMode'), 'openaiChat'),
+        )
+        return out
+    return provider
+
+
 def _iter_store_entries() -> list[dict[str, object]]:
     try:
         from app.services import config_service

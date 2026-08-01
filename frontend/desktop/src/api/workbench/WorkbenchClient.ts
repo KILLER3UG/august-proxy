@@ -19,6 +19,7 @@ export type CreateSessionParams = {
   workspacePath?: string;
   sandboxMode?: string;
   sandboxNetwork?: boolean;
+  verifierEnforced?: boolean;
 };
 
 export type QueuedUserMessage = {
@@ -86,6 +87,7 @@ export class WorkbenchClient {
         workspacePath: params.workspacePath || '',
         sandboxMode: params.sandboxMode || '',
         sandboxNetwork: params.sandboxNetwork,
+        verifierEnforced: params.verifierEnforced,
       }),
     );
   }
@@ -125,6 +127,18 @@ export class WorkbenchClient {
     return wbFetch<WorkbenchSession>(
       '/api/workbench/sandbox-mode',
       jsonInit('POST', body),
+    );
+  }
+
+  /** Toggle opt-in verifier enforcement (final answer withheld until
+   *  update_state(phase='complete') passes the verifier gate). */
+  async setVerifier(
+    sessionId: string,
+    verifierEnforced: boolean,
+  ): Promise<WorkbenchSession> {
+    return wbFetch<WorkbenchSession>(
+      '/api/workbench/verifier',
+      jsonInit('POST', { sessionId, verifierEnforced }),
     );
   }
 

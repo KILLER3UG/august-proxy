@@ -572,6 +572,7 @@ def buildSystemPrompt(
         'capabilitiesBlock': capabilities_block,
         'toolNames': tool_names,
         'executionState': getattr(session, '_execution_state', None),
+        'verifierEnforced': bool(getattr(session, 'verifierEnforced', False)),
         'workingMemory': getattr(session, '_working_memory', None),
         'subconsciousUpdates': _buildDaemonUpdates(getattr(session, 'id', '')),
         # Tool self-heal: structured failure from last tool exception (if any).
@@ -1255,6 +1256,46 @@ async def sendWorkbenchMessageStream(
             clear_current()
 
 
+def _verifier_gated_emit(session: object, emit):
+    """Wrap a turn's emit callback with the opt-in verifier final-answer gate.
+
+    When ``session.verifierEnforced`` is set, final-answer text (``finalOutput``
+    events) is withheld until ``update_state(phase='complete')`` passes the
+    verifier gate; a single ``verifierBlocked`` event is emitted instead so the
+    UI can explain why the answer is withheld. All other event types
+    (error/done/toolResult/thinking/…) pass through untouched, and the gate has
+    zero effect when the flag is off (the default — casual chat is unaffected).
+    """
+    if emit is None:
+        return None
+    if not getattr(session, 'verifierEnforced', False):
+        return emit
+    _fired = {'flag': False}
+
+    def _wrapped(evt: dict[str, object]) -> None:
+        etype = as_str(evt.get('type'), '')
+        if etype in ('finalOutput', 'final_output'):
+            state = getattr(session, '_execution_state', None)
+            phase = as_str(as_dict(state, {}).get('phase'), '') if state else ''
+            if phase != 'complete':
+                if not _fired['flag']:
+                    _fired['flag'] = True
+                    emit(
+                        {
+                            'type': 'verifierBlocked',
+                            'message': (
+                                'Verification required: the final answer is withheld until '
+                                "the model calls update_state(phase='complete') after a "
+                                'passing verification run.'
+                            ),
+                        }
+                    )
+                return
+        emit(evt)
+
+    return _wrapped
+
+
 async def _sendWorkbenchMessageStreamImpl(
     sessionId: str,
     message: str,
@@ -1310,6 +1351,10 @@ async def _sendWorkbenchMessageStreamImpl(
             session.provider = pname
     if emit:
         emit({'type': 'started', 'sessionId': sessionId, 'model': resolvedModel})
+    # Opt-in verifier enforcement: while session.verifierEnforced is set,
+    # finalOutput text is withheld until update_state(phase='complete') passes
+    # the verifier gate. Casual chat (flag off) is unaffected.
+    emit = _verifier_gated_emit(session, emit)
     if not resolvedProvider:
         if emit:
             emit(

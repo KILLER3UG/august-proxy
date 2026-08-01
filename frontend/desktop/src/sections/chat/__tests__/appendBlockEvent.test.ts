@@ -97,3 +97,28 @@ describe('appendBlockEvent — basic event merging', () => {
   });
 });
 
+
+describe('appendBlockEvent — verifier enforcement notice', () => {
+  it('appends a verifierBlocked notice block', () => {
+    const blocks = appendBlockEvent([], {
+      type: 'verifierBlocked',
+      content: 'Verification required: the final answer was withheld.',
+    });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('verifierBlocked');
+    expect(blocks[0].content).toContain('Verification required');
+  });
+
+  it('does not demote or merge into final output', () => {
+    let blocks = appendBlockEvent([], { type: 'finalOutput', content: 'partial' });
+    blocks = appendBlockEvent(blocks, {
+      type: 'verifierBlocked',
+      content: 'blocked',
+    });
+    blocks = appendBlockEvent(blocks, { type: 'finalOutput', content: ' tail' });
+    expect(blocks).toHaveLength(3);
+    expect(blocks.map((b) => b.type)).toEqual(['finalOutput', 'verifierBlocked', 'finalOutput']);
+    expect(blocks[0].content).toBe('partial');
+    expect(blocks[2].content).toBe(' tail');
+  });
+});

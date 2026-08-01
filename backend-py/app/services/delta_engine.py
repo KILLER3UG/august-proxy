@@ -142,31 +142,31 @@ def _detectTrailing(original: str, edited: str, char: str) -> str | None:
     return None
 
 
-def trackWrite(filePath: str, content: str) -> None:
+def trackWrite(file_path: str, content: str) -> None:
     """Track a write_file call by the model.
 
     Stores a content hash for later comparison.
     """
-    hashPath = _hashPath(filePath)
+    hashPath = _hashPath(file_path)
     _writeHash(hashPath, content)
 
 
-def checkAndDiff(filePath: str) -> list[str]:
+def checkAndDiff(file_path: str) -> list[str]:
     """Check if a file was changed externally and record diffs.
 
     Returns list of inferred preference rules (may be empty).
     """
-    if not os.path.exists(filePath):
+    if not os.path.exists(file_path):
         return []
-    hashPath = _hashPath(filePath)
+    hashPath = _hashPath(file_path)
     originalContent = _readHash(hashPath)
     if originalContent is None:
         return []
-    with open(filePath) as f:
+    with open(file_path) as f:
         currentContent = f.read()
     if currentContent == originalContent:
         return []
-    inferred = _processDiff(filePath, originalContent, currentContent)
+    inferred = _processDiff(file_path, originalContent, currentContent)
     return inferred
 
 
@@ -225,9 +225,9 @@ def shouldFlush() -> bool:
     return False
 
 
-def _hashPath(filePath: str) -> str:
+def _hashPath(file_path: str) -> str:
     """Generate a storage key for a file path."""
-    return f'delta_{hashlib.md5(filePath.encode()).hexdigest()}'
+    return f'delta_{hashlib.md5(file_path.encode()).hexdigest()}'
 
 
 def _writeHash(key: str, content: str) -> None:
@@ -247,7 +247,7 @@ def _readHash(key: str) -> str | None:
     return None
 
 
-def _processDiff(filePath: str, original: str, current: str) -> list[str]:
+def _processDiff(file_path: str, original: str, current: str) -> list[str]:
     """Process a diff between original and current file content."""
     diff = list(
         unifiedDiff(
@@ -260,7 +260,7 @@ def _processDiff(filePath: str, original: str, current: str) -> list[str]:
     if not diff:
         return []
     _diff_queue.append(
-        {'file': filePath, 'original': original, 'edited': current, 'diff': ''.join(diff), 'timestamp': time.time()}
+        {'file': file_path, 'original': original, 'edited': current, 'diff': ''.join(diff), 'timestamp': time.time()}
     )
     if shouldFlush():
         return flushQueue()

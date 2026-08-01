@@ -512,13 +512,13 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
         return {'status': 'error', 'command': command, 'error': str(exc)}
 
 
-async def approveTerminalRequest(requestId: str, approve: bool = True) -> dict[str, object]:
+async def approveTerminalRequest(request_id: str, approve: bool = True) -> dict[str, object]:
     """Approve or reject a pending terminal request."""
-    request = _pendingApprovals.pop(requestId, None)
+    request = _pendingApprovals.pop(request_id, None)
     if not request:
         return {'error': 'Request not found'}
     if not approve:
-        return {'status': 'rejected', 'requestId': requestId}
+        return {'status': 'rejected', 'requestId': request_id}
     if as_str(request.get('type')) == 'terminal_command':
         return await submitTerminalCommand(
             {'command': as_str(request.get('command'), ''), 'cwd': as_str(request.get('cwd'), ''), 'approved': True}
@@ -529,7 +529,7 @@ async def approveTerminalRequest(requestId: str, approve: bool = True) -> dict[s
         if session:
             session['approvedInteractive'] = True
         return {'status': 'approved_interactive', 'terminalId': sessionId}
-    return {'status': 'approved', 'requestId': requestId}
+    return {'status': 'approved', 'requestId': request_id}
 
 
 async def closeTerminalSession(sessionId: str) -> bool:

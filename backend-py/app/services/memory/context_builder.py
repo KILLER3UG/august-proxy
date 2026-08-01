@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.json_narrowing import as_dict, as_int, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.services.memory_store import get_memory
 
 AUGUST_PLATFORM: str = (
@@ -341,6 +341,16 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
                     'the result before calling update_state(phase="review").'
                 )
             blocks.append(wrapTag('verifier_gate', gateBody))
+    if as_bool(_get(session, 'verifierEnforced', 'verifier_enforced', default=False)):
+        blocks.append(
+            wrapTag(
+                'verifier_enforcement',
+                'This session enforces verification (opt-in). Your final answer '
+                "text is withheld from the user until update_state(phase='complete') "
+                'passes the verifier gate. Run the appropriate test/lint/validation '
+                'command, confirm the result, then call update_state(phase="complete").',
+            )
+        )
     workingMemory = _get(session, 'working_memory', 'workingMemory')
     if workingMemory:
         blocks.append(wrapTag('working_memory', _fmtVal(workingMemory, 2000)))

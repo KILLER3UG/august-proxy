@@ -22,6 +22,10 @@ export interface ProviderModel {
   free?: boolean;
   pinned?: boolean;
   source: 'manual' | 'fetched';
+  /** Per-model wire-format override (e.g. a Claude model on OpenCode Zen that
+   *  must use /v1/messages while the provider defaults to chat/completions).
+   *  `null`/absent → provider apiFormat. */
+  apiFormat?: ApiFormat | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -59,6 +63,8 @@ export interface ModelCreate {
   reasoning?: boolean;
   free?: boolean;
   pinned?: boolean;
+  /** Per-model wire-format override; null clears it back to provider format. */
+  apiFormat?: ApiFormat | null;
 }
 
 export interface RefreshResult {

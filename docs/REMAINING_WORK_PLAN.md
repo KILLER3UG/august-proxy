@@ -23,8 +23,8 @@
 
 ### A.1 Graceful Degradation Mode (Plan item 5.1)
 
-- [ ] **Implemented**
-- [ ] **Tested**
+- [x] **Implemented**
+- [x] **Tested**
 
 **File:** `frontend/desktop/src/components/overlays/BackendBootstrapGate.tsx`
 
@@ -62,8 +62,10 @@
 
 ### A.2 Feedforward/Feedback Bar (Plan item 4.4)
 
-- [ ] **Implemented**
-- [ ] **Tested**
+- [x] **Implemented**
+- [x] **Tested**
+
+> **Partial:** ContextBar.tsx exists but is not rendered; backend "feedforward" SSE event not emitted; TurnEvidenceTracker not wired into the tool loop
 
 **Files:**
 - Backend: `app/services/workbench/workbench.py` (emit SSE event at turn start)
@@ -112,7 +114,10 @@ await emit(tracker.to_dict())  # Already designed in evidence.py
 ### B.1 Playwright E2E Tests (Plan item 6.1)
 
 - [ ] **Implemented**
+
 - [ ] **Tested**
+
+> **Open:** no frontend/desktop/e2e/ directory; @playwright/test devDep present only
 
 **Files:**
 - `frontend/desktop/e2e/` (new directory)
@@ -168,8 +173,10 @@ async def chat(request: dict):
 
 ### B.2 API Envelope Migration (Plan item 6.7)
 
-- [ ] **Implemented**
-- [ ] **Tested**
+- [x] **Implemented**
+- [x] **Tested**
+
+> **Note:** envelope migrated on /api/harness/* only; rollout to other routers pending (see BETTER_HARNESS_PLAN 6.7)
 
 **File:** All files in `backend-py/app/routers/`
 
@@ -205,8 +212,10 @@ def wants_legacy(request: Request) -> bool:
 
 ### C.1 Replace `xlsx` (SheetJS)
 
-- [ ] **Implemented**
-- [ ] **Tested**
+- [x] **Implemented**
+- [x] **Tested**
+
+> **Note:** frontend/desktop/package.json: "xlsx-js-style": "^1.2.0"; plain xlsx no longer a direct dependency
 
 **Problem:** `xlsx` has Prototype Pollution + ReDoS vulnerabilities with **no fix available**.
 
@@ -223,7 +232,10 @@ def wants_legacy(request: Request) -> bool:
 ### C.2 Fix remaining audit issues
 
 - [ ] **Implemented**
+
 - [ ] **Tested**
+
+> **Open:** npm audit --omit=dev: 22 findings (14 moderate, 7 high, 1 critical)
 
 **Steps:**
 1. `npm audit fix` (safe fixes)
@@ -242,7 +254,10 @@ def wants_legacy(request: Request) -> bool:
 ### D.1 Seven-State Evidence Ladder
 
 - [ ] **Implemented**
+
 - [ ] **Tested**
+
+> **Open:** evidence.py still implements 3 states (verified/unverified/read_only); no evidence_states table
 
 **Current:** 3 states (verified/unverified/read_only) — per-turn only.
 
@@ -270,7 +285,10 @@ Missing | Unobserved | Not applicable
 ### D.2 Ten-Question Loop Discovery Gate
 
 - [ ] **Implemented**
+
 - [ ] **Tested**
+
+> **Open:** workflow_detection.py still promotes from title word-overlap + session count; no 10-question gate
 
 **Current:** `workflow_detection.py` promotes from title overlap + session count (better-harness explicitly forbids this).
 
@@ -306,7 +324,10 @@ Missing | Unobserved | Not applicable
 ### D.3 Tree-Sitter Blast Radius
 
 - [ ] **Implemented**
+
 - [ ] **Tested**
+
+> **Open:** hooks/blast_radius.py is regex-grep, depth-1, per-file; no tree-sitter
 
 **Current:** Regex grep for importers (depth 1, 8KB cap, single file).
 
@@ -336,8 +357,8 @@ Missing | Unobserved | Not applicable
 
 ### D.4 Ownership Routing Taxonomy
 
-- [ ] **Implemented**
-- [ ] **Tested**
+- [x] **Implemented**
+- [x] **Tested**
 
 **Current:** No routing layer. Detected work (workflow candidates, friction, coverage gaps) has no structured path to a durable owner.
 
@@ -380,4 +401,4 @@ Sprint A gives immediate user-facing value. Sprint C is quick security hygiene. 
 
 ---
 
-*Last updated: 2026-07-30*
+*Last updated: 2026-08-01 (hygiene pass — checkboxes reconciled with code audit)*

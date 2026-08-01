@@ -481,6 +481,14 @@ async def handleMessages(
     provider = providerResolver.resolve(providerName)
     if not provider:
         return ({'error': 'No provider available for model', 'model': resolvedModel}, None)
+    # Per-model format override (multi-format gateways like OpenCode Zen): the
+    # model's own apiFormat wins over the provider-level format. The existing
+    # both-directions upstream handling below keys off client.apiFormat.
+    from app.providers.resolver import apply_model_format_override
+
+    provider = apply_model_format_override(provider, resolvedModel)
+    if provider is None:
+        return ({'error': 'No provider available for model', 'model': resolvedModel}, None)
     client = getClient(provider)
     if not client:
         return ({'error': f'No client for provider: {as_str(provider.get("name"), "")}'}, None)

@@ -15,11 +15,22 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { providersApi, type Provider } from '@/api/providers';
+import { providersApi, type ApiFormat, type Provider } from '@/api/providers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { fmtContextWindow } from './modelSettingsShared';
+import { API_FORMATS, fmtContextWindow } from './modelSettingsShared';
+
+/** Suggest a wire format from the model id family (multi-format gateways like
+ *  OpenCode Zen serve Claude at /v1/messages while the provider defaults to
+ *  chat/completions). Advisory only — never auto-applied. */
+export function suggestModelApiFormat(id: string): ApiFormat | null {
+  const mid = id.toLowerCase();
+  if (mid.startsWith('claude-') || mid.startsWith('anthropic/') || mid.startsWith('claude/')) {
+    return 'anthropicMessages';
+  }
+  return null;
+}
 
 export function ModelRow({
   providerId,
@@ -36,6 +47,7 @@ export function ModelRow({
     (model.contextWindow ?? 128000).toString(),
   );
   const [reasoning, setReasoning] = useState(!!model.reasoning);
+  const [format, setFormat] = useState<ApiFormat | ''>(model.apiFormat ?? '');
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
     error?: string;
@@ -47,13 +59,15 @@ export function ModelRow({
     setName(model.name ?? model.id);
     setContextWindow((model.contextWindow ?? 128000).toString());
     setReasoning(!!model.reasoning);
-  }, [model.id, model.name, model.contextWindow, model.reasoning]);
+    setFormat(model.apiFormat ?? '');
+  }, [model.id, model.name, model.contextWindow, model.reasoning, model.apiFormat]);
 
   const update = useMutation({
     mutationFn: (body: {
       name?: string;
       contextWindow?: number | null;
       reasoning?: boolean;
+      apiFormat?: ApiFormat | null;
     }) => providersApi.updateModel(providerId, model.id, body),
     onSuccess: () => {
       setEditing(false);
@@ -145,6 +159,38 @@ export function ModelRow({
             <input type="checkbox" checked={reasoning} onChange={(e) => setReasoning(e.target.checked)} />
             Supports reasoning
           </label>
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 text-xs">
+              <span className="shrink-0">Wire format</span>
+              <select
+                value={format}
+                onChange={(e) => setFormat(e.target.value as ApiFormat | '')}
+                aria-label="Wire format override"
+                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+              >
+                <option value="">Auto (provider format)</option>
+                {API_FORMATS.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!format && suggestModelApiFormat(model.id) && (
+              <p className="text-[11px] text-amber-500/90">
+                {model.id} looks like an Anthropic model — multi-format gateways
+                (e.g. OpenCode Zen) need{' '}
+                <button
+                  type="button"
+                  className="underline underline-offset-2"
+                  onClick={() => setFormat('anthropicMessages')}
+                >
+                  v1/messages
+                </button>{' '}
+                for it.
+              </p>
+            )}
+          </div>
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -155,6 +201,7 @@ export function ModelRow({
                     ? Number(contextWindow)
                     : 128000,
                   reasoning,
+                  apiFormat: format || null,
                 })
               }
               disabled={update.isPending}
@@ -194,6 +241,14 @@ export function ModelRow({
         >
           {model.source}
         </span>
+        {model.apiFormat && (
+          <span
+            className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-mono bg-primary/10 text-primary"
+            title="Per-model wire-format override (overrides the provider format)"
+          >
+            {API_FORMATS.find((f) => f.value === model.apiFormat)?.label ?? model.apiFormat}
+          </span>
+        )}
         <label className="flex items-center gap-1 shrink-0" title="Context window (tokens)">
           <span className="text-[10px] uppercase tracking-wide text-muted-foreground">ctx</span>
           <Input

@@ -28,7 +28,7 @@ export interface ProviderSetupResult {
  *  narrow on `type` before relying on a specific field shape. */
 export interface MessageBlock {
   id: string;
-  type: 'thinking' | 'toolCall' | 'command' | 'finalOutput' | 'recalledMemories';
+  type: 'thinking' | 'toolCall' | 'command' | 'finalOutput' | 'recalledMemories' | 'verifierBlocked';
   content?: string;
   tool?: MessageBlockToolCall;
   /** Set on toolCall blocks whose context represents a revised plan
@@ -239,7 +239,8 @@ export interface AppendBlockEvent {
     | 'command'
     | 'tool_progress'
     | 'toolResult'
-    | 'recalledMemories';
+    | 'recalledMemories'
+    | 'verifierBlocked';
   content?: string;
   name?: string;
   id?: string;

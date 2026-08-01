@@ -20,6 +20,10 @@ class ModelConfig(ExtraAllowBaseModel):
     free: bool = False
     pinned: bool = False
     source: str = 'manual'
+    # Optional per-model wire-format override. None → provider apiFormat.
+    # Needed for multi-format gateways (e.g. OpenCode Zen) that list Claude,
+    # GPT, and DeepSeek models from one /models endpoint.
+    api_format: str | None = None
 
 
 class ProviderConfig(ExtraAllowBaseModel):
@@ -67,6 +71,7 @@ class ModelCreate(ExtraAllowBaseModel):
     reasoning: bool | None = None
     free: bool | None = None
     pinned: bool | None = None
+    api_format: str | None = None
 
 
 class ModelUpdate(ExtraAllowBaseModel):
@@ -77,3 +82,4 @@ class ModelUpdate(ExtraAllowBaseModel):
     reasoning: bool | None = None
     free: bool | None = None
     pinned: bool | None = None
+    api_format: str | None = None

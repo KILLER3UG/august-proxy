@@ -111,13 +111,17 @@ installed desktop users (bundled backend).
 
 ### Models list OK but Test / chat returns **Not Found** (OpenCode Zen)
 
-`GET …/models` returns the full Zen catalog. Each model family still needs a
-different wire path (`/chat/completions`, `/messages`, `/responses`, or Gemini’s
-Google-style path). August picks **one** `apiFormat` per provider. With
-`openaiChat`, only chat-completions models work (DeepSeek, GLM, Kimi, MiniMax,
-Grok, free tier). Claude needs `messages`; GPT needs `responses` — those will
-**404** under a single Zen `openaiChat` provider until per-model routing exists.
-See [`CONFIGURATION.md`](CONFIGURATION.md) (OpenCode note).
+`GET …/models` returns the full Zen catalog. Each model family needs a
+different wire path (`/chat/completions`, `/v1/messages`, `/responses`).
+August now supports a **per-model `apiFormat` override**: in **Settings →
+Model settings → Providers**, pencil-edit the failing model row and pick its
+wire format in the **Wire format** dropdown (`v1/messages` for Claude,
+`responses` for GPT; chat-completions models keep "Auto (provider format)").
+The override is honored by workbench chat, the Test button, and the
+`/v1/chat/completions` · `/v1/messages` · `/v1/responses` proxy adapters —
+an OpenAI-format request routed to a Claude model is translated to the
+Anthropic wire protocol automatically (and vice versa for `/v1/messages`).
+See [`CONFIGURATION.md`](CONFIGURATION.md) (per-model apiFormat note).
 
 Paste the provider base URL **exactly**. August does **not** invent `/v1` on
 the base — it only appends the API format leaf (`chat/completions`,

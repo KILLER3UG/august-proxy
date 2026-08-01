@@ -256,6 +256,12 @@ def resolve_chat_llm(
     if not resolved_provider:
         resolved_provider = resolve_workbench_provider('', '')
     resolved_model = resolve_model(resolved_provider, model or session_model or '')
+    # Per-model format override (multi-format gateways like OpenCode Zen):
+    # the model's own apiFormat wins over the provider-level format.
+    if resolved_provider:
+        from app.providers.resolver import apply_model_format_override
+
+        resolved_provider = apply_model_format_override(resolved_provider, resolved_model)
     return resolved_provider, resolved_model
 
 

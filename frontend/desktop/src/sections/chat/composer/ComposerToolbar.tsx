@@ -2,9 +2,9 @@
 /* Slim pill controls: + menu, model/effort, voice, send / steer / stop.   */
 
 import { useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
-import { Loader2, Mic, Send, Square } from 'lucide-react';
+import { Loader2, Mic, Send, ShieldCheck, Square } from 'lucide-react';
 import { updateSessionModel } from '@/store/sessions';
-import { setWorkbenchGuardMode, setWorkbenchSandboxMode } from '@/api/workbench';
+import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchVerifier } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage } from '@/types/chat';
 import {
@@ -174,6 +174,21 @@ export function ComposerToolbar({
     }
   };
 
+  const verifierEnforced = !!workbenchSession?.verifierEnforced;
+  const handleVerifierToggle = () => {
+    if (!workbenchSession?.id) return;
+    const next = !verifierEnforced;
+    setWorkbenchSession((prev) => (prev ? { ...prev, verifierEnforced: next } : prev));
+    void setWorkbenchVerifier(workbenchSession.id, next)
+      .then((updated) => {
+        if (updated) setWorkbenchSession(updated);
+      })
+      .catch((error) => {
+        console.warn('[ChatThread] Failed to persist verifier enforcement:', error);
+        setWorkbenchSession((prev) => (prev ? { ...prev, verifierEnforced: !next } : prev));
+      });
+  };
+
   return (
     <div className="flex items-center justify-between gap-1.5 px-2 pb-2 pt-0.5">
       <div className="flex items-center gap-1 min-w-0">
@@ -220,6 +235,27 @@ export function ComposerToolbar({
           breakdown={contextBreakdown}
           serverTokens={sessionUsage}
         />
+        <button
+          type="button"
+          onClick={handleVerifierToggle}
+          disabled={!workbenchSession?.id}
+          aria-pressed={verifierEnforced}
+          aria-label="Enforce verification before final answer"
+          title={
+            verifierEnforced
+              ? 'Verifier ON: final answer withheld until update_state(phase="complete") passes'
+              : 'Verifier OFF: allow answers without a passing verification run'
+          }
+          data-testid="verifier-toggle"
+          className={cn(
+            'grid size-7 place-items-center rounded transition disabled:opacity-40',
+            verifierEnforced
+              ? 'text-amber-400 hover:bg-white/[0.06]'
+              : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
+          )}
+        >
+          <ShieldCheck className="size-3.5" />
+        </button>
         <ModelEffortMenu
           models={models}
           visibleModels={visibleModels}

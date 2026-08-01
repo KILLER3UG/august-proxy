@@ -31,12 +31,12 @@ def validateToolArguments(
         messages = []
     func = toolCall.get('function', {})
     if isinstance(func, dict):
-        toolName = func.get('name') or toolCall.get('name')
+        tool_name = func.get('name') or toolCall.get('name')
     else:
-        toolName = toolCall.get('name')
-    if not isinstance(toolName, str) or not toolName:
+        tool_name = toolCall.get('name')
+    if not isinstance(tool_name, str) or not tool_name:
         return {'valid': False, 'error': 'Missing tool name'}
-    toolDef = _findToolDefinition(toolName, toolDefinitions)
+    toolDef = _findToolDefinition(tool_name, toolDefinitions)
     if not toolDef:
         return {'valid': True}
     argsRaw = toolCall.get('input', '{}')
@@ -61,8 +61,8 @@ def validateToolArguments(
         schema = None
     if not schema or not isinstance(schema, dict):
         return {'valid': True}
-    args = _applyCompatibilityShims(toolName, args)
-    gateResult = _checkProxyExecutionGate(toolName, args, messages)
+    args = _applyCompatibilityShims(tool_name, args)
+    gateResult = _checkProxyExecutionGate(tool_name, args, messages)
     if not gateResult.get('valid'):
         return gateResult
     required = schema.get('required', [])
@@ -107,12 +107,12 @@ def validateToolArguments(
     return {'valid': True}
 
 
-def buildValidationErrorToolMessage(toolCallId: str, toolName: str, errorMsg: str) -> dict[str, object]:
+def buildValidationErrorToolMessage(tool_call_id: str, tool_name: str, error_msg: str) -> dict[str, object]:
     """Build a tool result message for a validation error."""
     return {
-        'tool_call_id': toolCallId,
+        'tool_call_id': tool_call_id,
         'role': 'tool',
-        'content': f"[Validation Error] Tool '{toolName}' rejected before execution:\n{errorMsg}\n\n[Proxy Self-Heal]: Fix the tool arguments and retry. Do NOT stop.",
+        'content': f"[Validation Error] Tool '{tool_name}' rejected before execution:\n{error_msg}\n\n[Proxy Self-Heal]: Fix the tool arguments and retry. Do NOT stop.",
     }
 
 
@@ -129,13 +129,13 @@ def _findToolDefinition(name: str, definitions: list[dict[str, object]]) -> dict
     return None
 
 
-def _applyCompatibilityShims(toolName: str, args: dict[str, object]) -> dict[str, object]:
+def _applyCompatibilityShims(tool_name: str, args: dict[str, object]) -> dict[str, object]:
     """Apply compatibility shims for common tool name mappings."""
-    if toolName in ('WebFetch', 'web_fetch', 'mcp__workspace__web_fetch'):
+    if tool_name in ('WebFetch', 'web_fetch', 'mcp__workspace__web_fetch'):
         if 'prompt' in args and 'url' not in args:
             args = dict(args)
             args['url'] = args['prompt']
-    if toolName in ('WebSearch', 'web_search', 'mcp__workspace__web_search'):
+    if tool_name in ('WebSearch', 'web_search', 'mcp__workspace__web_search'):
         if 'prompt' in args and 'query' not in args:
             args = dict(args)
             args['query'] = args['prompt']
@@ -149,14 +149,14 @@ _MUTATINGToolPatterns = re.compile(
 
 
 def _checkProxyExecutionGate(
-    toolName: str, args: dict[str, object], messages: list[dict[str, object]]
+    tool_name: str, args: dict[str, object], messages: list[dict[str, object]]
 ) -> dict[str, object]:
     """Proxy Execution Gate: block mutating tools if no plan.md in context.
 
     This prevents the model from making changes before a plan has been
     explicitly approved.
     """
-    if not _MUTATINGToolPatterns.match(toolName):
+    if not _MUTATINGToolPatterns.match(tool_name):
         return {'valid': True}
     for msg in messages:
         content = msg.get('content', '')
@@ -170,5 +170,5 @@ def _checkProxyExecutionGate(
                         return {'valid': True}
     return {
         'valid': False,
-        'error': f"Tool '{toolName}' is blocked by the Proxy Execution Gate. No plan.md was found in the conversation. Create and approve a plan before using mutating tools.",
+        'error': f"Tool '{tool_name}' is blocked by the Proxy Execution Gate. No plan.md was found in the conversation. Create and approve a plan before using mutating tools.",
     }

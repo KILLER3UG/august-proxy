@@ -24,7 +24,23 @@
 - Used by workbench chat, model Test button, and `/v1/chat/completions` · `/v1/messages` proxy adapters
 - API format dropdown labels simplified to `chat/completions` / `messages` / `responses`
 
-**Still open (not fixed in 0.12.21):** OpenCode Zen lists all models via `GET …/models`, but each family needs a different wire path (`/chat/completions`, `/messages`, `/responses`, Gemini Google-style). One provider `apiFormat` cannot serve Claude+GPT+DeepSeek from the same Zen entry — expect **404 Not Found** for wrong-format models. See `docs/TROUBLESHOOTING.md` and `docs/CONFIGURATION.md`.
+## Multi-format gateways (per-model apiFormat)
+
+**OpenCode Zen** lists all models via `GET …/models`, but each family needs a
+different wire path (`/chat/completions`, `/v1/messages`, `/responses`). One
+provider-level `apiFormat` cannot serve Claude+GPT+DeepSeek from the same Zen
+entry, so model entries may carry their **own** `apiFormat` (set in Model
+settings → pencil-edit model → Wire format dropdown; the UI suggests
+`v1/messages` for `claude-`-prefixed ids). The override wins over the provider
+format and is honored by workbench chat, the Test button, Live/BTW, and the
+`/v1` proxy adapters (OpenAI→Anthropic body+SSE translation exists for Claude
+models reached via `/v1/chat/completions`). See `docs/TROUBLESHOOTING.md` and
+`docs/CONFIGURATION.md`.
+
+**Verifier enforcement is opt-in per session** (`verifierEnforced`, composer
+shield toggle / session creation). While on, the final answer is withheld
+until `update_state(phase='complete')` passes; a `verifierBlocked` SSE event
+drives the amber banner. Casual chat (flag off) is unaffected.
 
 ## Directory map & validation routing
 

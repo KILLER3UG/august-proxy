@@ -274,13 +274,22 @@ User-added providers, edited from **Settings → Model Providers** or
 | `apiKey` | Provider key (or rely on `config.json` / env) |
 | `enabled` | Whether it is used |
 | `autoFetch` | Re-fetch models on startup when supported |
-| `models` | Cached catalog |
+| `models` | Cached catalog. Each model entry may carry its own `apiFormat` override (see below) |
 
-**OpenCode Zen:** one `baseUrl` + one `apiFormat` cannot cover every listed
-model. Prefer `openaiChat` for DeepSeek / free / GLM / Kimi / MiniMax / Grok.
-Claude and GPT on Zen need different formats/endpoints — fetching them into the
-same provider still yields **404** on Test/chat until multi-endpoint routing
-ships. Desktop **0.12.21+** also stops forwarding `session_id: null` on OpenAI
+**Per-model `apiFormat` override (multi-format gateways):** a model entry may
+carry its own `apiFormat` — e.g. `"id": "claude-sonnet-4", "apiFormat":
+"anthropicMessages"` — which wins over the provider-level format for that
+model. This is how OpenCode Zen works: one provider (`openaiChat`) serves
+DeepSeek / GLM / Kimi / MiniMax / Grok on `chat/completions`, while Claude
+models tagged `anthropicMessages` route to `v1/messages` and GPT models tagged
+`openaiResponses` route to `responses`. Set it in **Settings → Model settings →
+Providers** (pencil-edit a model row → Wire format dropdown; the UI suggests
+`v1/messages` for `claude-`-prefixed ids). The override applies to workbench
+chat, the **Test** button, and the `/v1/chat/completions` · `/v1/messages` ·
+`/v1/responses` proxy adapters (OpenAI-format requests to a Claude model are
+translated to the Anthropic wire protocol automatically).
+
+Desktop **0.12.21+** also stops forwarding `session_id: null` on OpenAI
 bodies (Console 400).
 
 There is **no built-in template catalog**. You configure every provider

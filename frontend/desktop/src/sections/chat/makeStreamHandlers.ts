@@ -468,6 +468,12 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'recalledMemories', memories: items });
       scheduleUpdate();
     },
+    onVerifierBlocked: ({ message }) => {
+      // Opt-in verifier enforcement: final answer withheld until the model
+      // passes update_state(phase='complete'). Rendered as an amber notice.
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'verifierBlocked', content: message });
+      scheduleUpdate();
+    },
     onPlanProposed: ({ plan }) => {
       if (!isNonEmptyPlan(plan)) return;
       setWorkbenchSession((prev) => {

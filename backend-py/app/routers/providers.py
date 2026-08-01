@@ -37,6 +37,7 @@ def _provider_to_dict(p: object) -> dict:
                     'free': m.free,
                     'pinned': m.pinned,
                     'source': m.source,
+                    'apiFormat': m.api_format,
                 }
                 for m in p.models
             ],
@@ -425,6 +426,8 @@ async def addModel(providerId: str, body: ModelCreate):
                 'pinned': body.pinned or False,
                 'source': 'manual',
             }
+            if body.api_format:
+                entry['apiFormat'] = body.api_format
             p_models.append(entry)
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()
@@ -464,6 +467,12 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                         m['free'] = body.free
                     if body.pinned is not None:
                         m['pinned'] = body.pinned
+                    # Per-model wire-format override; explicit null clears it.
+                    if 'api_format' in dumped:
+                        if dumped['api_format'] is None:
+                            m.pop('apiFormat', None)
+                        else:
+                            m['apiFormat'] = dumped['api_format']
                     config_service.saveProvidersStore(store)
                     model_service.invalidate_cache()
                     return {'updated': True}

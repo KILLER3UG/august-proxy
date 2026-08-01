@@ -413,6 +413,8 @@ async def _aggregateModels() -> list[dict[str, object]]:
                         'supportsThinking': reasoning,
                         'isFree': m.get('free', False) or _isFreeModelId(mid),
                         'pinned': bool(m.get('pinned', False)),
+                        # Per-model wire-format override; None → provider format.
+                        'apiFormat': as_str(m.get('apiFormat'), '') or None,
                     }
                 )
     except Exception:
