@@ -251,6 +251,35 @@ describe('getOrCreateEmptySession — no blank stacking', () => {
     expect(second.id).not.toBe(first.id);
     expect($sessions.get()).toHaveLength(2);
   });
+
+  it('does not reuse a path-bound draft for a path-less Other chat', () => {
+    // Regression: the "Other chats" + button calls
+    // getOrCreateEmptySession(null, …, null). It reused any empty unfiled
+    // draft and kept its stale workspacePath, so the "new" chat landed in the
+    // last project instead of staying path-less.
+    const stale = createSession(null, 'Stale', 'C:/Dev/last-proj');
+    expect(stale.workspacePath).toBe('C:/Dev/last-proj');
+
+    const other = getOrCreateEmptySession(null, 'Other', null);
+
+    expect(other.id).not.toBe(stale.id);
+    expect(other.folderId).toBeNull();
+    expect(other.workspacePath).toBeNull();
+    // The path-bound draft is left untouched, not hijacked.
+    expect($sessions.get().find((s) => s.id === stale.id)?.workspacePath).toBe(
+      'C:/Dev/last-proj',
+    );
+    expect($sessions.get()).toHaveLength(2);
+  });
+
+  it('still reuses a path-less draft for a path-less Other chat', () => {
+    const first = getOrCreateEmptySession(null, 'Chat A', null);
+    expect(first.workspacePath).toBeNull();
+    const second = getOrCreateEmptySession(null, 'Chat B', null);
+    expect(second.id).toBe(first.id);
+    expect(second.workspacePath).toBeNull();
+    expect($sessions.get()).toHaveLength(1);
+  });
 });
 
 describe('createEmptySessionInFolder — Codex-style multi-chat per project', () => {

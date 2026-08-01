@@ -151,8 +151,14 @@ export function findReusableEmptySession(
     sessions.find((s) => {
       if (!sessionIsEmpty(s)) return false;
       if ((s.folderId ?? null) !== folderId) return false;
-      // Match workspace when both sides have a path; empty workspace is reusable.
-      if (workspacePath && s.workspacePath && s.workspacePath !== workspacePath) {
+      // Match workspace, including the path-less case. A caller asking for a
+      // path-less chat (workspacePath null — e.g. the "Other chats" + button)
+      // must not reuse a draft that still carries a project path, or the new
+      // chat silently lands in the last workspace. When a path IS requested,
+      // a path-less draft stays reusable (it gets the path assigned).
+      if (workspacePath) {
+        if (s.workspacePath && s.workspacePath !== workspacePath) return false;
+      } else if (s.workspacePath) {
         return false;
       }
       return true;
