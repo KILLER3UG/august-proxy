@@ -426,6 +426,28 @@ async def call_anthropic_workbench(
     return agg.result()
 
 
+def _reasoning_effort_rejected(status: object, msg: str | None) -> bool:
+    """Whether an upstream error is specifically rejecting ``reasoning_effort``.
+
+    Gateways that configure a per-model pattern for the field return a 400 whose
+    message names ``reasoning_effort`` (e.g. ``value "high" does not match pattern
+    configured for reasoning_effort``). We treat that as "drop the optional hint
+    and retry" rather than a fatal error. ``status`` may be ``None`` on the
+    exception path, where we rely on the message text alone.
+    """
+    text = (msg or '').lower()
+    if 'reasoning_effort' not in text:
+        return False
+    if status is None:
+        return True
+    # Narrow to int|str so int() resolves a concrete overload (status is `object`).
+    sval = status if isinstance(status, (int, str)) else str(status)
+    try:
+        return int(sval) == 400
+    except (TypeError, ValueError):
+        return False
+
+
 async def call_openai_workbench(
     messages: list[dict[str, object]],
     system_text: str,
@@ -480,85 +502,125 @@ async def call_openai_workbench(
         if reasoning and provider_accepts_reasoning_effort(provider, model):
             body['reasoning_effort'] = reasoning
 
-    contentText = ''
-    thinkingText = ''
-    # Always accumulate reasoning for tool-loop re-sends (DeepSeek/Kimi require it).
-    # UI emit / returned ``thinking`` still respect thinking_enabled.
-    preservedReasoning = ''
-    toolCallsAccum: dict[int, dict[str, object]] = {}
-    finishReason: str | None = None
-    usage: dict[str, int] = {}
     # Poll the workbench cancel signal during chunk iteration so Stop terminates promptly.
     from app.lib.async_subprocess import current_subprocess_cancel
 
     _cancel_event = current_subprocess_cancel.get()
-    try:
-        async for event in client.chat_completions_stream(body):
-            if _cancel_event is not None and _cancel_event.is_set():
-                break
-            # Surface HTTP/provider errors instead of returning an empty "success".
-            if as_str(event.get('type')) == 'error' or event.get('error') is not None:
-                msg = _extract_upstream_error_message(event)
-                errResp: dict[str, object] = {'error': msg or 'Upstream provider error'}
-                status = event.get('status')
-                if isinstance(status, int):
-                    errResp['errorStatus'] = status
-                retryAfter = event.get('retryAfterMs')
-                if isinstance(retryAfter, int) and retryAfter > 0:
-                    errResp['retryAfterMs'] = retryAfter
-                return errResp
+    # ``reasoning_effort`` is an optional hint. Some OpenAI-compatible gateways
+    # configure a per-model pattern for the field that rejects the value we map
+    # (e.g. "high"), hard-failing the request with a 400 — see the
+    # ``_reasoning_effort_rejected`` helper. Because it is only a hint, when the
+    # upstream rejects it (and we have emitted nothing yet) we drop it and retry
+    # once instead of surfacing the error: chat must not break over an effort
+    # hint a particular route won't accept. The heuristic gate above stays as the
+    # fast path so compatible providers keep the hint on the first try.
+    _retried_reasoning = False
+    for _stream_attempt in range(2):
+        contentText = ''
+        thinkingText = ''
+        # Always accumulate reasoning for tool-loop re-sends (DeepSeek/Kimi require it).
+        # UI emit / returned ``thinking`` still respect thinking_enabled.
+        preservedReasoning = ''
+        toolCallsAccum: dict[int, dict[str, object]] = {}
+        finishReason: str | None = None
+        usage: dict[str, int] = {}
+        _retry_stream = False
+        try:
+            async for event in client.chat_completions_stream(body):
+                if _cancel_event is not None and _cancel_event.is_set():
+                    break
+                # Surface HTTP/provider errors instead of returning an empty "success".
+                if as_str(event.get('type')) == 'error' or event.get('error') is not None:
+                    msg = _extract_upstream_error_message(event)
+                    status = event.get('status')
+                    # Upstream rejected our reasoning_effort hint before emitting any
+                    # content — drop the hint and retry once (see note above).
+                    if (
+                        not _retried_reasoning
+                        and 'reasoning_effort' in body
+                        and not contentText
+                        and not thinkingText
+                        and _reasoning_effort_rejected(status, msg)
+                    ):
+                        body.pop('reasoning_effort', None)
+                        _retried_reasoning = True
+                        _retry_stream = True
+                        break
+                    errResp: dict[str, object] = {'error': msg or 'Upstream provider error'}
+                    if isinstance(status, int):
+                        errResp['errorStatus'] = status
+                    retryAfter = event.get('retryAfterMs')
+                    if isinstance(retryAfter, int) and retryAfter > 0:
+                        errResp['retryAfterMs'] = retryAfter
+                    return errResp
 
-            eventType = event.get('_event_type', '')
-            if eventType not in ('chat.completion.chunk', ''):
-                pass
-            eventUsage = as_dict(event.get('usage'))
-            if eventUsage:
-                usage['input_tokens'] = as_int(eventUsage.get('prompt_tokens', 0))
-                usage['output_tokens'] = as_int(eventUsage.get('completion_tokens', 0))
-            choices = as_list(event.get('choices', []), [])
-            if not choices:
-                continue
-            choice = as_dict(choices[0])
-            delta = as_dict(choice.get('delta', {}))
-            # Some OpenAI-compatible providers (DeepSeek-R1-style "always
-            # reasoning" models via OpenCode Zen, etc.) stream reasoning
-            # tokens unconditionally — `reasoning_effort` is a hint they
-            # often ignore entirely. Always keep the text for the next
-            # request (tool-loop continuity); only surface it in the UI
-            # when Thinking is enabled.
-            reasoner = as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning'))
-            if reasoner:
-                preservedReasoning += reasoner
-                if thinking_enabled:
-                    thinkingText += reasoner
+                eventType = event.get('_event_type', '')
+                if eventType not in ('chat.completion.chunk', ''):
+                    pass
+                eventUsage = as_dict(event.get('usage'))
+                if eventUsage:
+                    usage['input_tokens'] = as_int(eventUsage.get('prompt_tokens', 0))
+                    usage['output_tokens'] = as_int(eventUsage.get('completion_tokens', 0))
+                choices = as_list(event.get('choices', []), [])
+                if not choices:
+                    continue
+                choice = as_dict(choices[0])
+                delta = as_dict(choice.get('delta', {}))
+                # Some OpenAI-compatible providers (DeepSeek-R1-style "always
+                # reasoning" models via OpenCode Zen, etc.) stream reasoning
+                # tokens unconditionally — `reasoning_effort` is a hint they
+                # often ignore entirely. Always keep the text for the next
+                # request (tool-loop continuity); only surface it in the UI
+                # when Thinking is enabled.
+                reasoner = as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning'))
+                if reasoner:
+                    preservedReasoning += reasoner
+                    if thinking_enabled:
+                        thinkingText += reasoner
+                        if emit:
+                            emit({'type': 'thinking', 'content': reasoner})
+                textDelta = as_str(delta.get('content', ''))
+                if textDelta:
+                    contentText += textDelta
                     if emit:
-                        emit({'type': 'thinking', 'content': reasoner})
-            textDelta = as_str(delta.get('content', ''))
-            if textDelta:
-                contentText += textDelta
-                if emit:
-                    emit({'type': 'finalOutput', 'content': textDelta})
-            for rawTc in as_list(delta.get('tool_calls', []), []):
-                tc = as_dict(rawTc)
-                idx = as_int(tc.get('index', 0))
-                if idx not in toolCallsAccum:
-                    fn = as_dict(tc.get('function', {}))
-                    toolCallsAccum[idx] = {
-                        'id': tc.get('id', f'call_{uuid.uuid4().hex[:12]}'),
-                        'type': 'function',
-                        'function': {'name': fn.get('name', ''), 'arguments': fn.get('arguments', '')},
-                    }
-                else:
-                    fn = as_dict(tc.get('function', {}))
-                    existing = as_dict(toolCallsAccum[idx]['function'])
-                    if fn.get('arguments'):
-                        existing['arguments'] = as_str(existing.get('arguments')) + as_str(fn.get('arguments'))
-                    if fn.get('name'):
-                        existing['name'] = as_str(existing.get('name')) + as_str(fn.get('name'))
-            if choice.get('finish_reason'):
-                finishReason = as_str(choice.get('finish_reason'))
-    except Exception as exc:
-        return {'error': str(exc)}
+                        emit({'type': 'finalOutput', 'content': textDelta})
+                for rawTc in as_list(delta.get('tool_calls', []), []):
+                    tc = as_dict(rawTc)
+                    idx = as_int(tc.get('index', 0))
+                    if idx not in toolCallsAccum:
+                        fn = as_dict(tc.get('function', {}))
+                        toolCallsAccum[idx] = {
+                            'id': tc.get('id', f'call_{uuid.uuid4().hex[:12]}'),
+                            'type': 'function',
+                            'function': {'name': fn.get('name', ''), 'arguments': fn.get('arguments', '')},
+                        }
+                    else:
+                        fn = as_dict(tc.get('function', {}))
+                        existing = as_dict(toolCallsAccum[idx]['function'])
+                        if fn.get('arguments'):
+                            existing['arguments'] = as_str(existing.get('arguments')) + as_str(fn.get('arguments'))
+                        if fn.get('name'):
+                            existing['name'] = as_str(existing.get('name')) + as_str(fn.get('name'))
+                if choice.get('finish_reason'):
+                    finishReason = as_str(choice.get('finish_reason'))
+        except Exception as exc:
+            # Same safety net for clients that raise on a 4xx instead of yielding
+            # an in-stream error event.
+            if (
+                not _retried_reasoning
+                and 'reasoning_effort' in body
+                and not contentText
+                and not thinkingText
+                and _reasoning_effort_rejected(None, str(exc))
+            ):
+                body.pop('reasoning_effort', None)
+                _retried_reasoning = True
+                _retry_stream = True
+            else:
+                return {'error': str(exc)}
+        if _retry_stream:
+            continue
+        break
 
     if not contentText and not toolCallsAccum and not thinkingText and not preservedReasoning:
         # Defensive: empty success with no tools is almost always an upstream
