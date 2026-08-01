@@ -103,14 +103,15 @@ describe('AssistantBlockTimeline process UI', () => {
     expect(screen.queryByRole('button', { name: /system info/i })).toBeNull();
 
     expandActivitySummary();
-    expect(document.querySelector('[data-slot="thought-step"]')).toBeTruthy();
-    // After final output, thoughts default collapsed — expand to see prose.
     const thought = document.querySelector('[data-slot="thought-step"]');
-    expect(thought).toHaveAttribute('data-expanded', 'false');
-    const thoughtToggle = thought?.querySelector('button');
-    if (thoughtToggle) fireEvent.click(thoughtToggle);
+    expect(thought).toBeTruthy();
+    // Settled reasoning renders as prose on the rail (clamped only when long);
+    // the threaded rail line replaces the old per-thought stem.
     expect(document.querySelector('.process-thought-prose')).toBeTruthy();
-    expect(document.querySelector('.process-thought-stem')).toBeTruthy();
+    expect(thought?.querySelector('.rail-line')).toBeTruthy();
+    expect(
+      document.querySelector('.process-thought-prose')?.textContent,
+    ).toContain('Considering the clock.');
     expect(screen.getByRole('button', { name: /system info/i })).toBeTruthy();
   });
 
@@ -197,7 +198,7 @@ describe('AssistantBlockTimeline process UI', () => {
     );
 
     const row = document.querySelector(
-      '[data-slot="tool-step-row"][data-status="running"]',
+      '[data-slot="edit-rail-row"][data-status="running"]',
     );
     expect(row).toBeTruthy();
     expect(row).toHaveAttribute('data-expanded', 'true');
@@ -229,7 +230,7 @@ describe('AssistantBlockTimeline process UI', () => {
     );
 
     const rowAfter = document.querySelector(
-      '[data-slot="tool-step-row"][data-status="running"]',
+      '[data-slot="edit-rail-row"][data-status="running"]',
     );
     expect(rowAfter).toHaveAttribute('data-expanded', 'true');
     expect(rowAfter!.querySelector('button')).toHaveAttribute(
@@ -297,7 +298,7 @@ describe('AssistantBlockTimeline process UI', () => {
     expect(document.querySelectorAll('[data-slot="thought-step"]').length).toBe(1);
   });
 
-  it('collapses thoughts by default once final output exists', () => {
+  it('renders settled reasoning as prose with a single rail Done marker', () => {
     renderTimeline([
       { id: 'th1', type: 'thinking', content: 'First thought.' },
       {
@@ -312,33 +313,24 @@ describe('AssistantBlockTimeline process UI', () => {
     expandActivitySummary();
     const thought = document.querySelector('[data-slot="thought-step"]');
     expect(thought).toBeTruthy();
-    expect(thought).toHaveAttribute('data-expanded', 'false');
-    expect(thought).toHaveAttribute('data-done', 'true');
-    // Expand to inspect settled thought chrome.
-    const thoughtToggle = thought?.querySelector('button');
-    expect(thoughtToggle).toBeTruthy();
-    fireEvent.click(thoughtToggle!);
-    expect(thought).toHaveAttribute('data-expanded', 'true');
+    // Short settled reasoning shows in full — prose is always in the DOM now
+    // (long thoughts clamp with a Show more control instead of collapsing).
     expect(document.querySelector('.process-thought-prose')).toBeTruthy();
+    expect(document.querySelector('.process-thought-prose')?.textContent).toContain(
+      'First thought.',
+    );
     expect(document.querySelector('.process-thought-clock')).toBeTruthy();
-    expect(document.querySelector('.process-thought-stem')).toBeTruthy();
-    expect(document.querySelector('.process-thought-check')).toBeTruthy();
-    expect(document.querySelector('[data-slot="thought-done"]')).toBeTruthy();
-    expect(
-      document.querySelector('.process-thought-prose')?.textContent,
-    ).toContain('First thought.');
+    // The per-thought Done / stem / check chrome is gone — completion moved to
+    // the rail level.
+    expect(document.querySelector('[data-slot="thought-done"]')).toBeNull();
+    expect(document.querySelector('.process-thought-check')).toBeNull();
+    const done = document.querySelector('[data-slot="rail-done-row"]');
+    expect(done).toBeTruthy();
+    expect(done).toHaveAttribute('data-status', 'done');
     expect(screen.getByText('Done')).toBeInTheDocument();
-
-    const toggle = thought!.querySelector('button');
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    fireEvent.click(toggle!);
-    expect(
-      document.querySelector('[data-slot="thought-step"]'),
-    ).toHaveAttribute('data-expanded', 'false');
-    expect(document.querySelector('.process-thought-prose')).toBeNull();
   });
 
-  it('shows Done only on the last thought after final response', () => {
+  it('shows a single rail Done marker regardless of thought count', () => {
     renderTimeline([
       { id: 'th1', type: 'thinking', content: 'First thought.' },
       makeToolBlock('tool_a', 'memory_search', 'done', {
@@ -355,8 +347,9 @@ describe('AssistantBlockTimeline process UI', () => {
     expandActivitySummary();
     const thoughts = document.querySelectorAll('[data-slot="thought-step"]');
     expect(thoughts.length).toBe(2);
-    expect(thoughts[0]).toHaveAttribute('data-done', 'false');
-    expect(thoughts[1]).toHaveAttribute('data-done', 'true');
+    // Completion is one rail marker at the foot of the thread, not stamped on
+    // the last thought.
+    expect(document.querySelectorAll('[data-slot="rail-done-row"]').length).toBe(1);
     expect(screen.getAllByText('Done')).toHaveLength(1);
   });
 

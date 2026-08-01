@@ -137,3 +137,55 @@ export function extractDiffData(tool: { context?: string; result?: unknown; name
 
   return null;
 }
+
+/**
+ * Best-effort extraction of a human-written *intent* for a file edit, e.g.
+ * "Add a note clarifying the document is self-contained". Some upstream
+ * agents (and August's own tools, when wired) attach a short imperative
+ * description to each edit; when present the rail row leads with it instead
+ * of a bare "Editing <file>" verb. Returns null when the args carry no such
+ * field — the caller falls back to the verb + filename chip.
+ */
+export function extractEditIntent(context?: string): string | null {
+  if (!context) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(context);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const obj = parsed as Record<string, unknown>;
+
+  const clean = (v: unknown): string | null => {
+    if (typeof v !== 'string') return null;
+    const t = v.replace(/\s+/g, ' ').trim();
+    if (!t) return null;
+    return t.length > 240 ? `${t.slice(0, 237).trimEnd()}…` : t;
+  };
+
+  // Top-level intent / description on the edit call.
+  const topLevel = clean(
+    obj.description ??
+      obj.intent ??
+      obj.change_summary ??
+      obj.edit_summary ??
+      obj.comment ??
+      obj.title,
+  );
+  if (topLevel) return topLevel;
+
+  // Multi-edit payloads: first item's own description (one rail row per call).
+  for (const key of ['edits', 'changes', 'replacements', 'files']) {
+    const list = obj[key];
+    if (Array.isArray(list) && list[0] && typeof list[0] === 'object') {
+      const item = list[0] as Record<string, unknown>;
+      const perItem = clean(item.description ?? item.intent ?? item.comment);
+      if (perItem) {
+        return list.length > 1 ? `${perItem} (+${list.length - 1} more)` : perItem;
+      }
+    }
+  }
+
+  return null;
+}

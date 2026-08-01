@@ -1574,3 +1574,341 @@ input::placeholder {
     filter: brightness(1.15);
   }
 }
+
+/* ── Process rail — threaded left line for thinking + edits + Done ──────
+   Each rail row paints one continuous vertical line (`.rail-line`) that the
+   next row's line meets edge-to-edge inside a `.process-rail-segment`
+   (gap:0), so a thought → edits → Done sequence reads as a single thread.
+   The icon sits on a small surface-coloured mask (`.rail-icon`) so the line
+   appears to pass *behind* each glyph rather than through it. */
+.rail-row {
+  position: relative;
+  padding: 2px 0;
+}
+.rail-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 7.5px;
+  width: 1px;
+  background: color-mix(in srgb, var(--dt-foreground) 22%, transparent);
+  pointer-events: none;
+}
+/* Cap the thread at the icon centre of the segment's first / last row so the
+   line never dangles above the first marker or below the last. 11px = row
+   padding-top (2px) + half the 18px icon box. */
+.process-rail-segment {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.process-rail-segment > .rail-row:first-child > .rail-line {
+  top: 11px;
+}
+.process-rail-segment > .rail-row:last-child > .rail-line {
+  bottom: auto;
+  height: 11px;
+}
+.rail-gutter {
+  flex: 0 0 16px;
+  width: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.rail-icon {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--dt-chat-background);
+  color: color-mix(in srgb, var(--dt-muted-foreground) 85%, transparent);
+}
+.rail-glyph {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.rail-row-body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* ── Edit rail row — ✎ · description · file chip · ±N ─────────────────── */
+.edit-rail-row {
+  display: flex;
+  align-items: flex-start;
+  column-gap: 10px;
+}
+.edit-rail-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 18px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 92%, transparent);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+.edit-rail-trigger:hover:not(:disabled) {
+  color: color-mix(in srgb, var(--dt-foreground) 88%, transparent);
+}
+.edit-rail-trigger:disabled {
+  cursor: default;
+}
+.edit-rail-trigger:focus-visible {
+  outline: 2px solid var(--dt-border);
+  outline-offset: 1px;
+}
+.edit-rail-desc {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-rail-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+}
+.edit-rail-chip > .edit-rail-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-rail-stats {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.edit-rail-panel {
+  margin-top: 4px;
+}
+
+/* ── Rail Done marker ─────────────────────────────────────────────────── */
+.rail-done-row {
+  display: flex;
+  align-items: flex-start;
+  column-gap: 10px;
+}
+.rail-done-label {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--dt-muted-foreground);
+}
+.rail-done-glyph {
+  color: color-mix(in srgb, var(--dt-muted-foreground) 90%, transparent);
+}
+
+/* ── Thought clamp — bound long reasoning with a fade + Show more ─────── */
+.thought-clamp {
+  position: relative;
+}
+.thought-clamp.is-clamped {
+  max-height: 12rem;
+  overflow: hidden;
+}
+.thought-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.75rem;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--dt-chat-background) 88%
+  );
+}
+.thought-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 3px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 78%, transparent);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.thought-toggle-btn:hover {
+  color: var(--dt-foreground);
+}
+.thought-toggle-btn:focus-visible {
+  outline: 2px solid var(--dt-border);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.thought-toggle-chevron {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.18s ease;
+}
+.thought-toggle-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+/* ── Edit rail row — header faces + code panel ─────────────────────── */
+.edit-rail-verb {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 92%, transparent);
+}
+.edit-rail-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.edit-rail-langicon {
+  flex: 0 0 auto;
+  line-height: 0;
+}
+.edit-rail-filelink {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--dt-foreground) 92%, transparent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--dt-foreground) 28%, transparent);
+  text-underline-offset: 2px;
+}
+.edit-rail-dir {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent);
+}
+.edit-rail-chevron {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  opacity: 0;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent);
+  transition: opacity 0.15s ease, transform 0.18s ease;
+}
+.edit-rail-trigger:hover .edit-rail-chevron,
+.edit-rail-trigger:focus-visible .edit-rail-chevron,
+.edit-rail-chevron.is-open {
+  opacity: 0.85;
+}
+.edit-rail-panel {
+  margin-top: 6px;
+}
+
+/* ── DiffCodePanel — syntax-highlighted, gutter + accent bar ─────────
+   The panel is a fixed *dark* code surface in both themes — the same
+   compromise the chat's fenced code blocks and the legacy DiffView make —
+   because the syntax tokens come from highlight.js's dark `vs2015` theme and
+   would wash out on a light background. Added/removed tints are rgba washes
+   over that dark surface (the legacy DiffView's proven palette), with a
+   bright accent bar and readable green/red line numbers. */
+.diff-code-panel {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #1e1e1e;
+  font-family: ui-monospace, 'JetBrains Mono Variable', 'Cascadia Code', Menlo,
+    Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.diff-code-scroll {
+  max-height: 22rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.diff-code-row {
+  display: flex;
+  align-items: stretch;
+  min-width: 100%;
+  width: max-content;
+}
+.diff-code-row:hover {
+  filter: brightness(1.08);
+}
+.diff-code-accent {
+  flex: 0 0 3px;
+  align-self: stretch;
+  background: transparent;
+}
+.diff-code-num {
+  flex: 0 0 auto;
+  min-width: 2.75rem;
+  padding: 0 0.6rem 0 0.5rem;
+  text-align: right;
+  white-space: pre;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  color: #6b7280;
+}
+.diff-code-text {
+  flex: 0 0 auto;
+  padding-right: 1rem;
+  white-space: pre;
+  color: #d4d4d4;
+}
+/* Added lines — green wash across the row, stronger in the gutter, bright
+   accent bar + readable green line numbers (the reference screenshot). */
+.diff-code-row--added {
+  background: rgba(74, 222, 128, 0.07);
+}
+.diff-code-row--added .diff-code-accent {
+  background: #4ade80;
+}
+.diff-code-row--added .diff-code-num {
+  background: rgba(74, 222, 128, 0.1);
+  color: #4ade80;
+}
+/* Removed lines — red mirror of the above. */
+.diff-code-row--removed {
+  background: rgba(248, 113, 113, 0.07);
+}
+.diff-code-row--removed .diff-code-accent {
+  background: #f87171;
+}
+.diff-code-row--removed .diff-code-num {
+  background: rgba(248, 113, 113, 0.1);
+  color: #f87171;
+}
+.diff-code-more {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: #9ca3af;
+  font-size: 10.5px;
+  text-align: center;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.diff-code-more:hover {
+  color: #e5e7eb;
+}

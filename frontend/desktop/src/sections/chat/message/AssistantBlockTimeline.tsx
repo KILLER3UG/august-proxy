@@ -10,6 +10,8 @@ import {
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { ThoughtStep } from '@/components/chat/ThoughtStep';
 import { ToolStepRow } from '@/components/chat/ToolStepRow';
+import { EditRailRow } from '@/components/chat/EditRailRow';
+import { RailDoneRow } from '@/components/chat/RailDoneRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { SubagentLaunchList } from '@/components/chat/SubagentLaunchList';
 import { RecalledMemoryStep } from '@/components/chat/RecalledMemoryStep';
@@ -488,8 +490,12 @@ export function AssistantBlockTimeline({
   }, [livePacked, liveSessionKey, liveDetail, liveItems, processSummary, isLast, streaming]);
 
   const renderProcessBlocks = (blocks: DisplayBlock[]) => {
-    // Coalesce consecutive thinking into one ThoughtStep for cleaner rails.
-    const nodes: ReactNode[] = [];
+    // Each rendered node is tagged rail (threaded onto the left line:
+    // thinking, file edits, the terminal Done marker) or block (everything
+    // else). Consecutive rail nodes are grouped into one segment so the line
+    // runs continuously through them; block rows sit between segments.
+    type Tagged = { kind: 'rail' | 'block'; node: ReactNode };
+    const tagged: Tagged[] = [];
     let ti = 0;
     while (ti < blocks.length) {
       const block = blocks[ti];
@@ -509,27 +515,20 @@ export function AssistantBlockTimeline({
           !hasFinalOutput &&
           ti === blocks.length
         );
-        // "Done" on the last thought once thinking has finished and a final
-        // answer exists (or the turn is no longer streaming).
-        const hasMoreThoughts = blocks
-          .slice(ti)
-          .some((b) => b.type === 'thinking');
-        const showDone =
-          !isGenerating &&
-          !hasMoreThoughts &&
-          (hasFinalOutput || !(isLast && streaming));
         const thoughtId = block.id || `think_${start}`;
         const thoughtExpanded = isThoughtExpanded(thoughtId);
-        nodes.push(
-          <ThoughtStep
-            key={thoughtId}
-            content={parts.join('\n\n')}
-            isGenerating={isGenerating}
-            showDone={showDone}
-            expanded={thoughtExpanded}
-            onToggle={() => toggleExpand(thoughtId, !thoughtExpanded)}
-          />,
-        );
+        tagged.push({
+          kind: 'rail',
+          node: (
+            <ThoughtStep
+              key={thoughtId}
+              content={parts.join('\n\n')}
+              isGenerating={isGenerating}
+              showFull={thoughtExpanded}
+              onToggle={() => toggleExpand(thoughtId, !thoughtExpanded)}
+            />
+          ),
+        });
         continue;
       }
 
@@ -556,15 +555,18 @@ export function AssistantBlockTimeline({
             .map((b) => b.tool?.id || b.id)
             .filter(Boolean)
             .join('-');
-          nodes.push(
-            <SubagentLaunchList
-              key={`subagents-${batchKey || ti}`}
-              agents={agents}
-              subBlocks={subagentBlocks}
-              subPrompts={subagentPrompts}
-              modelLabel={modelLabel}
-            />,
-          );
+          tagged.push({
+            kind: 'block',
+            node: (
+              <SubagentLaunchList
+                key={`subagents-${batchKey || ti}`}
+                agents={agents}
+                subBlocks={subagentBlocks}
+                subPrompts={subagentPrompts}
+                modelLabel={modelLabel}
+              />
+            ),
+          });
           continue;
         }
 
@@ -580,65 +582,83 @@ export function AssistantBlockTimeline({
           extractAgentId(tool.context) ??
           undefined;
         const filename = !isCommand ? extractFilename(tool.context) : null;
+        const expanded = isToolExpanded(toolId, tool.status);
+
+        // Web-search results render as their own specialized Task block
+        // (query trigger + scroll-capped hit list) instead of a generic row.
+        if (!isCommand && tool.searchHits && tool.searchHits.length > 0) {
+          tagged.push({
+            kind: 'block',
+            node: (
+              <SearchResultsTask
+                key={toolId}
+                query={extractSearchQuery(tool.context)}
+                hits={tool.searchHits}
+                expanded={expanded}
+                onToggle={(next) => toggleExpand(toolId, next)}
+              />
+            ),
+          });
+          ti++;
+          continue;
+        }
+
+        // File edits render as compact rail rows (pencil · description ·
+        // filename chip · ±N), threaded onto the same line as the thinking
+        // and the terminal Done marker.
+        if (!isCommand && classifyTool(tool.name) === 'edit') {
+          tagged.push({
+            kind: 'rail',
+            node: <EditRailRow key={toolId} tool={tool} expanded={expanded} />,
+          });
+          ti++;
+          continue;
+        }
+
         const label = getToolLabel(tool.name, {
           agentId: agentId ?? undefined,
           filename: filename ?? undefined,
           command: isCommand ? extractCommand(tool.context) ?? undefined : undefined,
           status: tool.status,
         });
-        const expanded = isToolExpanded(toolId, tool.status);
-
-        // Web-search results render as their own specialized Task block
-        // (query trigger + scroll-capped hit list) instead of a generic row.
-        if (!isCommand && tool.searchHits && tool.searchHits.length > 0) {
-          nodes.push(
-            <SearchResultsTask
+        tagged.push({
+          kind: 'block',
+          node: (
+            <ToolStepRow
               key={toolId}
-              query={extractSearchQuery(tool.context)}
-              hits={tool.searchHits}
+              tool={tool}
+              label={label}
+              isCommand={isCommand}
               expanded={expanded}
               onToggle={(next) => toggleExpand(toolId, next)}
-            />,
-          );
-          ti++;
-          continue;
-        }
-
-        nodes.push(
-          <ToolStepRow
-            key={toolId}
-            tool={tool}
-            label={label}
-            isCommand={isCommand}
-            expanded={expanded}
-            onToggle={(next) => toggleExpand(toolId, next)}
-            progress={tool.id ? toolProgress?.get(tool.id) : undefined}
-            afterRow={
-              promptEntries.length > 0 ? (
-                <div className="mt-1.5 flex flex-col gap-1">
-                  {promptEntries.map((p, pi) => (
-                    <PromptDisclosure
-                      key={`${toolId}-prompt-${pi}`}
-                      content={p.content}
-                      tokens={p.tokens}
-                      label={
-                        p.subagentId
-                          ? `SUB-AGENT PROMPT · ${p.subagentId}`
-                          : 'SUB-AGENT PROMPT'
-                      }
-                    />
-                  ))}
-                </div>
-              ) : null
-            }
-          >
-            <ToolCallItemBody
-              tool={tool}
               progress={tool.id ? toolProgress?.get(tool.id) : undefined}
-              hideProgress
-            />
-          </ToolStepRow>,
-        );
+              afterRow={
+                promptEntries.length > 0 ? (
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    {promptEntries.map((p, pi) => (
+                      <PromptDisclosure
+                        key={`${toolId}-prompt-${pi}`}
+                        content={p.content}
+                        tokens={p.tokens}
+                        label={
+                          p.subagentId
+                            ? `SUB-AGENT PROMPT · ${p.subagentId}`
+                            : 'SUB-AGENT PROMPT'
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : null
+              }
+            >
+              <ToolCallItemBody
+                tool={tool}
+                progress={tool.id ? toolProgress?.get(tool.id) : undefined}
+                hideProgress
+              />
+            </ToolStepRow>
+          ),
+        });
         ti++;
         continue;
       }
@@ -646,14 +666,17 @@ export function AssistantBlockTimeline({
       if (block.type === 'recalledMemories' && block.memories && block.memories.length > 0) {
         const recallId = block.id || `recall_${ti}`;
         const recallExpanded = isToolExpanded(recallId, 'done');
-        nodes.push(
-          <RecalledMemoryStep
-            key={recallId}
-            memories={block.memories}
-            expanded={recallExpanded}
-            onToggle={() => toggleExpand(recallId, !recallExpanded)}
-          />,
-        );
+        tagged.push({
+          kind: 'block',
+          node: (
+            <RecalledMemoryStep
+              key={recallId}
+              memories={block.memories}
+              expanded={recallExpanded}
+              onToggle={() => toggleExpand(recallId, !recallExpanded)}
+            />
+          ),
+        });
         ti++;
         continue;
       }
@@ -661,21 +684,24 @@ export function AssistantBlockTimeline({
       if (block.type === 'verifierBlocked') {
         // Opt-in verifier enforcement: final answer withheld until the model
         // passes update_state(phase='complete'). Amber notice, not final text.
-        nodes.push(
-          <div
-            key={block.id || `verifier_${ti}`}
-            role="alert"
-            data-testid="verifier-blocked-banner"
-            className="mx-3 my-1.5 flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-300"
-          >
-            <span className="shrink-0" aria-hidden="true">
-              ⚠
-            </span>
-            <span className="min-w-0 break-words">
-              {block.content || 'Verification required: the final answer was withheld.'}
-            </span>
-          </div>,
-        );
+        tagged.push({
+          kind: 'block',
+          node: (
+            <div
+              key={block.id || `verifier_${ti}`}
+              role="alert"
+              data-testid="verifier-blocked-banner"
+              className="mx-3 my-1.5 flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-300"
+            >
+              <span className="shrink-0" aria-hidden="true">
+                ⚠
+              </span>
+              <span className="min-w-0 break-words">
+                {block.content || 'Verification required: the final answer was withheld.'}
+              </span>
+            </div>
+          ),
+        });
         ti++;
         continue;
       }
@@ -683,7 +709,42 @@ export function AssistantBlockTimeline({
       // Non-process leftovers inside process list (ignore)
       ti++;
     }
-    return nodes;
+
+    // Terminal rail marker once the turn settles. Gated off while the last
+    // turn streams so it never flickers in the gap between steps.
+    const hasRail = tagged.some((t) => t.kind === 'rail');
+    if (hasRail && (!isLast || !streaming) && !anyToolRunning) {
+      tagged.push({
+        kind: 'rail',
+        node: <RailDoneRow key="rail-done" errored={errorsCount > 0} />,
+      });
+    }
+
+    // Group consecutive rail rows into segments (continuous left line); emit
+    // block rows between them with the body's normal spacing.
+    const out: ReactNode[] = [];
+    let railBuf: ReactNode[] = [];
+    let segSeq = 0;
+    const flushRail = () => {
+      if (railBuf.length === 0) return;
+      out.push(
+        <div key={`rail-seg-${segSeq}`} className="process-rail-segment">
+          {railBuf}
+        </div>,
+      );
+      segSeq += 1;
+      railBuf = [];
+    };
+    for (const t of tagged) {
+      if (t.kind === 'rail') {
+        railBuf.push(t.node);
+      } else {
+        flushRail();
+        out.push(t.node);
+      }
+    }
+    flushRail();
+    return out;
   };
 
   const renderFinal = (blocks: DisplayBlock[]) =>
@@ -741,7 +802,7 @@ export function AssistantBlockTimeline({
             <ThoughtStep
               content=""
               isGenerating
-              expanded={isThoughtExpanded('pending_think')}
+              showFull={isThoughtExpanded('pending_think')}
               onToggle={() =>
                 toggleExpand(
                   'pending_think',

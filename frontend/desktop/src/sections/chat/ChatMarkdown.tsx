@@ -1,55 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { marked, type Tokens } from 'marked';
 import katex from 'katex';
-import hljs from 'highlight.js/lib/core';
-import javascript from 'highlight.js/lib/languages/javascript';
-import typescript from 'highlight.js/lib/languages/typescript';
-import python from 'highlight.js/lib/languages/python';
-import jsonLang from 'highlight.js/lib/languages/json';
-import bash from 'highlight.js/lib/languages/bash';
-import shell from 'highlight.js/lib/languages/shell';
-import css from 'highlight.js/lib/languages/css';
-import xml from 'highlight.js/lib/languages/xml';
-import markdown from 'highlight.js/lib/languages/markdown';
-import sql from 'highlight.js/lib/languages/sql';
-import rust from 'highlight.js/lib/languages/rust';
-import go from 'highlight.js/lib/languages/go';
-import java from 'highlight.js/lib/languages/java';
-import csharp from 'highlight.js/lib/languages/csharp';
-import cpp from 'highlight.js/lib/languages/cpp';
-import yaml from 'highlight.js/lib/languages/yaml';
-import plaintext from 'highlight.js/lib/languages/plaintext';
-import 'highlight.js/styles/vs2015.css';
-
-hljs.registerLanguage('javascript', javascript);
-hljs.registerLanguage('js', javascript);
-hljs.registerLanguage('typescript', typescript);
-hljs.registerLanguage('ts', typescript);
-hljs.registerLanguage('tsx', typescript);
-hljs.registerLanguage('jsx', javascript);
-hljs.registerLanguage('python', python);
-hljs.registerLanguage('py', python);
-hljs.registerLanguage('json', jsonLang);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('shell', shell);
-hljs.registerLanguage('sh', shell);
-hljs.registerLanguage('css', css);
-hljs.registerLanguage('html', xml);
-hljs.registerLanguage('xml', xml);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('md', markdown);
-hljs.registerLanguage('sql', sql);
-hljs.registerLanguage('rust', rust);
-hljs.registerLanguage('go', go);
-hljs.registerLanguage('java', java);
-hljs.registerLanguage('csharp', csharp);
-hljs.registerLanguage('cs', csharp);
-hljs.registerLanguage('cpp', cpp);
-hljs.registerLanguage('c', cpp);
-hljs.registerLanguage('yaml', yaml);
-hljs.registerLanguage('yml', yaml);
-hljs.registerLanguage('text', plaintext);
-hljs.registerLanguage('plaintext', plaintext);
+import { highlightCode } from '@/lib/code-highlight';
 
 const COPY_PLACEHOLDER_ATTR = 'data-copy-placeholder';
 const COPY_CODE_ATTR = 'data-copy-code';
@@ -65,18 +17,6 @@ function escapeAttr(value: string): string {
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function highlightCode(text: string, lang: string): string {
-  const normalized = lang.toLowerCase().replace(/^language-/, '');
-  try {
-    if (normalized && hljs.getLanguage(normalized)) {
-      return hljs.highlight(text, { language: normalized, ignoreIllegals: true }).value;
-    }
-    return hljs.highlightAuto(text).value;
-  } catch {
-    return escapeHtml(text);
-  }
 }
 
 /** When true, renderCode skips highlight.js (set only during live stream parses). */

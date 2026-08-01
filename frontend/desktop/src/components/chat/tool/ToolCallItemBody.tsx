@@ -110,11 +110,19 @@ export function ToolCallItemBody({
   tool,
   progress,
   hideProgress = false,
+  hideDiff = false,
+  hideContext = false,
 }: {
   tool: ToolEntry;
   progress?: ReadonlyArray<ProgressEntry>;
   /** Progress entries are rendered as Task rows by the timeline chrome. */
   hideProgress?: boolean;
+  /** Suppress the diff + streaming-preview sections (the edit rail renders its
+   *  own syntax-highlighted code panel instead). */
+  hideDiff?: boolean;
+  /** Suppress the formatted "context" section (the row header already names the
+   *  file, so the args summary would be redundant). */
+  hideContext?: boolean;
   /** Reserved for callers that need subagent labeling in nested chrome. */
   agentIdOverride?: string;
 }) {
@@ -143,6 +151,7 @@ export function ToolCallItemBody({
       />,
     );
   } else if (
+    !hideContext &&
     tool.context &&
     !isView &&
     !tool.name.match(/context_read|memory_search|read_file|search/)
@@ -208,7 +217,7 @@ export function ToolCallItemBody({
 
   // Streaming preview is useful for edits, not for dumping file reads.
   // Commands use CommandOutputPane (preview + final summary) instead.
-  if (!isSubagent && !isView && !isCommand && tool.preview && tool.status === 'running') {
+  if (!isSubagent && !hideDiff && !isView && !isCommand && tool.preview && tool.status === 'running') {
     parts.push(
       <Section key="preview" label="streaming">
         {tool.preview}
@@ -218,7 +227,7 @@ export function ToolCallItemBody({
   }
 
   let hasDiff = false;
-  if (!isSubagent) {
+  if (!isSubagent && !hideDiff) {
     const diffData = extractDiffData(tool);
     if (diffData) {
       hasDiff = true;
