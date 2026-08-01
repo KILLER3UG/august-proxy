@@ -516,14 +516,12 @@ export function AssistantBlockTimeline({
           ti === blocks.length
         );
         const thoughtId = block.id || `think_${start}`;
-        // Auto-expand only while THIS thought is the live/generating one. The
-        // moment more blocks follow it (a tool call, another thought) or the
-        // turn settles, it falls back to clamped — i.e. "Show more" by default.
-        // Tying this to the whole process phase (streaming && !hasFinalOutput)
-        // left a finished first thought fully expanded ("Show less") for the
-        // rest of the turn, which is the bug we're fixing.
+        // Clamped ("Show more") by default — even while generating. A thought
+        // renders in full only when the user explicitly expands it (override),
+        // so long reasoning never pushes the whole thread open mid-stream, and
+        // a finished thought stays clamped rather than lingering on "Show less".
         const thoughtExpanded =
-          thoughtId in expandOverrides ? expandOverrides[thoughtId] : isGenerating;
+          thoughtId in expandOverrides ? expandOverrides[thoughtId] : false;
         tagged.push({
           kind: 'rail',
           node: (

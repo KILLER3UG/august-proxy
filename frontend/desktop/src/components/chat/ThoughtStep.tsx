@@ -64,9 +64,12 @@ export function ThoughtStep({
 
   if (!text && !isGenerating) return null;
 
-  // Never clamp a live thought — let streaming reasoning grow freely.
-  const clamped = overflowing && !showFull && !isGenerating;
-  const canReveal = overflowing && !isGenerating && typeof onToggle === 'function';
+  // Clamp long thoughts whether streaming or settled: once the reasoning passes
+  // the clamp height it is bounded with a fade + Show more, and the live tail
+  // simply streams below the fold (matching the reference, where a mid-stream
+  // thought is already truncated). Only an explicit Show more unclamps it.
+  const clamped = overflowing && !showFull;
+  const canReveal = overflowing && typeof onToggle === 'function';
 
   const clockIcon = isGenerating ? (
     <Loader2 className="process-thought-clock animate-spin" aria-hidden />
