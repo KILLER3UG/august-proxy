@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Send, X, PencilLine } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { hasPendingWorkbenchPlan } from '@/lib/workbench-plan';
+import { shouldShowPlanBanner } from '@/lib/workbench-plan';
 import type { WorkbenchSession } from '@/types/workbench';
 
 export interface PlanProposalBannerProps {
@@ -57,7 +57,7 @@ export function PlanProposalBanner({
     }
   }, [revising]);
 
-  if (!hasPendingWorkbenchPlan(workbenchSession)) return null;
+  if (!shouldShowPlanBanner(workbenchSession)) return null;
 
   const modelLabel = modelName?.trim() || 'The model';
 

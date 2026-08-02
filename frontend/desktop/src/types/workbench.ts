@@ -69,6 +69,10 @@ export interface WorkbenchSession {
    *  `verifierBlocked` SSE event). */
   verifierEnforced?: boolean;
   workspacePath?: string;
+  /** True only when `submit_plan` (the `planProposed` SSE event) ran this
+   *  session. Drives the banner off the event instead of hydrated session
+   *  state, so a restored pending plan doesn't re-show the banner. */
+  planSubmittedLive?: boolean;
 }
 
 export interface WorkbenchAgent {
@@ -169,7 +173,7 @@ export interface WorkbenchEventHandlers {
   onThinking?: (data: { content: string }) => void;
   onText?: (data: { content: string }) => void;
   onToolUse?: (data: { id: string; name: string; input: Record<string, unknown> }) => void;
-  onToolResult?: (data: { id: string; content: unknown; isError?: boolean; providerSetup?: unknown }) => void;
+  onToolResult?: (data: { id: string; content: unknown; isError?: boolean; providerSetup?: unknown; integrationSetup?: unknown }) => void;
   onToolProgress?: (data: {
     id: string;
     name: string;

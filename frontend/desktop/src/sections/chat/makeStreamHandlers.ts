@@ -26,7 +26,7 @@
  * the stream and then calls `finalize` exactly once.
  */
 
-import type { ChatMessage, MessageBlock, WorkbenchBtwState, AppendBlockEvent, ProviderSetupResult } from '@/types/chat';
+import type { ChatMessage, MessageBlock, WorkbenchBtwState, AppendBlockEvent, ProviderSetupResult, IntegrationSetupResult } from '@/types/chat';
 import type { ChatTurnRecord } from './chat-runtime';
 import type { WorkbenchEventHandlers, WorkbenchSession, WorkbenchTurnUsage } from '@/types/workbench';
 import type { GitDiffResult } from '@/api/git';
@@ -348,7 +348,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
-    onToolResult: ({ id, content, isError, providerSetup }) => {
+    onToolResult: ({ id, content, isError, providerSetup, integrationSetup }) => {
       let parsedResult: Record<string, unknown> | null;
       try {
         parsedResult = typeof content === 'string' ? JSON.parse(content) as Record<string, unknown> : content as Record<string, unknown>;
@@ -419,6 +419,13 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       if (toolEntry?.name === 'setup_provider' && providerSetup && typeof providerSetup === 'object') {
         providerSetupResult = providerSetup as ProviderSetupResult;
       }
+      // Surface integration tool results so the UI can render an inline widget.
+      let integrationSetupResult: IntegrationSetupResult | undefined;
+      const isIntegrationTool = toolEntry?.name &&
+        ['connect_github', 'connect_slack', 'connect_google', 'install_mcp_server'].includes(toolEntry.name);
+      if (isIntegrationTool && integrationSetup && typeof integrationSetup === 'object') {
+        integrationSetupResult = integrationSetup as IntegrationSetupResult;
+      }
 
       toolResults = toolResults.map(t => t.id === id ? {
         ...t,
@@ -434,6 +441,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         duration: t.startedAt ? Date.now() - t.startedAt : undefined,
         searchHits: searchHits ?? t.searchHits,
         providerSetup: providerSetupResult ?? t.providerSetup,
+        integrationSetup: integrationSetupResult ?? t.integrationSetup,
       } : t);
       streamBlocks = appendBlockEvent(streamBlocks, {
         type: 'toolResult',
@@ -444,6 +452,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         duration: toolResults.find(t => t.id === id)?.duration,
         searchHits,
         providerSetup: providerSetupResult,
+        integrationSetup: integrationSetupResult,
       });
       scheduleUpdate();
     },
@@ -487,6 +496,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
             approved: false,
             approvedAt: null,
             plan,
+            planSubmittedLive: true,
             goal: null,
             lastGoal: null,
             messageCount: 0,
@@ -500,6 +510,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         return {
           ...prev,
           plan,
+          planSubmittedLive: true,
           approved: false,
           approvedAt: null,
           planApproved: false,

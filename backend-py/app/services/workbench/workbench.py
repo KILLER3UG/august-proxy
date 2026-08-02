@@ -218,6 +218,9 @@ def isShellMutationTool(toolName: str, args: dict[str, object] | None = None) ->
         'pip_install',
         'npm_install',
         'pnpm_add',
+        # install_mcp_server spawns the model-supplied command (discoverTools);
+        # edit mode gates shell/subprocess tools, so include it here.
+        'install_mcp_server',
     }
     if name in shell:
         return True
@@ -240,6 +243,19 @@ def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> b
     if not toolName:
         return False
     name = toolName.lower()
+    # Integration tools mutate global config / credentials / env (connect_*) or
+    # are destructive (disconnect_integration); install_mcp_server also spawns a
+    # subprocess. Their names carry no write/delete/install marker, so without
+    # this explicit list they slip past ask/plan gating. (Edit-mode gating of
+    # the subprocess spawn is handled in isShellMutationTool.)
+    if name in {
+        'connect_github',
+        'connect_slack',
+        'connect_google',
+        'install_mcp_server',
+        'disconnect_integration',
+    }:
+        return True
     destructive = {
         'write_file',
         'edit_file',
@@ -1418,11 +1434,37 @@ async def _sendWorkbenchMessageStreamImpl(
         if session._failure_feedback_age >= 3:
             session._failure_feedback = None
             session._failure_feedback_age = None
+    def _buildSystemText(session: WorkbenchSession, tools: list[dict[str, object]]) -> str:
+        """Build the full system prompt for a session under its current guard mode,
+        appending effort + handoff. Callers may pass tools computed under a just-
+        flipped guard mode so the prompt reflects the active mode immediately."""
+        text = buildSystemPrompt(session, tools=tools)
+        if thinking_enabled:
+            text = (
+                f'{text}\n\n<effort>\n{effort_to_prompt_instruction(effectiveEffort)}\n</effort>'
+            )
+        else:
+            text = (
+                f'{text}\n\n<effort>\n'
+                'Do not use extended reasoning or long chain-of-thought. '
+                'Answer directly with minimal internal thinking.\n'
+                '</effort>'
+            )
+        handoff = (handoff_summary or '').strip()
+        if handoff:
+            text = (
+                f'{text}\n\n'
+                '<model_handoff>\n'
+                f'{handoff}\n'
+                '</model_handoff>'
+            )
+        return text
+
     with _trace.span('prompt_build'):
         # Build tool defs once and pass into system prompt (no double conversion).
         tools = toolDefinitions(session)
         openaiTools = openaiToolDefinitions(session)
-        systemText = buildSystemPrompt(session, tools=tools)
+        systemText = _buildSystemText(session, tools)
         if emit and session._last_recalled_memories:
             emit(
                 {
@@ -1438,27 +1480,6 @@ async def _sendWorkbenchMessageStreamImpl(
                         if isinstance(m, dict)
                     ],
                 }
-            )
-        # Effort scales thinking depth for every provider (Anthropic budget /
-        # OpenAI reasoning_effort / prompt hint for OpenAI-compatible APIs).
-        if thinking_enabled:
-            systemText = (
-                f'{systemText}\n\n<effort>\n{effort_to_prompt_instruction(effectiveEffort)}\n</effort>'
-            )
-        else:
-            systemText = (
-                f'{systemText}\n\n<effort>\n'
-                'Do not use extended reasoning or long chain-of-thought. '
-                'Answer directly with minimal internal thinking.\n'
-                '</effort>'
-            )
-        handoff = (handoff_summary or '').strip()
-        if handoff:
-            systemText = (
-                f'{systemText}\n\n'
-                '<model_handoff>\n'
-                f'{handoff}\n'
-                '</model_handoff>'
             )
     isAnthropic = _isAnthropicProvider(resolvedProvider)
     isOpenai = _isOpenaiProvider(resolvedProvider)
@@ -1718,6 +1739,14 @@ async def _sendWorkbenchMessageStreamImpl(
             toolUseId = as_str(tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}'))
             if toolName in ('enter_plan_mode', 'request_plan_mode'):
                 msg = enterPlanMode(session, emit=emit)
+                # enterPlanMode flips the session into plan mode, but the tool
+                # defs were computed at turn start under the old guard mode (full
+                # access strips submit_plan). Rebuild them + the system prompt so
+                # submit_plan is immediately available on the next model call of
+                # this same turn instead of waiting for the next turn.
+                tools = toolDefinitions(session)
+                openaiTools = openaiToolDefinitions(session)
+                systemText = _buildSystemText(session, tools)
                 if emit:
                     emit(
                         {
@@ -2141,6 +2170,8 @@ async def _sendWorkbenchMessageStreamImpl(
                 sseContent += '\n\n[... Tool result truncated at 100 KB — full length: {} bytes]'.format(len(result))
             if emit:
                 providerSetup = None
+                integrationSetup = None
+                _INTEGRATION_TOOLS = {'connect_github', 'connect_slack', 'connect_google', 'install_mcp_server'}
                 if toolName == 'setup_provider':
                     try:
                         parsed = json.loads(result)
@@ -2148,6 +2179,14 @@ async def _sendWorkbenchMessageStreamImpl(
                             providerSetup = parsed
                     except Exception:
                         providerSetup = None
+                if toolName in _INTEGRATION_TOOLS:
+                    try:
+                        parsed = json.loads(result)
+                        isu = parsed.get('integrationSetup') if isinstance(parsed, dict) else None
+                        if isinstance(isu, dict):
+                            integrationSetup = isu
+                    except Exception:
+                        integrationSetup = None
                 emit(
                     {
                         'type': 'toolResult',
@@ -2159,6 +2198,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         'summary': str(result)[:2000],
                         'status': 'done',
                         'providerSetup': providerSetup,
+                        'integrationSetup': integrationSetup,
                     }
                 )
                 if toolName.startswith('browser_'):

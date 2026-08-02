@@ -5,6 +5,7 @@ import {
   isNonEmptyPlan,
   normalizeWorkbenchSession,
   planBodyText,
+  shouldShowPlanBanner,
 } from '../workbench-plan';
 
 describe('workbench-plan helpers', () => {
@@ -22,6 +23,45 @@ describe('workbench-plan helpers', () => {
         plan: {} as never,
         approved: false,
         approvedAt: null,
+      }),
+    ).toBe(false);
+  });
+
+  it('hasPendingWorkbenchPlan ignores planSubmittedLive (panel approved state)', () => {
+    const realPlan = {
+      summary: 'x', id: 'p1', steps: [], files: [], risks: [], verification: [], createdAt: '',
+    };
+    // A real pending plan is pending regardless of the live flag — the plan
+    // panel derives its "approved" badge from this, so the flag must NOT gate it.
+    expect(
+      hasPendingWorkbenchPlan({ plan: realPlan, approved: false, approvedAt: null }),
+    ).toBe(true);
+  });
+
+  it('shouldShowPlanBanner requires planSubmittedLive — hydrated plans do not raise the banner', () => {
+    const realPlan = {
+      summary: 'x', id: 'p1', steps: [], files: [], risks: [], verification: [], createdAt: '',
+    };
+    // Restored pending plan (no live flag) must NOT show the banner.
+    expect(
+      shouldShowPlanBanner({ plan: realPlan, approved: false, approvedAt: null }),
+    ).toBe(false);
+    // After the model actually called submit_plan, it does.
+    expect(
+      shouldShowPlanBanner({
+        plan: realPlan,
+        approved: false,
+        approvedAt: null,
+        planSubmittedLive: true,
+      }),
+    ).toBe(true);
+    // Approved suppresses the banner too.
+    expect(
+      shouldShowPlanBanner({
+        plan: realPlan,
+        approved: true,
+        approvedAt: new Date().toISOString(),
+        planSubmittedLive: true,
       }),
     ).toBe(false);
   });

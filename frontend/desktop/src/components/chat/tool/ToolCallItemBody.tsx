@@ -8,6 +8,7 @@ import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
 import { formatToolContext } from '@/lib/tool-context-format';
 import { classifyTool } from '@/lib/tool-classify';
 import { ProviderSetupWidget } from '@/components/chat/ProviderSetupWidget';
+import { IntegrationSetupWidget } from '@/components/chat/IntegrationSetupWidget';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { getAgentRoleLabel, pathBasename } from '@/lib/tool-labels';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
@@ -256,6 +257,7 @@ export function ToolCallItemBody({
     tool.summary &&
     !tool.searchHits &&
     !tool.providerSetup &&
+    !tool.integrationSetup &&
     !hasDiff
   ) {
     parts.push(
@@ -265,6 +267,10 @@ export function ToolCallItemBody({
 
   if (tool.providerSetup) {
     parts.push(<ProviderSetupWidget key="provider" setup={tool.providerSetup} />);
+  }
+
+  if (tool.integrationSetup) {
+    parts.push(<IntegrationSetupWidget key="integration" setup={tool.integrationSetup} />);
   }
 
   if (!isSubagent && !isCommand && tool.error) {

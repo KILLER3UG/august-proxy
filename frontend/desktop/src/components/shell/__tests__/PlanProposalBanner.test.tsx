@@ -18,6 +18,10 @@ const baseSession: WorkbenchSession = {
   agentMode: 'assistant',
   approved: false,
   approvedAt: null,
+  // Banner only renders when a plan was actually submitted via submit_plan
+  // (onPlanProposed sets planSubmittedLive); a hydrated/stored plan alone
+  // must not raise it.
+  planSubmittedLive: true,
   plan: {
     id: 'plan_test',
     summary: 'A short plan summary.',

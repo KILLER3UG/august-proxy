@@ -21,6 +21,34 @@ export interface ProviderSetupResult {
   [key: string]: unknown;
 }
 
+/** Structured integration-setup config carried by `connect_github` /
+ *  `connect_slack` / `connect_google` / `install_mcp_server` tool results so
+ *  the UI can render an inline token field / Google sign-in button / status.
+ *  Secrets are never carried here — only masked status + action hints. */
+export interface IntegrationSetupResult {
+  kind?: 'google' | 'github' | 'slack' | 'mcp';
+  provider?: string;
+  label?: string;
+  status?: string;
+  error?: string;
+  needsToken?: boolean;
+  maskedToken?: string;
+  connected?: boolean;
+  account?: string;
+  teamId?: string;
+  facet?: string;
+  authUrl?: string;
+  needsClientId?: boolean;
+  message?: string;
+  name?: string;
+  serverId?: string;
+  started?: boolean;
+  toolCount?: number;
+  tools?: string[];
+  transport?: string;
+  [key: string]: unknown;
+}
+
 /** Rendered block inside a chat message (thinking, tool call, etc.).
  *  Kept as a permissive interface rather than a discriminated union so
  *  the existing reducer and rendering pipeline can attach fields like
@@ -64,6 +92,9 @@ export interface MessageBlockToolCall {
   /** For setup_provider results: structured provider config so the UI can
    *  render an inline API-key field. Mirrors `AppendBlockEvent.providerSetup`. */
   providerSetup?: ProviderSetupResult;
+  /** For integration tools: structured payload the UI renders as an inline
+   *  token field / Google sign-in button / MCP status. */
+  integrationSetup?: IntegrationSetupResult;
   pendingApproval?: {
     message?: string;
     detail?: string;
@@ -158,6 +189,8 @@ export interface ChatMessage {
     searchHits?: Array<{ title: string; url: string; snippet?: string }>;
     /** For setup_provider: structured provider config to render an inline key field. */
     providerSetup?: ProviderSetupResult;
+    /** For integration tools: structured payload to render an inline setup widget. */
+    integrationSetup?: IntegrationSetupResult;
   }>;
   thinking?: string;
   thinkingDuration?: number;
@@ -255,6 +288,8 @@ export interface AppendBlockEvent {
   searchHits?: Array<{ title: string; url: string; snippet?: string }>;
   /** For setup_provider results: structured provider config so the UI renders an inline key field. */
   providerSetup?: ProviderSetupResult;
+  /** For integration tools: structured payload to render an inline setup widget. */
+  integrationSetup?: IntegrationSetupResult;
   /** For type === 'recalledMemories': the recalled auto-memory rows. */
   memories?: RecalledMemoryItem[];
   /**

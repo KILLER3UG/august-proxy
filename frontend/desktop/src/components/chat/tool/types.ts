@@ -1,4 +1,4 @@
-import type { ProviderSetupResult } from '@/types/chat';
+import type { IntegrationSetupResult, ProviderSetupResult } from '@/types/chat';
 
 export interface ToolEntry {
   id: string;
@@ -20,4 +20,6 @@ export interface ToolEntry {
   searchHits?: Array<{ title: string; url: string; snippet?: string }>;
   /** For setup_provider results: structured provider config to render an inline key field. */
   providerSetup?: ProviderSetupResult;
+  /** For integration tools: structured payload to render an inline setup widget. */
+  integrationSetup?: IntegrationSetupResult;
 }

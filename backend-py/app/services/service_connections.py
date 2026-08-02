@@ -260,10 +260,13 @@ def connect_github(token: str) -> dict[str, Any]:
     if token.strip():
         sc['github'] = {'token': token.strip(), 'status': 'connected', 'updatedAt': _now()}
         os.environ['GITHUB_TOKEN'] = token.strip()
-    else:
-        sc.pop('github', None)
-        os.environ.pop('GITHUB_TOKEN', None)
-    _save_sc(sc)
+        _save_sc(sc)
+    # An empty token means "no token supplied" — the chat UI shows an inline
+    # field, or a caller is probing status. It must NOT delete a stored
+    # connection: clearing is the DELETE /api/service-connections/{name}
+    # endpoint's job. Returning the current card lets the UI render existing
+    # status (or an empty card) without silently wiping a working credential
+    # when the user cancels the inline field.
     return {'status': 'ok', 'connection': _github_card(as_dict(sc.get('github')) if sc.get('github') else None)}
 
 
@@ -279,10 +282,9 @@ def connect_slack(bot_token: str, team_id: str = '') -> dict[str, Any]:
         os.environ['SLACK_BOT_TOKEN'] = bot_token.strip()
         if team_id.strip():
             os.environ['SLACK_TEAM_ID'] = team_id.strip()
-    else:
-        sc.pop('slack', None)
-        os.environ.pop('SLACK_BOT_TOKEN', None)
-    _save_sc(sc)
+        _save_sc(sc)
+    # Empty bot token = no-op probe (see connect_github); never delete a
+    # stored connection here — the DELETE endpoint owns disconnect.
     return {'status': 'ok', 'connection': _slack_card(as_dict(sc.get('slack')) if sc.get('slack') else None)}
 
 

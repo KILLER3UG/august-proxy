@@ -178,6 +178,7 @@ export function ToolStepRow({
     tool.inlineDiff ||
     (tool.searchHits && tool.searchHits.length > 0) ||
     tool.providerSetup ||
+    tool.integrationSetup ||
     tool.pendingApproval ||
     (!isView && hasChildren)
   );

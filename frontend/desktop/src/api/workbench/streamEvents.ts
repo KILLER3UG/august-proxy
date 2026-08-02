@@ -71,6 +71,7 @@ export function dispatchWorkbenchEvent(
         content: p?.content,
         isError: p?.isError as boolean | undefined,
         providerSetup: p?.providerSetup,
+        integrationSetup: p?.integrationSetup,
       });
       break;
     case 'tool_progress': {

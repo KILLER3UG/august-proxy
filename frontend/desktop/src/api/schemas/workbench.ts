@@ -74,6 +74,7 @@ export const WorkbenchToolResultEventSchema = WorkbenchBaseSchema.extend({
   status: z.string().optional(),
   error: z.string().optional(),
   providerSetup: z.unknown().optional(),
+  integrationSetup: z.unknown().optional(),
 });
 
 const WorkbenchSessionSchema = z.object({

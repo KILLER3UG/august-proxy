@@ -142,6 +142,7 @@ export function appendBlockEvent(
           duration: event.duration,
           searchHits: event.searchHits ?? target.tool.searchHits,
           providerSetup: event.providerSetup ?? target.tool.providerSetup,
+          integrationSetup: event.integrationSetup ?? target.tool.integrationSetup,
         };
       }
       blocks[targetIdx] = target;

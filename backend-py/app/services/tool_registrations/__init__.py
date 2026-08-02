@@ -9,7 +9,7 @@ from __future__ import annotations
 
 def register_all() -> None:
     """Register all built-in tool groups (and external self-config/provider tools)."""
-    from app.services import provider_setup_tool, self_config_tools
+    from app.services import integration_tools, provider_setup_tool, self_config_tools
     from app.services.tool_registrations import (
         agent_tools,
         bulk_tools,
@@ -31,3 +31,4 @@ def register_all() -> None:
     bulk_tools.register()
     self_config_tools.register()
     provider_setup_tool.register()
+    integration_tools.register()

@@ -28,15 +28,42 @@ export function planBodyText(plan: WorkbenchPlan | null | undefined): string | n
 
 type PlanGateSession = Pick<WorkbenchSession, 'plan' | 'approved' | 'approvedAt'> & {
   planApproved?: boolean;
+  /** True only when `submit_plan` ran this session (set by the `planProposed`
+   *  SSE event). Used to gate the proposal BANNER (so a plan restored from
+   *  hydration doesn't re-raise it), while the plan drawer/panel still show
+   *  any real pending plan regardless of this flag. */
+  planSubmittedLive?: boolean;
 };
 
-/** True when the UI should show the plan proposal banner. */
+/**
+ * True when there is a real, un-approved plan on the session. This is the
+ * general pending-plan signal used by both the plan panel (approved state)
+ * and the proposal banner gate.
+ *
+ * NOTE: do NOT require `planSubmittedLive` here — WorkbenchPlanPanel derives
+ * its "approved" badge from this, and gating on the live flag would wrongly
+ * mark a restored pending plan as approved. Gate the *banner* on the live
+ * flag at the call site instead.
+ */
 export function hasPendingWorkbenchPlan(
   session: PlanGateSession | null | undefined,
 ): boolean {
   if (!session) return false;
   if (session.approved || !!session.approvedAt || session.planApproved) return false;
   return isNonEmptyPlan(session.plan);
+}
+
+/**
+ * Banner-specific gate: only raise the proposal banner when a plan was
+ * actually submitted THIS session (onPlanProposed → planSubmittedLive). A
+ * pending plan recovered from hydration/session-restore must not re-raise it.
+ */
+export function shouldShowPlanBanner(
+  session: PlanGateSession | null | undefined,
+): boolean {
+  if (!session) return false;
+  if (!session.planSubmittedLive) return false;
+  return hasPendingWorkbenchPlan(session);
 }
 
 /**

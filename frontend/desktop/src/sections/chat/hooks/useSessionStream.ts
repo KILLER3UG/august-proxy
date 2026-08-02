@@ -157,7 +157,20 @@ export function useSessionStream(sessionId: string | null) {
         | null
         | ((prev: WorkbenchSession | null) => WorkbenchSession | null),
     ) => {
-      new SessionStreamController(sessionId).setWorkbenchSession(session);
+      // The backend never returns `planSubmittedLive` (a frontend-only flag set
+      // by the planProposed SSE event). Any call site that replaces the
+      // workbench session with a backend payload — guard/sandbox/verifier
+      // toggles, undo, compact, session refresh — would otherwise wipe the flag
+      // and silently dismiss a pending plan banner. Preserve it across
+      // refreshes unless a caller sets it explicitly; once a plan is
+      // approved/rejected the banner is hidden by hasPendingWorkbenchPlan
+      // anyway, so a stale flag is harmless.
+      new SessionStreamController(sessionId).setWorkbenchSession((prev) => {
+        const next = typeof session === 'function' ? session(prev) : session;
+        if (next == null) return next;
+        const live = next.planSubmittedLive ?? prev?.planSubmittedLive;
+        return live === next.planSubmittedLive ? next : { ...next, planSubmittedLive: live };
+      });
     },
     [sessionId],
   );

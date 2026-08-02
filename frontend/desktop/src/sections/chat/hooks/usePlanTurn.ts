@@ -244,60 +244,62 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
     ],
   );
 
-  /** Accept plan without implementing — model is notified and stays gated. */
+  /** Accept plan without implementing — model stays gated. Optimistic: the
+   *  banner dismisses immediately; if the approve call fails the prior banner
+   *  state is restored so the user can retry. */
   const handlePlanAccept = useCallback(() => {
+    if (!workbenchSession) return;
+    const prev = workbenchSession;
+    setWorkbenchSession((cur) =>
+      cur
+        ? {
+            ...cur,
+            approved: true,
+            planApproved: true,
+            approvedAt: new Date().toISOString(),
+          }
+        : null,
+    );
     void (async () => {
-      if (!workbenchSession) return;
       try {
-        // Approve API returns {status}, not a full session — update locally.
-        await approveWorkbenchPlan(workbenchSession.id);
-        setWorkbenchSession((prev) =>
-          prev
-            ? {
-                ...prev,
-                approved: true,
-                planApproved: true,
-                approvedAt: new Date().toISOString(),
-              }
-            : null,
-        );
-        // Accepted but do not implement — stream the decision so the model replies.
+        await approveWorkbenchPlan(prev.id);
         await streamPlanTurn((handlers, signal) =>
-          streamPlanDecision(workbenchSession.id, 'accept', handlers, signal),
+          streamPlanDecision(prev.id, 'accept', handlers, signal),
         );
       } catch (e) {
+        setWorkbenchSession(prev);
         const message = e instanceof Error ? e.message : String(e);
         toast.error('Could not approve Workbench plan', { description: message });
       }
     })();
   }, [workbenchSession, setWorkbenchSession, streamPlanTurn]);
 
-  /** Accept plan and switch to Full access so the model may implement. */
+  /** Accept plan and switch to Full access so the model may implement.
+   *  Optimistic: dismiss banner + flip mode instantly, run API/model in
+   *  background, restore banner if the approve call fails. */
   const handlePlanAcceptAndImplement = useCallback(() => {
+    if (!workbenchSession) return;
+    const prev = workbenchSession;
+    setWorkbenchSession((cur) =>
+      cur
+        ? {
+            ...cur,
+            approved: true,
+            planApproved: true,
+            approvedAt: new Date().toISOString(),
+          }
+        : null,
+    );
+    setWorkbenchMode('full');
     void (async () => {
-      if (!workbenchSession) return;
       try {
-        await approveWorkbenchPlan(workbenchSession.id);
-        setWorkbenchSession((prev) =>
-          prev
-            ? {
-                ...prev,
-                approved: true,
-                planApproved: true,
-                approvedAt: new Date().toISOString(),
-              }
-            : null,
-        );
-        setWorkbenchMode('full');
+        await approveWorkbenchPlan(prev.id);
         await streamPlanTurn((handlers, signal) =>
-          streamPlanDecision(
-            workbenchSession.id,
-            'accept-and-implement',
-            handlers,
-            signal,
-          ),
+          streamPlanDecision(prev.id, 'accept-and-implement', handlers, signal),
         );
       } catch (e) {
+        setWorkbenchSession(prev);
+        setWorkbenchMode('plan');
         const message = e instanceof Error ? e.message : String(e);
         toast.error('Could not approve Workbench plan', { description: message });
       }
@@ -309,27 +311,24 @@ export function usePlanTurn(opts: UsePlanTurnOptions) {
     streamPlanTurn,
   ]);
 
-  /** Reject plan and stream the decision so the model acknowledges. */
+  /** Reject plan and stream the decision so the model acknowledges.
+   *  Optimistic: banner clears immediately; restore it if reject fails. */
   const handlePlanReject = useCallback(() => {
+    if (!workbenchSession) return;
+    const prev = workbenchSession;
+    setWorkbenchSession((cur) =>
+      cur
+        ? { ...cur, plan: null, approved: false, planApproved: false, approvedAt: null }
+        : null,
+    );
     void (async () => {
-      if (!workbenchSession) return;
       try {
-        await rejectWorkbenchPlan(workbenchSession.id);
-        setWorkbenchSession((prev) =>
-          prev
-            ? {
-                ...prev,
-                plan: null,
-                approved: false,
-                planApproved: false,
-                approvedAt: null,
-              }
-            : null,
-        );
+        await rejectWorkbenchPlan(prev.id);
         await streamPlanTurn((handlers, signal) =>
-          streamPlanDecision(workbenchSession.id, 'reject', handlers, signal),
+          streamPlanDecision(prev.id, 'reject', handlers, signal),
         );
       } catch (e) {
+        setWorkbenchSession(prev);
         const message = e instanceof Error ? e.message : String(e);
         toast.error('Could not reject Workbench plan', { description: message });
       }

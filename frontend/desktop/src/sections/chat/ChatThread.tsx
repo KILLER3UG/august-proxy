@@ -77,7 +77,7 @@ import {
 import { estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
 import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
-import { hasPendingWorkbenchPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
+import { normalizeWorkbenchSession, shouldShowPlanBanner } from '@/lib/workbench-plan';
 import { InitAugCard } from './InitAugCard';
 import type { ChatMessage } from '@/types/chat';
 import type { WorkbenchSandboxMode } from '@/types/workbench';
@@ -220,8 +220,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   });
   // Plan gate UI only when agent mode requires it — Full Access is a hard barrier.
   // Require a real plan object (not {} / boolean presence flags from session summaries).
+  // Banner only when the model actually called submit_plan this session
+  // (shouldShowPlanBanner requires planSubmittedLive, set by onPlanProposed).
   const planPending =
-    workbenchMode !== 'full' && hasPendingWorkbenchPlan(workbenchSession);
+    workbenchMode !== 'full' && shouldShowPlanBanner(workbenchSession);
 
   // Command / mutation pre-apply — replaces the composer until Accept/Reject.
   const workbenchSessionId = workbenchSession?.id ?? null;
