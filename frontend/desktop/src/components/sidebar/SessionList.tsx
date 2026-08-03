@@ -403,7 +403,7 @@ export function SessionList({
     : 0;
 
   return (
-    <div ref={rootRef} className="flex h-full text-sm relative select-none bg-sidebar">
+    <div ref={rootRef} className="august-session-list flex h-full text-sm relative select-none bg-sidebar">
       <input
         ref={dirInputRef}
         type="file"

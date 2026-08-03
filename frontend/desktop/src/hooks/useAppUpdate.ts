@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
+import type { Update } from '@tauri-apps/plugin-updater';
 import {
   IDLE_UPDATE_PROGRESS,
   useAppUpdateInstallStore,
@@ -21,6 +22,13 @@ export interface AppUpdateInfo {
 
 /** GitHub repo hosting the desktop releases (NSIS setup + latest.json). */
 const RELEASE_DOWNLOAD_BASE = 'https://github.com/KILLER3UG/august-proxy/releases';
+
+// The downloaded payload must survive across the settings page, notification
+// panel, and the global update dialog. Keep only the prepared artifact here;
+// the Zustand store owns the visible phase and progress.
+let pendingInstallerPath: string | null = null;
+let pendingNativeUpdate: Update | null = null;
+let cancelRequested = false;
 
 /** Windows desktop builds ship an NSIS `August_<version>_x64-setup.exe`. */
 function isWindowsDesktop(): boolean {

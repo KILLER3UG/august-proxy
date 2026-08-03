@@ -96,23 +96,23 @@
     color-scheme: dark;
 
     /* Surface palette — true-neutral charcoal, three clear tiers */
-    --dt-background: #0e0e10;
-    --dt-background-hsl: 240 6.67% 5.88%;
-    --dt-foreground: #ececee;
-    --dt-foreground-hsl: 240 5.56% 92.94%;
-    --dt-card: #161618;
-    --dt-card-hsl: 240 4.35% 9.02%;
-    --dt-card-foreground: #ececee;
-    --dt-card-foreground-hsl: 240 5.56% 92.94%;
-    --dt-muted: #1d1d20;
-    --dt-muted-hsl: 240 4.92% 11.96%;
-    --dt-muted-foreground: #9a9aa2;
-    --dt-muted-foreground-hsl: 240 4.12% 61.96%;
-    --dt-popover: #1d1d20;
-    --dt-popover-hsl: 240 4.92% 11.96%;
-    --dt-popover-foreground: #ececee;
-    --dt-popover-foreground-hsl: 240 5.56% 92.94%;
-    --dt-elevated: #1a1c22;
+    --dt-background: #181818;
+    --dt-background-hsl: 0 0% 9.4%;
+    --dt-foreground: #f0f0f0;
+    --dt-foreground-hsl: 0 0% 94.1%;
+    --dt-card: #202020;
+    --dt-card-hsl: 0 0% 12.5%;
+    --dt-card-foreground: #f0f0f0;
+    --dt-card-foreground-hsl: 0 0% 94.1%;
+    --dt-muted: #292929;
+    --dt-muted-hsl: 0 0% 16.1%;
+    --dt-muted-foreground: #a6a6a6;
+    --dt-muted-foreground-hsl: 0 0% 65.1%;
+    --dt-popover: #252525;
+    --dt-popover-hsl: 0 0% 14.5%;
+    --dt-popover-foreground: #f0f0f0;
+    --dt-popover-foreground-hsl: 0 0% 94.1%;
+    --dt-elevated: #2b2b2b;
     --dt-overlay: rgba(0, 0, 0, 0.65);
 
     /* Brand — bright enough for AAA on charcoal, still restrained */
@@ -124,9 +124,9 @@
     --dt-secondary-foreground: #dbeafe;
     --dt-accent: #1a2238;
     --dt-accent-foreground: #dbeafe;
-    --dt-border: #262629;
-    --dt-border-hsl: 240 3.8% 15.49%;
-    --dt-input: #2a2a2e;
+    --dt-border: #343434;
+    --dt-border-hsl: 0 0% 20.4%;
+    --dt-input: #3a3a3a;
     --dt-ring: #6f9bff;
 
     /* Status */
@@ -147,13 +147,13 @@
     --dt-code-block-fg: #e3e3e6;
 
     /* Sidebar */
-    --dt-sidebar: #0e0e10;
-    --dt-sidebar-foreground: #ececee;
+    --dt-sidebar: #202020;
+    --dt-sidebar-foreground: #eeeeee;
     --dt-sidebar-primary: #6f9bff;
     --dt-sidebar-primary-foreground: #0e0e10;
     --dt-sidebar-accent: #1a2238;
     --dt-sidebar-accent-foreground: #dbeafe;
-    --dt-sidebar-border: #262629;
+    --dt-sidebar-border: #343434;
     --dt-sidebar-ring: #6f9bff;
   }
 
@@ -616,6 +616,195 @@ input::placeholder {
 
 .group\/marquee:hover > .marquee-title-scroll {
   animation: marqueeTitleScroll 8s ease-in-out infinite;
+}
+
+/* ── Reference shell refresh ────────────────────────────────────────────
+   The product stays component-driven; these rules only tune the desktop
+   surface, density, and hierarchy to the compact dark workbench reference. */
+
+.august-shell {
+  background: var(--dt-background);
+}
+
+.august-shell-body {
+  background: var(--dt-background);
+}
+
+.august-app-chrome {
+  color: color-mix(in srgb, var(--dt-foreground) 58%, transparent);
+  background: color-mix(in srgb, var(--dt-background) 92%, black);
+  border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 72%, transparent);
+  font-size: 0.82rem;
+}
+
+.august-app-chrome-glyph {
+  color: var(--dt-primary);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.august-session-sidebar {
+  border-right: 1px solid color-mix(in srgb, var(--dt-border) 82%, transparent);
+  background: var(--dt-sidebar);
+}
+
+.august-sidebar-nav {
+  padding-top: 0.9rem;
+}
+
+.august-sidebar-brand {
+  min-height: 2.25rem;
+}
+
+.august-brand-mark {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dt-primary) 20%, transparent);
+}
+
+.august-sidebar-nav button {
+  border-radius: 0.45rem;
+}
+
+.august-session-list > div > .px-1\.5 {
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+}
+
+.august-session-list input[aria-label="Search sessions"] {
+  min-height: 2rem;
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--dt-background) 44%, transparent);
+  border-color: color-mix(in srgb, var(--dt-border) 78%, transparent);
+}
+
+.august-session-row {
+  min-height: 2rem;
+  border: 1px solid transparent;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.august-session-row:hover {
+  background: color-mix(in srgb, var(--dt-foreground) 6%, transparent);
+}
+
+.august-session-row:has(button:focus-visible) {
+  border-color: color-mix(in srgb, var(--dt-primary) 60%, transparent);
+}
+
+.august-titlebar {
+  height: 3.65rem !important;
+  padding-inline: 0.7rem;
+  background: color-mix(in srgb, var(--dt-background) 96%, black);
+  border-bottom-color: color-mix(in srgb, var(--dt-border) 88%, transparent) !important;
+}
+
+.august-titlebar h1 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+
+.august-titlebar [data-testid="session-bar-title"] {
+  color: var(--dt-foreground);
+}
+
+.august-content-area,
+.august-chat-surface,
+.august-message-footer {
+  background: var(--dt-background);
+}
+
+.august-chat-surface {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-background) 98%, white), var(--dt-background) 38%);
+}
+
+.august-message-list,
+.august-composer-slot,
+.august-empty-state-content {
+  max-width: 58rem !important;
+}
+
+.august-message-list {
+  padding-top: 2.1rem;
+  padding-bottom: 2.5rem;
+}
+
+.august-empty-state {
+  background: var(--dt-background);
+}
+
+.august-empty-state h1 {
+  font-size: clamp(1.45rem, 2vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.august-message-footer {
+  padding-top: 0.7rem;
+  padding-bottom: 0.95rem;
+}
+
+.august-composer-shell {
+  padding-bottom: 0;
+}
+
+.august-composer {
+  background: color-mix(in srgb, var(--dt-card) 98%, white) !important;
+  border-color: color-mix(in srgb, var(--dt-border) 98%, white) !important;
+  border-radius: 1.1rem !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.august-composer textarea {
+  min-height: 4.25rem !important;
+  padding-top: 1rem !important;
+  font-size: 0.9rem;
+}
+
+.august-composer > div:first-of-type {
+  padding-inline: 0.9rem;
+  min-height: 2.35rem;
+}
+
+.august-right-drawer {
+  height: calc(100% - 1.5rem) !important;
+  margin: 0.75rem 0.9rem 0.75rem 0;
+  border: 1px solid color-mix(in srgb, var(--dt-border) 92%, white) !important;
+  border-radius: 1.25rem;
+  background: color-mix(in srgb, var(--dt-elevated) 96%, white) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+}
+
+.august-right-drawer > div {
+  height: 100%;
+}
+
+.august-right-drawer-header {
+  height: 3.35rem !important;
+  padding-inline: 1rem;
+  background: transparent !important;
+  border-bottom-color: color-mix(in srgb, var(--dt-border) 80%, transparent) !important;
+}
+
+.august-drawer-card {
+  border-radius: 0.9rem;
+  border-color: color-mix(in srgb, var(--dt-border) 88%, transparent) !important;
+  background: color-mix(in srgb, var(--dt-card) 92%, black) !important;
+}
+
+@media (max-width: 900px) {
+  .august-session-sidebar {
+    min-width: 0;
+  }
+
+  .august-right-drawer {
+    margin-right: 0.5rem;
+  }
+
+  .august-message-list,
+  .august-composer-slot,
+  .august-empty-state-content {
+    padding-inline: 1rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

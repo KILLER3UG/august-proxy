@@ -19,9 +19,9 @@ export function ChatEmptyState({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, y: 20 }}
       transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-      className="flex-1 flex flex-col items-center justify-center px-6"
+      className="august-empty-state flex-1 flex flex-col items-center justify-center px-6"
     >
-      <div className="w-full max-w-3xl px-4 flex flex-col items-center gap-8">
+      <div className="august-empty-state-content w-full max-w-3xl px-4 flex flex-col items-center gap-8">
         <h1 className="text-2xl font-semibold tracking-tight text-center text-foreground/90 mb-2">
           What should we build in{' '}
           <span className="text-muted-foreground font-mono">

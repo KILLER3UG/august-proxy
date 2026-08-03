@@ -275,7 +275,7 @@ export function SessionRow({
       animate="animate"
       exit="exit"
       className={cn(
-        "group relative rounded-md",
+        "august-session-row group relative rounded-md",
         active ? "bg-white/[0.05]" : "hover:bg-white/[0.03]",
       )}
     >

@@ -170,7 +170,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
   }, [input, resizeTextarea]);
 
   return (
-    <div className="relative pb-3" ref={popovers.composerRootRef}>
+    <div className="august-composer-shell relative pb-3" ref={popovers.composerRootRef}>
       <input
         type="file"
         ref={fileInputRef}
@@ -225,7 +225,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
       <div
         className={cn(
-          'w-full min-w-0 rounded-3xl border bg-chat-input backdrop-blur-sm shadow-lg',
+          'august-composer w-full min-w-0 rounded-3xl border bg-chat-input backdrop-blur-sm shadow-lg',
           'border-border/70 overflow-visible',
         )}
       >

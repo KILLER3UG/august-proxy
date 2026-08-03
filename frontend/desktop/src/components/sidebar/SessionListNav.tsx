@@ -8,6 +8,7 @@ import {
   Package,
   PanelLeft,
   Plus,
+  Sparkles,
   Wrench,
 } from "lucide-react";
 import { t } from "@/lib/motion";
@@ -75,12 +76,18 @@ export function SessionListNav({
   onToggleCollapsed,
 }: SessionListNavProps) {
   return (
-    <div className="pt-1.5 pb-1 px-2 flex flex-col gap-0.5">
-      <div className="flex items-center px-0.5 pb-0.5">
+    <div className="august-sidebar-nav pt-1.5 pb-1 px-2 flex flex-col gap-0.5">
+      <div className="august-sidebar-brand flex items-center justify-between px-0.5 pb-2">
+        <div className="flex items-center gap-2 px-1">
+          <span className="august-brand-mark inline-flex size-6 items-center justify-center rounded-lg bg-primary/15 text-primary">
+            <Sparkles className="size-3.5" aria-hidden />
+          </span>
+          <span className="text-[15px] font-semibold tracking-[-0.02em] text-sidebar-foreground/90">August</span>
+        </div>
         <button
           type="button"
           onClick={onToggleCollapsed}
-          className="size-7 flex items-center justify-center rounded-md text-sidebar-foreground/45 hover:text-sidebar-foreground/80 hover:bg-white/[0.04] transition"
+          className="size-7 flex items-center justify-center rounded-lg text-sidebar-foreground/45 hover:text-sidebar-foreground/80 hover:bg-white/[0.05] transition"
           title="Hide sidebar"
           aria-label="Hide sidebar"
         >

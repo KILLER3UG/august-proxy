@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 
-export type AppUpdatePhase = 'idle' | 'downloading' | 'installing' | 'restarting';
+export type AppUpdatePhase = 'idle' | 'downloading' | 'ready' | 'installing' | 'restarting';
 
 export interface AppUpdateProgress {
   /** 0–100 while downloading; null when size is unknown. */

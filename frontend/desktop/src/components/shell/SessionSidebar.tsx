@@ -13,9 +13,9 @@ interface SessionSidebarProps {
 }
 
 const SIDEBAR_WIDTH_KEY = "august-session-sidebar-width";
-const DEFAULT_WIDTH = 256;
-const MIN_WIDTH = 150;
-const MAX_VIEWPORT_FRACTION = 0.4;
+const DEFAULT_WIDTH = 280;
+const MIN_WIDTH = 220;
+const MAX_VIEWPORT_FRACTION = 0.33;
 
 const PANEL_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
 const PANEL_MS = 0.32;
@@ -104,7 +104,7 @@ export function SessionSidebar({
             duration: isDragging ? 0 : PANEL_MS,
             ease: PANEL_EASE,
           }}
-          className="relative shrink-0 bg-sidebar text-sidebar-foreground flex flex-col overflow-hidden"
+          className="august-session-sidebar relative shrink-0 bg-sidebar text-sidebar-foreground flex flex-col overflow-hidden"
         >
           <div className="h-full flex-1 overflow-hidden" style={innerStyle}>
             <SessionList

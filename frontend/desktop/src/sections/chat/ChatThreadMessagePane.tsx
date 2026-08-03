@@ -67,10 +67,10 @@ export function ChatThreadMessagePane({
   const shouldAnimateEnter = useMessageEnterAnimation(messages, sessionId);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 relative">
+    <div className="august-message-pane flex-1 flex flex-col min-h-0 relative">
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden chat-scroll"
+        className="august-chat-scroll flex-1 overflow-y-auto overflow-x-hidden chat-scroll"
       >
         {/* overflow-anchor:none on content + sentinel below keeps stick-to-bottom
             smooth while the model reply grows (avoids per-token JS scroll snaps). */}
@@ -182,7 +182,7 @@ export function ChatThreadMessagePane({
       </div>
 
       {/* Plan / approval banners replace the composer until the user decides. */}
-      <div className="shrink-0 z-10 w-full bg-background py-3">
+      <div className="august-message-footer shrink-0 z-10 w-full bg-background py-3">
         {footerSlot}
       </div>
     </div>

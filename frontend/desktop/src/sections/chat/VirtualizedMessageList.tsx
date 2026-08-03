@@ -40,7 +40,7 @@ export function VirtualizedMessageList({
 
   if (!useVirt) {
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 space-y-5 relative">
+      <div className="august-message-list mx-auto w-full max-w-3xl px-4 py-8 space-y-5 relative">
         {messages.map((m, i) => (
           <div key={m.id}>{renderMessage(m, i)}</div>
         ))}
@@ -50,7 +50,7 @@ export function VirtualizedMessageList({
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8 relative" style={{ height: `${virt.getTotalSize() + 80}px` }}>
+    <div className="august-message-list mx-auto w-full max-w-3xl px-4 py-8 relative" style={{ height: `${virt.getTotalSize() + 80}px` }}>
       {virt.getVirtualItems().map((row) => {
         const m = messages[row.index];
         return (

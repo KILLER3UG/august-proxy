@@ -115,7 +115,7 @@ export function ChatTitlebar({
   };
 
   return (
-    <header data-tauri-drag-region className="h-11 bg-background flex items-center justify-between shrink-0 select-none border-b border-border/20">
+    <header data-tauri-drag-region className="august-titlebar h-11 bg-background flex items-center justify-between shrink-0 select-none border-b border-border/20">
       <div className="flex items-center min-w-0">
         {/* Expand only — collapse control lives in the sidebar header. */}
         {sidebarCollapsed && (

@@ -390,8 +390,21 @@ export function ChatLayout() {
   const isSettings = location.pathname.startsWith("/settings");
 
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
-      <div className="flex-1 flex min-h-0 overflow-hidden">
+    <div className="august-shell h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
+      <div
+        className="august-app-chrome flex h-9 shrink-0 items-center justify-between select-none"
+        data-tauri-drag-region
+      >
+        <div className="flex items-center gap-5 px-3">
+          <span className="august-app-chrome-glyph" aria-hidden>✦</span>
+          <span>File</span>
+          <span>Edit</span>
+          <span>View</span>
+          <span>Help</span>
+        </div>
+        <span className="pr-4 text-[10px] tracking-[0.08em] text-muted-foreground/45">AUGUST DESKTOP</span>
+      </div>
+      <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden">
         {!isSettings && (
           <SessionSidebar
             activeId={active?.id}
@@ -408,7 +421,7 @@ export function ChatLayout() {
           />
         )}
 
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="august-main-column flex-1 flex flex-col min-w-0">
           <ChatTitlebar
             session={active}
             sidebarCollapsed={collapsed}
@@ -419,7 +432,7 @@ export function ChatLayout() {
           {!isSettings && (
             <TeamAgentsStrip workbenchSessionId={active?.workbenchSessionId} />
           )}
-          <div className="flex-1 min-h-0 overflow-hidden relative flex">
+          <div className="august-content-area flex-1 min-h-0 overflow-hidden relative flex">
             {/* Settings takes the full width (its own internal layout).
                 Do NOT key Outlet on location.pathname here — that remounted
                 the entire SettingsPage (shell + content) on every tab switch

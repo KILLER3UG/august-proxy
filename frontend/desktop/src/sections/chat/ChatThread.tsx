@@ -1003,7 +1003,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   );
 
   const composerSlot = (
-    <div className="mx-auto w-full max-w-3xl px-4">{composer}</div>
+    <div className="august-composer-slot mx-auto w-full max-w-3xl px-4">{composer}</div>
   );
 
   /** Plan > approval > composer — only one occupies the input slot. */
@@ -1014,9 +1014,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       : composerSlot;
 
   return (
-    <div className="flex h-full min-h-0 relative w-full">
+    <div className="august-chat-thread flex h-full min-h-0 relative w-full">
       <ChatCheckpoints messages={messages} scrollRef={scrollRef} />
-      <div className="flex-1 flex flex-col min-w-0 bg-chat-area h-full overflow-hidden relative">
+      <div className="august-chat-surface flex-1 flex flex-col min-w-0 bg-chat-area h-full overflow-hidden relative">
         <SkillEvolvedChip />
         <CollaborationInsights />
         {examActive && (

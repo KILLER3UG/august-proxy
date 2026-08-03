@@ -8,9 +8,11 @@ import type { AppUpdateProgress } from '@/store/app-update-install';
 export function UpdateProgressBar({
   progress,
   className,
+  showLabel = true,
 }: {
   progress: AppUpdateProgress;
   className?: string;
+  showLabel?: boolean;
 }) {
   const indeterminate =
     progress.phase === 'downloading' && progress.percent == null;
@@ -61,11 +63,13 @@ export function UpdateProgressBar({
         />
       </motion.div>
 
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="select-none text-[11px] font-bold tracking-[0.28em] text-foreground/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]">
-          {restarting ? '…' : 'AUG'}
-        </span>
-      </div>
+      {showLabel && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="select-none text-[11px] font-bold tracking-[0.28em] text-foreground/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]">
+            {restarting ? '…' : 'AUG'}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

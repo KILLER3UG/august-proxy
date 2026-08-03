@@ -132,7 +132,7 @@ export function RightDrawer({
             duration: isDragging ? 0 : PANEL_MS,
             ease: PANEL_EASE,
           }}
-          className="relative shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
+          className="august-right-drawer relative shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
           aria-label="Workbench sidebar"
         >
           {/* Inner shell keeps content at target width while the outer panel animates. */}
@@ -151,7 +151,7 @@ export function RightDrawer({
               className={`absolute top-0 left-0 z-20 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? 'bg-primary/50' : 'bg-transparent'}`}
             />
 
-            <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
+            <div className="august-right-drawer-header flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
               <div className="flex min-w-0 items-center gap-2">
                 <Columns className="size-3 text-muted-foreground/60 shrink-0" />
                 <span className="truncate text-sm font-semibold text-foreground">Workbench</span>
@@ -262,7 +262,7 @@ function DrawerSectionCard({
   };
 }) {
   return (
-    <section className="relative flex h-full min-h-0 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm">
+    <section className="august-drawer-card relative flex h-full min-h-0 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm">
       <Button
         variant="ghost"
         size="icon-sm"
