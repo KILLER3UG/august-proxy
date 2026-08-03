@@ -33,7 +33,7 @@ _PROTECTED_PATH_PATTERNS = re.compile(
 )
 
 _WRITE_TOOLS = 'write_file|edit_file|create_file|run_command'
-_READ_TOOLS = 'read_file|list_files'
+_READ_TOOLS = 'read_file|list_directory|search_files'
 
 
 def scan_secrets(text: str) -> list[str]:
@@ -78,7 +78,8 @@ async def _post_tool_redact(ctx: HookContext) -> HookResult:
     path = ''
     if ctx.tool_args:
         path = str(ctx.tool_args.get('path', '') or ctx.tool_args.get('file_path', '') or '')
-    if not path or not _PROTECTED_PATH_PATTERNS.search(path):
+    # Canonicalize backslashes so Windows paths match the protected patterns.
+    if not path or not _PROTECTED_PATH_PATTERNS.search(path.replace('\\', '/')):
         return HookResult(action='allow')
 
     if ctx.tool_result:

@@ -6,18 +6,6 @@ import pytest
 from fastapi import HTTPException
 
 
-@pytest.fixture()
-def brain_ready(tmp_path, monkeypatch):
-    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    from app.services.memory_schema import ensure_schema
-    from app.services.memory_store import _conn
-
-    c = _conn()
-    ensure_schema(c)
-    c.commit()
-    return c
-
-
 def _seed_draft(name: str, draft_path, body: str = 'Run the tests first.\n'):
     from app.services.memory_store import _conn
 

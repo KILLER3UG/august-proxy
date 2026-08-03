@@ -269,6 +269,27 @@ export const WorkbenchRecalledMemoriesEventSchema = WorkbenchBaseSchema.extend({
   ),
 });
 
+/** Queued-message lifecycle events. The workbench emits snake_case names for
+ *  queue/dequeue/reorder while the dispatcher expects camelCase — both
+ *  spellings are accepted so queue updates are never dropped or warned. */
+export const WorkbenchUserMessageQueueEventSchema = WorkbenchBaseSchema.extend({
+  type: z.enum([
+    'user_message_queued',
+    'user_message_dequeued',
+    'user_message_injected',
+    'user_message_queue_reordered',
+    'user_message_queue_updated',
+    'user_message_queue_cleared',
+  ]),
+});
+
+/** Lifecycle events without dedicated UI handling yet (todo-list updates,
+ *  filesystem checkpoints) — accepted so they don't trip the schema-mismatch
+ *  warning in the stream dispatcher. */
+export const WorkbenchMiscLifecycleEventSchema = WorkbenchBaseSchema.extend({
+  type: z.enum(['todosUpdated', 'checkpoint']),
+});
+
 /** Opt-in verifier enforcement (session.verifierEnforced): emitted once per
  *  turn when the model tries to answer before update_state(phase='complete')
  *  passed the verifier gate — the final answer text is withheld. */
@@ -303,6 +324,8 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchUserMessageInjectedEventSchema,
   WorkbenchRecalledMemoriesEventSchema,
   WorkbenchVerifierBlockedEventSchema,
+  WorkbenchUserMessageQueueEventSchema,
+  WorkbenchMiscLifecycleEventSchema,
 ]);
 
 /** Inferred TypeScript type — should match `WorkbenchEvent` from

@@ -21,6 +21,7 @@ Endpoints (all GET):
 
 from __future__ import annotations
 
+import json
 import time
 
 from fastapi import APIRouter, Query
@@ -149,15 +150,25 @@ async def brainLearning() -> dict[str, object]:
     lastFlushAt = getattr(_de, '_last_flush', None)
     autoMemories: list[dict[str, object]] = []
     try:
+        from app.services.memory.auto_memory import enrich_memory_for_model
+
+        conn = memory_store._conn()
         rows = (
-            memory_store._conn()
-            .execute(
+            conn.execute(
                 'SELECT id, key, content, category, importance, source, pinned, created_at, updated_at '
                 'FROM auto_memories ORDER BY importance DESC, id DESC LIMIT 20'
             )
             .fetchall()
         )
-        autoMemories = [memory_store._row_as_wire(r) for r in rows]
+        for r in rows:
+            item = memory_store._row_as_wire(r)
+            try:
+                import json as _json
+
+                item['content'] = _json.loads(item['content'])  # type: ignore[arg-type]
+            except (json.JSONDecodeError, TypeError):
+                pass
+            autoMemories.append(enrich_memory_for_model(item))
     except Exception:
         pass
     sleepCycle: dict[str, object] = {'lastRunAt': None, 'lastMerged': 0, 'lastPromoted': 0, 'lastDeleted': 0}
@@ -209,6 +220,12 @@ async def brainLearning() -> dict[str, object]:
         'currentContext': currentContext,
         'sleepCycle': sleepCycle,
         'delta_engine': {
+            'consentGranted': bool(_de.isConsentGranted()) if hasattr(_de, 'isConsentGranted') else False,
+            'queueSize': deltaQueueSize,
+            'lastFlushAt': lastFlushAt,
+        },
+        # camelCase alias — the frontend reads this one.
+        'deltaEngine': {
             'consentGranted': bool(_de.isConsentGranted()) if hasattr(_de, 'isConsentGranted') else False,
             'queueSize': deltaQueueSize,
             'lastFlushAt': lastFlushAt,

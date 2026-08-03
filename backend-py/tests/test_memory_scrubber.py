@@ -4,19 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-
-@pytest.fixture()
-def brain_ready(tmp_path, monkeypatch):
-    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    from app.services.memory_schema import ensure_schema
-    from app.services.memory_store import _conn
-
-    c = _conn()
-    ensure_schema(c)
-    c.commit()
-    return c
-
-
 OPENAI_SECRET = 'sk-abcdefghijklmnopqrstuvwxyz1234567890'
 ANTHROPIC_SECRET = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890'
 

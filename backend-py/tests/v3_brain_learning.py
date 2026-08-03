@@ -11,7 +11,7 @@ def _initDb():
 
 
 def testLearningResponseHasAutoMemories():
-    """Response includes 'auto_memories' field."""
+    """Response includes 'autoMemories' field."""
     from app.main import app
     from fastapi.testclient import TestClient
 
@@ -19,23 +19,23 @@ def testLearningResponseHasAutoMemories():
     resp = client.get('/api/brain/learning')
     assert resp.status_code == 200
     data = resp.json()
-    assert 'auto_memories' in data
-    assert isinstance(data['auto_memories'], list)
+    assert 'autoMemories' in data
+    assert isinstance(data['autoMemories'], list)
 
 
 def testLearningResponseHasSleepCycle():
-    """Response includes 'sleep_cycle' field with last_run_at."""
+    """Response includes 'sleepCycle' field with last_run_at."""
     from app.main import app
     from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get('/api/brain/learning')
     data = resp.json()
-    assert 'sleep_cycle' in data
-    assert 'last_run_at' in data['sleep_cycle']
-    assert 'last_merged' in data['sleep_cycle']
-    assert 'last_promoted' in data['sleep_cycle']
-    assert 'last_deleted' in data['sleep_cycle']
+    assert 'sleepCycle' in data
+    assert 'lastRunAt' in data['sleepCycle']
+    assert 'lastMerged' in data['sleepCycle']
+    assert 'lastPromoted' in data['sleepCycle']
+    assert 'lastDeleted' in data['sleepCycle']
 
 
 def testLearningResponseHasDeltaEngineLastFlush():
@@ -47,7 +47,7 @@ def testLearningResponseHasDeltaEngineLastFlush():
     resp = client.get('/api/brain/learning')
     data = resp.json()
     assert 'delta_engine' in data
-    assert 'last_flush_at' in data['delta_engine']
+    assert 'lastFlushAt' in data['delta_engine']
 
 
 def testDeleteHeuristic():

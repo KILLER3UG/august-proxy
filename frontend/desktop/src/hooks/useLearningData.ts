@@ -10,6 +10,7 @@ export interface Heuristic {
   rule: string;
   source: string;
   category: string;
+  confidence?: number;
   createdAt: string;
 }
 
@@ -58,6 +59,9 @@ export function useLearningData() {
     queryKey: ['brain-learning'],
     queryFn: async () => {
       const json = await api.get<Record<string, unknown>>('/api/brain/learning');
+      const deltaBlock =
+        (json.deltaEngine as Record<string, unknown> | undefined) ??
+        (json.delta_engine as Record<string, unknown> | undefined);
       // Wire format is camelCase per the v3 brain API contract
       return {
         heuristics: (json.heuristics ?? []) as Heuristic[],
@@ -75,9 +79,9 @@ export function useLearningData() {
           lastDeleted: ((json.sleepCycle as Record<string, unknown>)?.lastDeleted ?? 0) as number,
         },
         deltaEngine: {
-          consentGranted: ((json.deltaEngine as Record<string, unknown>)?.consentGranted ?? false) as boolean,
-          queueSize: ((json.deltaEngine as Record<string, unknown>)?.queueSize ?? 0) as number,
-          lastFlushAt: ((json.deltaEngine as Record<string, unknown>)?.lastFlushAt ?? null) as string | null,
+          consentGranted: (deltaBlock?.consentGranted ?? false) as boolean,
+          queueSize: (deltaBlock?.queueSize ?? 0) as number,
+          lastFlushAt: (deltaBlock?.lastFlushAt ?? null) as string | null,
         },
         pendingSkills: (json.pendingSkills ?? []) as PendingSkill[],
       };

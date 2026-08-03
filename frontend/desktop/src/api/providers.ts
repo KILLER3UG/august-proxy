@@ -113,7 +113,7 @@ export const providersApi = {
   addModel: (id: string, body: ModelCreate) =>
     api.post<Provider>(p(`/${encodeURIComponent(id)}/models`), body),
   updateModel: (id: string, modelId: string, body: Partial<ModelCreate>) =>
-    api.patch<Provider>(p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}`), body),
+    api.patch<{ updated: boolean }>(p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}`), body),
   removeModel: (id: string, modelId: string) =>
     api.delete<void>(p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}`)),
   refreshModels: (id: string) =>

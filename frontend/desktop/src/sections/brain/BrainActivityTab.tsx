@@ -9,6 +9,7 @@ const CATEGORIES: Array<{ key: BrainEvent['category'] | 'all'; label: string; co
   { key: 'all',          label: 'All',           color: 'text-foreground' },
   { key: 'consolidation', label: 'Consolidation', color: 'text-info' },
   { key: 'heuristic',     label: 'Heuristics',    color: 'text-success' },
+  { key: 'memory',        label: 'Memory',        color: 'text-primary' },
   { key: 'delta_engine',  label: 'Delta Engine',  color: 'text-warning' },
   { key: 'review',        label: 'Review',        color: 'text-primary' },
   { key: 'skill_genesis', label: 'Skill Genesis', color: 'text-accent' },

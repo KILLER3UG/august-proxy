@@ -23,7 +23,7 @@ import logging
 import random
 import time
 import uuid
-from typing import Callable, cast
+from typing import Any, Callable, Coroutine, cast
 
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.services.tool_policy import is_mutating, is_shell_mutation
@@ -280,6 +280,74 @@ def is_plan_file_write(
         return False
 
 
+_git_probe_cache: dict[str, tuple[float, str, str]] = {}
+_GIT_PROBE_TTL_S = 60
+
+
+def _probe_workspace_git(workspace_path: str) -> tuple[str, str]:
+    """VCS state + recent git activity for a workspace, cached briefly.
+
+    buildSystemPrompt runs these synchronous subprocess probes on the async
+    hot path; the TTL cache keeps them at one run per 60s per workspace
+    instead of once per turn.
+    """
+    import subprocess
+    import time as _time
+
+    now = _time.monotonic()
+    cached = _git_probe_cache.get(workspace_path)
+    if cached is not None and now - cached[0] < _GIT_PROBE_TTL_S:
+        return cached[1], cached[2]
+    vcs_info = ''
+    whats_new = ''
+    try:
+        branch = subprocess.run(
+            ['git', 'branch', '--show-current'], cwd=workspace_path, capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        status = subprocess.run(
+            ['git', 'status', '--short'], cwd=workspace_path, capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        if branch:
+            dirty = ' (dirty)' if status else ' (clean)'
+            vcs_info = f'{branch}{dirty}'
+    except Exception:
+        logger.debug('prompt: git vcs probe failed', exc_info=True)
+    try:
+        log = subprocess.run(
+            ['git', 'log', '--oneline', '--since=24 hours ago', '--max-count=10'],
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        if log:
+            lines = log.split('\n')
+            whats_new = 'Recent git activity:\n' + '\n'.join((f'  - {line}' for line in lines))
+    except Exception:
+        logger.debug('prompt: git log failed', exc_info=True)
+    _git_probe_cache[workspace_path] = (now, vcs_info, whats_new)
+    return vcs_info, whats_new
+
+
+def _spawn_background(coro: Coroutine[Any, Any, object], name: str):
+    """Spawn a fire-and-forget task with exception logging on completion.
+
+    Retaining the task handle is not required, but a done callback surfaces
+    task-internal failures instead of "exception was never retrieved" noise.
+    """
+    task = asyncio.create_task(coro)
+
+    def _done(t: asyncio.Task[Any]) -> None:
+        try:
+            if not t.cancelled():
+                t.result()
+        except Exception as exc:  # noqa: BLE001 - task teardown must not raise
+            logger.error('background task %s failed: %s', name, exc)
+
+    task.add_done_callback(_done)
+    return task
+
+
 def buildSystemPrompt(
     session: WorkbenchSession,
     tools: list[dict[str, object]] | None = None,
@@ -325,7 +393,8 @@ def buildSystemPrompt(
 
         conn = brainConn()
         heuristicsRows = conn.execute(
-            'SELECT rule, source, category FROM learned_heuristics ORDER BY updated_at DESC LIMIT ?',
+            'SELECT rule, source, category, confidence FROM learned_heuristics '
+            'ORDER BY confidence DESC, updated_at DESC LIMIT ?',
             (_HEURISTIC_CAP,),
         ).fetchall()
         if heuristicsRows:
@@ -375,21 +444,9 @@ def buildSystemPrompt(
         logger.debug('prompt: brain policy failed', exc_info=True)
     workspacePath = str(session.workspacePath) if hasattr(session, 'workspacePath') and session.workspacePath else ''
     vcsInfo = ''
+    whatsNew = ''
     if workspacePath:
-        try:
-            import subprocess
-
-            branch = subprocess.run(
-                ['git', 'branch', '--show-current'], cwd=workspacePath, capture_output=True, text=True, timeout=5
-            ).stdout.strip()
-            status = subprocess.run(
-                ['git', 'status', '--short'], cwd=workspacePath, capture_output=True, text=True, timeout=5
-            ).stdout.strip()
-            if branch:
-                dirty = ' (dirty)' if status else ' (clean)'
-                vcsInfo = f'{branch}{dirty}'
-        except Exception:
-            logger.debug('prompt: git vcs probe failed', exc_info=True)
+        vcsInfo, whatsNew = _probe_workspace_git(workspacePath)
     memoryStats = {}
     try:
         from app.services.memory_store import get_stats as memStats
@@ -397,23 +454,6 @@ def buildSystemPrompt(
         memoryStats = memStats()
     except Exception:
         logger.debug('prompt: memory stats failed', exc_info=True)
-    whatsNew = ''
-    if workspacePath:
-        try:
-            import subprocess
-
-            log = subprocess.run(
-                ['git', 'log', '--oneline', '--since=24 hours ago', '--max-count=10'],
-                cwd=workspacePath,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            ).stdout.strip()
-            if log:
-                lines = log.split('\n')
-                whatsNew = 'Recent git activity:\n' + '\n'.join((f'  - {line}' for line in lines))
-        except Exception:
-            logger.debug('prompt: git log failed', exc_info=True)
     skillsManifest, _skillsInner = _seg_cache.get_skills_segments()
     cognitiveBudget = None
     try:
@@ -1452,7 +1492,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 attentionPressure = 'medium'
             else:
                 attentionPressure = 'low'
-            currentTurn = getattr(session, 'turn_count', 0)
+            currentTurn = getattr(session, 'turnCount', 0)
             lastCompaction = getattr(session, '_last_compaction_turn', -100)
             turnsSinceCompaction = currentTurn - lastCompaction
             # Compress toward ~55% of the real window so the next turn has headroom.
@@ -2222,6 +2262,9 @@ async def _sendWorkbenchMessageStreamImpl(
         else:
             session.status = 'idle'
         session.updatedAt = _now()
+        # Monotonic turn counter — drives the auto-compaction cooldown
+        # (messageCount shrinks on compaction and cannot serve this role).
+        session.turnCount = getattr(session, 'turnCount', 0) + 1
         with _trace.span('persist'):
             # Persist session to SQLite (primary); JSON export is best-effort.
             try:
@@ -2292,14 +2335,32 @@ async def _sendWorkbenchMessageStreamImpl(
     try:
         from app.services.memory.background_review import ReviewGates, tryBackgroundReview
 
-        asyncio.create_task(
+        _spawn_background(
             tryBackgroundReview(
                 session,
                 list(currentMessages),
                 gates=ReviewGates(turn_interval=3, tool_round_interval=6),
                 llm_client=_makeReviewLlmClient(resolvedProvider, review_model),
-            )
+            ),
+            'background_review',
         )
+    except Exception:
+        pass
+    # Diff learning: derive correction rules from committed git history.
+    # Gated inside (feature flag + interval + git availability), so a
+    # non-git workspace or off-flag is a cheap no-op.
+    try:
+        workspace = str(getattr(session, 'workspacePath', '') or '').strip()
+        if workspace:
+            from app.services.memory.diff_learning import learn_from_diffs
+
+            _spawn_background(
+                learn_from_diffs(
+                    workspace,
+                    llm_client=_makeReviewLlmClient(resolvedProvider, review_model),
+                ),
+                'diff_learning',
+            )
     except Exception:
         pass
     try:

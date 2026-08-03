@@ -5,18 +5,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.fixture()
-def brain_ready(tmp_path, monkeypatch):
-    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    from app.services.memory_schema import ensure_schema
-    from app.services.memory_store import _conn
-
-    c = _conn()
-    ensure_schema(c)
-    c.commit()
-    return c
-
-
 def _insert_row(conn, key, content, importance, source='auto'):
     conn.execute(
         'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at) '

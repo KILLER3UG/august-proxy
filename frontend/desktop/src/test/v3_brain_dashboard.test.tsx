@@ -45,7 +45,7 @@ function mockApiPostSequence(responses: Array<unknown>) {
 
 const FULL_LEARNING = {
   heuristics: [
-    { id: 1, rule: 'Use Yarn', source: 'manual', category: 'build', createdAt: '2026-06-29' },
+    { id: 1, rule: 'Use Yarn', source: 'manual', category: 'build', confidence: 0.8, createdAt: '2026-06-29' },
     { id: 2, rule: 'Prefer tabs', source: 'local-diff', category: 'style', createdAt: '2026-06-29' },
   ],
   heuristicCount: 2,
@@ -79,6 +79,16 @@ describe('v3 — LearningTab', () => {
       expect(screen.getByText('manual')).toBeTruthy();
       expect(screen.getByText('local-diff')).toBeTruthy();
     });
+  });
+
+  it('renders confidence badges on scored heuristics', async () => {
+    mockApiGetSequence([FULL_LEARNING]);
+    renderWithQuery(<LearningTab />);
+    await waitFor(() => {
+      expect(screen.getByTestId('heuristic-confidence-1').textContent).toBe('80%');
+    });
+    // Unscored heuristics render no badge.
+    expect(screen.queryByTestId('heuristic-confidence-2')).toBeNull();
   });
 
   it('renders auto-memories', async () => {

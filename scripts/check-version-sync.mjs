@@ -40,6 +40,16 @@ const sources = [
       return match[1];
     },
   },
+  {
+    label: 'package-lock.json (root)',
+    file: resolve(root, 'package-lock.json'),
+    extract: (content) => JSON.parse(content).version,
+  },
+  {
+    label: 'package-lock.json (frontend/desktop)',
+    file: resolve(root, 'package-lock.json'),
+    extract: (content) => JSON.parse(content).packages?.['frontend/desktop']?.version,
+  },
 ];
 
 const versions = [];

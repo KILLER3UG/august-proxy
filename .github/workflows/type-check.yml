@@ -42,6 +42,10 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node scripts/check-naming.mjs
 
+      - name: Version sync (4 manifests + lockfile)
+        working-directory: ${{ github.workspace }}
+        run: node scripts/check-version-sync.mjs
+
       # Full suite includes Phase 7 inventory E2E, feature_flow live-backend
       # emission during tool stages, proxy inject HTTP, SSRF gates, gateway
       # normalize paths (no live bot credentials required).

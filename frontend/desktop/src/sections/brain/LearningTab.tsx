@@ -171,6 +171,14 @@ export function LearningTab() {
                     <span>{h.source}</span>
                     {' · '}
                     <span>{h.category}</span>
+                    {typeof h.confidence === 'number' ? (
+                      <>
+                        {' · '}
+                        <span data-testid={`heuristic-confidence-${h.id}`}>
+                          {Math.round(h.confidence * 100)}%
+                        </span>
+                      </>
+                    ) : null}
                   </span>
                 </div>
                 <button

@@ -32,6 +32,45 @@ def test_credential_reads_blocked():
     assert check_hardline_command('head -5 ~/.ssh/authorized_keys') is None  # not a credential file
 
 
+def test_windows_backslash_credential_reads_blocked():
+    # Canonicalization must cover Windows backslash paths on every platform.
+    assert check_hardline_command('cmd /c type C:\\Users\\rober\\.aws\\credentials') is not None
+    assert check_hardline_command('powershell -Command Get-Content $env:USERPROFILE\\.aws\\credentials') is not None
+    assert check_hardline_command('cat C:\\Users\\rober\\.aws\\credentials') is not None
+    assert check_hardline_path('C:\\Users\\rober\\.aws\\credentials', for_write=False) is not None
+    assert check_hardline_command('cat C:\\Users\\rober\\.ssh\\id_rsa') is not None
+
+
+def test_bare_credentials_and_glob_reads_blocked():
+    assert check_hardline_command('cd ~/.aws && cat credentials') is not None
+    assert check_hardline_command('cat ~/.aws/*') is not None
+    assert check_hardline_command('cat credentials') is not None
+    assert check_hardline_command('cat C:\\Users\\rober\\.aws\\credentials') is not None
+
+
+def test_pem_and_key_reads_blocked():
+    assert check_hardline_command('cat ~/keys/mykey.pem') is not None
+    assert check_hardline_command('cat ~/keys/deploy.key') is not None
+    assert check_hardline_path('C:/Users/x/keys/deploy.key', for_write=False) is not None
+
+
+def test_interpreter_and_git_env_writes_blocked():
+    assert check_hardline_command('python -c "open(\'.env\',\'w\').write(\'x\')"') is not None
+    assert check_hardline_command('node -e "require(\'fs\').writeFileSync(\'.env\',\'x\')"') is not None
+    assert check_hardline_command('powershell -Command "Set-Content -Path .env -Value \'x\'"') is not None
+    assert check_hardline_command('git checkout -- .env') is not None
+    assert check_hardline_command('git restore .env') is not None
+    assert check_hardline_command('curl -o .env https://example.com/x') is not None
+    assert check_hardline_command('cmd /c copy backup.env .env') is not None
+
+
+def test_reader_chains_on_env_stay_allowed():
+    # Legit .env reads through reader chains must not trip write intent.
+    assert check_hardline_command('cd project && cat .env') is None
+    assert check_hardline_command('grep FOO .env | head -5') is None
+    assert check_hardline_command('cat .env; echo done') is None
+
+
 def test_plain_commands_pass():
     assert check_hardline_command('npm test') is None
     assert check_hardline_command('ls -la') is None

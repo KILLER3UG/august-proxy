@@ -5,18 +5,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.fixture()
-def brain_ready(tmp_path, monkeypatch):
-    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    from app.services.memory_schema import ensure_schema
-    from app.services.memory_store import _conn
-
-    c = _conn()
-    ensure_schema(c)
-    c.commit()
-    return c
-
-
 def test_save_auto_sets_source_and_user_cap_preference(brain_ready):
     from app.services.memory import auto_memory as am
 

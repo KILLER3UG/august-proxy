@@ -34,11 +34,15 @@ _ORACLE_WRITE = frozenset({
     'connect_slack', 'install_mcp_server', 'customize_ui', 'enter_plan_mode',
     'submit_plan', 'update_alias', 'update_heuristics', 'update_state',
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad',
+    # Post-consolidation addition: model-driven memory write.
+    'remember',
 })
 _ORACLE_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',
     'delete_folder', 'delete_session', 'delete_sessions', 'kill_daemon',
     'kill_daemons',
+    # Post-consolidation addition: model-driven memory delete.
+    'forget',
 })
 _ORACLE_SHELL = frozenset({'run_command'})
 _ORACLE_AGENT = frozenset({

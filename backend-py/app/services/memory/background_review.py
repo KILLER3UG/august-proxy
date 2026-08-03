@@ -63,6 +63,11 @@ async def tryBackgroundReview(
         return
     lastTurn = getattr(session, '_last_reviewed_at_turn', 0)
     sessionTurns = getattr(session, 'messageCount', 0) // 2
+    # Auto-compaction shrinks messageCount, which would otherwise wedge the
+    # gate below the stored marker; clamp so reviews resume after compaction.
+    if lastTurn > sessionTurns:
+        lastTurn = sessionTurns
+        setattr(session, '_last_reviewed_at_turn', lastTurn)
     toolRounds = len([m for m in messagesSnapshot if as_str(m.get('role')) == 'tool'])
     gates = gates or ReviewGates()
     if not gates.shouldReview(sessionTurns=sessionTurns, toolRounds=toolRounds, lastReviewedAtTurn=lastTurn):
@@ -86,6 +91,9 @@ async def tryEndOfSessionReview(
         return
     lastTurn = getattr(session, '_last_reviewed_at_turn', 0)
     sessionTurns = getattr(session, 'messageCount', 0) // 2
+    if lastTurn > sessionTurns:
+        lastTurn = sessionTurns
+        setattr(session, '_last_reviewed_at_turn', lastTurn)
     if sessionTurns <= 0 or sessionTurns - lastTurn <= 0:
         return
     setattr(session, '_last_reviewed_at_turn', sessionTurns)
@@ -127,13 +135,23 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
 
     # --- Corrections -> learned_heuristics + graph ---
     for correction in as_list(recommendations.get('corrections'), []):
-        rule = as_str(correction) if not isinstance(correction, dict) else as_str(as_dict(correction).get('rule'), '')
+        if isinstance(correction, dict):
+            rule = as_str(as_dict(correction).get('rule'), '')
+            confidence = as_dict(correction).get('confidence')
+        else:
+            rule = as_str(correction)
+            confidence = None
         if not rule:
             continue
         try:
             from app.services.heuristics_service import addHeuristic
 
-            added = addHeuristic(rule, source='reflection', category='correction')
+            added = addHeuristic(
+                rule,
+                source='reflection',
+                category='correction',
+                confidence=confidence,
+            )
             if added is not None:
                 as_list(result['corrections_added']).append(rule[:80])
                 _syncCorrectionToGraph(rule)
@@ -280,8 +298,9 @@ def _queue_pending_skill(
 
     conn = _conn()
     conn.execute(
-        '''INSERT OR REPLACE INTO pending_skills (name, description, trigger_text, draft_path, source_session_id, status)
-           VALUES (?, ?, ?, ?, ?, 'pending')''',
+        '''INSERT INTO pending_skills (name, description, trigger_text, draft_path, source_session_id, status)
+           VALUES (?, ?, ?, ?, ?, 'pending')
+           ON CONFLICT(name) DO NOTHING''',
         (name, description, trigger, draft_path, session_id),
     )
     conn.commit()
@@ -330,7 +349,7 @@ def _buildReviewPrompt(messagesSnapshot: list[dict[str, object]]) -> list[dict[s
             'Extract what should be learned for future interactions.\n\n'
             'Respond with a JSON object only (no markdown, no code fences):\n'
             '{\n'
-            '  "corrections": ["User prefers X over Y", "Never do Z in this project"],\n'
+            '  "corrections": [{"rule": "User prefers X over Y", "confidence": 0.8}],\n'
             '  "facts": ["User is a backend developer", "Project uses Python 3.12"],\n'
             '  "skills": [\n'
             '    {\n'
@@ -346,7 +365,9 @@ def _buildReviewPrompt(messagesSnapshot: list[dict[str, object]]) -> list[dict[s
             '}\n\n'
             'Rules:\n'
             '- corrections: behavioral rules the user stated or implied ("don\'t X", "always Y", "prefer Z"). '
-            'Each becomes a persistent rule injected into future prompts. Be precise and actionable.\n'
+            'Each becomes a persistent rule injected into future prompts. Be precise and actionable. '
+            'Set confidence (0.0-1.0) for how durable the rule is: repeated, emphasized, or explicit '
+            'statements score higher; single mentions lower.\n'
             '- facts: stable user/project facts worth remembering (identity, stack, preferences). '
             'Do NOT save transient task details.\n'
             '- skills: ONLY create when a multi-step workflow was completed successfully and is genuinely reusable. '
@@ -409,7 +430,10 @@ def _saveFact(action: str, content: str) -> None:
             if existing == content:
                 return
             if _similarity(content, existing) >= 0.85:
-                facts[i] = newFact
+                # Near-dup: refresh the timestamp, keep the existing (usually
+                # more specific) fact text — never replace detail with a
+                # shorter paraphrase.
+                facts[i] = {**dict(f), 'updated_at': now}
                 save_memory(KEY, facts)
                 return
         facts.append(newFact)

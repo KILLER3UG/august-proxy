@@ -5,18 +5,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.fixture()
-def brain_ready(tmp_path, monkeypatch):
-    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    from app.services.memory_schema import ensure_schema
-    from app.services.memory_store import _conn
-
-    c = _conn()
-    ensure_schema(c)
-    c.commit()
-    return c
-
-
 def test_consolidate_writes_profile(brain_ready):
     from app.services.memory import user_profile as up
     from app.services.memory_store import get_memory
@@ -91,4 +79,6 @@ def test_save_fact_near_dup_refreshes(brain_ready):
     br._saveFact('add', 'User prefers pnpm over npm')
     core = get_memory('coreMemory')
     assert len(core) == 1
-    assert core[0]['fact'] == 'User prefers pnpm over npm'  # refreshed, not twinned
+    # Near-dups refresh the timestamp but keep the existing (more specific)
+    # fact text — never replace detail with a shorter paraphrase.
+    assert core[0]['fact'] == 'The user prefers pnpm over npm for installs'

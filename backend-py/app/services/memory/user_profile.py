@@ -41,10 +41,16 @@ def _normalize_text(text: object) -> str:
 
 
 def _similarity(a: object, b: object) -> float:
-    """Token-overlap similarity in [0, 1]; 1.0 when one text covers the other."""
+    """Token-overlap similarity in [0, 1]; 1.0 when one text covers the other.
+
+    Short inputs (fewer than 3 tokens) score 0 — a single shared token like
+    "python" must never absorb an unrelated longer memory.
+    """
     ta = set(_normalize_text(a).split())
     tb = set(_normalize_text(b).split())
     if not ta or not tb:
+        return 0.0
+    if min(len(ta), len(tb)) < 3:
         return 0.0
     return len(ta & tb) / min(len(ta), len(tb))
 

@@ -65,6 +65,7 @@ class WorkbenchSession:
     startedAt: str = ''
     messageCount: int = 0
     mutationCount: int = 0
+    turnCount: int = 0
     workspacePath: str = ''
     goal: str = ''
     plan: dict[str, object] | None = None
@@ -936,7 +937,7 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
     session.messages = compressed
     session.messageCount = len(session.messages)
     session.updatedAt = _now()
-    session._last_compaction_turn = getattr(session, 'turn_count', 0) or 0
+    session._last_compaction_turn = getattr(session, 'turnCount', 0) or 0
     save_sessions()
     _emit_session_status(session_id)
     try:

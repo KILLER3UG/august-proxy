@@ -458,6 +458,10 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                     if body.name is not None:
                         m['name'] = body.name
                     dumped = body.model_dump(exclude_unset=True)
+                    # Any per-model patch marks the entry manual so refresh /
+                    # discovery pruning never drops it (and its overrides).
+                    if dumped:
+                        m['source'] = 'manual'
                     if 'context_window' in dumped:
                         cw = dumped['context_window']
                         if cw is None or (isinstance(cw, int) and cw <= 0):

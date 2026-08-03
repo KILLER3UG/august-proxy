@@ -28,6 +28,8 @@ const FEATURE_LABELS: Record<string, string> = {
   skill_genesis: 'Skill genesis (evolving skills)',
   'vector_memory': 'Vector memory',
   'graph_memory': 'Graph memory',
+  'llm_compactor': 'LLM context compaction',
+  'diff_learning': 'Git-history diff learning',
 };
 
 const INTERVAL_OPTIONS = [

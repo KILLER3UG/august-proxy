@@ -119,6 +119,9 @@ export function dispatchWorkbenchEvent(
     case 'started':
       handlers.onStarted?.({ sinceSeq: p?.sinceSeq as number | undefined });
       break;
+    // Snake_case spellings the workbench emits for the same lifecycle —
+    // both names dispatch to the same camelCase handlers.
+    case 'user_message_queued':
     case 'userMessageQueued':
       handlers.onUserMessageQueued?.({
         sessionId: typeof p?.sessionId === 'string' ? p.sessionId : JSON.stringify(p?.sessionId ?? ''),
@@ -127,12 +130,14 @@ export function dispatchWorkbenchEvent(
         queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
       });
       break;
+    case 'user_message_dequeued':
     case 'userMessageDequeued':
       handlers.onUserMessageDequeued?.({
         sessionId: typeof p?.sessionId === 'string' ? p.sessionId : JSON.stringify(p?.sessionId ?? ''),
         messageId: typeof p?.messageId === 'string' ? p.messageId : JSON.stringify(p?.messageId ?? ''),
       });
       break;
+    case 'user_message_injected':
     case 'userMessageInjected':
       handlers.onUserMessageInjected?.({
         sessionId: typeof p?.sessionId === 'string' ? p.sessionId : JSON.stringify(p?.sessionId ?? ''),
@@ -140,6 +145,14 @@ export function dispatchWorkbenchEvent(
         text: typeof p?.text === 'string' ? p.text : JSON.stringify(p?.text ?? ''),
         queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
       });
+      break;
+    // Queue reorder / update / clear and todo/checkpoint lifecycle: accepted
+    // (no schema-mismatch warning) but no dedicated UI handler yet.
+    case 'user_message_queue_reordered':
+    case 'user_message_queue_updated':
+    case 'user_message_queue_cleared':
+    case 'todosUpdated':
+    case 'checkpoint':
       break;
     case 'subagentStart':
       handlers.onSubagentStart?.({

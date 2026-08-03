@@ -8,6 +8,7 @@ export interface BrainEvent {
     | 'consolidation'
     | 'delta_engine'
     | 'heuristic'
+    | 'memory'
     | 'review'
     | 'skill_genesis'
     | 'session';

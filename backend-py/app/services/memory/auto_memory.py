@@ -89,12 +89,14 @@ def _normalize_text(text: object) -> str:
 
 
 def _similarity(a: object, b: object) -> float:
-    """Token-overlap similarity in [0, 1]; 1.0 when one text covers the other."""
-    ta = set(_normalize_text(a).split())
-    tb = set(_normalize_text(b).split())
-    if not ta or not tb:
-        return 0.0
-    return len(ta & tb) / min(len(ta), len(tb))
+    """Token-overlap similarity in [0, 1]; 1.0 when one text covers the other.
+
+    Short inputs (fewer than 3 tokens) score 0 so a single common token
+    (e.g. "python") cannot absorb an unrelated longer memory.
+    """
+    from app.services.memory.user_profile import _similarity as _shared_similarity
+
+    return _shared_similarity(a, b)
 
 
 def _find_near_dup(conn, content: object, exclude_key: str = '') -> sqlite3.Row | None:
@@ -122,21 +124,42 @@ def _content_preview(content: object) -> str:
     return str(content or '')
 
 
+def _clamp_importance(value: object, default: float = 0.5) -> float:
+    """Parse an importance value into [0, 1], falling back to ``default``."""
+    try:
+        v = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(1.0, v))
+
+
 def _evict_rows(conn, count: int, protect_user: bool) -> list[int]:
-    """Delete the ``count`` lowest-scoring rows (importance × recency decay)."""
+    """Delete the ``count`` lowest-scoring rows (importance × recency decay).
+
+    The read-score-delete sequence runs inside ``BEGIN IMMEDIATE`` so
+    concurrent threads (per-session worker threads) cannot interleave and
+    evict rows another thread just refreshed.
+    """
     if count <= 0:
         return []
     where = "WHERE COALESCE(source, '') != 'user' AND COALESCE(pinned, 0) = 0" if protect_user else ''
-    rows = conn.execute(f'SELECT id, importance, updated_at FROM auto_memories {where}').fetchall()
-    scored = [
-        (float(r['importance'] or 0.5) * _decay_factor(r['updated_at']), int(r['id']))
-        for r in rows
-    ]
-    scored.sort(key=lambda x: (x[0], x[1]))
-    ids = [i for _, i in scored[:count]]
-    if ids:
-        placeholders = ','.join('?' for _ in ids)
-        conn.execute(f'DELETE FROM auto_memories WHERE id IN ({placeholders})', ids)
+    conn.execute('BEGIN IMMEDIATE')
+    try:
+        rows = conn.execute(f'SELECT id, importance, updated_at FROM auto_memories {where}').fetchall()
+        scored = []
+        for r in rows:
+            imp = r['importance']
+            importance = 0.5 if imp is None else float(imp)
+            scored.append((importance * _decay_factor(r['updated_at']), int(r['id'])))
+        scored.sort(key=lambda x: (x[0], x[1]))
+        ids = [i for _, i in scored[:count]]
+        if ids:
+            placeholders = ','.join('?' for _ in ids)
+            conn.execute(f'DELETE FROM auto_memories WHERE id IN ({placeholders})', ids)
+        conn.commit()
+    except Exception:
+        conn.execute('ROLLBACK')
+        raise
     return ids
 
 
@@ -207,6 +230,7 @@ def saveAutoMemory(
     contentJson = content if isinstance(content, str) else json.dumps(content)
     src = _normalize_source(source)
     pin = 1 if pinned else 0
+    importance = _clamp_importance(importance)
     # Backstop: secrets never enter long-lived memory from model/agent paths.
     # User-added memories (UI / API) are the user's own choice.
     if not _is_user_source(src):
@@ -243,8 +267,11 @@ def saveAutoMemory(
             'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             (key, contentJson, category, importance, src, pin, now, now),
         )
-    _enforce_cap(conn)
+    # Commit before cap enforcement: _enforce_cap opens its own
+    # BEGIN IMMEDIATE transactions (eviction + episode merge) and must not
+    # find an uncommitted INSERT on this connection.
     conn.commit()
+    _enforce_cap(conn)
     _emit_memory_saved(key, category, importance, src, preview=contentJson[:160])
     try:
         from app.services.cognitive_config import get_features
@@ -467,6 +494,7 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
                 result = []
                 for _, r in scored[:lim]:
                     item = _row_as_wire(r)
+                    item.pop('rank', None)
                     try:
                         item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
                     except (json.JSONDecodeError, TypeError):
@@ -495,7 +523,7 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
             score += 0.5
         if q and q in content:
             score += 0.3
-        score += float(r['importance'] or 0) * 0.2
+        score += (0.0 if r['importance'] is None else float(r['importance'])) * 0.2
         if _is_user_source(r['source']):
             score += 0.15
         score += 0.25 * _decay_factor(r['updated_at'])
@@ -637,7 +665,8 @@ def update_auto_memory(
         sets.append('source = ?')
         params.append(_normalize_source(source))
     if pinned is not None:
-        sets.append('pinned = ?')
+        # OR-semantics, consistent with the save paths: an update never unpins.
+        sets.append('pinned = MAX(COALESCE(pinned, 0), ?)')
         params.append(1 if pinned else 0)
     if not sets:
         return True
@@ -741,40 +770,50 @@ def consolidate_conv_summaries() -> int:
     number of merged rows (0 when below the threshold).
     """
     conn = _conn()
-    rows = conn.execute(
-        "SELECT id, content FROM auto_memories "
-        "WHERE key LIKE 'conv_summary_%' ORDER BY updated_at ASC"
-    ).fetchall()
-    if len(rows) < _EPISODE_MERGE_MIN:
-        return 0
-    oldest = rows[:_EPISODE_MERGE_COUNT]
-    parts = [str(r['content'] or '') for r in oldest]
-    merged = '; '.join(parts).strip() or 'Consolidated past conversations'
-    # Max-based sequence: survives user deletion of earlier episode rows
-    # without colliding with a still-live key.
-    seqRow = conn.execute(
-        "SELECT COALESCE(MAX(CAST(REPLACE(key, 'episode_', '') AS INTEGER)), 0) AS m "
-        "FROM auto_memories WHERE key LIKE 'episode_%'"
-    ).fetchone()
-    seq = int(seqRow['m']) + 1
-    # Insert directly (not via saveAutoMemory): the merged row legitimately
-    # contains every remaining summary's tokens, so the near-dup check would
-    # absorb it into an existing row. FTS triggers index it on insert.
-    now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-    conn.execute(
-        'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        (f'episode_{seq}', merged, 'conversation', 0.55, 'auto', 0, now, now),
-    )
-    ids = [int(r['id']) for r in oldest]
-    placeholders = ','.join('?' for _ in ids)
-    conn.execute(f'DELETE FROM auto_memories WHERE id IN ({placeholders})', ids)
-    conn.commit()
-    return len(ids)
+    conn.execute('BEGIN IMMEDIATE')
+    try:
+        rows = conn.execute(
+            "SELECT id, content FROM auto_memories "
+            "WHERE key LIKE 'conv_summary_%' ORDER BY updated_at ASC"
+        ).fetchall()
+        if len(rows) < _EPISODE_MERGE_MIN:
+            conn.execute('ROLLBACK')
+            return 0
+        oldest = rows[:_EPISODE_MERGE_COUNT]
+        parts = [str(r['content'] or '') for r in oldest]
+        merged = '; '.join(parts).strip() or 'Consolidated past conversations'
+        # Max-based sequence: survives user deletion of earlier episode rows
+        # without colliding with a still-live key.
+        seqRow = conn.execute(
+            "SELECT COALESCE(MAX(CAST(REPLACE(key, 'episode_', '') AS INTEGER)), 0) AS m "
+            "FROM auto_memories WHERE key LIKE 'episode_%'"
+        ).fetchone()
+        seq = int(seqRow['m']) + 1
+        # Insert directly (not via saveAutoMemory): the merged row legitimately
+        # contains every remaining summary's tokens, so the near-dup check would
+        # absorb it into an existing row. FTS triggers index it on insert.
+        now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        conn.execute(
+            'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (f'episode_{seq}', merged, 'conversation', 0.55, 'auto', 0, now, now),
+        )
+        ids = [int(r['id']) for r in oldest]
+        placeholders = ','.join('?' for _ in ids)
+        conn.execute(f'DELETE FROM auto_memories WHERE id IN ({placeholders})', ids)
+        conn.commit()
+        return len(ids)
+    except Exception:
+        conn.execute('ROLLBACK')
+        raise
 
 
 def extractAndSaveTodos(messages: list[dict[str, object]]) -> list[str]:
-    """Extract todo items from assistant messages and save them."""
+    """Extract todo items from assistant messages and save them.
+
+    Merges with any previously stored todos (union by text) so items noted
+    in earlier turns are not silently replaced by the current turn's list.
+    """
     todos = []
     for msg in messages:
         if msg.get('role') != 'assistant':
@@ -784,5 +823,8 @@ def extractAndSaveTodos(messages: list[dict[str, object]]) -> list[str]:
             items = re.findall('- \\[ \\] (.+)', content)
             todos.extend(items)
     if todos:
-        saveAutoMemory('todos', todos, category='tasks', importance=0.8, source='auto')
+        existing = get_memory('todos')
+        prior = [str(t) for t in existing] if isinstance(existing, list) else []
+        merged = list(dict.fromkeys(prior + todos))
+        saveAutoMemory('todos', merged, category='tasks', importance=0.8, source='auto')
     return todos

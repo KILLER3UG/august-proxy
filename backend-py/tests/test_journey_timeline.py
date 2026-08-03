@@ -5,18 +5,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.fixture()
-def brain_ready(tmp_path, monkeypatch):
-    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    from app.services.memory_schema import ensure_schema
-    from app.services.memory_store import _conn
-
-    c = _conn()
-    ensure_schema(c)
-    c.commit()
-    return c
-
-
 def test_write_timeline_event_persists(brain_ready):
     from app.services.memory_store import _conn
     from app.services.memory_store.rest import write_timeline_event

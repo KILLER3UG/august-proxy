@@ -117,7 +117,14 @@ def isolatedData(tmp_path, monkeypatch):
 def _reset_module_singletons():
     """Reset in-memory module singletons between tests so cross-file
     ordering cannot leak state (prompt cache, MCP servers, service-connections
-    config cache, prompt segments cache, model cache)."""
+    config cache, prompt segments cache, model cache, tool registry)."""
+    try:
+        from app.services import tool_registry as _tr
+
+        _registry_snapshot = dict(_tr._registry)
+        _generation_snapshot = _tr._generation
+    except Exception:
+        _registry_snapshot, _generation_snapshot = None, None
     yield
     try:
         from app.services.workbench.prompt_cache import getCache
@@ -139,6 +146,33 @@ def _reset_module_singletons():
         invalidate_cache()
     except Exception:
         pass
+    if _registry_snapshot is not None:
+        try:
+            from app.services import tool_registry as _tr2
+
+            _tr2._registry.clear()
+            _tr2._registry.update(_registry_snapshot)
+            _tr2._generation = _generation_snapshot
+        except Exception:
+            pass
+    try:
+        from app.services.workbench import workbench as _wb
+        _wb._git_probe_cache.clear()
+    except Exception:
+        pass
+
+
+@pytest.fixture()
+def brain_ready(tmp_path, monkeypatch):
+    """Shared brain DB fixture: temp data dir + full schema on the brain conn."""
+    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
+    from app.services.memory_schema import ensure_schema
+    from app.services.memory_store import _conn
+
+    c = _conn()
+    ensure_schema(c)
+    c.commit()
+    return c
 
 
 @pytest.fixture
