@@ -7,6 +7,7 @@ import {
   PanelLeftClose,
   Minimize2,
   MoreHorizontal,
+  FolderOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
@@ -146,6 +147,16 @@ export function ChatTitlebar({
               className="shrink-0"
               menuPlacement="down"
             />
+          ) : null}
+          {session?.workspacePath ? (
+            <span
+              className="inline-flex items-center gap-1 shrink max-w-[14rem] rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground/80"
+              title={session.workspacePath}
+              data-testid="session-path-chip"
+            >
+              <FolderOpen className="size-3 shrink-0" aria-hidden />
+              <span className="truncate">{session.workspacePath}</span>
+            </span>
           ) : null}
         </div>
       </div>

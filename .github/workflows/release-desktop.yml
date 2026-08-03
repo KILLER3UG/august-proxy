@@ -63,5 +63,18 @@ jobs:
           "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Releasing version $version"
 
-      - name: Build and publish release assets
-        run: node scripts/release-desktop.mjs --version=${{ env.RELEASE_VERSION }} --tauri --publish
+      - name: Build and publish release assets (draft)
+        run: node scripts/release-desktop.mjs --version=${{ env.RELEASE_VERSION }} --tauri --publish --draft
+
+  publish:
+    name: Publish release (flip draft → live)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Publish draft release
+        run: gh release edit v${{ inputs.version }} --draft=false --latest --repo ${{ github.repository }}

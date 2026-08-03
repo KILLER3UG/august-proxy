@@ -24,6 +24,12 @@ class ModelConfig(ExtraAllowBaseModel):
     # Needed for multi-format gateways (e.g. OpenCode Zen) that list Claude,
     # GPT, and DeepSeek models from one /models endpoint.
     api_format: str | None = None
+    # Per-model reasoning_effort override. None → use heuristic.
+    # True = always send reasoning_effort; False = never send it.
+    supports_reasoning_effort: bool | None = None
+    # Cap the mapped reasoning_effort value (e.g. 'medium' means max→medium).
+    # None → no cap (max maps to 'high' as usual).
+    max_reasoning_effort: str | None = None
 
 
 class ProviderConfig(ExtraAllowBaseModel):
@@ -83,3 +89,5 @@ class ModelUpdate(ExtraAllowBaseModel):
     free: bool | None = None
     pinned: bool | None = None
     api_format: str | None = None
+    supports_reasoning_effort: bool | None = None
+    max_reasoning_effort: str | None = None

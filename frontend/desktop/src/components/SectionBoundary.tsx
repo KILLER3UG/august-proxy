@@ -83,7 +83,7 @@ function SectionCrashFallback({
           <Button size="sm" onClick={onRetry}>
             Retry
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => navigate('/')}>
+          <Button size="sm" variant="ghost" onClick={() => { void navigate('/'); }}>
             Go to Chat
           </Button>
         </div>

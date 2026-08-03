@@ -67,14 +67,7 @@ async def putAugContent(payload: dict = Body(...)):
         result = aug_directive_service.write(workspacePath, content)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    sessionId = payload.get('sessionId')
-    if sessionId:
-        try:
-            from app.services.workbench.prompt_cache import getCache
-
-            getCache().invalidate(sessionId)
-        except Exception:
-            pass
+    # Prompt cache is content-hash keyed — no manual invalidation needed.
     return result
 
 

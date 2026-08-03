@@ -331,8 +331,10 @@ export function AssistantBlockTimeline({
 
   const isThoughtExpanded = (thoughtId: string) => {
     if (thoughtId in expandOverrides) return expandOverrides[thoughtId];
-    // Auto-expand only while this live turn is still in the process phase.
-    return !!(isLast && streaming && !hasFinalOutput);
+    // Default to clamped ("Show more") whether streaming or settled — a long
+    // thought clamps once it passes the threshold instead of pushing the whole
+    // layout. Only an explicit Show more expands it.
+    return false;
   };
 
   const thinkingParts = processBlocks

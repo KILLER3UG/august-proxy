@@ -58,6 +58,18 @@
     --dt-code-inline: #b3215f;
     --dt-code-block-bg: #f6f6f5;
     --dt-code-block-fg: #1c1c1e;
+    /* Shared dark code surface (highlighted code + diffs) — same in both
+       themes because the syntax tokens come from highlight.js's dark theme. */
+    --dt-code-surface-bg: #1e1e1e;
+    --dt-code-surface-fg: #d4d4d4;
+    --dt-code-surface-num: #6b7280;
+    --dt-code-surface-border: rgba(255, 255, 255, 0.08);
+    --dt-code-added: #4ade80;
+    --dt-code-added-wash: rgba(74, 222, 128, 0.07);
+    --dt-code-added-gutter: rgba(74, 222, 128, 0.1);
+    --dt-code-removed: #f87171;
+    --dt-code-removed-wash: rgba(248, 113, 113, 0.07);
+    --dt-code-removed-gutter: rgba(248, 113, 113, 0.1);
 
     /* Sidebar */
     --dt-sidebar: #f8f8f7;
@@ -1317,8 +1329,8 @@ input::placeholder {
   padding: 0;
 }
 .markdown-content .markdown-code-block > pre.hljs {
-  background-color: #1e1e1e;
-  border-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--dt-code-surface-bg);
+  border-color: var(--dt-code-surface-border);
 }
 
 /* Tables */
@@ -1762,6 +1774,20 @@ input::placeholder {
   outline-offset: 2px;
   border-radius: 3px;
 }
+/* While the thought is still generating and clamped, pulse the Show more
+   affordance so the user knows the reasoning is live below the fold. */
+.thought-toggle-btn.is-live {
+  animation: thought-live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes thought-live-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
 .thought-toggle-chevron {
   width: 12px;
   height: 12px;
@@ -1773,7 +1799,11 @@ input::placeholder {
 
 /* ── Edit rail row — header faces + code panel ─────────────────────── */
 .edit-rail-verb {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: color-mix(in srgb, var(--dt-muted-foreground) 92%, transparent);
 }
 .edit-rail-head {
@@ -1792,9 +1822,6 @@ input::placeholder {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: color-mix(in srgb, var(--dt-foreground) 92%, transparent);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--dt-foreground) 28%, transparent);
-  text-underline-offset: 2px;
 }
 .edit-rail-dir {
   min-width: 0;
@@ -1817,6 +1844,9 @@ input::placeholder {
 .edit-rail-chevron.is-open {
   opacity: 0.85;
 }
+.edit-rail-chevron.is-open {
+  transform: rotate(90deg);
+}
 .edit-rail-panel {
   margin-top: 6px;
 }
@@ -1830,9 +1860,9 @@ input::placeholder {
    bright accent bar and readable green/red line numbers. */
 .diff-code-panel {
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--dt-code-surface-border);
   border-radius: 8px;
-  background: #1e1e1e;
+  background: var(--dt-code-surface-bg);
   font-family: ui-monospace, 'JetBrains Mono Variable', 'Cascadia Code', Menlo,
     Consolas, monospace;
   font-size: 12px;
@@ -1865,43 +1895,43 @@ input::placeholder {
   white-space: pre;
   user-select: none;
   font-variant-numeric: tabular-nums;
-  color: #6b7280;
+  color: var(--dt-code-surface-num);
 }
 .diff-code-text {
   flex: 0 0 auto;
   padding-right: 1rem;
   white-space: pre;
-  color: #d4d4d4;
+  color: var(--dt-code-surface-fg);
 }
 /* Added lines — green wash across the row, stronger in the gutter, bright
    accent bar + readable green line numbers (the reference screenshot). */
 .diff-code-row--added {
-  background: rgba(74, 222, 128, 0.07);
+  background: var(--dt-code-added-wash);
 }
 .diff-code-row--added .diff-code-accent {
-  background: #4ade80;
+  background: var(--dt-code-added);
 }
 .diff-code-row--added .diff-code-num {
-  background: rgba(74, 222, 128, 0.1);
-  color: #4ade80;
+  background: var(--dt-code-added-gutter);
+  color: var(--dt-code-added);
 }
 /* Removed lines — red mirror of the above. */
 .diff-code-row--removed {
-  background: rgba(248, 113, 113, 0.07);
+  background: var(--dt-code-removed-wash);
 }
 .diff-code-row--removed .diff-code-accent {
-  background: #f87171;
+  background: var(--dt-code-removed);
 }
 .diff-code-row--removed .diff-code-num {
-  background: rgba(248, 113, 113, 0.1);
-  color: #f87171;
+  background: var(--dt-code-removed-gutter);
+  color: var(--dt-code-removed);
 }
 .diff-code-more {
   display: block;
   width: 100%;
   padding: 0.4rem 0;
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--dt-code-surface-border);
   background: transparent;
   color: #9ca3af;
   font-size: 10.5px;

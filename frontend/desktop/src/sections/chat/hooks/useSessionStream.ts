@@ -77,10 +77,19 @@ export class SessionStreamController {
       | ((prev: WorkbenchSession | null) => WorkbenchSession | null),
   ): void {
     if (!this.sessionId) return;
-    updateSessionStreamState(this.sessionId, (prev) => ({
-      workbenchSession:
-        typeof session === 'function' ? session(prev.workbenchSession) : session,
-    }));
+    updateSessionStreamState(this.sessionId, (prev) => {
+      const next =
+        typeof session === 'function' ? session(prev.workbenchSession) : session;
+      // Preserve the frontend-only planSubmittedLive flag across any
+      // backend-payload replacement (guard/sandbox/verifier toggles, undo,
+      // compact, session refresh). The backend never returns this flag;
+      // without this merge every setWorkbenchSession(raw) call would wipe
+      // it and silently dismiss a pending plan banner.
+      if (next != null && next.planSubmittedLive == null && prev.workbenchSession?.planSubmittedLive) {
+        return { workbenchSession: { ...next, planSubmittedLive: prev.workbenchSession.planSubmittedLive } };
+      }
+      return { workbenchSession: next };
+    });
   }
 
   setWorkbenchBtw(
@@ -157,20 +166,7 @@ export function useSessionStream(sessionId: string | null) {
         | null
         | ((prev: WorkbenchSession | null) => WorkbenchSession | null),
     ) => {
-      // The backend never returns `planSubmittedLive` (a frontend-only flag set
-      // by the planProposed SSE event). Any call site that replaces the
-      // workbench session with a backend payload — guard/sandbox/verifier
-      // toggles, undo, compact, session refresh — would otherwise wipe the flag
-      // and silently dismiss a pending plan banner. Preserve it across
-      // refreshes unless a caller sets it explicitly; once a plan is
-      // approved/rejected the banner is hidden by hasPendingWorkbenchPlan
-      // anyway, so a stale flag is harmless.
-      new SessionStreamController(sessionId).setWorkbenchSession((prev) => {
-        const next = typeof session === 'function' ? session(prev) : session;
-        if (next == null) return next;
-        const live = next.planSubmittedLive ?? prev?.planSubmittedLive;
-        return live === next.planSubmittedLive ? next : { ...next, planSubmittedLive: live };
-      });
+      new SessionStreamController(sessionId).setWorkbenchSession(session);
     },
     [sessionId],
   );

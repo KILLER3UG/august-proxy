@@ -43,7 +43,31 @@ async def client(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_service_connections_list_and_github(client):
+async def test_service_connections_list_and_github(client, monkeypatch):
+    # Mock GitHub API validation so connect_github succeeds with a fake token.
+    class _FakeResp:
+        status_code = 200
+        text = '{"login":"testuser"}'
+        headers = {'x-oauth-scopes': 'repo'}
+
+        def json(self):
+            return {'login': 'testuser'}
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            pass
+
+        async def get(self, url, **k):
+            return _FakeResp()
+
+    monkeypatch.setattr('app.services.service_connections.httpx.AsyncClient', _FakeClient)
+
     r = await client.get('/api/service-connections')
     assert r.status_code == 200
     data = r.json()

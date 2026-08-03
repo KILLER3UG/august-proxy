@@ -24,7 +24,7 @@ describe('retrying event dispatch', () => {
 
   it('coerces missing numbers to zero and reason to a fallback', () => {
     const onRetrying = vi.fn();
-    dispatchWorkbenchEvent('retrying', {}, { onRetrying } as WorkbenchEventHandlers);
+    dispatchWorkbenchEvent('retrying', {}, { onRetrying });
     expect(onRetrying).toHaveBeenCalledWith({
       attempt: 0,
       maxRetries: 0,

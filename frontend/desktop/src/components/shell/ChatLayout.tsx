@@ -7,7 +7,7 @@ import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath } from "@/store/sessions";
+import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
@@ -235,9 +235,7 @@ export function ChatLayout() {
       void navigate(`/c/${activeSess.id}`, { replace: true });
     } else if (location.pathname.startsWith("/c/")) {
       // Match by UI id OR legacy workbench id (older builds rewrote session.id).
-      const match = sessions.find(
-        (s) => s.id === sessionId || s.workbenchSessionId === sessionId,
-      );
+      const match = resolveActiveSession(sessions, sessionId ?? null);
       if (match && !match.isArchived) {
         // URL still has a legacy workbench id — normalize to stable UI id.
         if (match.id !== sessionId) {

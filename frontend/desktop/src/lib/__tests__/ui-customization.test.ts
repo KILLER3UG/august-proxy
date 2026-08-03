@@ -69,7 +69,7 @@ describe('ui-customization', () => {
     for (const preset of THEME_PRESETS) {
       for (const [tokenId, color] of Object.entries(preset.map)) {
         expect(validIds.has(tokenId), `${preset.id}: unknown token ${tokenId}`).toBe(true);
-        expect(isHexColor(color as string), `${preset.id}: ${tokenId} not hex`).toBe(true);
+        expect(isHexColor(color), `${preset.id}: ${tokenId} not hex`).toBe(true);
       }
     }
     // Default preset restores theme defaults (empty map).

@@ -255,24 +255,42 @@ def list_connections() -> dict[str, Any]:
     }
 
 
-def connect_github(token: str) -> dict[str, Any]:
+async def connect_github(token: str) -> dict[str, Any]:
     sc = _sc()
     if token.strip():
-        sc['github'] = {'token': token.strip(), 'status': 'connected', 'updatedAt': _now()}
+        # Validate before storing — never persist a bad token.
+        validation = await test_github(token)
+        if not validation.get('ok'):
+            card = _github_card(as_dict(sc.get('github')) if sc.get('github') else None)
+            return {
+                'status': 'error',
+                'validationError': validation.get('error', 'Token validation failed'),
+                'connection': card,
+            }
+        login = validation.get('login', '')
+        sc['github'] = {
+            'token': token.strip(),
+            'status': 'connected',
+            'updatedAt': _now(),
+            **({'account': login} if login else {}),
+        }
         os.environ['GITHUB_TOKEN'] = token.strip()
         _save_sc(sc)
-    # An empty token means "no token supplied" — the chat UI shows an inline
-    # field, or a caller is probing status. It must NOT delete a stored
-    # connection: clearing is the DELETE /api/service-connections/{name}
-    # endpoint's job. Returning the current card lets the UI render existing
-    # status (or an empty card) without silently wiping a working credential
-    # when the user cancels the inline field.
+    # Empty token = no-op probe (see module docstring).
     return {'status': 'ok', 'connection': _github_card(as_dict(sc.get('github')) if sc.get('github') else None)}
 
 
-def connect_slack(bot_token: str, team_id: str = '') -> dict[str, Any]:
+async def connect_slack(bot_token: str, team_id: str = '') -> dict[str, Any]:
     sc = _sc()
     if bot_token.strip():
+        validation = await test_slack(bot_token)
+        if not validation.get('ok'):
+            card = _slack_card(as_dict(sc.get('slack')) if sc.get('slack') else None)
+            return {
+                'status': 'error',
+                'validationError': validation.get('error', 'Token validation failed'),
+                'connection': card,
+            }
         sc['slack'] = {
             'botToken': bot_token.strip(),
             'teamId': team_id.strip(),
@@ -283,8 +301,7 @@ def connect_slack(bot_token: str, team_id: str = '') -> dict[str, Any]:
         if team_id.strip():
             os.environ['SLACK_TEAM_ID'] = team_id.strip()
         _save_sc(sc)
-    # Empty bot token = no-op probe (see connect_github); never delete a
-    # stored connection here — the DELETE endpoint owns disconnect.
+    # Empty bot token = no-op probe; never delete a stored connection.
     return {'status': 'ok', 'connection': _slack_card(as_dict(sc.get('slack')) if sc.get('slack') else None)}
 
 

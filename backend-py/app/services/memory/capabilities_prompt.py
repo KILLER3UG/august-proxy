@@ -181,14 +181,12 @@ _EVOLVING_CREATED_BY: frozenset[str] = frozenset({'agent', 'auto-gen'})
 
 
 def classify_tool(name: str) -> str:
-    """Return the primary bucket for ``name`` (defaults to fail-closed ``tool_other``)."""
-    n = (name or '').strip()
-    if not n:
-        return 'tool_other'
-    for bucket, names in _BUCKET_SETS.items():
-        if n in names:
-            return bucket
-    return 'tool_other'
+    """Return the primary bucket for ``name`` (defaults to fail-closed ``tool_other``).
+
+    Delegates to the unified tool_policy module.
+    """
+    from app.services.tool_policy import prompt_bucket
+    return prompt_bucket(name)
 
 
 def is_bulk_tagged(name: str) -> bool:

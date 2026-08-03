@@ -26,6 +26,10 @@ export interface ProviderModel {
    *  must use /v1/messages while the provider defaults to chat/completions).
    *  `null`/absent → provider apiFormat. */
   apiFormat?: ApiFormat | null;
+  /** Per-model reasoning_effort override. null = auto (heuristic). */
+  supportsReasoningEffort?: boolean | null;
+  /** Cap the mapped reasoning_effort (e.g. 'medium' means max→medium). */
+  maxReasoningEffort?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -65,6 +69,8 @@ export interface ModelCreate {
   pinned?: boolean;
   /** Per-model wire-format override; null clears it back to provider format. */
   apiFormat?: ApiFormat | null;
+  supportsReasoningEffort?: boolean | null;
+  maxReasoningEffort?: string | null;
 }
 
 export interface RefreshResult {

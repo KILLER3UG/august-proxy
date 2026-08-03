@@ -110,7 +110,7 @@ export function ThoughtStep({
         {canReveal ? (
           <button
             type="button"
-            className="thought-toggle-btn"
+            className={cn('thought-toggle-btn', isGenerating && 'is-live')}
             onClick={onToggle}
             aria-expanded={showFull}
             aria-controls={panelId}

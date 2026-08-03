@@ -113,6 +113,34 @@ def isolatedData(tmp_path, monkeypatch):
         pass
 
 
+@pytest.fixture(autouse=True)
+def _reset_module_singletons():
+    """Reset in-memory module singletons between tests so cross-file
+    ordering cannot leak state (prompt cache, MCP servers, service-connections
+    config cache, prompt segments cache, model cache)."""
+    yield
+    try:
+        from app.services.workbench.prompt_cache import getCache
+        getCache().clear()
+    except Exception:
+        pass
+    try:
+        from app.services.tools import mcp_client
+        mcp_client._servers.clear()
+    except Exception:
+        pass
+    try:
+        from app.services.workbench import prompt_segments_cache
+        prompt_segments_cache.clear()
+    except Exception:
+        pass
+    try:
+        from app.services.model_service import invalidate_cache
+        invalidate_cache()
+    except Exception:
+        pass
+
+
 @pytest.fixture
 def isolatedSkills(tmp_path, monkeypatch):
     """Redirect both skill roots to temp dirs (shared via conftest)."""

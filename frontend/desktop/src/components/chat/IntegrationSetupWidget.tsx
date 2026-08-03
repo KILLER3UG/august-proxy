@@ -11,7 +11,7 @@
  *  - mcp: read-only status card (installed tools / server id).
  */
 import { useState } from 'react';
-import { CheckCircle2, Loader2, Key, Shield, ExternalLink, Inbox, Eye } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2, Key, Shield, ExternalLink, Inbox, Eye } from 'lucide-react';
 import { api } from '@/api/client';
 import { openExternal } from '@/lib/tauri-shell';
 import { Button } from '@/components/ui/button';
@@ -24,7 +24,7 @@ function StatusBadge({ ok, text }: { ok: boolean; text: string }) {
         ok ? 'bg-success/15 text-success' : 'bg-muted/50 text-muted-foreground'
       }`}
     >
-      <CheckCircle2 className="size-3" />
+      {ok ? <CheckCircle2 className="size-3" /> : <Circle className="size-3" />}
       {text}
     </span>
   );
@@ -81,6 +81,7 @@ function TokenPasteForm({
             if (e.key === 'Enter') void apply();
           }}
           placeholder={provider === 'github' ? 'ghp_… or gho_…' : 'xoxb-…'}
+          aria-label={`${label} token`}
           autoComplete="off"
           spellCheck={false}
           className="w-full rounded-md border border-border bg-background px-3 py-2 pr-10 text-xs outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition font-mono"
@@ -101,6 +102,7 @@ function TokenPasteForm({
           value={teamId}
           onChange={(e) => setTeamId(e.target.value)}
           placeholder="Team / workspace id (optional)"
+          aria-label="Slack team or workspace id"
           spellCheck={false}
           className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
         />

@@ -48,6 +48,10 @@ export function ModelRow({
   );
   const [reasoning, setReasoning] = useState(!!model.reasoning);
   const [format, setFormat] = useState<ApiFormat | ''>(model.apiFormat ?? '');
+  const [reasoningEffortSupport, setReasoningEffortSupport] = useState<'' | 'yes' | 'no'>(
+    model.supportsReasoningEffort === true ? 'yes' : model.supportsReasoningEffort === false ? 'no' : '',
+  );
+  const [maxReasoningEffort, setMaxReasoningEffort] = useState<string>(model.maxReasoningEffort ?? '');
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
     error?: string;
@@ -60,7 +64,11 @@ export function ModelRow({
     setContextWindow((model.contextWindow ?? 128000).toString());
     setReasoning(!!model.reasoning);
     setFormat(model.apiFormat ?? '');
-  }, [model.id, model.name, model.contextWindow, model.reasoning, model.apiFormat]);
+    setReasoningEffortSupport(
+      model.supportsReasoningEffort === true ? 'yes' : model.supportsReasoningEffort === false ? 'no' : '',
+    );
+    setMaxReasoningEffort(model.maxReasoningEffort ?? '');
+  }, [model.id, model.name, model.contextWindow, model.reasoning, model.apiFormat, model.supportsReasoningEffort, model.maxReasoningEffort]);
 
   const update = useMutation({
     mutationFn: (body: {
@@ -68,6 +76,8 @@ export function ModelRow({
       contextWindow?: number | null;
       reasoning?: boolean;
       apiFormat?: ApiFormat | null;
+      supportsReasoningEffort?: boolean | null;
+      maxReasoningEffort?: string | null;
     }) => providersApi.updateModel(providerId, model.id, body),
     onSuccess: () => {
       setEditing(false);
@@ -190,6 +200,33 @@ export function ModelRow({
                 for it.
               </p>
             )}
+            <label className="flex items-center gap-2 text-xs">
+              <span className="shrink-0">reasoning_effort</span>
+              <select
+                value={reasoningEffortSupport}
+                onChange={(e) => setReasoningEffortSupport(e.target.value as '' | 'yes' | 'no')}
+                aria-label="Supports reasoning_effort"
+                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+              >
+                <option value="">Auto (heuristic)</option>
+                <option value="yes">Yes — always send</option>
+                <option value="no">No — never send</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <span className="shrink-0">Max effort</span>
+              <select
+                value={maxReasoningEffort}
+                onChange={(e) => setMaxReasoningEffort(e.target.value)}
+                aria-label="Max reasoning effort"
+                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+              >
+                <option value="">Auto (no cap)</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+            </label>
           </div>
           <div className="flex gap-2">
             <Button
@@ -202,6 +239,8 @@ export function ModelRow({
                     : 128000,
                   reasoning,
                   apiFormat: format || null,
+                  supportsReasoningEffort: reasoningEffortSupport === '' ? null : reasoningEffortSupport === 'yes',
+                  maxReasoningEffort: maxReasoningEffort || null,
                 })
               }
               disabled={update.isPending}

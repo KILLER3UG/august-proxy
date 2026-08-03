@@ -135,6 +135,24 @@ export function healDuplicateSessions(): void {
 }
 
 /**
+ * Resolve the active session for a route id, matching either the UI id
+ * (`sess_*`) or the workbench id (`wb_*`). Single source of truth for the
+ * dual-id lookup that was previously copy-pasted across ChatThread /
+ * ChatLayout / session-id-map.
+ */
+export function resolveActiveSession(
+  sessions: Session[],
+  routeId: string | null,
+): Session | null {
+  if (!routeId) return null;
+  return (
+    sessions.find(
+      (s) => s.id === routeId || s.workbenchSessionId === routeId,
+    ) ?? null
+  );
+}
+
+/**
  * Find an existing empty chat in the same folder/workspace so "New session"
  * does not stack blank chats when the user is already on one.
  */

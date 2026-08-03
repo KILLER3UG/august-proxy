@@ -21,9 +21,8 @@
  */
 
 import { useEffect, useId, useState } from 'react';
-import { AlertCircle, ChevronDown, Loader2, Pencil } from 'lucide-react';
+import { AlertCircle, ChevronRight, Loader2, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { TaskItemFile } from '@/components/ui/task';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ToolCallItemBody, type ToolEntry } from '@/components/chat/ToolCallItem';
 import { DiffCodePanel } from '@/components/chat/DiffCodePanel';
@@ -43,24 +42,14 @@ function splitPath(full: string | null): { base: string; dir: string } {
   return { base: norm.slice(idx + 1), dir: norm.slice(0, idx + 1) };
 }
 
-/** Present-tense verb for the collapsed face when no intent is supplied.
- *  Derived from the tool name only — never the filename — so the chip can
- *  carry the name without risk of the verb duplicating it. */
+/** Present-tense verb for the leading slot when no intent is supplied.
+ *  Derived from the tool name only — never the filename — so the filename
+ *  column can carry the name without the verb duplicating it. */
 function presentVerb(tool: ToolEntry): string {
   const n = tool.name.toLowerCase();
   if (/write|create/.test(n)) return 'Writing';
   if (/delete|remove/.test(n)) return 'Deleting';
   return 'Editing';
-}
-
-/** Past-tense verb for the expanded header ("Wrote" / "Edited" / "Deleted"),
- *  present-tense while the edit is still running. */
-function expandedVerb(tool: ToolEntry): string {
-  const running = tool.status === 'running';
-  const n = tool.name.toLowerCase();
-  if (/write|create/.test(n)) return running ? 'Writing' : 'Wrote';
-  if (/delete|remove/.test(n)) return running ? 'Deleting' : 'Deleted';
-  return running ? 'Editing' : 'Edited';
 }
 
 export function EditRailRow({
@@ -142,39 +131,27 @@ export function EditRailRow({
           disabled={!hasBody}
           title={fullPath ?? undefined}
         >
-          {isOpen ? (
-            <>
-              <span className="edit-rail-verb">{expandedVerb(tool)}</span>
-              <span className="edit-rail-head min-w-0 flex-1">
-                {base ? (
-                  <FileIcon name={base} size={13} className="edit-rail-langicon" />
-                ) : null}
-                <span className="edit-rail-filelink" title={fullPath ?? undefined}>
-                  {base || 'file'}
-                </span>
-                {dir ? (
-                  <span className="edit-rail-dir" title={fullPath ?? undefined}>
-                    {dir}
-                  </span>
-                ) : null}
-              </span>
-              {statsNode}
-              {hasBody ? (
-                <ChevronDown className="edit-rail-chevron is-open" aria-hidden />
-              ) : null}
-            </>
-          ) : (
-            <>
-              <span className="edit-rail-desc">{description}</span>
-              {base ? (
-                <TaskItemFile className="edit-rail-chip" title={fullPath ?? undefined}>
-                  <span className="edit-rail-chip-text">{base}</span>
-                </TaskItemFile>
-              ) : null}
-              {statsNode}
-              {hasBody ? <ChevronDown className="edit-rail-chevron" aria-hidden /> : null}
-            </>
-          )}
+          <span className="edit-rail-verb">{description}</span>
+          {base ? (
+            <FileIcon name={base} size={13} className="edit-rail-langicon" />
+          ) : null}
+          {base ? (
+            <span className="edit-rail-filelink" title={fullPath ?? undefined}>
+              {base}
+            </span>
+          ) : null}
+          {dir ? (
+            <span className="edit-rail-dir" title={fullPath ?? undefined}>
+              {dir}
+            </span>
+          ) : null}
+          {statsNode}
+          {hasBody ? (
+            <ChevronRight
+              className={cn('edit-rail-chevron', isOpen && 'is-open')}
+              aria-hidden
+            />
+          ) : null}
         </button>
 
         {isOpen ? (

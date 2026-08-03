@@ -109,7 +109,7 @@ describe('SectionBoundary', () => {
 
     // Should show truncated message with ellipsis
     const displayed = screen.getByText(/x{10,}…/);
-    expect(displayed.textContent!.length).toBeLessThan(250);
+    expect(displayed.textContent.length).toBeLessThan(250);
     spy.mockRestore();
   });
 });

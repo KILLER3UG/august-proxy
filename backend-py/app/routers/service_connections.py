@@ -53,12 +53,12 @@ async def list_service_connections():
 
 @router.post('/api/service-connections/github')
 async def post_github(body: GithubBody):
-    return sc.connect_github(body.token)
+    return await sc.connect_github(body.token)
 
 
 @router.post('/api/service-connections/slack')
 async def post_slack(body: SlackBody):
-    return sc.connect_slack(body.bot_token, body.team_id)
+    return await sc.connect_slack(body.bot_token, body.team_id)
 
 
 class GithubTestBody(CamelModel):

@@ -22,6 +22,7 @@ import {
   createSession,
   updateSessionModel,
   updateSessionWorkbenchMetadata,
+  resolveActiveSession,
 } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
 import { AnimatePresence } from 'framer-motion';
@@ -136,9 +137,7 @@ function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const sessions = useSessionsStore((s) => s.sessions);
   const activeSession = useMemo(
-    () =>
-      sessions.find((s) => s.id === sessionId || s.workbenchSessionId === sessionId) ??
-      null,
+    () => resolveActiveSession(sessions, sessionId),
     [sessions, sessionId],
   );
 
@@ -434,9 +433,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ensureWorkbenchSession = async () => {
     if (!sessionId) return null;
-    const localTitle = useSessionsStore
-      .getState()
-      .sessions.find((s) => s.id === sessionId || s.workbenchSessionId === sessionId)?.title;
+    const localTitle = resolveActiveSession(
+      useSessionsStore.getState().sessions,
+      sessionId,
+    )?.title;
 
     const syncTitleToBackend = (wbId: string, backendTitle?: string) => {
       if (localTitle && !isPlaceholderTitle(localTitle) && isPlaceholderTitle(backendTitle)) {

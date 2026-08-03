@@ -105,7 +105,18 @@ async def connectGithub(token: str = '') -> str:
     from app.services import service_connections as sc
 
     try:
-        conn = sc.connect_github(token)
+        conn = await sc.connect_github(token)
+        if conn.get('status') == 'error':
+            return _err(
+                conn.get('validationError', 'GitHub token validation failed'),
+                integrationSetup={
+                    'provider': 'github',
+                    'label': 'GitHub',
+                    'needsToken': True,
+                    'connected': False,
+                    'status': 'disconnected',
+                },
+            )
         card = as_dict(conn.get('connection'))
         return _ok(
             integrationSetup={
@@ -131,7 +142,18 @@ async def connectSlack(bot_token: str = '', team_id: str = '') -> str:
     from app.services import service_connections as sc
 
     try:
-        conn = sc.connect_slack(bot_token, team_id)
+        conn = await sc.connect_slack(bot_token, team_id)
+        if conn.get('status') == 'error':
+            return _err(
+                conn.get('validationError', 'Slack token validation failed'),
+                integrationSetup={
+                    'provider': 'slack',
+                    'label': 'Slack',
+                    'needsToken': True,
+                    'connected': False,
+                    'status': 'disconnected',
+                },
+            )
         card = as_dict(conn.get('connection'))
         return _ok(
             integrationSetup={

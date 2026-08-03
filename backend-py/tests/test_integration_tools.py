@@ -10,6 +10,42 @@ from app.services.memory.capabilities_prompt import classify_tool, unclassified_
 from app.services.tool_registry import get, listRaw, register, unregister
 
 
+class _FakeGithubResponse:
+    """Minimal httpx-like response for GET /user."""
+
+    status_code = 200
+    text = '{"login":"testuser","name":"Test User"}'
+    headers = {'x-oauth-scopes': 'repo, read:user'}
+
+    def json(self) -> dict:
+        return {'login': 'testuser', 'name': 'Test User'}
+
+
+class _FakeHttpxClient:
+    """Mock httpx.AsyncClient that returns a successful /user response."""
+
+    def __init__(self, *a: object, **k: object) -> None:
+        pass
+
+    async def __aenter__(self) -> _FakeHttpxClient:
+        return self
+
+    async def __aexit__(self, *a: object) -> None:
+        pass
+
+    async def get(self, url: str, **k: object) -> _FakeGithubResponse:
+        return _FakeGithubResponse()
+
+
+@pytest.fixture
+def mock_github_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock httpx.AsyncClient so connect_github validation succeeds."""
+    monkeypatch.setattr(
+        'app.services.service_connections.httpx.AsyncClient',
+        _FakeHttpxClient,
+    )
+
+
 @pytest.fixture(scope='module', autouse=True)
 def _register_under_test():
     integration_tools.register()
@@ -60,7 +96,7 @@ class TestRegistration:
 
 
 @pytest.mark.asyncio
-async def test_connect_github_never_echoes_secret(isolatedData):
+async def test_connect_github_never_echoes_secret(isolatedData, mock_github_validation):
     raw = await integration_tools.connectGithub('ghp_1234567890abcdef')
     parsed = json.loads(raw)
     assert parsed['status'] == 'success'
@@ -82,7 +118,40 @@ async def test_connect_github_empty_token_needs_inline(isolatedData):
 
 
 @pytest.mark.asyncio
-async def test_disconnect_github_removes(isolatedData):
+async def test_connect_github_invalid_token_returns_error(isolatedData, monkeypatch):
+    """An invalid token must NOT be stored — validation fails first."""
+
+    class _FailResponse:
+        status_code = 401
+        text = 'Unauthorized'
+        headers: dict = {}
+
+        def json(self) -> dict:
+            return {}
+
+    class _FailClient:
+        def __init__(self, *a: object, **k: object) -> None:
+            pass
+
+        async def __aenter__(self) -> _FailClient:
+            return self
+
+        async def __aexit__(self, *a: object) -> None:
+            pass
+
+        async def get(self, url: str, **k: object) -> _FailResponse:
+            return _FailResponse()
+
+    monkeypatch.setattr('app.services.service_connections.httpx.AsyncClient', _FailClient)
+    raw = await integration_tools.connectGithub('ghp_invalid_token')
+    parsed = json.loads(raw)
+    assert parsed['status'] == 'error'
+    assert 'error' in parsed  # validation error message
+    assert parsed['integrationSetup']['connected'] is False
+
+
+@pytest.mark.asyncio
+async def test_disconnect_github_removes(isolatedData, mock_github_validation):
     await integration_tools.connectGithub('ghp_1234567890abcdef')
     result = await integration_tools.disconnectIntegration('github')
     parsed = json.loads(result)
@@ -139,7 +208,7 @@ async def test_list_integrations_includes_connections(isolatedData):
 
 
 @pytest.mark.asyncio
-async def test_connect_github_empty_preserves_existing(isolatedData):
+async def test_connect_github_empty_preserves_existing(isolatedData, mock_github_validation):
     """The model's "show the inline field" call (empty token) must not wipe a
     working connection — that path used to pop the stored token + env var."""
     from app.services import service_connections as sc

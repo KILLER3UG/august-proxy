@@ -41,6 +41,7 @@ const args = new Set(process.argv.slice(2));
 const publish = args.has('--publish');
 const buildTauri = args.has('--tauri');
 const dryRun = args.has('--dry-run');
+const draft = args.has('--draft');
 const bump = getBumpFromArgs();
 const version = getVersionFromArgs() || (bump ? bumpVersion(await readVersion(), bump) : await readVersion());
 
@@ -430,7 +431,7 @@ async function main() {
             console.log(`[release] release ${tag} exists — uploading assets`);
             run('gh', ['release', 'upload', tag, '--clobber', ...assets]);
         } else {
-            const ghArgs = ['release', 'create', tag, '--title', `"${title}"`, '--notes', `"${notes}"`, ...assets];
+            const ghArgs = ['release', 'create', tag, '--title', `"${title}"`, '--notes', `"${notes}"`, ...(draft ? ['--draft'] : []), ...assets];
             run('gh', ghArgs);
         }
         console.log(`[release] published GitHub release ${tag} (includes latest.json for in-app update notices)`);

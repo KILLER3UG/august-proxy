@@ -473,6 +473,19 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                             m.pop('apiFormat', None)
                         else:
                             m['apiFormat'] = dumped['api_format']
+                    # Per-model reasoning_effort overrides.
+                    if 'supports_reasoning_effort' in dumped:
+                        val = dumped['supports_reasoning_effort']
+                        if val is None:
+                            m.pop('supportsReasoningEffort', None)
+                        else:
+                            m['supportsReasoningEffort'] = val
+                    if 'max_reasoning_effort' in dumped:
+                        val = dumped['max_reasoning_effort']
+                        if val is None:
+                            m.pop('maxReasoningEffort', None)
+                        else:
+                            m['maxReasoningEffort'] = val
                     config_service.saveProvidersStore(store)
                     model_service.invalidate_cache()
                     return {'updated': True}

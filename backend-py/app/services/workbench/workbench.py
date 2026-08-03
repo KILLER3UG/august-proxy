@@ -26,6 +26,7 @@ import uuid
 from typing import Callable, cast
 
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
+from app.services.tool_policy import is_mutating, is_shell_mutation
 from app.services.workbench import providers as _providers_mod
 from app.services.workbench import sessions as _sessions_mod
 from app.services.workbench.effort import (
@@ -201,140 +202,15 @@ async def _interruptibleSleep(seconds: float) -> None:
 
 
 def isShellMutationTool(toolName: str, args: dict[str, object] | None = None) -> bool:
-    """True when the tool is a shell/command execution (not a file edit)."""
-    if not toolName:
-        return False
-    name = toolName.lower()
-    shell = {
-        'run_command',
-        'bash',
-        'bashtool',
-        'shell',
-        'exec',
-        'execute',
-        'terminal',
-        'install',
-        'uninstall',
-        'pip_install',
-        'npm_install',
-        'pnpm_add',
-        # install_mcp_server spawns the model-supplied command (discoverTools);
-        # edit mode gates shell/subprocess tools, so include it here.
-        'install_mcp_server',
-    }
-    if name in shell:
-        return True
-    if name == 'bulk':
-        op = as_str((args or {}).get('operation')).lower().replace('-', '_')
-        return op in {'run_command', 'bash', 'shell', 'exec'}
-    return any(m in name for m in ('bash', 'shell', 'terminal', 'run_command'))
+    """Thin wrapper — delegates to the unified tool_policy module."""
+    from app.services.tool_policy import is_shell_mutation
+    return is_shell_mutation(toolName, args)
 
 
 def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> bool:
-    """In plan mode, only DESTRUCTIVE tools are blocked.
-
-    Everything else — read-only file tools, search, web, memory, agent,
-    skill, MCP, and any other non-mutating tool — may run so the model can
-    investigate freely. Destructive actions (writes, edits, deletes, shell
-    commands, installs) require an approved plan; when the model attempts
-    one it gets a tool result telling it to call `submit_plan` and ask the
-    user for permission.
-    """
-    if not toolName:
-        return False
-    name = toolName.lower()
-    # Integration tools mutate global config / credentials / env (connect_*) or
-    # are destructive (disconnect_integration); install_mcp_server also spawns a
-    # subprocess. Their names carry no write/delete/install marker, so without
-    # this explicit list they slip past ask/plan gating. (Edit-mode gating of
-    # the subprocess spawn is handled in isShellMutationTool.)
-    if name in {
-        'connect_github',
-        'connect_slack',
-        'connect_google',
-        'install_mcp_server',
-        'disconnect_integration',
-    }:
-        return True
-    destructive = {
-        'write_file',
-        'edit_file',
-        'create_file',
-        'str_replace',
-        'str_replace_editor',
-        'strreplaceeditttool',
-        'apply_patch',
-        'patch_file',
-        'delete_file',
-        'remove_file',
-        'move_file',
-        'rename_file',
-        'mkdir',
-        'makedirs',
-        'run_command',
-        'bash',
-        'bashtool',
-        'shell',
-        'exec',
-        'execute',
-        'terminal',
-        'install',
-        'uninstall',
-        'pip_install',
-        'npm_install',
-        'pnpm_add',
-        'browser_click',
-        'browser_type',
-        'browser_select',
-        'browser_evaluate',
-        'create_agent',
-        'update_agent',
-        'delete_agent',
-        'create_alias',
-        'update_alias',
-        'delete_alias',
-        'configure_fallback',
-    }
-    if name in destructive:
-        return True
-    # Session/UI metadata renames are not workspace mutations — do not gate them.
-    if name in {'rename_session', 'renamesession'}:
-        return False
-    # Meta bulk tool: gate by the nested operation, not the name "bulk".
-    if name == 'bulk':
-        op = as_str((args or {}).get('operation')).lower().replace('-', '_')
-        mutating_ops = {
-            'write_files',
-            'write_file',
-            'write',
-            'delete_sessions',
-            'delete_session',
-            'rename_sessions',
-            'rename_session',
-            'kill_daemons',
-            'kill_daemon',
-        }
-        return op in mutating_ops or any(
-            m in op for m in ('write', 'delete', 'rename', 'kill')
-        )
-    if name in {'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons'}:
-        return True
-    destructiveMarkers = (
-        'write',
-        'edit',
-        'delete',
-        'remove',
-        'install',
-        'uninstall',
-        'exec',
-        'command',
-        'bash',
-        'shell',
-        'patch',
-        'rename',
-        'kill_daemon',
-    )
-    return any((marker in name for marker in destructiveMarkers))
+    """Thin wrapper — delegates to the unified tool_policy module."""
+    from app.services.tool_policy import is_mutating
+    return is_mutating(toolName, args)
 
 
 # The single file the model may write in plan mode: the plan markdown that
@@ -613,7 +489,31 @@ def buildSystemPrompt(
     from app.services.workbench.prompt_cache import getCache
 
     promptCache = getCache()
-    cacheKey = getattr(session, 'id', '') or ''
+    # Content-hash key: Tier1+Tier2 are deterministic functions of these inputs.
+    # When any input changes the hash changes → cache miss → rebuild. This makes
+    # staleness structurally impossible (no manual invalidate needed).
+    import hashlib
+    import json as _json
+
+    _hash_inputs = _json.dumps(
+        [
+            sessionDict.get('guardMode', ''),
+            sessionDict.get('id', ''),
+            sessionDict.get('capabilitiesBlock', ''),
+            str(sessionDict.get('toolNames', [])),
+            sessionDict.get('workspacePath', ''),
+            sessionDict.get('vcs', ''),
+            sessionDict.get('goal', ''),
+            _json.dumps(sessionDict.get('plan'), default=str, sort_keys=True),
+            sessionDict.get('planApproved', ''),
+            sessionDict.get('augMd', ''),
+            str(sessionDict.get('learnedHeuristics', [])),
+            str(memory.get('userProfile', '') if isinstance(memory, dict) else ''),
+        ],
+        default=str,
+        sort_keys=True,
+    )
+    cacheKey = hashlib.sha256(_hash_inputs.encode()).hexdigest()[:32]
     cachedT12 = promptCache.get(cacheKey)
     base = ctxBuild(
         session=sessionDict,
@@ -2449,7 +2349,7 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
                 session_id=session.id,
                 tool_name=toolName,
                 tool_args=args,
-                workspace_path=getattr(session, 'workspace_path', None),
+                workspace_path=getattr(session, 'workspacePath', None),
             )
             pre_results = await hook_registry.emit(HookEvent.PRE_TOOL_USE, pre_ctx)
             for r in pre_results:
@@ -2475,7 +2375,7 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
                 tool_name=toolName,
                 tool_args=args,
                 tool_result=result_str,
-                workspace_path=getattr(session, 'workspace_path', None),
+                workspace_path=getattr(session, 'workspacePath', None),
             )
             post_results = await hr2.emit(HE2.POST_TOOL_USE, post_ctx)
             for r in post_results:
@@ -2809,7 +2709,7 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
     if mode == 'full':
         return None
 
-    if mode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
+    if mode == 'plan' and (not session.planApproved) and is_mutating(toolName, args):
         if is_plan_file_write(session, toolName, args):
             # The plan markdown is the only file writable in plan mode.
             return None
@@ -2820,7 +2720,7 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
             'file, call `submit_plan`, and wait for the user to approve before executing.'
         )
     # Edit automatically: file edits proceed; shell/commands still need approval.
-    if mode == 'edit' and isShellMutationTool(toolName, args):
+    if mode == 'edit' and is_shell_mutation(toolName, args):
         if has_tool_grant(session, toolName, args):
             return None
         key = _mutation_grant_key(toolName, args)
@@ -2910,13 +2810,8 @@ def enterPlanMode(session: WorkbenchSession, emit: object | None = None) -> str:
     session.guardMode = 'plan'
     session.agentId = 'plan'
     session.updatedAt = _now()
-    # Mirror the guard-mode router: refresh barrier text + persist + notify UI.
-    try:
-        from app.services.workbench.prompt_cache import getCache
-
-        getCache().invalidate(session.id)
-    except Exception:
-        pass
+    # Prompt cache is content-hash keyed — guardMode change alters the hash
+    # automatically; no manual invalidation needed.
     try:
         from app.services.workbench.sessions import save_sessions
 

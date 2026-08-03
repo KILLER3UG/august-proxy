@@ -157,6 +157,18 @@ def effort_to_openai_reasoning_effort(effort: str) -> str:
     return mapping.get(effort, 'medium')
 
 
+def cap_reasoning_effort(mapped: str, max_effort: str | None) -> str:
+    """Cap a mapped reasoning_effort value at the model's configured max."""
+    if not max_effort:
+        return mapped
+    order = {'low': 0, 'medium': 1, 'high': 2}
+    cap_level = order.get(max_effort.lower(), 2)
+    mapped_level = order.get(mapped.lower(), 1)
+    if mapped_level > cap_level:
+        return max_effort.lower()
+    return mapped
+
+
 def model_likely_accepts_reasoning_effort(model: str) -> bool:
     """Model-id heuristic mirroring the desktop Effort UI families."""
     mid = (model or '').lower()
@@ -186,14 +198,22 @@ def model_likely_accepts_reasoning_effort(model: str) -> bool:
 def provider_accepts_reasoning_effort(
     provider: dict[str, object] | None,
     model: str = '',
+    model_entry: dict[str, object] | None = None,
 ) -> bool:
     """Whether attaching ``reasoning_effort`` is likely to be understood.
 
-    Official OpenAI, DeepSeek, and common reasoner model ids accept it.
-    Unknown OpenAI-compatible gateways often reject unknown fields — skip those.
-    OpenCode Zen/Go also skip: their Console path is sensitive to extras, and
-    free models work without ``reasoning_effort``.
+    Checks the per-model config override first (supportsReasoningEffort),
+    then falls back to the provider/model-id heuristic.
     """
+    # Per-model override takes precedence.
+    if model_entry is not None:
+        override = model_entry.get('supportsReasoningEffort')
+        if override is True:
+            return True
+        if override is False:
+            return False
+        # None / absent → fall through to heuristic.
+
     if not provider:
         return False
     pname = as_str(provider.get('name') or provider.get('id')).lower()

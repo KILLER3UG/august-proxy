@@ -1436,7 +1436,6 @@ async def setGuardMode(request: Request):
     """
     from datetime import datetime, timezone
 
-    from app.services.workbench.prompt_cache import getCache
     from app.services.workbench.sessions import save_sessions
 
     body = await request.json()
@@ -1467,11 +1466,8 @@ async def setGuardMode(request: Request):
         if as_str(getattr(session, 'status', '') or '') == 'awaiting_approval':
             session.status = 'idle'
     session.updatedAt = datetime.now(timezone.utc).isoformat()
-    # Invalidate cached Tier1/Tier2 so guard-mode barrier text refreshes.
-    try:
-        getCache().invalidate(sessionId)
-    except Exception:
-        pass
+    # Prompt cache is content-hash keyed — guardMode change alters the hash
+    # automatically; no manual invalidation needed.
     save_sessions()
     try:
         from app.services.realtime_bus import emit_invalidate, emit_realtime
@@ -1535,7 +1531,6 @@ async def _apply_sandbox_body(sessionId: str, body: dict) -> dict[str, object]:
         session.sandboxMode = normalize_sandbox_mode(str(body.get('sandboxMode')))
     if 'sandboxNetwork' in body:
         session.sandboxNetwork = bool(body.get('sandboxNetwork'))
-    prev_workspace_path = str(getattr(session, 'workspacePath', '') or '')
     if 'workspacePath' in body or 'workspace_path' in body:
         session.workspacePath = str(body.get('workspacePath') or body.get('workspace_path') or '')
     if session.sandboxMode == 'danger-full-access':
@@ -1550,13 +1545,8 @@ async def _apply_sandbox_body(sessionId: str, body: dict) -> dict[str, object]:
     # is still in the previous folder (stale `Path:` line, stale branch, stale
     # AUG.md) while the file/shell tools already execute in the new one — the
     # cross-session path leak seen when switching between folders.
-    if str(getattr(session, 'workspacePath', '') or '') != prev_workspace_path:
-        try:
-            from app.services.workbench.prompt_cache import getCache
-
-            getCache().invalidate(sessionId)
-        except Exception:
-            pass
+    # Prompt cache is content-hash keyed — workspacePath change alters the
+    # hash automatically; no manual invalidation needed.
     try:
         from app.services.realtime_bus import emit_invalidate, emit_realtime
         from app.services.workbench.sessions import _emit_session_status

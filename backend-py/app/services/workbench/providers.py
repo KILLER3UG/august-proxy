@@ -16,6 +16,7 @@ from typing import Callable
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.models import AnthropicRequest, ChatCompletionRequest
 from app.services.workbench.effort import (
+    cap_reasoning_effort,
     effort_to_openai_reasoning_effort,
     model_max_output_tokens,
     provider_accepts_reasoning_effort,
@@ -498,8 +499,16 @@ async def call_openai_workbench(
     # understand it (OpenAI/Codex/DeepSeek/reasoner ids). Unknown gateways often
     # reject unknown fields — skip those. Prompt-level effort is applied upstream.
     if thinking_enabled:
+        # Look up the per-model config entry for overrides.
+        _model_entry: dict[str, object] | None = None
+        for _m in as_list(provider.get('models', [])):
+            if isinstance(_m, dict) and as_str(_m.get('id')) == model:
+                _model_entry = _m
+                break
         reasoning = effort_to_openai_reasoning_effort(effort)
-        if reasoning and provider_accepts_reasoning_effort(provider, model):
+        if _model_entry:
+            reasoning = cap_reasoning_effort(reasoning, as_str(_model_entry.get('maxReasoningEffort')) or None)
+        if reasoning and provider_accepts_reasoning_effort(provider, model, model_entry=_model_entry):
             body['reasoning_effort'] = reasoning
 
     # Poll the workbench cancel signal during chunk iteration so Stop terminates promptly.
