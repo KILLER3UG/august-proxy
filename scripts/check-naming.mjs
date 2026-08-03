@@ -22,10 +22,47 @@ const REPO = resolve(SCRIPT_DIR, '..');
 const SERVICES = resolve(REPO, 'backend-py', 'app', 'services');
 const BASELINE = join(SCRIPT_DIR, 'naming-baseline.json');
 const UPDATE = process.argv.includes('--update');
+const LIST = process.argv.includes('--list');
+
+/** Split a signature's inner parameter list on commas that sit at bracket
+ *  depth 0. Generic annotations carry commas inside `[...]` / `(...)` / `{...}`
+ *  (e.g. `dict[str, object] | None`) and defaults can hold commas inside
+ *  string literals; a naive `.split(',')` mis-splits both and yields phantom
+ *  "params" like `object] | None` whose trailing `None` trips the camelCase
+ *  check. Track bracket depth and quote state so only real separators split. */
+function splitTopLevelParams(inner) {
+  const parts = [];
+  let depth = 0;
+  let cur = '';
+  let quote = null;
+  for (let k = 0; k < inner.length; k++) {
+    const ch = inner[k];
+    if (quote) {
+      cur += ch;
+      if (ch === quote && inner[k - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      cur += ch;
+      continue;
+    }
+    if (ch === '[' || ch === '(' || ch === '{') depth++;
+    else if (ch === ']' || ch === ')' || ch === '}') depth--;
+    if (ch === ',' && depth === 0) {
+      parts.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) parts.push(cur);
+  return parts;
+}
 
 /** Collect "relative/path.py:paramName" entries for camelCase params in
- *  service function signatures. Naive paren-balancing across lines; defaults
- *  with commas inside string literals are the only known blind spot. */
+ *  service function signatures. Paren-balancing across lines; parameter
+ *  splitting is bracket/quote aware (see splitTopLevelParams). */
 function collect() {
   const entries = [];
   const walk = (dir) => {
@@ -64,7 +101,7 @@ function scanFile(file, out) {
     const start = buf.indexOf('(');
     const end = buf.lastIndexOf(')');
     if (start === -1 || end <= start) continue;
-    for (const raw of buf.slice(start + 1, end).split(',')) {
+    for (const raw of splitTopLevelParams(buf.slice(start + 1, end))) {
       let param = raw.trim();
       if (!param) continue;
       if (param.startsWith('*')) param = param.slice(1).trim();
@@ -78,6 +115,10 @@ function scanFile(file, out) {
 }
 
 const current = new Set(collect());
+if (LIST) {
+  for (const e of [...current].sort()) console.log(e);
+  process.exit(0);
+}
 const baseline = existsSync(BASELINE)
   ? new Set(JSON.parse(readFileSync(BASELINE, 'utf8')))
   : new Set();

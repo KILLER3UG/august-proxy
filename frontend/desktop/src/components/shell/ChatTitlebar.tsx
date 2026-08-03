@@ -66,7 +66,7 @@ export function ChatTitlebar({
         setIsMaximized(await win.isMaximized());
       } catch { /* silent */ }
     })();
-  }, /* eslint-disable-line react-hooks/exhaustive-deps */ []);
+  }, []);
 
   const handleMinimize = async () => {
     if (!isTauri) return;

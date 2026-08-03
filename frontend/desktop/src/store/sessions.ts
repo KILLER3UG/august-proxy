@@ -4,14 +4,11 @@ import { deleteManageSession } from '@/api/api-client';
 import {
   defaultSessionTitle,
   dedupeSessions,
-  deriveSessionTitleFromMessage,
   folderNameFromPath,
   isPlaceholderTitle,
   makeSessionId,
   normalizePath,
   pathsMatch,
-  preferSessionRow,
-  preferSessionTitle,
   sessionIsEmpty,
 } from './sessions/helpers';
 import { reconcileSessionsFromBackend as reconcileSessionsFromBackendImpl } from './sessions/reconcile';
