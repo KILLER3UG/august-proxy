@@ -25,8 +25,8 @@ def test_recall_on_with_headroom():
 
 
 def test_recall_custom_min_headroom():
-    assert wb._shouldAutoRecall({'attention_pressure': 'low', 'remaining_tokens': 100}, minHeadroom=50) is True
-    assert wb._shouldAutoRecall({'attention_pressure': 'low', 'remaining_tokens': 40}, minHeadroom=50) is False
+    assert wb._shouldAutoRecall({'attention_pressure': 'low', 'remaining_tokens': 100}, min_headroom=50) is True
+    assert wb._shouldAutoRecall({'attention_pressure': 'low', 'remaining_tokens': 40}, min_headroom=50) is False
 
 
 def test_recall_missing_keys_off():

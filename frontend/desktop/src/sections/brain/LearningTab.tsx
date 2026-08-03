@@ -17,18 +17,24 @@ interface SkillDraft {
 
 function formatProfile(profile: unknown): string {
   if (typeof profile === 'string') return profile;
-  if (!profile || typeof profile !== 'object') return String(profile ?? '');
+  // Stored profiles are strings or JSON objects; anything else renders empty.
+  if (!profile || typeof profile !== 'object') return '';
   const p = profile as Record<string, unknown>;
   if (typeof p.summary === 'string' && p.summary) return p.summary;
-  if (Array.isArray(p.facts) && p.facts.length > 0) {
-    return (p.facts as Array<Record<string, unknown>>)
-      .map((f) => `- ${String(f.fact ?? '')}`)
-      .join('\n');
+  if (Array.isArray(p.facts)) {
+    const lines: string[] = [];
+    for (const f of p.facts as Array<Record<string, unknown>>) {
+      const fact = f?.fact;
+      if (typeof fact === 'string' || typeof fact === 'number') {
+        lines.push(`- ${String(fact)}`);
+      }
+    }
+    if (lines.length > 0) return lines.join('\n');
   }
   try {
-    return JSON.stringify(profile, null, 2);
+    return JSON.stringify(profile, null, 2) ?? '';
   } catch {
-    return String(profile);
+    return '';
   }
 }
 

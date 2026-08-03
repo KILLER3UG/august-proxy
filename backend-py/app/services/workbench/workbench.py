@@ -594,19 +594,19 @@ def _shouldAutoCompact(attention_pressure: str, turns_since_compaction: int) -> 
     return attention_pressure in ('high', 'critical') and turns_since_compaction >= 2
 
 
-def _shouldAutoRecall(cognitiveBudget: dict[str, object] | None, minHeadroom: int = 6000) -> bool:
+def _shouldAutoRecall(cognitive_budget: dict[str, object] | None, min_headroom: int = 6000) -> bool:
     """Auto-recall gate: inject past memories only when there is prompt headroom.
 
-    ``low``/``medium`` attention pressure plus at least ``minHeadroom``
+    ``low``/``medium`` attention pressure plus at least ``min_headroom``
     remaining tokens keeps recall free of cost under pressure — the on-demand
     memory tools are the fallback there.
     """
-    if not cognitiveBudget:
+    if not cognitive_budget:
         return False
-    pressure = as_str(cognitiveBudget.get('attention_pressure'), '')
-    raw_remaining = cognitiveBudget.get('remaining_tokens')
+    pressure = as_str(cognitive_budget.get('attention_pressure'), '')
+    raw_remaining = cognitive_budget.get('remaining_tokens')
     remaining = int(raw_remaining) if isinstance(raw_remaining, (int, float)) else 0
-    return pressure in ('low', 'medium') and remaining >= minHeadroom
+    return pressure in ('low', 'medium') and remaining >= min_headroom
 
 
 # Snake_case alias for tests / external callers.
