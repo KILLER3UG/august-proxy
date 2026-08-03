@@ -897,7 +897,7 @@ def branch_workbench_session(
     return new
 
 
-def compact_workbench_session_now(session_id: str) -> dict[str, object] | None:
+async def compact_workbench_session_now(session_id: str) -> dict[str, object] | None:
     """Force context compression on a session (user-triggered \"Free up memory\")."""
     session = get_workbench_session(session_id)
     if not session:
@@ -919,7 +919,7 @@ def compact_workbench_session_now(session_id: str) -> dict[str, object] | None:
             'message': 'Not enough messages to compress yet.',
         }
     # threshold=0 forces compression whenever head+tail leave a middle section
-    compressed = compressMessages(original, threshold=0, head_count=4, tail_count=6)
+    compressed = await compressMessages(original, threshold=0, head_count=4, tail_count=6)
     compressed_tokens = estimateTokens(compressed)
     compressed_count = max(0, len(original) - len(compressed))
     if compressed_count <= 0 or compressed_tokens >= original_tokens:

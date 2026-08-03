@@ -257,14 +257,33 @@ class TestContextCompressor:
         assert '[user]' in summary or 'Hello' in summary
 
     def testCompress(self):
+        import asyncio
+
         msgs = [
             {'role': 'user', 'content': 'A'},
             {'role': 'assistant', 'content': 'B'},
             {'role': 'user', 'content': 'C'},
             {'role': 'assistant', 'content': 'D'},
         ]
-        compressed = compressMessages(msgs, threshold=1, head_count=1, tail_count=1)
+        compressed = asyncio.run(compressMessages(msgs, threshold=1, head_count=1, tail_count=1))
         assert len(compressed) <= len(msgs)
+
+    def testAsyncSummarizerAwaited(self):
+        import asyncio
+
+        async def summarizer(middle):
+            return 'LLM-SUMMARIZED-CONTENT'
+
+        msgs = (
+            [{'role': 'user', 'content': f'turn {i}'} for i in range(20)]
+            + [{'role': 'assistant', 'content': f'reply {i}'} for i in range(20)]
+        )
+        out = asyncio.run(
+            compressMessages(msgs, threshold=1, head_count=2, tail_count=2, summarizer=summarizer)
+        )
+        summaries = [m for m in out if _isSummaryMessage(m)]
+        assert len(summaries) == 1
+        assert 'LLM-SUMMARIZED-CONTENT' in summaries[0]['content']
 
     def testSummaryHelpersDetectAndExtract(self):
         """s4 plumbing: prior summaries are detected and their text recovered."""
@@ -282,13 +301,15 @@ class TestContextCompressor:
         ONE summary (not the prior one + a new one = N blocks after N
         compactions) and fold the prior summary's text into the survivor so
         no information is lost."""
+        import asyncio
+
         priorSummary = buildSummaryMessage([{'role': 'user', 'content': 'old'}], 'PRIOR SUMMARY BODY')
         msgs = (
             [{'role': 'system', 'content': 'You are helpful.'}, priorSummary]
             + [{'role': 'user', 'content': f'turn {i}'} for i in range(20)]
             + [{'role': 'assistant', 'content': f'reply {i}'} for i in range(20)]
         )
-        out = compressMessages(msgs, threshold=1, head_count=2, tail_count=2)
+        out = asyncio.run(compressMessages(msgs, threshold=1, head_count=2, tail_count=2))
         summaries = [m for m in out if _isSummaryMessage(m)]
         assert len(summaries) == 1, f're-compaction must not accumulate summary blocks (s4); got {len(summaries)}'
         assert 'PRIOR SUMMARY BODY' in summaries[0]['content']

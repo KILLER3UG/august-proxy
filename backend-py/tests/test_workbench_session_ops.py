@@ -71,9 +71,11 @@ def test_branch_copies_messages():
 
 
 def test_compact_short_conversation_no_op():
+    import asyncio
+
     s = create_workbench_session()
     s.messages = [{'role': 'user', 'content': 'hi'}]
     s.messageCount = 1
-    result = compact_workbench_session_now(s.id)
+    result = asyncio.run(compact_workbench_session_now(s.id))
     assert result is not None
     assert result.get('underThreshold') is True

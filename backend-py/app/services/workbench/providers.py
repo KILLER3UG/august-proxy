@@ -111,6 +111,42 @@ def make_review_llm_client(
         return None
 
 
+def make_compactor_llm_client(
+    main_provider: dict[str, object] | None, compactor_model_hint: str = ''
+) -> Callable | None:
+    """Create an LLM client for mid-context compaction summaries.
+
+    Reuses the review client's provider/model resolution; the returned
+    callable takes the middle messages and returns a concise summary string
+    (``''`` on failure, so the caller can fall back to the local summarizer).
+    """
+    base = make_review_llm_client(main_provider, compactor_model_hint)
+    if base is None:
+        return None
+
+    async def compactorLlm(middle: list[dict[str, object]]) -> str:
+        prompt: list[dict[str, object]] = [
+            {
+                'role': 'system',
+                'content': (
+                    'Summarize the conversation fragment into a concise plain-text summary '
+                    'preserving: decisions made, requirements and corrections, tool results '
+                    'that changed state, and open questions. No headers, no markdown.'
+                ),
+            },
+            {
+                'role': 'user',
+                'content': json.dumps(middle, default=str)[:12000],
+            },
+        ]
+        try:
+            return await base(prompt)
+        except Exception:
+            return ''
+
+    return compactorLlm
+
+
 def _extract_upstream_error_message(event: dict[str, object]) -> str:
     """Pull a human-readable message from a provider stream/error event."""
     errObj = event.get('error')

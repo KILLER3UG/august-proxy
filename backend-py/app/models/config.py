@@ -78,6 +78,8 @@ class ModelCreate(ExtraAllowBaseModel):
     free: bool | None = None
     pinned: bool | None = None
     api_format: str | None = None
+    supports_reasoning_effort: bool | None = None
+    max_reasoning_effort: str | None = None
 
 
 class ModelUpdate(ExtraAllowBaseModel):

@@ -42,6 +42,7 @@ DEFAULT_FEATURES: dict[str, bool] = {
     'skill_genesis': True,
     'vector_memory': True,
     'graph_memory': True,
+    'llm_compactor': False,
 }
 
 DEFAULT_ORCHESTRATOR: dict[str, object] = {}

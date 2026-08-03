@@ -152,7 +152,8 @@ async def brainLearning() -> dict[str, object]:
         rows = (
             memory_store._conn()
             .execute(
-                'SELECT id, key, content, importance, created_at FROM auto_memories ORDER BY importance DESC, id DESC LIMIT 20'
+                'SELECT id, key, content, category, importance, source, pinned, created_at, updated_at '
+                'FROM auto_memories ORDER BY importance DESC, id DESC LIMIT 20'
             )
             .fetchall()
         )
@@ -335,6 +336,41 @@ async def brainGuidelines() -> dict[str, object]:
             }
         )
     return {'guidelines': out}
+
+
+@router.get('/timeline')
+async def brainTimeline(
+    category: str = '',
+    sessionId: str = '',
+    limit: int = 100,
+) -> dict[str, object]:
+    """Journey timeline — per-turn and system events, newest first.
+
+    Populated per completed workbench turn (category ``workbench``) and by
+    memory-lifecycle events (category ``memory``).
+    """
+    items: list[dict[str, object]] = []
+    try:
+        conn = memory_store._conn()
+        clauses: list[str] = []
+        params: list[object] = []
+        if category:
+            clauses.append('category = ?')
+            params.append(category)
+        if sessionId:
+            clauses.append('session_id = ?')
+            params.append(sessionId)
+        where = f'WHERE {" AND ".join(clauses)}' if clauses else ''
+        params.append(max(1, min(int(limit), 500)))
+        rows = conn.execute(
+            f'SELECT id, timestamp, session_id, event_summary, category '
+            f'FROM episodic_timeline {where} ORDER BY timestamp DESC, id DESC LIMIT ?',
+            params,
+        ).fetchall()
+        items = [memory_store._row_as_wire(r) for r in rows]
+    except Exception:
+        pass
+    return {'items': items, 'count': len(items)}
 
 
 @router.get('/graph')

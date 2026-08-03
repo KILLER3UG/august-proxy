@@ -1374,7 +1374,7 @@ async def compactSession(sessionId: str):
     """Force context compression (\"Free up chat memory\")."""
     from app.services.workbench.sessions import compact_workbench_session_now
 
-    result = compact_workbench_session_now(sessionId)
+    result = await compact_workbench_session_now(sessionId)
     if result is None:
         raise HTTPException(status_code=404, detail='Session not found')
     return result

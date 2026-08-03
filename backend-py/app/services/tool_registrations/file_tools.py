@@ -435,6 +435,11 @@ async def _runCommand(
     # Only queue sandbox-escape approval outside Full Access — Full Access must
     # never interrupt the chat with a permission banner for terminal commands.
     if result.denial_reason and session is not None and not allow_unsandboxed:
+        if result.hardline:
+            # Hardline blocks cannot be granted away (even by an unsandboxed
+            # approval) — surface the reason directly, never queue an
+            # approval that would be denied anyway.
+            return result.as_tool_text()
         if guard_full:
             return (
                 f'[sandbox:{result.enforcement}] Blocked: {result.denial_reason}\n'

@@ -452,8 +452,12 @@ _BRAINStores: dict[str, dict[str, object]] = {
 }
 
 
-def write_timeline_event(sessionId: str, eventSummary: str, category: str = 'general') -> int:
-    """v2: Append an entry to episodic_timeline. Returns the new row's id."""
+def write_timeline_event(sessionId: str | None, eventSummary: str, category: str = 'general') -> int:
+    """v2: Append an entry to episodic_timeline. Returns the new row's id.
+
+    ``sessionId`` is optional — system events (e.g. memory lifecycle) have
+    no owning session.
+    """
     conn = _conn()
     cur = conn.execute(
         "INSERT INTO episodic_timeline (timestamp, session_id, event_summary, category) VALUES (datetime('now'), ?, ?, ?)",

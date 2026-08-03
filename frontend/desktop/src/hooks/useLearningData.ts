@@ -1,7 +1,8 @@
 /* ── Brain learning data (React Query) ────────────────────────────────── */
 /* Fetches learning data from /api/brain/learning */
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { api } from '@/api/client';
 
 export interface Heuristic {
@@ -17,7 +18,11 @@ export interface AutoMemory {
   key: string;
   content: string;
   importance: number;
+  category?: string;
+  source?: string;
+  pinned?: number;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface PendingSkill {
@@ -25,6 +30,7 @@ export interface PendingSkill {
   name: string;
   description: string;
   triggerText?: string;
+  draftPath?: string;
 }
 
 export interface ActiveProject {
@@ -78,5 +84,17 @@ export function useLearningData() {
     },
     staleTime: 10_000,
     refetchInterval: 30_000,
+  });
+}
+
+export function useDeleteMemory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/api/memory/auto/${id}`),
+    onSuccess: () => {
+      toast.success('Memory deleted');
+      void qc.invalidateQueries({ queryKey: ['brain-learning'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Delete failed'),
   });
 }

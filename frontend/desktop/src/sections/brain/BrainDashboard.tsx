@@ -1,13 +1,14 @@
-/* Brain dashboard: Learning / Ops / Activity / Health */
+/* Brain dashboard: Learning / Journey / Ops / Activity / Health */
 import { useState } from 'react';
-import { Brain, Sparkles, Heart, Activity, Settings2 } from 'lucide-react';
+import { Brain, Sparkles, Heart, Activity, Settings2, History } from 'lucide-react';
 import { LearningTab } from './LearningTab';
 import { SystemHealthTab } from './SystemHealthTab';
 import { BrainActivityTab } from './BrainActivityTab';
 import { CognitiveOpsTab } from './CognitiveOpsTab';
+import { JourneyTab } from './JourneyTab';
 
 export function BrainDashboard() {
-  const [tab, setTab] = useState<'learning' | 'ops' | 'activity' | 'health'>('learning');
+  const [tab, setTab] = useState<'learning' | 'journey' | 'ops' | 'activity' | 'health'>('learning');
 
   const tabClass = (id: typeof tab) =>
     `px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
@@ -30,6 +31,15 @@ export function BrainDashboard() {
         <button type="button" onClick={() => setTab('learning')} className={tabClass('learning')}>
           <Sparkles className="size-3.5 inline mr-1.5" />
           Learning
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('journey')}
+          className={tabClass('journey')}
+          data-testid="brain-tab-journey"
+        >
+          <History className="size-3.5 inline mr-1.5" />
+          Journey
         </button>
         <button
           type="button"
@@ -57,6 +67,7 @@ export function BrainDashboard() {
 
       <div className="pb-8">
         {tab === 'learning' && <LearningTab />}
+        {tab === 'journey' && <JourneyTab />}
         {tab === 'ops' && <CognitiveOpsTab />}
         {tab === 'activity' && <BrainActivityTab />}
         {tab === 'health' && <SystemHealthTab />}

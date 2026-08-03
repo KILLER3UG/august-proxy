@@ -36,12 +36,15 @@ _WRITE_TOOLS = 'write_file|edit_file|create_file|run_command'
 _READ_TOOLS = 'read_file|list_files'
 
 
+def scan_secrets(text: str) -> list[str]:
+    """Return labels of every secret pattern found in ``text`` (never the values)."""
+    return [label for label, pattern in _SECRET_PATTERNS if pattern.search(text)]
+
+
 def _scan_for_secrets(text: str) -> str | None:
     """Return the label of the first secret pattern found, or None."""
-    for label, pattern in _SECRET_PATTERNS:
-        if pattern.search(text):
-            return label
-    return None
+    found = scan_secrets(text)
+    return found[0] if found else None
 
 
 def _redact_secrets(text: str) -> str:

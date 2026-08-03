@@ -128,6 +128,7 @@ _CORE_SCHEMA_SQL = """
             category TEXT DEFAULT 'auto',
             importance REAL DEFAULT 0.5,
             source TEXT DEFAULT '',
+            pinned INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
         );
@@ -228,8 +229,10 @@ def create_core_schema(conn: sqlite3.Connection) -> None:
         cols = [r['name'] for r in conn.execute('PRAGMA table_info(auto_memories)').fetchall()]
         if 'updated_at' not in cols:
             conn.execute('ALTER TABLE auto_memories ADD COLUMN updated_at TEXT')
+        if 'pinned' not in cols:
+            conn.execute('ALTER TABLE auto_memories ADD COLUMN pinned INTEGER DEFAULT 0')
     except Exception as exc:
-        logging.warning('auto_memories updated_at migration failed: %s', exc)
+        logging.warning('auto_memories updated_at/pinned migration failed: %s', exc)
 
 
 def create_extended_tables(conn: sqlite3.Connection) -> None:
@@ -563,6 +566,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
+            ensure_column(conn, 'auto_memories', 'pinned', 'INTEGER DEFAULT 0')
             create_vector_graph_tables(conn)
             _ensure_messages_fts(conn)
             repair_fts_sync(conn)

@@ -110,6 +110,47 @@ async def _contextRead() -> str:
         return f'Error reading context: {exc}'
 
 
+async def _rememberMemory(
+    content: str,
+    category: str = 'preference',
+    importance: float = 0.7,
+    pinned: bool = False,
+) -> str:
+    """Persist an intentional fact/preference for future sessions."""
+    from app.services.memory.auto_memory import rememberMemory
+    from app.services.memory.memory_scrubber import refuse_reason
+
+    reason = refuse_reason(content)
+    if reason:
+        return reason
+    try:
+        clamped = max(0.0, min(1.0, float(importance or 0.7)))
+        item = rememberMemory(content, category=category, importance=clamped, pinned=pinned)
+        if not item:
+            return 'Nothing saved: content was empty.'
+        title = as_str(item.get('title') or item.get('label') or item.get('key'), '')
+        mid = as_str(item.get('id') or item.get('key'), '')
+        return f'Remembered: {title} [id: {mid}]'
+    except Exception as exc:
+        return f'Error saving memory: {exc}'
+
+
+async def _forgetMemory(memoryId: int) -> str:
+    """Remove a stored memory row by id (wrong or stale facts)."""
+    from app.services.memory.auto_memory import delete_auto_memory, get_auto_memory
+
+    try:
+        mem = get_auto_memory(memoryId)
+        if mem is None:
+            return f'No memory found with id {memoryId}.'
+        if delete_auto_memory(memoryId):
+            title = as_str(mem.get('title') or mem.get('label') or mem.get('key'), str(memoryId))
+            return f'Deleted memory: {title}'
+        return f'Failed to delete memory {memoryId}.'
+    except Exception as exc:
+        return f'Error deleting memory: {exc}'
+
+
 async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int = 10) -> str:
     """Read-only unified brain query across any cognitive store.
 
@@ -294,6 +335,58 @@ def register() -> None:
         "Read the user's current context and profile from memory: stored preferences, session goals, user profile data, and active context flags.",
         _contextRead,
         {'type': 'object', 'properties': {}, 'required': []},
+    )
+    tool_registry.register(
+        'remember',
+        'Store a durable memory the user will want in future sessions. '
+        'Use when the user says to remember something ("remember that...", "don\'t forget..."), '
+        'states a stable preference or correction ("always use pnpm"), or a durable project fact '
+        'that is NOT derivable from the code or git history. Save before finishing your turn. '
+        'Prefer updating an existing memory over creating a duplicate; repeated facts refresh '
+        'the stored row. Do NOT save session trivia, anything already recorded in the repo, '
+        'or git history. Allowed categories: correction, preference, project, reference. '
+        'Pinned memories are injected into every prompt; use sparingly. '
+        'To read memories later, use memory_search / fact_search / context_read / brain_query.',
+        _rememberMemory,
+        {
+            'type': 'object',
+            'properties': {
+                'content': {
+                    'type': 'string',
+                    'description': 'The fact or preference to remember (one idea per call).',
+                },
+                'category': {
+                    'type': 'string',
+                    'enum': ['correction', 'preference', 'project', 'reference'],
+                    'description': 'Memory type. Default preference.',
+                },
+                'importance': {
+                    'type': 'number',
+                    'description': '0.0-1.0 importance for recall ranking. Default 0.7.',
+                },
+                'pinned': {
+                    'type': 'boolean',
+                    'description': 'When true, inject this memory into every prompt (like user-added memory). Default false.',
+                },
+            },
+            'required': ['content'],
+        },
+    )
+    tool_registry.register(
+        'forget',
+        'Delete a stored memory by id when it is wrong or no longer true. '
+        'List memories first with brain_query(store=autoMemories) or memory_search.',
+        _forgetMemory,
+        {
+            'type': 'object',
+            'properties': {
+                'memoryId': {
+                    'type': 'integer',
+                    'description': 'The memory id (from memory_search / brain_query / remember result).',
+                }
+            },
+            'required': ['memoryId'],
+        },
     )
     tool_registry.register(
         'brain_query',

@@ -117,10 +117,17 @@ class SandboxResult:
     enforcement: EnforcementBackend = 'soft'
     sandboxed: bool = True
     elapsed_ms: int = 0
+    hardline: bool = False
 
     def as_tool_text(self) -> str:
         if self.denial_reason:
             tag = f'[sandbox:{self.enforcement}]'
+            if self.hardline:
+                return (
+                    f'{tag} Blocked: {self.denial_reason}\n'
+                    'This path is protected in every sandbox mode, including Full access — '
+                    'there is no override.'
+                )
             return (
                 f'{tag} Blocked: {self.denial_reason}\n'
                 'Ask the user to approve unsandboxed execution (Once / This chat / Always), '

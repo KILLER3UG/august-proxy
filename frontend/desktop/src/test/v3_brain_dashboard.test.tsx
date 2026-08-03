@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LearningTab } from '@/sections/brain/LearningTab';
 import { SystemHealthTab } from '@/sections/brain/SystemHealthTab';
 import { BrainDashboard } from '@/sections/brain/BrainDashboard';
+import { JourneyTab } from '@/sections/brain/JourneyTab';
 import * as apiClient from '@/api/client';
 
 function createTestQueryClient() {
@@ -105,6 +106,114 @@ describe('v3 — LearningTab', () => {
       expect(screen.getByText('jwtDebugFlow')).toBeTruthy();
     });
   });
+
+  it('renders the user profile summary when present', async () => {
+    const learning = {
+      ...FULL_LEARNING,
+      userProfile: { summary: 'Name: Ada\nStack: Python, FastAPI', facts: [] },
+    };
+    mockApiGetSequence([learning]);
+    renderWithQuery(<LearningTab />);
+    await waitFor(() => {
+      expect(screen.getByText(/Name: Ada/)).toBeTruthy();
+    });
+  });
+
+  it('shows an empty-state when no profile exists yet', async () => {
+    mockApiGetSequence([FULL_LEARNING]);
+    renderWithQuery(<LearningTab />);
+    await waitFor(() => {
+      expect(screen.getByText(/No profile yet/)).toBeTruthy();
+    });
+  });
+
+  it('deletes an auto-memory via the delete button', async () => {
+    const del = vi.spyOn(apiClient.api, 'delete').mockResolvedValue({ ok: true });
+    mockApiGetSequence([FULL_LEARNING, { ...FULL_LEARNING, autoMemories: [] }]);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderWithQuery(<LearningTab />);
+    await waitFor(() => {
+      expect(screen.getByTestId('delete-memory-1')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId('delete-memory-1'));
+    await waitFor(() => {
+      expect(del).toHaveBeenCalledWith('/api/memory/auto/1');
+    });
+    confirmSpy.mockRestore();
+  });
+
+  it('shows a pinned badge on pinned memories', async () => {
+    const learning = {
+      ...FULL_LEARNING,
+      autoMemories: [
+        { id: 2, key: 'pin-this', content: 'Pinned fact', importance: 0.9, pinned: 1 },
+      ],
+    };
+    mockApiGetSequence([learning]);
+    renderWithQuery(<LearningTab />);
+    await waitFor(() => {
+      expect(screen.getByText('pin-this')).toBeTruthy();
+      expect(screen.getByLabelText('pinned')).toBeTruthy();
+    });
+  });
+
+  it('expands a pending skill into a diff preview', async () => {
+    const draft = { name: 'jwtDebugFlow', body: 'Debug JWT expiry.', existingBody: 'The old body.' };
+    mockApiGetSequence([FULL_LEARNING, draft]);
+    renderWithQuery(<LearningTab />);
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-skill-jwtDebugFlow')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId('preview-skill-jwtDebugFlow'));
+    await waitFor(() => {
+      expect(screen.getByText(/Debug JWT expiry/)).toBeTruthy();
+      expect(screen.getByText(/The old body/)).toBeTruthy();
+    });
+  });
+
+  it('shows a loading state while the draft is fetched', async () => {
+    const draft = { name: 'jwtDebugFlow', body: 'Debug JWT expiry.', existingBody: null };
+    mockApiGetSequence([FULL_LEARNING, draft]);
+    renderWithQuery(<LearningTab />);
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-skill-jwtDebugFlow')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId('preview-skill-jwtDebugFlow'));
+    expect(screen.getByText(/Loading draft/)).toBeTruthy();
+  });
+});
+
+describe('v3 — JourneyTab', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders grouped timeline events', async () => {
+    mockApiGetSequence([
+      {
+        items: [
+          { id: 2, timestamp: '2026-08-03 10:00:00', sessionId: 'wb_1', eventSummary: 'User asked: fix CI', category: 'workbench' },
+          { id: 1, timestamp: '2026-08-03 09:00:00', sessionId: null, eventSummary: 'Memory cap active: pruned 3 memories', category: 'memory' },
+        ],
+        count: 2,
+      },
+    ]);
+    renderWithQuery(<JourneyTab />);
+    await waitFor(() => {
+      expect(screen.getByText(/fix CI/)).toBeTruthy();
+      expect(screen.getByText(/pruned 3 memories/)).toBeTruthy();
+      expect(screen.getByText('workbench')).toBeTruthy();
+      expect(screen.getByText('memory')).toBeTruthy();
+    });
+  });
+
+  it('renders an empty state', async () => {
+    mockApiGetSequence([{ items: [], count: 0 }]);
+    renderWithQuery(<JourneyTab />);
+    await waitFor(() => {
+      expect(screen.getByText(/No timeline entries yet/)).toBeTruthy();
+    });
+  });
 });
 
 describe('v3 — SystemHealthTab', () => {
@@ -144,6 +253,18 @@ describe('v3 — BrainDashboard tab switching', () => {
     fireEvent.click(screen.getByText('System Health'));
     await waitFor(() => {
       expect(screen.getByText('Phase 4 — Learned Heuristics')).toBeTruthy();
+    });
+  });
+
+  it('switches to the Journey tab', async () => {
+    mockApiGetSequence([
+      FULL_LEARNING,
+      { items: [{ id: 1, timestamp: '2026-08-03 10:00:00', sessionId: 'wb_1', eventSummary: 'User asked: fix CI', category: 'workbench' }], count: 1 },
+    ]);
+    renderWithQuery(<BrainDashboard />);
+    fireEvent.click(screen.getByTestId('brain-tab-journey'));
+    await waitFor(() => {
+      expect(screen.getByText(/fix CI/)).toBeTruthy();
     });
   });
 });

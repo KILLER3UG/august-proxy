@@ -315,10 +315,10 @@ def buildSystemPrompt(
     session._last_recalled_memories = None
     # Fresh verifier gate receipts for this turn (see system_tools._updateState).
     session._verification_receipts = None
-    # Auto-memories are on-demand only: do not FTS-prefetch into the system
-    # prompt every turn. The model pulls past-session context via memory_search /
-    # fact_search / context_read / brain_query when the user asks about prior work.
-    # (Previously getRelevantMemories() injected <auto_memories> every turn.)
+    # Auto-memories are on-demand by default; the budget-gated auto-recall
+    # below injects a small recall when there is headroom. The model pulls
+    # deeper past-session context via memory_search / fact_search /
+    # context_read / brain_query when the user asks about prior work.
     _HEURISTIC_CAP = 15
     try:
         from app.services.memory_store import _conn as brainConn
@@ -424,9 +424,32 @@ def buildSystemPrompt(
         providerName = provider.get('name', '') if isinstance(provider, dict) else str(provider)
         modelName = model.get('name', '') if isinstance(model, dict) else str(model)
         msgsForBudget = getattr(session, 'messages', []) or []
-        cognitiveBudget = computeBudget(msgsForBudget, model=modelName or None, provider=providerName or None)
+        # Budget against the model's real window, not a fixed default, so the
+        # pressure signal and the auto-recall gate below reflect reality.
+        window = _resolveModelContextWindow(
+            modelName or '', provider if isinstance(provider, dict) else None
+        )
+        cognitiveBudget = computeBudget(
+            msgsForBudget,
+            model=modelName or None,
+            provider=providerName or None,
+            maxContext=window,
+        )
     except Exception:
         logger.debug('prompt: cognitive budget failed', exc_info=True)
+    # Budget-gated auto-recall: with headroom, surface the most relevant past
+    # memories directly; under pressure the on-demand memory tools stay the
+    # only recall path so we never push the conversation toward compaction.
+    try:
+        if _shouldAutoRecall(cognitiveBudget) and not memory.get('autoMemories'):
+            from app.services.memory.auto_memory import getRelevantMemories
+
+            recalled = getRelevantMemories(_lastUserMessageText(session), limit=5) or []
+            if recalled:
+                session._last_recalled_memories = recalled
+                memory['autoMemories'] = cast(list[JsonValue], recalled)
+    except Exception:
+        logger.debug('prompt: auto-recall failed', exc_info=True)
     if tools is None:
         tools = toolDefinitions(session)
     tool_names: list[str] = []
@@ -569,6 +592,21 @@ def _shouldAutoCompact(attention_pressure: str, turns_since_compaction: int) -> 
     Cooldown avoids re-compacting every turn once we are near the window.
     """
     return attention_pressure in ('high', 'critical') and turns_since_compaction >= 2
+
+
+def _shouldAutoRecall(cognitiveBudget: dict[str, object] | None, minHeadroom: int = 6000) -> bool:
+    """Auto-recall gate: inject past memories only when there is prompt headroom.
+
+    ``low``/``medium`` attention pressure plus at least ``minHeadroom``
+    remaining tokens keeps recall free of cost under pressure — the on-demand
+    memory tools are the fallback there.
+    """
+    if not cognitiveBudget:
+        return False
+    pressure = as_str(cognitiveBudget.get('attention_pressure'), '')
+    raw_remaining = cognitiveBudget.get('remaining_tokens')
+    remaining = int(raw_remaining) if isinstance(raw_remaining, (int, float)) else 0
+    return pressure in ('low', 'medium') and remaining >= minHeadroom
 
 
 # Snake_case alias for tests / external callers.
@@ -1421,7 +1459,22 @@ async def _sendWorkbenchMessageStreamImpl(
             threshold = max(4096, int(contextWindow * 0.55))
             currentMessages = list(session.messages)
             if _shouldAutoCompact(attentionPressure, turnsSinceCompaction):
-                compressed = compressMessages(currentMessages, threshold=threshold, head_count=4, tail_count=6)
+                summarizer = None
+                try:
+                    from app.services.cognitive_config import get_features
+                    from app.services.workbench.providers import make_compactor_llm_client
+
+                    if get_features().get('llm_compactor', False):
+                        summarizer = make_compactor_llm_client(resolvedProvider, resolvedModel)
+                except Exception:
+                    summarizer = None
+                compressed = await compressMessages(
+                    currentMessages,
+                    threshold=threshold,
+                    head_count=4,
+                    tail_count=6,
+                    summarizer=summarizer,
+                )
                 compressedTokens = estimateTokens(compressed)
                 if compressedTokens < originalTokens:
                     compressedCount = len(currentMessages) - len(compressed)
@@ -2183,6 +2236,15 @@ async def _sendWorkbenchMessageStreamImpl(
                             'code': 'session_persist_failed',
                         }
                     )
+            # Journey timeline: one entry per completed turn (last user ask).
+            try:
+                from app.services.memory_store.rest import write_timeline_event
+
+                lastAsk = _lastUserMessageText(session)[:240]
+                if lastAsk:
+                    write_timeline_event(session.id, lastAsk, category='workbench')
+            except Exception:
+                logger.debug('workbench timeline write failed', exc_info=True)
             # Record activity so cognitive idle consolidation timer resets.
             try:
                 from app.services.cognitive_boot import record_user_activity
@@ -2278,6 +2340,14 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
 
     try:
         extractAndSaveTodos(messages)
+    except Exception:
+        pass
+    try:
+        from app.services.memory.auto_memory import consolidate_conv_summaries
+
+        merged = consolidate_conv_summaries()
+        if merged:
+            logger.debug('memory: merged %s conversation summaries into an episode', merged)
     except Exception:
         pass
     try:

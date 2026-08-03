@@ -7,6 +7,7 @@ Port of backend/services/memory/context-compressor.js (177 lines).
 
 from __future__ import annotations
 
+import inspect
 import os
 from typing import Callable
 
@@ -131,7 +132,7 @@ def _extractSummaryText(msg: dict[str, object], summaryMarker: str = DEFAULT_SUM
     return '\n'.join(lines[2:-1])
 
 
-def compressMessages(
+async def compressMessages(
     messages: list[dict[str, object]],
     threshold: int,
     head_count: int = DEFAULT_HEAD_COUNT,
@@ -148,7 +149,8 @@ def compressMessages(
         threshold: Token threshold to compress under.
         head_count: Number of messages to preserve at the start.
         tail_count: Number of messages to preserve at the end.
-        summarizer: Optional async callable that returns a summary string.
+        summarizer: Optional callable — sync or async — that returns a summary
+            string; awaited transparently. ``localSummarize`` is the default.
 
     Returns:
         Compressed message list (may be unchanged if already under threshold).
@@ -172,6 +174,8 @@ def compressMessages(
         return list(messages)
     if summarizer:
         summaryText = summarizer(middle)
+        if inspect.isawaitable(summaryText):
+            summaryText = await summaryText
     else:
         summaryText = localSummarize(middle)
     if priorSummaryTexts:

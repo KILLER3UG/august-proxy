@@ -35,7 +35,18 @@ async def run_with_best_backend(
     *,
     timeout: float,
 ) -> 'SandboxResult':
-    """Dispatch to the strongest available backend, else soft."""
+    """Dispatch to the strongest available backend, else soft.
+
+    Hardline protected-path rules run first, before any backend and before
+    the Full Access short-circuit — they cannot be overridden by mode.
+    """
+    from app.services.sandbox.hardline import check_hardline_command
+    from app.services.sandbox.policy import SandboxResult
+
+    denial = check_hardline_command(command)
+    if denial:
+        return SandboxResult(ok=False, denial_reason=denial, enforcement='soft', sandboxed=True, hardline=True)
+
     if policy.is_full_access:
         from app.services.sandbox.backends.fallback import run_unsandboxed
 

@@ -38,6 +38,8 @@ def _provider_to_dict(p: object) -> dict:
                     'pinned': m.pinned,
                     'source': m.source,
                     'apiFormat': m.api_format,
+                    'supportsReasoningEffort': m.supports_reasoning_effort,
+                    'maxReasoningEffort': m.max_reasoning_effort,
                 }
                 for m in p.models
             ],
@@ -428,6 +430,10 @@ async def addModel(providerId: str, body: ModelCreate):
             }
             if body.api_format:
                 entry['apiFormat'] = body.api_format
+            if body.supports_reasoning_effort is not None:
+                entry['supportsReasoningEffort'] = body.supports_reasoning_effort
+            if body.max_reasoning_effort:
+                entry['maxReasoningEffort'] = body.max_reasoning_effort
             p_models.append(entry)
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()

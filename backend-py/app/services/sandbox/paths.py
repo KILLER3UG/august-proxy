@@ -37,6 +37,9 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
 
     Returns ``(resolved_path, error_message)``. On success error is None.
     When workspace is empty, paths resolve freely (legacy / no-workspace sessions).
+
+    Hardline protected paths are blocked first, in every mode and with or
+    without a workspace.
     """
     root = resolve_workspace_root(workspace)
     try:
@@ -46,6 +49,15 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
         resolved = candidate.resolve(strict=False)
     except OSError as exc:
         return None, f'Error: Invalid path: {exc}'
+
+    from app.services.sandbox.hardline import check_hardline_path
+
+    denial = check_hardline_path(str(resolved), for_write=for_write)
+    if denial:
+        return None, (
+            f'Error: Sandbox hardline blocked {denial}. '
+            'This path is protected in every sandbox mode, including Full access.'
+        )
 
     if root is None:
         return resolved, None

@@ -10,7 +10,10 @@ run consolidation) and the System Health fan-out.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import os
+import re
+
+from fastapi import APIRouter, HTTPException
 
 from app.json_narrowing import as_int
 
@@ -75,6 +78,44 @@ async def rejectSkill(name: str):
 
     ok = rejectPendingSkill(name)
     return {'rejected': ok}
+
+
+@router.get('/skills/{name}/draft')
+async def getSkillDraft(name: str):
+    """Fetch a pending skill's draft body plus the active skill body for diffing.
+
+    ``existingBody`` is the body of the active skill when one already exists
+    under this name (patch case); null for brand-new skills.
+    """
+    from app.services.memory_store import _conn
+
+    conn = _conn()
+    row = conn.execute(
+        'SELECT name, draft_path FROM pending_skills WHERE name = ?',
+        (name,),
+    ).fetchone()
+    if not row or not row['draft_path'] or not os.path.exists(row['draft_path']):
+        raise HTTPException(status_code=404, detail='Draft not found')
+    try:
+        raw = open(row['draft_path'], encoding='utf-8').read()
+    except OSError:
+        raise HTTPException(status_code=404, detail='Draft not found')
+    m = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', raw, re.DOTALL)
+    body = m.group(2).strip() if m else raw.strip()
+    existingBody = None
+    try:
+        from app.services import skill_service
+
+        existing = skill_service.get(name)
+        if not existing:
+            kebab = skill_service._kebab_name(name)
+            if kebab and kebab != name:
+                existing = skill_service.get(kebab)
+        if existing and existing.get('instructions'):
+            existingBody = str(existing['instructions'])
+    except Exception:
+        pass
+    return {'name': row['name'], 'body': body, 'existingBody': existingBody}
 
 
 @router.post('/run-consolidation')

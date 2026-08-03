@@ -1,18 +1,66 @@
 /* v3 — Learning tab: heuristics, auto-memories, facts, sleep cycle, mutations */
-import { Sparkles, Brain, Clock, Zap, ListChecks, Trash2, Check, X, Play } from 'lucide-react';
+import { useState } from 'react';
+import { Sparkles, Brain, Clock, Zap, ListChecks, Trash2, Check, X, Play, Pin, User, ChevronDown, ChevronRight } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
+import { DiffView } from '@/components/chat/DiffView';
 import { PageLoader } from '@/components/PageLoader';
-import { useLearningData } from '@/hooks/useLearningData';
+import { useDeleteMemory, useLearningData } from '@/hooks/useLearningData';
 import { api } from '@/api/client';
+
+interface SkillDraft {
+  name: string;
+  body: string;
+  existingBody?: string | null;
+}
+
+function formatProfile(profile: unknown): string {
+  if (typeof profile === 'string') return profile;
+  if (!profile || typeof profile !== 'object') return String(profile ?? '');
+  const p = profile as Record<string, unknown>;
+  if (typeof p.summary === 'string' && p.summary) return p.summary;
+  if (Array.isArray(p.facts) && p.facts.length > 0) {
+    return (p.facts as Array<Record<string, unknown>>)
+      .map((f) => `- ${String(f.fact ?? '')}`)
+      .join('\n');
+  }
+  try {
+    return JSON.stringify(profile, null, 2);
+  } catch {
+    return String(profile);
+  }
+}
 
 export function LearningTab() {
   const { data, error, isFetching, dataUpdatedAt } = useLearningData();
   const qc = useQueryClient();
+  const deleteMemory = useDeleteMemory();
+  const [drafts, setDrafts] = useState<Record<string, SkillDraft | 'loading'>>({});
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['brain-learning'] });
+  };
+
+  const toggleDraft = (name: string) => {
+    if (drafts[name]) {
+      const next = { ...drafts };
+      delete next[name];
+      setDrafts(next);
+      return;
+    }
+    setDrafts((prev) => ({ ...prev, [name]: 'loading' }));
+    void api
+      .get<SkillDraft>(`/api/brain/skills/${encodeURIComponent(name)}/draft`)
+      .then((d) => setDrafts((prev) => ({ ...prev, [name]: d })))
+      .catch(() => {
+        toast.error('Failed to load draft');
+        setDrafts((prev) => {
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        });
+      });
   };
 
   const deleteHeuristic = useMutation({
@@ -164,6 +212,23 @@ export function LearningTab() {
         )}
       </Card>
 
+      {/* User profile summary */}
+      <Card className="p-4 space-y-3 md:col-span-2">
+        <div className="flex items-center gap-2">
+          <User className="size-4 text-primary" />
+          <h3 className="font-medium text-sm">User profile summary</h3>
+        </div>
+        {data.userProfile ? (
+          <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-sans max-h-48 overflow-y-auto">
+            {formatProfile(data.userProfile)}
+          </pre>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No profile yet — it builds from stable facts as you chat.
+          </p>
+        )}
+      </Card>
+
       {/* Auto-memories */}
       <Card className="p-4 space-y-3">
         <div className="flex items-center gap-2">
@@ -177,9 +242,27 @@ export function LearningTab() {
         ) : (
           <ul className="space-y-2 max-h-60 overflow-y-auto">
             {data.autoMemories.map((m) => (
-              <li key={m.id} className="text-xs p-2 rounded hover:bg-muted/30">
-                <p className="font-medium">{m.key}</p>
-                <p className="text-muted-foreground line-clamp-2">{m.content}</p>
+              <li key={m.id} className="text-xs p-2 rounded hover:bg-muted/30 flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium flex items-center gap-1">
+                    {m.key}
+                    {m.pinned ? (
+                      <Pin className="size-3 text-primary shrink-0" aria-label="pinned" />
+                    ) : null}
+                  </p>
+                  <p className="text-muted-foreground line-clamp-2">{m.content}</p>
+                </div>
+                <button
+                  type="button"
+                  title="Delete memory"
+                  className="text-muted-foreground hover:text-danger p-1 shrink-0"
+                  data-testid={`delete-memory-${m.id}`}
+                  onClick={() => {
+                    if (confirm(`Delete this memory?\n\n${m.key}`)) deleteMemory.mutate(m.id);
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
               </li>
             ))}
           </ul>
@@ -227,29 +310,57 @@ export function LearningTab() {
         ) : (
           <ul className="space-y-2">
             {data.pendingSkills.map((s) => (
-              <li key={s.id} className="text-xs flex items-start gap-2 p-2 rounded border border-border">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium">{s.name}</p>
-                  <p className="text-muted-foreground">{s.description}</p>
+              <li key={s.id} className="text-xs p-2 rounded border border-border">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">{s.name}</p>
+                    <p className="text-muted-foreground">{s.description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="p-1 text-muted-foreground hover:text-foreground"
+                    title="Preview diff"
+                    data-testid={`preview-skill-${s.name}`}
+                    onClick={() => toggleDraft(s.name)}
+                  >
+                    {drafts[s.name] ? (
+                      <ChevronDown className="size-3.5" />
+                    ) : (
+                      <ChevronRight className="size-3.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1 text-success"
+                    title="Approve"
+                    data-testid={`approve-skill-${s.name}`}
+                    onClick={() => approveSkill.mutate(s.name)}
+                  >
+                    <Check className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1 text-danger"
+                    title="Reject"
+                    data-testid={`reject-skill-${s.name}`}
+                    onClick={() => rejectSkill.mutate(s.name)}
+                  >
+                    <X className="size-3.5" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="p-1 text-success"
-                  title="Approve"
-                  data-testid={`approve-skill-${s.name}`}
-                  onClick={() => approveSkill.mutate(s.name)}
-                >
-                  <Check className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  className="p-1 text-danger"
-                  title="Reject"
-                  data-testid={`reject-skill-${s.name}`}
-                  onClick={() => rejectSkill.mutate(s.name)}
-                >
-                  <X className="size-3.5" />
-                </button>
+                {drafts[s.name] ? (
+                  <div className="mt-2">
+                    {drafts[s.name] === 'loading' ? (
+                      <p className="text-muted-foreground">Loading draft…</p>
+                    ) : (
+                      <DiffView
+                        oldContent={(drafts[s.name] as SkillDraft).existingBody ?? ''}
+                        newContent={(drafts[s.name] as SkillDraft).body}
+                        maxLines={60}
+                      />
+                    )}
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

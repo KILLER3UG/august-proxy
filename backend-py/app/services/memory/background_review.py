@@ -189,6 +189,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
 
     # --- Facts -> coreMemory + graph ---
     rawFacts = recommendations.get('facts') or recommendations.get('memory')
+    factTexts: list[str] = []
     for fact in as_list(rawFacts, []):
         if isinstance(fact, str):
             content = fact
@@ -200,11 +201,26 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
         if not content:
             continue
         try:
+            from app.services.memory.memory_scrubber import emit_scrub_event, find_secrets
+
+            if find_secrets(content):
+                emit_scrub_event(layer='background_review')
+                continue
             _saveFact(action, content)
             as_list(result['facts_added']).append(content[:80])
             _syncFactToGraph(content)
+            factTexts.append(content)
         except Exception as exc:
             as_list(result['errors']).append(str(exc))
+
+    # --- User profile: fold stable facts into the durable summary blob ---
+    if factTexts:
+        try:
+            from app.services.memory.user_profile import consolidateUserProfile
+
+            consolidateUserProfile(factTexts)
+        except Exception as exc:
+            as_list(result['errors']).append(f'profile: {exc}')
 
     # --- Summary brain event ---
     try:
@@ -369,7 +385,8 @@ def _parseRecommendations(raw: str) -> dict[str, object]:
 
 
 def _saveFact(action: str, content: str) -> None:
-    """Save a fact to the core memory KV store."""
+    """Save a fact to the core memory KV store (near-dups refresh, never twin)."""
+    from app.services.memory.user_profile import _similarity
     from app.services.memory_store import get_memory, save_memory
 
     KEY = 'coreMemory'
@@ -385,8 +402,15 @@ def _saveFact(action: str, content: str) -> None:
                 return
         facts.append(newFact)
     else:
-        for f in facts:
-            if isinstance(f, dict) and f.get('fact', '') == content:
+        for i, f in enumerate(facts):
+            if not isinstance(f, dict):
+                continue
+            existing = str(f.get('fact', ''))
+            if existing == content:
+                return
+            if _similarity(content, existing) >= 0.85:
+                facts[i] = newFact
+                save_memory(KEY, facts)
                 return
         facts.append(newFact)
     save_memory(KEY, facts)

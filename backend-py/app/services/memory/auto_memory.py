@@ -11,8 +11,10 @@ table instead of a JSON blob under one key in `memory_store`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import sqlite3
 from datetime import datetime, timezone
 
 from app.services.memory_store import get_memory, save_memory
@@ -20,6 +22,11 @@ from app.services.memory_store import get_memory, save_memory
 _MAXMemories = 100
 _AREAS_CATEGORIES = frozenset({'correction', 'learning', 'preference', 'user'})
 _TELEMETRY_KEY_PREFIXES = ('tool_failure_',)
+_ROW_COLS = 'id, key, content, category, importance, source, pinned, created_at, updated_at'
+_NEAR_DUP_THRESHOLD = 0.85
+_NEAR_DUP_IMPORTANCE_STEP = 0.1
+_EPISODE_MERGE_MIN = 8
+_EPISODE_MERGE_COUNT = 5
 
 
 def _conn():
@@ -46,46 +53,139 @@ def _is_telemetry_key(key: str) -> bool:
     return any(key.startswith(p) for p in _TELEMETRY_KEY_PREFIXES)
 
 
+def _parse_ts(value: object) -> datetime | None:
+    """Parse a stored timestamp — ISO 'Z' form or SQLite 'YYYY-MM-DD HH:MM:SS'."""
+    s = str(value or '').strip()
+    if not s:
+        return None
+    if s.endswith('Z'):
+        s = s[:-1] + '+00:00'
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        pass
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f'):
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _decay_factor(ts_value: object, half_life_days: float = 30.0) -> float:
+    """Recency decay in [0, 1] — 0.5 at ``half_life_days``, near 0 past ~5 half-lives."""
+    ts = _parse_ts(ts_value)
+    if ts is None:
+        return 1.0
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    age_days = max(0.0, (datetime.now(timezone.utc) - ts).total_seconds() / 86400.0)
+    return 0.5 ** (age_days / half_life_days)
+
+
+def _normalize_text(text: object) -> str:
+    """Lowercase and collapse punctuation/whitespace — basis for near-dup checks."""
+    return ' '.join(re.sub(r'[^a-z0-9]+', ' ', str(text or '').lower()).split())
+
+
+def _similarity(a: object, b: object) -> float:
+    """Token-overlap similarity in [0, 1]; 1.0 when one text covers the other."""
+    ta = set(_normalize_text(a).split())
+    tb = set(_normalize_text(b).split())
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / min(len(ta), len(tb))
+
+
+def _find_near_dup(conn, content: object, exclude_key: str = '') -> sqlite3.Row | None:
+    """Return the best-matching existing row when ``content`` near-duplicates it.
+
+    Update-over-duplicate: refreshing the existing memory (recency + importance)
+    is preferred over inserting a twin.
+    """
+    rows = conn.execute(
+        f'SELECT {_ROW_COLS} FROM auto_memories ORDER BY updated_at DESC LIMIT 50'
+    ).fetchall()
+    best, best_score = None, 0.0
+    for r in rows:
+        if r['key'] == exclude_key:
+            continue
+        score = _similarity(content, r['content'])
+        if score > best_score:
+            best, best_score = r, score
+    return best if best_score >= _NEAR_DUP_THRESHOLD else None
+
+
 def _content_preview(content: object) -> str:
     if isinstance(content, (dict, list)):
         return json.dumps(content, default=str, ensure_ascii=False)
     return str(content or '')
 
 
+def _evict_rows(conn, count: int, protect_user: bool) -> list[int]:
+    """Delete the ``count`` lowest-scoring rows (importance × recency decay)."""
+    if count <= 0:
+        return []
+    where = "WHERE COALESCE(source, '') != 'user' AND COALESCE(pinned, 0) = 0" if protect_user else ''
+    rows = conn.execute(f'SELECT id, importance, updated_at FROM auto_memories {where}').fetchall()
+    scored = [
+        (float(r['importance'] or 0.5) * _decay_factor(r['updated_at']), int(r['id']))
+        for r in rows
+    ]
+    scored.sort(key=lambda x: (x[0], x[1]))
+    ids = [i for _, i in scored[:count]]
+    if ids:
+        placeholders = ','.join('?' for _ in ids)
+        conn.execute(f'DELETE FROM auto_memories WHERE id IN ({placeholders})', ids)
+    return ids
+
+
 def _enforce_cap(conn) -> None:
-    """Keep at most ``_MAXMemories`` rows, preferring to drop low-importance auto rows first."""
+    """Keep at most ``_MAXMemories`` rows, consolidating before evicting.
+
+    Conversation summaries are merged into episodes first; only the remaining
+    overflow is pruned (low-importance stale rows, user/pinned protected).
+    Pruning is surfaced as a brain event plus an episodic-timeline entry so
+    memory loss is never silent.
+    """
+    total = conn.execute('SELECT COUNT(*) AS c FROM auto_memories').fetchone()['c']
+    if int(total) <= _MAXMemories:
+        return
+    # Consolidation-first: merging old conversation summaries frees rows.
+    try:
+        consolidate_conv_summaries()
+    except Exception:
+        pass
     total = conn.execute('SELECT COUNT(*) AS c FROM auto_memories').fetchone()['c']
     if int(total) <= _MAXMemories:
         return
     overflow = int(total) - _MAXMemories
-    conn.execute(
-        """
-        DELETE FROM auto_memories WHERE id IN (
-            SELECT id FROM auto_memories
-            WHERE COALESCE(source, '') != 'user'
-            ORDER BY importance ASC, id ASC
-            LIMIT ?
-        )
-        """,
-        (overflow,),
-    )
+    removed = _evict_rows(conn, overflow, protect_user=True)
     total = conn.execute('SELECT COUNT(*) AS c FROM auto_memories').fetchone()['c']
-    if int(total) <= _MAXMemories:
-        return
-    overflow = int(total) - _MAXMemories
-    conn.execute(
-        """
-        DELETE FROM auto_memories WHERE id IN (
-            SELECT id FROM auto_memories
-            ORDER BY
-              CASE WHEN COALESCE(source, '') = 'user' THEN 1 ELSE 0 END ASC,
-              importance ASC,
-              id ASC
-            LIMIT ?
-        )
-        """,
-        (overflow,),
-    )
+    if int(total) > _MAXMemories:
+        removed += _evict_rows(conn, int(total) - _MAXMemories, protect_user=False)
+    if removed:
+        try:
+            from app.services.brain_event_bus import emitBrainEvent
+
+            emitBrainEvent(
+                category='memory',
+                layer='auto_memory.cap',
+                summary=f'Memory cap active: pruned {len(removed)} low-value/stale memories',
+                meta={'pruned': len(removed)},
+            )
+        except Exception:
+            pass
+        try:
+            from app.services.memory_store.rest import write_timeline_event
+
+            write_timeline_event(
+                None,
+                f'Memory cap active: pruned {len(removed)} low-value/stale memories',
+                category='memory',
+            )
+        except Exception:
+            pass
 
 
 def saveAutoMemory(
@@ -94,65 +194,58 @@ def saveAutoMemory(
     category: str = 'auto',
     importance: float = 0.5,
     source: str = 'auto',
+    pinned: int | bool = 0,
 ) -> None:
-    """Save an automatically captured memory as an individual FTS-indexed row."""
+    """Save an automatically captured memory as an individual FTS-indexed row.
+
+    ``pinned`` memories are always-loaded context (like user-added memory)
+    rather than on-demand recall. A near-duplicate insert refreshes the
+    existing row (recency + importance) instead of creating a twin.
+    """
     conn = _conn()
     now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     contentJson = content if isinstance(content, str) else json.dumps(content)
     src = _normalize_source(source)
+    pin = 1 if pinned else 0
+    # Backstop: secrets never enter long-lived memory from model/agent paths.
+    # User-added memories (UI / API) are the user's own choice.
+    if not _is_user_source(src):
+        try:
+            from app.services.memory.memory_scrubber import emit_scrub_event, find_secrets
+
+            if find_secrets(contentJson):
+                emit_scrub_event(layer='auto_memory')
+                return
+        except Exception:
+            pass
     existing = conn.execute('SELECT id, source FROM auto_memories WHERE key = ?', (key,)).fetchone()
     if existing:
         keep_src = 'user' if _is_user_source(existing['source']) and src != 'user' else src
+        # OR-semantics on pinned: a write never unpins an explicitly pinned memory.
         conn.execute(
             'UPDATE auto_memories SET content = ?, importance = ?, category = ?, '
-            'source = ?, updated_at = ? WHERE id = ?',
-            (contentJson, importance, category, keep_src, now, existing['id']),
+            'source = ?, pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ? WHERE id = ?',
+            (contentJson, importance, category, keep_src, pin, now, existing['id']),
         )
     else:
+        dup = _find_near_dup(conn, content, exclude_key=key)
+        if dup is not None:
+            conn.execute(
+                'UPDATE auto_memories SET importance = MIN(1.0, importance + ?), '
+                'pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ? WHERE id = ?',
+                (_NEAR_DUP_IMPORTANCE_STEP, pin, now, dup['id']),
+            )
+            conn.commit()
+            _emit_memory_saved(key, category, importance, src, preview=contentJson[:160])
+            return
         conn.execute(
-            'INSERT INTO auto_memories (key, content, category, importance, source, created_at, updated_at) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?)',
-            (key, contentJson, category, importance, src, now, now),
+            'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (key, contentJson, category, importance, src, pin, now, now),
         )
     _enforce_cap(conn)
     conn.commit()
-    try:
-        from app.services import logger as _tl
-
-        _tl.emitLogEvent(
-            {
-                'category': 'auto_memory',
-                'level': 'info',
-                'message': f'Auto-memory saved: {key}',
-                'metadata': {
-                    'key': key,
-                    'category': category,
-                    'importance': importance,
-                    'source': src,
-                },
-            }
-        )
-    except Exception:
-        pass
-    try:
-        from app.services.feature_flow import emit_feature_flow
-
-        preview = contentJson if isinstance(contentJson, str) else str(contentJson)
-        emit_feature_flow(
-            feature='memory',
-            stage='write',
-            summary=f'Remembered: {key}',
-            status='ok',
-            meta={
-                'key': key,
-                'category': category,
-                'importance': importance,
-                'source': src,
-                'preview': preview[:160],
-            },
-        )
-    except Exception:
-        pass
+    _emit_memory_saved(key, category, importance, src, preview=contentJson[:160])
     try:
         from app.services.cognitive_config import get_features
 
@@ -165,7 +258,7 @@ def saveAutoMemory(
 
                 vector_db.upsert(
                     text,
-                    metadata={'key': key, 'category': category, 'source': src},
+                    metadata={'key': key, 'category': category, 'source': src, 'pinned': pin},
                     namespace='auto_memory',
                 )
             except Exception:
@@ -187,6 +280,7 @@ def saveAutoMemory(
                         'label': label,
                         'preview': str(ui.get('summary') or preview_text)[:240],
                         'source': src,
+                        'pinned': pin,
                     },
                 )
                 if category and category not in ('auto', 'general', ''):
@@ -198,6 +292,46 @@ def saveAutoMemory(
                     graph_memory.addRelation(category, key, 'contains')
             except Exception:
                 pass
+    except Exception:
+        pass
+
+
+def _emit_memory_saved(key: str, category: str, importance: float, source: str, preview: str = '') -> None:
+    """Emit log + feature-flow entries for a memory write (shared by all paths)."""
+    try:
+        from app.services import logger as _tl
+
+        _tl.emitLogEvent(
+            {
+                'category': 'auto_memory',
+                'level': 'info',
+                'message': f'Auto-memory saved: {key}',
+                'metadata': {
+                    'key': key,
+                    'category': category,
+                    'importance': importance,
+                    'source': source,
+                },
+            }
+        )
+    except Exception:
+        pass
+    try:
+        from app.services.feature_flow import emit_feature_flow
+
+        emit_feature_flow(
+            feature='memory',
+            stage='write',
+            summary=f'Remembered: {key}',
+            status='ok',
+            meta={
+                'key': key,
+                'category': category,
+                'importance': importance,
+                'source': source,
+                'preview': preview,
+            },
+        )
     except Exception:
         pass
 
@@ -299,25 +433,39 @@ def enrich_memory_for_model(item: dict[str, object]) -> dict[str, object]:
 
 
 def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
-    """Find memories relevant to a query using FTS5 ranking."""
+    """Find memories relevant to a query using FTS5 ranking + recency decay.
+
+    FTS rank supplies the relevance half of the score; ``_decay_factor`` on
+    ``updated_at`` supplies the recency half, so fresh memories win ties and
+    stale entries fall out of the top-k unless strongly relevant.
+    """
     conn = _conn()
     lim = max(1, min(int(limit), 50))
     from app.services.memory_store import _fts_match_query, _row_as_wire
 
-    cols = 't.id, t.key, t.content, t.category, t.importance, t.source, t.created_at, t.updated_at'
+    cols = 't.id, t.key, t.content, t.category, t.importance, t.source, t.pinned, t.created_at, t.updated_at'
     try:
         ftsQ = _fts_match_query(query) if query and query.strip() else ''
         if ftsQ:
             rows = conn.execute(
-                f'SELECT {cols} '
+                f'SELECT {cols}, fts.rank '
                 'FROM auto_memories_fts AS fts '
                 'JOIN auto_memories AS t ON fts.rowid = t.rowid '
                 'WHERE auto_memories_fts MATCH ? ORDER BY rank LIMIT ?',
-                (ftsQ, lim),
+                (ftsQ, max(lim * 4, 50)),
             ).fetchall()
             if rows:
-                result = []
+                maxAbs = max((abs(float(r['rank'])) for r in rows if r['rank'] is not None), default=1.0)
+                maxAbs = max(maxAbs, 1e-9)
+                scored = []
                 for r in rows:
+                    rank = abs(float(r['rank'])) if r['rank'] is not None else 0.0
+                    norm = min(1.0, rank / maxAbs)
+                    decay = _decay_factor(r['updated_at'])
+                    scored.append((norm * 0.6 + decay * 0.4, r))
+                scored.sort(key=lambda x: x[0], reverse=True)
+                result = []
+                for _, r in scored[:lim]:
                     item = _row_as_wire(r)
                     try:
                         item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
@@ -332,7 +480,7 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     if like == '%%':
         return []
     allRows = conn.execute(
-        'SELECT id, key, content, category, importance, source, created_at, updated_at '
+        'SELECT id, key, content, category, importance, source, pinned, created_at, updated_at '
         'FROM auto_memories WHERE key LIKE ? OR content LIKE ? '
         'ORDER BY importance DESC LIMIT ?',
         (like, like, max(lim * 4, 20)),
@@ -350,6 +498,7 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
         score += float(r['importance'] or 0) * 0.2
         if _is_user_source(r['source']):
             score += 0.15
+        score += 0.25 * _decay_factor(r['updated_at'])
         if score > 0:
             item = _row_as_wire(r)
             try:
@@ -362,14 +511,14 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
 
 
 def list_user_added_memories(limit: int = 50) -> list[dict[str, object]]:
-    """Return user-authored memories for every-turn prompt injection."""
+    """Return user-authored and pinned memories for every-turn prompt injection."""
     conn = _conn()
     from app.services.memory_store import _row_as_wire
 
     lim = max(1, min(int(limit), 100))
     rows = conn.execute(
-        'SELECT id, key, content, category, importance, source, created_at, updated_at '
-        "FROM auto_memories WHERE source = 'user' "
+        f'SELECT {_ROW_COLS} '
+        "FROM auto_memories WHERE source = 'user' OR pinned = 1 "
         'ORDER BY importance DESC, updated_at DESC LIMIT ?',
         (lim,),
     ).fetchall()
@@ -408,7 +557,7 @@ def list_all_auto_memories(
         clauses.append("COALESCE(source, '') != 'user'")
     where = f'WHERE {" AND ".join(clauses)}' if clauses else ''
     rows = conn.execute(
-        f'SELECT id, key, content, category, importance, source, created_at, updated_at '
+        f'SELECT {_ROW_COLS} '
         f'FROM auto_memories {where} ORDER BY category ASC, updated_at DESC, id DESC',
         params,
     ).fetchall()
@@ -432,8 +581,7 @@ def get_auto_memory(memory_id: int) -> dict[str, object] | None:
     from app.services.memory_store import _row_as_wire
 
     row = conn.execute(
-        'SELECT id, key, content, category, importance, source, created_at, updated_at '
-        'FROM auto_memories WHERE id = ?',
+        f'SELECT {_ROW_COLS} FROM auto_memories WHERE id = ?',
         (memory_id,),
     ).fetchone()
     if not row:
@@ -466,6 +614,7 @@ def update_auto_memory(
     category: str | None = None,
     importance: float | None = None,
     source: str | None = None,
+    pinned: int | bool | None = None,
 ) -> bool:
     """Update fields on an existing ``auto_memories`` row by id."""
     conn = _conn()
@@ -487,6 +636,9 @@ def update_auto_memory(
     if source is not None:
         sets.append('source = ?')
         params.append(_normalize_source(source))
+    if pinned is not None:
+        sets.append('pinned = ?')
+        params.append(1 if pinned else 0)
     if not sets:
         return True
     sets.append('updated_at = ?')
@@ -515,6 +667,110 @@ def deleteOrphanedBlob() -> bool:
         save_memory('autoMemories', None)
         return True
     return False
+
+
+def rememberMemory(
+    content: str,
+    category: str = 'preference',
+    importance: float = 0.7,
+    pinned: int | bool = 0,
+) -> dict[str, object] | None:
+    """Model-driven memory write — store an intentional fact for later recall.
+
+    A stable key is derived from the normalized content, so repeating the
+    same fact refreshes the same row (update-over-duplicate). Returns the
+    enriched stored row (or the refreshed near-duplicate twin) so callers
+    can surface the id/key back to the model; None when content is empty.
+    """
+    normalized = _normalize_text(content)
+    if not normalized:
+        return None
+    key = f'remembered_{hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:8]}'
+    conn = _conn()
+    # Exact repeat of a model-written memory reinforces it (importance bump)
+    # and never unpins — the same update-over-duplicate semantics as near-dups.
+    existing = conn.execute('SELECT id FROM auto_memories WHERE key = ?', (key,)).fetchone()
+    if existing is not None:
+        now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        pin = 1 if pinned else 0
+        conn.execute(
+            'UPDATE auto_memories SET importance = MIN(1.0, importance + ?), '
+            'pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ? WHERE id = ?',
+            (_NEAR_DUP_IMPORTANCE_STEP, pin, now, existing['id']),
+        )
+        conn.commit()
+    else:
+        saveAutoMemory(
+            key,
+            content,
+            category=category,
+            importance=importance,
+            source='auto',
+            pinned=pinned,
+        )
+    row = conn.execute(
+        f'SELECT {_ROW_COLS} FROM auto_memories WHERE key = ?',
+        (key,),
+    ).fetchone()
+    if row is None:
+        dup = _find_near_dup(conn, content, exclude_key=key)
+        if dup is not None:
+            row = conn.execute(
+                f'SELECT {_ROW_COLS} FROM auto_memories WHERE id = ?',
+                (dup['id'],),
+            ).fetchone()
+    if row is None:
+        return None
+    from app.services.memory_store import _row_as_wire
+
+    item = _row_as_wire(row)
+    try:
+        item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return enrich_memory_for_model(item)
+
+
+def consolidate_conv_summaries() -> int:
+    """Merge the oldest conversation summaries into one durable episode memory.
+
+    Once ``_EPISODE_MERGE_MIN`` per-session summaries exist, the oldest
+    ``_EPISODE_MERGE_COUNT`` are folded into a single ``episode_<n>`` row
+    (importance 0.55) and the originals deleted — bounded, recallable
+    cross-session memory without unbounded summary growth. Returns the
+    number of merged rows (0 when below the threshold).
+    """
+    conn = _conn()
+    rows = conn.execute(
+        "SELECT id, content FROM auto_memories "
+        "WHERE key LIKE 'conv_summary_%' ORDER BY updated_at ASC"
+    ).fetchall()
+    if len(rows) < _EPISODE_MERGE_MIN:
+        return 0
+    oldest = rows[:_EPISODE_MERGE_COUNT]
+    parts = [str(r['content'] or '') for r in oldest]
+    merged = '; '.join(parts).strip() or 'Consolidated past conversations'
+    # Max-based sequence: survives user deletion of earlier episode rows
+    # without colliding with a still-live key.
+    seqRow = conn.execute(
+        "SELECT COALESCE(MAX(CAST(REPLACE(key, 'episode_', '') AS INTEGER)), 0) AS m "
+        "FROM auto_memories WHERE key LIKE 'episode_%'"
+    ).fetchone()
+    seq = int(seqRow['m']) + 1
+    # Insert directly (not via saveAutoMemory): the merged row legitimately
+    # contains every remaining summary's tokens, so the near-dup check would
+    # absorb it into an existing row. FTS triggers index it on insert.
+    now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    conn.execute(
+        'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        (f'episode_{seq}', merged, 'conversation', 0.55, 'auto', 0, now, now),
+    )
+    ids = [int(r['id']) for r in oldest]
+    placeholders = ','.join('?' for _ in ids)
+    conn.execute(f'DELETE FROM auto_memories WHERE id IN ({placeholders})', ids)
+    conn.commit()
+    return len(ids)
 
 
 def extractAndSaveTodos(messages: list[dict[str, object]]) -> list[str]:

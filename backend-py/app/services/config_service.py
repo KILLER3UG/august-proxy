@@ -77,6 +77,15 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                         pinned=bool(m.get('pinned', False)),
                         source=str(m.get('source', 'manual')),
                         api_format=str(m.get('apiFormat') or m.get('api_format') or '') or None,
+                        supports_reasoning_effort=(
+                            m.get('supportsReasoningEffort')
+                            if m.get('supportsReasoningEffort') is not None
+                            else m.get('supports_reasoning_effort')
+                        ),
+                        max_reasoning_effort=(
+                            str(m.get('maxReasoningEffort') or m.get('max_reasoning_effort') or '')
+                            or None
+                        ),
                     )
                 )
         from app.providers.api_format import normalize_api_format
