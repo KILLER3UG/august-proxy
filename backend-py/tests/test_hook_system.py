@@ -234,6 +234,23 @@ class TestSecretGuard:
         results = await reg.emit(HookEvent.PRE_TOOL_USE, ctx)
         assert any(r.action == 'deny' for r in results)
 
+    @pytest.mark.asyncio
+    async def test_pre_tool_denies_nested_bulk_secret_write(self, _clean_registry):
+        from app.services.hooks.secret_guard import register
+
+        reg = _clean_registry
+        register(reg)
+        ctx = HookContext(
+            event=HookEvent.PRE_TOOL_USE, session_id='s1',
+            tool_name='bulk',
+            tool_args={
+                'operation': 'write_files',
+                'files': [{'path': '.env', 'content': 'TOKEN=sk-abc123def456ghi789jkl012'}],
+            },
+        )
+        results = await reg.emit(HookEvent.PRE_TOOL_USE, ctx)
+        assert any(r.action == 'deny' for r in results)
+
 
 # ─── Blast Radius (2.3) ───────────────────────────────────────────────────────
 

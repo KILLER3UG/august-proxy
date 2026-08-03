@@ -1,6 +1,4 @@
 [
-  "backend-py/app/services/aug_artifact_service.py:sessionId",
-  "backend-py/app/services/aug_artifact_service.py:workspacePath",
   "backend-py/app/services/aug_directive_service.py:workspacePath",
   "backend-py/app/services/blackboard_service.py:pollInterval",
   "backend-py/app/services/blackboard_service.py:sessionId",

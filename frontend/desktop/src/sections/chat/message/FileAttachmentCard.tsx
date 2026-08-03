@@ -5,6 +5,7 @@
 import { getFileIcon } from '@/lib/file-icon';
 import { cn } from '@/lib/utils';
 import type { FileAttachment } from '@/types/chat';
+import { openRightDrawerFile } from '@/components/shell/RightDrawerState';
 
 function extensionLabel(name: string): string {
   const ext = name.split('.').pop()?.toUpperCase();
@@ -25,15 +26,25 @@ export function FileAttachmentCard({
   const fi = getFileIcon(file.name);
   const Icon = fi.Icon;
   const badge = extensionLabel(file.name);
+  const canOpen = (file.status ?? 'ready') === 'ready';
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => {
+        if (canOpen) openRightDrawerFile(file);
+      }}
+      disabled={!canOpen}
       className={cn(
-        'relative w-[148px] overflow-hidden rounded-lg border border-border/70 bg-muted/40 shadow-sm',
+        'group relative w-[148px] overflow-hidden rounded-lg border border-border/70 bg-muted/40 text-left shadow-sm transition',
         'ring-1 ring-black/5',
+        canOpen
+          ? 'cursor-pointer hover:border-primary/60 hover:ring-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+          : 'cursor-default opacity-80',
         className,
       )}
-      title={file.name}
+      title={canOpen ? `Open ${file.name} in preview` : file.name}
+      aria-label={canOpen ? `Open ${file.name} in preview` : file.name}
     >
       <div className="relative aspect-[3/4] w-full bg-[#1a1a1c]">
         {thumb ? (
@@ -74,7 +85,7 @@ export function FileAttachmentCard({
           </span>
         ) : null}
       </div>
-    </div>
+    </button>
   );
 }
 

@@ -1,6 +1,6 @@
 /* ── Session list ───────────────────────────────────────────────────── */
-/* Top:   Collapse · New chat · Automations · Skills · Artifacts           */
-/* Middle: Pinned + Repositories (folders / sessions)                      */
+/* Top:   Collapse · New chat · Automations · Skills                       */
+/* Middle: Pinned + Projects (folders / sessions)                           */
 /* Bottom: Settings                                                        */
 
 import { useState, useEffect, useRef } from "react";
@@ -478,7 +478,7 @@ export function SessionList({
           )}
 
           <Section
-            title="Repositories"
+            title="Projects"
             count={searching ? others.filter(matchesSearch).length : others.length}
             onNewFolder={handleCreateFolder}
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
@@ -494,7 +494,7 @@ export function SessionList({
                 const isCollapsed = folder.isCollapsed ?? false;
 
                 return (
-                  <div key={folder.id} className="space-y-0.5">
+                  <div key={folder.id} className="august-project-group space-y-0.5">
                     <FolderHeader
                       folder={folder}
                       count={folderSessions.length}
@@ -510,7 +510,7 @@ export function SessionList({
                     />
 
                     {(!isCollapsed || searching) && (
-                      <div className="pl-1 ml-4 space-y-px">
+                      <div className="august-project-sessions pl-1 ml-4 space-y-px">
                         <AnimatePresence initial={false} mode="popLayout">
                           {folderSessions.map((s) => (
                             <SessionRow

@@ -10,7 +10,7 @@ Design:
 - Uses a side LLM call; falls back to the main chat model via providers.py.
 - Corrections -> ``learned_heuristics`` (injected into prompt every turn).
 - Facts -> ``coreMemory`` KV store.
-- Skills -> ``skill_service`` (autonomous creation, no approval gate).
+- Skills -> ``pending_skills`` for user approval before activation.
 - Frustration -> brain event for attention flagging.
 """
 
@@ -29,6 +29,21 @@ from app.type_aliases import JsonValue
 log = logging.getLogger(__name__)
 _TURNInterval = 3
 _TOOLRoundInterval = 6
+
+
+def _backgroundReviewEnabled() -> bool:
+    """Return the explicit background-review switch.
+
+    The default is enabled for compatibility with the existing post-turn
+    learning behavior. An explicit UI/config value of false is a hard stop:
+    no reflection call and no skill/fact/correction extraction is started.
+    """
+    try:
+        from app.services.background_review_service import getConfig
+
+        return bool(getConfig().get('enabled', True))
+    except Exception:
+        return True
 
 
 @dataclass
@@ -59,6 +74,8 @@ async def tryBackgroundReview(
     synchronous; the actual review spawns a background ``asyncio.Task`` so
     the user receives the response immediately.
     """
+    if not _backgroundReviewEnabled():
+        return
     if not messagesSnapshot:
         return
     lastTurn = getattr(session, '_last_reviewed_at_turn', 0)
@@ -87,6 +104,8 @@ async def tryEndOfSessionReview(
     Cheap gate: only fires when turns-since-last-review > 0. Prevents
     corrections/facts in short 1-2 turn conversations from being lost.
     """
+    if not _backgroundReviewEnabled():
+        return
     if not messagesSnapshot:
         return
     lastTurn = getattr(session, '_last_reviewed_at_turn', 0)
@@ -98,6 +117,38 @@ async def tryEndOfSessionReview(
         return
     setattr(session, '_last_reviewed_at_turn', sessionTurns)
     asyncio.create_task(_doReview(messagesSnapshot, llm_client=llm_client))
+
+
+async def scheduleEndOfSessionReview(
+    session: object,
+    messagesSnapshot: list[dict[str, object]],
+    *,
+    llm_client: ReviewClient = None,
+    idle_seconds: float = 2.0,
+) -> None:
+    """Debounce a final review until the session has been idle briefly.
+
+    The workbench finalizer runs after every turn. Debouncing here means a
+    short one- or two-turn session still gets reviewed, while rapid follow-up
+    messages cancel the pending review and avoid one LLM call per message.
+    """
+    if not _backgroundReviewEnabled() or not messagesSnapshot:
+        return
+    previous = getattr(session, '_end_of_session_review_task', None)
+    if isinstance(previous, asyncio.Task) and not previous.done():
+        previous.cancel()
+
+    async def _waitAndReview() -> None:
+        try:
+            await asyncio.sleep(max(0.25, idle_seconds))
+            if getattr(session, 'status', 'idle') not in ('idle', 'awaiting_approval'):
+                return
+            await tryEndOfSessionReview(session, messagesSnapshot, llm_client=llm_client)
+        except asyncio.CancelledError:
+            return
+
+    task = asyncio.create_task(_waitAndReview())
+    setattr(session, '_end_of_session_review_task', task)
 
 
 async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: ReviewClient = None) -> dict[str, object]:
@@ -134,7 +185,13 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
     result['reviewed'] = True
 
     # --- Corrections -> learned_heuristics + graph ---
-    for correction in as_list(recommendations.get('corrections'), []):
+    try:
+        from app.services.cognitive_config import get_features
+
+        heuristicsEnabled = bool(get_features().get('heuristics', True))
+    except Exception:
+        heuristicsEnabled = True
+    for correction in as_list(recommendations.get('corrections'), []) if heuristicsEnabled else []:
         if isinstance(correction, dict):
             rule = as_str(as_dict(correction).get('rule'), '')
             confidence = as_dict(correction).get('confidence')
@@ -175,7 +232,13 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
             pass
 
     # --- Skills -> pending_skills (requires user approval before activation) ---
-    for rec in as_list(recommendations.get('skills'), []):
+    try:
+        from app.services.cognitive_config import get_features
+
+        skillGenesisEnabled = bool(get_features().get('skill_genesis', True))
+    except Exception:
+        skillGenesisEnabled = True
+    for rec in as_list(recommendations.get('skills'), []) if skillGenesisEnabled else []:
         recDict = as_dict(rec)
         try:
             action = as_str(recDict.get('action'), 'create')

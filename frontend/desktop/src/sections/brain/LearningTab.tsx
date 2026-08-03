@@ -38,6 +38,25 @@ function formatProfile(profile: unknown): string {
   }
 }
 
+function formatMemoryContent(memory: {
+  content: unknown;
+  summary?: string;
+  description?: string;
+  label?: string;
+  title?: string;
+}): string {
+  for (const value of [memory.summary, memory.description, memory.label, memory.title]) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  if (typeof memory.content === 'string') return memory.content;
+  if (memory.content == null) return '';
+  try {
+    return JSON.stringify(memory.content, null, 2) ?? '';
+  } catch {
+    return String(memory.content);
+  }
+}
+
 export function LearningTab() {
   const { data, error, isFetching, dataUpdatedAt } = useLearningData();
   const qc = useQueryClient();
@@ -124,14 +143,35 @@ export function LearningTab() {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <div className="flex items-center gap-1.5 text-xs md:col-span-2">
+      <div className="flex items-center justify-between gap-3 text-xs md:col-span-2">
         <span
           className={`size-2 rounded-full ${isFetching ? 'bg-success animate-pulse' : 'bg-muted-foreground'}`}
           aria-hidden
         />
-        <span className="text-muted-foreground">
-          {isFetching ? 'Refreshing…' : dataUpdatedAt ? `Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : 'Auto-refreshes every 30s'}
-        </span>
+        <div className="flex flex-1 items-center gap-1.5">
+          <span className="text-muted-foreground">
+            {isFetching ? 'Refreshing…' : dataUpdatedAt ? `Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : 'Auto-refreshes every 30s'}
+          </span>
+        </div>
+        <span className="text-[10px] text-muted-foreground/70">Learning overview</span>
+      </div>
+
+      {/* At-a-glance counts */}
+      <div className="grid grid-cols-2 gap-3 md:col-span-2 md:grid-cols-4">
+        {[
+          { label: 'Heuristics', value: data.heuristicCount, icon: Brain, tone: 'text-primary' },
+          { label: 'Memories', value: data.autoMemories.length, icon: ListChecks, tone: 'text-sky-400' },
+          { label: 'Pending skills', value: data.pendingSkills.length, icon: Sparkles, tone: 'text-warning' },
+          { label: 'Projects', value: data.activeProjects.length, icon: Zap, tone: 'text-success' },
+        ].map(({ label, value, icon: Icon, tone }) => (
+          <Card key={label} className="flex items-center gap-3 p-3">
+            <Icon className={`size-4 shrink-0 ${tone}`} />
+            <div className="min-w-0">
+              <p className="text-lg font-semibold leading-none">{value}</p>
+              <p className="mt-1 truncate text-[10px] text-muted-foreground">{label}</p>
+            </div>
+          </Card>
+        ))}
       </div>
 
       {/* Learned heuristics */}
@@ -199,7 +239,7 @@ export function LearningTab() {
       </Card>
 
       {/* Cross-session glance */}
-      <Card className="p-4 space-y-3 md:col-span-2">
+      <Card className="p-4 space-y-3">
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-primary" />
           <h3 className="font-medium text-sm">Active context</h3>
@@ -227,7 +267,7 @@ export function LearningTab() {
       </Card>
 
       {/* User profile summary */}
-      <Card className="p-4 space-y-3 md:col-span-2">
+      <Card className="p-4 space-y-3">
         <div className="flex items-center gap-2">
           <User className="size-4 text-primary" />
           <h3 className="font-medium text-sm">User profile summary</h3>
@@ -264,7 +304,9 @@ export function LearningTab() {
                       <Pin className="size-3 text-primary shrink-0" aria-label="pinned" />
                     ) : null}
                   </p>
-                  <p className="text-muted-foreground line-clamp-2">{m.content}</p>
+                  <p className="text-muted-foreground line-clamp-2 whitespace-pre-wrap">
+                    {formatMemoryContent(m)}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -314,10 +356,15 @@ export function LearningTab() {
       </Card>
 
       {/* Pending skills */}
-      <Card className="p-4 space-y-3 md:col-span-2">
+      <Card className={`p-4 space-y-3 md:col-span-2 ${data.pendingSkills.length > 0 ? 'border-primary/40 bg-primary/[0.03]' : ''}`}>
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-primary" />
           <h3 className="font-medium text-sm">Pending skills</h3>
+          {data.pendingSkills.length > 0 ? (
+            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] text-primary">
+              {data.pendingSkills.length} awaiting review
+            </span>
+          ) : null}
         </div>
         {data.pendingSkills.length === 0 ? (
           <p className="text-xs text-muted-foreground">No skills awaiting approval.</p>

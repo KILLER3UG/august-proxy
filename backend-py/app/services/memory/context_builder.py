@@ -210,7 +210,10 @@ def buildTier1(session: dict[str, object] | None = None) -> str:
             '   them with "I remember…". When the user refers to past sessions, preferences, or',
             '   stored facts, fetch details with memory_search() / fact_search() /',
             '   context_read() / brain_query(store, query, filters). User-Added and pinned',
-            '   Memory in <added_memories> is durable — honor it without a tool call.',
+            '   Memory in <added_memories> is durable — honor it without a tool call. If an',
+            '   auto-memory is clearly transient, obsolete, or no longer useful for future',
+            '   sessions, clean it up with forget(memoryId=<numeric id>); do not delete a',
+            '   durable fact merely because it is irrelevant to the current turn.',
             "3. Verifier gate: before transitioning to 'review' or 'complete' you must actually run",
             '   a verification command (tests / lint / build). Never skip or fake its output —',
             '   update_state rejects the transition without a passing run this turn.',
@@ -424,8 +427,9 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
                         line = f'- {body}'
                 else:
                     line = f'- {title or body}'
-                if key and key not in line:
-                    line = f'{line} [id: {key}]'
+                memory_id = as_str(item.get('id'), '')
+                if memory_id and memory_id not in line:
+                    line = f'{line} [memory id: {memory_id}]'
                 lines.append(_fmtVal(line, 480))
             else:
                 lines.append(f'- {_fmtVal(item, 400)}')

@@ -17,7 +17,11 @@ export interface Heuristic {
 export interface AutoMemory {
   id: number;
   key: string;
-  content: string;
+  content: unknown;
+  summary?: string;
+  description?: string;
+  label?: string;
+  title?: string;
   importance: number;
   category?: string;
   source?: string;

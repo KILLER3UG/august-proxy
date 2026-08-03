@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { SessionListNav } from '../SessionListNav';
 
 describe('SessionListNav', () => {
-  it('routes Automations, Skills, and Artifacts to chat-shell pages', () => {
+  it('routes Automations and Skills to chat-shell pages', () => {
     const onNavigate = vi.fn();
     render(
       <SessionListNav
@@ -19,7 +19,5 @@ describe('SessionListNav', () => {
     fireEvent.click(screen.getByTestId('sidebar-nav-skills'));
     expect(onNavigate).toHaveBeenCalledWith('/skills');
 
-    fireEvent.click(screen.getByTestId('sidebar-nav-artifacts'));
-    expect(onNavigate).toHaveBeenCalledWith('/artifacts');
   });
 });

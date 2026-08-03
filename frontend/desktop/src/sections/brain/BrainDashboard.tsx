@@ -18,7 +18,10 @@ export function BrainDashboard() {
     }`;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div
+      className="h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 max-w-6xl mx-auto space-y-6"
+      data-testid="brain-dashboard"
+    >
       <div className="flex items-center gap-3">
         <Brain className="size-7 text-primary" />
         <div>
@@ -27,7 +30,7 @@ export function BrainDashboard() {
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-border pb-px flex-wrap">
+      <div className="sticky top-0 z-10 flex gap-1 border-b border-border bg-background/95 pb-px backdrop-blur flex-wrap">
         <button type="button" onClick={() => setTab('learning')} className={tabClass('learning')}>
           <Sparkles className="size-3.5 inline mr-1.5" />
           Learning

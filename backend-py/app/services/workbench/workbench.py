@@ -481,10 +481,12 @@ def buildSystemPrompt(
     # memories directly; under pressure the on-demand memory tools stay the
     # only recall path so we never push the conversation toward compaction.
     try:
-        if _shouldAutoRecall(cognitiveBudget) and not memory.get('autoMemories'):
+        if _shouldAutoRecall(cognitiveBudget, session=session) and not memory.get('autoMemories'):
             from app.services.memory.auto_memory import getRelevantMemories
 
-            recalled = getRelevantMemories(_lastUserMessageText(session), limit=5) or []
+            recalled = getRelevantMemories(
+                _lastUserMessageText(session), limit=5, durable_only=True
+            ) or []
             if recalled:
                 session._last_recalled_memories = recalled
                 memory['autoMemories'] = cast(list[JsonValue], recalled)
@@ -634,15 +636,32 @@ def _shouldAutoCompact(attention_pressure: str, turns_since_compaction: int) -> 
     return attention_pressure in ('high', 'critical') and turns_since_compaction >= 2
 
 
-def _shouldAutoRecall(cognitive_budget: dict[str, object] | None, min_headroom: int = 6000) -> bool:
-    """Auto-recall gate: inject past memories only when there is prompt headroom.
+def _shouldAutoRecall(
+    cognitive_budget: dict[str, object] | None,
+    min_headroom: int = 6000,
+    *,
+    session: object | None = None,
+) -> bool:
+    """Auto-recall only on a fresh session when there is prompt headroom.
 
     ``low``/``medium`` attention pressure plus at least ``min_headroom``
-    remaining tokens keeps recall free of cost under pressure — the on-demand
-    memory tools are the fallback there.
+    remaining tokens keeps first-turn recall free of cost under pressure. On
+    later turns the model uses memory_search/fact_search only when the user
+    actually needs past context, so ordinary messages do not trigger recall.
     """
     if not cognitive_budget:
         return False
+    if session is not None:
+        messages = getattr(session, 'messages', None)
+        if isinstance(messages, list):
+            user_turns = sum(
+                1 for message in messages
+                if isinstance(message, dict) and message.get('role') == 'user'
+            )
+            if user_turns > 1:
+                return False
+        elif int(getattr(session, 'messageCount', 0) or 0) > 1:
+            return False
     pressure = as_str(cognitive_budget.get('attention_pressure'), '')
     raw_remaining = cognitive_budget.get('remaining_tokens')
     remaining = int(raw_remaining) if isinstance(raw_remaining, (int, float)) else 0
@@ -1449,7 +1468,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     'type': 'recalledMemories',
                     'items': [
                         {
-                            'id': str(m.get('key') or ''),
+                            'id': str(m.get('id') or m.get('key') or ''),
                             'key': str(m.get('key') or ''),
                             'category': str(m.get('category') or 'auto'),
                             'snippet': str(m.get('description') or m.get('label') or '')[:200],
@@ -2333,16 +2352,30 @@ async def _sendWorkbenchMessageStreamImpl(
     review_model = _backgroundTaskModel('reviewModel', resolvedModel)
     auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
     try:
-        from app.services.memory.background_review import ReviewGates, tryBackgroundReview
+        from app.services.memory.background_review import (
+            ReviewGates,
+            scheduleEndOfSessionReview,
+            tryBackgroundReview,
+        )
+
+        review_client = _makeReviewLlmClient(resolvedProvider, review_model)
 
         _spawn_background(
             tryBackgroundReview(
                 session,
                 list(currentMessages),
                 gates=ReviewGates(turn_interval=3, tool_round_interval=6),
-                llm_client=_makeReviewLlmClient(resolvedProvider, review_model),
+                llm_client=review_client,
             ),
             'background_review',
+        )
+        _spawn_background(
+            scheduleEndOfSessionReview(
+                session,
+                list(currentMessages),
+                llm_client=review_client,
+            ),
+            'end_of_session_review',
         )
     except Exception:
         pass
@@ -2389,14 +2422,13 @@ async def _sendWorkbenchMessageStreamImpl(
 
 
 def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]], model: str = '') -> None:
-    """Auto-memory sync — save conversation summaries and extract todos.
+    """Auto-memory sync — extract durable todos without archiving every turn.
 
     Runs fire-and-forget after each workbench turn so it never delays
-    the response. These lightweight rule-based extractions complement
-    the heavier LLM-based background_review. The ``model`` argument is
-    the resolved auto-memory model (falls back to the chat model) used
-    for audit/metadata on the saved memories."""
-    from app.services.memory.auto_memory import extractAndSaveTodos, saveAutoMemory
+    the response. Explicit model ``remember`` calls and the gated background
+    review own durable fact capture; this hook only keeps actionable todos.
+    The ``model`` argument is retained for the scheduler callback contract."""
+    from app.services.memory.auto_memory import extractAndSaveTodos
     from app.services.memory.cross_session_context import sync_from_turn
 
     try:
@@ -2404,30 +2436,7 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
     except Exception:
         pass
     try:
-        from app.services.memory.auto_memory import consolidate_conv_summaries
-
-        merged = consolidate_conv_summaries()
-        if merged:
-            logger.debug('memory: merged %s conversation summaries into an episode', merged)
-    except Exception:
-        pass
-    try:
         lastUserMsg = _lastUserMessageText(session)
-        if lastUserMsg:
-            # Full session id (includes date/time) so the model can tell which
-            # conversation a memory came from; stamp for human-readable ordering.
-            stamp = session.updatedAt or session.createdAt or ''
-            # Keep the technical session id in the memory key; put the user's
-            # words first so graph labels / previews stay beginner-readable.
-            when = f' @ {stamp}' if stamp else ''
-            summary = f'User asked: {lastUserMsg[:300]} (session {session.id}{when})'
-            saveAutoMemory(
-                f'conv_summary_{session.id}',
-                summary,
-                category='conversation',
-                importance=0.3,
-                source='auto',
-            )
         # Cross-session bridge: active_projects + current_context (not userProfile).
         sync_from_turn(
             workspace_path=as_str(getattr(session, 'workspacePath', '') or ''),
@@ -2916,12 +2925,6 @@ def submitPlan(session: WorkbenchSession, planData: dict[str, object]) -> None:
     session._execution_state = None
     session._working_memory = None
     session.updatedAt = _now()
-    try:
-        from app.services import aug_artifact_service
-
-        aug_artifact_service.savePlan(session.workspacePath or None, session.id, planData, status='pending')
-    except Exception:
-        pass
     _emitSessionStatus(session.id)
 
 
@@ -3087,19 +3090,11 @@ def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> 
 
 
 def submitTodos(session: WorkbenchSession, todosData: list[dict[str, object]], *, title: str = '') -> None:
-    """Store a todo list on the session and persist it to `.aug/todoList/`."""
+    """Store a todo list on the session."""
     if not isinstance(todosData, list):
         todosData = [todosData] if todosData else []
     session.todos = todosData
     session.updatedAt = _now()
-    try:
-        from app.services import aug_artifact_service
-
-        aug_artifact_service.saveTodos(
-            session.workspacePath or None, session.id, todosData, title=title, status='active'
-        )
-    except Exception:
-        pass
     _emitSessionStatus(session.id)
 
 
@@ -3116,14 +3111,6 @@ def approveWorkbenchPlan(sessionId: str) -> bool:
     session.planApproved = True
     session.updatedAt = _now()
     saveSessions()
-    # Reflect the approval on the persisted .aug artifact so the Plans
-    # section doesn't keep showing it as "pending".
-    try:
-        from app.services import aug_artifact_service
-
-        aug_artifact_service.updatePlanStatus(session.workspacePath or None, sessionId, 'approved')
-    except Exception:
-        pass
     _emitSessionStatus(sessionId)
     return True
 
@@ -3138,12 +3125,6 @@ def rejectWorkbenchPlan(sessionId: str) -> bool:
     session._execution_state = None
     session._working_memory = None
     session.updatedAt = _now()
-    try:
-        from app.services import aug_artifact_service
-
-        aug_artifact_service.deleteForSession(session.workspacePath or None, sessionId)
-    except Exception:
-        pass
     saveSessions()
     _emitSessionStatus(sessionId)
     return True

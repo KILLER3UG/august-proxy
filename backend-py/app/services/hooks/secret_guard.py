@@ -32,8 +32,11 @@ _PROTECTED_PATH_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-_WRITE_TOOLS = 'write_file|edit_file|create_file|run_command'
-_READ_TOOLS = 'read_file|list_directory|search_files'
+_WRITE_TOOLS = (
+    'write_file|write_files|edit_file|create_file|create_files|run_command|'
+    'str_replace|str_replace_editor|apply_patch|patch_file|bulk'
+)
+_READ_TOOLS = 'read_file|read_files|list_directory|search_files|bulk'
 
 
 def scan_secrets(text: str) -> list[str]:
@@ -55,15 +58,28 @@ def _redact_secrets(text: str) -> str:
     return result
 
 
+def _text_values(value: object):
+    """Yield all string leaves, including nested bulk-tool file entries."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for nested in value.values():
+            yield from _text_values(nested)
+    elif isinstance(value, (list, tuple)):
+        for nested in value:
+            yield from _text_values(nested)
+
+
 async def _pre_tool_guard(ctx: HookContext) -> HookResult:
     """Block writes containing secret patterns."""
-    content = ''
-    if ctx.tool_args:
-        content = str(ctx.tool_args.get('content', '') or ctx.tool_args.get('command', '') or '')
-    if not content:
+    if not ctx.tool_args:
         return HookResult(action='allow')
 
-    found = _scan_for_secrets(content)
+    found = None
+    for text in _text_values(ctx.tool_args):
+        found = _scan_for_secrets(text)
+        if found:
+            break
     if found:
         return HookResult(
             action='deny',
@@ -75,11 +91,12 @@ async def _pre_tool_guard(ctx: HookContext) -> HookResult:
 
 async def _post_tool_redact(ctx: HookContext) -> HookResult:
     """Redact secrets from reads of protected paths."""
-    path = ''
-    if ctx.tool_args:
-        path = str(ctx.tool_args.get('path', '') or ctx.tool_args.get('file_path', '') or '')
     # Canonicalize backslashes so Windows paths match the protected patterns.
-    if not path or not _PROTECTED_PATH_PATTERNS.search(path.replace('\\', '/')):
+    protected_path = any(
+        _PROTECTED_PATH_PATTERNS.search(text.replace('\\', '/'))
+        for text in _text_values(ctx.tool_args or {})
+    )
+    if not protected_path:
         return HookResult(action='allow')
 
     if ctx.tool_result:

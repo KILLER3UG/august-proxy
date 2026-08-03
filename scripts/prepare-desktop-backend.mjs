@@ -9,7 +9,7 @@
 //   node scripts/prepare-desktop-backend.mjs --skip-download   # reuse existing python/
 
 import { createWriteStream } from 'node:fs';
-import { mkdir, rm, cp, access, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, rm, cp, access, writeFile, readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve, dirname } from 'node:path';
@@ -142,6 +142,43 @@ async function stageBackendSources() {
   console.log(`[prepare-backend] staged backend sources → ${backendOut}`);
 }
 
+async function hashStagedBackendSources() {
+  // The runtime stamp must change when backend behavior changes. Previously it
+  // only included the Python build and app version, so an installed desktop
+  // app could keep running an older AppData backend after a source-only fix.
+  const hash = createHash('sha256');
+  const includeRoots = ['app', 'pyproject.toml', 'README.md'];
+  const ignoredDirs = new Set(['__pycache__', '.mypy_cache', '.ruff_cache', '.venv', 'tests']);
+
+  async function visit(path, relative) {
+    const entries = await readdir(path, { withFileTypes: true });
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const nextPath = join(path, entry.name);
+      const nextRelative = join(relative, entry.name).replaceAll('\\', '/');
+      if (entry.isDirectory()) {
+        if (!ignoredDirs.has(entry.name)) await visit(nextPath, nextRelative);
+        continue;
+      }
+      if (!entry.isFile() || entry.name.endsWith('.pyc')) continue;
+      hash.update(nextRelative);
+      hash.update(await readFile(nextPath));
+    }
+  }
+
+  for (const root of includeRoots) {
+    const path = join(root, 'backend-py', root);
+    if (existsSync(path)) {
+      if ((await stat(path)).isDirectory()) await visit(path, root);
+      else {
+        hash.update(root);
+        hash.update(await readFile(path));
+      }
+    }
+  }
+  return hash.digest('hex');
+}
+
 async function buildWheels(pythonExe) {
   await rm(wheelsOut, { recursive: true, force: true });
   await mkdir(wheelsOut, { recursive: true });
@@ -185,6 +222,7 @@ async function writeManifest(pythonExe) {
   const hash = createHash('sha256');
   hash.update(PYTHON_VERSION);
   hash.update(PYTHON_BUILD);
+  hash.update(await hashStagedBackendSources());
   try {
     const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
     hash.update(String(pkg.version || ''));

@@ -12,13 +12,13 @@ def testGetDefaultShape(isolatedData):
     cfg = background_review_service.getConfig()
     assert 'enabled' in cfg and 'reviewModel' in cfg
     assert 'reflectionModel' in cfg and 'autoMemoryModel' in cfg
-    assert cfg['enabled'] is False
+    assert cfg['enabled'] is True
 
 
 def testSavePartialMerge(isolatedData):
     out = background_review_service.saveConfig(review_model='claude-sonnet-4-7', actor='test')
     assert out['reviewModel'] == 'claude-sonnet-4-7'
-    assert out['enabled'] is False
+    assert out['enabled'] is True
     assert background_review_service.getConfig()['reviewModel'] == 'claude-sonnet-4-7'
 
 

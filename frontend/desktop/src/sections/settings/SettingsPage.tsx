@@ -36,7 +36,6 @@ import { FeatureFlowSection } from './FeatureFlowSection';
 import { SkillsSection } from './SkillsSection';
 import { ComputerUseSection } from './ComputerUseSection';
 import { ExternalAccessSection } from './ExternalAccessSection';
-import { PlansSection } from './PlansSection';
 import { UiDesignerSection } from './UiDesignerSection';
 import { ToolGrantsSection } from './ToolGrantsSection';
 import { KanbanSection } from './KanbanSection';
@@ -152,7 +151,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   skills: SkillsWrapper,
   'computer-use': ComputerUseWrapper,
   'api-access': ExternalAccessWrapper,
-  plans: PlansWrapper,
   'tool-grants': ToolGrantsWrapper,
   'agent-board': KanbanWrapper,
   'python-sandbox': PythonSandboxWrapper,
@@ -183,7 +181,6 @@ function AgentsAutomationWrapper() { return <AgentsAutomationSection />; }
 function DeveloperConsoleWrapper() { return <DeveloperConsoleSection />; }
 function SkillsWrapper() { return <SkillsSection />; }
 function ComputerUseWrapper() { return <ComputerUseSection />; }
-function PlansWrapper() { return <PlansSection />; }
 function ToolGrantsWrapper() { return <ToolGrantsSection />; }
 function KanbanWrapper() { return <KanbanSection />; }
 function PythonSandboxWrapper() { return <PythonSandboxSection />; }

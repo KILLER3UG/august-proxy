@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { X, Columns } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
-  closeRightDrawerSection,
   useRightDrawerSections,
   type RightDrawerSectionId,
 } from './RightDrawerState';
@@ -16,7 +15,10 @@ import { RightDrawerTerminalSection } from './RightDrawerTerminalSection';
 import { RightDrawerPreviewSection } from './RightDrawerPreviewSection';
 import { RightDrawerBrowserSection } from './RightDrawerBrowserSection';
 import { RightDrawerNotesSection } from './RightDrawerNotesSection';
+import { RightDrawerFileSection } from './RightDrawerFileSection';
 import type { WorkbenchSession } from '@/types/workbench';
+import { useRightDrawer } from './RightDrawerState';
+import { getFileIcon } from '@/lib/file-icon';
 
 const DEFAULT_BASE_WIDTH = 320;   // 1-2 sections
 const DEFAULT_WIDE_WIDTH = 640;   // 3-4 sections — doubles so they don't squish
@@ -62,6 +64,9 @@ export function RightDrawer({
   onClose: () => void;
 }) {
   const sections = useRightDrawerSections();
+  const filePreview = useRightDrawer().file;
+  const showingFile = sections.length === 1 && sections[0] === 'file' && !!filePreview;
+  const HeaderFileIcon = filePreview ? getFileIcon(filePreview.name).Icon : null;
   const isWide = sections.length >= 3;
   const [baseWidth, setBaseWidth] = useState<number>(() => loadStoredWidth(BASE_WIDTH_KEY, DEFAULT_BASE_WIDTH));
   const [wideWidth, setWideWidth] = useState<number>(() => loadStoredWidth(WIDE_WIDTH_KEY, DEFAULT_WIDE_WIDTH));
@@ -153,9 +158,15 @@ export function RightDrawer({
 
             <div className="august-right-drawer-header flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
               <div className="flex min-w-0 items-center gap-2">
-                <Columns className="size-3 text-muted-foreground/60 shrink-0" />
-                <span className="truncate text-sm font-semibold text-foreground">Workbench</span>
-                {sections.length > 0 && (
+                {showingFile && HeaderFileIcon ? (
+                  <HeaderFileIcon size={15} color={getFileIcon(filePreview.name).color} className="shrink-0" />
+                ) : (
+                  <Columns className="size-3 text-muted-foreground/60 shrink-0" />
+                )}
+                <span className="truncate text-sm font-semibold text-foreground">
+                  {showingFile ? filePreview.name : 'Workbench'}
+                </span>
+                {!showingFile && sections.length > 0 && (
                   <span className="ml-1 inline-flex items-center justify-center rounded-md bg-white/5 px-1.5 py-0.5 text-xs font-semibold text-muted-foreground/80">
                     {sections.length}
                   </span>
@@ -167,8 +178,10 @@ export function RightDrawer({
               </Button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-hidden p-2">
-              {sections.length === 1 && (
+            <div className={showingFile ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-hidden p-2'}>
+              {showingFile ? (
+                <RightDrawerFileSection file={filePreview} />
+              ) : sections.length === 1 && (
                 <DrawerSectionCard
                   sectionId={sections[0]}
                   ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
@@ -263,16 +276,6 @@ function DrawerSectionCard({
 }) {
   return (
     <section className="august-drawer-card relative flex h-full min-h-0 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={() => closeRightDrawerSection(sectionId)}
-        className="absolute right-1 top-1 z-10"
-        aria-label={`Close ${sectionId} section`}
-        title="Close section"
-      >
-        <X className="size-3" />
-      </Button>
       <div className="min-h-0 flex-1 overflow-y-auto">{renderSection(sectionId, ctx)}</div>
     </section>
   );

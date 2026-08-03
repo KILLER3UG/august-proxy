@@ -50,7 +50,7 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 | Prompt item | Actual status (verified in repo) | Belongs to |
 |---|---|---|
 | **B16** function APIs on `memory_store` / `db_writer` / `proxy_tools` | **CLOSED** — `def` names are snake_case (`save_memory`, `enqueue_write`, `execute_managed_proxy_tool`, …). **Residual naming debt:** many **parameters** still camelCase (`sessionId`, `factKey`). WIRE TypedDict keys still camelCase **by design**. | Phase 2 (not Phase 3/4) |
-| **B1a** non-atomic JSON writes | **CLOSED** for listed sites: `aug_artifact_service` + `gateway/session_bridge` use `write_json_atomic`; `skills/curator` uses temp + `Path.replace`; `mcp_client` stdin JSON-RPC is not a durable JSON store write. **Residual (low, different class):** `consolidation_daemon` skill-draft `.md` uses plain `open(..., 'w')` (markdown staging, not the B1a JSON-store bug). | Phase 0/1 safety (gated Phase 2; closed before scale-up) |
+| **B1a** non-atomic JSON writes | **CLOSED** for listed sites: `gateway/session_bridge` uses `write_json_atomic`; `skills/curator` uses temp + `Path.replace`; `mcp_client` stdin JSON-RPC is not a durable JSON store write. **Residual (low, different class):** `consolidation_daemon` skill-draft `.md` uses plain `open(..., 'w')` (markdown staging, not the B1a JSON-store bug). | Phase 0/1 safety (gated Phase 2; closed before scale-up) |
 | **Known large files** beyond workbench/anthropic | **Deferred, not forgotten** — see modularization residual table | Phase 3 optional polish |
 | **Schema rename** | **CLOSED** on live DB — snake tables only; pass 1 merge + pass 2 drop verified | Phase 4 |
 
@@ -343,7 +343,6 @@ Permanent tooling (also listed in `docs/ARCHITECTURE.md`): `_live_db_fingerprint
 
 | Site | Status |
 |---|---|
-| `aug_artifact_service.py` | `write_json_atomic` |
 | `gateway/session_bridge.py` | `write_json_atomic` |
 | `skills/curator.py` | temp file + `tmp.replace(path)` |
 | `tools/mcp_client.py` | N/A for B1a (process stdin, not store file) |
@@ -541,7 +540,7 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 
 | ID | Prior | Verified | Verdict |
 |---|---|---|---|
-| B1a | CLOSED | atomic writes at aug_artifact + session_bridge; curator tmp+replace | **CLOSED** |
+| B1a | CLOSED | atomic writes at session_bridge; curator tmp+replace | **CLOSED** |
 | B2 | AMENDED | FIFO + age-drop docs match code | **CLOSED** (amended truth) |
 | B11 | absent | no `backend-py/backend-py/` | **CLOSED** |
 | B12 | open optional | deleted `data/august_brain.sqlite.bak`, `data/providers.json.bak` | **CLOSED** |

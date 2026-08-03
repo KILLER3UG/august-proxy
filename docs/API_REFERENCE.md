@@ -423,14 +423,13 @@ Unified manage actions used by the UI and agent self-config tools:
 
 ---
 
-## AUG.md / plans
+## AUG.md
 
 | Method & path | Purpose |
 |---------------|---------|
 | `GET /api/aug/context` | Loaded AUG context |
 | `POST /api/aug/init` | Generate / refine AUG.md |
 | `PUT/DELETE /api/aug/content` | Write / clear content |
-| `GET /api/aug/plans` · `DELETE /api/aug/plans/{kind}/{slug}` | Plan/todo artifacts |
 
 ---
 

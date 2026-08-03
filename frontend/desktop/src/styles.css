@@ -637,12 +637,6 @@ input::placeholder {
   font-size: 0.82rem;
 }
 
-.august-app-chrome-glyph {
-  color: var(--dt-primary);
-  font-size: 0.95rem;
-  line-height: 1;
-}
-
 .august-session-sidebar {
   border-right: 1px solid color-mix(in srgb, var(--dt-border) 82%, transparent);
   background: var(--dt-sidebar);
@@ -667,6 +661,66 @@ input::placeholder {
 .august-session-list > div > .px-1\.5 {
   padding-left: 0.7rem;
   padding-right: 0.7rem;
+}
+
+.august-sidebar-section {
+  margin-top: 0.65rem;
+}
+
+.august-sidebar-section-header {
+  padding-inline: 0.65rem;
+  margin-bottom: 0.35rem;
+}
+
+.august-sidebar-section-header h3 {
+  color: color-mix(in srgb, var(--dt-foreground) 48%, transparent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.august-project-group + .august-project-group {
+  margin-top: 0.2rem;
+}
+
+.august-project-row {
+  min-height: 2.05rem;
+  border: 1px solid transparent;
+  padding-block: 0.35rem;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.august-project-row:hover {
+  background: color-mix(in srgb, var(--dt-foreground) 6%, transparent);
+}
+
+.august-project-row > div:first-child {
+  gap: 0.45rem;
+}
+
+.august-project-row > div:first-child > svg {
+  opacity: 0.9;
+}
+
+.august-project-sessions {
+  margin-left: 1.55rem !important;
+  padding-left: 0.3rem !important;
+  border-left: 1px solid color-mix(in srgb, var(--dt-border) 72%, transparent);
+}
+
+.august-project-sessions .august-session-row {
+  min-height: 2.1rem;
+  border-radius: 0.45rem;
+}
+
+.august-session-row-active {
+  background: color-mix(in srgb, var(--dt-foreground) 10%, transparent) !important;
+  border-color: color-mix(in srgb, var(--dt-border) 90%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--dt-primary) 78%, transparent);
+}
+
+.august-other-chats-row {
+  margin-top: 0.2rem;
 }
 
 .august-session-list input[aria-label="Search sessions"] {
@@ -766,12 +820,15 @@ input::placeholder {
 }
 
 .august-right-drawer {
-  height: calc(100% - 1.5rem) !important;
-  margin: 0.75rem 0.9rem 0.75rem 0;
-  border: 1px solid color-mix(in srgb, var(--dt-border) 92%, white) !important;
-  border-radius: 1.25rem;
+  height: 100% !important;
+  margin: 0;
+  border-top: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 0 !important;
+  border-left: 1px solid color-mix(in srgb, var(--dt-border) 92%, white) !important;
+  border-radius: 0;
   background: color-mix(in srgb, var(--dt-elevated) 96%, white) !important;
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+  box-shadow: none;
 }
 
 .august-right-drawer > div {
@@ -791,13 +848,52 @@ input::placeholder {
   background: color-mix(in srgb, var(--dt-card) 92%, black) !important;
 }
 
+/* Update flow dialog — intentionally follows the desktop updater reference:
+   calm dimmed workspace, one focused card, bytes above a thin progress bar,
+   then a clear Later / Restart to update decision. */
+.update-flow-backdrop {
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(8px);
+}
+
+.update-flow-card {
+  border-color: color-mix(in srgb, var(--dt-border) 90%, white);
+  background: color-mix(in srgb, var(--dt-elevated) 98%, white);
+}
+
+.update-flow-icon {
+  color: var(--dt-primary);
+  background: color-mix(in srgb, var(--dt-primary) 16%, var(--dt-card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dt-primary) 35%, transparent);
+}
+
+.update-flow-secondary-button {
+  color: var(--dt-foreground);
+  background: color-mix(in srgb, var(--dt-foreground) 8%, transparent);
+  transition: background-color 150ms ease;
+}
+
+.update-flow-secondary-button:hover {
+  background: color-mix(in srgb, var(--dt-foreground) 14%, transparent);
+}
+
+.update-flow-primary-button {
+  color: var(--dt-primary-foreground);
+  background: var(--dt-primary);
+  transition: filter 150ms ease, transform 150ms ease;
+}
+
+.update-flow-primary-button:hover {
+  filter: brightness(1.08);
+}
+
 @media (max-width: 900px) {
   .august-session-sidebar {
     min-width: 0;
   }
 
   .august-right-drawer {
-    margin-right: 0.5rem;
+    margin-right: 0;
   }
 
   .august-message-list,

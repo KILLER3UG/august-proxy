@@ -276,7 +276,7 @@ export function SessionRow({
       exit="exit"
       className={cn(
         "august-session-row group relative rounded-md",
-        active ? "bg-white/[0.05]" : "hover:bg-white/[0.03]",
+        active ? "august-session-row-active bg-white/[0.05]" : "hover:bg-white/[0.03]",
       )}
     >
       <button

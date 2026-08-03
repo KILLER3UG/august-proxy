@@ -5,6 +5,11 @@ from __future__ import annotations
 from app.services.workbench import workbench as wb
 
 
+class _Session:
+    def __init__(self, messages):
+        self.messages = messages
+
+
 def test_recall_off_without_budget():
     assert wb._shouldAutoRecall(None) is False
 
@@ -32,3 +37,12 @@ def test_recall_custom_min_headroom():
 def test_recall_missing_keys_off():
     assert wb._shouldAutoRecall({}) is False
     assert wb._shouldAutoRecall({'attention_pressure': 'low'}) is False
+
+
+def test_recall_only_runs_on_first_user_turn():
+    budget = {'attention_pressure': 'low', 'remaining_tokens': 9000}
+    assert wb._shouldAutoRecall(budget, session=_Session([{'role': 'user'}])) is True
+    assert wb._shouldAutoRecall(
+        budget,
+        session=_Session([{'role': 'user'}, {'role': 'assistant'}, {'role': 'user'}]),
+    ) is False

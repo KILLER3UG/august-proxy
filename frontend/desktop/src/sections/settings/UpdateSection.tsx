@@ -83,13 +83,13 @@ export function UpdateSection() {
                     </div>
                   )}
                 </div>
-                {!installing && (
+                {(!installing || progress.phase === 'ready') && (
                   <Button size="sm" onClick={() => { void install(); }}>
-                    <Download className="size-3.5 mr-1.5" />
-                    Install
+                    {progress.phase === 'ready' ? <CheckCircle className="size-3.5 mr-1.5" /> : <Download className="size-3.5 mr-1.5" />}
+                    {progress.phase === 'ready' ? 'Restart to update' : 'Install'}
                   </Button>
                 )}
-                {installing && (
+                {installing && progress.phase !== 'ready' && (
                   <span className="shrink-0 text-xs font-medium text-primary">
                     {progress.phase === 'restarting'
                       ? 'Installing…'
@@ -109,14 +109,18 @@ export function UpdateSection() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-foreground">
-                    {progress.phase === 'restarting'
+                    {progress.phase === 'ready'
+                      ? `${available?.version ?? 'Update'} is ready`
+                      : progress.phase === 'restarting'
                       ? 'Installing August…'
                       : progress.phase === 'installing'
                         ? 'Launching installer…'
                         : 'Downloading update…'}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {progress.phase === 'restarting'
+                    {progress.phase === 'ready'
+                      ? 'The update is downloaded. Restart August when you’re ready to apply it.'
+                      : progress.phase === 'restarting'
                       ? 'August is updating. The old version is removed automatically; you’ll see the install wizard, then August reopens.'
                       : progress.phase === 'installing'
                         ? 'The setup window will appear in a moment.'
@@ -124,7 +128,7 @@ export function UpdateSection() {
                   </p>
                 </div>
                 <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
-                  {progress.phase === 'installing' || progress.phase === 'restarting'
+                  {progress.phase === 'ready' || progress.phase === 'installing' || progress.phase === 'restarting'
                     ? '100%'
                     : progress.percent != null
                       ? `${progress.percent}%`

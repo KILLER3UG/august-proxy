@@ -65,8 +65,11 @@ def _last_run_key(workspace_path: str) -> str:
 
 
 def _interval_seconds() -> int:
+    raw = os.environ.get('AUGUST_DIFF_LEARN_INTERVAL_S', '').strip()
+    if not raw:
+        return _DIFF_LEARN_INTERVAL_S
     try:
-        return max(60, int(os.environ.get('AUGUST_DIFF_LEARN_INTERVAL_S', '') or 0))
+        return max(60, int(raw))
     except ValueError:
         return _DIFF_LEARN_INTERVAL_S
 
@@ -213,7 +216,8 @@ async def learn_from_diffs(
     try:
         from app.services.cognitive_config import get_features
 
-        if not get_features().get('diff_learning', True):
+        features = get_features()
+        if not features.get('diff_learning', True) or not features.get('heuristics', True):
             result['reason'] = 'feature_disabled'
             return result
     except Exception:

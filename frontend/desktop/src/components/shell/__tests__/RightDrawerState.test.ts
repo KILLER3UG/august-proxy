@@ -3,6 +3,7 @@ import {
   addRightDrawerSection,
   closeRightDrawer,
   closeRightDrawerSection,
+  openRightDrawerFile,
   toggleRightDrawerSection,
   useRightDrawerStore,
 } from '../RightDrawerState';
@@ -48,5 +49,29 @@ describe('RightDrawerState', () => {
     const state = useRightDrawerStore.getState();
     expect(state.open).toBe(false);
     expect(state.sections).toHaveLength(0);
+  });
+
+  it('opens a file as the focused drawer view and replaces it with Workbench sections', () => {
+    const file = {
+      id: 'file-1',
+      name: 'pasted-text.txt',
+      size: '1 KB',
+      type: 'text' as const,
+      content: 'hello',
+      status: 'ready' as const,
+    };
+
+    openRightDrawerFile(file);
+    expect(useRightDrawerStore.getState()).toMatchObject({
+      open: true,
+      sections: ['file'],
+      activeSection: 'file',
+      file,
+    });
+
+    addRightDrawerSection('diff');
+    const state = useRightDrawerStore.getState();
+    expect(state.sections).toEqual(['diff']);
+    expect(state.file).toBeUndefined();
   });
 });

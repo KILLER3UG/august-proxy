@@ -99,6 +99,27 @@ describe('v3 — LearningTab', () => {
     });
   });
 
+  it('renders structured auto-memory content without crashing', async () => {
+    mockApiGetSequence([
+      {
+        ...FULL_LEARNING,
+        autoMemories: [
+          {
+            id: 9,
+            key: 'tool-failure-rate',
+            content: { count: 3, suggestion: 'Prefer the safer fallback.' },
+            importance: 0.4,
+          },
+        ],
+      },
+    ]);
+    renderWithQuery(<LearningTab />);
+    await waitFor(() => {
+      expect(screen.getByText(/count/)).toBeTruthy();
+      expect(screen.getByText(/Prefer the safer fallback/)).toBeTruthy();
+    });
+  });
+
   it('renders sleep cycle stats', async () => {
     mockApiGetSequence([FULL_LEARNING]);
     renderWithQuery(<LearningTab />);
@@ -264,6 +285,12 @@ describe('v3 — BrainDashboard tab switching', () => {
     await waitFor(() => {
       expect(screen.getByText('Phase 4 — Learned Heuristics')).toBeTruthy();
     });
+  });
+
+  it('provides an independent scroll container for the dashboard', () => {
+    mockApiGetSequence([FULL_LEARNING]);
+    renderWithQuery(<BrainDashboard />);
+    expect(screen.getByTestId('brain-dashboard')).toHaveClass('overflow-y-auto');
   });
 
   it('switches to the Journey tab', async () => {

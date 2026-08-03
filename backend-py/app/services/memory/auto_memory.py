@@ -459,12 +459,54 @@ def enrich_memory_for_model(item: dict[str, object]) -> dict[str, object]:
     return item
 
 
-def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
+def _is_durable_recall_memory(row: object) -> bool:
+    """Return whether a row is useful for automatic prompt recall.
+
+    Conversation summaries and low-signal telemetry are still searchable on
+    demand, but they should not be pushed into every new prompt. Automatic
+    recall is reserved for explicit/user-authored memories, pinned items, and
+    high-importance durable facts.
+    """
+    if not isinstance(row, dict):
+        try:
+            key = str(row['key'] or '')  # type: ignore[index]
+            category = str(row['category'] or '')  # type: ignore[index]
+            source = str(row['source'] or '')  # type: ignore[index]
+            pinned = bool(row['pinned'])  # type: ignore[index]
+            importance = float(row['importance'] or 0.0)  # type: ignore[index]
+        except (KeyError, TypeError, ValueError):
+            return False
+    else:
+        key = str(row.get('key') or '')
+        category = str(row.get('category') or '')
+        source = str(row.get('source') or '')
+        pinned = bool(row.get('pinned'))
+        try:
+            importance = float(row.get('importance') or 0.0)
+        except (TypeError, ValueError):
+            importance = 0.0
+
+    if category.strip().lower() in {'conversation', 'telemetry', 'learning'}:
+        return False
+    if key.startswith(('conv_summary_', 'episode_', 'tool_failure_')):
+        return False
+    return _is_user_source(source) or pinned or importance >= 0.65
+
+
+def getRelevantMemories(
+    query: str,
+    limit: int = 5,
+    *,
+    durable_only: bool = False,
+) -> list[dict[str, object]]:
     """Find memories relevant to a query using FTS5 ranking + recency decay.
 
     FTS rank supplies the relevance half of the score; ``_decay_factor`` on
     ``updated_at`` supplies the recency half, so fresh memories win ties and
-    stale entries fall out of the top-k unless strongly relevant.
+    stale entries fall out of the top-k unless strongly relevant. When
+    ``durable_only`` is true, low-value conversation summaries and telemetry
+    are omitted for automatic prompt recall while remaining available to the
+    explicit memory-search tool.
     """
     conn = _conn()
     lim = max(1, min(int(limit), 50))
@@ -492,7 +534,12 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
                     scored.append((norm * 0.6 + decay * 0.4, r))
                 scored.sort(key=lambda x: x[0], reverse=True)
                 result = []
-                for _, r in scored[:lim]:
+                candidates = (
+                    [item for item in scored if _is_durable_recall_memory(item[1])]
+                    if durable_only
+                    else scored
+                )
+                for _, r in candidates[:lim]:
                     item = _row_as_wire(r)
                     item.pop('rank', None)
                     try:
@@ -533,7 +580,8 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
                 item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
             except (json.JSONDecodeError, TypeError):
                 pass
-            scored.append((score, enrich_memory_for_model(item)))
+            if not durable_only or _is_durable_recall_memory(r):
+                scored.append((score, enrich_memory_for_model(item)))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [m for __, m in scored[:limit]]
 

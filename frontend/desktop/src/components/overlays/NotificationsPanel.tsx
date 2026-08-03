@@ -149,14 +149,16 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
               <div className="mx-2 mb-2 rounded-lg border border-border/50 bg-muted/30 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-medium text-foreground">
-                    {progress.phase === 'restarting'
-                      ? 'Restarting August…'
+                    {progress.phase === 'ready'
+                      ? `${update?.version ?? 'Update'} is ready`
+                      : progress.phase === 'restarting'
+                        ? 'Restarting August…'
                       : progress.phase === 'installing'
                         ? 'Installing update…'
                         : 'Downloading update…'}
                   </p>
                   <span className="text-xs font-semibold tabular-nums text-foreground">
-                    {progress.phase === 'installing' || progress.phase === 'restarting'
+                    {progress.phase === 'ready' || progress.phase === 'installing' || progress.phase === 'restarting'
                       ? '100%'
                       : progress.percent != null
                         ? `${progress.percent}%`
@@ -205,6 +207,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
                     item={item}
                     installing={installing}
                     progressPercent={progress.percent}
+                    progressPhase={progress.phase}
                     onInstall={() => {
                       void install();
                     }}
@@ -249,12 +252,14 @@ function NotificationRow({
   item,
   installing,
   progressPercent,
+  progressPhase,
   onInstall,
   onOpenUrl,
 }: {
   item: NotificationItem;
   installing: boolean;
   progressPercent: number | null;
+  progressPhase: 'idle' | 'downloading' | 'ready' | 'installing' | 'restarting';
   onInstall: () => void;
   onOpenUrl: (url: string) => void;
 }) {
@@ -266,7 +271,7 @@ function NotificationRow({
         : GitCommitHorizontal;
 
   const clickable = item.kind !== 'update' && Boolean(item.url);
-  const updateBusy = item.kind === 'update' && installing;
+  const updateBusy = item.kind === 'update' && installing && progressPhase !== 'ready';
 
   return (
     <motion.div
@@ -276,7 +281,7 @@ function NotificationRow({
       <motion.button
         type="button"
         {...menuItemHover}
-        disabled={item.kind === 'update' ? installing : !clickable}
+        disabled={item.kind === 'update' ? updateBusy : !clickable}
         onClick={() => {
           if (item.kind === 'update') onInstall();
           else if (item.url) onOpenUrl(item.url);
@@ -316,7 +321,9 @@ function NotificationRow({
                     ? progressPercent != null
                       ? `Downloading ${progressPercent}%`
                       : 'Downloading…'
-                    : 'Click to install'}
+                    : progressPhase === 'ready'
+                      ? 'Restart to update'
+                      : 'Click to install'}
                 </span>
               )}
               {clickable && (

@@ -102,25 +102,55 @@ export function useAppUpdate() {
   });
   const install = useCallback(async () => {
     if (!isTauri || !query.data) return;
-    if (useAppUpdateInstallStore.getState().installing) return;
+
+    const state = useAppUpdateInstallStore.getState();
+    if (state.installing && state.progress.phase !== 'ready') return;
+
+    // The second click is intentionally the explicit "Restart to update"
+    // action shown after the installer has finished downloading.
+    if (state.installing && state.progress.phase === 'ready') {
+      try {
+        if (isWindowsDesktop()) {
+          if (!pendingInstallerPath) throw new Error('Downloaded installer is no longer available');
+          await stopBackendBeforeInstall();
+          setProgress({ ...state.progress, phase: 'restarting' });
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => window.setTimeout(resolve, 450));
+          });
+          await invoke<string>('launch_installer_and_exit', { path: pendingInstallerPath });
+          toast.success('Update started — the installer will guide you through the final step.');
+        } else {
+          if (!pendingNativeUpdate) throw new Error('Downloaded update is no longer available');
+          await stopBackendBeforeInstall();
+          await schedulePostUpdateRelaunch();
+          setProgress({ ...state.progress, phase: 'restarting' });
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => window.setTimeout(resolve, 450));
+          });
+          await pendingNativeUpdate.install();
+          try {
+            const { relaunch } = await import('@tauri-apps/plugin-process');
+            await relaunch();
+          } catch {
+            toast.success('Update installed — August should reopen shortly.');
+          }
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        toast.error(message || 'Failed to install update');
+        resetInstall();
+      }
+      return;
+    }
 
     const version = query.data.version;
+    cancelRequested = false;
+    pendingInstallerPath = null;
+    pendingNativeUpdate = null;
     setInstalling(true);
-    setProgress({
-      percent: 0,
-      downloadedBytes: 0,
-      totalBytes: null,
-      phase: 'downloading',
-    });
+    setProgress({ percent: 0, downloadedBytes: 0, totalBytes: null, phase: 'downloading' });
 
     if (isWindowsDesktop()) {
-      // Full-installer flow: download the real NSIS setup from the latest
-      // GitHub release, then run it in `/UPDATE` mode. The template routes
-      // update mode through the previous version's uninstaller FIRST (the
-      // uninstall wizard pops up), then continues with the install wizard —
-      // see `windows/installer.nsi` + `launch_installer_and_exit`. This
-      // replaces the quiet in-place patch, which could miss bundled backend
-      // changes, and guarantees a clean swap to the latest version.
       let unlisten: (() => void) | undefined;
       let downloaded = 0;
       let total: number | null = null;
@@ -132,51 +162,32 @@ export function useAppUpdate() {
             downloaded = payload.downloadedBytes;
             total = payload.totalBytes;
             setProgress({
-              percent:
-                total && total > 0
-                  ? Math.min(100, Math.round((downloaded / total) * 100))
-                  : null,
+              percent: total && total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : null,
               downloadedBytes: downloaded,
               totalBytes: total,
               phase: 'downloading',
             });
           },
         );
-
         const filename = `August_${version}_x64-setup.exe`;
         const installerPath = await invoke<string>('download_release_installer', {
           url: `${RELEASE_DOWNLOAD_BASE}/latest/download/${filename}`,
           filename,
         });
-
+        if (cancelRequested) {
+          resetInstall();
+          return;
+        }
+        pendingInstallerPath = installerPath;
         setProgress({
           percent: 100,
           downloadedBytes: downloaded,
           totalBytes: total ?? downloaded,
-          phase: 'installing',
+          phase: 'ready',
         });
-        await stopBackendBeforeInstall();
-
-        // Paint the full-screen overlay before the process exits so users
-        // see what is happening instead of a sudden quit.
-        setProgress({
-          percent: 100,
-          downloadedBytes: downloaded,
-          totalBytes: total ?? downloaded,
-          phase: 'restarting',
-        });
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => {
-            window.setTimeout(resolve, 450);
-          });
-        });
-
-        // Spawns the setup wizard and exits August — rarely returns.
-        await invoke<string>('launch_installer_and_exit', { path: installerPath });
-        toast.success('Update started — the installer will guide you through the final step.');
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        toast.error(message || 'Failed to download the installer');
+        if (!cancelRequested) toast.error(message || 'Failed to download the installer');
         resetInstall();
       } finally {
         unlisten?.();
@@ -184,109 +195,63 @@ export function useAppUpdate() {
       return;
     }
 
-    // Non-Windows: keep the in-place updater plugin path.
     try {
       const { check } = await import('@tauri-apps/plugin-updater');
       const update = await check();
       if (!update) {
         toast.message('No update available');
+        resetInstall();
         void queryClient.invalidateQueries({ queryKey: ['app-update'] });
         return;
       }
-
       let downloaded = 0;
       let contentLength: number | null = null;
-
-      // Download first, then kill the backend, then install. On Windows NSIS
-      // cannot overwrite resources/python/*.pyd while uvicorn still holds them;
-      // downloadAndInstall races quit vs sidecar teardown.
       await update.download((event) => {
-        switch (event.event) {
-          case 'Started': {
-            contentLength =
-              typeof event.data.contentLength === 'number' && event.data.contentLength > 0
-                ? event.data.contentLength
-                : null;
-            downloaded = 0;
-            setProgress({
-              percent: contentLength ? 0 : null,
-              downloadedBytes: 0,
-              totalBytes: contentLength,
-              phase: 'downloading',
-            });
-            break;
-          }
-          case 'Progress': {
-            downloaded += event.data.chunkLength;
-            const percent =
-              contentLength && contentLength > 0
-                ? Math.min(100, Math.round((downloaded / contentLength) * 100))
-                : null;
-            setProgress({
-              percent,
-              downloadedBytes: downloaded,
-              totalBytes: contentLength,
-              phase: 'downloading',
-            });
-            break;
-          }
-          case 'Finished': {
-            setProgress({
-              percent: 100,
-              downloadedBytes: contentLength ?? downloaded,
-              totalBytes: contentLength ?? downloaded,
-              phase: 'installing',
-            });
-            break;
-          }
-          default:
-            break;
+        if (event.event === 'Started') {
+          contentLength = typeof event.data.contentLength === 'number' && event.data.contentLength > 0
+            ? event.data.contentLength
+            : null;
+          downloaded = 0;
+          setProgress({ percent: contentLength ? 0 : null, downloadedBytes: 0, totalBytes: contentLength, phase: 'downloading' });
+        } else if (event.event === 'Progress') {
+          downloaded += event.data.chunkLength;
+          setProgress({
+            percent: contentLength && contentLength > 0 ? Math.min(100, Math.round((downloaded / contentLength) * 100)) : null,
+            downloadedBytes: downloaded,
+            totalBytes: contentLength,
+            phase: 'downloading',
+          });
         }
       });
-      setProgress({
-        percent: 100,
-        downloadedBytes: contentLength ?? downloaded,
-        totalBytes: contentLength ?? downloaded,
-        phase: 'installing',
-      });
-      await stopBackendBeforeInstall();
-      // Must run before install(): on Windows the process is killed inside install().
-      // Waiter polls for `.august-update-complete` (NSIS POSTINSTALL) up to ~3 min.
-      await schedulePostUpdateRelaunch();
-
-      // Paint the full-screen “restarting” overlay before the process exits so
-      // users aren’t left staring at a frozen UI or a sudden quit.
-      setProgress({
-        percent: 100,
-        downloadedBytes: contentLength ?? downloaded,
-        totalBytes: contentLength ?? downloaded,
-        phase: 'restarting',
-      });
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => {
-          window.setTimeout(resolve, 450);
-        });
-      });
-
-      await update.install();
-
-      // Non-Windows (and rare Windows paths where install() returns): relaunch now.
-      // On Windows quiet NSIS, install() usually never returns — POSTINSTALL +
-      // the scheduled waiter handle relaunch.
-      try {
-        const { relaunch } = await import('@tauri-apps/plugin-process');
-        await relaunch();
-      } catch {
-        toast.success('Update installed — August should reopen shortly.');
+      if (cancelRequested) {
+        await update.close().catch(() => undefined);
+        resetInstall();
+        return;
       }
+      pendingNativeUpdate = update;
+      setProgress({
+        percent: 100,
+        downloadedBytes: contentLength ?? downloaded,
+        totalBytes: contentLength ?? downloaded,
+        phase: 'ready',
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      toast.error(message || 'Failed to install update');
+      toast.error(message || 'Failed to download update');
       resetInstall();
     }
-    // Do not reset on success — keep the restarting overlay until the process
-    // exits (Windows) or relaunch() replaces the window.
   }, [query.data, queryClient, setInstalling, setProgress, resetInstall]);
+
+  const cancelDownload = useCallback(() => {
+    cancelRequested = true;
+    if (isWindowsDesktop()) {
+      void invoke<string>('cancel_update_download').catch(() => undefined);
+    }
+    void pendingNativeUpdate?.close().catch(() => undefined);
+    pendingNativeUpdate = null;
+    pendingInstallerPath = null;
+    resetInstall();
+  }, [resetInstall]);
 
   return {
     isTauri,
@@ -297,6 +262,7 @@ export function useAppUpdate() {
     formatBytes,
     refresh: () => queryClient.invalidateQueries({ queryKey: ['app-update'] }),
     install,
+    cancelDownload,
   };
 }
 

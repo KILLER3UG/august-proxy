@@ -11,7 +11,6 @@ import 'xterm/css/xterm.css';
 import {
   approveTerminalRequest,
   createTerminalSession,
-  deleteTerminalSession,
   getTerminalSessions,
   openExternalTerminal,
   resizeTerminalSession,
@@ -105,14 +104,6 @@ export function RightDrawerTerminalSection() {
     mutationFn: (requestId: string) => approveTerminalRequest(requestId, false),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['terminal-sessions'] }); },
   });
-  const close = useMutation({
-    mutationFn: deleteTerminalSession,
-    onSuccess: () => {
-      if (selectedId) setSelectedId(null);
-      void qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
-    },
-  });
-
   // Auto-spawn a real terminal session if there are none yet.
   useEffect(() => {
     if (
@@ -145,7 +136,7 @@ export function RightDrawerTerminalSection() {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
       fontSize: 14,
       theme: {
-        background: '#020617',
+        background: '#181818',
         foreground: '#e5e7eb',
       },
     });
@@ -322,22 +313,10 @@ export function RightDrawerTerminalSection() {
         >
           {createSession.isPending ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
         </Button>
-        {active && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => close.mutate(active.id)}
-            disabled={close.isPending}
-            aria-label="Close terminal session"
-            title="Close"
-          >
-            <X className="size-3" />
-          </Button>
-        )}
       </div>
 
       {inErrorState && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-lg bg-[#020617]/95 p-6 text-center">
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-lg bg-[#181818]/95 p-6 text-center">
           <AlertCircle className="size-8 text-destructive" />
           <div className="max-w-xs">
             <p className="text-sm font-medium text-foreground">Shell failed to start</p>
@@ -381,7 +360,7 @@ export function RightDrawerTerminalSection() {
       <div
         ref={containerRef}
         className={cn(
-          'absolute inset-0 overflow-hidden rounded-lg border border-black/20 bg-[#020617]',
+          'absolute inset-0 overflow-hidden rounded-lg border border-black/20 bg-[#181818]',
           !socketReady && !connectedRef.current && 'opacity-95'
         )}
       />

@@ -7,6 +7,7 @@ import { AlertCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getFileIcon } from '@/lib/file-icon';
 import type { FileAttachment } from '@/types/chat';
+import { openRightDrawerFile } from '@/components/shell/RightDrawerState';
 
 const RING_SIZE = 44;
 const STROKE = 3;
@@ -169,16 +170,31 @@ export function ComposerAttachmentChips({
         const status = file.status ?? 'ready';
         const progress = file.progress ?? 0;
         const isReading = status === 'reading';
+        const canOpen = status === 'ready';
 
         return (
           <div
             key={file.id ?? `${file.name}-${i}`}
+            role={canOpen ? 'button' : undefined}
+            tabIndex={canOpen ? 0 : undefined}
+            onClick={() => {
+              if (canOpen) openRightDrawerFile(file);
+            }}
+            onKeyDown={(event) => {
+              if (canOpen && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                openRightDrawerFile(file);
+              }
+            }}
             className={cn(
               'group relative flex items-center gap-2.5 pl-1.5 pr-2 py-1.5 rounded-xl',
               'bg-card border border-border shadow-xs',
               'max-w-[220px] animate-in fade-in zoom-in-95 duration-150',
+              canOpen && 'cursor-pointer hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
               status === 'error' && 'border-destructive/40 bg-destructive/5',
             )}
+            title={canOpen ? `Open ${file.name} in preview` : file.name}
+            aria-label={canOpen ? `Open ${file.name} in preview` : undefined}
           >
             <AttachmentThumb file={file} />
 
@@ -201,7 +217,10 @@ export function ComposerAttachmentChips({
 
             <button
               type="button"
-              onClick={() => onRemove(i)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemove(i);
+              }}
               className={cn(
                 'absolute top-1 right-1 p-0.5 rounded-full',
                 'bg-background/90 border border-border/60 shadow-xs',

@@ -1,12 +1,10 @@
-"""AUG routes — AUG.md management + plan/todo artifact persistence.
+"""AUG routes — AUG.md management.
 
 Endpoints:
   GET  /api/aug/context                 → current AUG.md { exists, body, frontmatter, path }
   POST /api/aug/init                    → LLM draft { draft, existing, analysis, mode }
   PUT  /api/aug/content                 → write AUG.md { path, bytes }
   DELETE /api/aug/content               → remove AUG.md { path, removed }
-  GET  /api/aug/plans                   → list .aug artifacts { artifacts: [...] }
-  DELETE /api/aug/plans/{kind}/{slug}   → manual delete { removed }
 """
 
 from __future__ import annotations
@@ -14,7 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, HTTPException, Query
 
 from app.json_narrowing import as_str
-from app.services import aug_artifact_service, aug_directive_service
+from app.services import aug_directive_service
 
 router = APIRouter(prefix='/api/aug')
 
@@ -75,19 +73,3 @@ async def putAugContent(payload: dict = Body(...)):
 async def deleteAugContent(workspacePath: str = Query('')):
     """Remove the workspace AUG.md if present."""
     return aug_directive_service.delete(workspacePath or None)
-
-
-@router.get('/plans')
-async def listAugPlans(workspacePath: str = Query('', description='Workspace path (falls back to project root)')):
-    """List `.aug` plan/todo artifacts for manual cleanup."""
-    artifacts = aug_artifact_service.listArtifacts(workspacePath or None)
-    return {'artifacts': artifacts}
-
-
-@router.delete('/plans/{kind}/{slug}')
-async def deleteAugPlan(kind: str, slug: str, workspacePath: str = Query('')):
-    """Manually delete a single `.aug` artifact."""
-    result = aug_artifact_service.deleteArtifact(workspacePath or None, kind, slug)
-    if not result.get('removed') and result.get('error'):
-        raise HTTPException(status_code=400, detail=result['error'])
-    return result

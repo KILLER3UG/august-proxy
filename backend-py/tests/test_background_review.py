@@ -20,6 +20,7 @@ from app.services.memory.background_review import (
     _lastRelevantMessages,
     _parseRecommendations,
     _saveFact,
+    scheduleEndOfSessionReview,
     tryBackgroundReview,
 )
 from app.services.memory_store import get_memory
@@ -113,6 +114,46 @@ async def testTryBackgroundReviewNoLlmMeansNoop():
     messages = [{'role': 'user'}, {'role': 'assistant'}]
     await tryBackgroundReview(session, messages, llm_client=None)
     assert True
+
+
+@pytest.mark.asyncio
+async def testEndOfSessionReviewCoversShortIdleSession(monkeypatch):
+    called = []
+
+    async def stubReview(_messages, *, llm_client=None):
+        called.append(True)
+
+    monkeypatch.setattr('app.services.memory.background_review._doReview', stubReview)
+    session = mkSession(messageCount=2, status='idle')
+    await scheduleEndOfSessionReview(
+        session,
+        [{'role': 'user'}, {'role': 'assistant'}],
+        llm_client=None,
+        idle_seconds=0.25,
+    )
+    await asyncio.sleep(0.4)
+    assert called == [True]
+
+
+@pytest.mark.asyncio
+async def testBackgroundReviewToggleStopsReview(isolatedData):
+    from app.services import background_review_service
+
+    background_review_service.saveConfig(enabled=False, actor='test')
+    called = []
+
+    async def dummyLlm(_prompt):
+        called.append(True)
+        return '{}'
+
+    session = mkSession(messageCount=8)
+    await tryBackgroundReview(
+        session,
+        [{'role': 'user'}, {'role': 'assistant'}],
+        llm_client=dummyLlm,
+    )
+    await asyncio.sleep(0.05)
+    assert called == []
 
 
 @pytest.mark.asyncio

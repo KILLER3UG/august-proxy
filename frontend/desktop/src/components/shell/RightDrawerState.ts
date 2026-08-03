@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import type { GitDiffResult } from '@/api/git';
+import type { FileAttachment } from '@/types/chat';
 
 export type RightDrawerSectionId =
   | 'preview'
@@ -10,7 +11,8 @@ export type RightDrawerSectionId =
   | 'tasks'
   | 'plan'
   | 'browser'
-  | 'notes';
+  | 'notes'
+  | 'file';
 
 export interface RightDrawerState {
   open: boolean;
@@ -18,6 +20,7 @@ export interface RightDrawerState {
   activeSection?: RightDrawerSectionId;
   diff?: GitDiffResult;
   selectedDiffPath?: string;
+  file?: FileAttachment;
 }
 
 const MAX_SECTIONS = 4;
@@ -62,12 +65,14 @@ export function useRightDrawer(): RightDrawerState {
   const activeSection = useRightDrawerStore((s) => s.activeSection);
   const diff = useRightDrawerStore((s) => s.diff);
   const selectedDiffPath = useRightDrawerStore((s) => s.selectedDiffPath);
+  const file = useRightDrawerStore((s) => s.file);
   return {
     open,
     sections,
     activeSection,
     diff,
     selectedDiffPath,
+    file,
   };
 }
 
@@ -83,12 +88,17 @@ export function useRightDrawerSections(): RightDrawerSectionId[] {
   return useRightDrawerStore((s) => s.sections);
 }
 
-export function openRightDrawer(section?: RightDrawerSectionId, options: Partial<Pick<RightDrawerState, 'diff' | 'selectedDiffPath'>> = {}) {
+export function openRightDrawer(section?: Exclude<RightDrawerSectionId, 'file'>, options: Partial<Pick<RightDrawerState, 'diff' | 'selectedDiffPath'>> = {}) {
   const current = useRightDrawerStore.getState();
-  const target = section ?? current.activeSection ?? SECTION_ORDER[0];
-  const nextSections = current.sections.includes(target)
-    ? current.sections
-    : [...current.sections, target].slice(-MAX_SECTIONS);
+  const target = (
+    section ?? (current.activeSection === 'file' ? undefined : current.activeSection) ?? SECTION_ORDER[0]
+  ) as Exclude<RightDrawerSectionId, 'file'>;
+  const baseSections = current.sections.filter(
+    (item): item is Exclude<RightDrawerSectionId, 'file'> => item !== 'file',
+  );
+  const nextSections = baseSections.includes(target)
+    ? baseSections
+    : [...baseSections, target].slice(-MAX_SECTIONS);
 
   useRightDrawerStore.setState({
     ...current,
@@ -96,6 +106,7 @@ export function openRightDrawer(section?: RightDrawerSectionId, options: Partial
     open: true,
     activeSection: target,
     sections: nextSections,
+    file: undefined,
   });
 }
 
@@ -108,6 +119,18 @@ export function closeRightDrawer() {
     open: false,
     sections: [],
     activeSection: undefined,
+    file: undefined,
+  });
+}
+
+/** Open an attachment in the full-height file viewer. */
+export function openRightDrawerFile(file: FileAttachment) {
+  useRightDrawerStore.setState({
+    ...useRightDrawerStore.getState(),
+    open: true,
+    sections: ['file'],
+    activeSection: 'file',
+    file,
   });
 }
 
@@ -178,6 +201,9 @@ export function setRightDrawerSections(sections: RightDrawerSectionId[], activeS
  */
 export function addRightDrawerSection(section: RightDrawerSectionId) {
   const current = useRightDrawerStore.getState();
+  // A file preview occupies the drawer as a focused document view. Opening a
+  // Workbench section from the titlebar should replace it cleanly.
+  const baseSections = current.sections.filter((item) => item !== 'file');
   if (current.sections.includes(section)) {
     useRightDrawerStore.setState({
       ...current,
@@ -186,7 +212,11 @@ export function addRightDrawerSection(section: RightDrawerSectionId) {
     });
     return;
   }
-  const nextSections = [...current.sections, section].slice(-MAX_SECTIONS);
+  const nextSections = [...baseSections, section].slice(-MAX_SECTIONS);
+  useRightDrawerStore.setState({
+    ...current,
+    file: undefined,
+  });
   setSectionsOrClose(nextSections, section);
 }
 

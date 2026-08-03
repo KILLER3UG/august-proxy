@@ -22,6 +22,8 @@ const DEFAULT_PROXY_PORT: u16 = 8085;
 
 /// When true, the watchdog must not respawn the backend (update/install in progress).
 static UPDATE_HOLDOFF: AtomicBool = AtomicBool::new(false);
+/// Set by the UI when the user cancels the visible installer download.
+static UPDATE_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 
 pub struct BackendProcess(pub Mutex<Option<Child>>, pub Mutex<Option<String>>);
 
@@ -1144,6 +1146,7 @@ pub async fn download_release_installer(
     url: String,
     filename: String,
 ) -> Result<String, String> {
+    UPDATE_DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
     tokio::task::spawn_blocking(move || {
         use std::io::{Read, Write};
 
@@ -1199,6 +1202,10 @@ pub async fn download_release_installer(
         // `.chunk()` API does not exist on it, so read into a fixed buffer.
         let mut buf = [0u8; 64 * 1024];
         loop {
+            if UPDATE_DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
+                let _ = std::fs::remove_file(&dest);
+                return Err("update download cancelled".into());
+            }
             let n = resp
                 .read(&mut buf)
                 .map_err(|e| format!("download interrupted: {e}"))?;
@@ -1232,6 +1239,13 @@ pub async fn download_release_installer(
     })
     .await
     .map_err(|e| format!("download task failed: {e}"))?
+}
+
+/// Stop an in-flight Windows installer download started by the update dialog.
+#[tauri::command]
+pub fn cancel_update_download() -> String {
+    UPDATE_DOWNLOAD_CANCEL.store(true, Ordering::SeqCst);
+    "cancel_requested".into()
 }
 
 /// Launch the downloaded installer in **update mode**, then exit August so the

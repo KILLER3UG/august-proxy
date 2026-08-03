@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx-js-style';
 // ── Limits ──────────────────────────────────────────────────────────────────
 const TEXT_MAX_CHARS = 100_000;   // 100 KB of extracted text
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024; // 10 MB for images
+const INLINE_FILE_MAX_SIZE = 8 * 1024 * 1024; // Keep generic inline previews bounded.
 
 // ── Types ───────────────────────────────────────────────────────────────────
 export type FileReadType = 'text' | 'image' | 'unsupported';
@@ -16,7 +17,7 @@ export interface FileReadResult {
   type: FileReadType;
   /** Extracted text content (for text-type files). */
   content?: string;
-  /** Base64 data URL (for image files). */
+  /** Base64 data URL for images and small unsupported files that can be opened inline. */
   dataUrl?: string;
   /** First-page thumbnail data URL (PDFs); UI preview only. */
   thumbnailUrl?: string;
@@ -308,6 +309,16 @@ export async function readFileContent(
         return { type: 'text', content, mimeType, truncated };
       }
     } catch { /* silent */ }
+  }
+
+  // Keep otherwise-unreadable small files clickable. The drawer can hand
+  // browser-previewable formats (PDF/media) their original data URL, while
+  // archives and binaries still get a useful metadata/unsupported view.
+  if (file.size <= INLINE_FILE_MAX_SIZE) {
+    try {
+      const dataUrl = await readFileAsDataUrl(file, onProgress);
+      return { type: 'unsupported', dataUrl, mimeType };
+    } catch { /* fall through to metadata-only attachment */ }
   }
 
   onProgress?.(100);

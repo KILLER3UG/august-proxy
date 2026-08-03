@@ -18,7 +18,7 @@ import {
 import { useRightDrawer, type RightDrawerSectionId } from './RightDrawerState';
 
 const SECTION_META: Record<
-  RightDrawerSectionId,
+  Exclude<RightDrawerSectionId, 'file'>,
   { label: string; hint?: string; Icon: typeof FileDiff }
 > = {
   preview: {
@@ -58,7 +58,7 @@ const SECTION_META: Record<
   },
 };
 
-const OPTIONS: RightDrawerSectionId[] = [
+const OPTIONS: Array<Exclude<RightDrawerSectionId, 'file'>> = [
   'diff',
   'terminal',
   'plan',

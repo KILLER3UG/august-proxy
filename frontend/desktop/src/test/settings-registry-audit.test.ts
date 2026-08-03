@@ -132,7 +132,6 @@ describe('legacy alias resolution', () => {
     ['logs',            'observability'],
     ['traffic',         'observability'],
     ['activity',        'observability'],
-    ['artifacts',       'observability'],
     ['audit',           'observability'],
     ['rollback',        'observability'],
     ['observations',    'observability'],

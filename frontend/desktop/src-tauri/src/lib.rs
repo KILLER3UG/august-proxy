@@ -90,6 +90,7 @@ pub fn run() {
             backend::stop_backend_for_update,
             backend::schedule_post_update_relaunch,
             backend::download_release_installer,
+            backend::cancel_update_download,
             backend::launch_installer_and_exit,
             confirm_quit,
         ])

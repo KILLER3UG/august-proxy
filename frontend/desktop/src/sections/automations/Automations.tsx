@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  FolderOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -33,6 +34,7 @@ import {
 import { PageLoader } from '@/components/PageLoader';
 import { useNavigate } from 'react-router-dom';
 import { OsNotifyService } from '@/lib/os-notify';
+import { openFolderViaTauri } from '@/api/folder';
 
 const SCHEDULE_PRESETS: Array<{ label: string; value: string }> = [
   { label: 'Every hour', value: '0 * * * *' },
@@ -244,6 +246,23 @@ function CreateAutomationForm({
   const [preset, setPreset] = useState(SCHEDULE_PRESETS[0].value);
   const [customSchedule, setCustomSchedule] = useState('');
   const [workspacePath, setWorkspacePath] = useState('');
+  const [pickingWorkspace, setPickingWorkspace] = useState(false);
+
+  const chooseWorkspace = async () => {
+    setPickingWorkspace(true);
+    try {
+      const result = await openFolderViaTauri();
+      if (!result.cancelled && result.path) {
+        setWorkspacePath(result.path);
+      }
+    } catch (error) {
+      toast.error('Could not open folder picker', {
+        description: error instanceof Error ? error.message : 'Please enter the path manually.',
+      });
+    } finally {
+      setPickingWorkspace(false);
+    }
+  };
 
   const schedule = preset || customSchedule.trim();
   const canSave =
@@ -379,17 +398,33 @@ function CreateAutomationForm({
               />
             </label>
           )}
-          <label className="block space-y-1 sm:col-span-2">
+          <div className="block space-y-1 sm:col-span-2">
             <span className="text-xs text-muted-foreground">
               {jobType === 'shell' ? 'Working directory (optional)' : 'Workspace path (optional)'}
             </span>
-            <input
-              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
-              value={workspacePath}
-              onChange={(e) => setWorkspacePath(e.target.value)}
-              placeholder="C:\\Dev\\my-project"
-            />
-          </label>
+            <div className="flex items-center gap-2">
+              <input
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
+                value={workspacePath}
+                onChange={(e) => setWorkspacePath(e.target.value)}
+                placeholder="C:\\Dev\\my-project"
+                aria-label="Workspace path"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void chooseWorkspace()}
+                disabled={busy || pickingWorkspace}
+                title="Choose workspace folder"
+                aria-label="Choose workspace folder"
+                className="shrink-0"
+              >
+                <FolderOpen className="size-3.5" />
+                <span className="hidden sm:inline">Browse</span>
+              </Button>
+            </div>
+          </div>
         </div>
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="ghost" onClick={onCancel} disabled={busy}>

@@ -9,7 +9,6 @@ import {
   Brain,
   Mic,
   Bot,
-  Package,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
@@ -28,9 +27,6 @@ const BrainDashboard = lazy(() =>
 );
 const AutomationsPage = lazy(() =>
   import('@/sections/automations/AutomationsPage').then((m) => ({ default: m.AutomationsPage })),
-);
-const ArtifactsPage = lazy(() =>
-  import('@/sections/artifacts/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })),
 );
 const SkillsPage = lazy(() =>
   import('@/sections/skills/SkillsPage').then((m) => ({ default: m.SkillsPage })),
@@ -105,13 +101,6 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     label: 'Skills & Tools',
     Icon: Wrench,
     element: React.createElement(LazySection, { name: 'Skills' }, React.createElement(SkillsPage)),
-    nav: true,
-  },
-  {
-    path: '/artifacts',
-    label: 'Artifacts',
-    Icon: Package,
-    element: React.createElement(LazySection, { name: 'Artifacts' }, React.createElement(ArtifactsPage)),
     nav: true,
   },
   {

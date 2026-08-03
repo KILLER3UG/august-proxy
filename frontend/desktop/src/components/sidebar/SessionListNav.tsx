@@ -1,14 +1,12 @@
 /* ── Session list nav — top actions ─────────────────────────────────── */
-/* Collapse · New chat · Automations · Skills & Tools · Artifacts         */
+/* Collapse · New chat · Automations · Skills & Tools                     */
 
 import { motion } from "framer-motion";
 import {
   Bot,
   Brain,
-  Package,
   PanelLeft,
   Plus,
-  Sparkles,
   Wrench,
 } from "lucide-react";
 import { t } from "@/lib/motion";
@@ -57,12 +55,6 @@ const wrenchIconMotion = {
   tap: { scale: 0.92, transition: t.fast },
 };
 
-const packageIconMotion = {
-  rest: { scale: 1, y: 0 },
-  hover: { scale: 1.12, y: -2, transition: t.spring },
-  tap: { scale: 0.92, y: 0, transition: t.fast },
-};
-
 const brainIconMotion = {
   rest: { scale: 1, rotate: 0 },
   hover: { scale: 1.12, rotate: -6, transition: t.spring },
@@ -79,9 +71,6 @@ export function SessionListNav({
     <div className="august-sidebar-nav pt-1.5 pb-1 px-2 flex flex-col gap-0.5">
       <div className="august-sidebar-brand flex items-center justify-between px-0.5 pb-2">
         <div className="flex items-center gap-2 px-1">
-          <span className="august-brand-mark inline-flex size-6 items-center justify-center rounded-lg bg-primary/15 text-primary">
-            <Sparkles className="size-3.5" aria-hidden />
-          </span>
           <span className="text-[15px] font-semibold tracking-[-0.02em] text-sidebar-foreground/90">August</span>
         </div>
         <button
@@ -158,21 +147,6 @@ export function SessionListNav({
         <span>Skills & Tools</span>
       </motion.button>
 
-      <motion.button
-        type="button"
-        onClick={() => onNavigate("/artifacts")}
-        className={quietRow}
-        initial="rest"
-        whileHover="hover"
-        whileTap="tap"
-        variants={rowMotion}
-        data-testid="sidebar-nav-artifacts"
-      >
-        <motion.span className="inline-flex shrink-0 opacity-60" variants={packageIconMotion}>
-          <Package className="size-3.5" />
-        </motion.span>
-        <span>Artifacts</span>
-      </motion.button>
     </div>
   );
 }

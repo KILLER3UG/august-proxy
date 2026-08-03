@@ -22,7 +22,7 @@ and are hidden until the user enables “Show advanced.”
 | **General** (6) | System & Health, Account, Profile & Preferences, UI Designer, Conversations, Updates | App chrome, profiles, history, app updates |
 | **Intelligence** (4) | Model Providers, Memory & Knowledge, Recalled Memory, Added Memory | Providers + cognitive + memory planes |
 | **Tools & Skills** (7) | Integrations, Skills, Computer Use, Agents & Automation, Agent Board, Tool Reach, Python Sandbox | Agent capabilities |
-| **Activity** (5) | Observability, Conversation Inspector, Backend Monitor, Feature Flow, Artifacts | Telemetry and artifacts |
+| **Activity** (4) | Observability, Conversation Inspector, Backend Monitor, Feature Flow | Telemetry and feature execution |
 | **Security & Access** (4) | Path Permissions, Computer Access, API Access, Developer Console | Gating surfaces |
 
 ### Section id inventory
@@ -50,7 +50,6 @@ and are hidden until the user enables “Show advanced.”
 | `conversation-inspector` | Conversation Inspector | activity | advanced |
 | `backend-monitor` | Backend Monitor | activity | advanced |
 | `feature-flow` | Feature Flow | activity | advanced |
-| `plans` | Artifacts | activity | advanced |
 | `tool-grants` | Path Permissions | security | basic |
 | `computer-access` | Computer Access | security | advanced |
 | `api-access` | API Access | security | basic |

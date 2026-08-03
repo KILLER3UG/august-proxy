@@ -374,8 +374,11 @@ def register() -> None:
     )
     tool_registry.register(
         'forget',
-        'Delete a stored memory by id when it is wrong or no longer true. '
-        'List memories first with brain_query(store=autoMemories) or memory_search.',
+        'Delete a stored memory by id when it is wrong, stale, transient, or no longer useful '
+        'for future sessions. If an automatically recalled memory is clearly unnecessary to '
+        'keep, clean it up proactively with this tool; do not delete a durable fact merely '
+        'because it is irrelevant to the current turn. List memories first with '
+        'brain_query(store=autoMemories) or memory_search.',
         _forgetMemory,
         {
             'type': 'object',

@@ -24,7 +24,7 @@ from app.config import settings
 from app.lib.paths import dataPath
 from app.services.memory_store import record_config_audit
 
-_DEFAULTConfig: dict[str, object] = {'enabled': False, 'reviewModel': '', 'reflectionModel': '', 'autoMemoryModel': ''}
+_DEFAULTConfig: dict[str, object] = {'enabled': True, 'reviewModel': '', 'reflectionModel': '', 'autoMemoryModel': ''}
 
 
 def getConfig() -> dict[str, object]:

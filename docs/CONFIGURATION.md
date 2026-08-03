@@ -437,14 +437,7 @@ filtering is not active.
 Type `/init` in the chat composer to generate or refine `AUG.md` for the current
 workspace (preview → save). API: `/api/aug/*`.
 
-### Plan & todo persistence (`.aug/`)
-
-When the model creates a plan (`submit_plan`) or todos (`submit_todos`), copies
-are persisted under the workspace `.aug/` directory and cleaned up when the
-session is reset/rejected/deleted. Settings → Plans surfaces survivors.
-
 ### Implementation
 
 - Loader / writer / generator: `backend-py/app/services/aug_directive_service.py`
-- Artifact persistence: `backend-py/app/services/aug_artifact_service.py`
 - API: `backend-py/app/routers/aug.py`

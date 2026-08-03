@@ -767,7 +767,6 @@ def delete_workbench_session(session_id: str) -> bool:
         _load_sessions()
     session = _sessions.get(session_id)
     found_in_memory = session is not None
-    workspace = session.workspacePath if session else ''
 
     # Drop from RAM + notify UI first (real-time), cascade SQLite after.
     if session_id in _sessions:
@@ -782,12 +781,6 @@ def delete_workbench_session(session_id: str) -> bool:
         except Exception:
             pass
 
-    try:
-        from app.services import aug_artifact_service
-
-        aug_artifact_service.deleteForSession(workspace or None, session_id)
-    except Exception:
-        pass
     cascade_ok = False
     try:
         from app.services.memory_store import delete_session_cascade

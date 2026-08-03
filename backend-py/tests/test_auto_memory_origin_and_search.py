@@ -62,6 +62,39 @@ def test_telemetry_filtered_from_recalled_list(brain_ready):
     assert any(r['key'] == 'conv_ok' for r in filtered)
 
 
+def test_durable_recall_excludes_transient_conversations(brain_ready):
+    from app.services.memory import auto_memory as am
+
+    marker = 'durable_recall_marker_xyz'
+    am.saveAutoMemory(
+        'conv_transient',
+        f'User asked about {marker}',
+        category='conversation',
+        source='auto',
+        importance=0.9,
+    )
+    am.saveAutoMemory(
+        'low_signal_project',
+        f'One-off note about {marker}',
+        category='project',
+        source='auto',
+        importance=0.4,
+    )
+    am.saveAutoMemory(
+        'durable_preference',
+        f'User prefers the {marker} workflow',
+        category='preference',
+        source='auto',
+        importance=0.8,
+    )
+
+    rows = am.getRelevantMemories(marker, limit=10, durable_only=True)
+    keys = {str(row['key']) for row in rows}
+    assert 'durable_preference' in keys
+    assert 'conv_transient' not in keys
+    assert 'low_signal_project' not in keys
+
+
 @pytest.mark.asyncio
 async def test_memory_search_finds_auto_memories(brain_ready):
     from app.services.memory import auto_memory as am

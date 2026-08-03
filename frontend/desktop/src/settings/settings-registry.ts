@@ -30,7 +30,6 @@ import {
   Bot,
   BrainCircuit,
   StickyNote,
-  ClipboardList,
   Code2,
   FolderLock,
   GitBranch,
@@ -362,8 +361,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // Note: 'screenshot' is owned by computer-use. 'history' is owned
     // by conversations-history. 'security' is owned by computer-access.
     // Post-observation screenshots are reached via 'observation' here.
-    keywords: ['audit', 'rollback', 'observation', 'compliance', 'undo', 'artifacts', 'traffic', 'log', 'activity'],
-    legacyAliases: ['traffic-activity', 'overview', 'logs', 'traffic', 'activity', 'artifacts', 'audit', 'rollback', 'observations'],
+    keywords: ['audit', 'rollback', 'observation', 'compliance', 'undo', 'traffic', 'log', 'activity'],
+    legacyAliases: ['traffic-activity', 'overview', 'logs', 'traffic', 'activity', 'audit', 'rollback', 'observations'],
   },
   {
     id: 'conversation-inspector',
@@ -398,17 +397,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     keywords: ['feature', 'flow', 'pipeline', 'animation', 'inventory', 'sse', 'execution'],
     legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
   },
-  {
-    id: 'plans',
-    label: 'Artifacts',
-    description: 'Workspace .aug artifacts — model-generated plans and todo lists. Manually delete survivors left behind by errors.',
-    icon: ClipboardList,
-    category: 'activity',
-    tier: 'advanced',
-    keywords: ['plans', 'todos', 'aug', 'init', 'checklist', 'tasks'],
-    legacyAliases: ['aug-plans', 'aug-artifacts'],
-  },
-
   /* ── Security & Access ──────────────────────────────────────── */
   {
     id: 'computer-access',

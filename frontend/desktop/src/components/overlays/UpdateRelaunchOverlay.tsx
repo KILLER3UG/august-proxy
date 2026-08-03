@@ -1,108 +1,145 @@
-/**
- * Full-screen overlay while an update installs / the app is about to relaunch.
- * Prevents a confusing blank quit — users see a clear "restarting" moment.
- *
- * Bold & prominent by design: a strong dimmed backdrop + a large card with the
- * target version, a branded pulsing icon, and the AUG progress bar. The
- * underlying color tokens (bg-background, bg-card, bg-primary, …) are
- * registered in tailwind.config.cjs backed by `--dt-*-hsl` channels, so the
- * `/NN` alpha modifiers here actually render semi-opaque (previously they were
- * silently transparent because the tokens were only plain CSS classes).
- */
+/** Global update flow dialog: download → ready → explicit restart. */
 
+import { useEffect, useState } from 'react';
+import { CalendarDays, Download, RefreshCw, Sparkles, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RefreshCw } from 'lucide-react';
 import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
+import { useAppUpdate, useAppUpdateVersion } from '@/hooks/useAppUpdate';
 import { useAppUpdateInstallStore } from '@/store/app-update-install';
-import { useAppUpdateVersion } from '@/hooks/useAppUpdate';
 
 export function UpdateRelaunchOverlay() {
   const installing = useAppUpdateInstallStore((s) => s.installing);
   const progress = useAppUpdateInstallStore((s) => s.progress);
-  const targetVersion = useAppUpdateVersion();
-  const visible =
-    installing &&
-    (progress.phase === 'installing' || progress.phase === 'restarting');
+  const { available, formatBytes, install, cancelDownload } = useAppUpdate();
+  const cachedVersion = useAppUpdateVersion();
+  const [readyDismissed, setReadyDismissed] = useState(false);
 
+  const downloading = progress.phase === 'downloading';
+  const ready = progress.phase === 'ready';
   const restarting = progress.phase === 'restarting';
+  const visible = installing && (downloading || ready || progress.phase === 'installing' || restarting);
+  const targetVersion = available?.version ?? cachedVersion;
 
-  const title = restarting
-    ? targetVersion
-      ? `Installing August v${targetVersion}…`
-      : 'Installing August…'
-    : 'Preparing installer…';
+  useEffect(() => {
+    if (!ready) setReadyDismissed(false);
+  }, [ready]);
 
-  const subtitle = restarting
-    ? 'August is closing so the update can apply. The uninstall wizard pops up first, then the install wizard — August reopens once it’s done.'
-    : 'The setup window will appear in a moment. You’ll see the uninstall wizard first, then the install wizard.';
+  const showDialog = visible && (!ready || !readyDismissed);
+  const title = downloading
+    ? `Downloading${targetVersion ? ` v${targetVersion}` : ''}`
+    : ready
+      ? `${targetVersion ? `v${targetVersion}` : 'Update'} is ready`
+      : restarting
+        ? targetVersion
+          ? `Installing August v${targetVersion}…`
+          : 'Installing August…'
+        : 'Preparing installer…';
+
+  const subtitle = downloading
+    ? 'August is downloading the latest desktop build. You can keep working while this finishes.'
+    : ready
+      ? 'The update is downloaded and ready. Restart August when you’re ready to apply it.'
+      : restarting
+        ? 'August is closing so the update can apply. The installer will guide you through the final step, then August reopens.'
+        : 'The setup window will appear in a moment.';
 
   return (
     <AnimatePresence>
-      {visible && (
+      {showDialog && (
         <motion.div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-background/90 backdrop-blur-md"
+          className="update-flow-backdrop fixed inset-0 z-[200] flex items-center justify-center p-6"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.28 }}
           role="alertdialog"
           aria-modal="true"
-          aria-labelledby="update-relaunch-title"
-          aria-describedby="update-relaunch-desc"
+          aria-labelledby="update-flow-title"
+          aria-describedby="update-flow-description"
         >
           <motion.div
-            className="mx-6 w-full max-w-lg rounded-2xl border border-border/60 bg-card/95 p-7 shadow-2xl ring-1 ring-primary/30"
-            initial={{ opacity: 0, y: 16, scale: 0.97 }}
+            className="update-flow-card w-full max-w-[640px] rounded-2xl border p-6 shadow-2xl"
+            initial={{ opacity: 0, y: 14, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 280, damping: 28 }}
           >
             <div className="flex items-start gap-4">
-              <span
-                className="relative grid size-14 shrink-0 place-items-center rounded-2xl bg-primary/15 text-primary ring-1 ring-primary/40"
-                aria-hidden
-              >
-                {/* Pulsing glow ring for liveness */}
-                <span className="absolute inset-0 rounded-2xl ring-1 ring-primary/40 animate-pulse" />
-                <RefreshCw
-                  className={
-                    restarting
-                      ? 'size-6 animate-spin'
-                      : 'size-6 animate-[aug-relaunch-spin_2.4s_linear_infinite]'
-                  }
-                />
+              <span className="update-flow-icon relative grid size-14 shrink-0 place-items-center rounded-2xl" aria-hidden>
+                <Sparkles className="size-6" />
+                {(downloading || restarting) && <span className="absolute inset-0 rounded-2xl ring-1 ring-primary/50 animate-pulse" />}
               </span>
               <div className="min-w-0 flex-1">
-                <h2
-                  id="update-relaunch-title"
-                  className="text-lg font-semibold tracking-tight text-foreground"
-                >
+                <h2 id="update-flow-title" className="text-xl font-semibold tracking-tight text-foreground">
                   {title}
                 </h2>
-                <p
-                  id="update-relaunch-desc"
-                  className="mt-1.5 text-sm text-muted-foreground leading-relaxed"
-                >
+                <p id="update-flow-description" className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
                   {subtitle}
                 </p>
+                {available?.date && (
+                  <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground/80">
+                    <CalendarDays className="size-3.5" aria-hidden />
+                    {new Date(available.date).toLocaleDateString()}
+                  </p>
+                )}
               </div>
+              {ready && (
+                <button
+                  type="button"
+                  onClick={() => setReadyDismissed(true)}
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                  aria-label="Later"
+                  title="Later"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
             </div>
 
-            <div className="mt-6 space-y-2.5">
-              <UpdateProgressBar progress={progress} />
-              <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className="size-1.5 rounded-full bg-primary animate-pulse"
-                    aria-hidden
-                  />
-                  {restarting ? 'Setup wizard opening…' : 'Preparing…'}
-                </span>
-                <span className="tabular-nums font-medium text-foreground/80">
-                  {restarting ? 'August will reopen automatically' : '100%'}
-                </span>
+            {downloading && (
+              <div className="mt-7 space-y-2.5">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-medium text-foreground">Download progress</span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {progress.totalBytes != null
+                      ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
+                      : progress.downloadedBytes > 0
+                        ? `${formatBytes(progress.downloadedBytes)} downloaded`
+                        : 'Starting…'}
+                  </span>
+                </div>
+                <UpdateProgressBar progress={progress} showLabel={false} className="h-2 rounded-full border-0 bg-muted" />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    {progress.percent != null ? `${progress.percent}%` : 'Downloading…'}
+                  </span>
+                  <button type="button" onClick={cancelDownload} className="update-flow-secondary-button rounded-lg px-3 py-2 text-sm">
+                    Cancel download
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+
+            {ready && (
+              <div className="mt-7 flex items-center justify-end gap-2">
+                <button type="button" onClick={() => setReadyDismissed(true)} className="update-flow-secondary-button rounded-lg px-4 py-2.5 text-sm">
+                  Later
+                </button>
+                <button type="button" onClick={() => { void install(); }} className="update-flow-primary-button inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium">
+                  <RefreshCw className="size-3.5" />
+                  Restart to update
+                </button>
+              </div>
+            )}
+
+            {(progress.phase === 'installing' || restarting) && (
+              <div className="mt-6 space-y-2.5">
+                <UpdateProgressBar progress={progress} showLabel={false} className="h-2 rounded-full border-0 bg-muted" />
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5"><Download className="size-3.5" /> Setup wizard opening…</span>
+                  <span>100%</span>
+                </div>
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}

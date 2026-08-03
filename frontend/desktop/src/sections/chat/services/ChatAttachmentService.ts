@@ -136,6 +136,7 @@ export class ChatAttachmentService {
         name: file.name || (result.type === 'image' ? 'pasted-image.png' : pending.name),
         content: result.content,
         dataUrl: result.dataUrl,
+        mimeType: result.mimeType || file.type || undefined,
         thumbnailUrl: result.thumbnailUrl,
         type: result.type,
         truncated: result.truncated,

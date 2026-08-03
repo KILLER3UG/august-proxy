@@ -20,7 +20,7 @@ import { PageLoader } from '@/components/PageLoader';
 import { uniqueAggregatedModels } from './modelSettingsShared';
 
 const DEFAULT_BG_CONFIG: ReviewBackgroundConfig = {
-  enabled: false,
+  enabled: true,
   reviewModel: '',
   reflectionModel: '',
   autoMemoryModel: '',
@@ -77,7 +77,7 @@ export function BackgroundReflectionTab() {
           <p className="text-sm font-semibold">Background review & reflection</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Configure separate models for background review, reflection, and auto‑memory extraction.
-            When a task has no model selected (or background tasks are disabled), the chat session model is used automatically.
+            When enabled, background tasks use the configured models or fall back to the active chat session model.
           </p>
         </div>
 

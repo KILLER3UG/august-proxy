@@ -138,9 +138,16 @@ async def brainLearning() -> dict[str, object]:
     """
     from app.services import consolidation_daemon as _cd
     from app.services import delta_engine as _de
-    from app.services.heuristics_service import listHeuristics
 
-    heuristics = listHeuristics()
+    try:
+        from app.services.heuristics_service import listHeuristics
+
+        heuristics = listHeuristics()
+    except Exception:
+        # A partially migrated DB should not take down the whole dashboard.
+        # Startup normally applies this migration, but the endpoint remains
+        # useful during upgrades or when an older bundled backend is running.
+        heuristics = []
     coreFacts = memory_store.get_memory('coreMemory')
     userProfile = memory_store.get_memory('userProfile')
     try:

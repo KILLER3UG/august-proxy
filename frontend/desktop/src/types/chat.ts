@@ -114,8 +114,10 @@ export interface FileAttachment {
   path?: string;
   /** Extracted text content for text-type files (PDF, DOCX, code, etc.) */
   content?: string;
-  /** Base64 data URL for images (sent to the model). */
+  /** Base64 data URL for images (sent to the model) and small inline previews. */
   dataUrl?: string;
+  /** Original MIME type, used by the inline file preview when available. */
+  mimeType?: string;
   /** Local object-URL preview shown while reading (revoked when done/removed). */
   previewUrl?: string;
   /** First-page / document thumbnail for UI cards (PDF etc.). Not sent as vision. */

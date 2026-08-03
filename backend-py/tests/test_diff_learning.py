@@ -71,6 +71,17 @@ def test_collect_non_git_dir(tmp_path):
     assert collect_correction_diffs(str(tmp_path / 'nope')) == ''
 
 
+def test_interval_defaults_to_six_hours(monkeypatch):
+    from app.services.memory import diff_learning as dl
+
+    monkeypatch.delenv('AUGUST_DIFF_LEARN_INTERVAL_S', raising=False)
+    assert dl._interval_seconds() == 6 * 3600
+    monkeypatch.setenv('AUGUST_DIFF_LEARN_INTERVAL_S', '30')
+    assert dl._interval_seconds() == 60
+    monkeypatch.setenv('AUGUST_DIFF_LEARN_INTERVAL_S', 'not-a-number')
+    assert dl._interval_seconds() == 6 * 3600
+
+
 @pytest.mark.asyncio
 async def test_learn_from_diffs_writes_heuristic(brain_ready, git_repo, monkeypatch):
     from app.services.heuristics_service import listHeuristics

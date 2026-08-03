@@ -4,6 +4,8 @@ import { useState } from "react";
 import {
   Plus,
   FolderPlus,
+  Folder as FolderIcon,
+  FolderOpen,
   ChevronRight,
   Edit3,
   Trash2,
@@ -11,7 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Folder } from "@/store/sessions";
 
-/** Section header for PINNED / RECENTS with optional folder create actions. */
+/** Section header for PINNED / PROJECTS with optional folder create actions. */
 export function Section({
   title,
   count,
@@ -28,8 +30,8 @@ export function Section({
   children?: React.ReactNode;
 }) {
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1 px-2">
+    <div className="august-sidebar-section">
+      <div className="august-sidebar-section-header flex items-center justify-between mb-1 px-2">
         <div className="flex items-center gap-1">
           <h3 className="text-[11px] text-sidebar-foreground/40 font-normal">
             {title}
@@ -40,7 +42,7 @@ export function Section({
             </span>
           )}
         </div>
-        {(title === "Sessions" || title === "Recents" || title === "Repositories") && onNewFolder && onUploadFolder && (
+        {(title === "Sessions" || title === "Recents" || title === "Projects") && onNewFolder && onUploadFolder && (
           <div className="flex items-center gap-0.5">
             <button
               onClick={onUploadFolder}
@@ -99,7 +101,7 @@ export function FolderHeader({
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="flex items-center justify-between py-0.5 px-2 rounded-md hover:bg-white/[0.03] cursor-pointer group text-sidebar-foreground/55"
+      className="august-project-row flex items-center justify-between py-0.5 px-2 rounded-md hover:bg-white/[0.03] cursor-pointer group text-sidebar-foreground/55"
       onClick={onToggleCollapse}
     >
       <div className="flex items-center gap-1 min-w-0">
@@ -111,6 +113,19 @@ export function FolderHeader({
         >
           <ChevronRight className="size-3" />
         </span>
+        {folder.isCollapsed ? (
+          <FolderIcon
+            className="size-4 shrink-0 text-sidebar-foreground/60 group-hover:text-sidebar-foreground/85"
+            strokeWidth={1.7}
+            aria-hidden
+          />
+        ) : (
+          <FolderOpen
+            className="size-4 shrink-0 text-sidebar-foreground/60 group-hover:text-sidebar-foreground/85"
+            strokeWidth={1.7}
+            aria-hidden
+          />
+        )}
         <span className="truncate text-[12.5px] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
           {folder.name}
         </span>
@@ -174,7 +189,7 @@ export function UncategorizedHeader({
 }) {
   return (
     <div
-      className="flex items-center justify-between py-0.5 px-2 rounded-md hover:bg-white/[0.03] cursor-pointer group text-sidebar-foreground/55"
+      className="august-other-chats-row flex items-center justify-between py-0.5 px-2 rounded-md hover:bg-white/[0.03] cursor-pointer group text-sidebar-foreground/55"
       onClick={onToggleCollapse}
     >
       <div className="flex items-center gap-1 min-w-0">

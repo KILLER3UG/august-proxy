@@ -277,7 +277,7 @@ export function ChatLayout() {
 
     // Explicit "Other chats" target — the "+" on the Other chats header passes
     // null on purpose. Bypass the workspace divert below so the new chat stays
-    // uncategorized instead of landing in a Repositories folder.
+    // uncategorized instead of landing in a Projects folder.
     if (folderId === null) {
       const newSess = getOrCreateEmptySession(null, defaultSessionTitle(), null);
       void navigate(`/c/${newSess.id}`);
@@ -300,7 +300,7 @@ export function ChatLayout() {
 
     // Top-level "New chat": stay in the active project folder when possible.
     // Resolve by folderId first, then by workspace path so chats do not land
-    // in "Other chats" while Repositories folders keep growing.
+    // in "Other chats" while Projects folders keep growing.
     const activeFolderId = active?.folderId ?? null;
     const activeFolder = activeFolderId
       ? folders.find((f) => f.id === activeFolderId)
@@ -395,8 +395,7 @@ export function ChatLayout() {
         className="august-app-chrome flex h-9 shrink-0 items-center justify-between select-none"
         data-tauri-drag-region
       >
-        <div className="flex items-center gap-5 px-3">
-          <span className="august-app-chrome-glyph" aria-hidden>✦</span>
+        <div className="flex items-center gap-4 px-3">
           <span>File</span>
           <span>Edit</span>
           <span>View</span>

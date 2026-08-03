@@ -1,6 +1,7 @@
 /* Evolving skills strip shown above the chat thread.
  * Persistent-memory banner removed per product request. */
-import { Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { Sparkles, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useLearningData } from '@/hooks/useLearningData';
 import { cn } from '@/lib/utils';
@@ -11,10 +12,28 @@ import { cn } from '@/lib/utils';
  */
 export function CollaborationInsights({ className }: { className?: string }) {
   const { data } = useLearningData();
+  const [dismissedSignature, setDismissedSignature] = useState(() => {
+    try {
+      return window.localStorage.getItem('august.collaboration-insights.dismissed') ?? '';
+    } catch {
+      return '';
+    }
+  });
   if (!data) return null;
 
   const pending = data.pendingSkills ?? [];
   if (pending.length === 0) return null;
+  const signature = pending.map((skill) => `${skill.id}:${skill.name}`).join('|');
+  if (dismissedSignature === signature) return null;
+
+  const dismiss = () => {
+    setDismissedSignature(signature);
+    try {
+      window.localStorage.setItem('august.collaboration-insights.dismissed', signature);
+    } catch {
+      /* Local storage can be unavailable in restricted webviews. */
+    }
+  };
 
   return (
     <div
@@ -27,7 +46,18 @@ export function CollaborationInsights({ className }: { className?: string }) {
       >
         <Sparkles className="size-3.5 text-primary shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1 space-y-1">
-          <div className="font-medium text-foreground/90">Evolving skills</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-medium text-foreground/90">Evolving skills</div>
+            <button
+              type="button"
+              onClick={dismiss}
+              className="rounded p-0.5 text-muted-foreground/70 hover:bg-white/10 hover:text-foreground"
+              aria-label="Dismiss evolving skills notification"
+              title="Dismiss notification"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
           <p className="text-muted-foreground leading-relaxed">
             August is learning as you collaborate — turning complex work into skills made for you.
             {pending.length === 1
