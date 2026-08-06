@@ -40,6 +40,41 @@ const ROLE_META: Array<{
     label: 'Prefrontal model',
     hint: 'Highest-reasoning model for skill genesis and /Exam authoring.',
   },
+  {
+    key: 'chat_default',
+    label: 'Chat — default role',
+    hint: 'Used for ordinary turns when routing is on. Empty = your selected model.',
+  },
+  {
+    key: 'chat_smol',
+    label: 'Chat — smol (subagents)',
+    hint: 'Cheap model for sub-agent fan-out. Empty = the parent session model.',
+  },
+  {
+    key: 'chat_slow',
+    label: 'Chat — slow (deep reasoning)',
+    hint: 'Used when effort is set to max. Empty = selected model.',
+  },
+  {
+    key: 'chat_plan',
+    label: 'Chat — plan mode',
+    hint: 'Used for plan-mode turns. Empty = selected model.',
+  },
+  {
+    key: 'chat_vision',
+    label: 'Chat — vision',
+    hint: 'Used when the turn has image attachments. Empty = selected model.',
+  },
+  {
+    key: 'chat_chain',
+    label: 'Chat — fallback chain',
+    hint: 'Comma-separated model ids tried after the primary fails (429/5xx), in order.',
+  },
+  {
+    key: 'chat_context_promotion',
+    label: 'Chat — context promotion',
+    hint: 'Larger-context sibling used when the primary hits a context overflow.',
+  },
 ];
 
 export function ModelFleetTab() {
@@ -59,6 +94,13 @@ export function ModelFleetTab() {
     cerebellum: '',
     hippocampus: '',
     prefrontal: '',
+    chat_default: '',
+    chat_smol: '',
+    chat_slow: '',
+    chat_plan: '',
+    chat_vision: '',
+    chat_chain: '',
+    chat_context_promotion: '',
   };
   const [editFleet, setEditFleet] = useState<ModelFleetConfig | null>(null);
   const [saving, setSaving] = useState(false);
@@ -96,6 +138,13 @@ export function ModelFleetTab() {
       cerebellum: '',
       hippocampus: '',
       prefrontal: '',
+      chat_default: '',
+      chat_smol: '',
+      chat_slow: '',
+      chat_plan: '',
+      chat_vision: '',
+      chat_chain: '',
+      chat_context_promotion: '',
     };
     setEditFleet(cleared);
   };
@@ -122,24 +171,49 @@ export function ModelFleetTab() {
           {ROLE_META.map(({ key, label, hint }) => (
             <div key={key} data-testid={`fleet-${key}-field`}>
               <WorkspaceField label={label} hint={hint}>
-                <div className="flex items-center gap-2">
-                  <ModelPickerDropdown
-                    models={models}
-                    value={active[key] ?? ''}
-                    onChange={(modelId) =>
-                      setEditFleet({ ...active, [key]: modelId })
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setEditFleet({ ...active, [key]: '' })}
-                    disabled={active[key] === '' || active[key] === undefined}
-                    className="text-[11px] text-muted-foreground hover:text-foreground underline disabled:opacity-30 disabled:cursor-not-allowed"
-                    data-testid={`fleet-${key}-clear`}
-                  >
-                    Clear (use session model)
-                  </button>
-                </div>
+                {key === 'chat_chain' || key === 'chat_context_promotion' ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={active[key] ?? ''}
+                      onChange={(e) => setEditFleet({ ...active, [key]: e.target.value })}
+                      placeholder={
+                        key === 'chat_chain'
+                          ? 'model-a, model-b, model-c'
+                          : 'larger-context-model'
+                      }
+                      className="flex-1 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs font-mono"
+                      data-testid={`fleet-${key}-input`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditFleet({ ...active, [key]: '' })}
+                      disabled={active[key] === '' || active[key] === undefined}
+                      className="text-[11px] text-muted-foreground hover:text-foreground underline disabled:opacity-30 disabled:cursor-not-allowed"
+                      data-testid={`fleet-${key}-clear`}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <ModelPickerDropdown
+                      models={models}
+                      value={active[key] ?? ''}
+                      onChange={(modelId) =>
+                        setEditFleet({ ...active, [key]: modelId })
+                      }
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditFleet({ ...active, [key]: '' })}
+                      disabled={active[key] === '' || active[key] === undefined}
+                      className="text-[11px] text-muted-foreground hover:text-foreground underline disabled:opacity-30 disabled:cursor-not-allowed"
+                      data-testid={`fleet-${key}-clear`}
+                    >
+                      Clear (use session model)
+                    </button>
+                  </div>
+                )}
               </WorkspaceField>
             </div>
           ))}

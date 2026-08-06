@@ -179,6 +179,47 @@ def _modelRetryPolicy() -> dict[str, int]:
     return policy
 
 
+_CONTEXT_OVERFLOW_MARKERS = (
+    'context length',
+    'context window',
+    'maximum context',
+    'context_length',
+    'context_window',
+    'too many tokens',
+    'token limit',
+    'max_tokens',
+    'prompt is too long',
+    'input is too long',
+)
+
+
+def _isContextOverflowError(response: dict[str, object]) -> bool:
+    """True when the failure is a context-window overflow (promotable)."""
+    msg = as_str(response.get('error')).lower()
+    return any((marker in msg for marker in _CONTEXT_OVERFLOW_MARKERS))
+
+
+def _chatFallbackChain() -> list[str]:
+    """Configured fallback chain (fleet ``chat_chain``, comma-separated ids)."""
+    try:
+        from app.services.model_fleet_service import getModelForRole
+
+        raw = getModelForRole('chat_chain')
+        return [m.strip() for m in raw.split(',') if m.strip()]
+    except Exception:
+        return []
+
+
+def _chatContextPromotionModel() -> str:
+    """Configured larger-context sibling (fleet ``chat_context_promotion``)."""
+    try:
+        from app.services.model_fleet_service import getModelForRole
+
+        return getModelForRole('chat_context_promotion').strip()
+    except Exception:
+        return ''
+
+
 def _modelRetryDelayMs(attempt: int, response: dict[str, object], policy: dict[str, int]) -> int:
     """Backoff before retry ``attempt`` (1-based): honor Retry-After, else exponential."""
     retryAfter = response.get('retryAfterMs')
@@ -1393,11 +1434,38 @@ async def _sendWorkbenchMessageStreamImpl(
     effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
     # Persist so later turns / BTW inherit the composer effort selection.
     session.metadata['effort'] = effectiveEffort
+    # Role routing (surpass #2): derive the task role for this turn — plan
+    # mode → plan role, max effort → slow role, image attachments → vision.
+    # A configured ``chat_<role>`` fleet model wins over the picked model;
+    # blank roles fall through to the normal selection (one-model default).
+    chat_role = 'default'
+    try:
+        gm = as_str(getattr(session, 'guardMode', '') or '')
+        if gm == 'plan':
+            chat_role = 'plan'
+        elif effectiveEffort == 'max':
+            chat_role = 'slow'
+        else:
+            for cand in reversed(session.messages):
+                if cand.get('role') != 'user':
+                    continue
+                raw_attachments = cand.get('attachments')
+                attachments = raw_attachments if isinstance(raw_attachments, list) else []
+                if any(
+                    as_str(a.get('type'), '').startswith('image') or as_str(a.get('mimeType'), '').startswith('image/')
+                    for a in attachments
+                    if isinstance(a, dict)
+                ):
+                    chat_role = 'vision'
+                    break
+    except Exception:
+        chat_role = 'default'
     resolvedProvider, resolvedModel = _resolveChatLlm(
         model=model or '',
         model_provider=modelProvider or '',
         session_provider=session.provider or provider or '',
         session_model=session.model or '',
+        role=chat_role,
     )
     # Remember model/provider on the session so BTW and Live use the same ones.
     if resolvedModel:
@@ -1414,9 +1482,9 @@ async def _sendWorkbenchMessageStreamImpl(
         from app.services.recurring_tasks import check_and_fire
 
         workspace = as_str(getattr(session, 'workspacePath', '') or '')
-        for msg in check_and_fire(sessionId, workspace):
+        for taskMsg in check_and_fire(sessionId, workspace):
             if emit:
-                emit({'type': 'recurringTask', 'message': msg[:2000]})
+                emit({'type': 'recurringTask', 'message': taskMsg[:2000]})
     except Exception:
         logger.debug('recurring tasks check failed', exc_info=True)
     # Opt-in verifier enforcement: while session.verifierEnforced is set,
@@ -1664,60 +1732,109 @@ async def _sendWorkbenchMessageStreamImpl(
             )
             logger.debug('workbench presenting %d tools to model: %s', len(toolNames), toolNames)
         retryPolicy = _modelRetryPolicy()
-        for retryAttempt in range(retryPolicy['maxRetries'] + 1):
-            _llmT0 = time.monotonic()
-            with _trace.span('llm_wait', round=toolRound, attempt=retryAttempt):
-                if isAnthropic:
-                    response = await _callAnthropicWorkbench(
-                        currentMessages,
-                        systemText,
-                        resolvedModel,
-                        tools,
-                        effectiveEffort,
-                        provider=resolvedProvider,
-                        emit=emit,
-                        thinking_enabled=thinking_enabled,
+        # Fallback chain + context promotion (surpass #3): after retries are
+        # exhausted on the primary model, the turn continues on the next
+        # configured chain model (or a larger-context sibling on overflow).
+        chainModels = _chatFallbackChain()
+        promotionModel = _chatContextPromotionModel()
+        promotionUsed = False
+        for chainIndex in range(len(chainModels) + 1):
+            if chainIndex > 0:
+                nextModel = chainModels[chainIndex - 1]
+                nProvider, nModel = _resolveChatLlm(model=nextModel, role='')
+                if not nProvider or not nModel:
+                    continue
+                resolvedProvider, resolvedModel = nProvider, nModel
+                logger.warning('workbench falling back to chain model %s', resolvedModel)
+                if emit:
+                    emit(
+                        {
+                            'type': 'retrying',
+                            'attempt': 1,
+                            'maxRetries': retryPolicy['maxRetries'],
+                            'delayMs': 0,
+                            'reason': f'Primary model failed — continuing on {resolvedModel}',
+                        }
                     )
-                elif isOpenai:
-                    response = await _callOpenaiWorkbench(
-                        currentMessages,
-                        systemText,
-                        resolvedModel,
-                        openaiTools,
-                        effectiveEffort,
-                        provider=resolvedProvider,
-                        emit=emit,
-                        thinking_enabled=thinking_enabled,
-                    )
-                else:
-                    response = {'error': f'Unknown provider format for {resolvedProvider}'}
-            totalGenerationMs += (time.monotonic() - _llmT0) * 1000
-            # Retry transient upstream failures (429 rate limits, 5xx, network)
-            # instead of killing the turn — up to maxRetries, then surface the
-            # error as before.
-            if not _isRetryableModelError(response):
-                break
-            if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():
-                break
-            delayMs = _modelRetryDelayMs(retryAttempt + 1, response, retryPolicy)
-            logger.warning(
-                'workbench model call failed (retry %d/%d in %dms): %s',
-                retryAttempt + 1,
-                retryPolicy['maxRetries'],
-                delayMs,
-                as_str(response.get('error')),
-            )
-            if emit:
-                emit(
-                    {
-                        'type': 'retrying',
-                        'attempt': retryAttempt + 1,
-                        'maxRetries': retryPolicy['maxRetries'],
-                        'delayMs': delayMs,
-                        'reason': as_str(response.get('error')),
-                    }
+            for retryAttempt in range(retryPolicy['maxRetries'] + 1):
+                _llmT0 = time.monotonic()
+                with _trace.span('llm_wait', round=toolRound, attempt=retryAttempt):
+                    if isAnthropic:
+                        response = await _callAnthropicWorkbench(
+                            currentMessages,
+                            systemText,
+                            resolvedModel,
+                            tools,
+                            effectiveEffort,
+                            provider=resolvedProvider,
+                            emit=emit,
+                            thinking_enabled=thinking_enabled,
+                        )
+                    elif isOpenai:
+                        response = await _callOpenaiWorkbench(
+                            currentMessages,
+                            systemText,
+                            resolvedModel,
+                            openaiTools,
+                            effectiveEffort,
+                            provider=resolvedProvider,
+                            emit=emit,
+                            thinking_enabled=thinking_enabled,
+                        )
+                    else:
+                        response = {'error': f'Unknown provider format for {resolvedProvider}'}
+                totalGenerationMs += (time.monotonic() - _llmT0) * 1000
+                # Retry transient upstream failures (429 rate limits, 5xx, network)
+                # instead of killing the turn — up to maxRetries, then surface the
+                # error as before.
+                if not _isRetryableModelError(response):
+                    break
+                if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():
+                    break
+                delayMs = _modelRetryDelayMs(retryAttempt + 1, response, retryPolicy)
+                logger.warning(
+                    'workbench model call failed (retry %d/%d in %dms): %s',
+                    retryAttempt + 1,
+                    retryPolicy['maxRetries'],
+                    delayMs,
+                    as_str(response.get('error')),
                 )
-            await _interruptibleSleep(delayMs / 1000)
+                if emit:
+                    emit(
+                        {
+                            'type': 'retrying',
+                            'attempt': retryAttempt + 1,
+                            'maxRetries': retryPolicy['maxRetries'],
+                            'delayMs': delayMs,
+                            'reason': as_str(response.get('error')),
+                        }
+                    )
+                await _interruptibleSleep(delayMs / 1000)
+            if not response.get('error'):
+                break
+            if _isCancelled():
+                break
+            # Context promotion: overflow → larger-context sibling once,
+            # before walking the normal fallback chain.
+            if not promotionUsed and promotionModel and _isContextOverflowError(response):
+                promotionUsed = True
+                pProvider, pModel = _resolveChatLlm(model=promotionModel, role='')
+                if pProvider and pModel:
+                    resolvedProvider, resolvedModel = pProvider, pModel
+                    logger.warning('workbench context overflow — promoting to %s', resolvedModel)
+                    if emit:
+                        emit(
+                            {
+                                'type': 'retrying',
+                                'attempt': 1,
+                                'maxRetries': retryPolicy['maxRetries'],
+                                'delayMs': 0,
+                                'reason': f'Context overflow — promoted to {resolvedModel}',
+                            }
+                        )
+                    continue
+            if chainIndex >= len(chainModels):
+                break
         if not isAnthropic and not isOpenai:
             if emit:
                 emit({'type': 'error', 'message': f'Unknown provider format for {resolvedProvider}'})
@@ -2423,6 +2540,25 @@ async def _sendWorkbenchMessageStreamImpl(
                     doneEvent['memorySuggestions'] = suggestions
             except Exception:
                 logger.debug('memory suggestions extract failed', exc_info=True)
+            # Routing evidence (surpass #1/#7): record this turn's outcome by
+            # task type so the harness learns which model wins what.
+            try:
+                from app.services.routing_evidence import classify_task_type, record_turn
+
+                record_turn(
+                    session_id=sessionId,
+                    task_type=classify_task_type(_lastUserMessageText(session)),
+                    model=as_str(resolvedModel, ''),
+                    provider=as_str(
+                        (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
+                    ),
+                    ok=True,
+                    input_tokens=totalInputTokens,
+                    output_tokens=totalOutputTokens,
+                    duration_ms=int(totalGenerationMs),
+                )
+            except Exception:
+                logger.debug('routing evidence record failed', exc_info=True)
             emit(doneEvent)
     review_model = _backgroundTaskModel('reviewModel', resolvedModel)
     auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
@@ -2611,6 +2747,56 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
 
         if isMcpToolName(toolName):
             return str(await executeMcpToolCall(toolName, args))
+
+        # Hash-anchored edits (surpass #5): mutating tools may carry the
+        # sha256 of the file as read (the read tool reports it). A mismatch
+        # means the file changed and the patch would corrupt it — reject and
+        # tell the model to re-read instead of applying stale edits.
+        name_l = (toolName or '').lower()
+        if any(
+            m in name_l
+            for m in (
+                'write',
+                'edit',
+                'patch',
+                'str_replace',
+                'replace',
+                'create',
+                'delete',
+                'remove',
+                'move',
+                'rename',
+                'append',
+            )
+        ):
+            expected = as_str(args.get('fileHash') or args.get('file_hash') or '', '')
+            if expected:
+                target = as_str(
+                    args.get('path')
+                    or args.get('filePath')
+                    or args.get('file_path')
+                    or args.get('file')
+                    or '',
+                    '',
+                )
+                if target:
+                    import hashlib
+                    from pathlib import Path
+
+                    try:
+                        p = Path(target)
+                        if not p.is_absolute():
+                            ws = as_str(getattr(session, 'workspacePath', '') or '')
+                            p = Path(ws) / p if ws else p
+                        if p.is_file():
+                            actual = hashlib.sha256(p.read_bytes()).hexdigest()
+                            if actual != expected.lower():
+                                return (
+                                    'Error: File changed since you read it (content hash mismatch). '
+                                    'Re-read the file with the read tool, then retry the edit.'
+                                )
+                    except OSError:
+                        pass
 
         # Lifecycle hooks: PRE_TOOL_USE (can deny or modify)
         try:

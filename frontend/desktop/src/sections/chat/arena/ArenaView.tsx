@@ -21,6 +21,7 @@ import {
 } from '../stream/session-stream-store';
 import { resolveWorkbenchSessionId } from '../stream/session-id-map';
 import { getWorkbenchSession, truncateWorkbenchSession, createWorkbenchSession } from '@/api/workbench';
+import { api } from '@/api/client';
 import { normalizeWorkbenchSession } from '@/lib/workbench-plan';
 import {
   WORKBENCH_GUARD_MODES,
@@ -53,6 +54,22 @@ export function ArenaView() {
   if (!run) return null;
 
   const pickWinner = (lane: ArenaRunLane) => {
+    // Record the verdict for the routing-evidence loop (surpass #1/#7).
+    try {
+      const losers = run.lanes
+        .filter((l) => l.uiSessionId !== lane.uiSessionId)
+        .map((l) => ({ modelId: l.modelId, provider: l.provider }));
+      void api
+        .post('/api/brain/routing/arena', {
+          sessionId: lane.uiSessionId,
+          prompt: run.prompt,
+          winner: { modelId: lane.modelId, provider: lane.provider },
+          losers,
+        })
+        .catch(() => undefined);
+    } catch {
+      /* evidence is best-effort */
+    }
     clearArenaRun();
     navigate(`/c/${lane.uiSessionId}`);
   };

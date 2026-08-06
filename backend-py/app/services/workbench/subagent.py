@@ -244,6 +244,20 @@ async def executeSubAgent(
                         'message': f'Sub-agent using fallback {as_str(fb.get("provider"))}/{fbModel}',
                     }
                 )
+    # Role routing (surpass #2): subagents default to the cheap "smol" fleet
+    # model when configured and the agent has no explicit model alias.
+    if not aliasHint:
+        try:
+            from app.services.model_fleet_service import getModelForRole
+
+            smol = getModelForRole('chat_smol').strip()
+            if smol:
+                smolProvider = resolve_for_model(smol, '')
+                if smolProvider:
+                    provider = smolProvider
+                    model = smol
+        except Exception:
+            pass
     if not provider:
         err = 'No provider available for sub-agent.'
         if emit:

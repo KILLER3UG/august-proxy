@@ -4,7 +4,8 @@
  * pick the winner to continue. Supports saved templates (A3, localStorage). */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bookmark, Swords, X } from 'lucide-react';
+import { Bookmark, Sparkles, Swords, X } from 'lucide-react';
+import { api } from '@/api/client';
 import type { ModelItem } from '../model-display';
 
 const MAX_LANES = 3;
@@ -48,6 +49,33 @@ export function ArenaLaunchModal({
   const [prompt, setPrompt] = useState(initialPrompt);
   const [templates, setTemplates] = useState<ArenaTemplate[]>(loadTemplates);
   const [templateName, setTemplateName] = useState('');
+  // Routing-evidence hint (surpass #1): "for 'tests' tasks, X wins 7/9".
+  const [suggestions, setSuggestions] = useState<
+    Array<{ model: string; wins: number; total: number; winRate: number; avgTokens: number }>
+  >([]);
+
+  useEffect(() => {
+    if (!prompt.trim()) {
+      setSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void api
+        .get<{
+          taskType: string;
+          suggestions: Array<{
+            model: string;
+            wins: number;
+            total: number;
+            winRate: number;
+            avgTokens: number;
+          }>;
+        }>(`/api/brain/routing/suggestions?prompt=${encodeURIComponent(prompt.trim())}`)
+        .then((res) => setSuggestions(res.suggestions ?? []))
+        .catch(() => setSuggestions([]));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [prompt]);
 
   const targets = useMemo(
     () => models.filter((m) => selected.has(m.id)),
@@ -175,6 +203,22 @@ export function ArenaLaunchModal({
           aria-label="Arena prompt"
           data-testid="arena-prompt"
         />
+
+        {/* Routing-evidence hint (surpass #1) */}
+        {suggestions.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5" data-testid="arena-routing-hint">
+            <Sparkles className="size-3 text-primary" />
+            {suggestions.slice(0, 2).map((s) => (
+              <span
+                key={s.model}
+                className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary"
+                title={`${s.wins}/${s.total} wins · ${s.avgTokens} avg tokens`}
+              >
+                {s.model} wins {s.wins}/{s.total} · {s.avgTokens} tok avg
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         <ul className="space-y-1 max-h-56 overflow-y-auto">
           {models.map((m) => {

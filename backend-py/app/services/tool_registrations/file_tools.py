@@ -138,12 +138,19 @@ async def _readFile(
 
         async with aiofiles.open(str(filePath), 'r', encoding='utf-8', errors='replace') as f:
             content = await f.read()
+        # Hash-anchored edits (surpass #5): every read reports the file's
+        # sha256 so the model can echo it back as `fileHash` on the next
+        # write/edit — a mismatch rejects the patch before it corrupts.
+        import hashlib
+
+        digest = hashlib.sha256(content.encode('utf-8')).hexdigest()
+        hashHeader = f'[sha256 {digest}]\n'
         # Line paging (agent-style): offset is 1-based start line when set.
         start = start_line if start_line is not None else offset
         if start is not None or limit is not None or end_line is not None:
             lines = content.splitlines(keepends=True)
             if not lines and content == '':
-                return content
+                return hashHeader + content
             # Treat offset as 1-based line number (common agent convention).
             try:
                 start_i = max(1, int(start)) if start is not None else 1
@@ -165,8 +172,8 @@ async def _readFile(
             header = f'[lines {start_i}-{min(end_i, len(lines))} of {len(lines)}]\n' if (
                 start_i > 1 or end_i < len(lines)
             ) else ''
-            return header + ''.join(sliced)
-        return content
+            return hashHeader + header + ''.join(sliced)
+        return hashHeader + content
     except Exception as exc:
         return f'Error reading file: {exc}'
 

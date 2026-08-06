@@ -161,12 +161,21 @@ export function updateReviewBackgroundConfig(
   return api.put<ReviewBackgroundConfig>('/api/config/background-review', config);
 }
 
-/* Model Fleet — four cognitive roles → models. */
+/* Model Fleet — cognitive roles + chat routing roles → models. */
 export interface ModelFleetConfig {
   cortex: string;
   cerebellum: string;
   hippocampus: string;
   prefrontal: string;
+  /** Chat role routing (surpass #2): blank = use the selected model. */
+  chat_default: string;
+  chat_smol: string;
+  chat_slow: string;
+  chat_plan: string;
+  chat_vision: string;
+  /** Comma-separated fallback chain + context-promotion model (#3). */
+  chat_chain: string;
+  chat_context_promotion: string;
 }
 
 export function getModelFleet(): Promise<ModelFleetConfig> {

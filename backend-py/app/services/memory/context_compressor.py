@@ -46,13 +46,19 @@ def localSummarize(messages: list[dict[str, object]], maxSummaryChars: int = DEF
         if isinstance(content, str):
             text = content
         elif isinstance(content, list):
-            text = ' '.join(
-                (
-                    str(b.get('text', ''))
-                    for b in content
-                    if isinstance(b, dict) and b.get('type') in ('text', 'output_text')
-                )
-            )
+            # Denser elision (surpass #4): assistant blocks keep only the
+            # FINAL text block — earlier provisional text and thinking are
+            # noise once the answer exists.
+            blocks = [b for b in content if isinstance(b, dict)]
+            text_blocks = [
+                str(b.get('text', ''))
+                for b in blocks
+                if b.get('type') in ('text', 'output_text')
+            ]
+            if role == 'assistant' and text_blocks:
+                text = text_blocks[-1]
+            else:
+                text = ' '.join(text_blocks)
         elif content:
             try:
                 import json
@@ -74,7 +80,10 @@ def localSummarize(messages: list[dict[str, object]], maxSummaryChars: int = DEF
                     names.append(name)
             if names:
                 text += f' [tool_calls: {", ".join(names)}]'
-        trimmed = ' '.join(text.split())[:600]
+        # Denser elision: tool results (the largest blocks) slim to one line;
+        # users keep 400 chars, assistant text 600.
+        cap = 120 if role == 'tool' else (400 if role == 'user' else 600)
+        trimmed = ' '.join(text.split())[:cap]
         if trimmed:
             lines.append(f'[{role}] {trimmed}')
     summary = '\n'.join(lines)

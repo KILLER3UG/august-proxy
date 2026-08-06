@@ -273,10 +273,14 @@ def resolve_chat_llm(
     model_provider: str = '',
     session_provider: str = '',
     session_model: str = '',
+    role: str = '',
 ) -> tuple[dict[str, object] | None, str]:
     """Same resolution order as workbench chat turns.
 
     Order:
+      0. role routing (surpass #2): when ``role`` is set and the model fleet
+         has a ``chat_<role>`` model configured, that model wins — the
+         harness picks the right model per task type. Blank = normal path.
       1. explicit modelProvider
       2. model id hint
       3. session.provider + model/session.model
@@ -284,6 +288,20 @@ def resolve_chat_llm(
     Then model = explicit model → session.model → provider default.
     """
     resolved_provider: dict[str, object] | None = None
+    resolved_model = ''
+    if role:
+        from app.services.model_fleet_service import getModelForRole
+
+        fleet_model = getModelForRole(f'chat_{role}').strip()
+        if fleet_model:
+            resolved_provider = resolve_workbench_provider('', fleet_model)
+            if resolved_provider:
+                resolved_model = resolve_model(resolved_provider, fleet_model)
+                if resolved_model:
+                    from app.providers.resolver import apply_model_format_override
+
+                    resolved_provider = apply_model_format_override(resolved_provider, resolved_model)
+                    return resolved_provider, resolved_model
     if model_provider:
         resolved_provider = resolve_workbench_provider(model_provider, '')
     if not resolved_provider and model:

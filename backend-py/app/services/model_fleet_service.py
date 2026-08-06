@@ -10,12 +10,33 @@ from __future__ import annotations
 from app.json_narrowing import as_dict, as_str
 from app.services import config_service
 
-ROLES = ('cortex', 'cerebellum', 'hippocampus', 'prefrontal')
+ROLES = (
+    'cortex',
+    'cerebellum',
+    'hippocampus',
+    'prefrontal',
+    # Chat role routing (surpass #2): blank = use the selected model.
+    'chat_default',
+    'chat_smol',
+    'chat_slow',
+    'chat_plan',
+    'chat_vision',
+    # Fallback chain (comma-separated model ids) + context-promotion model.
+    'chat_chain',
+    'chat_context_promotion',
+)
 DEFAULTS: dict[str, str] = {
     'cortex': '',
     'cerebellum': 'claude-3-haiku-20240307',
     'hippocampus': 'claude-3-haiku-20240307',
     'prefrontal': 'claude-3-5-sonnet-20240620',
+    'chat_default': '',
+    'chat_smol': '',
+    'chat_slow': '',
+    'chat_plan': '',
+    'chat_vision': '',
+    'chat_chain': '',
+    'chat_context_promotion': '',
 }
 
 

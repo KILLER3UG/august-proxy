@@ -192,6 +192,50 @@ async def getSkillDraft(name: str):
     return {'name': row['name'], 'body': body, 'existingBody': existingBody}
 
 
+@router.get('/routing/suggestions')
+async def routingSuggestions(prompt: str = '', taskType: str = '', limit: int = 5):
+    """Which models win for this kind of task (surpass #1/#7).
+
+    ``prompt`` is classified into a task type; ``taskType`` overrides.
+    Returns per-model win-rate + average token cost, best first.
+    """
+    from app.services.routing_evidence import classify_task_type, get_suggestions
+
+    resolved_type = (taskType or '').strip() or classify_task_type(prompt)
+    return {
+        'taskType': resolved_type,
+        'suggestions': get_suggestions(resolved_type, limit=limit),
+    }
+
+
+@router.post('/routing/arena')
+async def routingArena(body: dict):
+    """Record an arena/debate verdict: the picked lane won, the rest lost.
+
+    Body: ``{ "sessionId": str, "prompt": str, "winner": {modelId, provider},
+    "losers": [{modelId, provider}, ...] }``
+    """
+    from app.services.routing_evidence import classify_task_type, record_arena
+
+    raw_winner = body.get('winner')
+    winner = raw_winner if isinstance(raw_winner, dict) else {}
+    raw_losers = body.get('losers')
+    losers = raw_losers if isinstance(raw_losers, list) else []
+    loser_pairs = [
+        (as_str(loser.get('modelId'), ''), as_str(loser.get('provider'), ''))
+        for loser in losers
+        if isinstance(loser, dict)
+    ]
+    record_arena(
+        session_id=as_str(body.get('sessionId'), ''),
+        task_type=classify_task_type(as_str(body.get('prompt'), '')),
+        winner_model=as_str(winner.get('modelId'), ''),
+        winner_provider=as_str(winner.get('provider'), ''),
+        loser_models=loser_pairs,
+    )
+    return {'recorded': True}
+
+
 @router.post('/run-consolidation')
 async def runConsolidationEndpoint(body: dict = {}):
     """Trigger a consolidation cycle now.
