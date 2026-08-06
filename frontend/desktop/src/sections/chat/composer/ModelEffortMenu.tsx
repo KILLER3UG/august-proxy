@@ -3,10 +3,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, Pin, RefreshCw } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Pin, RefreshCw, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { api } from '@/api/client';
 import {
   chipTrigger,
   menuFlyout,
@@ -94,6 +95,7 @@ export function ModelEffortMenu({
   thinkingEnabled,
   onThinkingChange,
   openSignal,
+  promptHint,
 }: {
   /** Full catalog (kept for call-site compatibility; flyout uses `visibleModels`). */
   models: ModelItem[];
@@ -109,6 +111,9 @@ export function ModelEffortMenu({
   onThinkingChange: (v: boolean) => void;
   /** Incrementing counter — each change opens the menu (command palette). */
   openSignal?: number;
+  /** Composer draft — used to classify the task and surface routing
+   *  evidence ("best model for this kind of task", surpass #1). */
+  promptHint?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -117,6 +122,39 @@ export function ModelEffortMenu({
   useEffect(() => {
     if (openSignal) setOpen(true);
   }, [openSignal]);
+
+  // Routing-evidence hint: while the menu is open, fetch the best models
+  // for the task the draft describes (debounced).
+  interface RoutingSuggestion {
+    model: string;
+    wins: number;
+    total: number;
+    winRate: number;
+    avgTokens: number;
+  }
+  const [routingSuggestions, setRoutingSuggestions] = useState<RoutingSuggestion[]>([]);
+  const [routingTaskType, setRoutingTaskType] = useState('');
+  useEffect(() => {
+    if (!open || !promptHint?.trim()) {
+      setRoutingSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void api
+        .get<{ taskType: string; suggestions: RoutingSuggestion[] }>(
+          `/api/brain/routing/suggestions?prompt=${encodeURIComponent(promptHint.trim())}`,
+        )
+        .then((res) => {
+          setRoutingTaskType(res.taskType ?? '');
+          setRoutingSuggestions(res.suggestions ?? []);
+        })
+        .catch(() => setRoutingSuggestions([]));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [open, promptHint]);
+
+  const suggestionFor = (modelId: string): RoutingSuggestion | undefined =>
+    routingSuggestions.find((s) => s.model === modelId);
 
   // Pin/unpin straight from the dropdown: resolve the provider entry behind
   // the aggregated model (provider name → provider id), flip its `pinned`
@@ -565,8 +603,44 @@ export function ModelEffortMenu({
                           : 'No models loaded'}
                       </div>
                     ) : (
-                      grouped.map(
-                        ({
+                      <>
+                        {routingSuggestions.length > 0 && !searchQuery.trim() ? (
+                          <div
+                            className="px-3 pt-2 pb-1 space-y-1 border-b border-border/60"
+                            data-testid="model-menu-routing-hint"
+                          >
+                            <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                              <Sparkles className="size-3 text-primary" />
+                              Best for “{routingTaskType || 'this task'}”
+                            </span>
+                            {routingSuggestions.slice(0, 2).map((s) => {
+                              const match = visibleModels.find((m) => m.id === s.model);
+                              return (
+                                <button
+                                  key={s.model}
+                                  type="button"
+                                  onClick={() => {
+                                    if (match) {
+                                      onSelect(match);
+                                      closeAll();
+                                    }
+                                  }}
+                                  className="w-full flex items-center gap-2 rounded-md bg-primary/10 px-2 py-1.5 text-left hover:bg-primary/20 transition"
+                                  data-testid={`routing-use-${s.model}`}
+                                >
+                                  <Sparkles className="size-3 text-primary shrink-0" />
+                                  <span className="text-xs font-medium truncate flex-1">
+                                    {s.model}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground shrink-0">
+                                    {s.wins}/{s.total} wins · {s.avgTokens} tok avg
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                        {grouped.map(                        ({
                           provider,
                           visible,
                           isExpanded,
@@ -604,6 +678,14 @@ export function ModelEffortMenu({
                                       </span>
                                     )}
                                   </span>
+                                  {suggestionFor(m.id) ? (
+                                    <span
+                                      className="text-[10px] text-primary shrink-0 font-medium"
+                                      title={`${suggestionFor(m.id)!.wins}/${suggestionFor(m.id)!.total} wins · ${suggestionFor(m.id)!.avgTokens} tok avg for "${routingTaskType}"`}
+                                    >
+                                      {suggestionFor(m.id)!.wins}/{suggestionFor(m.id)!.total}
+                                    </span>
+                                  ) : null}
                                   {/* Pin to top — visible on hover, always when pinned */}
                                   <span
                                     onClick={(e) => {
@@ -648,7 +730,10 @@ export function ModelEffortMenu({
                           </div>
                         ),
                       )
-                    )}
+                      }
+                      </>
+                      )
+                    }
                   </div>
                 </motion.div>
               )}

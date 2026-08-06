@@ -275,6 +275,7 @@ export function ComposerToolbar({
           thinkingEnabled={thinkingEnabled}
           onThinkingChange={setThinkingEnabled}
           openSignal={modelMenuOpenSignal}
+          promptHint={input}
           onSelect={(m) => {
             void (async () => {
               const prev = selectedModel;
