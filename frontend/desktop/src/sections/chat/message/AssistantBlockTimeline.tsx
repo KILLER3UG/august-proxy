@@ -30,7 +30,9 @@ import {
 } from '@/store/liveActivity';
 import { getToolLabel } from '@/lib/tool-labels';
 import { modelDisplayParts } from '../model-display';
-import { resolveUiSessionId } from '../stream/session-id-map';
+import { resolveUiSessionId, resolveWorkbenchSessionId } from '../stream/session-id-map';
+import { toast } from 'sonner';
+import { api } from '@/api/client';
 
 type DisplayBlock = MessageBlock;
 
@@ -308,8 +310,11 @@ export function AssistantBlockTimeline({
   // Tools: running → open, else collapsed. Thoughts: open while generating,
   // collapse once the final answer exists (unless the user overrode).
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>(
+
     {},
   );
+  // Verifier banner "Run it for me" in-flight flag.
+  const [verifierRunning, setVerifierRunning] = useState(false);
 
   // When the turn finishes, drop expand overrides so thoughts re-collapse.
   useEffect(() => {
@@ -762,6 +767,53 @@ export function AssistantBlockTimeline({
                       <li>
                         <span className="font-medium">Model-stated blockers:</span>{' '}
                         {ev.blockers.join(' · ')}
+                      </li>
+                    ) : null}
+                    {ev.verificationCommand ? (
+                      <li className="flex items-center gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void navigator.clipboard
+                              ?.writeText(ev.verificationCommand ?? '')
+                              .catch(() => undefined);
+                            toast.success('Command copied');
+                          }}
+                          className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-200 hover:bg-amber-500/25"
+                          data-testid="verifier-copy-command"
+                        >
+                          Copy command
+                        </button>
+                        <button
+                          type="button"
+                          disabled={verifierRunning}
+                          onClick={() => {
+                            setVerifierRunning(true);
+                            const wbId = resolveWorkbenchSessionId(liveSessionKey);
+                            api
+                              .post<{ status: string; output?: string; error?: string }>(
+                                `/api/workbench/sessions/${encodeURIComponent(wbId)}/verify-run`,
+                                { command: ev.verificationCommand ?? '' },
+                              )
+                              .then((res) => {
+                                if (res.status === 'ok') {
+                                  toast.success(
+                                    'Verification ran — August was told to finish the gate',
+                                  );
+                                } else {
+                                  toast.error(res.error || 'Verification run failed');
+                                }
+                              })
+                              .catch((err: Error) =>
+                                toast.error(err.message || 'Verification run failed'),
+                              )
+                              .finally(() => setVerifierRunning(false));
+                          }}
+                          className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-200 hover:bg-amber-500/25 disabled:opacity-50"
+                          data-testid="verifier-run-command"
+                        >
+                          {verifierRunning ? 'Running…' : 'Run it for me'}
+                        </button>
                       </li>
                     ) : null}
                   </ul>

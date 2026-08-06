@@ -5,6 +5,7 @@ import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import type { ChatMessage } from '@/types/chat';
+import type { ModelItem } from './model-display';
 import { getDisplayBlocks } from './message-blocks';
 import {
   voiceCommandRegistry,
@@ -36,6 +37,8 @@ export function MessageBubble({
   toolProgress,
   subagentPrompts,
   subagentBlocks,
+  models,
+  onReanswerWithModel,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -50,6 +53,9 @@ export function MessageBubble({
   onFork?: () => void;
   onClarifyAnswer?: (answer: string) => void;
   toolProgress?: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
+  /** Visible model catalog for "answer this with another model" (A4). */
+  models?: ModelItem[];
+  onReanswerWithModel?: (model: ModelItem) => void;
   /** Sub-agent prompt disclosures keyed by the parent toolUse id. Only
    *  present for blocks whose tool name is august__spawn_subagent or
    *  august__run_team (and the team-run agents they spawn). The bubble
@@ -71,6 +77,7 @@ export function MessageBubble({
 }) {
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [reanswerOpen, setReanswerOpen] = useState(false);
   const [editText, setEditText] = useState('');
   const [copied, setCopied] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -325,8 +332,36 @@ export function MessageBubble({
           onCopy={() => { void handleCopy(); }}
           onRegen={() => { void handleRegenClick(); }}
           onFork={onFork}
+          onReanswer={
+            models && onReanswerWithModel
+              ? () => setReanswerOpen((v) => !v)
+              : undefined
+          }
+          reanswerOpen={reanswerOpen}
         />
       )}
+      {!isUser && reanswerOpen && models && onReanswerWithModel ? (
+        <div className="relative self-start mt-1" data-testid="reanswer-model-list">
+          <div className="absolute left-0 top-0 z-20 w-60 max-h-56 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg">
+            {models.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  setReanswerOpen(false);
+                  onReanswerWithModel(m);
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] hover:bg-muted/60"
+              >
+                <span className="flex-1 min-w-0 truncate">{m.name || m.id}</span>
+                <span className="text-[10px] text-muted-foreground truncate max-w-24">
+                  {m.provider}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {/* Rendered after the assistant's final output (not above it) so the
        * question reads as a continuation of what the model just said, and
        * disappears the moment `message.clarify.answer` is set below. */}

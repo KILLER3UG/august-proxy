@@ -193,11 +193,34 @@ async def getSkillDraft(name: str):
 
 
 @router.post('/run-consolidation')
-async def runConsolidationEndpoint():
-    """v3: Trigger a consolidation cycle now."""
-    from app.services.consolidation_daemon import runConsolidation
+async def runConsolidationEndpoint(body: dict = {}):
+    """Trigger a consolidation cycle now.
 
+    Body ``{ "preview": true }`` computes the plan WITHOUT applying it —
+    the UI shows merge/promote/delete candidates first (B2), then calls
+    ``/apply-consolidation`` with the same plan.
+    """
+    from app.services.consolidation_daemon import previewConsolidation, runConsolidation
+
+    if body.get('preview'):
+        return await previewConsolidation()
     stats = await runConsolidation()
+    return stats
+
+
+@router.post('/apply-consolidation')
+async def applyConsolidation(body: dict):
+    """Apply a previously previewed consolidation plan.
+
+    Body: ``{ "plan": {"merge": [...], "promote": [...], "delete": [...]} }``
+    — the exact plan returned by ``run-consolidation`` with ``preview: true``.
+    """
+    from app.services.consolidation_daemon import _apply_consolidation_plan
+
+    plan = body.get('plan')
+    if not isinstance(plan, dict):
+        raise HTTPException(status_code=400, detail='plan is required')
+    stats = await _apply_consolidation_plan(plan)
     return stats
 
 

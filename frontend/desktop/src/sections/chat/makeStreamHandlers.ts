@@ -40,6 +40,8 @@ import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan'
 import { buildCompactionNoticeMessage } from '@/sections/chat/message/CompactionNoticeCard';
 import { setSessionContextUsed } from './context-used-store';
 import { setMemorySuggestions } from './memory-suggestions-store';
+import { pushNotification } from '@/store/notifications';
+import { useArenaStore } from './arena/arena-store';
 import {
   applySubagentEvent,
   makeSubagentEventHandlers,
@@ -488,6 +490,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         content: message,
         verifierEvidence: evidence,
       });
+      pushNotification('Verification required', message, 'verifier');
       scheduleUpdate();
     },
     onPlanProposed: ({ plan }) => {
@@ -658,6 +661,18 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       if (sessionId && Array.isArray(data?.memorySuggestions)) {
         setMemorySuggestions(sessionId, data.memorySuggestions);
       }
+      // Notification center (C1): arena lane completions land in the bell.
+      if (sessionId) {
+        try {
+          const run = useArenaStore.getState().run;
+          const lane = run?.lanes.find((l) => l.uiSessionId === sessionId);
+          if (lane) {
+            pushNotification(`⚔ ${lane.modelName} finished`, undefined, 'arena');
+          }
+        } catch {
+          /* notification is best-effort */
+        }
+      }
       // Finalize FIRST — synchronously capture the complete assistantContent
       // / streamBlocks snapshot before any async work. The old code awaited
       // gitApi.diff() before calling finalize, so a slow/hanging diff fetch
@@ -699,6 +714,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         content: message || 'Generation failed',
         system: true,
       });
+      pushNotification('Turn failed', message || 'Generation failed', 'error');
       scheduleUpdate();
       finalize('error');
     },

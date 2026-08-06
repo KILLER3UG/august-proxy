@@ -1,6 +1,6 @@
 /* v3 — Learning tab: heuristics, auto-memories, facts, sleep cycle, mutations */
 import { useState } from 'react';
-import { Sparkles, Brain, Clock, Zap, ListChecks, Trash2, Check, X, Play, Pin, User, ChevronDown, ChevronRight } from 'lucide-react';
+import { Sparkles, Brain, Clock, Zap, ListChecks, Trash2, Check, X, Play, Pin, User, ChevronDown, ChevronRight, Eye } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
@@ -13,6 +13,20 @@ interface SkillDraft {
   name: string;
   body: string;
   existingBody?: string | null;
+}
+
+interface ConsolidationPlan {
+  merge?: Array<{ keepId?: number; removeIds?: number[]; mergedRule?: string }>;
+  promote?: Array<{ pattern?: string; factKey?: string; factValue?: string }>;
+  delete?: number[];
+}
+
+interface ConsolidationPreview {
+  plan: ConsolidationPlan | null;
+  merged: number;
+  promoted: number;
+  deleted: number;
+  errors?: string[];
 }
 
 function formatProfile(profile: unknown): string {
@@ -122,6 +136,31 @@ export function LearningTab() {
       invalidate();
     },
     onError: (e: Error) => toast.error(e.message || 'Consolidation failed'),
+  });
+
+  // Sleep-cycle preview (B2): compute the plan without applying, show the
+  // user exactly what would merge/promote/delete, then apply on confirm.
+  const [preview, setPreview] = useState<ConsolidationPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const fetchPreview = () => {
+    setPreviewLoading(true);
+    void api
+      .post<ConsolidationPreview>('/api/brain/run-consolidation', { preview: true })
+      .then((res) => setPreview(res))
+      .catch((e: Error) => toast.error(e.message || 'Preview failed'))
+      .finally(() => setPreviewLoading(false));
+  };
+
+  const applyPreview = useMutation({
+    mutationFn: (plan: ConsolidationPlan) =>
+      api.post('/api/brain/apply-consolidation', { plan }),
+    onSuccess: () => {
+      toast.success('Sleep cycle applied');
+      setPreview(null);
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Apply failed'),
   });
 
   const toggleDeltaConsent = useMutation({
@@ -340,16 +379,28 @@ export function LearningTab() {
             <Clock className="size-4 text-primary" />
             <h3 className="font-medium text-sm">Sleep cycle</h3>
           </div>
-          <button
-            type="button"
-            className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground disabled:opacity-50"
-            disabled={runConsolidation.isPending}
-            data-testid="learning-run-consolidation"
-            onClick={() => runConsolidation.mutate()}
-          >
-            <Play className="size-3 inline mr-1" />
-            Run now
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground disabled:opacity-50"
+              disabled={previewLoading}
+              data-testid="learning-preview-consolidation"
+              onClick={fetchPreview}
+            >
+              <Eye className="size-3 inline mr-1" />
+              {previewLoading ? 'Computing…' : 'Preview'}
+            </button>
+            <button
+              type="button"
+              className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground disabled:opacity-50"
+              disabled={runConsolidation.isPending}
+              data-testid="learning-run-consolidation"
+              onClick={() => runConsolidation.mutate()}
+            >
+              <Play className="size-3 inline mr-1" />
+              Run now
+            </button>
+          </div>
         </div>
         <dl className="text-xs grid grid-cols-2 gap-1">
           <dt className="text-muted-foreground">Last run</dt>
@@ -466,6 +517,126 @@ export function LearningTab() {
           </button>
         </div>
       </Card>
+
+      {/* Sleep-cycle preview modal (B2) */}
+      {preview ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sleep cycle preview"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPreview(null);
+          }}
+          data-testid="consolidation-preview-modal"
+        >
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-popover p-4 shadow-xl space-y-3">
+            <div className="flex items-center gap-2">
+              <Clock className="size-4 text-primary" />
+              <h3 className="font-medium text-sm">Sleep cycle preview</h3>
+              <span className="text-[10px] text-muted-foreground/70 ml-auto">
+                Nothing applied yet
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreview(null)}
+                className="p-1 text-muted-foreground hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+
+            {!preview.plan || (preview.merged === 0 && preview.promoted === 0 && preview.deleted === 0) ? (
+              <p className="text-xs text-muted-foreground">
+                Nothing to consolidate right now — the sleep cycle found no
+                merges, promotions, or stale rules.
+              </p>
+            ) : (
+              <div className="space-y-3 text-xs">
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-500">
+                    {preview.merged} merge{preview.merged === 1 ? '' : 's'}
+                  </span>
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-500">
+                    {preview.promoted} promotion{preview.promoted === 1 ? '' : 's'}
+                  </span>
+                  <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-rose-500">
+                    {preview.deleted} deletion{preview.deleted === 1 ? '' : 's'}
+                  </span>
+                </div>
+
+                {preview.plan.merge?.length ? (
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                      Merge duplicates
+                    </p>
+                    {preview.plan.merge.map((m, i) => (
+                      <p key={i} className="text-muted-foreground">
+                        #{m.keepId} keeps — removes {m.removeIds?.join(', ')}
+                        {m.mergedRule ? (
+                          <>
+                            {' '}
+                            <span className="text-foreground/80">→ “{m.mergedRule.slice(0, 80)}”</span>
+                          </>
+                        ) : null}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+
+                {preview.plan.promote?.length ? (
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                      Promote patterns to facts
+                    </p>
+                    {preview.plan.promote.map((p, i) => (
+                      <p key={i} className="text-muted-foreground">
+                        <span className="font-mono text-[10px]">{p.factKey}</span> ←{' '}
+                        {String(p.factValue).slice(0, 100)}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+
+                {preview.plan.delete?.length ? (
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                      Delete stale rules
+                    </p>
+                    <p className="text-muted-foreground">#{preview.plan.delete.join(', #')}</p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPreview(null)}
+                className="text-xs px-3 py-1.5 rounded bg-muted text-muted-foreground"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                disabled={
+                  !preview.plan ||
+                  applyPreview.isPending ||
+                  (preview.merged === 0 && preview.promoted === 0 && preview.deleted === 0)
+                }
+                className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50"
+                data-testid="consolidation-apply"
+                onClick={() => applyPreview.mutate(preview.plan!)}
+              >
+                <Check className="size-3 inline mr-1" />
+                Apply {preview.merged + preview.promoted + preview.deleted} change
+                {preview.merged + preview.promoted + preview.deleted === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

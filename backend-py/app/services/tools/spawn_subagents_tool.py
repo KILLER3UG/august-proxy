@@ -42,6 +42,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
+from app.json_narrowing import as_list
 from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,157 @@ TOOL_DEFINITION = {
     },
 }
 _pendingProposals: dict[str, dict[str, Any]] = {}
+
+
+# ── Proposal persistence (B5): survive backend restarts ────────────────
+# The in-memory dict above is the fast path; the `proposals` table is the
+# durable store. On restart, approvals hydrate the session from the
+# workbench store and re-spawn the work items.
+
+def _persist_proposal(
+    proposal_id: str,
+    session: object,
+    work_items: list[dict[str, Any]],
+    mode: str,
+    background: bool,
+    created_at: float,
+) -> None:
+    """Insert one pending proposal row (fire-and-forget, never raises)."""
+    try:
+        import json as _json
+        from datetime import datetime, timezone
+
+        from app.services.memory_store import _conn
+
+        sid = _session_id(session)
+        _conn().execute(
+            'INSERT INTO proposals (session_id, proposal_type, content, status, created_at) '
+            'VALUES (?, ?, ?, ?, ?)',
+            (
+                sid,
+                'subagent_breakdown',
+                _json.dumps(
+                    {
+                        'proposalId': proposal_id,
+                        'workItems': work_items,
+                        'mode': mode,
+                        'background': background,
+                        'createdAt': created_at,
+                        'sessionId': sid,
+                    }
+                ),
+                'pending',
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        _conn().commit()
+    except Exception:
+        logger.debug('proposal persist failed (non-fatal)', exc_info=True)
+
+
+def _load_proposal_from_db(proposal_id: str) -> dict[str, Any] | None:
+    """Rehydrate a pending proposal after a restart (memory miss)."""
+    try:
+        import json as _json
+        import types
+
+        from app.services.memory_store import _conn
+
+        rows = _conn().execute(
+            "SELECT id, session_id, content FROM proposals WHERE status = 'pending'"
+        ).fetchall()
+        for r in rows:
+            try:
+                data = _json.loads(r['content'] or '{}')
+            except Exception:
+                continue
+            if data.get('proposalId') != proposal_id:
+                continue
+            sid = str(r['session_id'] or data.get('sessionId') or '')
+            session: object | None = None
+            if sid:
+                try:
+                    from app.services.workbench.workbench import get_workbench_session
+
+                    session = get_workbench_session(sid)
+                except Exception:
+                    session = None
+            if session is None:
+                # Best-effort shell — spawning still works via session id.
+                session = types.SimpleNamespace(id=sid or 'default', model='', agentId='', provider='')
+            return {
+                'session': session,
+                'workItems': as_list(data.get('workItems'), []),
+                'mode': str(data.get('mode') or 'auto'),
+                'background': bool(data.get('background', True)),
+            }
+    except Exception:
+        logger.debug('proposal db load failed (non-fatal)', exc_info=True)
+    return None
+
+
+def list_persisted_proposals() -> list[dict[str, Any]]:
+    """Pending proposals from the durable store (for the Runs tab)."""
+    try:
+        import json as _json
+
+        from app.services.memory_store import _conn
+
+        rows = _conn().execute(
+            'SELECT id, content FROM proposals WHERE status = ? ORDER BY id DESC LIMIT 20',
+            ('pending',),
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            try:
+                data = _json.loads(r['content'] or '{}')
+            except Exception:
+                continue
+            items = data.get('workItems') or []
+            out.append(
+                {
+                    'proposalId': data.get('proposalId') or f'db_{r["id"]}',
+                    'createdAt': data.get('createdAt') or 0,
+                    'workItemCount': len(items) if isinstance(items, list) else 0,
+                    'goals': [
+                        str((w.get('goal') or '') if isinstance(w, dict) else '')[:200]
+                        for w in items
+                        if isinstance(w, dict)
+                    ],
+                }
+            )
+        return out
+    except Exception:
+        logger.debug('proposal list failed (non-fatal)', exc_info=True)
+        return []
+
+
+def _mark_proposal_decided(proposal_id: str, status: str) -> None:
+    """Mark a proposal row decided (approved/rejected)."""
+    try:
+        import json as _json
+        from datetime import datetime, timezone
+
+        from app.services.memory_store import _conn
+
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT id, content FROM proposals WHERE status = 'pending'"
+        ).fetchall()
+        for r in rows:
+            try:
+                data = _json.loads(r['content'] or '{}')
+            except Exception:
+                continue
+            if data.get('proposalId') == proposal_id:
+                conn.execute(
+                    'UPDATE proposals SET status = ?, decided_at = ? WHERE id = ?',
+                    (status, datetime.now(timezone.utc).isoformat(), r['id']),
+                )
+                conn.commit()
+                return
+    except Exception:
+        logger.debug('proposal decide failed (non-fatal)', exc_info=True)
 
 
 def _session_id(session: object) -> str:
@@ -168,13 +320,15 @@ async def executeSpawnSubagents(
     """
     if mode == 'proposed':
         proposalId = f'proposal_{__import__("uuid").uuid4().hex[:8]}'
+        createdAt = __import__('time').time()
         _pendingProposals[proposalId] = {
             'workItems': workItems,
             'session': session,
             'mode': mode,
             'background': background,
-            'createdAt': __import__('time').time(),
+            'createdAt': createdAt,
         }
+        _persist_proposal(proposalId, session, workItems, mode, background, createdAt)
         if emit:
             emit(
                 {
@@ -194,10 +348,18 @@ async def executeSpawnSubagents(
 
 
 async def approveProposal(orchestrator: SubagentOrchestrator, proposalId: str) -> dict[str, Any]:
-    """Approve a pending proposal and trigger spawning."""
+    """Approve a pending proposal and trigger spawning.
+
+    Memory-first; after a restart the proposal is rehydrated from the
+    durable ``proposals`` table (B5) and the session re-fetched from the
+    workbench store.
+    """
     proposal = _pendingProposals.pop(proposalId, None)
     if not proposal:
-        return {'status': 'error', 'error': f'Proposal {proposalId} not found or already expired.'}
+        proposal = _load_proposal_from_db(proposalId)
+        if not proposal:
+            return {'status': 'error', 'error': f'Proposal {proposalId} not found or already expired.'}
+    _mark_proposal_decided(proposalId, 'approved')
     return await _doSpawn(
         orchestrator,
         proposal['session'],

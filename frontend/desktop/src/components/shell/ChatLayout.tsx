@@ -226,11 +226,34 @@ export function ChatLayout() {
     return createSession(null, defaultSessionTitle(), null);
   };
 
+  // C4: remember the last active session so `/` restores it after a restart.
+  useEffect(() => {
+    if (sessionId && resolveActiveSession(sessions, sessionId)) {
+      try {
+        localStorage.setItem('august_last_session', sessionId);
+      } catch {
+        /* storage unavailable */
+      }
+    }
+  }, [sessionId, sessions]);
+
   // Auto redirect from `/` or invalid/archived sessionId to the first non-archived session
   useEffect(() => {
     const activeSessions = sessions.filter((s) => !s.isArchived);
     if (location.pathname === "/" || location.pathname === "") {
       let activeSess = activeSessions[0];
+      // Prefer the last-active session (C4) over the newest by creation.
+      try {
+        const lastId = localStorage.getItem("august_last_session");
+        if (lastId) {
+          const last = activeSessions.find(
+            (s) => s.id === lastId || s.workbenchSessionId === lastId,
+          );
+          if (last) activeSess = last;
+        }
+      } catch {
+        /* ignore */
+      }
       if (!activeSess) {
         activeSess = createSessionInCurrentWorkspace();
       }

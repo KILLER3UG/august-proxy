@@ -131,27 +131,13 @@ async def _callHippocampus(prompt: str) -> str:
     return ''
 
 
-async def runConsolidation() -> ConsolidationSummaryDict:
-    """Run one Hippocampus-driven consolidation cycle.
+async def _build_consolidation_plan() -> dict | None:
+    """Steps 1–2: collect memories/heuristics and ask Hippocampus for a plan.
 
-    1. Collect recent auto_memories and all learned_heuristics
-    2. Call Hippocampus with a structured prompt
-    3. Validate the JSON response
-    4. Apply merges, promotions, deletes (most-recent 20 protected)
-    5. Write through db_writer (Phase 0 single-write-queue)
-
-    Returns stats about what was done.
+    Returns the validated plan dict (``{merge, promote, delete}``) or None
+    when there is nothing to consolidate or the model call fails.
     """
-    stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
-    from app.services.brain_event_bus import emitBrainEvent
-
-    emitBrainEvent(
-        category='consolidation',
-        layer='consolidation_daemon',
-        summary=f'Sleep cycle started over {0} heuristics (will update on completion)',
-    )
     try:
-        from app.services.db_writer import enqueue_write
         from app.services.memory_store import _conn
 
         conn = _conn()
@@ -159,81 +145,100 @@ async def runConsolidation() -> ConsolidationSummaryDict:
             dict(r) for r in conn.execute('SELECT * FROM auto_memories ORDER BY id DESC LIMIT 100').fetchall()
         ]
         heuristics = [dict(r) for r in conn.execute('SELECT * FROM learned_heuristics ORDER BY id DESC').fetchall()]
-        if heuristics or autoMemories:
-            prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": []}}.\n"""
-            raw = await _callHippocampus(prompt)
-            if raw:
-                try:
-                    plan = json.loads(raw)
-                except (json.JSONDecodeError, TypeError):
-                    plan = None
-                if isinstance(plan, dict):
-                    recentIds = {
-                        r['id']
-                        for r in conn.execute(
-                            'SELECT id FROM learned_heuristics ORDER BY id DESC LIMIT ?', (_RECENTProtectionCount,)
-                        ).fetchall()
-                    }
-                    for mergeRaw in as_list(plan.get('merge'), []):
-                        merge = as_dict(mergeRaw)
-                        keepId = merge.get('keepId')
-                        removeIds = as_list(merge.get('removeIds'), [])
-                        mergedRule = merge.get('mergedRule')
-                        if keepId is None or not removeIds:
-                            continue
-                        for rid in removeIds:
-                            if rid == keepId:
-                                continue
+        if not (heuristics or autoMemories):
+            return None
+        prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": []}}.\n"""
+        raw = await _callHippocampus(prompt)
+        if not raw:
+            return None
+        try:
+            plan = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return plan if isinstance(plan, dict) else None
+    except Exception as exc:
+        logger.error('Consolidation plan error: %s', exc)
+        return None
 
-                            def _deleteMerged(i: object = rid) -> object:
-                                conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
-                                conn.commit()
-                                _record_audit('merge', target_key=str(i), reason='merged duplicate', detail=str(mergedRule)[:300])
-                                return None
 
-                            await enqueue_write(_deleteMerged, must_succeed=True)
-                        if mergedRule:
+async def _apply_consolidation_plan(plan: dict) -> ConsolidationSummaryDict:
+    """Steps 4–5: apply a validated plan (merges/promotes/deletes + audit).
 
-                            def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
-                                conn.execute(
-                                    "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (m, k)
-                                )
-                                conn.commit()
-                                _record_audit('merge', target_key=str(k), reason='merged rule replaced', detail=str(m)[:300])
-                                return None
+    Writes go through db_writer (single-write-queue); every mutation is
+    mirrored to the audit trail. Most-recent 20 rules are protected.
+    """
+    stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
+    try:
+        from app.services.db_writer import enqueue_write
+        from app.services.memory_store import _conn
 
-                            await enqueue_write(_updateMerged, must_succeed=True)
-                        stats['merged'] += 1
-                    for promoRaw in as_list(plan.get('promote'), []):
-                        promo = as_dict(promoRaw)
-                        factKey = promo.get('factKey')
-                        factValue = promo.get('factValue')
-                        if not factKey or not factValue:
-                            continue
+        conn = _conn()
+        recentIds = {
+            r['id']
+            for r in conn.execute(
+                'SELECT id FROM learned_heuristics ORDER BY id DESC LIMIT ?', (_RECENTProtectionCount,)
+            ).fetchall()
+        }
+        for mergeRaw in as_list(plan.get('merge'), []):
+            merge = as_dict(mergeRaw)
+            keepId = merge.get('keepId')
+            removeIds = as_list(merge.get('removeIds'), [])
+            mergedRule = merge.get('mergedRule')
+            if keepId is None or not removeIds:
+                continue
+            for rid in removeIds:
+                if rid == keepId:
+                    continue
 
-                        def _insertFact(k: object = factKey, v: object = factValue) -> object:
-                            conn.execute(
-                                'INSERT INTO facts (fact_key, fact_value, category, source, confidence) VALUES (?, ?, ?, ?, ?)',
-                                (k, v, 'auto-promoted', 'consolidation', 0.8),
-                            )
-                            conn.commit()
-                            _record_audit('promote', target_key=str(k), reason='promoted pattern', detail=str(v)[:300])
-                            return None
+                def _deleteMerged(i: object = rid) -> object:
+                    conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
+                    conn.commit()
+                    _record_audit('merge', target_key=str(i), reason='merged duplicate', detail=str(mergedRule)[:300])
+                    return None
 
-                        await enqueue_write(_insertFact, must_succeed=True)
-                        stats['promoted'] += 1
-                    for did in as_list(plan.get('delete'), []):
-                        if did in recentIds:
-                            continue
+                await enqueue_write(_deleteMerged, must_succeed=True)
+            if mergedRule:
 
-                        def _deleteStale(i: object = did) -> object:
-                            conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
-                            conn.commit()
-                            _record_audit('delete', target_key=str(i), reason='stale rule')
-                            return None
+                def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
+                    conn.execute(
+                        "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (m, k)
+                    )
+                    conn.commit()
+                    _record_audit('merge', target_key=str(k), reason='merged rule replaced', detail=str(m)[:300])
+                    return None
 
-                        await enqueue_write(_deleteStale, must_succeed=True)
-                        stats['deleted_stale'] += 1
+                await enqueue_write(_updateMerged, must_succeed=True)
+            stats['merged'] += 1
+        for promoRaw in as_list(plan.get('promote'), []):
+            promo = as_dict(promoRaw)
+            factKey = promo.get('factKey')
+            factValue = promo.get('factValue')
+            if not factKey or not factValue:
+                continue
+
+            def _insertFact(k: object = factKey, v: object = factValue) -> object:
+                conn.execute(
+                    'INSERT INTO facts (fact_key, fact_value, category, source, confidence) VALUES (?, ?, ?, ?, ?)',
+                    (k, v, 'auto-promoted', 'consolidation', 0.8),
+                )
+                conn.commit()
+                _record_audit('promote', target_key=str(k), reason='promoted pattern', detail=str(v)[:300])
+                return None
+
+            await enqueue_write(_insertFact, must_succeed=True)
+            stats['promoted'] += 1
+        for did in as_list(plan.get('delete'), []):
+            if did in recentIds:
+                continue
+
+            def _deleteStale(i: object = did) -> object:
+                conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
+                conn.commit()
+                _record_audit('delete', target_key=str(i), reason='stale rule')
+                return None
+
+            await enqueue_write(_deleteStale, must_succeed=True)
+            stats['deleted_stale'] += 1
     except Exception as exc:
         stats['errors'].append(str(exc))
         logger.error('Consolidation error: %s', exc)
@@ -262,6 +267,55 @@ async def runConsolidation() -> ConsolidationSummaryDict:
         },
     )
     return stats
+
+
+async def runConsolidation() -> ConsolidationSummaryDict:
+    """Run one Hippocampus-driven consolidation cycle (plan + apply).
+
+    1. Collect recent auto_memories and all learned_heuristics
+    2. Call Hippocampus with a structured prompt
+    3. Validate the JSON response
+    4. Apply merges, promotions, deletes (most-recent 20 protected)
+    5. Write through db_writer (Phase 0 single-write-queue)
+
+    Returns stats about what was done.
+    """
+    from app.services.brain_event_bus import emitBrainEvent
+
+    emitBrainEvent(
+        category='consolidation',
+        layer='consolidation_daemon',
+        summary='Sleep cycle started (will update on completion)',
+    )
+    plan = await _build_consolidation_plan()
+    if plan is None:
+        stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
+        _persist_last_run(stats)
+        return stats
+    return await _apply_consolidation_plan(plan)
+
+
+async def previewConsolidation() -> dict[str, object]:
+    """Compute the sleep-cycle plan WITHOUT applying anything (B2 preview).
+
+    Returns the raw plan plus per-action counts so the UI can show the user
+    exactly what would merge/promote/delete before they commit.
+    """
+    plan = await _build_consolidation_plan()
+    if plan is None:
+        return {'plan': None, 'merged': 0, 'promoted': 0, 'deleted': 0, 'errors': []}
+    merged = 0
+    for mergeRaw in as_list(plan.get('merge'), []):
+        m = as_dict(mergeRaw)
+        if m.get('keepId') is not None and as_list(m.get('removeIds'), []):
+            merged += 1
+    promoted = 0
+    for promoRaw in as_list(plan.get('promote'), []):
+        p = as_dict(promoRaw)
+        if p.get('factKey') and p.get('factValue'):
+            promoted += 1
+    deleted = len(as_list(plan.get('delete'), []))
+    return {'plan': plan, 'merged': merged, 'promoted': promoted, 'deleted': deleted, 'errors': []}
 
 
 def approvePendingSkill(name: str) -> bool:

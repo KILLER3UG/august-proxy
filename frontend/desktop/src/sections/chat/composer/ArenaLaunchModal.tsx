@@ -1,14 +1,33 @@
 /* ── ArenaLaunchModal ─────────────────────────────────────────────────── */
 /* "Ask in parallel": pick 2–3 models, one prompt → each model answers in
- * its own forked session; the sidebar shows all lanes, you pick the winner
- * to continue. Reuses branch + per-turn model override + SSE infra. */
+ * its own forked session; the split-pane overlay streams all lanes and you
+ * pick the winner to continue. Supports saved templates (A3, localStorage). */
 
-import { useMemo, useState } from 'react';
-import { Swords, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Bookmark, Swords, X } from 'lucide-react';
 import type { ModelItem } from '../model-display';
 
 const MAX_LANES = 3;
 const MIN_LANES = 2;
+const TEMPLATES_KEY = 'august_arena_templates';
+
+export interface ArenaTemplate {
+  id: string;
+  name: string;
+  modelIds: string[];
+  prompt: string;
+  savedAt: number;
+}
+
+function loadTemplates(): ArenaTemplate[] {
+  try {
+    const raw = localStorage.getItem(TEMPLATES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 export function ArenaLaunchModal({
   models,
@@ -27,6 +46,8 @@ export function ArenaLaunchModal({
     return s;
   });
   const [prompt, setPrompt] = useState(initialPrompt);
+  const [templates, setTemplates] = useState<ArenaTemplate[]>(loadTemplates);
+  const [templateName, setTemplateName] = useState('');
 
   const targets = useMemo(
     () => models.filter((m) => selected.has(m.id)),
@@ -44,6 +65,47 @@ export function ArenaLaunchModal({
       return next;
     });
   };
+
+  const saveTemplate = () => {
+    const name = templateName.trim() || `${targets.length} models`;
+    const template: ArenaTemplate = {
+      id: `tpl_${Date.now()}`,
+      name,
+      modelIds: targets.map((m) => m.id),
+      prompt,
+      savedAt: Date.now(),
+    };
+    const next = [template, ...templates].slice(0, 12);
+    setTemplates(next);
+    try {
+      localStorage.setItem(TEMPLATES_KEY, JSON.stringify(next));
+    } catch {
+      /* storage full / unavailable */
+    }
+    setTemplateName('');
+  };
+
+  const applyTemplate = (t: ArenaTemplate) => {
+    setSelected(new Set(t.modelIds.filter((id) => models.some((m) => m.id === id))));
+    setPrompt(t.prompt);
+  };
+
+  const deleteTemplate = (id: string) => {
+    const next = templates.filter((t) => t.id !== id);
+    setTemplates(next);
+    try {
+      localStorage.setItem(TEMPLATES_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Keep the default selection in sync when the catalog loads after mount.
+  useEffect(() => {
+    if (selected.size === 0 && models.length > 0) {
+      setSelected(new Set(models.slice(0, 2).map((m) => m.id)));
+    }
+  }, [models, selected.size]);
 
   return (
     <div
@@ -72,6 +134,37 @@ export function ArenaLaunchModal({
             <X className="size-3.5" />
           </button>
         </div>
+
+        {/* Saved templates (A3) */}
+        {templates.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Bookmark className="size-3 text-muted-foreground" />
+            {templates.map((t) => (
+              <span
+                key={t.id}
+                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px]"
+              >
+                <button
+                  type="button"
+                  onClick={() => applyTemplate(t)}
+                  title={t.prompt}
+                  className="hover:text-primary"
+                  data-testid={`arena-template-${t.id}`}
+                >
+                  {t.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteTemplate(t.id)}
+                  className="text-muted-foreground hover:text-danger"
+                  aria-label={`Delete template ${t.name}`}
+                >
+                  <X className="size-2.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         <textarea
           value={prompt}
@@ -111,6 +204,29 @@ export function ArenaLaunchModal({
             );
           })}
         </ul>
+
+        <div className="flex items-center gap-2">
+          <input
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && targets.length >= MIN_LANES) saveTemplate();
+            }}
+            className="flex-1 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-[11px]"
+            placeholder="Save this selection as a template…"
+            aria-label="Template name"
+            data-testid="arena-template-name"
+          />
+          <button
+            type="button"
+            onClick={saveTemplate}
+            disabled={targets.length < MIN_LANES}
+            className="text-xs px-2.5 py-1.5 rounded bg-muted text-muted-foreground disabled:opacity-50 shrink-0"
+          >
+            <Bookmark className="size-3 inline mr-1" />
+            Save
+          </button>
+        </div>
 
         <div className="flex justify-end gap-2">
           <button

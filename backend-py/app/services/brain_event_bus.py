@@ -5,14 +5,15 @@ Mirrors `services/logger.py:ActivityLog` — append-only ring buffer plus SSE
 fan-out. Used by the Brain dashboard "Activity" tab to show what the brain
 subsystems are doing in realtime.
 
-NOT persisted to disk. Events that should be audited belong on their
-own tables (heuristics, auto_memories, episodic_timeline, …). This is
-the *live tail* — what you'd see if you had a window into the brain.
+The ring is the *live tail*; every event is also mirrored to the durable
+``brain_events`` table (migration 008) so the Activity feed survives
+restarts (B4).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from collections import deque
@@ -40,6 +41,7 @@ class BrainEventBus:
             'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
         }
         self._events.appendleft(entry)
+        self._persist(entry)
         dead: list[asyncio.Queue] = []
         for q in list(self._subscribers):
             try:
@@ -50,11 +52,83 @@ class BrainEventBus:
             self._unsubscribe(q)
         return entry
 
+    @staticmethod
+    def _persist(entry: dict[str, object]) -> None:
+        """Mirror one event to the durable brain_events table (best-effort)."""
+        try:
+            from app.services.memory_store import _conn
+
+            conn = _conn()
+            conn.execute(
+                'INSERT OR IGNORE INTO brain_events (event_id, category, layer, summary, meta, at) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
+                (
+                    str(entry.get('id') or ''),
+                    str(entry.get('category') or ''),
+                    str(entry.get('layer') or ''),
+                    str(entry.get('summary') or '')[:2000],
+                    json.dumps(entry.get('meta') or {}, default=str)[:8000],
+                    str(entry.get('at') or ''),
+                ),
+            )
+            conn.commit()
+        except Exception:
+            pass
+
     def recent(self, limit: int = 100, category: str | None = None) -> list[dict[str, object]]:
         items = list(self._events)
         if category:
             items = [e for e in items if e['category'] == category]
         return items[: max(0, limit)]
+
+    def history(self, limit: int = 200, category: str | None = None) -> list[dict[str, object]]:
+        """Durable event tail (survives restarts), merged with the live ring.
+
+        Ring entries come first (newest); older rows are back-filled from the
+        table so the Activity tab always shows a full window.
+        """
+        live = self.recent(limit=limit, category=category)
+        live_ids = {str(e.get('id')) for e in live}
+        try:
+            from app.services.memory_store import _conn
+
+            conn = _conn()
+            if category:
+                rows = conn.execute(
+                    'SELECT event_id, category, layer, summary, meta, at '
+                    'FROM brain_events WHERE category = ? ORDER BY id DESC LIMIT ?',
+                    (category, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    'SELECT event_id, category, layer, summary, meta, at '
+                    'FROM brain_events ORDER BY id DESC LIMIT ?',
+                    (limit,),
+                ).fetchall()
+            out = list(live)
+            for r in rows:
+                eid = str(r['event_id'] or '')
+                if eid in live_ids:
+                    continue
+                try:
+                    meta = json.loads(r['meta'] or '{}')
+                except Exception:
+                    meta = {}
+                out.append(
+                    {
+                        'id': eid,
+                        'category': r['category'],
+                        'layer': r['layer'],
+                        'summary': r['summary'],
+                        'meta': meta if isinstance(meta, dict) else {},
+                        'at': r['at'],
+                    }
+                )
+                if len(out) >= limit:
+                    break
+            return out[: max(0, limit)]
+        except Exception:
+            return live
 
     def _subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=500)

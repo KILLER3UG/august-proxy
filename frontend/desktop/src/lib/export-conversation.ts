@@ -92,3 +92,24 @@ export function downloadConversation(
   URL.revokeObjectURL(url);
   return filename;
 }
+
+/** Copy the transcript to the clipboard as Markdown (C3). */
+export async function copyConversationToClipboard(
+  messages: ChatMessage[],
+  title?: string | null,
+): Promise<void> {
+  const markdown = messagesToMarkdown(messages, title);
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(markdown);
+    return;
+  }
+  // Fallback for environments without the async clipboard API.
+  const textarea = document.createElement('textarea');
+  textarea.value = markdown;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}

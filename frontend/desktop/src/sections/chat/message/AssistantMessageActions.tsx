@@ -1,7 +1,7 @@
-import { Check, RefreshCw, Play, Pause, Bug, GitBranch } from 'lucide-react';
+import { Check, RefreshCw, Play, Pause, Bug, GitBranch, ArrowLeftRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-/** Speak / copy / regenerate / fork / raw-debug controls under an assistant message. */
+/** Speak / copy / re-answer / regenerate / fork / raw-debug controls under an assistant message. */
 export function AssistantMessageActions({
   showActions,
   copied,
@@ -15,6 +15,8 @@ export function AssistantMessageActions({
   onCopy,
   onRegen,
   onFork,
+  onReanswer,
+  reanswerOpen,
 }: {
   showActions: boolean;
   copied: boolean;
@@ -28,6 +30,9 @@ export function AssistantMessageActions({
   onCopy: () => void;
   onRegen: () => void;
   onFork?: () => void;
+  /** "Answer this with another model" — toggles the model list in the bubble. */
+  onReanswer?: () => void;
+  reanswerOpen?: boolean;
 }) {
   return (
     <div className={cn(
@@ -65,6 +70,21 @@ export function AssistantMessageActions({
           )}
         </div>
       </button>
+      {onReanswer && (
+        <button
+          onClick={onReanswer}
+          disabled={streaming}
+          className={cn(
+            "p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50",
+            reanswerOpen && "text-primary",
+          )}
+          title="Answer this with another model"
+          aria-expanded={reanswerOpen}
+          data-testid="reanswer-open"
+        >
+          <ArrowLeftRight className="size-3" />
+        </button>
+      )}
       {isLast && (
         <button
           onClick={onRegen}

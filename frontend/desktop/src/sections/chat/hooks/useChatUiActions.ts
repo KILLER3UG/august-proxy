@@ -22,7 +22,7 @@ import {
 } from '@/components/chat/WorkbenchModeSelector';
 import { onUiAction } from '@/api/ui-events';
 import type { ChatMessage } from '@/types/chat';
-import { downloadConversation } from '@/lib/export-conversation';
+import { downloadConversation, copyConversationToClipboard } from '@/lib/export-conversation';
 import { persistMessages } from '../message-storage';
 
 export interface UseChatUiActionsOptions {
@@ -61,7 +61,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
       activeSession?.workbenchSessionId ||
       (sessionId?.startsWith('wb_') ? sessionId : null);
 
-    const unsub = onUiAction((e) => {
+    const unsub = onUiAction(async (e) => {
       if (e.action === 'stop_chat') {
         if (!streaming) {
           toast.message('Nothing is streaming right now.');
@@ -197,6 +197,20 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
         } catch (err: unknown) {
           toast.error(
             `Export failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      if (e.action === 'copy_conversation') {
+        if (messages.length === 0) {
+          toast.message('Nothing to copy yet.');
+          return;
+        }
+        try {
+          await copyConversationToClipboard(messages, activeSession?.title);
+          toast.success('Conversation copied to clipboard');
+        } catch (err: unknown) {
+          toast.error(
+            `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
       }

@@ -35,6 +35,8 @@ export function AssistantMessageContent({
   onCopy,
   onRegen,
   onFork,
+  onReanswer,
+  reanswerOpen,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -55,6 +57,9 @@ export function AssistantMessageContent({
   onCopy: () => void;
   onRegen: () => void;
   onFork?: () => void;
+  /** "Answer this with another model" — toggles the model list in the bubble. */
+  onReanswer?: () => void;
+  reanswerOpen?: boolean;
 }) {
   const tokensPerSecond = message.usage ? formatTokensPerSecond(message.usage) : null;
 
@@ -182,6 +187,8 @@ export function AssistantMessageContent({
         onCopy={onCopy}
         onRegen={onRegen}
         onFork={onFork}
+        onReanswer={onReanswer}
+        reanswerOpen={reanswerOpen}
       />
     </>
   );

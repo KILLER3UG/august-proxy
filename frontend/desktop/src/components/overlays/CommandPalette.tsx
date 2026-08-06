@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Command } from "cmdk";
+import { toast } from "sonner";
+import { api } from "@/api/client";
 import {
   Plus,
   RefreshCw,
@@ -8,6 +10,10 @@ import {
   Moon,
   Settings,
   Copy,
+  Brain,
+  Sparkles,
+  Clock,
+  Network,
   Undo2,
   GitBranch,
   Shrink,
@@ -137,6 +143,15 @@ export function CommandPalette() {
               <FileDown className="size-3.5" /> Export conversation
             </Command.Item>
             <Command.Item
+              value="action copy conversation clipboard markdown"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'copy_conversation', target: 'active' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Copy className="size-3.5" /> Copy conversation
+            </Command.Item>
+            <Command.Item
               value="mode ask before changes"
               onSelect={run(() =>
                 dispatchUiAction({ action: 'set_guard_mode', target: 'ask' }),
@@ -219,6 +234,47 @@ export function CommandPalette() {
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
               <StickyNote className="size-3.5" /> Open notepad
+            </Command.Item>
+          </Command.Group>
+
+          <Command.Separator className="my-2 border-t border-border" />
+
+          <Command.Group
+            heading="Brain"
+            className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground"
+          >
+            <Command.Item
+              value="action brain you profile"
+              onSelect={run(() => { void navigate("/brain?tab=you"); })}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Brain className="size-3.5" /> What August knows about you
+            </Command.Item>
+            <Command.Item
+              value="action brain pending skills"
+              onSelect={run(() => { void navigate("/brain?tab=learning"); })}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Sparkles className="size-3.5" /> Review pending skills
+            </Command.Item>
+            <Command.Item
+              value="action brain runs"
+              onSelect={run(() => { void navigate("/brain?tab=runs"); })}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Network className="size-3.5" /> Sub-agent runs
+            </Command.Item>
+            <Command.Item
+              value="action brain run consolidation"
+              onSelect={run(() => {
+                void api
+                  .post("/api/brain/run-consolidation", {})
+                  .then(() => toast.success("Sleep cycle finished"))
+                  .catch((e: Error) => toast.error(e.message || "Consolidation failed"));
+              })}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Clock className="size-3.5" /> Run sleep cycle now
             </Command.Item>
           </Command.Group>
 

@@ -22,6 +22,10 @@ export interface ArenaRun {
   prompt: string;
   lanes: ArenaRunLane[];
   startedAt: number;
+  /** Original composer settings — reused for lane re-asks (A2). */
+  workbenchMode?: string;
+  effort?: string;
+  thinkingEnabled?: boolean;
 }
 
 interface ArenaState {

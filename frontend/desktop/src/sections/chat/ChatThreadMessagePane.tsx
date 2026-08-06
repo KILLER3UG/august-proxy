@@ -10,6 +10,7 @@ import { messagePop, userMessagePop } from '@/lib/motion';
 import { ScrollToTopButton } from '@/components/chat/ScrollToTopButton';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { MessageBubble } from './MessageBubble';
+import type { ModelItem } from './model-display';
 import { ModelPickerCard } from './ModelPickerCard';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
 import type { ChatMessage } from '@/types/chat';
@@ -39,6 +40,8 @@ export function ChatThreadMessagePane({
   onFork,
   onClarifyAnswer,
   footerSlot,
+  models,
+  onReanswerWithModel,
 }: {
   sessionId: string | null;
   messages: ChatMessage[];
@@ -63,7 +66,9 @@ export function ChatThreadMessagePane({
   onClarifyAnswer: (msgId: string, answer: string) => void;
   /** Composer or plan banner under the list. */
   footerSlot: ReactNode;
-}) {
+  /** Visible model catalog for "answer this with another model" (A4). */
+  models?: ModelItem[];
+  onReanswerWithModel?: (model: ModelItem, index: number) => void;}) {
   const shouldAnimateEnter = useMessageEnterAnimation(messages, sessionId);
 
   return (
@@ -119,6 +124,12 @@ export function ChatThreadMessagePane({
                   toolProgress={toolProgress}
                   subagentPrompts={subagentPrompts}
                   subagentBlocks={subagentBlocks}
+                  models={models}
+                  onReanswerWithModel={
+                    onReanswerWithModel
+                      ? (model) => onReanswerWithModel(model, realIndex)
+                      : undefined
+                  }
                 />
               </motion.div>
             );

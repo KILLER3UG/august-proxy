@@ -1049,8 +1049,31 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     ],
   );
 
-  /** Arena ("ask in parallel"): fork the session per target model and send
-   *  the same prompt to each with a per-turn model override. The split-pane
+  /** "Answer this with another model" (A4): switch the session model and
+   *  regenerate the turn — the backend is truncated at that turn by
+   *  handleRegenerate, and the deferred call runs after re-render so the
+   *  fresh generateAIResponse closure uses the newly selected model. */
+  const handleRegenerateRef = useRef(handleRegenerate);
+  handleRegenerateRef.current = handleRegenerate;
+  const handleReanswerWithModel = useCallback(
+    (index: number, model: ModelItem) => {
+      if (streaming) return;
+      setSelectedModel(model);
+      userSelectedRef.current = model.id;
+      try {
+        localStorage.setItem('august_last_model', JSON.stringify(model));
+      } catch {
+        /* silent */
+      }
+      if (sessionId) updateSessionModel(sessionId, model.id, model.provider);
+      window.setTimeout(() => {
+        handleRegenerateRef.current?.(index);
+      }, 0);
+    },
+    [streaming, sessionId, setSelectedModel, userSelectedRef],
+  );
+
+  /** Arena ("ask in parallel"): fork the session per target model and send   *  the same prompt to each with a per-turn model override. The split-pane
    *  overlay (ArenaView) streams all lanes side by side; picking a winner
    *  navigates to that lane's session — which holds the full conversation
    *  plus the winning answer, so the chat continues there. */
@@ -1110,6 +1133,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           prompt,
           lanes,
           startedAt: Date.now(),
+          workbenchMode,
+          effort,
+          thinkingEnabled,
         });
         toast.success(
           `Arena launched — ${lanes.length} models answering in parallel`,
@@ -1366,6 +1392,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onRegenerate={handleRegenerate}
                 onFork={handleFork}
                 onClarifyAnswer={handleClarifyAnswer}
+                models={visibleModels}
+                onReanswerWithModel={(model, index) => handleReanswerWithModel(index, model)}
                 footerSlot={inputSlot}
               />
             )}

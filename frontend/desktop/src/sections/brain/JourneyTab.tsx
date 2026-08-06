@@ -1,6 +1,8 @@
 /* Journey tab — episodic timeline of per-turn and system events. */
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { History, Sparkles, Zap, Moon, Compass, ListChecks } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { History, Sparkles, Zap, Moon, Compass, ListChecks, ExternalLink, Brain } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { PageLoader } from '@/components/PageLoader';
 import { api } from '@/api/client';
@@ -11,6 +13,11 @@ interface TimelineEntry {
   sessionId?: string;
   eventSummary?: string;
   category?: string;
+}
+
+interface SessionLearning {
+  heuristics: Array<{ id: number; rule: string; source?: string }>;
+  autoMemories: Array<{ id: number; key: string; sourceSessionId?: string }>;
 }
 
 /* Milestones: first occurrence of each learning category + approval events. */
@@ -82,12 +89,35 @@ function formatTime(ts?: string): string {
 }
 
 export function JourneyTab() {
+  const navigate = useNavigate();
   const { data, error, isFetching } = useQuery<{ items: TimelineEntry[] }>({
     queryKey: ['brain-timeline'],
     queryFn: async () => api.get<{ items: TimelineEntry[] }>('/api/brain/timeline'),
     staleTime: 10_000,
     refetchInterval: 30_000,
   });
+  // Per-entry "what August learned here" (B3): sessionId → learned data.
+  const [learnedFor, setLearnedFor] = useState<Record<string, SessionLearning | 'loading'>>({});
+
+  const toggleLearned = (sessionId: string) => {
+    if (learnedFor[sessionId]) {
+      const next = { ...learnedFor };
+      delete next[sessionId];
+      setLearnedFor(next);
+      return;
+    }
+    setLearnedFor((prev) => ({ ...prev, [sessionId]: 'loading' }));
+    void api
+      .get<SessionLearning>(`/api/brain/session-learning/${encodeURIComponent(sessionId)}`)
+      .then((d) => setLearnedFor((prev) => ({ ...prev, [sessionId]: d })))
+      .catch(() => {
+        setLearnedFor((prev) => {
+          const next = { ...prev };
+          delete next[sessionId];
+          return next;
+        });
+      });
+  };
 
   if (error) {
     return <div className="p-4 text-danger">Error loading timeline: {error.message}</div>;
@@ -174,10 +204,71 @@ export function JourneyTab() {
                 <span className="text-muted-foreground font-mono shrink-0 w-10">
                   {formatTime(it.timestamp)}
                 </span>
-                <span className="flex-1 min-w-0">{it.eventSummary}</span>
+                <span className="flex-1 min-w-0">
+                  {it.eventSummary}
+                  {it.sessionId && learnedFor[it.sessionId] ? (
+                    <span className="mt-1 block space-y-0.5 border-l-2 border-primary/30 pl-2">
+                      {learnedFor[it.sessionId] === 'loading' ? (
+                        <span className="text-[10px] text-muted-foreground animate-pulse">
+                          Loading what August learned here…
+                        </span>
+                      ) : (
+                        <>
+                          {(learnedFor[it.sessionId] as SessionLearning).heuristics.length > 0 ? (
+                            <span className="text-[10px] text-muted-foreground">
+                              <Sparkles className="size-2.5 inline mr-1 text-primary" />
+                              {(learnedFor[it.sessionId] as SessionLearning).heuristics.length} rule
+                              {(learnedFor[it.sessionId] as SessionLearning).heuristics.length === 1 ? '' : 's'}{' '}
+                              learned:{' '}
+                              {(learnedFor[it.sessionId] as SessionLearning).heuristics
+                                .slice(0, 2)
+                                .map((h) => `“${h.rule.slice(0, 60)}”`)
+                                .join(', ')}
+                            </span>
+                          ) : null}
+                          {(learnedFor[it.sessionId] as SessionLearning).autoMemories.length > 0 ? (
+                            <span className="text-[10px] text-muted-foreground block">
+                              <ListChecks className="size-2.5 inline mr-1 text-sky-400" />
+                              {(learnedFor[it.sessionId] as SessionLearning).autoMemories.length}{' '}
+                              memor{(learnedFor[it.sessionId] as SessionLearning).autoMemories.length === 1 ? 'y' : 'ies'}{' '}
+                              stored
+                            </span>
+                          ) : null}
+                          {(learnedFor[it.sessionId] as SessionLearning).heuristics.length === 0 &&
+                          (learnedFor[it.sessionId] as SessionLearning).autoMemories.length === 0 ? (
+                            <span className="text-[10px] text-muted-foreground">
+                              Nothing was learned from this conversation.
+                            </span>
+                          ) : null}
+                        </>
+                      )}
+                    </span>
+                  ) : null}
+                </span>
                 {it.category ? (
                   <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
                     {it.category}
+                  </span>
+                ) : null}
+                {it.sessionId ? (
+                  <span className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleLearned(it.sessionId!)}
+                      className="p-0.5 rounded text-muted-foreground hover:text-primary"
+                      title="What August learned here"
+                      data-testid={`journey-learned-${it.sessionId}`}
+                    >
+                      <Brain className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/c/${it.sessionId}`)}
+                      className="p-0.5 rounded text-muted-foreground hover:text-primary"
+                      title="Open this conversation"
+                    >
+                      <ExternalLink className="size-3" />
+                    </button>
                   </span>
                 ) : null}
               </li>

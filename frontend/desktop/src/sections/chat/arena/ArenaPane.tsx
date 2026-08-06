@@ -1,7 +1,7 @@
 /* ── ArenaPane — one model's live lane in the split-pane comparison ──── */
 
 import { useMemo, useState } from 'react';
-import { Brain, Check, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Brain, Check, ChevronDown, ChevronRight, Loader2, RotateCcw, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Markdown } from '../ChatMarkdown';
 import { useSessionStream } from '../hooks/useSessionStream';
@@ -78,9 +78,15 @@ function LaneBlocks({ message }: { message: ChatMessage }) {
 export function ArenaPane({
   lane,
   onPickWinner,
+  onStop,
+  onRestart,
 }: {
   lane: ArenaRunLane;
   onPickWinner: (lane: ArenaRunLane) => void;
+  /** Stop this lane's stream (A2). */
+  onStop?: (lane: ArenaRunLane) => void;
+  /** Re-ask the prompt on this lane (A2). */
+  onRestart?: (lane: ArenaRunLane) => void;
 }) {
   const streamState = useSessionStream(lane.uiSessionId);
   const streaming = chatRuntime.isSessionStreaming(lane.uiSessionId);
@@ -127,6 +133,28 @@ export function ArenaPane({
             >
               {formatTokenCount(usage.inputTokens + usage.outputTokens)} tok
             </span>
+          ) : null}
+          {streaming && onStop ? (
+            <button
+              type="button"
+              onClick={() => onStop(lane)}
+              className="p-1 rounded text-muted-foreground hover:text-danger"
+              title="Stop this lane"
+              data-testid={`arena-stop-${lane.modelId}`}
+            >
+              <Square className="size-3" />
+            </button>
+          ) : null}
+          {!streaming && onRestart ? (
+            <button
+              type="button"
+              onClick={() => onRestart(lane)}
+              className="p-1 rounded text-muted-foreground hover:text-primary"
+              title="Re-ask this prompt on this lane"
+              data-testid={`arena-restart-${lane.modelId}`}
+            >
+              <RotateCcw className="size-3" />
+            </button>
           ) : null}
         </span>
       </div>

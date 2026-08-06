@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { LearningTab } from '@/sections/brain/LearningTab';
 import { SystemHealthTab } from '@/sections/brain/SystemHealthTab';
 import { BrainDashboard } from '@/sections/brain/BrainDashboard';
@@ -21,9 +22,11 @@ function createTestQueryClient() {
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = createTestQueryClient();
   return render(
-    <QueryClientProvider client={queryClient}>
-      {ui}
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        {ui}
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 

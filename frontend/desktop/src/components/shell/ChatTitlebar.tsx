@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
 import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
+import { NotificationBell } from "./NotificationBell";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import { WorkspaceBranchChip } from "@/components/workspace/WorkspaceBranchChip";
 import type { Session } from "@/store/sessions";
@@ -206,6 +207,10 @@ export function ChatTitlebar({
             </div>
           )}
         </div>
+
+        <div className="h-3.5 w-px bg-border/30 mx-1" />
+
+        <NotificationBell />
 
         <div className="h-3.5 w-px bg-border/30 mx-1" />
 

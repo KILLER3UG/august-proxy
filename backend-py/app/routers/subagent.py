@@ -145,6 +145,9 @@ async def terminateSubagent(taskId: str, request: Request):
 async def proposeBreakdown(body: ProposeBreakdownRequest, request: Request):
     """Approve or reject a proposed sub-agent breakdown."""
     if not body.approved:
+        from app.services.tools.spawn_subagents_tool import _mark_proposal_decided
+
+        _mark_proposal_decided(body.proposal_id, 'rejected')
         return {'status': 'rejected', 'proposalId': body.proposal_id}
     orch = _getOrchestrator(request)
     result = await approveProposal(orch, body.proposal_id)
@@ -156,12 +159,16 @@ async def listProposals():
     """List pending breakdown proposals awaiting user approval.
 
     Proposals are created when a model uses ``spawn_subagents`` in
-    ``proposed`` mode; they live in process memory and are approved/rejected
-    via ``POST /propose-breakdown`` (from chat or the Brain Runs tab).
+    ``proposed`` mode; they are persisted (B5) and approved/rejected via
+    ``POST /propose-breakdown`` (from chat or the Brain Runs tab).
     """
-    from app.services.tools.spawn_subagents_tool import _pendingProposals
+    from app.services.tools.spawn_subagents_tool import (
+        _pendingProposals,
+        list_persisted_proposals,
+    )
 
     out = []
+    seen: set[str] = set()
     for pid, p in _pendingProposals.items():
         items = p.get('workItems') if isinstance(p, dict) else []
         out.append(
@@ -176,6 +183,11 @@ async def listProposals():
                 ],
             }
         )
+        seen.add(pid)
+    # Durable-store rows (survive restarts); skip ones still in memory.
+    for p in list_persisted_proposals():
+        if p['proposalId'] not in seen:
+            out.append(p)
     return {'proposals': out}
 
 

@@ -19,8 +19,12 @@ router = APIRouter(prefix='/api/brain')
 
 @router.get('/events')
 async def listBrainEvents(limit: int = Query(200, ge=1, le=200), category: str | None = Query(None)):
-    """Recent brain events, newest first, optionally filtered by category."""
-    return brainBus.recent(limit=limit, category=category)
+    """Recent brain events, newest first, optionally filtered by category.
+
+    Merges the live in-memory ring with the durable ``brain_events`` table
+    (B4), so the Activity feed survives backend restarts.
+    """
+    return brainBus.history(limit=limit, category=category)
 
 
 @router.get('/events/stream')
