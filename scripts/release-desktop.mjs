@@ -227,6 +227,30 @@ async function syncPackageVersions(nextVersion) {
         await writeFile(cargoPath, cargo);
     }
 
+    // package-lock.json (root + frontend/desktop workspace entry) — keeps
+    // check-version-sync.mjs green after the bump without a manual
+    // `npm install --package-lock-only`.
+    const lockPath = resolve(root, 'package-lock.json');
+    if (existsSync(lockPath)) {
+        const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+        lock.version = nextVersion;
+        if (lock.packages?.['frontend/desktop']) {
+            lock.packages['frontend/desktop'].version = nextVersion;
+        }
+        await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    }
+
+    // Cargo.lock crate version (august-desktop entry)
+    const cargoLockPath = resolve(root, 'frontend/desktop/src-tauri/Cargo.lock');
+    if (existsSync(cargoLockPath)) {
+        let cargoLock = await readFile(cargoLockPath, 'utf8');
+        cargoLock = cargoLock.replace(
+            /(^name = "august-desktop"[\s\S]*?^version = ")[^"]+(")/m,
+            `$1${nextVersion}$2`,
+        );
+        await writeFile(cargoLockPath, cargoLock);
+    }
+
     console.log(`[release] synced package versions to ${nextVersion}`);
 }
 

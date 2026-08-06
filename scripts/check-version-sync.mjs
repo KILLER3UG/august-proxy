@@ -41,6 +41,17 @@ const sources = [
     },
   },
   {
+    label: 'frontend/desktop/src-tauri/Cargo.lock (august-desktop)',
+    file: resolve(root, 'frontend/desktop/src-tauri/Cargo.lock'),
+    extract: (content) => {
+      const match = content.match(
+        /^name = "august-desktop"[\s\S]*?^version = "([^"]+)"/m,
+      );
+      if (!match) throw new Error('Could not find august-desktop entry in Cargo.lock');
+      return match[1];
+    },
+  },
+  {
     label: 'package-lock.json (root)',
     file: resolve(root, 'package-lock.json'),
     extract: (content) => JSON.parse(content).version,

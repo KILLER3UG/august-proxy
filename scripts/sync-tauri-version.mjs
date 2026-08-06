@@ -54,3 +54,29 @@ if (existsSync(cargoPath)) {
   writeFileSync(cargoPath, cargo);
   console.log(`[sync-tauri-version] Cargo.toml → ${newVersion}`);
 }
+
+// ── 4. package-lock.json (root + frontend/desktop workspace entry) ──
+// Without this, check-version-sync.mjs fails after every bump and CI goes
+// red until someone runs `npm install` and commits the lockfile by hand.
+const lockPath = join(root, 'package-lock.json');
+if (existsSync(lockPath)) {
+  const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+  lock.version = newVersion;
+  if (lock.packages?.['frontend/desktop']) {
+    lock.packages['frontend/desktop'].version = newVersion;
+  }
+  writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+  console.log(`[sync-tauri-version] package-lock.json → ${newVersion}`);
+}
+
+// ── 5. Cargo.lock crate version ───────────────────────────────────
+const cargoLockPath = join(root, 'frontend/desktop/src-tauri/Cargo.lock');
+if (existsSync(cargoLockPath)) {
+  let cargoLock = readFileSync(cargoLockPath, 'utf8');
+  cargoLock = cargoLock.replace(
+    /(^name = "august-desktop"[\s\S]*?^version = ")[^"]+(")/m,
+    `$1${newVersion}$2`,
+  );
+  writeFileSync(cargoLockPath, cargoLock);
+  console.log(`[sync-tauri-version] Cargo.lock → ${newVersion}`);
+}
