@@ -34,7 +34,7 @@ pytestmark = pytest.mark.skipif(
     reason='Real-LLM tests skipped by default. Set RUN_REAL_LLM=1 to enable (requires network access).',
 )
 EXTERNAL_API_URL = 'https://opencode.ai/zen/v1/chat/completions'
-EXTERNAL_API_KEY = 'sk-LTe2jmtwB5VQe0J5jWoqrshlE0SJKN0zVkpOSpLySLbmzAT1uSOOyu5UIG5UEMZM'
+EXTERNAL_API_KEY = os.environ.get('AUGUST_TEST_API_KEY', '')  # never commit a real key
 TEST_MODEL = 'deepseek-v4-flash-free'
 
 

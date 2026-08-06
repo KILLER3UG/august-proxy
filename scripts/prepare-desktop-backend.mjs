@@ -140,6 +140,25 @@ async function stageBackendSources() {
     });
   }
   console.log(`[prepare-backend] staged backend sources → ${backendOut}`);
+
+  // Stage bundled skills → resources/skills (D16): installed builds resolve
+  // SKILLS_DIR to {appData}/backend-runtime/skills; without this, packaged
+  // apps ship ZERO built-in skills.
+  const skillsOut = join(resourcesDir, 'skills');
+  const skillsSrc = resolve(root, 'skills');
+  if (await pathExists(skillsSrc)) {
+    await rm(skillsOut, { recursive: true, force: true });
+    await mkdir(skillsOut, { recursive: true });
+    await cp(skillsSrc, skillsOut, {
+      recursive: true,
+      filter: (p) => {
+        const n = p.replace(/\\/g, '/');
+        if (n.includes('/__pycache__/') || n.endsWith('.pyc')) return false;
+        return true;
+      },
+    });
+    console.log(`[prepare-backend] staged bundled skills → ${skillsOut}`);
+  }
 }
 
 async function hashStagedBackendSources() {
@@ -147,7 +166,7 @@ async function hashStagedBackendSources() {
   // only included the Python build and app version, so an installed desktop
   // app could keep running an older AppData backend after a source-only fix.
   const hash = createHash('sha256');
-  const includeRoots = ['app', 'pyproject.toml', 'README.md'];
+  const includeRoots = ['app', 'pyproject.toml', 'README.md', 'skills'];
   const ignoredDirs = new Set(['__pycache__', '.mypy_cache', '.ruff_cache', '.venv', 'tests']);
 
   async function visit(path, relative) {
@@ -167,7 +186,10 @@ async function hashStagedBackendSources() {
   }
 
   for (const root of includeRoots) {
-    const path = join(root, 'backend-py', root);
+    const path =
+      root === 'skills'
+        ? resolve(root, 'skills')            // bundled skills live at repo root
+        : join(root, 'backend-py', root);
     if (existsSync(path)) {
       if ((await stat(path)).isDirectory()) await visit(path, root);
       else {

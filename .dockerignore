@@ -26,3 +26,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Never ship the developer's local brain data or keys
+backend-py/data/
+data/
+memory/

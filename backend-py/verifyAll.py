@@ -27,7 +27,7 @@ for t in expected:
     else:
         errors.append(f'missing table: {t}')
 print('\n3. New tables...')
-dbPath = settings.data_dir / 'august_brain.sqlite'
+dbPath = settings.dataDir / 'august_brain.sqlite'
 conn = sqlite3.connect(str(dbPath))
 cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
 tables = {r[0] for r in cursor.fetchall()}
@@ -150,7 +150,7 @@ for t in required:
     else:
         errors.append(f'core tool missing: {t}')
 print('\n11. Config flags...')
-cfg = json.load(open(str(settings.data_dir / 'config.json')))
+cfg = json.load(open(str(settings.dataDir / 'config.json')))
 layers = cfg.get('auxiliary', {}).get('cognitive_layers', {})
 for k in [
     'heuristics',
@@ -171,7 +171,7 @@ for k in ['daemons', 'blackboard', 'env_watcher', 'verifier_reflex', 'skill_gene
         print(f'  v2 {k}={layers.get(k)} (expected false)')
 print('\n12. Compile check...')
 files = [
-    'app/services/memory_store.py',
+    'app/services/memory_store/__init__.py',
     'app/services/memory/auto_memory.py',
     'app/services/memory/context_builder.py',
     'app/services/daemon_manager.py',

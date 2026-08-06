@@ -29,7 +29,7 @@ import os
 
 import pytest
 
-from tests.v2RealLlm import EXTERNAL_API_KEY, EXTERNAL_API_URL, TEST_MODEL
+from tests.v2_real_llm import EXTERNAL_API_KEY, EXTERNAL_API_URL, TEST_MODEL
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get('RUN_REAL_LLM'),

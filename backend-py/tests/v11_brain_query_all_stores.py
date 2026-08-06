@@ -22,12 +22,12 @@ ALL_STORES = [
 
 
 @pytest.mark.parametrize('store_name', ALL_STORES)
-def testStoreReturnsListOrNotAvailable(storeName):
+def testStoreReturnsListOrNotAvailable(store_name):
     """Each store returns a list of rows, or a structured 'not available' dict."""
-    result = brain_query(store=storeName, query='', limit=5)
+    result = brain_query(store=store_name, query='', limit=5)
     assert isinstance(result, str)
     parsed = json.loads(result)
-    assert isinstance(parsed, (list, dict)), f'{storeName}: unexpected type {type(parsed)}'
+    assert isinstance(parsed, (list, dict)), f'{store_name}: unexpected type {type(parsed)}'
     if isinstance(parsed, dict):
         assert 'error' in parsed
         assert 'available' in parsed

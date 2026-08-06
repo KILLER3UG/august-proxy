@@ -299,6 +299,16 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("mkdir runtime: {e}"))?;
     copyDirRecursive(&bundled_py_root, &runtime_backend)?;
 
+    // Bundled skills (D16): skill_service resolves SKILLS_DIR to
+    // {appData}/backend-runtime/skills — copy the staged skills tree so
+    // installed builds ship the built-in skill catalog.
+    if let Some(bundled_skills) = resolveResource(app, "skills") {
+        let runtime_skills = runtime.join("skills");
+        let _ = std::fs::create_dir_all(&runtime_skills);
+        let _ = copyDirRecursive(&bundled_skills, &runtime_skills);
+        log::info!("[backend] bundled skills copied → {}", runtime_skills.display());
+    }
+
     if !venv_py.is_file() {
         setSetupPhase(
             app,
