@@ -1,9 +1,27 @@
 /* ── DebateLaunchModal — pick debaters, optional judge, rounds (A5) ──── */
 
 import { useMemo, useState } from 'react';
-import { Gavel, Minus, Plus, X } from 'lucide-react';
+import { Bookmark, Gavel, Minus, Plus, X } from 'lucide-react';
 import type { ModelItem } from '../model-display';
 import type { DebateLane } from './debate-store';
+
+const LAST_CONFIG_KEY = 'august_debate_last_config';
+
+interface LastDebateConfig {
+  a: string;
+  b: string;
+  judge: string;
+  rounds: number;
+}
+
+function loadLastConfig(): LastDebateConfig | null {
+  try {
+    const raw = localStorage.getItem(LAST_CONFIG_KEY);
+    return raw ? (JSON.parse(raw) as LastDebateConfig) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function DebateLaunchModal({
   models,
@@ -21,6 +39,19 @@ export function DebateLaunchModal({
   const [judgeId, setJudgeId] = useState<string>('');
   const [rounds, setRounds] = useState(3);
   const [prompt, setPrompt] = useState(initialPrompt);
+  // Last-config preset (D13): restore the previous debaters/rounds.
+  const last = useMemo(loadLastConfig, []);
+
+  const persistConfig = () => {
+    try {
+      localStorage.setItem(
+        LAST_CONFIG_KEY,
+        JSON.stringify({ a: aId, b: bId, judge: judgeId, rounds } satisfies LastDebateConfig),
+      );
+    } catch {
+      /* storage unavailable */
+    }
+  };
 
   const laneFor = (id: string): DebateLane | null => {
     const m = models.find((x) => x.id === id);
@@ -86,6 +117,24 @@ export function DebateLaunchModal({
           </button>
         </div>
 
+        {/* Last-config preset (D13) */}
+        {last && models.some((m) => m.id === last.a) && models.some((m) => m.id === last.b) ? (
+          <button
+            type="button"
+            onClick={() => {
+              setAId(last.a);
+              setBId(last.b);
+              setJudgeId(last.judge);
+              setRounds(last.rounds);
+            }}
+            className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] hover:text-primary"
+            data-testid="debate-resume-last"
+          >
+            <Bookmark className="size-2.5" />
+            Resume last debate ({last.rounds} rounds)
+          </button>
+        ) : null}
+
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -142,7 +191,10 @@ export function DebateLaunchModal({
             disabled={!canLaunch}
             className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50"
             data-testid="debate-launch"
-            onClick={() => a && b && onLaunch(a, b, judge, rounds, prompt.trim())}
+            onClick={() => {
+              persistConfig();
+              if (a && b) onLaunch(a, b, judge, rounds, prompt.trim());
+            }}
           >
             <Gavel className="size-3 inline mr-1" />
             Start debate

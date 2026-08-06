@@ -322,6 +322,9 @@ export interface WorkbenchEventHandlers {
   }) => void;
   onDone?: (data?: {
     usage?: WorkbenchTurnUsage;
+    /** When a fallback-chain or context-promotion switch happened mid-turn,
+     *  the model that actually answered (D8). */
+    usedFallback?: string;
     /** Per-turn context snapshot — what memory/context the harness injected
      *  into this turn's prompt (backend A5). Feeds the context-used badge. */
     context?: {

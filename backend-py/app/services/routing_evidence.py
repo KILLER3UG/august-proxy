@@ -145,3 +145,52 @@ def get_suggestions(task_type: str, min_samples: int = 1, limit: int = 5) -> lis
         )
     )
     return out[: max(1, min(limit, 10))]
+
+
+def get_stats(days: int = 30) -> dict:
+    """Model track record + daily token totals (D6/D7).
+
+    One table feeds both: per-model win/error/latency/token aggregates and
+    the daily token burn (the same turns record input+output tokens).
+    """
+    try:
+        conn = _conn()
+        models = conn.execute(
+            'SELECT model, provider, SUM(ok) AS wins, COUNT(*) AS total, '
+            'SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS losses, '
+            'AVG(input_tokens + output_tokens) AS avg_tokens, '
+            'AVG(duration_ms) AS avg_duration '
+            'FROM routing_evidence WHERE created_at > datetime(\'now\', ?) '
+            'GROUP BY model, provider ORDER BY total DESC LIMIT 20',
+            (f'-{max(1, min(days, 90))} days',),
+        ).fetchall()
+        daily = conn.execute(
+            "SELECT date(created_at) AS day, SUM(input_tokens + output_tokens) AS tokens "
+            "FROM routing_evidence WHERE created_at > datetime('now', ?) "
+            "GROUP BY date(created_at) ORDER BY day",
+            (f'-{max(1, min(days, 90))} days',),
+        ).fetchall()
+    except Exception:
+        return {'models': [], 'daily': [], 'totalTokens': 0}
+    model_rows = []
+    for r in models:
+        total = as_int(r['total'], 0)
+        if total <= 0:
+            continue
+        model_rows.append(
+            {
+                'model': as_str(r['model'], ''),
+                'provider': as_str(r['provider'], ''),
+                'wins': as_int(r['wins'], 0),
+                'losses': as_int(r['losses'], 0),
+                'total': total,
+                'winRate': round(as_int(r['wins'], 0) / total, 2),
+                'avgTokens': int(round(as_int(r['avg_tokens'], 0))),
+                'avgDurationMs': int(round(as_int(r['avg_duration'], 0))),
+            }
+        )
+    daily_rows = [
+        {'day': as_str(r['day'], ''), 'tokens': as_int(r['tokens'], 0)} for r in daily
+    ]
+    total_tokens = sum(as_int(r['tokens'], 0) for r in daily_rows)
+    return {'models': model_rows, 'daily': daily_rows, 'totalTokens': total_tokens}

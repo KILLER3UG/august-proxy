@@ -11,6 +11,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Gauge,
   Pencil,
   Plus,
   RotateCcw,
@@ -22,6 +23,23 @@ import { Card } from '@/components/ui/card';
 import { PageLoader } from '@/components/PageLoader';
 import { api } from '@/api/client';
 import { useLearningData } from '@/hooks/useLearningData';
+
+interface ModelTrackRow {
+  model: string;
+  provider: string;
+  wins: number;
+  losses: number;
+  total: number;
+  winRate: number;
+  avgTokens: number;
+  avgDurationMs: number;
+}
+
+interface RoutingStats {
+  models: ModelTrackRow[];
+  daily: Array<{ day: string; tokens: number }>;
+  totalTokens: number;
+}
 
 interface ProfileFact {
   fact?: string;
@@ -180,6 +198,96 @@ function WeeklyDigestCard({
   );
 }
 
+/** Model track record (D6) + daily token burn (D7) — the optimizer view. */
+function ModelTrackRecordCard() {
+  const { data, isFetching } = useQuery<RoutingStats>({
+    queryKey: ['routing-stats'],
+    queryFn: async () => api.get<RoutingStats>('/api/brain/routing/stats'),
+    staleTime: 30_000,
+  });
+
+  const models = data?.models ?? [];
+  const daily = data?.daily ?? [];
+  const maxTokens = Math.max(1, ...daily.map((d) => d.tokens));
+
+  return (
+    <Card className="p-4 space-y-3 md:col-span-2" data-testid="model-track-record">
+      <div className="flex items-center gap-2">
+        <Gauge className="size-4 text-primary" />
+        <h3 className="font-medium text-sm">Model track record</h3>
+        <span className="text-[10px] text-muted-foreground/70 ml-auto">
+          {isFetching ? 'refreshing…' : `${data?.totalTokens ?? 0} tokens tracked`}
+        </span>
+      </div>
+
+      {models.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">
+          No tracked turns yet — chat, run arenas, and this table fills with
+          each model's win rate, tokens, and latency.
+        </p>
+      ) : (
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="text-left text-muted-foreground">
+              <th className="pb-1.5 font-medium">Model</th>
+              <th className="pb-1.5 font-medium">Wins</th>
+              <th className="pb-1.5 font-medium">Rate</th>
+              <th className="pb-1.5 font-medium">Avg tokens</th>
+              <th className="pb-1.5 font-medium">Avg latency</th>
+            </tr>
+          </thead>
+          <tbody>
+            {models.map((m) => (
+              <tr key={m.model} className="border-t border-border/50">
+                <td className="py-1.5 pr-2 truncate max-w-40">
+                  <span className="font-medium">{m.model}</span>
+                  <span className="text-[10px] text-muted-foreground"> · {m.provider}</span>
+                </td>
+                <td className="py-1.5 pr-2">
+                  <span className={m.winRate >= 0.66 ? 'text-success' : m.winRate >= 0.4 ? 'text-warning' : 'text-danger'}>
+                    {m.wins}/{m.total}
+                  </span>
+                </td>
+                <td className="py-1.5 pr-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${Math.round(m.winRate * 100)}%` }}
+                      />
+                    </div>
+                    <span>{Math.round(m.winRate * 100)}%</span>
+                  </div>
+                </td>
+                <td className="py-1.5 pr-2">{m.avgTokens.toLocaleString()}</td>
+                <td className="py-1.5">{(m.avgDurationMs / 1000).toFixed(1)}s</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {daily.length > 1 ? (
+        <div className="pt-2 border-t border-border/50">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">
+            Tokens per day
+          </p>
+          <div className="flex items-end gap-1 h-12">
+            {daily.slice(-14).map((d) => (
+              <div
+                key={d.day}
+                className="flex-1 rounded-sm bg-primary/40 hover:bg-primary/60 transition"
+                style={{ height: `${Math.max(4, (d.tokens / maxTokens) * 100)}%` }}
+                title={`${d.day}: ${d.tokens.toLocaleString()} tokens`}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 export function YouTab() {
   const { data, error, isFetching } = useLearningData();
   const qc = useQueryClient();
@@ -273,6 +381,9 @@ export function YouTab() {
         }}
         stats={stats}
       />
+
+      {/* Model track record (D6/D7) */}
+      <ModelTrackRecordCard />
 
       {/* Profile */}
       <Card className="p-4 space-y-3 md:col-span-2">

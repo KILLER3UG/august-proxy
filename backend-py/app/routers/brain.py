@@ -192,6 +192,14 @@ async def getSkillDraft(name: str):
     return {'name': row['name'], 'body': body, 'existingBody': existingBody}
 
 
+@router.get('/routing/stats')
+async def routingStats(days: int = 30):
+    """Model track record + daily token totals (D6/D7)."""
+    from app.services.routing_evidence import get_stats
+
+    return get_stats(days=days)
+
+
 @router.get('/routing/suggestions')
 async def routingSuggestions(prompt: str = '', taskType: str = '', limit: int = 5):
     """Which models win for this kind of task (surpass #1/#7).

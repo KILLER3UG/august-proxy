@@ -1,8 +1,19 @@
 /* Runs tab — sub-agent run history, live progress, terminate, proposals.
  * Visibility-first: no launcher yet — runs originate from chat tool use. */
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Network, Play, Square, X } from 'lucide-react';
+import {
+  Check,
+  Gauge,
+  Network,
+  Play,
+  Plus,
+  Rocket,
+  Square,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { PageLoader } from '@/components/PageLoader';
 import { api } from '@/api/client';
@@ -56,6 +67,71 @@ export function RunsTab() {
       return runs.some((r) => r.status === 'pending' || r.status === 'running') ? 4_000 : 20_000;
     },
     staleTime: 2_000,
+  });
+
+  // ── Daemons (D11) ────────────────────────────────────────────────────
+  interface DaemonRow {
+    id: string;
+    name: string;
+    prompt?: string;
+    watchCondition?: string;
+    status?: string;
+  }
+  const { data: daemons } = useQuery<{ daemons: DaemonRow[] }>({
+    queryKey: ['daemons'],
+    queryFn: async () => api.get<{ daemons: DaemonRow[] }>('/api/daemons'),
+    refetchInterval: 5_000,
+  });
+  const [daemonPrompt, setDaemonPrompt] = useState('');
+  const [daemonName, setDaemonName] = useState('');
+  const [daemonCondition, setDaemonCondition] = useState('');
+  const spawnDaemon = useMutation({
+    mutationFn: () =>
+      api.post<{ daemonId: string }>('/api/daemons', {
+        name: daemonName || 'watcher',
+        prompt: daemonPrompt,
+        watchCondition: daemonCondition,
+      }),
+    onSuccess: () => {
+      toast.success('Daemon spawned');
+      setDaemonPrompt('');
+      void qc.invalidateQueries({ queryKey: ['daemons'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Spawn failed'),
+  });
+  const killDaemon = useMutation({
+    mutationFn: (id: string) => api.post(`/api/daemons/${encodeURIComponent(id)}/kill`),
+    onSuccess: () => {
+      toast.success('Daemon killed');
+      void qc.invalidateQueries({ queryKey: ['daemons'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Kill failed'),
+  });
+
+  // ── Sub-agent launcher (D12) ─────────────────────────────────────────
+  const [launcherOpen, setLauncherOpen] = useState(false);
+  const [launchGoals, setLaunchGoals] = useState('');
+  const [launchAgent, setLaunchAgent] = useState('general');
+  const [launchMode, setLaunchMode] = useState<'auto' | 'proposed'>('auto');
+  const launchAgents = useMutation({
+    mutationFn: () =>
+      subagents.spawn({
+        workItems: launchGoals
+          .split('\n')
+          .map((g) => g.trim())
+          .filter(Boolean)
+          .map((goal) => ({ goal, agentId: launchAgent })),
+        mode: launchMode,
+      }),
+    onSuccess: (res) => {
+      toast.success(
+        res.status === 'awaiting_approval' ? 'Proposal created — approve it in chat' : 'Agents launched',
+      );
+      setLauncherOpen(false);
+      setLaunchGoals('');
+      void qc.invalidateQueries({ queryKey: ['subagent-runs'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Launch failed'),
   });
 
   const { data: proposals } = useQuery<{ proposals: Proposal[] }>({
@@ -112,6 +188,15 @@ export function RunsTab() {
         <span className="text-[10px] text-muted-foreground/70 ml-auto">
           Runs are spawned by agents mid-chat; history persists across restarts.
         </span>
+        <button
+          type="button"
+          onClick={() => setLauncherOpen(true)}
+          className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] text-primary-foreground shrink-0"
+          data-testid="launch-agents"
+        >
+          <Rocket className="size-3" />
+          Launch agents
+        </button>
       </div>
 
       {/* Pending proposals */}
@@ -222,6 +307,165 @@ export function RunsTab() {
           </ul>
         )}
       </Card>
+
+      {/* Daemons (D11) */}
+      <Card className="p-4 space-y-3 md:col-span-2">
+        <div className="flex items-center gap-2">
+          <Gauge className="size-4 text-primary" />
+          <h3 className="font-medium text-sm">Subconscious daemons</h3>
+          <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+            {(daemons?.daemons ?? []).length}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={daemonName}
+            onChange={(e) => setDaemonName(e.target.value)}
+            className="w-28 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-[11px]"
+            placeholder="name"
+            aria-label="Daemon name"
+          />
+          <input
+            value={daemonPrompt}
+            onChange={(e) => setDaemonPrompt(e.target.value)}
+            className="flex-1 min-w-40 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-[11px]"
+            placeholder="Prompt — what should the daemon watch and report?"
+            aria-label="Daemon prompt"
+          />
+          <input
+            value={daemonCondition}
+            onChange={(e) => setDaemonCondition(e.target.value)}
+            className="w-40 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-[11px]"
+            placeholder="watchCondition (optional)"
+            aria-label="Daemon watch condition"
+          />
+          <button
+            type="button"
+            disabled={spawnDaemon.isPending || !daemonPrompt.trim()}
+            onClick={() => spawnDaemon.mutate()}
+            className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] text-primary-foreground disabled:opacity-50"
+            data-testid="spawn-daemon"
+          >
+            <Plus className="size-3" />
+            Spawn
+          </button>
+        </div>
+        {(daemons?.daemons ?? []).length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">
+            No daemons running — spawn one above (e.g. prompt "watch for TODO comments",
+            condition "on_change") and its reports land in the chat as subconscious updates.
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {daemons!.daemons.map((d) => (
+              <li key={d.id} className="text-xs flex items-start gap-2 p-2 rounded border border-border">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium">
+                    {d.name}
+                    <span
+                      className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${
+                        d.status === 'running' || d.status === 'idle'
+                          ? 'bg-emerald-500/15 text-emerald-500'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {d.status ?? 'registered'}
+                    </span>
+                  </p>
+                  <p className="text-muted-foreground line-clamp-2">{d.prompt}</p>
+                  {d.watchCondition ? (
+                    <p className="text-[10px] text-muted-foreground font-mono">{d.watchCondition}</p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => killDaemon.mutate(d.id)}
+                  className="p-1 rounded text-muted-foreground hover:text-danger"
+                  title="Kill daemon"
+                >
+                  <Trash2 className="size-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {/* Sub-agent launcher modal (D12) */}
+      {launcherOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Launch sub-agents"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setLauncherOpen(false);
+          }}
+          data-testid="launcher-modal"
+        >
+          <div className="w-full max-w-lg rounded-xl border border-border bg-popover p-4 shadow-xl space-y-3">
+            <div className="flex items-center gap-2">
+              <Rocket className="size-4 text-primary" />
+              <h3 className="font-medium text-sm">Launch sub-agents</h3>
+              <button
+                type="button"
+                onClick={() => setLauncherOpen(false)}
+                className="ml-auto p-1 text-muted-foreground hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+            <textarea
+              value={launchGoals}
+              onChange={(e) => setLaunchGoals(e.target.value)}
+              rows={4}
+              className="w-full rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs resize-none"
+              placeholder="One goal per line — each becomes a parallel sub-agent"
+              aria-label="Agent goals"
+              data-testid="launcher-goals"
+            />
+            <div className="flex items-center gap-2 text-xs">
+              <label className="text-muted-foreground">Agent</label>
+              <input
+                value={launchAgent}
+                onChange={(e) => setLaunchAgent(e.target.value)}
+                className="flex-1 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs"
+                placeholder="general"
+              />
+              <label className="text-muted-foreground">Mode</label>
+              <select
+                value={launchMode}
+                onChange={(e) => setLaunchMode(e.target.value as 'auto' | 'proposed')}
+                className="rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs"
+              >
+                <option value="auto">auto</option>
+                <option value="proposed">proposed</option>
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setLauncherOpen(false)}
+                className="text-xs px-3 py-1.5 rounded bg-muted text-muted-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={launchAgents.isPending || launchGoals.trim().split('\n').filter(Boolean).length === 0}
+                className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50"
+                data-testid="launcher-go"
+                onClick={() => launchAgents.mutate()}
+              >
+                <Play className="size-3 inline mr-1" />
+                Launch {launchGoals.trim().split('\n').filter(Boolean).length} agent
+                {launchGoals.trim().split('\n').filter(Boolean).length === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

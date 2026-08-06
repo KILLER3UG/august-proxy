@@ -144,6 +144,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   let streamBlocks: MessageBlock[] = [];
   let changedFiles: GitDiffResult | null = null;
   let turnUsage: WorkbenchTurnUsage | undefined;
+  let turnFallback: string | undefined;
   let retryNotice: string | undefined;
   const beforeMutationCount = initialMutationCount ?? 0;
   let latestMutationCount = 0;
@@ -182,6 +183,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
         changedFiles: changedFiles || undefined,
         usage: turnUsage,
+        usedFallback: turnFallback,
         retryNotice,
       } : msg
     ));
@@ -256,6 +258,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
         changedFiles: changedFiles || undefined,
         usage: turnUsage,
+        usedFallback: turnFallback,
         retryNotice: undefined,
       } : msg
     ));
@@ -659,6 +662,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onDone: (data) => {
       turnUsage = data?.usage;
+      turnFallback = data?.usedFallback;
       // Persist the per-turn context snapshot ("what August used") for the
       // composer's context-used badge (backend A5 payload).
       if (sessionId && data?.context) {

@@ -69,8 +69,24 @@ def getFleet() -> dict[str, str]:
     return out
 
 
-def getModelForRole(role: str) -> str:
+def getModelForRole(role: str, workspace: str = '') -> str:
+    """Model for a role, with an optional per-workspace override (D9).
+
+    ``auxiliary.cognitive.workspaceFleet`` maps ``{workspaceName: {role: model}}``
+    and wins over the global fleet when the workspace matches.
+    """
     fleet = getFleet()
+    if workspace:
+        try:
+            from app.services.cognitive_config import get_cognitive
+
+            tree = get_cognitive()
+            ws_fleet = as_dict(tree.get('workspaceFleet'), {})
+            entry = as_dict(ws_fleet.get(workspace), {})
+            if role in entry:
+                return as_str(entry.get(role))
+        except Exception:
+            pass
     if role in fleet:
         return fleet[role]
     return fleet.get('cortex', '')

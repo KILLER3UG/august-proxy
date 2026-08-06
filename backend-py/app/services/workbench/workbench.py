@@ -664,6 +664,7 @@ def buildSystemPrompt(
             'addedMemories': len(as_list(memory.get('addedMemories'), [])),
             'recalledMemories': [
                 {
+                    'id': as_int(m.get('id'), 0) or None,
                     'key': as_str(m.get('key'), ''),
                     'category': as_str(m.get('category'), 'auto'),
                     'snippet': as_str(
@@ -1466,6 +1467,7 @@ async def _sendWorkbenchMessageStreamImpl(
         session_provider=session.provider or provider or '',
         session_model=session.model or '',
         role=chat_role,
+        workspace=as_str(getattr(session, 'workspacePath', '') or '').rstrip('/\\').split('/')[-1].split('\\')[-1],
     )
     # Remember model/provider on the session so BTW and Live use the same ones.
     if resolvedModel:
@@ -1618,6 +1620,9 @@ async def _sendWorkbenchMessageStreamImpl(
     # Wall time spent inside model sub-calls only (tool execution excluded) —
     # the denominator for the per-turn tokens/sec shown in the chat chip.
     totalGenerationMs = 0.0
+    # D8: which model actually answered when a fallback/promotion switch
+    # happened — surfaced in the done event as usedFallback.
+    chainUsedAt: str | None = None
     try:
         from app.providers.clients.base import estimateTokens
         from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
@@ -1745,6 +1750,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 if not nProvider or not nModel:
                     continue
                 resolvedProvider, resolvedModel = nProvider, nModel
+                chainUsedAt = resolvedModel
                 logger.warning('workbench falling back to chain model %s', resolvedModel)
                 if emit:
                     emit(
@@ -1821,6 +1827,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 pProvider, pModel = _resolveChatLlm(model=promotionModel, role='')
                 if pProvider and pModel:
                     resolvedProvider, resolvedModel = pProvider, pModel
+                    chainUsedAt = resolvedModel
                     logger.warning('workbench context overflow — promoting to %s', resolvedModel)
                     if emit:
                         emit(
@@ -2479,6 +2486,26 @@ async def _sendWorkbenchMessageStreamImpl(
                     write_timeline_event(session.id, lastAsk, category='workbench')
             except Exception:
                 logger.debug('workbench timeline write failed', exc_info=True)
+            # Session summary (D5): once per session, distill a free local
+            # summary into the metadata and the Journey timeline.
+            try:
+                if (
+                    session.messageCount >= 4
+                    and not (session.metadata or {}).get('summary')
+                    and getattr(session, 'metadata', None) is not None
+                ):
+                    from app.services.memory.context_compressor import localSummarize
+
+                    summary = localSummarize(list(session.messages), maxSummaryChars=800)
+                    if summary.strip():
+                        session.metadata['summary'] = summary.strip()
+                        write_timeline_event(
+                            session.id,
+                            f'Session summary: {summary.strip()[:300]}',
+                            category='summary',
+                        )
+            except Exception:
+                logger.debug('session summary failed', exc_info=True)
             # Record activity so cognitive idle consolidation timer resets.
             try:
                 from app.services.cognitive_boot import record_user_activity
@@ -2504,6 +2531,36 @@ async def _sendWorkbenchMessageStreamImpl(
                     logger.exception('workbench record_usage failed')
     finally:
         current_subprocess_cancel.reset(_cancel_token)
+        # Verifier auto-run (D3): when enforcement is on and the model ended
+        # without completing the gate, run the stated verification command
+        # once and steer the model to finish (phase='complete').
+        try:
+            if getattr(session, 'verifierEnforced', False) and not getattr(
+                session, '_verifier_auto_ran', False
+            ):
+                vstate = getattr(session, '_execution_state', None) or {}
+                vphase = as_str(vstate.get('phase'), '') if isinstance(vstate, dict) else ''
+                vcmd = as_str(vstate.get('verification_command'), '') if isinstance(vstate, dict) else ''
+                if vphase != 'complete' and vcmd:
+                    setattr(session, '_verifier_auto_ran', True)
+                    vresult = await _executeTool('run_command', {'command': vcmd}, session)
+                    vout = as_str(vresult, '')[-3000:]
+                    receipts = getattr(session, '_verification_receipts', None)
+                    if receipts is None:
+                        receipts = []
+                        setattr(session, '_verification_receipts', receipts)
+                    receipts.append({'name': 'run_command', 'content': vout})
+                    if len(receipts) > 12:
+                        del receipts[: len(receipts) - 12]
+                    enqueueUserMessage(
+                        sessionId,
+                        '[VERIFIER AUTO-RUN] The verification command ran automatically with this output:\n'
+                        f'{vout}\n'
+                        "If it passed, call update_state(phase='complete') to release the final answer.",
+                        kind='steer',
+                    )
+        except Exception:
+            logger.debug('verifier auto-run failed', exc_info=True)
         if emit:
             # Surface this turn's token usage so the UI can render a per-turn
             # chip (early-exit `done` events above carry no usage).
@@ -2519,6 +2576,10 @@ async def _sendWorkbenchMessageStreamImpl(
                     'durationMs': int(totalGenerationMs),
                 },
             }
+            # D8: the message shows who actually answered when a
+            # fallback/promotion switch happened mid-turn.
+            if chainUsedAt:
+                doneEvent['usedFallback'] = chainUsedAt
             # Per-turn context snapshot (A5): what the harness injected into
             # this turn's prompt — the chat context panel's data feed.
             snapshot = getattr(session, '_last_context_snapshot', None)

@@ -229,6 +229,8 @@ export interface ChatMessage {
   /** Token usage for this turn (from the `done` SSE event). Rendered as a
    *  muted chip in the assistant message footer. */
   usage?: WorkbenchTurnUsage;
+  /** When a fallback-chain/promotion switch answered this turn (D8). */
+  usedFallback?: string;
   /** Transient "retrying after rate limit" notice while the backend backs
    *  off (from `retrying` SSE events). Cleared when the turn finalizes. */
   retryNotice?: string;

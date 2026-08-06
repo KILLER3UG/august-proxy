@@ -264,6 +264,8 @@ export function dispatchWorkbenchEvent(
               durationMs: Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : undefined,
             }
           : undefined,
+        usedFallback:
+          typeof p?.usedFallback === 'string' ? p.usedFallback : undefined,
       });
       break;
     }

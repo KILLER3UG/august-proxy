@@ -123,7 +123,10 @@ export function useChatSend(opts: UseChatSendOptions) {
   messagesRef.current = messages;
 
   const generateAIResponse = useCallback(
-    async (chatHistory: ChatMessage[]) => {
+    async (
+      chatHistory: ChatMessage[],
+      opts?: { autoRouteModel?: { id: string; provider: string } | null },
+    ) => {
       const turnSessionId = sessionId;
       if (!turnSessionId) return;
       if (!chatRuntime.canStartTurn(turnSessionId)) {
@@ -170,11 +173,24 @@ export function useChatSend(opts: UseChatSendOptions) {
         return;
       }
 
-      if (!modelForRequest?.id) {
+      // Auto-routing (D1): strong evidence may override the model for this
+      // turn — opt-in via the local flag, requires ≥5 samples and ≥66% win
+      // rate for the classified task type.
+      let useModel = modelForRequest;
+      try {
+        const autoRouteOn = localStorage.getItem('august_auto_route') !== '0';
+        const candidate = opts?.autoRouteModel;
+        if (autoRouteOn && candidate?.id && candidate.provider) {
+          useModel = { ...modelForRequest, ...candidate } as ModelItem;
+        }
+      } catch {
+        /* keep selected model */
+      }
+      if (!useModel?.id) {
         toast.error('Select a model first (e.g. a free OpenCode model)');
         return;
       }
-      if (!modelForRequest.provider) {
+      if (!useModel.provider) {
         toast.error('Selected model has no provider — pick it again from the model list');
         return;
       }
@@ -195,11 +211,11 @@ export function useChatSend(opts: UseChatSendOptions) {
         // Honor the user's toggle for every model — backend drops reasoning
         // deltas when false, and skips requesting extended thinking when off.
         thinkingEnabled,
-        model: modelForRequest.id,
+        model: useModel.id,
         // Always pass the provider that owns this model (name or id). Without
         // it, free claude-like ids can resolve to bare Anthropic with no key.
-        modelProvider: modelForRequest.provider,
-        provider: modelForRequest.provider,
+        modelProvider: useModel.provider,
+        provider: useModel.provider,
         agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
         guardMode: workbenchMode,
         ensureWorkbenchSession,
@@ -446,11 +462,48 @@ export function useChatSend(opts: UseChatSendOptions) {
       setMessages(nextMessages);
       persistMessages(sessionId, nextMessages);
       playSendChime();
+      // Auto-routing (D1): with strong evidence, let the winning model take
+      // this turn. Fetch is bounded (1.5s) — any failure keeps the pick.
+      let autoRouteModel: { id: string; provider: string } | null = null;
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 1500);
+        const res = await fetch(
+          `/api/brain/routing/suggestions?prompt=${encodeURIComponent(text.slice(0, 400))}`,
+          { signal: ctrl.signal },
+        );
+        clearTimeout(timer);
+        if (res.ok) {
+          const data = (await res.json()) as {
+            suggestions?: Array<{
+              model: string;
+              provider: string;
+              wins: number;
+              total: number;
+              winRate: number;
+            }>;
+          };
+          const top = data.suggestions?.[0];
+          if (
+            top &&
+            top.total >= 5 &&
+            top.winRate >= 0.66 &&
+            top.model !== modelForRequest?.id
+          ) {
+            autoRouteModel = { id: top.model, provider: top.provider };
+            toast.message(`Auto-routed to ${top.model}`, {
+              description: `${top.wins}/${top.total} wins on this task type — disable in Settings → Model Fleet`,
+            });
+          }
+        }
+      } catch {
+        /* keep the selected model */
+      }
       // Pass the FULL message history — generateAIResponse builds the new
       // messages state from this argument, so passing only `[userMsg]` would
       // overwrite the existing list with just two entries and wipe the prior
       // conversation from view and from localStorage.
-      await generateAIResponse(nextMessages);
+      await generateAIResponse(nextMessages, { autoRouteModel });
     },
     [
       sessionId,

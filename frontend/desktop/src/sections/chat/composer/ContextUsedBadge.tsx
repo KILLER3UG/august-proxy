@@ -8,7 +8,9 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, X } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { Brain, Trash2, X } from 'lucide-react';
 import { api } from '@/api/client';
 import {
   $sessionContextUsed,
@@ -46,6 +48,27 @@ export function ContextUsedBadge({ sessionId }: { sessionId: string | null }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
+  const qc = useQueryClient();
+
+  /** Delete a recalled memory directly from the badge (D4). */
+  const deleteRecalled = (memoryId: number | undefined) => {
+    if (!memoryId || !sessionId) return;
+    const current = bySession[sessionId];
+    if (!current) return;
+    void api
+      .delete(`/api/memory/auto/${memoryId}`)
+      .then(() => {
+        toast.success('Memory deleted');
+        setSessionContextUsed(sessionId, {
+          ...current,
+          recalledMemories: (current.recalledMemories ?? []).filter(
+            (m) => m.id !== memoryId,
+          ),
+        });
+        void qc.invalidateQueries({ queryKey: ['brain-learning'] });
+      })
+      .catch((e: Error) => toast.error(e.message || 'Delete failed'));
+  };
 
   const snapshot = sessionId ? bySession[sessionId] : undefined;
 
@@ -156,10 +179,23 @@ export function ContextUsedBadge({ sessionId }: { sessionId: string | null }) {
                 Recalled from your history
               </p>
               {snapshot.recalledMemories!.slice(0, 3).map((m) => (
-                <p key={m.key ?? m.snippet} className="text-[11px] text-muted-foreground line-clamp-2">
-                  <span className="text-foreground/80 font-medium">{m.key ?? m.category}</span>
-                  {m.snippet ? ` — ${m.snippet}` : ''}
-                </p>
+                <div key={m.key ?? m.snippet} className="flex items-start gap-1">
+                  <p className="text-[11px] text-muted-foreground line-clamp-2 flex-1 min-w-0">
+                    <span className="text-foreground/80 font-medium">{m.key ?? m.category}</span>
+                    {m.snippet ? ` — ${m.snippet}` : ''}
+                  </p>
+                  {m.id ? (
+                    <button
+                      type="button"
+                      onClick={() => deleteRecalled(m.id)}
+                      className="p-0.5 rounded text-muted-foreground hover:text-danger shrink-0"
+                      title="Delete this memory"
+                      aria-label="Delete this memory"
+                    >
+                      <Trash2 className="size-2.5" />
+                    </button>
+                  ) : null}
+                </div>
               ))}
             </div>
           ) : null}

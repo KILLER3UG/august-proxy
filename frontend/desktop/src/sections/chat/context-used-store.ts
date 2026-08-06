@@ -10,6 +10,7 @@
 import { create } from 'zustand';
 
 export interface RecalledMemoryItemLite {
+  id?: number;
   key?: string;
   category?: string;
   snippet?: string;

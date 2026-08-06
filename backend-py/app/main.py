@@ -279,6 +279,7 @@ from app.routers import calendar as calendarRoutes  # noqa: E402
 from app.routers import config as configRoutes  # noqa: E402
 from app.routers import cron as cronRoutes  # noqa: E402
 from app.routers import curator as curatorRoutes  # noqa: E402
+from app.routers import daemons as daemonsRoutes  # noqa: E402
 from app.routers import desktop_automation as desktopAutomationRoutes  # noqa: E402
 from app.routers import exam as examRoutes  # noqa: E402
 from app.routers import gateway as gatewayRoutes  # noqa: E402
@@ -346,6 +347,7 @@ app.include_router(liveRoutes.router)
 app.include_router(calendarRoutes.router)
 app.include_router(subagentRoutes.router)
 app.include_router(recurringTasksRoutes.router)
+app.include_router(daemonsRoutes.router)
 app.include_router(serviceConnectionsRoutes.router)
 app.include_router(automationsRoutes.router)
 app.include_router(previewRoutes.router)

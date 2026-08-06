@@ -3,6 +3,7 @@ import { ChatLayout } from '@/components/shell/ChatLayout';
 import { ALL_ROUTES, SECTION_ROUTES, SETTINGS_PAGE_ELEMENT } from '@/routes';
 import { CommandPalette } from '@/components/overlays/CommandPalette';
 import { ConversationSearchModal } from '@/components/overlays/ConversationSearchModal';
+import { OnboardingTour } from '@/components/overlays/OnboardingTour';
 import { ProviderOnboardingModal } from '@/components/overlays/ProviderOnboardingModal';
 import { BackendBootstrapGate } from '@/components/overlays/BackendBootstrapGate';
 import { QuitConfirmModal } from '@/components/overlays/QuitConfirmModal';
@@ -38,6 +39,7 @@ export default function App() {
         </Routes>
         <CommandPalette />
         <ConversationSearchModal />
+        <OnboardingTour />
         <ProviderOnboardingModal />
         <QuitConfirmModal />
       </BackendBootstrapGate>

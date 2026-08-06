@@ -152,8 +152,8 @@ export function AssistantMessageContent({
         )}
         {/* Per-turn token usage chip (from the `done` SSE event). */}
         {!(isLast && streaming) &&
-          message.usage &&
-          (message.usage.inputTokens > 0 || message.usage.outputTokens > 0) && (
+          (message.usage &&
+            (message.usage.inputTokens > 0 || message.usage.outputTokens > 0)) && (
             <div
               className="text-[10px] tabular-nums text-muted-foreground/60"
               title={`Input ${message.usage.inputTokens.toLocaleString()} tokens · Output ${message.usage.outputTokens.toLocaleString()} tokens${
@@ -173,6 +173,16 @@ export function AssistantMessageContent({
                 ` · ctx ${formatTokenCount(message.usage.contextTokens)}`}
             </div>
           )}
+        {/* Fallback chip (D8): a chain/promotion switch answered this turn. */}
+        {!(isLast && streaming) && message.usedFallback ? (
+          <div
+            className="text-[10px] text-muted-foreground/60"
+            title="The primary model failed; this model answered the turn"
+            data-testid="fallback-chip"
+          >
+            answered via {message.usedFallback}
+          </div>
+        ) : null}
       </div>
       <AssistantMessageActions
         showActions={showActions}
