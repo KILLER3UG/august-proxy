@@ -318,7 +318,21 @@ export interface WorkbenchEventHandlers {
     text: string;
     queuedAt: string;
   }) => void;
-  onDone?: (data?: { usage?: WorkbenchTurnUsage }) => void;
+  onDone?: (data?: {
+    usage?: WorkbenchTurnUsage;
+    /** Per-turn context snapshot — what memory/context the harness injected
+     *  into this turn's prompt (backend A5). Feeds the context-used badge. */
+    context?: {
+      profileSummaryUsed?: boolean;
+      heuristicsUsed?: number;
+      addedMemories?: number;
+      recalledMemories?: Array<{ key?: string; category?: string; snippet?: string }>;
+      currentContextUsed?: boolean;
+      activeProjects?: number;
+      coreFactsUsed?: boolean;
+      augDirectiveUsed?: boolean;
+    };
+  }) => void;
   /** Backend is backing off before retrying a failed model call (429/5xx).
    *  The chat shows a self-updating notice instead of dying mid-turn. */
   onRetrying?: (data: { attempt: number; maxRetries: number; delayMs: number; reason: string }) => void;

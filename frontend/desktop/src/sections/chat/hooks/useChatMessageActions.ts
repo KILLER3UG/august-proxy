@@ -5,6 +5,8 @@ import { useCallback, useState, type Dispatch, type SetStateAction } from 'react
 import { toast } from 'sonner';
 import type { ChatMessage } from '@/types/chat';
 import { persistMessages } from '../message-storage';
+import { truncateWorkbenchSession } from '@/api/workbench';
+import { resolveWorkbenchSessionId } from '../stream/session-id-map';
 
 export function useChatMessageActions({
   sessionId,
@@ -25,6 +27,20 @@ export function useChatMessageActions({
 }) {
   const [revertingIndex, setRevertingIndex] = useState<number | null>(null);
 
+  /** Truncate the backend session in place at `userMsgIndex` (inclusive) so
+   *  the model's history matches the locally truncated thread. Best-effort:
+   *  a failure keeps the local state but leaves a stale backend transcript. */
+  const truncateBackend = useCallback(
+    (userMsgIndex: number) => {
+      if (!sessionId) return;
+      const wbId = resolveWorkbenchSessionId(sessionId);
+      void truncateWorkbenchSession(wbId, userMsgIndex).catch((err) => {
+        console.warn('[truncate backend] failed — local state kept:', err);
+      });
+    },
+    [sessionId],
+  );
+
   const handleRevert = useCallback(
     (index: number) => {
       if (streaming) return;
@@ -40,6 +56,7 @@ export function useChatMessageActions({
 
       const userMsg = messages[userMsgIndex];
       const deleted = messages.length - userMsgIndex;
+      truncateBackend(userMsgIndex);
 
       const originalMessages = [...messages];
       const originalInput = input;
@@ -70,7 +87,7 @@ export function useChatMessageActions({
         });
       }, 300);
     },
-    [streaming, messages, input, setInput, setMessages, sessionId],
+    [streaming, messages, input, setInput, setMessages, sessionId, truncateBackend],
   );
 
   const handleEdit = useCallback(
@@ -87,6 +104,9 @@ export function useChatMessageActions({
         )
       )
         return;
+      // Keep the edited message as the new tail of the thread — truncate the
+      // backend at this index so the old turn (+ its reply) leaves context.
+      truncateBackend(index);
       setMessages((prev) => {
         const current = prev[index];
         if (!current || current.role !== 'user') return prev;
@@ -95,7 +115,7 @@ export function useChatMessageActions({
         return next;
       });
     },
-    [streaming, messages, setMessages, sessionId],
+    [streaming, messages, setMessages, sessionId, truncateBackend],
   );
 
   const handleRegenerate = useCallback(
@@ -110,12 +130,15 @@ export function useChatMessageActions({
       }
       const msg = messages[userIndex];
       if (!msg || msg.role !== 'user') return;
+      // Truncate the backend at this turn so the re-answer is generated
+      // without the old reply (and old tool noise) still in context.
+      truncateBackend(userIndex);
       const trimmed = messages.slice(0, userIndex + 1);
       setMessages(trimmed);
       persistMessages(sessionId, trimmed);
       await generateAIResponse([msg]);
     },
-    [streaming, messages, setMessages, sessionId, generateAIResponse],
+    [streaming, messages, setMessages, sessionId, generateAIResponse, truncateBackend],
   );
 
   const handleClarifyAnswer = useCallback(

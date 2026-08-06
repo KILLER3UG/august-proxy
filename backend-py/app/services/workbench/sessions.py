@@ -98,6 +98,10 @@ class WorkbenchSession:
     # update_state requires a passing receipt before allowing review/complete
     # (see system_tools._updateState). Cleared every turn in chatTurn.
     _verification_receipts: list[dict[str, object]] | None = None
+    # What the last buildSystemPrompt() call injected (profile, heuristics,
+    # recalled memories, ...) — carried into the per-turn `done` event and the
+    # chat context panel. Set/cleared every turn in buildSystemPrompt.
+    _last_context_snapshot: dict[str, object] | None = None
 
     def toDict(self) -> dict[str, object]:
         return {
@@ -809,26 +813,52 @@ def undo_last_turn(session_id: str) -> dict[str, object] | None:
 
     Mirrors the chat UI \"revert\" action so workbench history stays in sync.
     """
+    return truncate_session(session_id, up_to_index=None)
+
+
+def truncate_session(
+    session_id: str, up_to_index: int | None = None
+) -> dict[str, object] | None:
+    """Truncate the session in place up to (and including) ``up_to_index``.
+
+    Messages after the index are removed along with any in-flight plan,
+    clarify question, and queued follow-ups. With ``up_to_index=None`` the
+    session is cut back to just before the last user turn (undo semantics).
+    Used by the chat UI's revert / edit / regenerate actions so the backend
+    history matches what the user sees after truncating locally.
+    """
     session = get_workbench_session(session_id)
     if not session:
         return None
     msgs = list(session.messages)
-    last_user = -1
-    for i in range(len(msgs) - 1, -1, -1):
-        if as_str(msgs[i].get('role')) == 'user':
-            last_user = i
-            break
-    if last_user < 0:
-        return {
-            'session': session.toDict(),
-            'removed': 0,
-            'message': 'Nothing to undo — no user messages yet.',
-        }
-    removed = len(msgs) - last_user
-    session.messages = msgs[:last_user]
+    if up_to_index is None:
+        last_user = -1
+        for i in range(len(msgs) - 1, -1, -1):
+            if as_str(msgs[i].get('role')) == 'user':
+                last_user = i
+                break
+        if last_user < 0:
+            return {
+                'session': session.toDict(),
+                'removed': 0,
+                'message': 'Nothing to undo — no user messages yet.',
+            }
+        cut = last_user
+    else:
+        cut = int(up_to_index)
+        if cut < 0:
+            cut = 0
+        if cut >= len(msgs):
+            return {
+                'session': session.toDict(),
+                'removed': 0,
+                'message': 'Nothing to remove — index is past the end of the conversation.',
+            }
+    removed = len(msgs) - cut
+    session.messages = msgs[:cut]
     session.messageCount = len(session.messages)
     session.updatedAt = _now()
-    # Clear in-flight plan/clarify that belonged to the undone turn.
+    # Clear in-flight plan/clarify/queue that belonged to the truncated turns.
     session.plan = None
     session.planApproved = False
     session.clarify = None
@@ -838,7 +868,7 @@ def undo_last_turn(session_id: str) -> dict[str, object] | None:
     try:
         from app.services.realtime_bus import emit_invalidate, emit_realtime
 
-        emit_realtime('session.updated', sessionId=session_id, action='undo_last_turn')
+        emit_realtime('session.updated', sessionId=session_id, action='truncate')
         emit_invalidate('workbench-session', 'session-status', session_id=session_id)
     except Exception:
         pass

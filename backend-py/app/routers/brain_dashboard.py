@@ -17,6 +17,8 @@ Endpoints (all GET):
   /api/brain/guidelines   → { guidelines: Guideline[] }
   /api/brain/graph        → GraphStats
   /api/brain/diagnostics  → BrainDiagnostics
+  /api/brain/friction     → { stats, recent }
+  /api/brain/consolidation/audit → { entries: ConsolidationAuditEntry[] }
 """
 
 from __future__ import annotations
@@ -95,6 +97,37 @@ async def brainItems() -> dict[str, object]:
             }
         )
     return {'items': items}
+
+
+@router.get('/friction')
+async def brainFriction(sinceDays: int = 7, recent: int = 20) -> dict[str, object]:
+    """Friction attribution — what has been going wrong for the user.
+
+    ``sinceDays`` controls the aggregate window; ``recent`` caps the raw
+    event tail (default 20, max 200).
+    """
+    from app.services.memory.friction import get_friction_stats, recent_friction
+
+    stats = get_friction_stats(since_days=sinceDays)
+    return {'stats': stats, 'recent': recent_friction(limit=recent)}
+
+
+@router.get('/consolidation/audit')
+async def consolidationAudit(limit: int = 50) -> dict[str, object]:
+    """Sleep-cycle audit trail — merges/promotions/deletes applied by consolidation."""
+    from app.services.memory_store import _conn, _row_as_wire
+
+    if limit < 1 or limit > 500:
+        limit = 50
+    try:
+        rows = _conn().execute(
+            'SELECT id, action, target_key, reason, detail, created_at '
+            'FROM consolidation_audit ORDER BY id DESC LIMIT ?',
+            (limit,),
+        ).fetchall()
+        return {'entries': [_row_as_wire(r) for r in rows]}
+    except Exception:
+        return {'entries': []}
 
 
 @router.get('/vectors')
@@ -216,6 +249,12 @@ async def brainLearning() -> dict[str, object]:
     backgroundReview = {'status': 'idle', 'lastStartedAt': lastAt, 'lastTopic': lastTopic}
     activeProjects = memory_store.get_memory('active_projects') or []
     currentContext = memory_store.get_memory('current_context') or ''
+    try:
+        from app.services.memory.friction import get_friction_stats
+
+        friction = get_friction_stats(7)
+    except Exception:
+        friction = {'total': 0, 'sinceDays': 7, 'byCategory': {}, 'daily': [], 'topTools': []}
     return {
         'status': 'idle',
         'heuristics': heuristics,
@@ -238,6 +277,7 @@ async def brainLearning() -> dict[str, object]:
             'lastFlushAt': lastFlushAt,
         },
         'pendingSkills': pendingSkills,
+        'friction': friction,
         'backgroundReview': backgroundReview,
     }
 

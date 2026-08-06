@@ -688,6 +688,32 @@ export function AssistantBlockTimeline({
         continue;
       }
 
+      if (block.type === 'error') {
+        // Real generation/tool failure — red banner, never collapsed away.
+        // The message-level Retry button (last assistant message) re-runs
+        // the turn from the same user prompt.
+        tagged.push({
+          kind: 'block',
+          node: (
+            <div
+              key={block.id || `error_${ti}`}
+              role="alert"
+              data-testid="chat-error-block"
+              className="mx-3 my-1.5 flex items-start gap-2 rounded border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-[11px] leading-relaxed text-rose-300"
+            >
+              <span className="shrink-0" aria-hidden="true">
+                ⚠
+              </span>
+              <span className="min-w-0 break-words">
+                {block.content || 'Generation failed.'}
+              </span>
+            </div>
+          ),
+        });
+        ti++;
+        continue;
+      }
+
       if (block.type === 'verifierBlocked') {
         // Opt-in verifier enforcement: final answer withheld until the model
         // passes update_state(phase='complete'). Amber notice, not final text.

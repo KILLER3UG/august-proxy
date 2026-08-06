@@ -90,7 +90,13 @@ async def tryBackgroundReview(
     if not gates.shouldReview(sessionTurns=sessionTurns, toolRounds=toolRounds, lastReviewedAtTurn=lastTurn):
         return
     setattr(session, '_last_reviewed_at_turn', sessionTurns)
-    asyncio.create_task(_doReview(messagesSnapshot, llm_client=llm_client))
+    asyncio.create_task(
+        _doReview(
+            messagesSnapshot,
+            llm_client=llm_client,
+            session_id=str(getattr(session, 'id', '') or ''),
+        )
+    )
 
 
 async def tryEndOfSessionReview(
@@ -116,7 +122,13 @@ async def tryEndOfSessionReview(
     if sessionTurns <= 0 or sessionTurns - lastTurn <= 0:
         return
     setattr(session, '_last_reviewed_at_turn', sessionTurns)
-    asyncio.create_task(_doReview(messagesSnapshot, llm_client=llm_client))
+    asyncio.create_task(
+        _doReview(
+            messagesSnapshot,
+            llm_client=llm_client,
+            session_id=str(getattr(session, 'id', '') or ''),
+        )
+    )
 
 
 async def scheduleEndOfSessionReview(
@@ -151,7 +163,12 @@ async def scheduleEndOfSessionReview(
     setattr(session, '_end_of_session_review_task', task)
 
 
-async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: ReviewClient = None) -> dict[str, object]:
+async def _doReview(
+    messagesSnapshot: list[dict[str, object]],
+    *,
+    llm_client: ReviewClient = None,
+    session_id: str = '',
+) -> dict[str, object]:
     """Run the unified reflection: corrections, facts, skills, frustration."""
     result: dict[str, object] = {
         'reviewed': False,
@@ -208,6 +225,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
                 source='reflection',
                 category='correction',
                 confidence=confidence,
+                session_id=session_id,
             )
             if added is not None:
                 as_list(result['corrections_added']).append(rule[:80])

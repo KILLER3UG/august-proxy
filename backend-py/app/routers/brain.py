@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import os
 import re
+import time
 
 from fastapi import APIRouter, HTTPException
 
-from app.json_narrowing import as_int
+from app.json_narrowing import as_dict, as_int, as_list, as_str
 
 router = APIRouter(prefix='/api/brain')
 
@@ -41,6 +42,66 @@ async def putDeltaConsent(body: dict):
     return {'consentGranted': bool(de.isConsentGranted())}
 
 
+@router.patch('/profile')
+async def editProfile(body: dict):
+    """Edit the user profile blob (the "what August knows about you" facts).
+
+    Body (all optional, at least one):
+      ``{ "summary": str }``            — replace the profile summary line
+      ``{ "addFact": str }``            — add/refresh one fact (auto-fielded)
+      ``{ "removeFact": str }``         — remove a fact by exact text
+    Returns the updated profile object.
+    """
+    from app.services.memory.user_profile import (
+        _MAX_PROFILE_FACTS,
+        _NEAR_DUP_THRESHOLD,
+        _build_summary,
+        _classify_fact,
+        _similarity,
+    )
+    from app.services.memory_store import get_memory, save_memory
+
+    key = 'userProfile'
+    raw = get_memory(key)
+    profile = raw if isinstance(raw, dict) else {'summary': '', 'facts': [], 'updated_at': 0.0}
+    facts = [as_dict(f) for f in as_list(profile.get('facts'), [])]
+    changed = False
+    now = time.time()
+
+    summary = (body.get('summary') or '').strip()
+    if summary and summary != as_str(profile.get('summary'), ''):
+        profile['summary'] = summary
+        changed = True
+
+    addFact = (body.get('addFact') or '').strip()
+    if addFact:
+        dup = next(
+            (f for f in facts if _similarity(addFact, as_str(f.get('fact'), '')) >= _NEAR_DUP_THRESHOLD),
+            None,
+        )
+        if dup is not None:
+            dup['updated_at'] = now
+        else:
+            facts.append({'fact': addFact, 'field': _classify_fact(addFact), 'updated_at': now})
+        changed = True
+
+    removeFact = (body.get('removeFact') or '').strip()
+    if removeFact:
+        before = len(facts)
+        facts = [f for f in facts if as_str(f.get('fact'), '') != removeFact]
+        changed = changed or len(facts) != before
+
+    if not changed:
+        return {'profile': profile, 'changed': False}
+    facts.sort(key=lambda f: float(as_str(f.get('updated_at'), '0') or 0), reverse=True)
+    facts = facts[:_MAX_PROFILE_FACTS]
+    profile['facts'] = facts
+    profile['summary'] = _build_summary(facts)
+    profile['updated_at'] = now
+    save_memory(key, profile)
+    return {'profile': profile, 'changed': True}
+
+
 @router.delete('/heuristics/{heuristic_id}')
 async def deleteHeuristic(heuristic_id: int):
     """v3: Delete a learned heuristic."""
@@ -52,14 +113,27 @@ async def deleteHeuristic(heuristic_id: int):
 
 @router.patch('/heuristics/{heuristic_id}')
 async def editHeuristic(heuristic_id: int, body: dict):
-    """v3: Edit a learned heuristic's rule text."""
-    from app.services.heuristics_service import updateHeuristic
+    """v3: Edit a learned heuristic — rule text and/or suppression.
+
+    Body: ``{ "rule": "new text"?, "suppressed": true|false? }``. At least
+    one field must be present. Suppressing a rule excludes it from prompt
+    injection without deleting it.
+    """
+    from app.services.heuristics_service import setHeuristicSuppressed, updateHeuristic
 
     newRule = (body.get('rule') or '').strip()
-    if not newRule:
-        return {'updated': False, 'error': 'rule cannot be empty'}
-    ok = updateHeuristic(heuristic_id, newRule)
-    return {'updated': ok}
+    suppressed = body.get('suppressed')
+    if newRule:
+        ok = updateHeuristic(heuristic_id, newRule)
+        if not ok:
+            return {'updated': False, 'error': 'heuristic not found'}
+    if suppressed is not None:
+        ok = setHeuristicSuppressed(heuristic_id, bool(suppressed))
+        if not ok and not newRule:
+            return {'updated': False, 'error': 'heuristic not found'}
+    if not newRule and suppressed is None:
+        return {'updated': False, 'error': 'rule or suppressed required'}
+    return {'updated': True}
 
 
 @router.post('/skills/{name}/approve')

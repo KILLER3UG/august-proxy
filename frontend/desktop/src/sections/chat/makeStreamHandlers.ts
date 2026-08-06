@@ -38,6 +38,7 @@ import { pushBrowserAction } from '@/lib/browser-store';
 import { playReceiveChime } from '@/lib/chat-chime';
 import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
 import { buildCompactionNoticeMessage } from '@/sections/chat/message/CompactionNoticeCard';
+import { setSessionContextUsed } from './context-used-store';
 import {
   applySubagentEvent,
   makeSubagentEventHandlers,
@@ -641,6 +642,11 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onDone: (data) => {
       turnUsage = data?.usage;
+      // Persist the per-turn context snapshot ("what August used") for the
+      // composer's context-used badge (backend A5 payload).
+      if (sessionId && data?.context) {
+        setSessionContextUsed(sessionId, data.context);
+      }
       // Finalize FIRST — synchronously capture the complete assistantContent
       // / streamBlocks snapshot before any async work. The old code awaited
       // gitApi.diff() before calling finalize, so a slow/hanging diff fetch
@@ -674,8 +680,14 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onError: ({ message }) => {
-      const errText = `⚠️ Workbench error: ${message}`;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: errText, system: true });
+      // Real error block (rendered as a red banner with the message-level
+      // Retry button), NOT a thinking block — a collapsed disclosure hid
+      // failures entirely.
+      streamBlocks = appendBlockEvent(streamBlocks, {
+        type: 'error',
+        content: message || 'Generation failed',
+        system: true,
+      });
       scheduleUpdate();
       finalize('error');
     },

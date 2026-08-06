@@ -1,14 +1,16 @@
-/* Brain dashboard: Learning / Journey / Ops / Activity / Health */
+/* Brain dashboard: You / Runs / Learning / Journey / Ops / Activity / Health */
 import { useState } from 'react';
-import { Brain, Sparkles, Heart, Activity, Settings2, History } from 'lucide-react';
+import { Brain, Sparkles, Heart, Activity, Settings2, History, User, Network } from 'lucide-react';
 import { LearningTab } from './LearningTab';
 import { SystemHealthTab } from './SystemHealthTab';
 import { BrainActivityTab } from './BrainActivityTab';
 import { CognitiveOpsTab } from './CognitiveOpsTab';
 import { JourneyTab } from './JourneyTab';
+import { YouTab } from './YouTab';
+import { RunsTab } from './RunsTab';
 
 export function BrainDashboard() {
-  const [tab, setTab] = useState<'learning' | 'journey' | 'ops' | 'activity' | 'health'>('learning');
+  const [tab, setTab] = useState<'you' | 'runs' | 'learning' | 'journey' | 'ops' | 'activity' | 'health'>('you');
 
   const tabClass = (id: typeof tab) =>
     `px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
@@ -31,6 +33,14 @@ export function BrainDashboard() {
       </div>
 
       <div className="sticky top-0 z-10 flex gap-1 border-b border-border bg-background/95 pb-px backdrop-blur flex-wrap">
+        <button type="button" onClick={() => setTab('you')} className={tabClass('you')} data-testid="brain-tab-you">
+          <User className="size-3.5 inline mr-1.5" />
+          You
+        </button>
+        <button type="button" onClick={() => setTab('runs')} className={tabClass('runs')} data-testid="brain-tab-runs">
+          <Network className="size-3.5 inline mr-1.5" />
+          Runs
+        </button>
         <button type="button" onClick={() => setTab('learning')} className={tabClass('learning')}>
           <Sparkles className="size-3.5 inline mr-1.5" />
           Learning
@@ -69,6 +79,8 @@ export function BrainDashboard() {
       </div>
 
       <div className="pb-8">
+        {tab === 'you' && <YouTab />}
+        {tab === 'runs' && <RunsTab />}
         {tab === 'learning' && <LearningTab />}
         {tab === 'journey' && <JourneyTab />}
         {tab === 'ops' && <CognitiveOpsTab />}

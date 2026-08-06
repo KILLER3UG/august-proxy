@@ -322,8 +322,11 @@ async def streamChat(
 async def stopChat(request: Request):
     """Abort a running generation and free the session for a new turn.
 
-    Immediately clears the in-flight task slot and queued follow-ups so the
-    next POST /chat is not stuck behind \"already in progress\".
+    Immediately clears the in-flight task slot and — unless the caller
+    asks to keep them (``preserveQueue: true``) — queued follow-ups so the
+    next POST /chat is not stuck behind "already in progress". Stopping to
+    switch models must not destroy the user's queued follow-ups, so the
+    frontend always preserves them and the queue drains into the next turn.
     """
     body = await request.json()
     sessionId = body.get('sessionId', '')
@@ -340,10 +343,12 @@ async def stopChat(request: Request):
         task.cancel()
 
     cleared = 0
-    try:
-        cleared = wb.clearQueuedMessages(sessionId)
-    except Exception:
-        cleared = 0
+    preserveQueue = bool(body.get('preserveQueue', False))
+    if not preserveQueue:
+        try:
+            cleared = wb.clearQueuedMessages(sessionId)
+        except Exception:
+            cleared = 0
 
     try:
         session = wb.getWorkbenchSession(sessionId)
@@ -1339,6 +1344,49 @@ async def undoLastTurn(sessionId: str):
     if result is None:
         raise HTTPException(status_code=404, detail='Session not found')
     return result
+
+
+@router.post('/sessions/{sessionId}/truncate')
+async def truncateSession(sessionId: str, request: Request):
+    """Truncate the session in place up to (and including) ``upToIndex``.
+
+    Body: ``{ "upToIndex": int }`` — the message index to keep up to
+    (inclusive); everything after is removed. Used by the chat UI's
+    revert/edit/regenerate actions so backend history matches the thread.
+    """
+    from app.services.workbench.sessions import truncate_session
+
+    body: dict = {}
+    try:
+        if request.headers.get('content-type', '').startswith('application/json'):
+            raw = await request.json()
+            if isinstance(raw, dict):
+                body = raw
+    except Exception:
+        body = {}
+    up_to = body.get('upToIndex')
+    if up_to is None or up_to == '':
+        raise HTTPException(status_code=400, detail='upToIndex is required')
+    try:
+        up_to_index = int(up_to)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail='upToIndex must be an integer') from exc
+    result = truncate_session(sessionId, up_to_index=up_to_index)
+    if result is None:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return result
+
+
+@router.get('/sessions/{sessionId}/context')
+async def sessionContext(sessionId: str):
+    """Last-turn context snapshot — what memory/context the harness injected.
+
+    ``None`` when the session has no recorded snapshot yet (e.g. pre-upgrade
+    sessions or turns before the snapshot feature shipped).
+    """
+    from app.services.memory_store import get_memory
+
+    return {'context': get_memory(f'session_context:{sessionId}')}
 
 
 @router.post('/sessions/{sessionId}/branch')

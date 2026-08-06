@@ -114,3 +114,25 @@ def get_friction_stats(since_days: int = 7) -> dict:
     except Exception as exc:
         logger.debug('Friction stats query failed: %s', exc)
         return {'total': 0, 'sinceDays': since_days, 'byCategory': {}, 'daily': [], 'topTools': []}
+
+
+def recent_friction(limit: int = 20) -> list[dict]:
+    """Return the most recent raw friction events, newest first.
+
+    Used by the Brain "You" tab to show what went wrong per conversation.
+    """
+    try:
+        from app.services.memory_store import _conn, _row_as_wire
+
+        if limit < 1 or limit > 200:
+            limit = 20
+        conn = _conn()
+        rows = conn.execute(
+            'SELECT id, session_id, category, detail, tool_name, created_at '
+            'FROM friction_events ORDER BY id DESC LIMIT ?',
+            (limit,),
+        ).fetchall()
+        return [_row_as_wire(r) for r in rows]
+    except Exception as exc:
+        logger.debug('Friction recent query failed: %s', exc)
+        return []

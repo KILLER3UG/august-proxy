@@ -277,7 +277,23 @@ export async function streamWorkbenchReconnect(
       let terminalSeen = false;
       const streamHandlers = {
         ...wrappedHandlers,
-        onDone: (data?: { usage?: WorkbenchTurnUsage }) => {
+        onDone: (data?: {
+          usage?: WorkbenchTurnUsage;
+          context?: {
+            profileSummaryUsed?: boolean;
+            heuristicsUsed?: number;
+            addedMemories?: number;
+            recalledMemories?: Array<{
+              key?: string;
+              category?: string;
+              snippet?: string;
+            }>;
+            currentContextUsed?: boolean;
+            activeProjects?: number;
+            coreFactsUsed?: boolean;
+            augDirectiveUsed?: boolean;
+          };
+        }) => {
           terminalSeen = true;
           wrappedHandlers.onDone?.(data);
         },

@@ -17,6 +17,7 @@ import {
 } from '@/components/chat/SandboxModeSelector';
 import { ProjectRulesBadge } from '@/components/chat/ProjectRulesBadge';
 import { ContextRing, type ContextBreakdown } from '../ChatComposer';
+import { ContextUsedBadge } from './ContextUsedBadge';
 import type { ModelItem } from '../model-display';
 import type { SessionUsageState } from '../hooks/useChatUsage';
 import type { EffortLevel } from '../hooks/useChatSend';
@@ -58,6 +59,7 @@ export function ComposerToolbar({
   setEffort,
   thinkingEnabled,
   setThinkingEnabled,
+  modelMenuOpenSignal,
   actionsOpen,
   actionsPos,
   actionsTriggerRef,
@@ -105,6 +107,8 @@ export function ComposerToolbar({
   setEffort: Dispatch<SetStateAction<EffortLevel>>;
   thinkingEnabled: boolean;
   setThinkingEnabled: Dispatch<SetStateAction<boolean>>;
+  /** Incrementing counter — opens the model menu (command palette). */
+  modelMenuOpenSignal?: number;
   actionsOpen: boolean;
   actionsPos: AnchorPos | null;
   actionsTriggerRef: React.RefObject<HTMLButtonElement | null>;
@@ -235,6 +239,7 @@ export function ComposerToolbar({
           breakdown={contextBreakdown}
           serverTokens={sessionUsage}
         />
+        <ContextUsedBadge sessionId={sessionId} />
         <button
           type="button"
           onClick={handleVerifierToggle}
@@ -269,6 +274,7 @@ export function ComposerToolbar({
           onEffortChange={setEffort}
           thinkingEnabled={thinkingEnabled}
           onThinkingChange={setThinkingEnabled}
+          openSignal={modelMenuOpenSignal}
           onSelect={(m) => {
             void (async () => {
               const prev = selectedModel;

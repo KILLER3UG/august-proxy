@@ -17,6 +17,8 @@ import {
   FileDown,
   Keyboard,
   StickyNote,
+  Square,
+  ArrowLeftRight,
 } from "lucide-react";
 import {
   useCommandPaletteStore,
@@ -88,6 +90,24 @@ export function CommandPalette() {
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
               <Undo2 className="size-3.5" /> Undo last turn
+            </Command.Item>
+            <Command.Item
+              value="action stop generation"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'stop_chat', target: 'active' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Square className="size-3.5" /> Stop generation
+            </Command.Item>
+            <Command.Item
+              value="action switch model picker"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'open_model_picker', target: 'active' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <ArrowLeftRight className="size-3.5" /> Switch model…
             </Command.Item>
             <Command.Item
               value="action branch chat fork"

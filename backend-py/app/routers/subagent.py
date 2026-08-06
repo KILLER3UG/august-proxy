@@ -102,6 +102,35 @@ async def listActive(request: Request, sessionId: Optional[str] = None):
     return {'agents': orch.listActive(sessionId=sessionId)}
 
 
+@router.get('/runs')
+async def listRuns(sessionId: Optional[str] = None, limit: int = 50):
+    """List persisted sub-agent run history (newest first).
+
+    Optional ``sessionId`` filter narrows to one conversation; ``limit``
+    caps the page (default 50, max 500).
+    """
+    from app.services.memory_store import _conn, _row_as_wire
+
+    if limit < 1 or limit > 500:
+        limit = 50
+    conn = _conn()
+    if sessionId:
+        rows = conn.execute(
+            'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, error, '
+            'started_at, finished_at, created_at FROM subagent_runs '
+            'WHERE session_id = ? ORDER BY id DESC LIMIT ?',
+            (sessionId, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, error, '
+            'started_at, finished_at, created_at FROM subagent_runs '
+            'ORDER BY id DESC LIMIT ?',
+            (limit,),
+        ).fetchall()
+    return {'runs': [_row_as_wire(r) for r in rows]}
+
+
 @router.post('/{taskId}/terminate')
 async def terminateSubagent(taskId: str, request: Request):
     """Terminate a running sub-agent."""
@@ -120,6 +149,34 @@ async def proposeBreakdown(body: ProposeBreakdownRequest, request: Request):
     orch = _getOrchestrator(request)
     result = await approveProposal(orch, body.proposal_id)
     return result
+
+
+@router.get('/proposals')
+async def listProposals():
+    """List pending breakdown proposals awaiting user approval.
+
+    Proposals are created when a model uses ``spawn_subagents`` in
+    ``proposed`` mode; they live in process memory and are approved/rejected
+    via ``POST /propose-breakdown`` (from chat or the Brain Runs tab).
+    """
+    from app.services.tools.spawn_subagents_tool import _pendingProposals
+
+    out = []
+    for pid, p in _pendingProposals.items():
+        items = p.get('workItems') if isinstance(p, dict) else []
+        out.append(
+            {
+                'proposalId': pid,
+                'createdAt': p.get('createdAt', 0) if isinstance(p, dict) else 0,
+                'workItemCount': len(items) if isinstance(items, list) else 0,
+                'goals': [
+                    str((w.get('goal') or '') if isinstance(w, dict) else '')[:200]
+                    for w in items
+                    if isinstance(w, dict)
+                ],
+            }
+        )
+    return {'proposals': out}
 
 
 @router.get('/stream')

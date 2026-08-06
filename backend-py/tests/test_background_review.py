@@ -120,7 +120,7 @@ async def testTryBackgroundReviewNoLlmMeansNoop():
 async def testEndOfSessionReviewCoversShortIdleSession(monkeypatch):
     called = []
 
-    async def stubReview(_messages, *, llm_client=None):
+    async def stubReview(_messages, *, llm_client=None, session_id=''):
         called.append(True)
 
     monkeypatch.setattr('app.services.memory.background_review._doReview', stubReview)

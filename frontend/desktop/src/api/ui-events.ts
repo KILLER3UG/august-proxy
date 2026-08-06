@@ -15,7 +15,9 @@ export type UiAction =
   | 'undo_last_turn'
   | 'compact_now'
   | 'branch_session'
-  | 'export_conversation';
+  | 'export_conversation'
+  | 'stop_chat'
+  | 'open_model_picker';
 
 export interface UiActionEvent {
   id?: string;

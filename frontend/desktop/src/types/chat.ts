@@ -56,7 +56,14 @@ export interface IntegrationSetupResult {
  *  narrow on `type` before relying on a specific field shape. */
 export interface MessageBlock {
   id: string;
-  type: 'thinking' | 'toolCall' | 'command' | 'finalOutput' | 'recalledMemories' | 'verifierBlocked';
+  type:
+    | 'thinking'
+    | 'toolCall'
+    | 'command'
+    | 'finalOutput'
+    | 'recalledMemories'
+    | 'verifierBlocked'
+    | 'error';
   content?: string;
   tool?: MessageBlockToolCall;
   /** Set on toolCall blocks whose context represents a revised plan
@@ -275,7 +282,8 @@ export interface AppendBlockEvent {
     | 'tool_progress'
     | 'toolResult'
     | 'recalledMemories'
-    | 'verifierBlocked';
+    | 'verifierBlocked'
+    | 'error';
   content?: string;
   name?: string;
   id?: string;

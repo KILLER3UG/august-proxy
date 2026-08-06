@@ -93,6 +93,7 @@ export function ModelEffortMenu({
   onEffortChange,
   thinkingEnabled,
   onThinkingChange,
+  openSignal,
 }: {
   /** Full catalog (kept for call-site compatibility; flyout uses `visibleModels`). */
   models: ModelItem[];
@@ -106,8 +107,16 @@ export function ModelEffortMenu({
   onEffortChange: (v: EffortLevel) => void;
   thinkingEnabled: boolean;
   onThinkingChange: (v: boolean) => void;
+  /** Incrementing counter — each change opens the menu (command palette). */
+  openSignal?: number;
 }) {
   const [open, setOpen] = useState(false);
+
+  // External open requests (e.g. command palette "Switch model") bump the
+  // signal; re-opening the same menu must re-fire, hence the counter.
+  useEffect(() => {
+    if (openSignal) setOpen(true);
+  }, [openSignal]);
 
   // Pin/unpin straight from the dropdown: resolve the provider entry behind
   // the aggregated model (provider name → provider id), flip its `pinned`

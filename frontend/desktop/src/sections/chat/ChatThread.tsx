@@ -69,7 +69,9 @@ import {
   listWorkbenchCapabilities,
   getQueuedWorkbenchMessages,
   branchWorkbenchSession,
+  truncateWorkbenchSession,
 } from '@/api/workbench';
+import { resolveWorkbenchSessionId } from './stream/session-id-map';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import {
   WORKBENCH_GUARD_MODES,
@@ -584,6 +586,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     loadMessagesForSession,
   });
 
+  const stop = () => {
+    if (!sessionId) return;
+    const prevModel = selectedModel?.name || selectedModel?.id;
+    const summary = buildHandoffSummary(messages, prevModel);
+    markHandoffPending(sessionId, summary, selectedModel?.id);
+    void stopChatStream(sessionId);
+  };
+
   useChatUiActions({
     sessionId,
     messages,
@@ -593,6 +603,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     setWorkbenchSession,
     setWorkbenchMode,
     activeSession,
+    onStop: stop,
   });
 
   const {
@@ -808,23 +819,123 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     });
   }, [models, setSelectedModel, userSelectedRef]);
 
-  // Model selection from ModelPickerCard
+  // Model selection from ModelPickerCard — unified with the composer-menu
+  // switch path: stop + handoff when streaming, server-computed handoff +
+  // notice card for any change, then auto-continue (re-answer the
+  // interrupted prompt with the new model). Refs keep the listener stable
+  // across re-renders while still reading fresh state when an event fires.
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
+  const streamingRef = useRef(streaming);
+  streamingRef.current = streaming;
+  const chatMessagesRef = useRef(messages);
+  chatMessagesRef.current = messages;
+  const stopRef = useRef(stop);
+  stopRef.current = stop;
+  const setChatMessagesRef = useRef(setMessages);
+  setChatMessagesRef.current = setMessages;
+  const generateRef = useRef(generateAIResponse);
+  generateRef.current = generateAIResponse;
+
   useEffect(() => {
-    const handleModelSelected = (e: Event) => {
+    const handleModelSelected = async (e: Event) => {
       const { modelId, provider } =
         (e as CustomEvent<{ modelId?: string; provider?: string }>).detail ?? {};
       if (!modelId || !provider) return;
       const model = models.find((m) => m.id === modelId);
-      if (model) {
-        setSelectedModel(model);
-        userSelectedRef.current = model.id;
-        try {
-          localStorage.setItem('august_last_model', JSON.stringify(model));
-        } catch {
-          /* silent */
+      if (!model) return;
+      const sid = sessionId;
+      const msgs = chatMessagesRef.current;
+      const prev = selectedModelRef.current;
+      const modelChanged = !!(sid && prev && prev.id !== model.id);
+
+      // 1) Streaming: stop the turn (queue preserved) and capture a handoff
+      //    brief before stream state is torn down.
+      let interrupted = false;
+      if (streamingRef.current && sid) {
+        interrupted = true;
+        const summary = buildHandoffSummary(msgs, prev?.name || prev?.id);
+        await stopRef.current();
+        markHandoffPending(sid, summary, prev?.id);
+      } else if (modelChanged && sid) {
+        const { peekHandoffPending } = await import('./handoff-summary');
+        if (!peekHandoffPending(sid)) {
+          const last = msgs[msgs.length - 1];
+          const incomplete =
+            last?.role === 'assistant' &&
+            (!last.content?.trim() ||
+              last.blocks?.some(
+                (b) =>
+                  b.type === 'thinking' ||
+                  (b.type === 'toolCall' && b.tool?.status === 'running'),
+              ));
+          if (incomplete) {
+            markHandoffPending(
+              sid,
+              buildHandoffSummary(msgs, prev?.name || prev?.id),
+              prev?.id,
+            );
+          }
         }
-        if (sessionId) updateSessionModel(sessionId, modelId, provider);
-        toast.success(`Switched to ${model.name}`);
+      }
+
+      // 2) Server-computed handoff for ANY model change with prior messages —
+      //    non-blocking, upgrades the pending summary and drops a notice card.
+      if (modelChanged && msgs.length > 0 && sid) {
+        const fromLabel = prev?.name || prev?.id || '';
+        void (async () => {
+          try {
+            const { requestSessionHandoff } = await import('@/api/workbench');
+            const record = await requestSessionHandoff(sid, prev?.id ?? '', model.id);
+            const { buildHandoffNoticeMessage } = await import('./handoff-summary');
+            markHandoffPending(
+              sid,
+              `Previous model (${fromLabel}) context handoff:\n${record.summary}`,
+              prev?.id,
+            );
+            setChatMessagesRef.current((list) => [
+              ...list,
+              buildHandoffNoticeMessage(record, fromLabel),
+            ]);
+          } catch (error) {
+            console.warn(
+              '[ChatThread] Server handoff summary failed, using local fallback:',
+              error,
+            );
+            const { peekHandoffPending, buildHandoffSummary } = await import('./handoff-summary');
+            if (!peekHandoffPending(sid)) {
+              markHandoffPending(sid, buildHandoffSummary(msgs, fromLabel), prev?.id);
+            }
+          }
+        })();
+      }
+
+      // 3) Apply the selection (next turn / auto-continue uses the new model).
+      setSelectedModel(model);
+      userSelectedRef.current = model.id;
+      try {
+        localStorage.setItem('august_last_model', JSON.stringify(model));
+      } catch {
+        /* silent */
+      }
+      if (sid) updateSessionModel(sid, modelId, provider);
+      toast.success(`Switched to ${model.name}`);
+
+      // 4) Auto-continue: re-answer the interrupted prompt with the new
+      //    model. The backend is truncated at the interrupted turn and the
+      //    re-send runs after re-render so the fresh generateAIResponse
+      //    closure (new modelForRequest) is used.
+      if (interrupted && sid) {
+        const lastUserIdx = [...msgs].map((m) => m.role).lastIndexOf('user');
+        if (lastUserIdx >= 0) {
+          const trimmed = msgs.slice(0, lastUserIdx + 1);
+          setChatMessagesRef.current(trimmed);
+          const wbId = resolveWorkbenchSessionId(sid);
+          void truncateWorkbenchSession(wbId, lastUserIdx).catch(() => undefined);
+          window.setTimeout(() => {
+            void generateRef.current?.(trimmed);
+          }, 0);
+        }
       }
     };
     window.addEventListener('august:model-selected', handleModelSelected);
@@ -850,14 +961,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       window.removeEventListener('focus', handleFocus);
     };
   }, [ensureWorkbenchSession, sessionId]);
-
-  const stop = () => {
-    if (!sessionId) return;
-    const prevModel = selectedModel?.name || selectedModel?.id;
-    const summary = buildHandoffSummary(messages, prevModel);
-    markHandoffPending(sessionId, summary, selectedModel?.id);
-    void stopChatStream(sessionId);
-  };
 
   const maxContext = modelForRequest?.contextWindow && modelForRequest.contextWindow > 0
     ? modelForRequest.contextWindow

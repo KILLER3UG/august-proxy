@@ -268,6 +268,14 @@ export async function undoWorkbenchLastTurn(sessionId: string): Promise<{
   return workbenchClient.undoLastTurn(sessionId);
 }
 
+/** Truncate the backend session in place up to (and including) `upToIndex`. */
+export async function truncateWorkbenchSession(
+  sessionId: string,
+  upToIndex: number,
+): Promise<{ session: WorkbenchSession; removed: number; message?: string }> {
+  return workbenchClient.truncateSession(sessionId, upToIndex);
+}
+
 /** Fork a workbench session (optional upToIndex = last source message to keep). */
 export async function branchWorkbenchSession(
   sessionId: string,

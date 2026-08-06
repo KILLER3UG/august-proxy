@@ -2,7 +2,7 @@
 /* Floating pill message box: attachments, @skills/tools, /commands,       */
 /* model/effort menu, send / mid-run steer, stop.                          */
 
-import { useCallback, useLayoutEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import type { WorkbenchSession } from '@/types/workbench';
@@ -21,6 +21,7 @@ import {
   useComposerPopovers,
   type ComposerDropdownApi,
 } from './composer/useComposerPopovers';
+import { onUiAction } from '@/api/ui-events';
 import { ComposerAttachmentChips } from './composer/ComposerAttachmentChips';
 import { ComposerMentionsDropdown } from './composer/ComposerMentionsDropdown';
 import { ComposerCommandsDropdown } from './composer/ComposerCommandsDropdown';
@@ -151,7 +152,19 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     taRef,
     dropdownApiRef,
     send,
+    stop,
+    streaming,
   });
+
+  // Command palette "Switch model" → bump the counter so the model menu
+  // opens (ModelEffortMenu re-fires on each increment).
+  const [modelMenuSignal, setModelMenuSignal] = useState(0);
+  useEffect(() => {
+    const unsub = onUiAction((e) => {
+      if (e.action === 'open_model_picker') setModelMenuSignal((n) => n + 1);
+    });
+    return unsub;
+  }, []);
 
   // Value-driven auto-grow so clearing input after send collapses height
   // (onChange alone never fires for controlled setInput('')).
@@ -332,6 +345,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           setEffort={setEffort}
           thinkingEnabled={thinkingEnabled}
           setThinkingEnabled={setThinkingEnabled}
+          modelMenuOpenSignal={modelMenuSignal}
           actionsOpen={popovers.showComposerActionsDropdown}
           actionsPos={popovers.composerActionsPos}
           actionsTriggerRef={popovers.composerActionsTriggerRef}

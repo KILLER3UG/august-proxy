@@ -38,14 +38,14 @@ def listHeuristics(category: str = '') -> list[dict[str, object]]:
     conn = _conn()
     if category:
         rows = conn.execute(
-            'SELECT id, rule, source, category, confidence, created_at, updated_at '
+            'SELECT id, rule, source, category, confidence, source_session_id, suppressed, created_at, updated_at '
             'FROM learned_heuristics WHERE category = ? '
             'ORDER BY confidence DESC, updated_at DESC',
             (category,),
         ).fetchall()
     else:
         rows = conn.execute(
-            'SELECT id, rule, source, category, confidence, created_at, updated_at '
+            'SELECT id, rule, source, category, confidence, source_session_id, suppressed, created_at, updated_at '
             'FROM learned_heuristics ORDER BY confidence DESC, updated_at DESC'
         ).fetchall()
     return [_row_as_wire(r) for r in rows]
@@ -87,6 +87,7 @@ def addHeuristic(
     source: str = 'auto',
     category: str = 'general',
     confidence: object = None,
+    session_id: str = '',
 ) -> int | None:
     """Add a learned heuristic rule, merging repeats instead of duplicating.
 
@@ -95,6 +96,10 @@ def addHeuristic(
     its ``updated_at``, returning the existing id — a repeated correction
     strengthens the rule. New rules insert with the given confidence
     (default 0.5, clamped to [0, 1]).
+
+    ``session_id`` records which conversation produced the rule (provenance
+    for the Brain "You" surface); best-effort, may be empty for
+    workspace-level learners (diff, delta-engine).
     """
     if not rule or not rule.strip():
         return None
@@ -137,9 +142,9 @@ def addHeuristic(
         return int(best['id'])
     conf = _clamp_confidence(confidence)
     conn.execute(
-        'INSERT INTO learned_heuristics (rule, source, category, confidence, updated_at) '
-        "VALUES (?, ?, ?, ?, datetime('now'))",
-        (stripped, source, category, conf),
+        'INSERT INTO learned_heuristics (rule, source, category, confidence, source_session_id, updated_at) '
+        "VALUES (?, ?, ?, ?, ?, datetime('now'))",
+        (stripped, source, category, conf, session_id or None),
     )
     conn.commit()
     rowId = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -202,6 +207,22 @@ def updateHeuristic(heuristicId: int, newRule: str) -> bool:
     conn = _conn()
     cur = conn.execute(
         "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (newRule, heuristicId)
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def setHeuristicSuppressed(heuristicId: int, suppressed: bool) -> bool:
+    """Mark a heuristic as wrong/outdated (suppressed) or re-enable it.
+
+    Suppressed rules are excluded from prompt injection (see workbench
+    prompt builder) but kept in the table so the user can review and
+    re-enable them in the Brain "You" surface.
+    """
+    conn = _conn()
+    cur = conn.execute(
+        'UPDATE learned_heuristics SET suppressed = ?, updated_at = datetime(\'now\') WHERE id = ?',
+        (1 if suppressed else 0, heuristicId),
     )
     conn.commit()
     return cur.rowcount > 0

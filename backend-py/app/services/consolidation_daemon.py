@@ -78,6 +78,25 @@ def _sanitizeSkillName(name: str) -> str:
     return _kebab_name(name)[:50]
 
 
+def _record_audit(action: str, target_key: str = '', reason: str = '', detail: str = '') -> None:
+    """Append one row to the consolidation audit trail (fire-and-forget).
+
+    Written from the db_writer worker thread alongside the mutation it
+    describes, so the trail stays in lock-step with what actually changed.
+    """
+    try:
+        from app.services.memory_store import _conn
+
+        conn = _conn()
+        conn.execute(
+            'INSERT INTO consolidation_audit (action, target_key, reason, detail) VALUES (?, ?, ?, ?)',
+            (action, (target_key or '')[:120], (reason or '')[:200], (detail or '')[:300]),
+        )
+        conn.commit()
+    except Exception:
+        logger.debug('consolidation audit record failed (non-fatal)', exc_info=True)
+
+
 async def _call_hippocampus(prompt: str) -> str:
     """Snake-case alias for tests and newer callers."""
     return await _callHippocampus(prompt)
@@ -169,6 +188,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                             def _deleteMerged(i: object = rid) -> object:
                                 conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
                                 conn.commit()
+                                _record_audit('merge', target_key=str(i), reason='merged duplicate', detail=str(mergedRule)[:300])
                                 return None
 
                             await enqueue_write(_deleteMerged, must_succeed=True)
@@ -179,6 +199,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                                     "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (m, k)
                                 )
                                 conn.commit()
+                                _record_audit('merge', target_key=str(k), reason='merged rule replaced', detail=str(m)[:300])
                                 return None
 
                             await enqueue_write(_updateMerged, must_succeed=True)
@@ -196,6 +217,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                                 (k, v, 'auto-promoted', 'consolidation', 0.8),
                             )
                             conn.commit()
+                            _record_audit('promote', target_key=str(k), reason='promoted pattern', detail=str(v)[:300])
                             return None
 
                         await enqueue_write(_insertFact, must_succeed=True)
@@ -207,6 +229,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                         def _deleteStale(i: object = did) -> object:
                             conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
                             conn.commit()
+                            _record_audit('delete', target_key=str(i), reason='stale rule')
                             return None
 
                         await enqueue_write(_deleteStale, must_succeed=True)

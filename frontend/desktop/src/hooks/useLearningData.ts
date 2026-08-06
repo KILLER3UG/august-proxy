@@ -11,6 +11,8 @@ export interface Heuristic {
   source: string;
   category: string;
   confidence?: number;
+  sourceSessionId?: string;
+  suppressed?: number;
   createdAt: string;
 }
 

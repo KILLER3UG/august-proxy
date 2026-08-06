@@ -64,6 +64,10 @@ export interface UseComposerPopoversArgs {
   taRef: RefObject<HTMLTextAreaElement | null>;
   dropdownApiRef?: MutableRefObject<ComposerDropdownApi | null>;
   send: (textOverride?: string) => Promise<void>;
+  /** Stops the in-flight generation (Esc while streaming). */
+  stop?: () => void;
+  /** Whether a generation is currently streaming (enables the stop key). */
+  streaming?: boolean;
 }
 
 /**
@@ -75,6 +79,8 @@ export function useComposerPopovers({
   taRef,
   dropdownApiRef,
   send,
+  stop,
+  streaming,
 }: UseComposerPopoversArgs) {
   const [showComposerActionsDropdown, setShowComposerActionsDropdown] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
@@ -381,9 +387,22 @@ export function useComposerPopovers({
           return;
         }
       }
+      // ⌘/Ctrl+Enter always sends — the explicit shortcut for a hard send
+      // regardless of dropdown focus (plain Enter sends too when idle).
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void send();
+        return;
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         void send();
+      }
+      // Esc while streaming stops generation (queue is preserved); with no
+      // dropdown open Esc is otherwise a no-op in the composer.
+      if (e.key === 'Escape' && streaming && stop) {
+        e.preventDefault();
+        stop();
       }
     },
     [
@@ -396,6 +415,8 @@ export function useComposerPopovers({
       highlightedCommandIndex,
       insertCommand,
       send,
+      stop,
+      streaming,
     ],
   );
 

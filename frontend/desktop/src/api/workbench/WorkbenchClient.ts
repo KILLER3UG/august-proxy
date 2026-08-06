@@ -171,6 +171,15 @@ export class WorkbenchClient {
     );
   }
 
+  /** In-place truncation up to (and including) `upToIndex` — backend copy of
+   *  the chat UI's revert/edit/regenerate truncation. */
+  async truncateSession(sessionId: string, upToIndex: number) {
+    return wbFetch<{ session: WorkbenchSession; removed: number; message?: string }>(
+      `/api/workbench/sessions/${encodeURIComponent(sessionId)}/truncate`,
+      jsonInit('POST', { upToIndex }),
+    );
+  }
+
   async branchSession(
     sessionId: string,
     upToIndex?: number | null,
@@ -209,8 +218,11 @@ export class WorkbenchClient {
 
   /* ── Chat control ──────────────────────────────────────────────── */
 
-  async stopChat(sessionId: string): Promise<void> {
-    await wbFetch<void>('/api/workbench/chat/stop', jsonInit('POST', { sessionId }));
+  async stopChat(sessionId: string, preserveQueue: boolean = true): Promise<void> {
+    await wbFetch<void>(
+      '/api/workbench/chat/stop',
+      jsonInit('POST', { sessionId, preserveQueue }),
+    );
   }
 
   /* ── Queue / steer ─────────────────────────────────────────────── */

@@ -2,7 +2,7 @@
 /* Mid-response queue: drag reorder, edit pill text, cancel, clear-all.   */
 
 import { useState } from 'react';
-import { GripVertical, Pencil, Trash2, X, Check } from 'lucide-react';
+import { GripVertical, Pencil, Trash2, X, Check, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { workbenchClient } from '@/api/workbench';
@@ -47,6 +47,22 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
     });
     setQueuedMessages(sessionId, []);
     toast.message('Queue cleared');
+  };
+
+  /** Promote a plain queued follow-up to a mid-run steer (applies at the
+   *  next tool/LLM boundary instead of waiting for the turn to end). */
+  const promoteToSteer = (q: QueuedUserMessage) => {
+    void (async () => {
+      try {
+        await workbenchClient.dequeueMessage(wbId, q.id);
+        const entry = await workbenchClient.steerMessage(wbId, q.text, q.attachments);
+        setQueuedMessages(sessionId, [entry, ...items.filter((e) => e.id !== q.id)]);
+        toast.message('Promoted to direction — applies at the next step');
+      } catch (err) {
+        console.error('[promote to steer] failed', err);
+        toast.error('Could not promote to direction');
+      }
+    })();
   };
 
   const startEdit = (q: QueuedUserMessage) => {
@@ -191,6 +207,17 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
               <span className="truncate text-muted-foreground flex-1 min-w-0" title={q.text}>
                 {q.text.length > 120 ? q.text.slice(0, 120).trim() + '…' : q.text}
               </span>
+              {q.kind !== 'steer' ? (
+                <button
+                  type="button"
+                  onClick={() => promoteToSteer(q)}
+                  className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-muted transition shrink-0"
+                  title="Promote to direction (apply mid-run instead of after this turn)"
+                  aria-label="Promote to direction"
+                >
+                  <Zap className="size-3" />
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => startEdit(q)}

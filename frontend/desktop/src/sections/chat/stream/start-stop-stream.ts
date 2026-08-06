@@ -19,7 +19,6 @@ import {
   streamWorkbenchChat,
   streamWorkbenchReconnect,
   workbenchClient,
-  clearQueuedWorkbenchMessages,
 } from '@/api/workbench';
 import { setSessionStatus, clearSessionStatus } from '@/store/sessions';
 import { clearActiveChatStream } from '@/store/chat-active-streams';
@@ -36,7 +35,6 @@ import {
   hasSessionSubscriber,
 } from './session-subscriber';
 import { resolveWorkbenchSessionId, resolveUiSessionId } from './session-id-map';
-import { clearQueuedMessages } from '../queue-store';
 import { takeHandoffSummary } from '../handoff-summary';
 
 // Start a new chat generation
@@ -92,13 +90,6 @@ export async function startChatStream(
   try {
     const session = await params.ensureWorkbenchSession();
     if (!session) {
-      updateSessionStreamState(sessionId, prev => ({
-        messages: prev.messages.map(msg =>
-          msg.id === assistantMsgId
-            ? { ...msg, content: '⚠️ Could not initialize Workbench session. Check that the backend is running.' }
-            : msg
-        )
-      }));
       try { handlers.onError?.({ message: 'Could not initialize Workbench session' }); } catch { /* silent */ }
       finalize('error');
       activeStreamControllers.delete(sessionId);
@@ -182,13 +173,8 @@ export async function startChatStream(
       : typeof e === 'string'
         ? e
         : 'Unknown error';
-    updateSessionStreamState(sessionId, prev => ({
-      messages: prev.messages.map(msg =>
-        msg.id === assistantMsgId
-          ? { ...msg, content: (msg.content || '') + `\n\n⚠️ Could not generate a response: ${errorMsg}` }
-          : msg
-      )
-    }));
+    // The error is rendered as a real error block (via onError) — no inline
+    // ⚠️ text appended to the bubble content.
     try { handlers.onError?.({ message: errorMsg }); } catch { /* silent */ }
     finalize('error');
     return 'error';
@@ -216,15 +202,15 @@ export async function stopChatStream(sessionId: string) {
 
   clearSessionStatus(uiSessionId);
   clearSessionStatus(wbSessionId);
-  clearQueuedMessages(uiSessionId);
-  clearQueuedMessages(wbSessionId);
   clearActiveChatStream(sessionId, uiSessionId, wbSessionId);
 
   // Tell the backend to stop and free the in-flight slot immediately.
   // Always prefer the workbench id — `_activeStreams` is keyed by wb_*.
+  // The queue is PRESERVED: stopping (e.g. to switch models) must not
+  // destroy queued follow-ups — they drain into the next turn (backend
+  // in-loop drain) or are re-sent by useChatSend's fallback drain.
   try {
-    await workbenchClient.stopChat(wbSessionId);
-    await clearQueuedWorkbenchMessages(wbSessionId).catch(() => undefined);
+    await workbenchClient.stopChat(wbSessionId, /* preserveQueue */ true);
   } catch (err) {
     console.warn('Failed to notify backend of stop:', err);
   }

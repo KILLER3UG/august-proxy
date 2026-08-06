@@ -34,11 +34,13 @@ export interface UseChatUiActionsOptions {
   setWorkbenchSession: Dispatch<SetStateAction<WorkbenchSession | null>>;
   setWorkbenchMode: Dispatch<SetStateAction<WorkbenchGuardMode>>;
   activeSession: Session | null;
+  /** Stops the in-flight generation (command palette "Stop generation"). */
+  onStop?: () => void;
 }
 
 /**
  * Subscribes to shell ui-actions for the active chat (mode, undo, compact,
- * branch, restore checkpoint).
+ * branch, restore checkpoint, stop generation).
  */
 export function useChatUiActions(opts: UseChatUiActionsOptions): void {
   const {
@@ -50,6 +52,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
     setWorkbenchSession,
     setWorkbenchMode,
     activeSession,
+    onStop,
   } = opts;
 
   useEffect(() => {
@@ -59,6 +62,15 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
       (sessionId?.startsWith('wb_') ? sessionId : null);
 
     const unsub = onUiAction((e) => {
+      if (e.action === 'stop_chat') {
+        if (!streaming) {
+          toast.message('Nothing is streaming right now.');
+          return;
+        }
+        onStop?.();
+        return;
+      }
+
       if (e.action === 'set_guard_mode') {
         const mode = e.target as WorkbenchGuardMode;
         if (!WORKBENCH_GUARD_MODES[mode]) return;
@@ -198,6 +210,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
     setWorkbenchSession,
     setWorkbenchMode,
     setMessages,
+    onStop,
     activeSession?.workbenchSessionId,
     activeSession?.workspacePath,
     activeSession?.folderId,

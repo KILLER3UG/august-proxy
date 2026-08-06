@@ -14,7 +14,7 @@ import {
   voiceCommandRegistry,
   type ChatMessageLite,
 } from '@/api/voice/registry';
-import { queueWorkbenchMessage } from '@/api/workbench';
+import { dequeueWorkbenchMessage, queueWorkbenchMessage } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage, FileAttachment } from '@/types/chat';
 import { ChatAttachmentService } from '../services/ChatAttachmentService';
@@ -250,9 +250,17 @@ export function useChatSend(opts: UseChatSendOptions) {
       const remaining = [...messagesRef.current, userMsg];
       setMessages(remaining);
       persistMessages(sessionId, remaining);
-      // Drop the entry we just consumed locally; the backend will see an
-      // empty queue when we POST the next /chat call.
+      // Drop the entry we just consumed locally, and dequeue it from the
+      // backend too — with stop now preserving the queue, a leftover entry
+      // would otherwise be injected twice (once via this re-send, once by
+      // the next turn's in-loop drain).
       setQueuedMessages(sessionId, rest);
+      const wbId = ChatSendService.resolveWorkbenchQueueId(
+        workbenchSessionId,
+        activeWorkbenchSessionId,
+        sessionId,
+      );
+      void dequeueWorkbenchMessage(wbId, first.id).catch(() => undefined);
       setTimeout(() => {
         void generateAIResponse(remaining);
       }, 0);

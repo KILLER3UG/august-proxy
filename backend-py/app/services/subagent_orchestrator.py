@@ -47,6 +47,62 @@ MAX_CONCURRENT_WORKERS = 5
 PEER_HELP_WINDOW_SECONDS = 5.0
 
 
+def _record_run(handle: SubagentHandle) -> None:
+    """Persist one run row (fire-and-forget, never raises).
+
+    Inserts on first sight of the task; updates the same row on status
+    transitions. Best-effort — a missing table or busy DB must not break
+    orchestration.
+    """
+    try:
+        from app.services.memory_store import _conn
+
+        conn = _conn()
+        status = handle.status or 'pending'
+        summary = ''
+        if isinstance(handle.result, dict):
+            summary = str(
+                handle.result.get('result')
+                or handle.result.get('output')
+                or handle.result.get('summary')
+                or ''
+            ).strip()
+        elif isinstance(handle.result, str):
+            summary = handle.result
+        existing = conn.execute(
+            'SELECT id FROM subagent_runs WHERE task_id = ?', (handle.taskId,)
+        ).fetchone()
+        if existing:
+            conn.execute(
+                'UPDATE subagent_runs SET status = ?, result_summary = ?, error = ?, '
+                "finished_at = COALESCE(?, finished_at) WHERE task_id = ?",
+                (
+                    status,
+                    summary[:500],
+                    (handle.error or '')[:500],
+                    time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(handle.finishedAt)) if handle.finishedAt else None,
+                    handle.taskId,
+                ),
+            )
+        else:
+            conn.execute(
+                'INSERT INTO subagent_runs '
+                '(task_id, session_id, agent_id, goal, status, started_at) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
+                (
+                    handle.taskId,
+                    handle.sessionId,
+                    handle.agentId,
+                    (handle.goal or '')[:500],
+                    status,
+                    time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(handle.startedAt)),
+                ),
+            )
+        conn.commit()
+    except Exception:
+        logger.debug('subagent run record failed (non-fatal)', exc_info=True)
+
+
 class SubagentSpawnRequest:
     """Parameters for spawning one or more sub-agents."""
 
@@ -125,6 +181,7 @@ class SubagentOrchestrator:
                 sid = str(request.session.get('id', ''))
             handle = SubagentHandle(taskId, agentId, goal, sessionId=sid)
             self._handles[taskId] = handle
+            _record_run(handle)
             handles.append(handle)
             task = asyncio.create_task(
                 self._runWithSlot(
@@ -150,6 +207,7 @@ class SubagentOrchestrator:
         task.cancel()
         handle.status = 'cancelled'
         handle.finishedAt = time.time()
+        _record_run(handle)
         try:
             await task
         except asyncio.CancelledError:
@@ -237,6 +295,7 @@ class SubagentOrchestrator:
         """Acquire semaphore, run the sub-agent task, release."""
         async with self._semaphore:
             handle.status = 'running'
+            _record_run(handle)
             await self._fireEvent('subagentStarted', {'taskId': handle.taskId, 'agentId': agentId, 'goal': goal})
             try:
                 from app.services.subagent_worker import runSubagent
@@ -262,6 +321,7 @@ class SubagentOrchestrator:
                         if not err and not self._result_payload_text(result):
                             err = 'empty result payload with success status'
                         handle.error = err or handle.error
+                    _record_run(handle)
                     await self._fireEvent('subagentFailed', handle.toDict())
                 elif (
                     isinstance(result, dict)
@@ -269,18 +329,22 @@ class SubagentOrchestrator:
                 ):
                     # Not equivalent to full completion for tallies (see spawn_subagents).
                     handle.status = 'partial'
+                    _record_run(handle)
                     await self._fireEvent('subagentCompleted', handle.toDict())
                 else:
                     handle.status = 'completed'
+                    _record_run(handle)
                     await self._fireEvent('subagentCompleted', handle.toDict())
             except asyncio.CancelledError:
                 handle.status = 'cancelled'
                 handle.finishedAt = time.time()
+                _record_run(handle)
                 raise
             except Exception as exc:
                 handle.status = 'failed'
                 handle.error = str(exc)
                 handle.finishedAt = time.time()
+                _record_run(handle)
                 logger.exception('[Orchestrator] unexpected error for task %s', handle.taskId)
                 await self._handleFailure(handle, request)
                 await self._fireEvent('subagentFailed', handle.toDict())

@@ -381,6 +381,7 @@ def buildSystemPrompt(
     if projects:
         memory['active_projects'] = projects
     session._last_recalled_memories = None
+    session._last_context_snapshot = None
     # Fresh verifier gate receipts for this turn (see system_tools._updateState).
     session._verification_receipts = None
     # Auto-memories are on-demand by default; the budget-gated auto-recall
@@ -394,6 +395,7 @@ def buildSystemPrompt(
         conn = brainConn()
         heuristicsRows = conn.execute(
             'SELECT rule, source, category, confidence FROM learned_heuristics '
+            "WHERE COALESCE(suppressed, 0) = 0 "
             'ORDER BY confidence DESC, updated_at DESC LIMIT ?',
             (_HEURISTIC_CAP,),
         ).fetchall()
@@ -610,6 +612,33 @@ def buildSystemPrompt(
         _seg_cache.BULK_BLOCK,
         _seg_cache.WEB_BLOCK,
     ]
+    # Snapshot of what this turn's prompt actually injected — carried into the
+    # per-turn `done` event and the chat context panel (A5).
+    try:
+        recalled = getattr(session, '_last_recalled_memories', None) or []
+        session._last_context_snapshot = {
+            'profileSummaryUsed': bool(memory.get('userProfile')),
+            'heuristicsUsed': len(as_list(memory.get('learnedHeuristics'), [])),
+            'addedMemories': len(as_list(memory.get('addedMemories'), [])),
+            'recalledMemories': [
+                {
+                    'key': as_str(m.get('key'), ''),
+                    'category': as_str(m.get('category'), 'auto'),
+                    'snippet': as_str(
+                        m.get('description') or m.get('label') or m.get('content') or m.get('text') or '', ''
+                    )[:200],
+                }
+                for m in recalled
+                if isinstance(m, dict)
+            ][:5],
+            'currentContextUsed': bool(memory.get('global_context')),
+            'activeProjects': len(as_list(memory.get('active_projects'), [])),
+            'coreFactsUsed': bool(memory.get('coreMemory')),
+            'augDirectiveUsed': bool(sessionDict.get('augMd')),
+        }
+    except Exception:
+        logger.debug('prompt: context snapshot failed', exc_info=True)
+        session._last_context_snapshot = None
     return base + '\n\n' + '\n\n'.join(extraParts)
 
 
@@ -2337,18 +2366,28 @@ async def _sendWorkbenchMessageStreamImpl(
             # chip (early-exit `done` events above carry no usage).
             # durationMs covers model generation only (tool rounds excluded)
             # so the chip's tokens/sec reflects raw model throughput.
-            emit(
-                {
-                    'type': 'done',
-                    'sessionId': sessionId,
-                    'usage': {
-                        'inputTokens': totalInputTokens,
-                        'outputTokens': totalOutputTokens,
-                        'contextTokens': finalContextTokens,
-                        'durationMs': int(totalGenerationMs),
-                    },
-                }
-            )
+            doneEvent: dict[str, object] = {
+                'type': 'done',
+                'sessionId': sessionId,
+                'usage': {
+                    'inputTokens': totalInputTokens,
+                    'outputTokens': totalOutputTokens,
+                    'contextTokens': finalContextTokens,
+                    'durationMs': int(totalGenerationMs),
+                },
+            }
+            # Per-turn context snapshot (A5): what the harness injected into
+            # this turn's prompt — the chat context panel's data feed.
+            snapshot = getattr(session, '_last_context_snapshot', None)
+            if isinstance(snapshot, dict):
+                doneEvent['context'] = snapshot
+                try:
+                    from app.services.brain_write_facade import save_kv
+
+                    save_kv(f'session_context:{sessionId}', snapshot)
+                except Exception:
+                    logger.debug('context snapshot persist failed', exc_info=True)
+            emit(doneEvent)
     review_model = _backgroundTaskModel('reviewModel', resolvedModel)
     auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
     try:

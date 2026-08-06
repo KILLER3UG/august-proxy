@@ -1,6 +1,6 @@
 /* Journey tab — episodic timeline of per-turn and system events. */
 import { useQuery } from '@tanstack/react-query';
-import { History } from 'lucide-react';
+import { History, Sparkles, Zap, Moon, Compass, ListChecks } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { PageLoader } from '@/components/PageLoader';
 import { api } from '@/api/client';
@@ -12,6 +12,52 @@ interface TimelineEntry {
   eventSummary?: string;
   category?: string;
 }
+
+/* Milestones: first occurrence of each learning category + approval events. */
+const MILESTONE_DEFS: Array<{
+  key: string;
+  label: string;
+  icon: typeof Sparkles;
+  tone: string;
+  matches: (it: TimelineEntry) => boolean;
+}> = [
+  {
+    key: 'heuristic',
+    label: 'First learned rule',
+    icon: Sparkles,
+    tone: 'text-primary',
+    matches: (it) => it.category === 'heuristic',
+  },
+  {
+    key: 'memory',
+    label: 'First memory stored',
+    icon: ListChecks,
+    tone: 'text-sky-400',
+    matches: (it) => it.category === 'memory',
+  },
+  {
+    key: 'review',
+    label: 'First reflection',
+    icon: Compass,
+    tone: 'text-violet-400',
+    matches: (it) => it.category === 'review',
+  },
+  {
+    key: 'skill',
+    label: 'First skill created',
+    icon: Zap,
+    tone: 'text-warning',
+    matches: (it) =>
+      it.category === 'skill_genesis' || /approve|created skill/i.test(it.eventSummary ?? ''),
+  },
+  {
+    key: 'consolidation',
+    label: 'First sleep cycle',
+    icon: Moon,
+    tone: 'text-emerald-400',
+    matches: (it) => it.category === 'consolidation',
+  },
+];
 
 function toDate(ts?: string): Date | null {
   if (!ts) return null;
@@ -66,6 +112,15 @@ export function JourneyTab() {
     groups.set(day, [...(groups.get(day) ?? []), it]);
   }
 
+  const milestones = MILESTONE_DEFS.map((def) => {
+    const hits = items.filter(def.matches);
+    return {
+      ...def,
+      first: hits.length > 0 ? hits[hits.length - 1] : null,
+      count: hits.length,
+    };
+  }).filter((m) => m.first !== null);
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="flex items-center gap-1.5 text-xs md:col-span-2">
@@ -77,6 +132,36 @@ export function JourneyTab() {
           {isFetching ? 'Refreshing…' : `${items.length} events`}
         </span>
       </div>
+
+      {/* Milestones */}
+      {milestones.length > 0 ? (
+        <Card className="p-4 space-y-2 md:col-span-2">
+          <div className="flex items-center gap-2">
+            <History className="size-4 text-primary" />
+            <h3 className="font-medium text-sm">Milestones</h3>
+          </div>
+          <ul className="flex flex-wrap gap-2">
+            {milestones.map((m) => {
+              const Icon = m.icon;
+              return (
+                <li
+                  key={m.key}
+                  className="text-[11px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted/50"
+                  data-testid={`milestone-${m.key}`}
+                >
+                  <Icon className={`size-3.5 ${m.tone}`} />
+                  <span className="font-medium">{m.label}</span>
+                  <span className="text-muted-foreground">{formatDay(m.first?.timestamp)}</span>
+                  {m.count > 1 ? (
+                    <span className="text-muted-foreground/70">×{m.count}</span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      ) : null}
+
       {[...groups.entries()].map(([day, dayItems]) => (
         <Card key={day} className="p-4 space-y-2">
           <div className="flex items-center gap-2">

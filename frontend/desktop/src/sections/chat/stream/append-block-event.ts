@@ -129,6 +129,20 @@ export function appendBlockEvent(
       type: 'verifierBlocked',
       content: event.content || 'Verification required: the final answer was withheld.',
     });
+  } else if (event.type === 'error') {
+    // Real failure banner — replace any prior error block for this turn
+    // rather than stacking duplicates (retries can error more than once).
+    const prevErrIdx = blocks.findIndex((b) => b.type === 'error');
+    const errBlock: MessageBlock = {
+      id: `b_error_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'error',
+      content: event.content || 'Generation failed',
+    };
+    if (prevErrIdx !== -1) {
+      blocks[prevErrIdx] = errBlock;
+    } else {
+      blocks.push(errBlock);
+    }
   } else if (event.type === 'toolResult') {
     const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
     if (targetIdx !== -1) {
