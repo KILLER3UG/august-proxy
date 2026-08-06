@@ -14,6 +14,7 @@ import {
   Sparkles,
   Clock,
   Network,
+  Search,
   Undo2,
   GitBranch,
   Shrink,
@@ -36,6 +37,7 @@ import { SECTION_NAV_ITEMS, SETTINGS_TABS } from '@/routes';
 import { Backdrop } from "./Backdrop";
 import { useQueryClient } from "@tanstack/react-query";
 import { dispatchUiAction } from "@/api/ui-events";
+import { openConversationSearch } from "@/store/conversation-search";
 
 export function CommandPalette() {
   const open = useCommandPaletteStore((s) => s.open);
@@ -87,6 +89,13 @@ export function CommandPalette() {
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
               <Plus className="size-3.5" /> New chat
+            </Command.Item>
+            <Command.Item
+              value="action search conversations"
+              onSelect={run(() => openConversationSearch())}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Search className="size-3.5" /> Search conversations…
             </Command.Item>
             <Command.Item
               value="action undo last turn"

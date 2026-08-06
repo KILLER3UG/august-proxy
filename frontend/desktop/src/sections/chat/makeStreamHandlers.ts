@@ -41,7 +41,9 @@ import { buildCompactionNoticeMessage } from '@/sections/chat/message/Compaction
 import { setSessionContextUsed } from './context-used-store';
 import { setMemorySuggestions } from './memory-suggestions-store';
 import { pushNotification } from '@/store/notifications';
+import { toast } from 'sonner';
 import { useArenaStore } from './arena/arena-store';
+import { isDebateSession, debateTurnDone } from './debate/debate-store';
 import {
   applySubagentEvent,
   makeSubagentEventHandlers,
@@ -649,6 +651,12 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: info, system: true });
       scheduleUpdate();
     },
+    onRecurringTask: ({ message }) => {
+      // Recurring-task daemon (B7): due reminder → bell + toast.
+      pushNotification('Reminder', message, 'info');
+      toast.message('⏰ Reminder', { description: message });
+      scheduleUpdate();
+    },
     onDone: (data) => {
       turnUsage = data?.usage;
       // Persist the per-turn context snapshot ("what August used") for the
@@ -671,6 +679,10 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
           }
         } catch {
           /* notification is best-effort */
+        }
+        // Debate mode (A5): advance the round when our initiated turn ends.
+        if (isDebateSession(sessionId)) {
+          debateTurnDone(sessionId);
         }
       }
       // Finalize FIRST — synchronously capture the complete assistantContent

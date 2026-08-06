@@ -296,6 +296,7 @@ from app.routers import preview as previewRoutes  # noqa: E402
 from app.routers import providers as providersRoutes  # noqa: E402
 from app.routers import proxy as proxyRoutes  # noqa: E402
 from app.routers import realtime as realtimeRoutes  # noqa: E402
+from app.routers import recurring_tasks as recurringTasksRoutes  # noqa: E402
 from app.routers import security as securityRoutes  # noqa: E402
 from app.routers import service_connections as serviceConnectionsRoutes  # noqa: E402
 from app.routers import sessions as sessionsRoutes  # noqa: E402
@@ -344,6 +345,7 @@ app.include_router(examRoutes.router)
 app.include_router(liveRoutes.router)
 app.include_router(calendarRoutes.router)
 app.include_router(subagentRoutes.router)
+app.include_router(recurringTasksRoutes.router)
 app.include_router(serviceConnectionsRoutes.router)
 app.include_router(automationsRoutes.router)
 app.include_router(previewRoutes.router)

@@ -49,6 +49,7 @@ import {
   Palette,
   UserRound,
   ArrowUpCircle,
+  Bell,
 } from 'lucide-react';
 
 /** Visibility tier for the rail. `basic` items are always shown; the
@@ -231,6 +232,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // reached via 'recall' / 'auto-memory' / category names instead.
     keywords: ['recall', 'recalled', 'auto-memory', 'auto memory', 'category'],
     legacyAliases: ['recalled-memories', 'auto-memories'],
+  },
+  {
+    id: 'recurring-tasks',
+    label: 'Reminders',
+    description:
+      'Recurring-task daemon — time- and workspace-based reminders fired into the notification bell.',
+    icon: Bell,
+    category: 'intelligence',
+    tier: 'basic',
+    keywords: ['reminder', 'reminders', 'recurring', 'task', 'every', 'when i open', 'daemon'],
   },
   {
     id: 'added-memory',

@@ -297,6 +297,8 @@ export interface WorkbenchEventHandlers {
     message?: string;
     extras?: Record<string, unknown>;
   }) => void;
+  /** Recurring-task daemon (B7): a due reminder fired at turn start. */
+  onRecurringTask?: (data: { message: string }) => void;
   /** A user message was queued for mid-response delivery. The chat
    *  thread updates its local queue pill and (when the queue holds
    *  nothing yet) adds the entry optimistically. */

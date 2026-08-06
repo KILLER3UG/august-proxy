@@ -1408,6 +1408,17 @@ async def _sendWorkbenchMessageStreamImpl(
             session.provider = pname
     if emit:
         emit({'type': 'started', 'sessionId': sessionId, 'model': resolvedModel})
+    # Recurring-task daemon (B7): fire due reminders at turn start — surfaced
+    # to the UI as recurringTask SSE events → notification bell.
+    try:
+        from app.services.recurring_tasks import check_and_fire
+
+        workspace = as_str(getattr(session, 'workspacePath', '') or '')
+        for msg in check_and_fire(sessionId, workspace):
+            if emit:
+                emit({'type': 'recurringTask', 'message': msg[:2000]})
+    except Exception:
+        logger.debug('recurring tasks check failed', exc_info=True)
     # Opt-in verifier enforcement: while session.verifierEnforced is set,
     # finalOutput text is withheld until update_state(phase='complete') passes
     # the verifier gate. Casual chat (flag off) is unaffected.

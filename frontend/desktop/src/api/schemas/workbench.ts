@@ -298,6 +298,12 @@ export const WorkbenchVerifierBlockedEventSchema = WorkbenchBaseSchema.extend({
   message: z.string().optional(),
 });
 
+/** Recurring-task daemon (B7): a due reminder fired at turn start. */
+export const WorkbenchRecurringTaskEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('recurringTask'),
+  message: z.string().optional(),
+});
+
 export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchStartedEventSchema,
   WorkbenchThinkingEventSchema,
@@ -324,6 +330,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchUserMessageInjectedEventSchema,
   WorkbenchRecalledMemoriesEventSchema,
   WorkbenchVerifierBlockedEventSchema,
+  WorkbenchRecurringTaskEventSchema,
   WorkbenchUserMessageQueueEventSchema,
   WorkbenchMiscLifecycleEventSchema,
 ]);

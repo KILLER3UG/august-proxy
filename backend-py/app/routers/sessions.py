@@ -26,6 +26,62 @@ class MessageCreate(CamelModel):
     content: str
 
 
+@router.get('/search')
+async def search_sessions(q: str, limit: int = 20):
+    """Full-text search across conversation messages (C8).
+
+    Uses the ``messages_fts`` FTS5 index (kept in sync by triggers).
+    Returns per-session hits with the matching snippet, newest first.
+    """
+    from app.json_narrowing import as_str
+
+    query = (q or '').strip()
+    if not query:
+        return {'results': []}
+    if limit < 1 or limit > 100:
+        limit = 20
+    try:
+        conn = memory_store._conn()
+        # FTS5 MATCH with a quoted-phrase + prefix fallback for multi-word
+        # queries ("build" matches "building"; phrase quotes keep exactness).
+        match_expr = f'"{query.replace(chr(34), "")}"*'
+        rows = conn.execute(
+            """
+            SELECT m.session_id, m.role, m.content, s.title,
+                   snippet(messages_fts, 0, '[', ']', '…', 24) AS snip,
+                   m.id AS message_id
+            FROM messages_fts f
+            JOIN messages m ON m.id = f.rowid
+            LEFT JOIN sessions s ON s.id = m.session_id
+            WHERE messages_fts MATCH ?
+            ORDER BY m.id DESC
+            LIMIT ?
+            """,
+            (match_expr, limit),
+        ).fetchall()
+        results = []
+        seen: set[str] = set()
+        for r in rows:
+            sid = as_str(r['session_id'], '')
+            if not sid or sid in seen:
+                continue
+            seen.add(sid)
+            results.append(
+                {
+                    'sessionId': sid,
+                    'title': as_str(r['title'], '') or 'Untitled conversation',
+                    'role': as_str(r['role'], ''),
+                    'snippet': as_str(r['snip'], '') or as_str(r['content'], '')[:240],
+                    'messageId': r['message_id'],
+                }
+            )
+            if len(results) >= limit:
+                break
+        return {'results': results}
+    except Exception as exc:
+        return {'results': [], 'error': str(exc)}
+
+
 @router.get('')
 async def list_sessions():
     """List all sessions."""

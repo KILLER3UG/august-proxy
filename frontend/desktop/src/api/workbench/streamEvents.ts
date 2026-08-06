@@ -236,6 +236,20 @@ export function dispatchWorkbenchEvent(
           typeof p?.message === 'string'
             ? p.message
             : 'Verification required before the final answer is shown',
+        evidence: p?.evidence as
+          | {
+              currentPhase?: string;
+              verificationCommand?: string;
+              blockers?: string[];
+              completed?: string[];
+              receiptCount?: number;
+            }
+          | undefined,
+      });
+      break;
+    case 'recurringTask':
+      handlers.onRecurringTask?.({
+        message: typeof p?.message === 'string' ? p.message : '',
       });
       break;
     case 'done': {

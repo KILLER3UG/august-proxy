@@ -12,7 +12,9 @@ import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { WorkspaceBranchChip } from '@/components/workspace/WorkspaceBranchChip';
 import { QueuePills } from './QueuePills';
 import { ArenaLaunchModal } from './composer/ArenaLaunchModal';
-import { Swords } from 'lucide-react';
+import { DebateLaunchModal } from './debate/DebateLaunchModal';
+import type { DebateRun } from './debate/debate-store';
+import { Swords, Gavel, WifiOff } from 'lucide-react';
 import type { QueuedUserMessage } from './queue-store';
 import { type ContextBreakdown } from './ChatComposer';
 import { Markdown } from './ChatMarkdown';
@@ -81,6 +83,17 @@ export interface ChatThreadComposerProps {
   onEditModels: () => void;
   /** Arena ("ask in parallel"): run the prompt on 2–3 models in forks. */
   onArenaLaunch?: (targets: ModelItem[], prompt: string) => void;
+  /** Structured debate (A5): two models argue in this chat, optional judge. */
+  onDebateLaunch?: (
+    a: DebateRun['models'][number],
+    b: DebateRun['models'][number],
+    judge: DebateRun['models'][number] | null,
+    rounds: number,
+    prompt: string,
+  ) => void;
+  /** Offline compose (C9): queued messages waiting for the backend. */
+  offlineCount?: number;
+  onFlushOffline?: () => void;
   effort: EffortLevel;
   setEffort: Dispatch<SetStateAction<EffortLevel>>;
   thinkingEnabled: boolean;
@@ -133,6 +146,9 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     onRefreshModels,
     onEditModels,
     onArenaLaunch,
+    onDebateLaunch,
+    offlineCount = 0,
+    onFlushOffline,
     effort,
     setEffort,
     thinkingEnabled,
@@ -173,6 +189,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
   // Arena ("ask in parallel") modal state.
   const [arenaOpen, setArenaOpen] = useState(false);
+  // Debate (A5) modal state.
+  const [debateOpen, setDebateOpen] = useState(false);
 
   // Value-driven auto-grow so clearing input after send collapses height
   // (onChange alone never fires for controlled setInput('')).
@@ -227,6 +245,28 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           popovers.setShowCommandsDropdown(false);
         }}
       />
+
+      {/* Offline compose banner (C9) */}
+      {offlineCount > 0 ? (
+        <div
+          className="mb-1.5 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning"
+          data-testid="offline-banner"
+        >
+          <WifiOff className="size-3 shrink-0" />
+          <span className="flex-1 min-w-0">
+            Offline — {offlineCount} message{offlineCount === 1 ? '' : 's'} queued; sending when
+            the backend returns.
+          </span>
+          <button
+            type="button"
+            onClick={onFlushOffline}
+            className="rounded bg-warning/20 px-2 py-0.5 hover:bg-warning/30"
+            data-testid="offline-flush-now"
+          >
+            Send now
+          </button>
+        </div>
+      ) : null}
 
       {queuedMessages.length > 0 && sessionId && (
         <QueuePills
@@ -383,7 +423,30 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           <Swords className="size-3.5" />
           Parallel
         </button>
+        <button
+          type="button"
+          onClick={() => setDebateOpen(true)}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground hover:text-primary hover:bg-muted/60 transition shrink-0"
+          title="Structured debate — two models argue this prompt, optional judge"
+          aria-label="Start a debate"
+          data-testid="debate-open"
+        >
+          <Gavel className="size-3.5" />
+          Debate
+        </button>
       </div>
+
+      {debateOpen ? (
+        <DebateLaunchModal
+          models={visibleModels}
+          initialPrompt={input}
+          onClose={() => setDebateOpen(false)}
+          onLaunch={(a, b, judge, rounds, prompt) => {
+            setDebateOpen(false);
+            onDebateLaunch?.(a, b, judge, rounds, prompt);
+          }}
+        />
+      ) : null}
 
       {arenaOpen ? (
         <ArenaLaunchModal

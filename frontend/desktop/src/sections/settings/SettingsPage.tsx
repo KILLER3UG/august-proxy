@@ -45,6 +45,7 @@ import { AccountSection } from './AccountSection';
 import { UpdateSection } from './UpdateSection';
 import { RecalledMemorySection } from './RecalledMemorySection';
 import { AddedMemorySection } from './AddedMemorySection';
+import { RecurringTasksSection } from './RecurringTasksSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -130,6 +131,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'memory-knowledge': MemoryWrapper,
   'recalled-memory': RecalledMemoryWrapper,
   'added-memory': AddedMemoryWrapper,
+  'recurring-tasks': RecurringTasksWrapper,
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
   account: AccountWrapper,
@@ -169,6 +171,7 @@ function UsageWrapper() { return <WorkspaceUsageSection />; }
 function MemoryWrapper() { return <WorkspaceMemorySection />; }
 function RecalledMemoryWrapper() { return <RecalledMemorySection />; }
 function AddedMemoryWrapper() { return <AddedMemorySection />; }
+function RecurringTasksWrapper() { return <RecurringTasksSection />; }
 function InspectorWrapper() { return <WorkspaceInspectorSection />; }
 function ModelsWrapper() { return <WorkspaceModelsSection />; }
 function AccountWrapper() { return <AccountSection />; }

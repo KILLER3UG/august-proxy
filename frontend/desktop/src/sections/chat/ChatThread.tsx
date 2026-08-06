@@ -77,6 +77,12 @@ import { resolveWorkbenchSessionId } from './stream/session-id-map';
 import { getOrInitSessionStreamState } from './stream/session-stream-store';
 import { setArenaRun, type ArenaRunLane } from './arena/arena-store';
 import { ArenaView } from './arena/ArenaView';
+import { setDebateRun, type DebateRun as DebateRunType } from './debate/debate-store';
+import { DebateView } from './debate/DebateView';
+import {
+  useOfflineQueueStore,
+  dequeueOfflineMessages,
+} from './offline-queue-store';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import {
   WORKBENCH_GUARD_MODES,
@@ -1154,6 +1160,72 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     ],
   );
 
+  /** Structured debate (A5): two models alternate rounds in THIS chat; an
+   *  optional judge summarizes. The overlay orchestrates turns; each round
+   *  is a real turn with a per-turn model override. */
+  const launchDebate = useCallback(
+    (
+      a: DebateRunType['models'][number],
+      b: DebateRunType['models'][number],
+      judge: DebateRunType['models'][number] | null,
+      rounds: number,
+      prompt: string,
+    ) => {
+      if (!sessionId) return;
+      setDebateRun({
+        runId: `debate_${Date.now()}`,
+        sessionId,
+        prompt,
+        models: [a, b],
+        judge: judge ?? undefined,
+        maxRounds: rounds,
+        round: 0,
+        phase: 'config',
+        auto: true,
+        awaitingTurn: false,
+        startedAt: Date.now(),
+      });
+    },
+    [sessionId],
+  );
+
+  // Offline compose (C9): flush queued messages for this session when the
+  // backend is reachable again (also triggered by the banner's "Send now").
+  const offlineItems = useOfflineQueueStore((s) => s.items);
+  const offlineCount = sessionId
+    ? offlineItems.filter((i) => i.sessionId === sessionId).length
+    : 0;
+  const [flushingOffline, setFlushingOffline] = useState(false);
+  const flushOffline = useCallback(async () => {
+    if (!sessionId || flushingOffline) return;
+    const mine = useOfflineQueueStore
+      .getState()
+      .items.filter((i) => i.sessionId === sessionId);
+    if (mine.length === 0) return;
+    setFlushingOffline(true);
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2000);
+      const res = await fetch('/api/health', { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error('backend unhealthy');
+    } catch {
+      setFlushingOffline(false);
+      return;
+    }
+    const removed = dequeueOfflineMessages(mine.map((i) => i.id));
+    for (const item of removed) {
+      await send(item.text);
+    }
+    setFlushingOffline(false);
+  }, [sessionId, flushingOffline, send]);
+
+  useEffect(() => {
+    if (offlineCount === 0 || flushingOffline) return;
+    const timer = setTimeout(() => void flushOffline(), 2000);
+    return () => clearTimeout(timer);
+  }, [offlineCount, flushingOffline, flushOffline]);
+
   const composer = (
     <>
       <MemorySuggestionBar sessionId={sessionId} />
@@ -1197,6 +1269,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }}
       onEditModels={() => setShowModelVisibility(true)}
       onArenaLaunch={launchArena}
+      onDebateLaunch={launchDebate}
+      offlineCount={offlineCount}
+      onFlushOffline={() => void flushOffline()}
       effort={effort}
       setEffort={setEffort}
       thinkingEnabled={thinkingEnabled}
@@ -1251,6 +1326,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       <ChatCheckpoints messages={messages} scrollRef={scrollRef} />
       {/* Split-pane arena overlay — null when no run is active. */}
       <ArenaView />
+      {/* Debate overlay — null when no debate is active. */}
+      <DebateView ensureWorkbenchSession={ensureWorkbenchSession} />
       <div className="august-chat-surface flex-1 flex flex-col min-w-0 bg-chat-area h-full overflow-hidden relative">
         <SkillEvolvedChip />
         <CollaborationInsights />
