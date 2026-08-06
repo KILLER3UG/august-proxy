@@ -75,7 +75,8 @@ import {
 } from '@/api/workbench';
 import { resolveWorkbenchSessionId } from './stream/session-id-map';
 import { getOrInitSessionStreamState } from './stream/session-stream-store';
-import { useNavigate } from 'react-router-dom';
+import { setArenaRun, type ArenaRunLane } from './arena/arena-store';
+import { ArenaView } from './arena/ArenaView';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import {
   WORKBENCH_GUARD_MODES,
@@ -141,7 +142,6 @@ function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
 }
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
-  const navigate = useNavigate();
   const sessions = useSessionsStore((s) => s.sessions);
   const activeSession = useMemo(
     () => resolveActiveSession(sessions, sessionId),
@@ -1050,15 +1050,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   );
 
   /** Arena ("ask in parallel"): fork the session per target model and send
-   *  the same prompt to each with a per-turn model override. Every lane is a
-   *  real session in the sidebar — open the first, hop between lanes to
-   *  compare, and continue the best one. */
+   *  the same prompt to each with a per-turn model override. The split-pane
+   *  overlay (ArenaView) streams all lanes side by side; picking a winner
+   *  navigates to that lane's session — which holds the full conversation
+   *  plus the winning answer, so the chat continues there. */
   const launchArena = useCallback(
     async (targets: ModelItem[], prompt: string) => {
       if (!sessionId || targets.length < 2) return;
       const wbId = resolveWorkbenchSessionId(sessionId);
       const prefix = getOrInitSessionStreamState(sessionId).messages ?? [];
-      const launchedIds: string[] = [];
+      const lanes: ArenaRunLane[] = [];
       try {
         for (let i = 0; i < targets.length; i++) {
           const m = targets[i];
@@ -1081,7 +1082,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           };
           const seeded = [...prefix, userMsg];
           persistMessages(ui.id, seeded);
-          launchedIds.push(ui.id);
+          lanes.push({
+            uiSessionId: ui.id,
+            modelId: m.id,
+            modelName: m.name || m.id,
+            provider: m.provider,
+          });
           void startChatStream(ui.id, {
             message: prompt,
             chatHistory: seeded,
@@ -1098,10 +1104,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             }
           });
         }
+        setArenaRun({
+          runId: `arena_${Date.now()}`,
+          sourceSessionId: sessionId,
+          prompt,
+          lanes,
+          startedAt: Date.now(),
+        });
         toast.success(
-          `Arena launched — ${launchedIds.length} models answering in parallel`,
+          `Arena launched — ${lanes.length} models answering in parallel`,
         );
-        navigate(`/c/${launchedIds[0]}`);
       } catch (err) {
         toast.error(`Arena launch failed: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -1113,7 +1125,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       thinkingEnabled,
       activeSession?.folderId,
       activeSession?.workspacePath,
-      navigate,
     ],
   );
 
@@ -1212,6 +1223,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   return (
     <div className="august-chat-thread flex h-full min-h-0 relative w-full">
       <ChatCheckpoints messages={messages} scrollRef={scrollRef} />
+      {/* Split-pane arena overlay — null when no run is active. */}
+      <ArenaView />
       <div className="august-chat-surface flex-1 flex flex-col min-w-0 bg-chat-area h-full overflow-hidden relative">
         <SkillEvolvedChip />
         <CollaborationInsights />
