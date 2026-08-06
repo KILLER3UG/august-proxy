@@ -21,6 +21,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 import time
 import uuid
 from typing import Any, Callable, Coroutine, cast
@@ -1322,6 +1323,11 @@ def _verifier_gated_emit(session: object, emit):
             if phase != 'complete':
                 if not _fired['flag']:
                     _fired['flag'] = True
+                    stateDict = as_dict(state, {}) if state else {}
+                    # Evidence for the UI banner: what the model claimed, what
+                    # it said blocks completion, and whether any verification
+                    # command ran this turn (receipts).
+                    receipts = as_list(getattr(session, '_verification_receipts', None), [])
                     emit(
                         {
                             'type': 'verifierBlocked',
@@ -1330,6 +1336,15 @@ def _verifier_gated_emit(session: object, emit):
                                 "the model calls update_state(phase='complete') after a "
                                 'passing verification run.'
                             ),
+                            'evidence': {
+                                'currentPhase': as_str(stateDict.get('phase'), 'research'),
+                                'verificationCommand': as_str(
+                                    stateDict.get('verification_command'), ''
+                                ),
+                                'blockers': as_list(stateDict.get('blockers'), [])[:5],
+                                'completed': as_list(stateDict.get('completed'), [])[:5],
+                                'receiptCount': len(receipts),
+                            },
                         }
                     )
                 return
@@ -2387,6 +2402,16 @@ async def _sendWorkbenchMessageStreamImpl(
                     save_kv(f'session_context:{sessionId}', snapshot)
                 except Exception:
                     logger.debug('context snapshot persist failed', exc_info=True)
+            # Proactive memory suggestions (F3): cheap deterministic preference
+            # candidates from the last user message — the chat renders
+            # one-click "Save as memory" chips. Only emitted when the user has
+            # not already stated the same fact (profile near-dup guard).
+            try:
+                suggestions = _extract_memory_suggestions(session)
+                if suggestions:
+                    doneEvent['memorySuggestions'] = suggestions
+            except Exception:
+                logger.debug('memory suggestions extract failed', exc_info=True)
             emit(doneEvent)
     review_model = _backgroundTaskModel('reviewModel', resolvedModel)
     auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
@@ -2471,7 +2496,7 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
     from app.services.memory.cross_session_context import sync_from_turn
 
     try:
-        extractAndSaveTodos(messages)
+        extractAndSaveTodos(messages, session_id=str(getattr(session, 'id', '') or ''))
     except Exception:
         pass
     try:
@@ -2497,6 +2522,64 @@ def _lastUserMessageText(session: WorkbenchSession) -> str:
                 texts = [b.get('text', '') for b in content if isinstance(b, dict) and b.get('type') == 'text']
                 return ' '.join(texts)
     return ''
+
+
+# Deterministic preference patterns for one-click memory suggestions (F3).
+# Conservative by design: full sentences with an explicit preference verb, so
+# casual chat rarely triggers and genuine statements ("I prefer X over Y")
+# become saveable facts without an extra LLM call per turn.
+_MEMORY_SUGGESTION_PATTERNS = [
+    re.compile(r'\b(?:I|we)\s+(?:prefer|use|like|love|hate|dislike|need|want|avoid)\s+(.{8,120})', re.IGNORECASE),
+    re.compile(r'\b(?:My|our)\s+(?:name|role|stack|team|company|project|tool)\s+(?:is|are)\s+(.{3,120})', re.IGNORECASE),
+    re.compile(r'\b(?:I|we)\s+work(?:ing)?\s+on\s+(.{8,120})', re.IGNORECASE),
+]
+
+
+def _extract_memory_suggestions(session: WorkbenchSession) -> list[str]:
+    """Candidate "save as memory" facts from the last user message.
+
+    Near-dup guard against facts already in the user profile, and a
+    per-session seen-set so the same statement is not re-suggested on every
+    turn. Returns up to 3 clean candidates; empty when nothing qualifies.
+    """
+    import re as _re
+
+    text = _lastUserMessageText(session)
+    if not text.strip():
+        return []
+    seen = getattr(session, '_memory_suggestions_seen', None)
+    if seen is None:
+        seen = set()
+        setattr(session, '_memory_suggestions_seen', seen)
+    # Existing profile facts (near-dup guard)
+    known: list[str] = []
+    try:
+        from app.services.memory_store import get_memory
+
+        profile = get_memory('userProfile')
+        if isinstance(profile, dict):
+            for f in as_list(profile.get('facts'), []):
+                d = as_dict(f)
+                if d:
+                    known.append(as_str(d.get('fact'), '').lower())
+    except Exception:
+        pass
+    candidates: list[str] = []
+    for pattern in _MEMORY_SUGGESTION_PATTERNS:
+        for m in pattern.finditer(text):
+            cand = _re.sub(r'\s+', ' ', m.group(1)).strip(' .,;:!?')
+            if not (8 <= len(cand) <= 120):
+                continue
+            low = cand.lower()
+            if any(low in k or k in low for k in known):
+                continue
+            if low in seen:
+                continue
+            seen.add(low)
+            candidates.append(cand)
+            if len(candidates) >= 3:
+                return candidates
+    return candidates
 
 
 async def _executeTool(toolName: str, args: dict[str, object], session: WorkbenchSession) -> str:

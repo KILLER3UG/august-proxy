@@ -73,7 +73,9 @@ def _matchesCron(expr: str, dt: datetime | None = None) -> bool:
         and dt.hour in hours
         and (dt.day in days)
         and (dt.month in months)
-        and (dt.weekday() in weekdays)
+        # Cron day-of-week is 0=Sunday…6=Saturday; dt.weekday() is
+        # 0=Monday…6=Sunday — shift before comparing.
+        and ((dt.weekday() + 1) % 7) in weekdays
     )
 
 
@@ -211,6 +213,11 @@ async def startScheduler(intervalS: int = 60) -> None:
             if not job.get('enabled'):
                 continue
             if _matchesCron(as_str(job.get('schedule'), '* * * * *'), now):
+                # Skip jobs still running from a previous tick — a slow job
+                # (longer than the tick interval) must not fire concurrently.
+                prev = _tasks.get(jobId)
+                if prev is not None and not prev.done():
+                    continue
                 task = asyncio.create_task(runJobNow(jobId))
                 _tasks[jobId] = task
                 task.add_done_callback(_make_done_callback(jobId))

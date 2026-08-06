@@ -716,7 +716,9 @@ export function AssistantBlockTimeline({
 
       if (block.type === 'verifierBlocked') {
         // Opt-in verifier enforcement: final answer withheld until the model
-        // passes update_state(phase='complete'). Amber notice, not final text.
+        // passes update_state(phase='complete'). Amber notice + gate evidence
+        // (phase, blockers, verification command) so the user sees WHY.
+        const ev = block.verifierEvidence;
         tagged.push({
           kind: 'block',
           node: (
@@ -729,9 +731,42 @@ export function AssistantBlockTimeline({
               <span className="shrink-0" aria-hidden="true">
                 ⚠
               </span>
-              <span className="min-w-0 break-words">
+              <div className="min-w-0 break-words">
                 {block.content || 'Verification required: the final answer was withheld.'}
-              </span>
+                {ev ? (
+                  <ul className="mt-1.5 space-y-0.5 text-[10px] text-amber-200/80">
+                    {ev.currentPhase ? (
+                      <li>
+                        <span className="font-medium">Current phase:</span> {ev.currentPhase}
+                      </li>
+                    ) : null}
+                    {ev.receiptCount === 0 ? (
+                      <li>
+                        <span className="font-medium">No verification command ran</span> this turn —
+                        run the test/lint/build command, confirm it passes, then call{' '}
+                        <code className="font-mono">update_state(phase=&quot;complete&quot;)</code>.
+                      </li>
+                    ) : (
+                      <li>
+                        <span className="font-medium">{ev.receiptCount} command receipt(s)</span>{' '}
+                        recorded this turn.
+                      </li>
+                    )}
+                    {ev.verificationCommand ? (
+                      <li>
+                        <span className="font-medium">Verification command:</span>{' '}
+                        <code className="font-mono">{ev.verificationCommand}</code>
+                      </li>
+                    ) : null}
+                    {ev.blockers && ev.blockers.length > 0 ? (
+                      <li>
+                        <span className="font-medium">Model-stated blockers:</span>{' '}
+                        {ev.blockers.join(' · ')}
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : null}
+              </div>
             </div>
           ),
         });

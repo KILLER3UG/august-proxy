@@ -72,10 +72,18 @@ def _getAdapter(request: Request, name: str) -> BasePlatformAdapter | None:
 
 @router.post('/telegram/webhook')
 async def telegramWebhook(request: Request) -> dict[str, object]:
-    """Receive a Telegram update via webhook and dispatch to the adapter."""
+    """Receive a Telegram update via webhook and dispatch to the adapter.
+
+    Rejects updates without the registered secret token (401) — the webhook
+    URL must be public, so unauthenticated updates would let anyone inject
+    messages, including /approve and /deny plan commands.
+    """
     adapter = _getAdapter(request, 'telegram')
     if not adapter:
         raise HTTPException(status_code=503, detail='Telegram adapter not running')
+    verify = getattr(adapter, 'verifyWebhook', None)
+    if verify is not None and not verify(request.headers):
+        raise HTTPException(status_code=401, detail='Invalid webhook secret token')
     body = await request.json()
     await adapter.handleIncoming(body)
     return {'ok': True}

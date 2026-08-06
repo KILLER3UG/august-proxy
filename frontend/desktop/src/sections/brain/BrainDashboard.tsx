@@ -9,8 +9,24 @@ import { JourneyTab } from './JourneyTab';
 import { YouTab } from './YouTab';
 import { RunsTab } from './RunsTab';
 
+type BrainTab = 'you' | 'runs' | 'learning' | 'journey' | 'ops' | 'activity' | 'health';
+const BRAIN_TABS: readonly BrainTab[] = [
+  'you',
+  'runs',
+  'learning',
+  'journey',
+  'ops',
+  'activity',
+  'health',
+];
+
 export function BrainDashboard() {
-  const [tab, setTab] = useState<'you' | 'runs' | 'learning' | 'journey' | 'ops' | 'activity' | 'health'>('you');
+  // `?tab=you` deep-links (e.g. the composer's context badge "View full
+  // profile" opens the You tab directly).
+  const [tab, setTab] = useState<BrainTab>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return BRAIN_TABS.includes(t as BrainTab) ? (t as BrainTab) : 'you';
+  });
 
   const tabClass = (id: typeof tab) =>
     `px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${

@@ -24,7 +24,12 @@ export function TeamAgentsStrip({
     queryKey: ['session-agents', workbenchSessionId],
     queryFn: () => listWorkbenchSessionAgents(workbenchSessionId!),
     enabled: !!workbenchSessionId,
-    refetchInterval: 4_000,
+    // Poll fast only while agents are actually running; the strip renders
+    // nothing otherwise, so a 4s eternal poll is pure waste.
+    refetchInterval: (query) => {
+      const agents = (query.state.data as { agents?: unknown[] } | undefined)?.agents;
+      return agents && agents.length > 0 ? 4_000 : 15_000;
+    },
   });
 
   const cancelAll = useMutation({

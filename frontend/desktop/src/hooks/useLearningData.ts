@@ -28,6 +28,7 @@ export interface AutoMemory {
   category?: string;
   source?: string;
   pinned?: number;
+  sourceSessionId?: string;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -131,14 +131,19 @@ class OpenaiStreamAccumulator:
                 for tc in tool_calls:
                     if not isinstance(tc, dict):
                         continue
+                    # Some providers omit `index` (or send null) on tool-call
+                    # deltas; treat that as 0 so parallel calls merge instead
+                    # of duplicating a fresh ToolCallDelta per chunk.
+                    tc_index = tc.get('index')
+                    tc_index = 0 if tc_index is None else tc_index
                     existing = next(
-                        (t for t in self.tool_calls if t.index == tc.get('index')),
+                        (t for t in self.tool_calls if t.index == tc_index),
                         None,
                     )
                     if existing:
                         existing.apply_delta(tc)
                     else:
-                        new_tc = ToolCallDelta(index=tc.get('index', 0))
+                        new_tc = ToolCallDelta(index=tc_index)
                         new_tc.apply_delta(tc)
                         self.tool_calls.append(new_tc)
 
@@ -421,6 +426,14 @@ class OpenaiToAnthropicStreamState:
                     new_tc.apply_delta(tc)
                     self.pending_tool_calls.append(new_tc)
 
+        # Capture upstream usage stats BEFORE the finish-reason block —
+        # OpenAI sends usage in the final chunk together with finish_reason,
+        # so emitting message_delta first would always report 0/0.
+        chunk_usage = chunk.get('usage')
+        if isinstance(chunk_usage, dict):
+            self.data.input_tokens = chunk_usage.get('prompt_tokens', 0)
+            self.data.output_tokens = chunk_usage.get('completion_tokens', 0)
+
         # On finish_reason, flush pending blocks and emit message_delta
         if finish_reason and finish_reason != 'null':
             self._emit_content_block_stops(events)
@@ -440,12 +453,6 @@ class OpenaiToAnthropicStreamState:
                 )
             )
             events.append(write_sse_event('message_stop', {'type': 'message_stop'}))
-
-        # Capture upstream usage stats
-        chunk_usage = chunk.get('usage')
-        if isinstance(chunk_usage, dict):
-            self.data.input_tokens = chunk_usage.get('prompt_tokens', 0)
-            self.data.output_tokens = chunk_usage.get('completion_tokens', 0)
 
         return events
 

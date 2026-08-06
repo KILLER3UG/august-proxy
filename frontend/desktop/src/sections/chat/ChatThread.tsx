@@ -36,6 +36,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
 import {
+  startChatStream,
   stopChatStream,
   syncActiveStreams,
 } from './chat-stream-manager';
@@ -47,6 +48,7 @@ import {
 } from './queue-store';
 import { buildHandoffSummary, markHandoffPending } from './handoff-summary';
 import { SkillEvolvedChip } from '@/components/chat/SkillEvolvedChip';
+import { MemorySuggestionBar } from './MemorySuggestionBar';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useStickToBottomScroll } from './hooks/useStickToBottomScroll';
@@ -72,6 +74,8 @@ import {
   truncateWorkbenchSession,
 } from '@/api/workbench';
 import { resolveWorkbenchSessionId } from './stream/session-id-map';
+import { getOrInitSessionStreamState } from './stream/session-stream-store';
+import { useNavigate } from 'react-router-dom';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import {
   WORKBENCH_GUARD_MODES,
@@ -137,6 +141,7 @@ function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
 }
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
+  const navigate = useNavigate();
   const sessions = useSessionsStore((s) => s.sessions);
   const activeSession = useMemo(
     () => resolveActiveSession(sessions, sessionId),
@@ -228,7 +233,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   // Command / mutation pre-apply — replaces the composer until Accept/Reject.
   const workbenchSessionId = workbenchSession?.id ?? null;
-  const { data: sessionStatus } = useSessionStatus(workbenchSessionId, 2000);
+  const { data: sessionStatus } = useSessionStatus(workbenchSessionId, 5_000);
   // Keep the approval banner up whenever tokens remain — do not require
   // status === awaiting_approval alone (multi-approve used to clear status
   // after the first Accept and hide the rest of the stack).
@@ -432,8 +437,24 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const currentModel = selectedModel || null;
   const modelForRequest = currentModel || modelFromSession(activeSession || null);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const ensureWorkbenchSession = async () => {
+  // Latest-value refs so `ensureWorkbenchSession` can keep a STABLE identity
+  // (useCallback deps = [sessionId]) while still reading fresh state. Before
+  // this, the inline function was recreated every render, and the
+  // syncActiveStreams effect re-ran on every render — one extra GET
+  // /api/workbench/chat/active plus listener teardown/rebind per stream
+  // flush (~32ms), i.e. ~1,800 wasted requests per 60s turn.
+  const workbenchSessionRef = useRef(workbenchSession);
+  workbenchSessionRef.current = workbenchSession;
+  const activeSessionRef = useRef(activeSession);
+  activeSessionRef.current = activeSession;
+  const modelForRequestRef = useRef(modelForRequest);
+  modelForRequestRef.current = modelForRequest;
+  const workbenchModeRef = useRef(workbenchMode);
+  workbenchModeRef.current = workbenchMode;
+
+  const ensureWorkbenchSession = useCallback(async () => {
+    const workbenchSession = workbenchSessionRef.current;
+    const activeSession = activeSessionRef.current;
     if (!sessionId) return null;
     const localTitle = resolveActiveSession(
       useSessionsStore.getState().sessions,
@@ -509,9 +530,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       /* ignore */
     }
     const created = await createWorkbenchSession({
-      provider: modelForRequest?.provider,
-      agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
-      guardMode: workbenchMode,
+      provider: modelForRequestRef.current?.provider,
+      agentId: WORKBENCH_GUARD_MODES[workbenchModeRef.current].agentId,
+      guardMode: workbenchModeRef.current,
       workspacePath: activeSession?.workspacePath || undefined,
       sandboxMode,
       sandboxNetwork,
@@ -525,7 +546,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     });
     syncTitleToBackend(normalizedCreated.id, normalizedCreated.title);
     return normalizedCreated;
-  };
+  }, [sessionId]);
 
   const { send, generateAIResponse } = useChatSend({
     sessionId,
@@ -1028,8 +1049,78 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     ],
   );
 
+  /** Arena ("ask in parallel"): fork the session per target model and send
+   *  the same prompt to each with a per-turn model override. Every lane is a
+   *  real session in the sidebar — open the first, hop between lanes to
+   *  compare, and continue the best one. */
+  const launchArena = useCallback(
+    async (targets: ModelItem[], prompt: string) => {
+      if (!sessionId || targets.length < 2) return;
+      const wbId = resolveWorkbenchSessionId(sessionId);
+      const prefix = getOrInitSessionStreamState(sessionId).messages ?? [];
+      const launchedIds: string[] = [];
+      try {
+        for (let i = 0; i < targets.length; i++) {
+          const m = targets[i];
+          const branch = await branchWorkbenchSession(wbId);
+          const ui = createSession(
+            activeSession?.folderId ?? null,
+            `⚔ ${m.name || m.id}`,
+            activeSession?.workspacePath || null,
+          );
+          updateSessionWorkbenchMetadata(ui.id, {
+            workbenchSessionId: branch.id,
+            workbenchAgentId: branch.agentId,
+            workbenchProvider: branch.provider,
+          });
+          const userMsg: ChatMessage = {
+            id: `m${Date.now()}_a${i}`,
+            role: 'user',
+            content: prompt,
+            timestamp: new Date().toISOString(),
+          };
+          const seeded = [...prefix, userMsg];
+          persistMessages(ui.id, seeded);
+          launchedIds.push(ui.id);
+          void startChatStream(ui.id, {
+            message: prompt,
+            chatHistory: seeded,
+            workbenchMode,
+            effort,
+            thinkingEnabled,
+            model: m.id,
+            modelProvider: m.provider,
+            provider: m.provider,
+            ensureWorkbenchSession: async () => normalizeWorkbenchSession(branch) ?? branch,
+          }).then((r) => {
+            if (r === 'error') {
+              toast.error(`Arena lane on ${m.name || m.id} failed — check the backend`);
+            }
+          });
+        }
+        toast.success(
+          `Arena launched — ${launchedIds.length} models answering in parallel`,
+        );
+        navigate(`/c/${launchedIds[0]}`);
+      } catch (err) {
+        toast.error(`Arena launch failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [
+      sessionId,
+      workbenchMode,
+      effort,
+      thinkingEnabled,
+      activeSession?.folderId,
+      activeSession?.workspacePath,
+      navigate,
+    ],
+  );
+
   const composer = (
-    <ChatThreadComposer
+    <>
+      <MemorySuggestionBar sessionId={sessionId} />
+      <ChatThreadComposer
       sessionId={sessionId}
       loadedSessionId={loadedSessionId}
       input={input}
@@ -1068,6 +1159,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         void handleRefreshModels();
       }}
       onEditModels={() => setShowModelVisibility(true)}
+      onArenaLaunch={launchArena}
       effort={effort}
       setEffort={setEffort}
       thinkingEnabled={thinkingEnabled}
@@ -1076,6 +1168,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       startVoiceInput={startVoiceInput}
       dropdownApiRef={composerDropdownRef}
     />
+    </>
   );
 
   const planBanner = (

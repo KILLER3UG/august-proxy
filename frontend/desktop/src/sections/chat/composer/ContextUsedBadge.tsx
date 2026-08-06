@@ -7,6 +7,7 @@
  * opened after the fact. */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Brain, X } from 'lucide-react';
 import { api } from '@/api/client';
 import {
@@ -44,6 +45,7 @@ export function ContextUsedBadge({ sessionId }: { sessionId: string | null }) {
   );
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const navigate = useNavigate();
 
   const snapshot = sessionId ? bySession[sessionId] : undefined;
 
@@ -161,6 +163,14 @@ export function ContextUsedBadge({ sessionId }: { sessionId: string | null }) {
               ))}
             </div>
           ) : null}
+          <button
+            type="button"
+            onClick={() => navigate('/brain?tab=you')}
+            className="mt-2 w-full text-[11px] text-primary hover:underline"
+            data-testid="context-used-open-profile"
+          >
+            View full profile — edit or delete what August knows →
+          </button>
         </div>
       ) : null}
     </div>

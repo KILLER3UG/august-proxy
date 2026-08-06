@@ -218,12 +218,15 @@ def saveAutoMemory(
     importance: float = 0.5,
     source: str = 'auto',
     pinned: int | bool = 0,
+    session_id: str = '',
 ) -> None:
     """Save an automatically captured memory as an individual FTS-indexed row.
 
     ``pinned`` memories are always-loaded context (like user-added memory)
     rather than on-demand recall. A near-duplicate insert refreshes the
     existing row (recency + importance) instead of creating a twin.
+    ``session_id`` records which conversation produced the memory
+    (provenance for the Brain "You"/Journey surfaces); best-effort.
     """
     conn = _conn()
     now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
@@ -248,8 +251,9 @@ def saveAutoMemory(
         # OR-semantics on pinned: a write never unpins an explicitly pinned memory.
         conn.execute(
             'UPDATE auto_memories SET content = ?, importance = ?, category = ?, '
-            'source = ?, pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ? WHERE id = ?',
-            (contentJson, importance, category, keep_src, pin, now, existing['id']),
+            'source = ?, pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ?, '
+            'source_session_id = COALESCE(?, source_session_id) WHERE id = ?',
+            (contentJson, importance, category, keep_src, pin, now, session_id or None, existing['id']),
         )
     else:
         dup = _find_near_dup(conn, content, exclude_key=key)
@@ -263,9 +267,9 @@ def saveAutoMemory(
             _emit_memory_saved(key, category, importance, src, preview=contentJson[:160])
             return
         conn.execute(
-            'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            (key, contentJson, category, importance, src, pin, now, now),
+            'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at, source_session_id) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (key, contentJson, category, importance, src, pin, now, now, session_id or None),
         )
     # Commit before cap enforcement: _enforce_cap opens its own
     # BEGIN IMMEDIATE transactions (eviction + episode merge) and must not
@@ -751,6 +755,7 @@ def rememberMemory(
     category: str = 'preference',
     importance: float = 0.7,
     pinned: int | bool = 0,
+    session_id: str = '',
 ) -> dict[str, object] | None:
     """Model-driven memory write — store an intentional fact for later recall.
 
@@ -784,6 +789,7 @@ def rememberMemory(
             importance=importance,
             source='auto',
             pinned=pinned,
+            session_id=session_id,
         )
     row = conn.execute(
         f'SELECT {_ROW_COLS} FROM auto_memories WHERE key = ?',
@@ -856,7 +862,9 @@ def consolidate_conv_summaries() -> int:
         raise
 
 
-def extractAndSaveTodos(messages: list[dict[str, object]]) -> list[str]:
+def extractAndSaveTodos(
+    messages: list[dict[str, object]], session_id: str = ''
+) -> list[str]:
     """Extract todo items from assistant messages and save them.
 
     Merges with any previously stored todos (union by text) so items noted
@@ -874,5 +882,7 @@ def extractAndSaveTodos(messages: list[dict[str, object]]) -> list[str]:
         existing = get_memory('todos')
         prior = [str(t) for t in existing] if isinstance(existing, list) else []
         merged = list(dict.fromkeys(prior + todos))
-        saveAutoMemory('todos', merged, category='tasks', importance=0.8, source='auto')
+        saveAutoMemory(
+            'todos', merged, category='tasks', importance=0.8, source='auto', session_id=session_id
+        )
     return todos

@@ -128,6 +128,7 @@ export function appendBlockEvent(
       id: `b_verifier_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       type: 'verifierBlocked',
       content: event.content || 'Verification required: the final answer was withheld.',
+      verifierEvidence: event.verifierEvidence,
     });
   } else if (event.type === 'error') {
     // Real failure banner — replace any prior error block for this turn

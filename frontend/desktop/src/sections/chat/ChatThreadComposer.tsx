@@ -11,6 +11,8 @@ import type { WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { WorkspaceBranchChip } from '@/components/workspace/WorkspaceBranchChip';
 import { QueuePills } from './QueuePills';
+import { ArenaLaunchModal } from './composer/ArenaLaunchModal';
+import { Swords } from 'lucide-react';
 import type { QueuedUserMessage } from './queue-store';
 import { type ContextBreakdown } from './ChatComposer';
 import { Markdown } from './ChatMarkdown';
@@ -77,6 +79,8 @@ export interface ChatThreadComposerProps {
   userSelectedRef: MutableRefObject<string | null>;
   onRefreshModels: () => void;
   onEditModels: () => void;
+  /** Arena ("ask in parallel"): run the prompt on 2–3 models in forks. */
+  onArenaLaunch?: (targets: ModelItem[], prompt: string) => void;
   effort: EffortLevel;
   setEffort: Dispatch<SetStateAction<EffortLevel>>;
   thinkingEnabled: boolean;
@@ -128,6 +132,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     userSelectedRef,
     onRefreshModels,
     onEditModels,
+    onArenaLaunch,
     effort,
     setEffort,
     thinkingEnabled,
@@ -165,6 +170,9 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     });
     return unsub;
   }, []);
+
+  // Arena ("ask in parallel") modal state.
+  const [arenaOpen, setArenaOpen] = useState(false);
 
   // Value-driven auto-grow so clearing input after send collapses height
   // (onChange alone never fires for controlled setInput('')).
@@ -364,7 +372,30 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
             popovers.setShowComposerActionsDropdown(false);
           }}
         />
+        <button
+          type="button"
+          onClick={() => setArenaOpen(true)}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground hover:text-primary hover:bg-muted/60 transition shrink-0"
+          title="Ask in parallel — run this prompt on 2–3 models and pick the best"
+          aria-label="Ask in parallel"
+          data-testid="arena-open"
+        >
+          <Swords className="size-3.5" />
+          Parallel
+        </button>
       </div>
+
+      {arenaOpen ? (
+        <ArenaLaunchModal
+          models={visibleModels}
+          initialPrompt={input}
+          onClose={() => setArenaOpen(false)}
+          onLaunch={(targets, prompt) => {
+            setArenaOpen(false);
+            onArenaLaunch?.(targets, prompt);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

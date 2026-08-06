@@ -39,6 +39,7 @@ import { playReceiveChime } from '@/lib/chat-chime';
 import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
 import { buildCompactionNoticeMessage } from '@/sections/chat/message/CompactionNoticeCard';
 import { setSessionContextUsed } from './context-used-store';
+import { setMemorySuggestions } from './memory-suggestions-store';
 import {
   applySubagentEvent,
   makeSubagentEventHandlers,
@@ -478,10 +479,15 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'recalledMemories', memories: items });
       scheduleUpdate();
     },
-    onVerifierBlocked: ({ message }) => {
+    onVerifierBlocked: ({ message, evidence }) => {
       // Opt-in verifier enforcement: final answer withheld until the model
-      // passes update_state(phase='complete'). Rendered as an amber notice.
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'verifierBlocked', content: message });
+      // passes update_state(phase='complete'). Rendered as an amber notice
+      // with the gate evidence (phase, blockers, verification command).
+      streamBlocks = appendBlockEvent(streamBlocks, {
+        type: 'verifierBlocked',
+        content: message,
+        verifierEvidence: evidence,
+      });
       scheduleUpdate();
     },
     onPlanProposed: ({ plan }) => {
@@ -646,6 +652,11 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // composer's context-used badge (backend A5 payload).
       if (sessionId && data?.context) {
         setSessionContextUsed(sessionId, data.context);
+      }
+      // Proactive memory suggestions ("August noticed…") — one-click save
+      // chips above the composer (backend F3 payload).
+      if (sessionId && Array.isArray(data?.memorySuggestions)) {
+        setMemorySuggestions(sessionId, data.memorySuggestions);
       }
       // Finalize FIRST — synchronously capture the complete assistantContent
       // / streamBlocks snapshot before any async work. The old code awaited

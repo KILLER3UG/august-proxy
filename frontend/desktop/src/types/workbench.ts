@@ -332,6 +332,9 @@ export interface WorkbenchEventHandlers {
       coreFactsUsed?: boolean;
       augDirectiveUsed?: boolean;
     };
+    /** Deterministic preference candidates from the last user message —
+     *  rendered as one-click "save as memory" chips (backend F3). */
+    memorySuggestions?: string[];
   }) => void;
   /** Backend is backing off before retrying a failed model call (429/5xx).
    *  The chat shows a self-updating notice instead of dying mid-turn. */
@@ -354,8 +357,18 @@ export interface WorkbenchEventHandlers {
    *  chip flips without waiting for the REST refetch. */
   onGuardModeChanged?: (data: { guardMode: string; agentId?: string }) => void;
   /** Opt-in verifier enforcement: the model answered before
-   *  update_state(phase='complete') passed — the final answer was withheld. */
-  onVerifierBlocked?: (data: { message: string }) => void;
+   *  update_state(phase='complete') passed — the final answer was withheld.
+   *  `evidence` explains what the verifier saw (phase, blockers, command). */
+  onVerifierBlocked?: (data: {
+    message: string;
+    evidence?: {
+      currentPhase?: string;
+      verificationCommand?: string;
+      blockers?: string[];
+      completed?: string[];
+      receiptCount?: number;
+    };
+  }) => void;
   /** Emitted once per turn when auto-memory recall (`getRelevantMemories`)
    *  prefetched rows into the system prompt. The chat thread renders a
    *  collapsed "Recalled: {category} — {snippet}" card, same style as a

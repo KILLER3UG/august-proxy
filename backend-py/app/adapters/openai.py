@@ -38,6 +38,7 @@ from app.adapters.proxy_tools import (
 )
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
 from app.adapters.tool_classification import classifyOpenaiToolCalls
+from app.adapters.upstream_errors import UpstreamError, normalize_upstream_error
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.models import ChatCompletionRequest, ChatMessage
 from app.models.openai import dump_openai_upstream_body
@@ -271,7 +272,7 @@ async def resolveManagedOpenaiToolCalls(
         )
         resp = await cast('BaseProviderClient', client).requestJson('POST', upstreamUrl, upstreamHeaders, reqBody)
         if resp.is_error:
-            return (currentMessages, None)
+            raise UpstreamError(resp)
         responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.body_json)), {})
         if responseBody.get('usage'):
             finalUsage = cast('dict[str, object]', responseBody['usage'])
@@ -481,12 +482,31 @@ async def handleChatCompletions(
     hasManagedTools = len(managedLocalToolNames) > 0
     if isResponsesEndpoint:
         raw_body['stream'] = False
+        upstream_body = cast('dict[str, object]', camelToSnake(raw_body))
+        # The internal `_endpoint` routing marker must never reach the
+        # upstream validator (strict gateways 400 on unknown keys).
+        upstream_body.pop('_endpoint', None)
+        # Responses API speaks `input`, not `messages` — translate a
+        # chat-shaped body so the same request works on both endpoints.
+        msgs = as_list(upstream_body.get('messages'), [])
+        if msgs:
+            upstream_body['input'] = [
+                {
+                    'role': as_str(m.get('role'), 'user'),
+                    'content': as_str(m.get('content'), ''),
+                }
+                for m in msgs
+                if isinstance(m, dict)
+            ]
+            upstream_body.pop('messages', None)
         resp = await client.requestJson(
             'POST',
             upstreamUrl.replace('/chat/completions', '/responses'),
             headers,
-            cast('dict[str, object]', camelToSnake(raw_body)),
+            upstream_body,
         )
+        if resp.is_error:
+            return (normalize_upstream_error(resp), None)
         return (
             cast(
                 'dict[str, object]',
@@ -506,9 +526,14 @@ async def handleChatCompletions(
         raw_body['stream'] = False
         if hasManagedTools:
             messages = cast('list[dict[str, object]]', as_list(raw_body.get('messages'), []))
-            updatedMessages, usage = await resolveManagedOpenaiToolCalls(
-                messages, model, upstreamUrl, headers, knownTools, managedLocalToolNames, clientToolNames, client=client
-            )
+            try:
+                updatedMessages, usage = await resolveManagedOpenaiToolCalls(
+                    messages, model, upstreamUrl, headers, knownTools, managedLocalToolNames, clientToolNames, client=client
+                )
+            except UpstreamError as exc:
+                # Never answer 200 with the user's own text when the upstream
+                # call failed — surface the real error to the client.
+                return (normalize_upstream_error(exc.resp), None)
             lastMsg = updatedMessages[-1] if updatedMessages else {}
             response_acc = OpenaiStreamAccumulator(
                 id=f'chatcmpl-{uuid.uuid4().hex[:12]}',
@@ -534,6 +559,8 @@ async def handleChatCompletions(
             resp = await client.requestJson(
                 'POST', upstreamUrl, headers, cast('dict[str, object]', camelToSnake(raw_body))
             )
+            if resp.is_error:
+                return (normalize_upstream_error(resp), None)
             return (
                 cast(
                     'dict[str, object]',

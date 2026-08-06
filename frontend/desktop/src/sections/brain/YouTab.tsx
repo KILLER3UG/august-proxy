@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import {
   AlertTriangle,
   Brain,
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronRight,
@@ -82,6 +83,101 @@ function formatDate(ts?: string | number): string {
   const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+interface TimelineDigestEntry {
+  id: number;
+  timestamp?: string;
+  category?: string;
+  eventSummary?: string;
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  heuristic: 'rules learned',
+  memory: 'memories stored',
+  review: 'reflections',
+  consolidation: 'sleep cycles',
+  skill_genesis: 'skills drafted',
+  delta_engine: 'edit signals',
+  session: 'sessions',
+};
+
+/** Weekly digest (F6): aggregate the last 7 days of timeline + friction +
+ *  learning activity into a single "this week" card. Pure frontend — the
+ *  data is already served by /api/brain/timeline + /api/brain/learning. */
+function WeeklyDigestCard({
+  data,
+  stats,
+}: {
+  data: { heuristics: unknown[]; autoMemories: unknown[]; pendingSkills: unknown[] };
+  stats?: FrictionStats;
+}) {
+  const { data: timeline } = useQuery<{ items: TimelineDigestEntry[] }>({
+    queryKey: ['brain-timeline'],
+    queryFn: async () => api.get<{ items: TimelineDigestEntry[] }>('/api/brain/timeline'),
+    staleTime: 30_000,
+  });
+
+  const now = Date.now();
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const byCategory = new Map<string, number>();
+  let total = 0;
+  for (const it of timeline?.items ?? []) {
+    const t = it.timestamp ? new Date(it.timestamp).getTime() : NaN;
+    if (!Number.isNaN(t) && now - t <= WEEK_MS) {
+      const cat = it.category ?? 'session';
+      byCategory.set(cat, (byCategory.get(cat) ?? 0) + 1);
+      total += 1;
+    }
+  }
+  const rows = [...byCategory.entries()]
+    .filter(([cat]) => CATEGORY_LABELS[cat])
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, count]) => ({ label: CATEGORY_LABELS[cat], count }));
+
+  return (
+    <Card className="p-4 space-y-2 md:col-span-2" data-testid="weekly-digest">
+      <div className="flex items-center gap-2">
+        <CalendarDays className="size-4 text-primary" />
+        <h3 className="font-medium text-sm">This week</h3>
+        <span className="text-[10px] text-muted-foreground/70 ml-auto">
+          Rolling 7 days · updated as you chat
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {rows.map((r) => (
+          <span
+            key={r.label}
+            className="text-[11px] px-2 py-1 rounded-full bg-muted/60 text-muted-foreground"
+          >
+            <span className="font-semibold text-foreground">{r.count}</span> {r.label}
+          </span>
+        ))}
+        {stats && stats.total > 0 ? (
+          <span className="text-[11px] px-2 py-1 rounded-full bg-warning/10 text-warning">
+            <span className="font-semibold">{stats.total}</span> friction events
+          </span>
+        ) : null}
+        <span className="text-[11px] px-2 py-1 rounded-full bg-muted/60 text-muted-foreground">
+          <span className="font-semibold text-foreground">{data.heuristics.length}</span> rules
+          active
+        </span>
+        <span className="text-[11px] px-2 py-1 rounded-full bg-muted/60 text-muted-foreground">
+          <span className="font-semibold text-foreground">{data.autoMemories.length}</span>{' '}
+          memories held
+        </span>
+        <span className="text-[11px] px-2 py-1 rounded-full bg-muted/60 text-muted-foreground">
+          <span className="font-semibold text-foreground">{data.pendingSkills.length}</span>{' '}
+          skills awaiting review
+        </span>
+      </div>
+      {total === 0 && (!stats || stats.total === 0) ? (
+        <p className="text-[11px] text-muted-foreground">
+          Quiet week so far — activity and learning will show up here.
+        </p>
+      ) : null}
+    </Card>
+  );
 }
 
 export function YouTab() {
@@ -167,6 +263,16 @@ export function YouTab() {
         </span>
         <span className="text-[10px] text-muted-foreground/70">Understanding surface</span>
       </div>
+
+      {/* Weekly digest */}
+      <WeeklyDigestCard
+        data={{
+          heuristics: data.heuristics,
+          autoMemories: data.autoMemories,
+          pendingSkills: data.pendingSkills,
+        }}
+        stats={stats}
+      />
 
       {/* Profile */}
       <Card className="p-4 space-y-3 md:col-span-2">

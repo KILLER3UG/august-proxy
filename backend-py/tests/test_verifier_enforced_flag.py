@@ -44,16 +44,17 @@ def test_gate_blocks_final_output_without_complete_phase():
     seen: list[dict] = []
     emit = wb._verifier_gated_emit(_make_session(enforced=True), seen.append)
     emit({'type': 'finalOutput', 'content': 'answer'})
-    assert seen == [
-        {
-            'type': 'verifierBlocked',
-            'message': (
-                'Verification required: the final answer is withheld until '
-                "the model calls update_state(phase='complete') after a "
-                'passing verification run.'
-            ),
-        }
-    ]
+    assert len(seen) == 1
+    assert seen[0]['type'] == 'verifierBlocked'
+    assert 'Verification required' in seen[0]['message']
+    # The banner now carries gate evidence so the UI can explain WHY.
+    assert seen[0]['evidence'] == {
+        'currentPhase': 'research',
+        'verificationCommand': '',
+        'blockers': [],
+        'completed': [],
+        'receiptCount': 0,
+    }
 
 
 def test_gate_blocks_when_phase_is_implement():

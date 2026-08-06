@@ -112,6 +112,36 @@ async def brainFriction(sinceDays: int = 7, recent: int = 20) -> dict[str, objec
     return {'stats': stats, 'recent': recent_friction(limit=recent)}
 
 
+@router.get('/session-learning/{session_id}')
+async def sessionLearning(session_id: str):
+    """What the harness learned from one conversation (provenance loop).
+
+    Returns the heuristics and auto-memories that record this session as
+    their source — closes the loop between "this chat happened" and "this
+    is what August took away from it".
+    """
+    from app.services.memory_store import _conn, _row_as_wire
+
+    try:
+        conn = _conn()
+        heuristics = conn.execute(
+            'SELECT id, rule, source, category, confidence, created_at, updated_at '
+            'FROM learned_heuristics WHERE source_session_id = ? ORDER BY id DESC LIMIT 50',
+            (session_id,),
+        ).fetchall()
+        memories = conn.execute(
+            'SELECT id, key, content, category, importance, source, pinned, created_at, updated_at '
+            'FROM auto_memories WHERE source_session_id = ? ORDER BY id DESC LIMIT 50',
+            (session_id,),
+        ).fetchall()
+        return {
+            'heuristics': [_row_as_wire(r) for r in heuristics],
+            'autoMemories': [_row_as_wire(r) for r in memories],
+        }
+    except Exception:
+        return {'heuristics': [], 'autoMemories': []}
+
+
 @router.get('/consolidation/audit')
 async def consolidationAudit(limit: int = 50) -> dict[str, object]:
     """Sleep-cycle audit trail — merges/promotions/deletes applied by consolidation."""
@@ -195,7 +225,7 @@ async def brainLearning() -> dict[str, object]:
         conn = memory_store._conn()
         rows = (
             conn.execute(
-                'SELECT id, key, content, category, importance, source, pinned, created_at, updated_at '
+                'SELECT id, key, content, category, importance, source, pinned, source_session_id, created_at, updated_at '
                 'FROM auto_memories ORDER BY importance DESC, id DESC LIMIT 20'
             )
             .fetchall()

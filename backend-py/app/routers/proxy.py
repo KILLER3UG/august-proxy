@@ -213,8 +213,14 @@ async def _trackRequest(endpoint: str, body: dict[str, object], request: Request
     return reqId
 
 
-def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
-    """Finalize a non-streaming request: capture response/tokens, end it."""
+def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object] | JSONResponse:
+    """Finalize a non-streaming request: capture response/tokens, end it.
+
+    Error results are returned as a real JSONResponse with the upstream's
+    status code — before, the dict was serialized as HTTP 200, so clients
+    saw "success" with an error body (and Anthropic-style envelopes with no
+    top-level ``error`` key passed as success entirely).
+    """
     if 'error' in result:
         trafficLogger.capture_error(reqId, as_str(result.get('error'))[:500])
         trafficLogger.capture_response(reqId, result)
@@ -240,7 +246,7 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
             trace_id=reqId,
             error=as_str(result.get('error'))[:500],
         )
-        return result
+        return JSONResponse(status_code=err_code, content=result)
     trafficLogger.capture_response(reqId, result)
     usage = as_dict(result.get('usage'), {})
     inT = _safeInt(usage.get('prompt_tokens') or usage.get('input_tokens'))

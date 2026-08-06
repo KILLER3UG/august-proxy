@@ -72,6 +72,16 @@ export interface MessageBlock {
   /** For type === 'recalledMemories': the auto-memory rows that
    *  getRelevantMemories() prefetched into the system prompt this turn. */
   memories?: RecalledMemoryItem[];
+  /** For type === 'verifierBlocked': what the verifier gate saw — the
+   *  model's claimed phase, its stated blockers, and whether any
+   *  verification command ran this turn. */
+  verifierEvidence?: {
+    currentPhase?: string;
+    verificationCommand?: string;
+    blockers?: string[];
+    completed?: string[];
+    receiptCount?: number;
+  };
 }
 
 /** One auto-memory row surfaced by the `recalledMemories` SSE event. */
@@ -302,6 +312,14 @@ export interface AppendBlockEvent {
   integrationSetup?: IntegrationSetupResult;
   /** For type === 'recalledMemories': the recalled auto-memory rows. */
   memories?: RecalledMemoryItem[];
+  /** For type === 'verifierBlocked': evidence about the verifier gate. */
+  verifierEvidence?: {
+    currentPhase?: string;
+    verificationCommand?: string;
+    blockers?: string[];
+    completed?: string[];
+    receiptCount?: number;
+  };
   /**
    * Marks a `thinking` event as a system notice (warning / info / error)
    * rather than model reasoning. System thinking events append to the

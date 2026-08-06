@@ -125,7 +125,18 @@ async def _rememberMemory(
         return reason
     try:
         clamped = max(0.0, min(1.0, float(importance or 0.7)))
-        item = rememberMemory(content, category=category, importance=clamped, pinned=pinned)
+        sid = ''
+        try:
+            from app.services.workbench.workbench import get_session
+
+            sess = get_session()
+            if sess is not None:
+                sid = str(getattr(sess, 'id', '') or '')
+        except Exception:
+            pass
+        item = rememberMemory(
+            content, category=category, importance=clamped, pinned=pinned, session_id=sid
+        )
         if not item:
             return 'Nothing saved: content was empty.'
         title = as_str(item.get('title') or item.get('label') or item.get('key'), '')

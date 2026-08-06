@@ -916,16 +916,169 @@ async def revoke_tool_grant(request: Request):
     return result
 
 
+# ── Restricted Python cell sandbox ──────────────────────────────────────
+# Code-level policy shared by the caller-side fast check and the subprocess
+# runner (single source of truth; the runner embeds these via placeholder
+# substitution so the two cannot drift).
+
+_SANDBOX_BANNED_MODULES = frozenset({
+    'socket', 'http', 'urllib', 'requests', 'httpx', 'subprocess',
+    'multiprocessing', 'ctypes', 'importlib', 'pty', 'fcntl',
+})
+
+_SANDBOX_BUILTIN_NAMES = frozenset({
+    'abs', 'all', 'any', 'bool', 'dict', 'enumerate', 'float', 'int', 'len',
+    'list', 'max', 'min', 'print', 'range', 'repr', 'reversed', 'round', 'set',
+    'sorted', 'str', 'sum', 'tuple', 'zip', 'True', 'False', 'None',
+})
+
+# The runner executes in a fresh interpreter process; it reads the cell from
+# stdin, applies the same AST policy, runs with restricted builtins, and
+# prints a single JSON result to stdout. A runaway loop is hard-killed by
+# subprocess.run's timeout — it can never block the server's event loop.
+_SANDBOX_RUNNER_TEMPLATE = r'''
+import ast, io, json, sys, traceback
+from contextlib import redirect_stderr, redirect_stdout
+
+banned = __BANNED__
+code = sys.stdin.read()
+try:
+    tree = ast.parse(code, mode='exec')
+except SyntaxError as exc:
+    print(json.dumps({'ok': False, 'error': f'SyntaxError: {exc}', 'stdout': '', 'stderr': ''}))
+    sys.exit(0)
+for node in ast.walk(tree):
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            root = (alias.name or '').split('.')[0]
+            if root in banned:
+                print(json.dumps({'ok': False, 'error': f'Import blocked by sandbox policy: {root}', 'stdout': '', 'stderr': ''}))
+                sys.exit(0)
+    if isinstance(node, ast.ImportFrom):
+        root = (node.module or '').split('.')[0]
+        if root in banned:
+            print(json.dumps({'ok': False, 'error': f'Import blocked by sandbox policy: {root}', 'stdout': '', 'stderr': ''}))
+            sys.exit(0)
+
+names = __BUILTINS__
+safe_builtins = {}
+for n in names:
+    try:
+        safe_builtins[n] = getattr(__builtins__, n)
+    except (AttributeError, TypeError):
+        safe_builtins[n] = __builtins__[n]
+import json as _json, math, re as _re
+globals_dict = {'__builtins__': safe_builtins, 'math': math, 'json': _json, 're': _re}
+stdout_buf = io.StringIO()
+stderr_buf = io.StringIO()
+ok, err = True, None
+try:
+    with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+        exec(compile(tree, '<sandbox>', 'exec'), globals_dict, {})
+except Exception as exc:
+    ok, err = False, f'{type(exc).__name__}: {exc}'
+    stderr_buf.write(traceback.format_exc()[-2000:])
+print(json.dumps({'ok': ok, 'stdout': stdout_buf.getvalue()[:50000], 'stderr': stderr_buf.getvalue()[:10000], 'error': err}))
+'''
+
+
+def _sandbox_ast_check(code: str) -> str:
+    """Static AST policy check. Returns an error message or '' when clean."""
+    import ast
+
+    try:
+        tree = ast.parse(code, mode='exec')
+    except SyntaxError as exc:
+        return f'SyntaxError: {exc}'
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = (alias.name or '').split('.')[0]
+                if root in _SANDBOX_BANNED_MODULES:
+                    return f'Import blocked by sandbox policy: {root}'
+        if isinstance(node, ast.ImportFrom):
+            root = (node.module or '').split('.')[0]
+            if root in _SANDBOX_BANNED_MODULES:
+                return f'Import blocked by sandbox policy: {root}'
+    return ''
+
+
+def _run_sandbox_subprocess(code: str, cwd_path, timeout_ms: int) -> dict:
+    """Run one cell in a fresh interpreter with a HARD timeout.
+
+    subprocess.run kills the child when the timeout expires (infinite loops
+    included), so a runaway cell can never stall the server. The server's own
+    cwd is never mutated — the cell just inherits `cwd` in the child.
+    """
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    runner_src = (
+        _SANDBOX_RUNNER_TEMPLATE.replace('__BANNED__', repr(sorted(_SANDBOX_BANNED_MODULES)))
+        .replace('__BUILTINS__', repr(sorted(_SANDBOX_BUILTIN_NAMES)))
+    )
+    fd, runner_path = tempfile.mkstemp(suffix='.py', prefix='august_sandbox_')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(runner_src)
+        proc = subprocess.run(
+            [sys.executable, runner_path],
+            input=code,
+            capture_output=True,
+            text=True,
+            cwd=str(cwd_path) if cwd_path else None,
+            timeout=(timeout_ms / 1000.0) + 0.5,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            'ok': False,
+            'error': f'Exceeded timeout ({timeout_ms}ms)',
+            'stdout': (exc.stdout or '')[:50000],
+            'stderr': (exc.stderr or '')[:10000],
+        }
+    except OSError as exc:
+        return {
+            'ok': False,
+            'error': f'Could not start sandbox interpreter: {exc}',
+            'stdout': '',
+            'stderr': '',
+        }
+    finally:
+        try:
+            os.unlink(runner_path)
+        except OSError:
+            pass
+    if proc.returncode != 0:
+        return {
+            'ok': False,
+            'error': f'Sandbox interpreter exited with code {proc.returncode}',
+            'stdout': (proc.stdout or '')[:50000],
+            'stderr': (proc.stderr or '')[:10000],
+        }
+    try:
+        import json as _json
+
+        return _json.loads(proc.stdout or '{}')
+    except Exception:
+        return {
+            'ok': False,
+            'error': 'Sandbox returned an unparseable result',
+            'stdout': (proc.stdout or '')[:50000],
+            'stderr': (proc.stderr or '')[:10000],
+        }
+
+
 @router.post('/sandbox/python')
 async def sandbox_python(request: Request):
-    """Restricted Python cell: no network, limited builtins, timeout, cwd bound.
+    """Restricted Python cell: no network, limited builtins, HARD timeout, cwd bound.
 
-    Body: { code: string, cwd?: string, timeoutMs?: number }
+    The cell runs in a separate interpreter process (never the event loop),
+    so infinite loops are hard-killed at ``timeoutMs`` and the server's own
+    working directory is never mutated. Body: { code, cwd?, timeoutMs? }
     """
-    import ast
-    import io
-    import traceback
-    from contextlib import redirect_stderr, redirect_stdout
     from pathlib import Path
 
     body = await request.json()
@@ -940,139 +1093,30 @@ async def sandbox_python(request: Request):
     timeout_ms = max(200, min(timeout_ms, 10_000))
 
     # Bind cwd to workspace-ish paths only
+    cwd_path = None
     if cwd_raw:
         cwd_path = Path(cwd_raw).resolve()
         if not cwd_path.is_dir():
             raise HTTPException(status_code=400, detail='cwd is not a directory')
-    else:
-        cwd_path = Path.cwd()
 
-    # Block obvious network / process escape imports via AST
-    banned = {
-        'socket',
-        'http',
-        'urllib',
-        'requests',
-        'httpx',
-        'subprocess',
-        'multiprocessing',
-        'ctypes',
-        'importlib',
-        'pty',
-        'fcntl',
+    # Fast-fail AST policy check on the calling side (the subprocess runner
+    # re-checks authoritatively before exec).
+    ban_error = _sandbox_ast_check(code)
+    if ban_error:
+        return {'ok': False, 'error': ban_error, 'stdout': '', 'stderr': ''}
+
+    import asyncio
+
+    result = await asyncio.to_thread(_run_sandbox_subprocess, code, cwd_path, timeout_ms)
+    result.setdefault('elapsedMs', None)
+    result['cwd'] = str(cwd_path) if cwd_path else None
+    result['policy'] = {
+        'network': False,
+        'subprocess': False,
+        'timeoutMs': timeout_ms,
+        'bannedImports': sorted(_SANDBOX_BANNED_MODULES),
     }
-    try:
-        tree = ast.parse(code, mode='exec')
-    except SyntaxError as exc:
-        return {
-            'ok': False,
-            'error': f'SyntaxError: {exc}',
-            'stdout': '',
-            'stderr': '',
-        }
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                root = (alias.name or '').split('.')[0]
-                if root in banned:
-                    return {
-                        'ok': False,
-                        'error': f'Import blocked by sandbox policy: {root}',
-                        'stdout': '',
-                        'stderr': '',
-                    }
-        if isinstance(node, ast.ImportFrom):
-            root = (node.module or '').split('.')[0]
-            if root in banned:
-                return {
-                    'ok': False,
-                    'error': f'Import blocked by sandbox policy: {root}',
-                    'stdout': '',
-                    'stderr': '',
-                }
-
-    safe_builtins = {
-        'abs': abs,
-        'all': all,
-        'any': any,
-        'bool': bool,
-        'dict': dict,
-        'enumerate': enumerate,
-        'float': float,
-        'int': int,
-        'len': len,
-        'list': list,
-        'max': max,
-        'min': min,
-        'print': print,
-        'range': range,
-        'repr': repr,
-        'reversed': reversed,
-        'round': round,
-        'set': set,
-        'sorted': sorted,
-        'str': str,
-        'sum': sum,
-        'tuple': tuple,
-        'zip': zip,
-        'True': True,
-        'False': False,
-        'None': None,
-    }
-    # Allow a tiny stdlib subset
-    import json as _json
-    import math
-    import re as _re
-
-    globals_dict: dict = {
-        '__builtins__': safe_builtins,
-        'math': math,
-        'json': _json,
-        're': _re,
-    }
-    stdout_buf = io.StringIO()
-    stderr_buf = io.StringIO()
-    ok = True
-    err_msg = ''
-    import os
-    import time as _time
-
-    old_cwd = os.getcwd()
-    started = _time.monotonic()
-    try:
-        os.chdir(str(cwd_path))
-        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-            # Cooperative timeout via bytecode size / wall clock check is limited;
-            # we rely on short timeout_ms budget and no network/process.
-            exec(compile(tree, '<sandbox>', 'exec'), globals_dict, {})  # noqa: S102
-            elapsed_ms = int((_time.monotonic() - started) * 1000)
-            if elapsed_ms > timeout_ms:
-                ok = False
-                err_msg = f'Exceeded timeout ({timeout_ms}ms)'
-    except Exception as exc:
-        ok = False
-        err_msg = f'{type(exc).__name__}: {exc}'
-        stderr_buf.write(traceback.format_exc()[-2000:])
-    finally:
-        try:
-            os.chdir(old_cwd)
-        except Exception:
-            pass
-
-    return {
-        'ok': ok,
-        'stdout': stdout_buf.getvalue()[:50_000],
-        'stderr': stderr_buf.getvalue()[:10_000],
-        'error': err_msg or None,
-        'cwd': str(cwd_path),
-        'elapsedMs': int((_time.monotonic() - started) * 1000),
-        'policy': {
-            'network': False,
-            'subprocess': False,
-            'timeoutMs': timeout_ms,
-            'bannedImports': sorted(banned),
-        },
-    }
+    return result
 
 
 @router.get('/skills/hub')

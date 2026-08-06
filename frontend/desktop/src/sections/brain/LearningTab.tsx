@@ -303,6 +303,14 @@ export function LearningTab() {
                     {m.pinned ? (
                       <Pin className="size-3 text-primary shrink-0" aria-label="pinned" />
                     ) : null}
+                    {m.sourceSessionId ? (
+                      <span
+                        className="text-[10px] font-mono text-muted-foreground bg-muted px-1 py-0.5 rounded"
+                        title={`Learned in session ${m.sourceSessionId}`}
+                      >
+                        from {m.sourceSessionId.slice(0, 12)}…
+                      </span>
+                    ) : null}
                   </p>
                   <p className="text-muted-foreground line-clamp-2 whitespace-pre-wrap">
                     {formatMemoryContent(m)}

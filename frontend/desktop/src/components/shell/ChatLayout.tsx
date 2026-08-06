@@ -161,6 +161,8 @@ export function ChatLayout() {
 
   // Fetch the active workbench session to feed the right sidebar. The chat
   // thread also fetches this independently, so this is the layout-level mirror.
+  // Realtime invalidates `workbench-session` on SSE events; poll fast only
+  // while the drawer (its consumer) is open, slow otherwise.
   const workbench = useQuery({
     queryKey: ['workbench-session', active?.workbenchSessionId],
     queryFn: async () => {
@@ -179,7 +181,7 @@ export function ChatLayout() {
       }
     },
     enabled: !!active?.workbenchSessionId,
-    refetchInterval: 2_000,
+    refetchInterval: rightDrawer.open ? 2_000 : 15_000,
     retry: false,
   });
   const workbenchSession: WorkbenchSession | null =

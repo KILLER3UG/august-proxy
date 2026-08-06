@@ -61,6 +61,7 @@ from app.adapters.stream_state import AnthropicNativeStreamState, OpenaiToAnthro
 from app.adapters.tool_classification import (
     classifyAnthropicToolUses,
 )
+from app.adapters.upstream_errors import normalize_upstream_error
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.models import (
     AnthropicRequest,
@@ -589,9 +590,11 @@ async def _handleMessagesNonStreaming(
         reqBody['stream'] = False
         reqBodyJson = cast(dict[str, object], as_dict(camelToSnake(reqBody), {}))
         resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, reqBodyJson)
-        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.body_json)), {})
         if resp.is_error:
-            return (responseBody, None)
+            # Never answer 200 with a raw upstream error envelope — normalize
+            # it so the router's _endNonStream surfaces a real non-2xx.
+            return (normalize_upstream_error(resp), None)
+        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.body_json)), {})
         content = as_list(responseBody.get('content'), [])
         toolUses = [b for b in content if isinstance(b, dict) and as_str(b.get('type'), '') == 'tool_use']
         if toolUses:
@@ -634,9 +637,9 @@ async def _handleMessagesNonStreaming(
         openaiBody['stream'] = False
         openaiBodyJson = cast(dict[str, object], as_dict(camelToSnake(openaiBody), {}))
         resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, openaiBodyJson)
-        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.body_json)), {})
         if resp.is_error:
-            return (responseBody, None)
+            return (normalize_upstream_error(resp), None)
+        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.body_json)), {})
         return (_translateOpenaiToAnthropicResponse(responseBody, model), None)
 
 

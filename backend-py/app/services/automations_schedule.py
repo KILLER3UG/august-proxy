@@ -141,7 +141,9 @@ def matches_cron(expr: str, dt: datetime) -> bool:
         and dt.hour in hours
         and dt.day in days
         and dt.month in months
-        and dt.weekday() in weekdays
+        # Cron day-of-week is 0=Sunday…6=Saturday; dt.weekday() is
+        # 0=Monday…6=Sunday — shift before comparing.
+        and ((dt.weekday() + 1) % 7) in weekdays
     )
 
 

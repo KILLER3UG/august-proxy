@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import secrets
 from typing import Optional
 
 import httpx
@@ -50,6 +51,9 @@ class TelegramAdapter(BasePlatformAdapter):
         self._token: str = os.environ.get('AUGUST_TELEGRAM_BOT_TOKEN', '')
         self._client: httpx.AsyncClient | None = None
         self._pollTask: asyncio.Task | None = None
+        # Set when webhook mode registers a secret with Telegram; the webhook
+        # route rejects updates that do not carry the matching header.
+        self._webhookSecret: str = ''
 
     def _apiUrl(self, method: str) -> str:
         return f'{_TELEGRAMApi}{self._token}/{method}'
@@ -89,18 +93,44 @@ class TelegramAdapter(BasePlatformAdapter):
             self._client = None
 
     async def start(self) -> None:
-        """Optionally set the webhook; if no base_url configured, start polling."""
+        """Optionally set the webhook; if no base_url configured, start polling.
+
+        Webhook mode registers a random secret token with Telegram and
+        rejects updates that do not carry it back (see ``verifyWebhook``) —
+        otherwise anyone who can reach the public URL could inject updates,
+        including /approve and /deny plan commands.
+        """
         baseUrl = as_str(self.config.get('baseUrl'), '')
         webhookPath = as_str(self.config.get('webhook_path'), '/api/gateway/telegram/webhook')
         if baseUrl:
             webhookUrl = f'{baseUrl.rstrip("/")}/{webhookPath.lstrip("/")}'
-            r = await self._request('setWebhook', url=webhookUrl)
+            self._webhookSecret = (
+                as_str(self.config.get('webhookSecret'), '') or secrets.token_urlsafe(32)
+            )
+            r = await self._request('setWebhook', url=webhookUrl, secret_token=self._webhookSecret)
             if r.get('ok'):
                 log.info('telegram: webhook set to %s', webhookUrl)
             else:
                 log.warning('telegram: setWebhook failed: %s', as_str(r.get('description')))
         else:
             self._pollTask = asyncio.create_task(self._pollLoop())
+
+    def verifyWebhook(self, headers) -> bool:
+        """Reject unauthenticated webhook updates (secret-token check).
+
+        In webhook mode the adapter always registers a secret; the request
+        must carry it in ``X-Telegram-Bot-Api-Secret-Token``. Polling mode
+        (no secret) accepts everything for backward compatibility.
+        """
+        secret = self._webhookSecret or ''
+        if not secret:
+            return True
+        token = ''
+        try:
+            token = as_str(headers.get('x-telegram-bot-api-secret-token', ''), '')
+        except Exception:
+            return False
+        return bool(token) and secrets.compare_digest(token, secret)
 
     async def stop(self) -> None:
         if self._pollTask:
