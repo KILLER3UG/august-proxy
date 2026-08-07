@@ -42,6 +42,7 @@ export function dispatchWorkbenchEvent(
     case 'text':
     case 'content':
     case 'finalOutput':
+    case 'final_output': // legacy snake_case alias
       handlers.onText?.({ content: typeof p?.content === 'string' ? p.content : JSON.stringify(p?.content ?? '') });
       break;
     case 'toolUse':

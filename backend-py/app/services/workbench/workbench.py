@@ -1383,6 +1383,7 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
             build_runner_source,
             extract_fenced_python,
             format_result,
+            runner_command,
             runner_path,
         )
 
@@ -1395,7 +1396,7 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
             f.write(build_runner_source(block, ws))
         result = await _executeTool(
             'run_command',
-            {'command': f'python -u "{path}"', 'timeout': _CODE_RUN_TIMEOUT_S},
+            {'command': runner_command(path), 'timeout': _CODE_RUN_TIMEOUT_S},
             session,
         )
         return format_result(result)
@@ -1988,6 +1989,9 @@ async def _sendWorkbenchMessageStreamImpl(
     lastExecSig: tuple[str, int] | None = None
     stalledRounds = 0
     stallMessageSent = False
+    # Turn-scoped malformed-tool counter: accumulates ACROSS rounds (a reset
+    # per round meant repeated malformed calls never triggered the downgrade).
+    parseFailures = 0
     # Set when the turn ends on an error path — the done-event block below
     # still runs (to flush usage/evidence), and routing evidence must record
     # ok=False for error turns, not a hardcoded win.
@@ -2302,7 +2306,7 @@ async def _sendWorkbenchMessageStreamImpl(
         planSubmittedThisRound = False
         clarifySubmittedThisRound = False
         pending_regular: list[tuple[str, dict[str, object], str]] = []
-        parseFailures = 0
+        invalidThisRound = 0
         for tu in toolUses:
             if _isCancelled():
                 break
@@ -2333,6 +2337,7 @@ async def _sendWorkbenchMessageStreamImpl(
             invalidRaw = as_str(toolInput.get('_invalid_json') or toolInput.get('_raw'), '')
             if invalidRaw:
                 parseFailures += 1
+                invalidThisRound += 1
                 if parseFailures >= 3 and emit:
                     emit(
                         {
@@ -2775,14 +2780,22 @@ async def _sendWorkbenchMessageStreamImpl(
                     result = await _executeTool(toolName, toolInput, session)
             # Verifier gate receipt: keep the tail of command output for this turn
             # so update_state can require a real verification run before it allows
-            # a review/complete transition (see system_tools._updateState).
+            # a review/complete transition (see system_tools._updateState). The
+            # command itself is recorded so the gate can match the DECLARED
+            # verification_command instead of accepting any passing command.
             if 'run_command' in toolName or toolName in ('bash', 'safe_python'):
                 try:
                     receipts = getattr(session, '_verification_receipts', None)
                     if receipts is None:
                         receipts = []
                         setattr(session, '_verification_receipts', receipts)
-                    receipts.append({'name': toolName, 'content': as_str(result, '')[-3000:]})
+                    receipts.append(
+                        {
+                            'name': toolName,
+                            'command': as_str(toolInput.get('command'), ''),
+                            'content': as_str(result, '')[-3000:],
+                        }
+                    )
                     if len(receipts) > 12:
                         del receipts[: len(receipts) - 12]
                 except Exception:
@@ -2866,6 +2879,10 @@ async def _sendWorkbenchMessageStreamImpl(
                 is_cancelled=_isCancelled,
             )
         )
+        # The model recovered: valid arguments this round reset the turn-scoped
+        # malformed counter (it accumulates only across consecutive bad rounds).
+        if invalidThisRound == 0:
+            parseFailures = 0
         # Graceful degradation (mini-swe-agent / smolagents lesson): after
         # repeated malformed tool calls this round, downgrade the NEXT round
         # to the bare tool surface — fewer tools means less JSON to improvise.
@@ -3002,7 +3019,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     if receipts is None:
                         receipts = []
                         setattr(session, '_verification_receipts', receipts)
-                    receipts.append({'name': 'run_command', 'content': vout})
+                    receipts.append({'name': 'run_command', 'command': vcmd, 'content': vout})
                     if len(receipts) > 12:
                         del receipts[: len(receipts) - 12]
                     # Deterministic verdict (exit code is always surfaced by

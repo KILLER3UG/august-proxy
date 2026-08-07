@@ -475,8 +475,13 @@ async def openaiResponses(request: Request, _auth: bool = Depends(require_gatewa
     if isinstance(result, dict):
         if 'error' in result:
             return _endNonStream(reqId, result)
-        translated = _translateToResponsesFormat(result)
-        return _endNonStream(reqId, translated)
+        if 'choices' in result and 'output' not in result:
+            # Anthropic-upstream path returned a chat-completions body —
+            # translate it to the Responses wire format (the responses branch
+            # of the adapter already returns Responses-format bodies and must
+            # NOT be translated again — that emptied the output).
+            return _endNonStream(reqId, _translateToResponsesFormat(result))
+        return _endNonStream(reqId, result)
     if isinstance(result, AsyncIterator):
         return StreamingResponse(
             _wrapStream(reqId, result),

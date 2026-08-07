@@ -155,7 +155,12 @@ _FAIL_MARKERS = ('failed', 'failure', 'traceback', 'error:', 'assertionerror')
 _WEAK_PASS_MARKERS = ('passed', '✓')
 
 
-def _verificationVerdict(receipts: list[object]) -> tuple[str, str]:
+def _normalizeCommand(cmd: str) -> str:
+    """Normalize a command for matching (whitespace + case insensitive)."""
+    return ' '.join((cmd or '').strip().lower().split())
+
+
+def _verificationVerdict(receipts: list[object], expected_command: str = '') -> tuple[str, str]:
     """Judge this turn's command receipts for the verifier gate.
 
     Returns (verdict, detail): 'pass' | 'fail' | 'unclear' | 'none'.
@@ -163,13 +168,23 @@ def _verificationVerdict(receipts: list[object]) -> tuple[str, str]:
     older receipts, and pure-unclear history is given the benefit of the
     doubt (the gate must not strand tasks whose verification output is
     unconventional).
+
+    When ``expected_command`` is set (the declared ``verification_command``),
+    receipts from OTHER commands are skipped — ``echo ok`` must not satisfy
+    the gate.
     """
     if not receipts:
         return ('none', '')
+    matched_declared = False
     for receipt in reversed(receipts):
         text = as_str(as_dict(receipt).get('content'), '').lower() if isinstance(receipt, dict) else ''
         if not text:
             continue
+        if expected_command:
+            cmd = as_str(as_dict(receipt).get('command'), '') if isinstance(receipt, dict) else ''
+            if _normalizeCommand(cmd) != _normalizeCommand(expected_command):
+                continue
+            matched_declared = True
         name = as_str(as_dict(receipt).get('name'), 'command') if isinstance(receipt, dict) else 'command'
         m = _EXIT_CODE_RE.search(text)
         if m:
@@ -183,6 +198,10 @@ def _verificationVerdict(receipts: list[object]) -> tuple[str, str]:
             return ('fail', f'failure markers in {name} output')
         if any(marker in text for marker in _WEAK_PASS_MARKERS):
             return ('pass', f'pass markers in {name} output')
+    if expected_command and not matched_declared:
+        # A verification command was DECLARED but no receipt came from it —
+        # the gate must not give the benefit of the doubt to other commands.
+        return ('none', 'no receipt from the declared verification command')
     return ('unclear', '')
 
 
@@ -337,8 +356,13 @@ async def _updateState(
         entering_review = targetPhase == 'review' and currentPhase not in ('review', 'complete')
         entering_complete = targetPhase == 'complete' and currentPhase != 'complete'
         if entering_review or entering_complete:
+            # When a verification command was DECLARED, only receipts from that
+            # exact command satisfy the gate (`echo ok` cannot stand in for the
+            # declared test command).
+            declaredCmd = as_str(as_dict(prevState).get('verification_command'), '') if prevState else ''
             verdict, detail = _verificationVerdict(
-                as_list(getattr(session, '_verification_receipts', None), [])
+                as_list(getattr(session, '_verification_receipts', None), []),
+                expected_command=declaredCmd,
             )
             if verdict == 'none':
                 return (

@@ -202,12 +202,17 @@ def resolve(name: str) -> Optional[dict[str, object]]:
 
 
 def list_available() -> list[dict[str, object]]:
-    """Enabled providers from providers.json that have an API key."""
+    """Enabled providers from providers.json that have credentials.
+
+    ``_hasApiKey`` also resolves environment-backed credentials — providers
+    configured via env vars have no literal ``apiKey`` field but are fully
+    usable (a raw ``apiKey`` check marked them unavailable).
+    """
     out: list[dict[str, object]] = []
     for e in _iter_store_entries():
         if not e.get('enabled', True):
             continue
-        if not e.get('apiKey'):
+        if not _hasApiKey(e):
             continue
         out.append(entry_to_provider_dict(e))
     return out

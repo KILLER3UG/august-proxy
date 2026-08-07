@@ -26,6 +26,17 @@ _MAX_OUTPUT_CHARS = 24 * 1024
 
 _PREAMBLE = '''\
 # August code-mode tool API (workspace-bound)
+import os as _os
+# Scrub secrets before the model's code runs: the child python can read
+# os.environ, so API keys / AUGUST_* config must not be visible to it.
+for _k in list(_os.environ):
+    if (
+        _k.startswith('AUGUST_')
+        or _k.endswith('_API_KEY')
+        or _k.endswith('_API_TOKEN')
+        or _k.endswith('_SECRET')
+    ):
+        _os.environ.pop(_k, None)
 import subprocess
 from pathlib import Path
 
@@ -110,3 +121,16 @@ def format_result(result: str) -> str:
             f'\n\n[... code output truncated at {_MAX_OUTPUT_CHARS} chars]'
         )
     return result
+
+
+def runner_command(path: str) -> str:
+    """Shell command that executes a code-run script.
+
+    ``python -I`` = isolated mode: no user site-packages, no sys.path
+    injection from the cwd — the same trust level as a typed ``run_command``
+    (which can also run arbitrary python), with secrets scrubbed by the
+    preamble. Code mode is NOT a security boundary: the model's block runs
+    with the user's OS privileges inside the workspace, exactly like any
+    command the user would approve.
+    """
+    return f'python -I -u "{path}"'

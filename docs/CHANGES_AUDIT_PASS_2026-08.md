@@ -164,6 +164,45 @@ fix), tool-card presentation (improved), diff preview refresh after revert
 attachment source-path preservation (needs Tauri dialog plumbing), Feishu /
 macOS installer items (not applicable on Windows).
 
+## External audit fixes (P0/P1, same day)
+
+**Release & trust:**
+- Version sync fixed across all 7 files (incl. `package-lock.json` +
+  `Cargo.lock`); `node scripts/check-version-sync.mjs` passes.
+- Backend health reports the real version (`app/version.py` reads root
+  `package.json`); `/api/health/detailed` returns `status: degraded` with
+  `backgroundIssues` when brain sync / cognitive boot are unhealthy.
+- Code mode hardened: `python -I` isolated mode + secret env scrubbing in the
+  preamble; documented trust parity with `run_command` (not a security
+  boundary).
+- File tools: writes are gated to the system temp area when no workspace is
+  configured (reads stay unrestricted — shell parity).
+- Scheduled shell automations now run through the standard sandbox
+  (`run_sandboxed`, workspace-bound, no network) instead of raw
+  `subprocess.run(shell=True)`.
+
+**Functional:**
+- `/v1/responses` non-streaming double translation fixed (adapter returns
+  Responses-format; the route only translates chat-shaped bodies from the
+  Anthropic-upstream path).
+- `list_available` honors environment-backed credentials (`_hasApiKey`), so
+  env-configured providers appear in `/v1/models` and routing.
+- Verifier gate: when `verification_command` is DECLARED, only receipts from
+  that exact command satisfy it — `echo ok` no longer passes; receipts record
+  the command.
+- Double `message_stop` removed from `_streamOpenaiAsAnthropic` (tracked per
+  round).
+- Malformed-tool counter is turn-scoped (accumulates across rounds, resets
+  when the model recovers) — the bare-surface downgrade now actually fires.
+- SSE schema + dispatcher accept `aborted`, `retrying`, and the legacy
+  `final_output` alias (no more validation warnings, legacy events dispatch).
+
+**UI:**
+- Send button disabled until a usable model is selected.
+- Settings & UX redesign roadmap documented in
+  `docs/SETTINGS_UX_REDESIGN.md` (5-group structure, guided AI setup,
+  terminology, product opportunities).
+
 ## Validation
 
 - `uv run ruff check .` clean; `uv run mypy app/` 0 errors.

@@ -123,6 +123,7 @@ export function ComposerToolbar({
   const canSend =
     !!sessionId &&
     loadedSessionId === sessionId &&
+    !!selectedModel &&
     !attachmentsReading &&
     (input.trim().length > 0 || attachmentsCount > 0);
 

@@ -60,6 +60,20 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
         )
 
     if root is None:
+        # No workspace configured: reads resolve freely (shell parity), but
+        # WRITES are gated to the system temp area — otherwise a session
+        # without a bound folder could scatter files anywhere on the machine.
+        if for_write:
+            import tempfile
+
+            try:
+                resolved.relative_to(Path(tempfile.gettempdir()).resolve())
+            except ValueError:
+                return None, (
+                    'Error: Sandbox blocked write outside a workspace. '
+                    'Open a project folder first (the session has no workspace), '
+                    'or write under the system temp directory.'
+                )
         return resolved, None
 
     if not is_within_root(resolved, root):

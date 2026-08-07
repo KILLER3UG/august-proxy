@@ -1,41 +1,36 @@
-feat: feature batch 2 — mention expansion, subagent config, eval harness tracks
+fix: external-audit P0/P1 round — versions, sandbox trust, verifier, SSE contracts
 
-Verifier reviewer pass (2a):
-- AUGUST_VERIFIER_REVIEWER=1: one-shot independent reviewer critique after the
-  deterministic gate passes; FAIL vetoes the completion with the reason;
-  memoized per turn
+Release & trust (P0):
+- Version sync across all 7 files incl. package-lock.json + Cargo.lock
+  (check-version-sync.mjs now passes); backend health reports the real
+  version (app/version.py reads root package.json)
+- /api/health/detailed returns status:degraded + backgroundIssues when
+  brain sync / cognitive boot are unhealthy
+- Code mode hardened: python -I isolated mode + secret env scrubbing in the
+  runner preamble; documented trust parity with run_command
+- File tools: writes gated to the system temp area when no workspace is
+  configured (reads stay unrestricted)
+- Scheduled shell automations run through the standard sandbox
+  (run_sandboxed, workspace-bound, no network) instead of raw
+  subprocess.run(shell=True)
 
-Responses API streaming (2b):
-- /v1/responses stream:true now works via upstream-native Responses-SSE
-  pass-through (event names + payloads preserved; response.failed on errors);
-  the old 400 rejection is gone
+Functional (P1):
+- /v1/responses non-streaming double translation fixed (adapter returns
+  Responses-format; route translates only chat-shaped bodies from the
+  Anthropic-upstream path)
+- list_available honors environment-backed credentials (_hasApiKey) so
+  env-configured providers appear in /v1/models and routing
+- Verifier gate: when verification_command is DECLARED, only receipts from
+  that exact command satisfy it (echo ok no longer passes); receipts record
+  the command; unmatched-declared returns 'none'
+- Double message_stop removed from _streamOpenaiAsAnthropic (per-round
+  terminal tracking)
+- Malformed-tool counter is turn-scoped (accumulates across rounds, resets
+  on recovery) so the bare-surface downgrade actually fires
+- SSE schema + dispatcher accept aborted / retrying / legacy final_output
+  (no validation warnings, legacy events dispatch)
 
-Eval harness (1):
-- app/services/harness_eval.py: ScriptedClient + run_turn drive the REAL
-  workbench loop with scripted models; hermetic tool-registry restore
-- tests/test_harness_evals.py: 12 golden scenarios (well-behaved turn, tool
-  round-trip, malformed-JSON self-heal, empty-response error, round cap,
-  stall detection, stream-rule narration, verifier gate block/pass, code mode,
-  chat mode, persistence)
-- GET /api/brain/harness/evals (pass rate + runs) + scripts/run_harness_evals.py
-
-UI completion (3):
-- Model settings: maxTools + maxToolResultChars inputs (backend ModelUpdate
-  + provider dict round-trip)
-- Memory -> Proposals tab (list + approve/reject; GET /api/memory/proposals)
-- CuratorSuggestionBar: on-demand 'Curate skills (dry run)' chip in composer
-- Arena archive: idle ArenaView shows verdict history (GET /api/brain/routing/arena)
-
-Code/shell-first mode (4):
-- set_agent_mode(chat|agent|code) system tool; code mode executes fenced
-  python blocks via the existing sandboxed run_command with a
-  workspace-bound tool API (code_runner.py); chat mode blocks tool calls;
-  prompt blocks + parse-failure hint; WorkbenchSession.agent_mode field
-
-Changelog-inspired batch:
-- @-mention expansion: MCP plugin tools (/api/mcp/tools) + workspace files
-  (new bounded GET /api/workbench/workspace/files) in the composer picker
-- Subagent effort + model override (spawn_subagents items, orchestrator,
-  worker, executeSubAgent); recurring tasks dispatch scheduled sub-agents via
-  [agent:ID model:MODEL] message directives
-- tool_policy bucket + parity oracle updated for set_agent_mode
+UI:
+- Send button disabled until a usable model is selected
+- docs/SETTINGS_UX_REDESIGN.md: settings restructure roadmap (5 groups,
+  guided AI setup, terminology, product opportunities)

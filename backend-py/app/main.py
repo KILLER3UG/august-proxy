@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.version import backend_version
 
 
 def _cors_allow_origins() -> list[str]:
@@ -240,7 +241,7 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title='August Proxy', version='0.1.0', lifespan=lifespan)
+app = FastAPI(title='August Proxy', version=backend_version(), lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_allow_origins(),
@@ -396,7 +397,7 @@ async def health():
     """
     return {
         'status': 'ok',
-        'version': '0.1.0',
+        'version': backend_version(),
         'python': True,
         'port': settings.port,
         'uptime': time.time() - _startedAt,
@@ -437,8 +438,16 @@ async def healthDetailed():
         cognitive = get_boot_status()
     except Exception as exc:
         cognitive = {'error': str(exc)}
+    # Top-level status must reflect background services — 'ok' only when the
+    # brain sync and cognitive boot are healthy too.
+    bg_issues: list[str] = []
+    if isinstance(brain_sync, dict) and brain_sync.get('error'):
+        bg_issues.append(f'brainSync: {brain_sync["error"]}')
+    if isinstance(cognitive, dict) and cognitive.get('error'):
+        bg_issues.append(f'cognitiveBoot: {cognitive["error"]}')
     return {
-        'status': 'ok',
+        'status': 'degraded' if bg_issues else 'ok',
+        'backgroundIssues': bg_issues,
         'mode': 'python',
         'port': settings.port,
         'data_dir': str(settings.dataDir),

@@ -287,7 +287,13 @@ export const WorkbenchUserMessageQueueEventSchema = WorkbenchBaseSchema.extend({
  *  filesystem checkpoints) — accepted so they don't trip the schema-mismatch
  *  warning in the stream dispatcher. */
 export const WorkbenchMiscLifecycleEventSchema = WorkbenchBaseSchema.extend({
-  type: z.enum(['todosUpdated', 'checkpoint']),
+  type: z.enum(['todosUpdated', 'checkpoint', 'aborted', 'retrying']),
+});
+
+/** Legacy snake_case alias of `finalOutput` — some paths still emit it. */
+export const WorkbenchLegacyFinalOutputEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('final_output'),
+  content: z.string().optional(),
 });
 
 /** Opt-in verifier enforcement (session.verifierEnforced): emitted once per
@@ -332,6 +338,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchVerifierBlockedEventSchema,
   WorkbenchRecurringTaskEventSchema,
   WorkbenchUserMessageQueueEventSchema,
+  WorkbenchLegacyFinalOutputEventSchema,
   WorkbenchMiscLifecycleEventSchema,
 ]);
 

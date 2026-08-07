@@ -397,23 +397,28 @@ def due_job_ids(*, now: datetime | None = None) -> list[str]:
     return out
 
 
-def _run_shell(job: dict[str, object]) -> tuple[str, str, int | None]:
-    import subprocess
+async def _run_shell(job: dict[str, object]) -> tuple[str, str, int | None]:
+    """Run a scheduled shell job through the standard sandbox (same policy as
+    workbench run_command: workspace-bound paths, no network, soft backend)."""
+    from app.services.sandbox.policy import SandboxPolicy
+    from app.services.sandbox.runner import run_sandboxed
 
     command = as_str(job.get('command') or job.get('task'))
     if not command:
         return 'error', 'shell job missing command', None
-    completed = subprocess.run(
-        command,
-        shell=True,
-        capture_output=True,
-        text=True,
-        timeout=as_float(job.get('timeoutMs'), 60000.0) / 1000.0,
-        cwd=as_str(job.get('cwd') or job.get('workspacePath')) or None,
+    cwd = as_str(job.get('cwd') or job.get('workspacePath')) or ''
+    policy = SandboxPolicy(
+        mode='workspace-write',
+        workspace_root=cwd,
+        network=False,
     )
-    out = (completed.stdout or '')[-4000:]
-    status = 'idle' if completed.returncode == 0 else 'error'
-    return status, out, completed.returncode
+    timeout = as_float(job.get('timeoutMs'), 60000.0) / 1000.0
+    result = await run_sandboxed(command, policy, timeout=timeout)
+    out = result.as_tool_text()[-4000:]
+    if result.denial_reason:
+        return 'error', out, None
+    status = 'idle' if result.exit_code == 0 else 'error'
+    return status, out, result.exit_code
 
 
 def _run_http(job: dict[str, object]) -> tuple[str, str, int | None]:
@@ -704,7 +709,7 @@ async def run_job_async(
 
     try:
         if job_type == 'shell':
-            status, out, code = await asyncio.to_thread(_run_shell, snap)
+            status, out, code = await _run_shell(snap)
         elif job_type == 'http':
             status, out, code = await asyncio.to_thread(_run_http, snap)
         else:

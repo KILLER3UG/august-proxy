@@ -294,3 +294,49 @@ def test_routing_evidence_ok_uses_real_outcome(isolatedData):
     suggestions = get_suggestions('bugfix', min_samples=2)
     assert suggestions
     assert suggestions[0]['winRate'] == 0.5
+
+
+# ── 13. Verifier gate: only the DECLARED verification command counts ─────
+
+
+def test_verifier_verdict_requires_declared_command():
+    from app.services.tool_registrations.system_tools import _verificationVerdict
+
+    echoReceipt = {'name': 'run_command', 'command': 'echo ok', 'content': 'Exit code: 0\nok'}
+    testReceipt = {
+        'name': 'run_command',
+        'command': 'pytest -q',
+        'content': 'Exit code: 0\n5 passed',
+    }
+    # Without a declared command, any passing receipt satisfies the gate.
+    verdict, _ = _verificationVerdict([echoReceipt])
+    assert verdict == 'pass'
+    # With a declared command, `echo ok` must NOT satisfy it.
+    verdict, _ = _verificationVerdict([echoReceipt], expected_command='pytest -q')
+    assert verdict == 'none'
+    # The declared command's own receipt passes.
+    verdict, _ = _verificationVerdict([echoReceipt, testReceipt], expected_command='pytest -q')
+    assert verdict == 'pass'
+
+
+def test_version_sync():
+    """The 7 version files must agree (package.json, locks, Cargo)."""
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent.parent
+    versions = [
+        json.loads((root / 'package.json').read_text('utf-8'))['version'],
+        json.loads((root / 'frontend/desktop/package.json').read_text('utf-8'))['version'],
+        json.loads((root / 'frontend/desktop/src-tauri/tauri.conf.json').read_text('utf-8'))['version'],
+        re.search(r'^version\s*=\s*"([^"]+)"', (root / 'frontend/desktop/src-tauri/Cargo.toml').read_text('utf-8'), re.M).group(1),
+        re.search(
+            r'^name = "august-desktop"[\s\S]*?^version = "([^"]+)"',
+            (root / 'frontend/desktop/src-tauri/Cargo.lock').read_text('utf-8'),
+            re.M,
+        ).group(1),
+        json.loads((root / 'package-lock.json').read_text('utf-8'))['version'],
+        json.loads((root / 'package-lock.json').read_text('utf-8'))['packages']['frontend/desktop']['version'],
+    ]
+    assert len(set(versions)) == 1, f'version mismatch: {versions}'

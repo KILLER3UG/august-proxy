@@ -796,6 +796,10 @@ async def _streamOpenaiAsAnthropic(
     openaiBody['stream'] = True
     toolRound = 0
     currentMessages: list[dict[str, object]] = cast('list[dict[str, object]]', as_list(body.get('messages'), []))
+    # The converter emits message_stop when a round's finish_reason arrives —
+    # only synthesize one at the end when the final round did NOT already
+    # terminate cleanly (prevents a duplicate message_stop on the wire).
+    sawTerminalStop = False
     # 0 = unlimited managed tool rounds
     while True:
         if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound >= MAX_MANAGED_TOOL_ROUNDS:
@@ -812,6 +816,8 @@ async def _streamOpenaiAsAnthropic(
                 )
                 return
             events = st.convert_chunk(chunk)
+            if any('message_stop' in e for e in events):
+                sawTerminalStop = True
             for eventStr in events:
                 yield eventStr
         # Stream ended — resolve tool calls now. Executing tools mid-stream and
@@ -846,8 +852,8 @@ async def _streamOpenaiAsAnthropic(
                 tr = ToolResultBlock(tool_use_id=tuId, content=f'Error: {exc}', is_error=True)
                 currentMessages.append(tr.model_dump())  # type: ignore[misc]
         continue
-    yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
-    yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
+    if not sawTerminalStop:
+        yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
 
 
 def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, object], model: str) -> dict[str, object]:
