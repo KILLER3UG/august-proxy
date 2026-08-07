@@ -25,6 +25,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
+  Gauge,
   Boxes,
   BookOpen,
   Bot,
@@ -55,7 +56,7 @@ import {
 
 /** Visibility tier for the rail. `basic` items are always shown; the
  *  `advanced` tier is hidden until the user toggles "Show advanced". */
-export type SettingsTier = 'basic' | 'advanced';
+export type SettingsTier = 'basic' | 'advanced' | 'hidden';
 
 /**
  * A single settings screen. `id` doubles as the URL segment (`/settings/<id>`),
@@ -72,8 +73,8 @@ export interface SettingsSection {
   category: string;
   /** Beginner-friendliness tier. `basic` items are always shown in the
    *  rail; `advanced` items are hidden until the user enables the
-   *  "Show advanced" toggle. Deep links always resolve and reveal the
-   *  targeted section even when advanced is off. */
+   *  "Show advanced" toggle. `hidden` items are not shown in the rail at
+   *  all (deep links still resolve). */
   tier: SettingsTier;
   keywords: string[];
   /** Old tab keys that should now open this section. */
@@ -98,27 +99,27 @@ export interface SettingsCategory {
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     id: 'general',
-    label: 'General',
+    label: 'Essentials',
     description: 'App-level basics: health, appearance, and conversation history.',
   },
   {
     id: 'intelligence',
-    label: 'Intelligence',
+    label: 'AI & Memory',
     description: 'The cognitive core: providers, brain orchestration, and memory.',
   },
   {
     id: 'tools',
-    label: 'Tools & Skills',
+    label: 'Capabilities',
     description: 'Capabilities the agent can use: MCP servers, skills, computer use, agents.',
   },
   {
     id: 'activity',
-    label: 'Activity',
+    label: 'Diagnostics',
     description: 'Telemetry and observability surfaces: traffic, logs, inspectors.',
   },
   {
     id: 'security',
-    label: 'Security & Access',
+    label: 'Permissions',
     description: 'Gating surfaces: API access, filesystem permissions, developer surfaces.',
   },
 ] as const;
@@ -137,10 +138,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   /* ── General ───────────────────────────────────────────────────── */
   {
     id: 'system-health',
-    label: 'System & Health',
+    label: 'System Status',
     description: 'Gateway status, uptime, RAM, endpoint URLs, and connect-an-app URLs.',
     icon: Activity,
-    category: 'general',
+    category: 'activity',
     tier: 'basic',
     // Note: 'gateway' is owned by api-access (the action surface for
     // opening/closing it). 'connect' is owned by api-access.
@@ -161,7 +162,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   {
     id: 'profile-preferences',
-    label: 'Profile & Preferences',
+    label: 'Appearance & Behavior',
     description: 'Theme, appearance, text size, presets, keyboard shortcuts, and onboarding.',
     icon: SlidersHorizontal,
     category: 'general',
@@ -203,7 +204,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   /* ── Intelligence ────────────────────────────────────────────── */
   {
     id: 'model-providers',
-    label: 'Model Providers',
+    label: 'Models & Providers',
     description: 'Provider cards, model catalog, aliases, quotas, and per-model usage + cost.',
     icon: Boxes,
     category: 'intelligence',
@@ -213,7 +214,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   {
     id: 'memory-knowledge',
-    label: 'Memory & Knowledge',
+    label: 'Memory & Saved Knowledge',
     description: 'Memory store, semantic facts, vector entries, knowledge graph, and system prompt.',
     icon: Network,
     category: 'intelligence',
@@ -313,7 +314,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   {
     id: 'computer-use',
-    label: 'Computer Use',
+    label: 'Desktop Automation',
     description: 'Desktop automation with SOM overlay, cross-platform support, and safe approval workflows.',
     icon: Monitor,
     category: 'tools',
@@ -324,7 +325,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   {
     id: 'agents-automation',
-    label: 'Agents & Automation',
+    label: 'Automations',
     description: 'Agent registry, permissions, automations, and approvals.',
     icon: Bot,
     category: 'tools',
@@ -348,13 +349,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Durable kanban board for multi-agent work across sessions.',
     icon: Kanban,
     category: 'tools',
-    tier: 'basic',
+    tier: 'hidden',
     keywords: ['kanban', 'board', 'multi-agent', 'cards'],
     legacyAliases: ['kanban'],
   },
   {
     id: 'agent-sandbox',
-    label: 'Tool Reach',
+    label: 'Files & Shell Access',
     description:
       'Where shell/files can go (project only by default). Separate from agent mode approvals.',
     icon: Shield,
@@ -377,7 +378,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   /* ── Activity ────────────────────────────────────────────────── */
   {
     id: 'observability',
-    label: 'Observability',
+    label: 'Activity Log',
     description: 'Audit log, rollback history, post-observation screenshots, traffic, and logs.',
     icon: LineChart,
     category: 'activity',
@@ -388,9 +389,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     keywords: ['audit', 'rollback', 'observation', 'compliance', 'undo', 'traffic', 'log', 'activity'],
     legacyAliases: ['traffic-activity', 'overview', 'logs', 'traffic', 'activity', 'audit', 'rollback', 'observations'],
   },
+
+  {
+    id: 'usage',
+    label: 'Usage & Limits',
+    description: 'Token usage, model cost, quotas, and per-model consumption.',
+    icon: Gauge,
+    category: 'activity',
+    tier: 'basic',
+    keywords: ['limits', 'spend', 'quotas', 'tokens', 'usage-limits'],
+    legacyAliases: ['usage-limits'],
+  },
+
   {
     id: 'conversation-inspector',
-    label: 'Conversation Inspector',
+    label: 'Request Inspector',
     description: 'Readable transcript, raw request/response bodies, and assistant thinking.',
     icon: SearchIcon,
     category: 'activity',
@@ -424,7 +437,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   /* ── Security & Access ──────────────────────────────────────── */
   {
     id: 'computer-access',
-    label: 'Computer Access',
+    label: 'Desktop App Permissions',
     description: 'Filesystem scope, allowed roots, and computer-use app allowlist.',
     icon: ShieldCheck,
     category: 'security',
@@ -434,7 +447,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   {
     id: 'api-access',
-    label: 'API Access',
+    label: 'External API Access',
     description: 'Open or close the proxy gateway for external clients, manage the API key.',
     icon: Globe,
     category: 'security',
@@ -448,7 +461,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Developer Console',
     description: 'August console and advanced debug/reset options (experimental).',
     icon: TerminalSquare,
-    category: 'security',
+    category: 'activity',
     tier: 'advanced',
     keywords: ['developer', 'console', 'august', 'debug', 'reset', 'experimental'],
     legacyAliases: ['advanced'],
@@ -499,9 +512,9 @@ export function auditRegistry(): void {
     }
     ids.add(s.id);
 
-    if (s.tier !== 'basic' && s.tier !== 'advanced') {
+    if (s.tier !== 'basic' && s.tier !== 'advanced' && s.tier !== 'hidden') {
       throw new Error(
-        `settings-registry: section "${s.id}" has invalid tier "${String(s.tier)}" — must be "basic" or "advanced"`,
+        `settings-registry: section "${s.id}" has invalid tier "${String(s.tier)}" — must be "basic", "advanced", or "hidden"`,
       );
     }
     tiers.add(s.tier);

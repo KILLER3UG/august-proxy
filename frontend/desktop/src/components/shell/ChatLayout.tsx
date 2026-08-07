@@ -106,6 +106,24 @@ export function ChatLayout() {
     return () => window.removeEventListener('august:open-right-sidebar', handler);
   }, []);
 
+  // "Open a project folder" (onboarding checklist, voice) → the real folder
+  // picker, with feedback when no Tauri shell is available.
+  useEffect(() => {
+    const handler = () => {
+      void (async () => {
+        try {
+          const { openFolderViaTauri } = await import('@/api/folder');
+          const result = await openFolderViaTauri();
+          if (!result) toast.info('Choose a project folder from the sidebar to bind it.');
+        } catch {
+          toast.error('Folder picker is only available in the desktop app.');
+        }
+      })();
+    };
+    window.addEventListener('august:open-folder', handler);
+    return () => window.removeEventListener('august:open-folder', handler);
+  }, []);
+
   // Task 5: listen for august:ui-action events from the LLM/tool layer.
   // API/state actions only — no DOM clicks/fills (locked decision 3).
   const workbenchSessionId = active?.workbenchSessionId;

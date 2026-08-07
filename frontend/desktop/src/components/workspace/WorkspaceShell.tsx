@@ -17,7 +17,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
 import { useSettingsAdvancedPreference } from '@/hooks/useSettingsAdvancedPreference';
@@ -60,6 +60,7 @@ export function WorkspaceShell({
   className,
 }: WorkspaceShellProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const { showAdvanced, toggle: toggleAdvanced } = useSettingsAdvancedPreference();
   const { available: updateAvailable } = useAppUpdate();
@@ -92,10 +93,12 @@ export function WorkspaceShell({
 
   // Apply tier filter: when "Show advanced" is off, hide advanced items
   // UNLESS the user has deep-linked to one (we keep the active section
-  // visible so legacy URLs continue to work).
+  // visible so legacy URLs continue to work). `hidden` sections are never
+  // shown in the rail (deep links still resolve via the active id).
   const tiered = useMemo(() => {
-    if (showAdvanced) return decorated;
-    return decorated.filter((s) => s.tier === 'basic' || s.id === active);
+    const visible = decorated.filter((s) => s.tier !== 'hidden' || s.id === active);
+    if (showAdvanced) return visible;
+    return visible.filter((s) => s.tier === 'basic' || s.id === active);
   }, [decorated, showAdvanced, active]);
 
   // Filter by free-text query (matches label, description, keywords).
@@ -128,7 +131,13 @@ export function WorkspaceShell({
       {/* Left rail */}
       <aside className="w-64 shrink-0 border-r border-white/[0.06] bg-[#0f0f12] flex flex-col">
         <button
-          onClick={() => { void navigate('/'); }}
+          onClick={() => {
+            // Return to the exact chat the user came from (saved when
+            // navigating into /settings), not always "/".
+            const back = sessionStorage.getItem('pre-settings-path');
+            void navigate(back && back !== location.pathname ? back : '/');
+            sessionStorage.removeItem('pre-settings-path');
+          }}
           className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition text-left"
         >
           <ArrowLeft className="size-4" />
@@ -167,7 +176,9 @@ export function WorkspaceShell({
                       badge={
                         s.id === 'app-updates' && updateAvailable
                           ? 'New'
-                          : null
+                          : s.tier === 'advanced' && !isFiltering
+                            ? 'Advanced'
+                            : null
                       }
                       onSelect={() => {
                         if (s.id === active) return;

@@ -102,7 +102,7 @@ export function useProviderOnboardingState() {
         description: 'Gmail, Calendar, and Drive in one click when ready',
         done: googleConnected,
         optional: true,
-        href: '/settings/integrations',
+        href: '/settings/tools-connections',
       },
     ],
     [hasProvider, hasWorkspace, googleConnected, doctorOk, doctorDetail],

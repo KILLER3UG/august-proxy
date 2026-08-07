@@ -187,11 +187,11 @@ export function ModelRow({
           </label>
           <div className="space-y-1.5">
             <label className="flex items-center gap-2 text-xs">
-              <span className="shrink-0">Wire format</span>
+              <span className="shrink-0">Request format</span>
               <select
                 value={format}
                 onChange={(e) => setFormat(e.target.value as ApiFormat | '')}
-                aria-label="Wire format override"
+                aria-label="Request format override"
                 className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
               >
                 <option value="">Auto (provider format)</option>

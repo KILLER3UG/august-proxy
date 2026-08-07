@@ -66,11 +66,20 @@ export function ProviderOnboardingModal() {
 
   const go = (href?: string) => {
     if (!href) return;
+    if (href === '/') {
+      // "Open a project folder" — launch the real folder picker instead of
+      // navigating to the chat root.
+      window.dispatchEvent(new CustomEvent('august:open-folder'));
+      skip();
+      return;
+    }
     void navigate(href);
   };
 
   return (
-    <Backdrop onClose={skip}>
+    // Deliberately NOT backdrop-dismissible: a stray click must not close the
+    // setup checklist mid-flow — use Skip / the X button.
+    <Backdrop>
       <div
         className="relative w-full max-w-md rounded-2xl border border-white/[0.06] bg-card p-6 shadow-2xl"
         role="dialog"

@@ -50,10 +50,18 @@ const TEXT_SIZE_OPTIONS: { id: TextSize; label: string; scale: string }[] = [
   { id: 'spacious',    label: 'Extra Large', scale: '1.18' },
 ];
 
+const PRESET_KEY = 'august_preset';
+
 export function ProfilePreferencesSection() {
   const themeMode = useThemeStore((s) => s.mode);
   const textSize = useThemeStore((s) => s.textSize);
-  const [activePreset, setActivePreset] = useState<string>('default');
+  const [activePreset, setActivePreset] = useState<string>(() => {
+    try {
+      return localStorage.getItem(PRESET_KEY) ?? 'default';
+    } catch {
+      return 'default';
+    }
+  });
   const [tour, setTour] = useState(true);
   const [osNotify, setOsNotify] = useState(false);
 
@@ -61,13 +69,31 @@ export function ProfilePreferencesSection() {
     setOsNotify(OsNotifyService.isEnabled());
   }, []);
 
+  const selectPreset = (id: string) => {
+    setActivePreset(id);
+    try {
+      localStorage.setItem(PRESET_KEY, id);
+    } catch {
+      /* storage unavailable */
+    }
+    // Cheap preset hints: privacy preset hides the OS-notification surface
+    // and keeps the tour off.
+    if (id === 'privacy') {
+      setTour(false);
+      if (OsNotifyService.isEnabled()) {
+        OsNotifyService.setEnabled(false);
+        setOsNotify(false);
+      }
+    }
+  };
+
   const themeModeIcon =
     themeMode === 'light' ? Sun : themeMode === 'dark' ? Moon : Monitor;
 
   return (
     <div className="flex h-full flex-col">
       <header className="px-6 pt-5 pb-4 shrink-0">
-        <h2 className="text-lg font-semibold tracking-tight text-foreground">Profile &amp; Preferences</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">Appearance &amp; Behavior</h2>
         <p className="mt-1 text-sm leading-5 text-muted-foreground">
           Personalize how August looks and behaves. These are app-level preferences.
         </p>
@@ -195,7 +221,7 @@ export function ProfilePreferencesSection() {
               return (
                 <button
                   key={p.id}
-                  onClick={() => setActivePreset(p.id)}
+                  onClick={() => selectPreset(p.id)}
                   className={cn(
                     'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition',
                     active

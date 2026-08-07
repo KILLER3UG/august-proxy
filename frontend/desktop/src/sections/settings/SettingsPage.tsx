@@ -24,6 +24,7 @@ import { WorkspaceMemorySection } from '@/sections/workspace/WorkspaceMemorySect
 import { WorkspaceInspectorSection } from '@/sections/workspace/WorkspaceInspectorSection';
 import { WorkspaceModelsSection } from '@/sections/workspace/WorkspaceModelsSection';
 import { WorkspaceGeneralSection } from '@/sections/workspace/WorkspaceGeneralSection';
+import { ProfilePreferencesSection } from './ProfilePreferencesSection';
 import { SystemHealthSection } from './SystemHealthSection';
 import { IntegrationsSection } from './IntegrationsSection';
 import { ConversationsHistorySection } from './ConversationsHistorySection';
@@ -136,7 +137,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
   account: AccountWrapper,
-  'profile-preferences': GeneralWrapper,
+  'profile-preferences': ProfilePreferencesWrapper,
   'ui-designer': UiDesignerWrapper,
   'system-health': SystemHealthWrapper,
   'tools-connections': ToolsConnectionsWrapper,
@@ -178,6 +179,7 @@ function InspectorWrapper() { return <WorkspaceInspectorSection />; }
 function ModelsWrapper() { return <WorkspaceModelsSection />; }
 function AccountWrapper() { return <AccountSection />; }
 function GeneralWrapper() { return <WorkspaceGeneralSection />; }
+function ProfilePreferencesWrapper() { return <ProfilePreferencesSection />; }
 function UiDesignerWrapper() { return <UiDesignerSection />; }
 function SystemHealthWrapper() { return <SystemHealthSection />; }
 function ToolsConnectionsWrapper() { return <IntegrationsSection />; }

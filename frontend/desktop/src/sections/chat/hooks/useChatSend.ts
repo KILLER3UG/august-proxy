@@ -10,6 +10,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import {
   voiceCommandRegistry,
   type ChatMessageLite,
@@ -97,6 +98,7 @@ export interface UseChatSendOptions {
  * after a stream ends without the backend consuming them.
  */
 export function useChatSend(opts: UseChatSendOptions) {
+  const navigate = useNavigate();
   const {
     sessionId,
     loadedSessionId,
@@ -222,7 +224,19 @@ export function useChatSend(opts: UseChatSendOptions) {
         ensureWorkbenchSession,
       });
       if (result === 'error') {
-        toast.error('Chat failed — check backend and model provider');
+        // Actionable error: retry the same message or jump to provider
+        // settings — never leave the user with a dead-end "Chat failed".
+        toast.error('Chat failed', {
+          description: 'The backend or model provider rejected the request.',
+          action: {
+            label: 'Retry',
+            onClick: () => void send(requestText),
+          },
+          cancel: {
+            label: 'Provider settings',
+            onClick: () => void navigate('/settings/model-providers'),
+          },
+        });
       } else if (result === 'queued') {
         toast.message('Message queued', {
           description: 'It will run when the current response finishes.',

@@ -1,36 +1,30 @@
-fix: external-audit P0/P1 round — versions, sandbox trust, verifier, SSE contracts
+feat: settings restructure (5 groups), onboarding fixes, actionable chat errors
 
-Release & trust (P0):
-- Version sync across all 7 files incl. package-lock.json + Cargo.lock
-  (check-version-sync.mjs now passes); backend health reports the real
-  version (app/version.py reads root package.json)
-- /api/health/detailed returns status:degraded + backgroundIssues when
-  brain sync / cognitive boot are unhealthy
-- Code mode hardened: python -I isolated mode + secret env scrubbing in the
-  runner preamble; documented trust parity with run_command
-- File tools: writes gated to the system temp area when no workspace is
-  configured (reads stay unrestricted)
-- Scheduled shell automations run through the standard sandbox
-  (run_sandboxed, workspace-bound, no network) instead of raw
-  subprocess.run(shell=True)
+Settings (roadmap implemented):
+- Rail regrouped into the 5 target groups: Essentials, AI & Memory,
+  Capabilities, Permissions, Diagnostics (category ids unchanged for compat);
+  every section re-tagged; new "Usage & Limits" section added (UsageWrapper
+  existed, no rail entry); Agent Board hidden from the rail via a new
+  `tier: 'hidden'` (deep links still resolve); registry audit accepts the
+  hidden tier; usage keywords deduped against model-providers
+- Terminology renames: Models & Providers, Appearance & Behavior, Files &
+  Shell Access, Activity Log, Request Inspector, System Status, Desktop App
+  Permissions, External API Access, Memory & Saved Knowledge, Automations,
+  Desktop Automation
+- Advanced chip on rail items (visibly labels advanced surfaces)
+- Back to workspace returns to the exact chat the user came from
+  (pre-settings-path), not always /
+- profile-preferences now mounts the functional ProfilePreferencesSection;
+  presets persist to localStorage and the privacy preset applies (tour off,
+  OS notifications off)
 
-Functional (P1):
-- /v1/responses non-streaming double translation fixed (adapter returns
-  Responses-format; route translates only chat-shaped bodies from the
-  Anthropic-upstream path)
-- list_available honors environment-backed credentials (_hasApiKey) so
-  env-configured providers appear in /v1/models and routing
-- Verifier gate: when verification_command is DECLARED, only receipts from
-  that exact command satisfy it (echo ok no longer passes); receipts record
-  the command; unmatched-declared returns 'none'
-- Double message_stop removed from _streamOpenaiAsAnthropic (per-round
-  terminal tracking)
-- Malformed-tool counter is turn-scoped (accumulates across rounds, resets
-  on recovery) so the bare-surface downgrade actually fires
-- SSE schema + dispatcher accept aborted / retrying / legacy final_output
-  (no validation warnings, legacy events dispatch)
+Onboarding:
+- Setup checklist is no longer backdrop-dismissible (explicit Skip/X only)
+- "Open a project folder" launches the real folder picker via a new
+  august:open-folder event -> openFolderViaTauri (with fallback toast)
+- Google integration link -> canonical /settings/tools-connections
 
-UI:
-- Send button disabled until a usable model is selected
-- docs/SETTINGS_UX_REDESIGN.md: settings restructure roadmap (5 groups,
-  guided AI setup, terminology, product opportunities)
+Terminology + errors:
+- "Wire format" -> "Request format" in the model editor
+- Chat failure toast is actionable: Retry (re-sends the message) + Provider
+  settings

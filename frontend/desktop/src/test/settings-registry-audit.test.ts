@@ -72,7 +72,7 @@ describe('settings-registry audit', () => {
 
   it('every section declares a valid tier', () => {
     for (const s of SETTINGS_SECTIONS) {
-      expect(['basic', 'advanced'], `${s.id} has invalid tier`).toContain(s.tier);
+      expect(['basic', 'advanced', 'hidden'], `${s.id} has invalid tier`).toContain(s.tier);
     }
   });
 

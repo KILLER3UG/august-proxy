@@ -19,6 +19,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 // renders in the rail.
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
+  useLocation: () => ({ pathname: '/settings/system-health' }),
 }));
 
 vi.mock('@/hooks/useAppUpdate', () => ({

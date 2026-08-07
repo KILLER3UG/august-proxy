@@ -104,3 +104,27 @@ Search results should visibly label Advanced and Developer settings.
 - SSE schema + dispatcher accept `aborted` / `retrying` / legacy
   `final_output`.
 - Send disabled until a usable model is selected.
+
+## Done in the restructure pass (0.12.55)
+
+- **5-group rail implemented** — categories renamed (Essentials, AI & Memory,
+  Capabilities, Permissions, Diagnostics) and every section re-tagged;
+  `Usage & Limits` section added; Agent Board hidden from the rail
+  (`tier: 'hidden'`, deep links still resolve).
+- **Section labels renamed** per the terminology table (Models & Providers,
+  Appearance & Behavior, Files & Shell Access, Activity Log, Request
+  Inspector, System Status, Desktop App Permissions, External API Access,
+  Memory & Saved Knowledge, Automations, Desktop Automation).
+- **Advanced chip** on rail items so advanced surfaces are visibly labeled.
+- **Back to workspace** returns to the exact chat the user came from
+  (`pre-settings-path`), not always `/`.
+- **Appearance & Behavior** now mounts the functional
+  `ProfilePreferencesSection`; presets persist (localStorage) and the
+  privacy preset applies (tour off, OS notifications off).
+- **Onboarding**: the setup checklist is no longer backdrop-dismissible;
+  "Open a project folder" launches the real folder picker
+  (`august:open-folder` event → `openFolderViaTauri`); Google integration
+  links to the canonical `/settings/tools-connections`.
+- **"Wire format" → "Request format"** in the model editor.
+- **Chat errors are actionable**: Retry (re-sends the message) + Provider
+  settings in the failure toast.
