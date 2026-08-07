@@ -29,8 +29,11 @@ import { Badge } from '@/components/ui/badge';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { ModelPickerDropdown } from '@/components/overlays/ModelPickerDropdown';
 import { uniqueAggregatedModels } from './modelSettingsShared';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 
 export function AliasesTab() {
+  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
   const qc = useQueryClient();
   const aliasQ = useQuery({
     queryKey: ['user-model-aliases'],
@@ -101,7 +104,13 @@ export function AliasesTab() {
   }
 
   async function handleRestart() {
-    if (!window.confirm('Restart the backend? This will briefly interrupt active requests.')) return;
+    const ok = await confirm({
+      title: 'Restart backend?',
+      message: 'This will briefly interrupt active requests.',
+      confirmLabel: 'Restart',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     setRestarting(true);
     try {
       await restartMut.mutateAsync();
@@ -215,6 +224,16 @@ export function AliasesTab() {
           <Badge variant="warning" className="text-[10px]">unsaved changes</Badge>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

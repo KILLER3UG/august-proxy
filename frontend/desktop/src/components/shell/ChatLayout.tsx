@@ -21,6 +21,8 @@ import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
 import type { RightDrawerSectionId } from "./RightDrawerState";
 import { dispatchFocusComposer, dispatchInsertComposerText, onUiAction } from "@/api/ui-events";
+import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 const WORKBENCH_SIDEBAR_OPEN_KEY = "august-workbench-sidebar-open";
@@ -28,6 +30,7 @@ const WORKBENCH_SIDEBAR_OPEN_KEY = "august-workbench-sidebar-open";
 export function ChatLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
   const { sessionId } = useParams<{ sessionId?: string }>();
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem(SESSIONS_COLLAPSED_KEY) === "1",
@@ -275,7 +278,7 @@ export function ChatLayout() {
     }
   }, [location.pathname, sessionId, sessions, navigate, currentWorkspacePath]);
 
-  const handleNewSession = (folderId?: string | null) => {
+  const handleNewSession = async (folderId?: string | null) => {
     // Dirty confirm: streaming or unsent composer draft.
     try {
       const sid = active?.id;
@@ -291,7 +294,13 @@ export function ChatLayout() {
           const msg = streaming
             ? 'August is still working. Start a new chat anyway? The current run continues in the background until you stop it.'
             : 'You have an unsent draft. Discard it and start a new chat?';
-          if (!window.confirm(msg)) return;
+          const ok = await confirm({
+            title: 'Start new chat?',
+            message: msg,
+            confirmLabel: 'Start New Chat',
+            variant: 'destructive',
+          });
+          if (!ok) return;
         }
       }
     } catch {
@@ -504,6 +513,16 @@ export function ChatLayout() {
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

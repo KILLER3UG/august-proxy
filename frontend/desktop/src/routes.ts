@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import * as React from 'react';
 import { type ReactNode, lazy, Suspense } from 'react';
-import { Navigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -110,7 +110,10 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     element: React.createElement(
       LazySection,
       { name: 'Live' },
-      React.createElement(LiveSurface, { onSwitchToChat: () => { window.location.href = '/'; } }),
+      React.createElement(() => {
+        const navigate = useNavigate();
+        return React.createElement(LiveSurface, { onSwitchToChat: () => navigate('/') });
+      }),
     ),
     nav: true,
   },

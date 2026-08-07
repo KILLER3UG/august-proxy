@@ -20,12 +20,15 @@ import {
   clearRightDrawerDiff,
 } from './RightDrawerState';
 import { resolveWorkbenchSessionId } from '@/sections/chat/stream/session-id-map';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 
 export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null }) {
   const qc = useQueryClient();
   const drawer = useRightDrawer();
   const storedDiff = drawer.diff;
   const [reverting, setReverting] = useState(false);
+  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
   const query = useQuery({
     queryKey: ['git', 'diff', sessionId],
@@ -61,16 +64,22 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
         const list = await listWorkbenchCheckpoints(wbId).catch(() => []);
         const latest = list[0];
         if (latest?.id) {
-          const ok = window.confirm(
-            `Revert all ${files.length} changed file${files.length === 1 ? '' : 's'} back to the last save point?`,
-          );
+          const ok = await confirm({
+            title: 'Revert changes?',
+            message: `Revert all ${files.length} changed file${files.length === 1 ? '' : 's'} back to the last save point?`,
+            confirmLabel: 'Revert',
+            variant: 'destructive',
+          });
           if (!ok) return;
           const res = await restoreWorkbenchCheckpoint(wbId, latest.id);
           toast.success(res.message || 'Reverted to last save point');
         } else {
-          const ok = window.confirm(
-            `No save point found. Discard changes to ${files.length} tracked file${files.length === 1 ? '' : 's'} with git restore?`,
-          );
+          const ok = await confirm({
+            title: 'Discard changes?',
+            message: `No save point found. Discard changes to ${files.length} tracked file${files.length === 1 ? '' : 's'} with git restore?`,
+            confirmLabel: 'Discard',
+            variant: 'destructive',
+          });
           if (!ok) return;
           await gitApi.command(['restore', '--', '.'], sessionId);
           toast.success('Working tree restored');
@@ -201,6 +210,16 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
           );
         })}
       </div>
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

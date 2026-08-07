@@ -12,6 +12,7 @@ import {
   useMemo,
   useCallback,
 } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { mockChatThread } from '@/lib/mock';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
@@ -148,6 +149,7 @@ function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
 }
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
+  const navigate = useNavigate();
   const sessions = useSessionsStore((s) => s.sessions);
   const activeSession = useMemo(
     () => resolveActiveSession(sessions, sessionId),
@@ -681,7 +683,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           });
           persistMessages(ui.id, messages.slice(0, index + 1));
           toast.success('Forked chat — opening the copy…');
-          window.location.href = `/c/${ui.id}`;
+          navigate(`/c/${ui.id}`);
         })
         .catch((err: unknown) => {
           toast.error(
@@ -1485,7 +1487,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           hiddenModels={hiddenModels}
           onToggleModel={toggleModelVisibility}
           onNavigate={(p) => {
-            window.location.href = p;
+            navigate(p);
           }}
           onRefreshModels={() => {
             void handleRefreshModels();

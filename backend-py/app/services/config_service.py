@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +14,11 @@ from app.atomic_write import write_json_atomic
 from app.json_narrowing import as_int, as_list
 from app.lib.paths import dataPath
 from app.models.config import ModelConfig, ProviderConfig
+
+# ── read cache (avoids hitting disk on every hot-path call) ──────────────
+_CONFIG_CACHE_TTL_S = 2.0  # seconds — long enough to dedup burst reads,
+# short enough that editors / external writes propagate quickly.
+_config_cache: tuple[float, dict[str, object]] | None = None
 
 
 def _readJson(path: Path) -> dict[str, object]:
@@ -28,11 +34,22 @@ def _writeJson(path: Path, data: dict[str, object]) -> None:
 
 
 def getConfig() -> dict[str, object]:
-    return _readJson(dataPath('config.json'))
+    """Return config.json contents, cached for _CONFIG_CACHE_TTL_S seconds."""
+    global _config_cache  # noqa: PLW0603
+    now = time.monotonic()
+    if _config_cache is not None:
+        cached_at, cached_data = _config_cache
+        if now - cached_at < _CONFIG_CACHE_TTL_S:
+            return cached_data
+    data = _readJson(dataPath('config.json'))
+    _config_cache = (now, data)
+    return data
 
 
 def saveConfig(config: dict[str, object]) -> None:
+    global _config_cache  # noqa: PLW0603
     _writeJson(dataPath('config.json'), config)
+    _config_cache = None  # invalidate read cache
 
 
 def getProvidersStore() -> dict[str, object]:

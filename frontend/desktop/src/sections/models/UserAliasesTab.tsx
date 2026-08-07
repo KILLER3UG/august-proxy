@@ -13,9 +13,12 @@ import {
 } from '@/api/api-client';
 import { PageLoader } from '@/components/PageLoader';
 import { EmptyState } from './modelsShared';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 
 /** Editable user-defined model aliases with save and backend restart. */
 export function UserAliasesTab() {
+  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
   const { data: aliasData, isLoading: aliasesLoading } = useQuery({
     queryKey: ['user-model-aliases'],
     queryFn: () => getUserModelAliases(),
@@ -80,7 +83,13 @@ export function UserAliasesTab() {
   }
 
   async function handleRestart() {
-    if (!window.confirm('Restart the backend? This will briefly interrupt active requests.')) return;
+    const ok = await confirm({
+      title: 'Restart backend?',
+      message: 'This will briefly interrupt active requests.',
+      confirmLabel: 'Restart',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     setRestarting(true);
     try {
       await restartBackend();
@@ -160,6 +169,16 @@ export function UserAliasesTab() {
           </div>
         </Card>
       )}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

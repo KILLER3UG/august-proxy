@@ -324,6 +324,7 @@ def is_plan_file_write(
 
 _git_probe_cache: dict[str, tuple[float, str, str]] = {}
 _GIT_PROBE_TTL_S = 60
+_GIT_PROBE_CACHE_MAX = 128  # evict stale entries when exceeded
 
 
 def _probe_workspace_git(workspace_path: str) -> tuple[str, str]:
@@ -368,6 +369,11 @@ def _probe_workspace_git(workspace_path: str) -> tuple[str, str]:
     except Exception:
         logger.debug('prompt: git log failed', exc_info=True)
     _git_probe_cache[workspace_path] = (now, vcs_info, whats_new)
+    # Evict stale entries when cache grows too large.
+    if len(_git_probe_cache) > _GIT_PROBE_CACHE_MAX:
+        expired = [k for k, v in _git_probe_cache.items() if now - v[0] >= _GIT_PROBE_TTL_S]
+        for k in expired[:len(expired) // 2 or 1]:
+            _git_probe_cache.pop(k, None)
     return vcs_info, whats_new
 
 

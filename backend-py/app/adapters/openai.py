@@ -630,26 +630,31 @@ def _openaiToAnthropicBody(body: dict[str, object]) -> dict[str, object]:
     """Translate an OpenAI chat-completions request body to Anthropic messages."""
     system_parts: list[str] = []
     messages: list[dict[str, object]] = []
-    for raw in as_list(body.get('messages'), []):
-        msg = as_dict(raw, {})
+    raw_msgs = as_list(body.get('messages'), [])
+    i = 0
+    while i < len(raw_msgs):
+        msg = as_dict(raw_msgs[i], {})
         role = as_str(msg.get('role'), 'user')
         content = msg.get('content')
         if role == 'system':
             system_parts.append(_openaiContentToText(content))
+            i += 1
             continue
         if role == 'tool':
-            messages.append(
-                {
-                    'role': 'user',
-                    'content': [
-                        {
-                            'type': 'tool_result',
-                            'tool_use_id': as_str(msg.get('tool_call_id'), ''),
-                            'content': _openaiContentToText(content),
-                        }
-                    ],
-                }
-            )
+            # Group consecutive tool messages into a single user message
+            # with multiple tool_result blocks (Anthropic API requirement).
+            tool_blocks: list[dict[str, object]] = []
+            while i < len(raw_msgs) and as_str(as_dict(raw_msgs[i], {}).get('role'), '') == 'tool':
+                tmsg = as_dict(raw_msgs[i], {})
+                tool_blocks.append(
+                    {
+                        'type': 'tool_result',
+                        'tool_use_id': as_str(tmsg.get('tool_call_id'), ''),
+                        'content': _openaiContentToText(tmsg.get('content')),
+                    }
+                )
+                i += 1
+            messages.append({'role': 'user', 'content': tool_blocks})
             continue
         if role == 'assistant':
             blocks: list[dict[str, object]] = []
@@ -682,8 +687,10 @@ def _openaiToAnthropicBody(body: dict[str, object]) -> dict[str, object]:
                 messages.append({'role': 'assistant', 'content': blocks})
             else:
                 messages.append({'role': 'assistant', 'content': text})
+            i += 1
             continue
         messages.append({'role': role, 'content': _openaiContentToAnthropic(content)})
+        i += 1
     out: dict[str, object] = {
         'model': as_str(body.get('model'), ''),
         'max_tokens': as_int(body.get('max_tokens'), 4096),

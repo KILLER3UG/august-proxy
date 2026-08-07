@@ -54,7 +54,9 @@ class ChatMessage(ExtraAllowBaseModel):
 
 # August routing / bookkeeping — never forward to OpenAI-compatible gateways.
 # OpenCode Console Zod-rejects ``session_id: null`` (expects string if present).
-_AUGUST_ONLY_OPENAI_KEYS = frozenset({'session_id', 'sessionId', 'user', 'metadata'})
+# NOTE: `user` and `metadata` are legitimate OpenAI fields (abuse tracking,
+# project IDs) and must NOT be stripped — only August-internal routing keys.
+_AUGUST_ONLY_OPENAI_KEYS = frozenset({'session_id', 'sessionId'})
 
 
 def dump_openai_upstream_body(

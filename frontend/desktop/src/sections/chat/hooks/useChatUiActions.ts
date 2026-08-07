@@ -3,6 +3,7 @@
 /* restore latest checkpoint.                                               */
 
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   createSession,
@@ -43,6 +44,7 @@ export interface UseChatUiActionsOptions {
  * branch, restore checkpoint, stop generation).
  */
 export function useChatUiActions(opts: UseChatUiActionsOptions): void {
+  const navigate = useNavigate();
   const {
     sessionId,
     messages,
@@ -176,7 +178,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
             });
             persistMessages(ui.id, messages);
             toast.success('Branched chat — opening copy…');
-            window.location.href = `/c/${ui.id}`;
+            navigate(`/c/${ui.id}`);
           })
           .catch((err: unknown) => {
             toast.error(
