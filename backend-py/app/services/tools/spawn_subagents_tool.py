@@ -83,6 +83,18 @@ TOOL_DEFINITION = {
                                 'instead of parsing prose.'
                             ),
                         },
+                        'effort': {
+                            'type': 'string',
+                            'enum': ['low', 'medium', 'high', 'max'],
+                            'description': 'Reasoning/thinking budget for this sub-agent (default medium).',
+                        },
+                        'model': {
+                            'type': 'string',
+                            'description': (
+                                'Optional model override for this sub-agent (e.g. a specific '
+                                'model id). Default: the agent\'s alias or the cheap smol fleet model.'
+                            ),
+                        },
                         'context': {'type': 'string', 'description': 'Additional context for the sub-agent.'},
                     },
                     'required': ['goal'],
@@ -410,6 +422,8 @@ async def _doSpawn(
                 'agentId': item.get('agentId', 'general'),
                 'restrictedTools': item.get('restrictedTools'),
                 'yieldSchema': item.get('yieldSchema'),
+                'effort': item.get('effort', 'medium'),
+                'model': item.get('model', ''),
                 'context': item.get('context', ''),
             }
             for item in workItems

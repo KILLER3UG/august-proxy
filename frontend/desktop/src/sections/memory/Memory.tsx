@@ -22,6 +22,7 @@ import { MemoryGuidelinesTab } from './MemoryGuidelinesTab';
 import { MemoryGraphTab } from './MemoryGraphTab';
 import { MemorySearchTab } from './MemorySearchTab';
 import { MemoryPromptTab } from './MemoryPromptTab';
+import { MemoryProposalsTab } from './MemoryProposalsTab';
 
 export function Memory() {
   const [tab, setTab] = useState<Tab>('overview');
@@ -157,6 +158,7 @@ export function Memory() {
           brain={brain}
         />
       )}
+      {tab === 'proposals' && <MemoryProposalsTab />}
     </div>
   );
 }

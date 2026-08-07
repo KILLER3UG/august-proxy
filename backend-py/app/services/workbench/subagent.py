@@ -105,6 +105,8 @@ async def executeSubAgent(
     job_id: str | None = None,
     restricted_names: set[str] | None = None,
     yield_schema: dict[str, object] | None = None,
+    effort: str = 'medium',
+    model_override: str = '',
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``.
 
@@ -114,7 +116,9 @@ async def executeSubAgent(
     never mutate the module-level ``toolDefinitions``, which races across
     concurrent workers. ``yield_schema`` (optional JSON Schema) makes the
     agent return a single JSON object; the result is validated and returned
-    as parsed JSON when it matches.
+    as parsed JSON when it matches. ``effort`` maps to the reasoning/thinking
+    budget (default 'medium'); ``model_override`` pins the model instead of
+    the agent alias / smol role routing.
     """
     from app.providers.model_resolver import resolve_or_fallback
     from app.providers.route_resolver import resolve_for_model
@@ -225,7 +229,7 @@ async def executeSubAgent(
         except Exception:
             worktree_path = ''
 
-    aliasHint = as_str(agent.get('modelAlias')) or parentAlias or ''
+    aliasHint = model_override or as_str(agent.get('modelAlias')) or parentAlias or ''
     resolution = resolve_or_fallback(aliasHint, provider_hint=getattr(session, 'provider', '') or '')
     model = as_str((resolution or {}).get('model')) or aliasHint or ''
     providerName = as_str((resolution or {}).get('provider')) or ''
@@ -368,11 +372,11 @@ async def executeSubAgent(
             for retryAttempt in range(retryPolicy['maxRetries'] + 1):
                 if isAnthropic:
                     response = await _callAnthropicWorkbench(
-                        messages, systemText, resolvedModel, tools, 'medium', provider=provider, emit=_subEmit
+                        messages, systemText, resolvedModel, tools, effort, provider=provider, emit=_subEmit
                     )
                 elif isOpenai:
                     response = await _callOpenaiWorkbench(
-                        messages, systemText, resolvedModel, openaiTools, 'medium', provider=provider, emit=_subEmit
+                        messages, systemText, resolvedModel, openaiTools, effort, provider=provider, emit=_subEmit
                     )
                 else:
                     err = 'Unsupported provider type for sub-agent.'

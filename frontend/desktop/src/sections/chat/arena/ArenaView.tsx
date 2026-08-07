@@ -6,8 +6,11 @@
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { FileDiff, Swords, X } from 'lucide-react';
 import { DiffView } from '@/components/chat/DiffView';
+import { SectionHeader } from '@/components/SectionHeader';
+import { cn } from '@/lib/utils';
 import {
   useArenaStore,
   clearArenaRun,
@@ -51,7 +54,60 @@ export function ArenaView() {
     return out;
   }, [run]);
 
-  if (!run) return null;
+  // Arena archive: recent verdicts (results used to vanish when the overlay
+  // closed — the routing_evidence arena rows are the durable record).
+  const historyQ = useQuery<{ results: Array<{
+    sessionId: string; taskType: string; model: string; provider: string;
+    won: boolean; tokens: number; durationMs: number; at: string;
+  }> }>({
+    queryKey: ['arena-history'],
+    queryFn: () => api.get<{ results: Array<{
+      sessionId: string; taskType: string; model: string; provider: string;
+      won: boolean; tokens: number; durationMs: number; at: string;
+    }> }>('/api/brain/routing/arena'),
+    refetchInterval: 30_000,
+  });
+
+  if (!run) {
+    // Idle state = the archive screen, so past verdicts never disappear.
+    const history = historyQ.data?.results ?? [];
+    return (
+      <div className="p-6 space-y-4">
+        <SectionHeader
+          title="Arena archive"
+          subtitle="Past arena / debate verdicts — the routing-evidence loop's training data."
+        />
+        {history.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No arena verdicts recorded yet — run an arena comparison and pick a
+            winner; the verdict is recorded here for the routing-evidence loop.
+          </p>
+        )}
+        <div className="space-y-2">
+          {history.map((h, i) => (
+            <div
+              key={`${h.sessionId}-${i}`}
+              className="rounded-xl border border-border bg-card/60 px-3 py-2.5 text-xs flex items-center gap-3"
+            >
+              <span
+                className={cn(
+                  'inline-block size-2 rounded-full shrink-0',
+                  h.won ? 'bg-success' : 'bg-muted-foreground/40',
+                )}
+                title={h.won ? 'Won' : 'Lost'}
+              />
+              <span className="font-medium truncate">{h.model}</span>
+              <span className="text-muted-foreground truncate">{h.provider}</span>
+              <span className="text-muted-foreground/70">{h.taskType}</span>
+              <span className="ml-auto text-muted-foreground/50 shrink-0">
+                {new Date(h.at).toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const pickWinner = (lane: ArenaRunLane) => {
     // Record the verdict for the routing-evidence loop (surpass #1/#7).

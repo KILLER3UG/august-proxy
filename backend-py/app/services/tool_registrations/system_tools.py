@@ -186,6 +186,113 @@ def _verificationVerdict(receipts: list[object]) -> tuple[str, str]:
     return ('unclear', '')
 
 
+def _messageText(msg: dict[str, object], cap: int = 4000) -> str:
+    """Extract plain text from a session message (str or block list)."""
+    content = msg.get('content', '')
+    if isinstance(content, str):
+        return content[:cap]
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and as_str(block.get('type'), '') == 'text':
+                parts.append(as_str(block.get('text'), ''))
+        return '\n'.join(parts)[:cap]
+    return ''
+
+
+async def _reviewerCritique(session: object) -> tuple[bool, str]:
+    """One-shot independent reviewer critique of the final answer.
+
+    Opt-in (``AUGUST_VERIFIER_REVIEWER=1``): after the deterministic gate
+    passes, a cheap review model may veto the completion if the answer does
+    not satisfy the goal. Any failure to run falls back to allowing — the
+    deterministic gate already passed. Memoized per turn so repeated
+    ``update_state(phase='complete')`` calls do not re-pay the call.
+    """
+    try:
+        if getattr(session, '_reviewer_checked', False):
+            return (True, '')
+        import os
+
+        if os.environ.get('AUGUST_VERIFIER_REVIEWER') != '1':
+            return (True, '')
+        from app.providers import resolver as providerResolver
+        from app.services.workbench.providers import make_review_llm_client
+
+        provider = providerResolver.resolve(as_str(getattr(session, 'provider', '') or ''))
+        reviewer = make_review_llm_client(provider, '')
+        if reviewer is None:
+            setattr(session, '_reviewer_checked', True)
+            return (True, '')
+        msgs = as_list(getattr(session, 'messages', None), [])
+        goal = ''
+        answer = ''
+        for m in reversed(msgs):
+            if not isinstance(m, dict):
+                continue
+            role = as_str(m.get('role'), '')
+            if role == 'assistant' and not answer:
+                answer = _messageText(m)
+            elif role == 'user' and not goal:
+                goal = _messageText(m, 2000)
+            if answer and goal:
+                break
+        if not answer:
+            setattr(session, '_reviewer_checked', True)
+            return (True, '')
+        reviewText = (
+            await reviewer(
+                [
+                    {
+                        'role': 'system',
+                        'content': (
+                            'You are a strict correctness reviewer for an AI coding agent. '
+                            'The agent must satisfy the user goal and its verification '
+                            '(tests/lint/build) must genuinely pass. Reply with exactly '
+                            'PASS or FAIL, then one short line explaining why.'
+                        ),
+                    },
+                    {
+                        'role': 'user',
+                        'content': (
+                            f'GOAL:\n{goal}\n\nFINAL ANSWER:\n{answer}\n\n'
+                            'Does this answer satisfy the goal? Reply PASS or FAIL.'
+                        ),
+                    },
+                ]
+            )
+            or ''
+        ).strip()[:300]
+        setattr(session, '_reviewer_checked', True)
+        if reviewText.upper().startswith('FAIL'):
+            return (False, reviewText)
+        return (True, reviewText)
+    except Exception:
+        return (True, '')
+
+
+async def _setAgentMode(mode: str = '') -> str:
+    """Switch the session's agent mode.
+
+    Modes:
+      chat — answer in text; tool calls are blocked.
+      agent — native tool calling (default).
+      code — write a fenced ```python block instead; the harness executes it
+             with a workspace-bound tool API (read_file / write_file /
+             run_command / list_files).
+    """
+    from app.services.workbench.workbench import get_session
+
+    mode = (mode or '').strip().lower()
+    if mode not in ('chat', 'agent', 'code'):
+        return "Error: mode must be one of: chat, agent, code."
+    session = get_session()
+    if not session:
+        return 'Error: no active workbench session.'
+    setattr(session, 'agent_mode', mode)
+    return f'Agent mode set to {mode}.'
+
+
 async def _updateState(
     phase: str = '', step: int = 1, completed: str = '', blockers: str = '', verificationCommand: str = ''
 ) -> str:
@@ -244,6 +351,16 @@ async def _updateState(
                     f'Verifier gate: the verification run did not pass ({detail}). Fix the '
                     'failures, re-run the command, then call update_state again.'
                 )
+            if targetPhase == 'complete' and verdict in ('pass', 'unclear'):
+                # Reviewer critique (opt-in, one-shot): an independent model may
+                # veto a completion whose answer does not satisfy the goal.
+                allow, reviewDetail = await _reviewerCritique(session)
+                if not allow:
+                    return (
+                        'Verifier gate: the reviewer model found problems with the answer '
+                        f'({reviewDetail}). Fix them, re-run verification, then call '
+                        "update_state(phase='complete') again."
+                    )
         completedList = [c.strip() for c in completed.split('\n') if c.strip()] if completed else []
         blockersList = [b.strip() for b in blockers.split('\n') if b.strip()] if blockers else []
         state: dict[str, object] = {
@@ -376,5 +493,24 @@ def register() -> None:
                 },
             },
             'required': [],
+        },
+    )
+    tool_registry.register(
+        'set_agent_mode',
+        "Switch this session's agent mode: 'chat' (answer in text only; tool calls are "
+        "blocked), 'agent' (native tool calling, default), or 'code' (write a fenced "
+        '```python block; the harness executes it with a workspace-bound tool API: '
+        'read_file(path), write_file(path, content), run_command(cmd), list_files(path)).',
+        _setAgentMode,
+        {
+            'type': 'object',
+            'properties': {
+                'mode': {
+                    'type': 'string',
+                    'enum': ['chat', 'agent', 'code'],
+                    'description': 'The agent mode to switch to.',
+                }
+            },
+            'required': ['mode'],
         },
     )

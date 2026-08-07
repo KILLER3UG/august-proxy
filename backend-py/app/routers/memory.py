@@ -248,6 +248,13 @@ async def deleteFactRoute(key: str):
     return {'status': 'ok'}
 
 
+@router.get('/proposals')
+async def listProposalsRoute(sessionId: str = '', status: str = '', limit: int = 50):
+    """List proposals (optionally by session and/or status)."""
+    proposals = memory_store.list_proposals(sessionId, status)
+    return {'results': proposals[-max(1, min(limit, 200)) :]}
+
+
 @router.post('/proposals')
 async def createProposal(body: ProposalCreate):
     """Create a proposal (plan, mutation)."""

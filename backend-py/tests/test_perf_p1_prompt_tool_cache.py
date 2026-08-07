@@ -160,11 +160,14 @@ async def test_p1_tool_defs_cache_invalidates_on_register(stub_wb, monkeypatch):
     async def _noop(**kwargs: object) -> str:
         return 'ok'
 
-    tool_registry.register('p1_test_only_tool', 'test', _noop, parameters={'type': 'object', 'properties': {}})
-    assert tool_registry.generation() > gen0
-    a3 = wb.toolDefinitions(type('S', (), {'messages': []})())
-    names = {t.get('name') for t in a3}
-    assert 'p1_test_only_tool' in names
+    try:
+        tool_registry.register('p1_test_only_tool', 'test', _noop, parameters={'type': 'object', 'properties': {}})
+        assert tool_registry.generation() > gen0
+        a3 = wb.toolDefinitions(type('S', (), {'messages': []})())
+        names = {t.get('name') for t in a3}
+        assert 'p1_test_only_tool' in names
+    finally:
+        tool_registry.unregister('p1_test_only_tool')
 
 
 @pytest.mark.asyncio
@@ -177,16 +180,19 @@ async def test_p1_tool_defs_cache_invalidates_on_unregister(stub_wb, monkeypatch
     async def _noop(**kwargs: object) -> str:
         return 'ok'
 
-    tool_registry.register(
-        'p1_withdraw_me', 'will remove', _noop, parameters={'type': 'object', 'properties': {}}
-    )
-    defs = wb.toolDefinitions(type('S', (), {'messages': []})())
-    assert 'p1_withdraw_me' in {t.get('name') for t in defs}
+    try:
+        tool_registry.register(
+            'p1_withdraw_me', 'will remove', _noop, parameters={'type': 'object', 'properties': {}}
+        )
+        defs = wb.toolDefinitions(type('S', (), {'messages': []})())
+        assert 'p1_withdraw_me' in {t.get('name') for t in defs}
 
-    assert tool_registry.unregister('p1_withdraw_me') is True
-    defs2 = wb.toolDefinitions(type('S', (), {'messages': []})())
-    names2 = {t.get('name') for t in defs2}
-    assert 'p1_withdraw_me' not in names2, 'stale cache served withdrawn tool definition'
+        assert tool_registry.unregister('p1_withdraw_me') is True
+        defs2 = wb.toolDefinitions(type('S', (), {'messages': []})())
+        names2 = {t.get('name') for t in defs2}
+        assert 'p1_withdraw_me' not in names2, 'stale cache served withdrawn tool definition'
+    finally:
+        tool_registry.unregister('p1_withdraw_me')
 
 
 @pytest.mark.asyncio

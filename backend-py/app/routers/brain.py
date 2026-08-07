@@ -260,6 +260,27 @@ async def harnessTrends(days: int = 30):
         return {'rangeDays': max(1, min(days, 90)), 'daily': []}
 
 
+@router.get('/harness/evals')
+async def harnessEvals(limit: int = 50):
+    """Recent scripted-model eval runs (the loop-level golden tasks).
+
+    Each row is one scenario run from ``tests/test_harness_evals.py`` /
+    ``app/services/harness_eval.py`` — pass/fail, rounds, duration. Running
+    the eval suite regularly and plotting this over time measures whether
+    harness changes actually improve loop behavior.
+    """
+    from app.services.harness_eval import list_eval_runs
+
+    runs = list_eval_runs(limit=limit)
+    passed = sum(1 for r in runs if r.get('passed'))
+    return {
+        'runs': runs,
+        'total': len(runs),
+        'passed': passed,
+        'passRate': round(passed / len(runs), 2) if runs else None,
+    }
+
+
 @router.post('/routing/arena')
 async def routingArena(body: dict):
     """Record an arena/debate verdict: the picked lane won, the rest lost.
@@ -286,6 +307,44 @@ async def routingArena(body: dict):
         loser_models=loser_pairs,
     )
     return {'recorded': True}
+
+
+@router.get('/routing/arena')
+async def routingArenaHistory(limit: int = 50, days: int = 30):
+    """Arena/debate verdict history (source='arena' rows, newest first).
+
+    Feeds the Brain arena archive UI — results previously vanished when the
+    overlay closed.
+    """
+    try:
+        from app.services.memory_store import _conn as getConn
+
+        conn = getConn()
+        rows = conn.execute(
+            "SELECT session_id, task_type, model, provider, ok, "
+            "input_tokens + output_tokens AS tokens, duration_ms, created_at "
+            "FROM routing_evidence WHERE source = 'arena' "
+            "AND created_at > datetime('now', ?) "
+            "ORDER BY created_at DESC LIMIT ?",
+            (f'-{max(1, min(days, 90))} days', max(1, min(limit, 200))),
+        ).fetchall()
+        results = []
+        for r in rows:
+            results.append(
+                {
+                    'sessionId': as_str(r['session_id'], ''),
+                    'taskType': as_str(r['task_type'], ''),
+                    'model': as_str(r['model'], ''),
+                    'provider': as_str(r['provider'], ''),
+                    'won': as_int(r['ok'], 0) == 1,
+                    'tokens': as_int(r['tokens'], 0),
+                    'durationMs': as_int(r['duration_ms'], 0),
+                    'at': as_str(r['created_at'], ''),
+                }
+            )
+        return {'results': results}
+    except Exception:
+        return {'results': []}
 
 
 @router.post('/run-consolidation')

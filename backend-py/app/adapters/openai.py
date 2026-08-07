@@ -333,6 +333,43 @@ async def streamOpenaiSseToClient(
     yield write_openai_sse_done()
 
 
+def _responsesEventLine(event: dict[str, object]) -> str:
+    """Serialize one upstream Responses-SSE event for client pass-through."""
+    cleanEvent: dict[str, object] = {}
+    for k, v in event.items():
+        if k != '_event_type':
+            cleanEvent[k] = v
+    etype = as_str(event.get('_event_type'), '') or as_str(cleanEvent.get('type'), '')
+    if etype:
+        return f'event: {etype}\ndata: {json.dumps(cleanEvent)}\n\n'
+    return f'data: {json.dumps(cleanEvent)}\n\n'
+
+
+async def _streamResponsesPassThrough(
+    upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, object]
+) -> AsyncIterator[str]:
+    """Stream a Responses-API request from the upstream, passthrough.
+
+    The upstream's SSE events are already Responses-format (named events like
+    ``response.created`` / ``response.output_text.delta`` / ``response.completed``),
+    so they are forwarded unchanged — event name + payload. Internal
+    bookkeeping keys (``_event_type``) are stripped; error events surface as
+    ``response.failed``.
+    """
+    client = await _getClient()
+    async for rawEvent in client.streamSse(upstreamUrl, upstreamHeaders, body):
+        event = cast('dict[str, object]', rawEvent)
+        if as_str(event.get('type'), '') == 'error' or as_str(event.get('_event_type'), '') == 'error':
+            payload = {
+                'type': 'response.failed',
+                'error': {
+                    'code': 'upstream_error',
+                    'message': as_str(event.get('body'), as_str(event.get('error'), 'Upstream stream error')),
+                },
+            }
+            yield f'event: response.failed\ndata: {json.dumps(payload)}\n\n'
+            return
+        yield _responsesEventLine(event)
 async def streamUpstreamAndResolveToolsOpenai(
     upstreamUrl: str,
     upstreamHeaders: dict[str, str],
@@ -488,13 +525,13 @@ async def handleChatCompletions(
             clientToolNames.add(name)
     hasManagedTools = len(managedLocalToolNames) > 0
     if isResponsesEndpoint:
-        raw_body['stream'] = False
+        # Responses API speaks `input`, not `messages` — translate a
+        # chat-shaped body so the same request works on both endpoints.
         upstream_body = cast('dict[str, object]', camelToSnake(raw_body))
         # The internal `_endpoint` routing marker must never reach the
         # upstream validator (strict gateways 400 on unknown keys).
         upstream_body.pop('_endpoint', None)
-        # Responses API speaks `input`, not `messages` — translate a
-        # chat-shaped body so the same request works on both endpoints.
+        upstream_body['stream'] = bool(clientWantsStream)
         msgs = as_list(upstream_body.get('messages'), [])
         if msgs:
             upstream_body['input'] = [
@@ -506,12 +543,15 @@ async def handleChatCompletions(
                 if isinstance(m, dict)
             ]
             upstream_body.pop('messages', None)
-        resp = await client.requestJson(
-            'POST',
-            upstreamUrl.replace('/chat/completions', '/responses'),
-            headers,
-            upstream_body,
-        )
+        responsesUrl = upstreamUrl.replace('/chat/completions', '/responses')
+        if clientWantsStream:
+            # Upstream-native Responses SSE pass-through: the gateway's events
+            # are already Responses-format, so forward them unchanged (event
+            # names + payloads). Managed proxy tools do not intercept in this
+            # mode — the client's own tools pass through.
+            stream = _streamResponsesPassThrough(responsesUrl, headers, upstream_body)
+            return (stream, write_openai_sse_headers())
+        resp = await client.requestJson('POST', responsesUrl, headers, upstream_body)
         if resp.is_error:
             return (normalize_upstream_error(resp), None)
         return (

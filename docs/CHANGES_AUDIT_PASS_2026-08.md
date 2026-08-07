@@ -122,20 +122,47 @@ All findings were re-verified against the code before and after the changes.
 
 ## Deferred (roadmap)
 
-- Arena/debate **history + replay UI** (endpoints exist; no archive surface).
-- Memory **proposals panel** (`/api/memory/proposals` + `decide` — chips only).
-- **Curator suggestion chips** in the composer (dry-run results where the user
-  works).
-- Reviewer-model one-shot critique in the verifier gate (opt-in).
-- Full `code`/`shell-first` execution mode (smolagents CodeAgent) — the
-  auto-downgrade mechanism is in; executing fenced Python needs a sandboxed
-  runner.
-- Loop-level **eval harness** (`evals/loop/` golden tasks + nightly trends) —
-  the `/api/brain/harness/trends` feed exists; golden task files are the next
-  step.
+- ~~Arena/debate history + replay UI~~ → **done** (idle ArenaView shows the archive;
+  `GET /api/brain/routing/arena`).
+- ~~Memory proposals panel~~ → **done** (Memory → Proposals tab with approve/reject;
+  `GET /api/memory/proposals` list endpoint added).
+- ~~Curator suggestion chips in the composer~~ → **done** (on-demand "Curate skills
+  (dry run)" chip above the composer).
+- ~~Reviewer-model one-shot critique in the verifier gate~~ → **done** (opt-in via
+  `AUGUST_VERIFIER_REVIEWER=1`; one-shot PASS/FAIL critique after the deterministic
+  gate passes, memoized per turn).
+- ~~`/v1/responses` streaming~~ → **done** (upstream-native Responses-SSE
+  pass-through; `stream: true` no longer 400s).
+- ~~Loop-level eval harness~~ → **done** (`app/services/harness_eval.py` +
+  `tests/test_harness_evals.py` — 12 golden scenarios driving the real loop with
+  scripted models; `GET /api/brain/harness/evals` + `scripts/run_harness_evals.py`).
+- ~~Code/shell-first mode~~ → **done** (`set_agent_mode(chat|agent|code)`; code mode
+  executes fenced ```python blocks through the existing sandboxed `run_command`
+  with a workspace-bound tool API; chat mode blocks tool calls; prompt block +
+  parse-failure hint point at code mode).
 - Skills self-improvement during use + memory nudges (Hermes) — depends on the
-  versioned state store.
-- `/v1/responses` streaming (Responses-style SSE synthesis).
+  versioned state store (heuristic trail is in; skill-level versioning is next).
+- Model settings inputs for `maxTools`/`maxToolResultChars` → **done**.
+
+## Feature batch 2 (changelog-inspired)
+
+- **@-mention expansion** — the composer picker now surfaces MCP server tools
+  (`/api/mcp/tools` — the "plugins") and workspace files (new bounded
+  `GET /api/workbench/workspace/files` listing) alongside skills + core tools.
+- **Subagent config** — `executeSubAgent` takes `effort` (was hardcoded
+  `'medium'`) and `model_override`; `spawn_subagents` work items accept
+  `effort`/`model`; recurring tasks can dispatch a scheduled sub-agent with a
+  chosen agent + model via an `[agent:ID model:MODEL]` message directive.
+- **Eval harness hermeticity** — eval scenarios restore the tool registry
+  after each run (fixes order-dependent test pollution); `set_agent_mode`
+  added to the tool capability buckets.
+
+**Already covered / not applicable:** project memory in Settings (exists),
+custom minute intervals (exists), queued-message ordering (exists + Phase-3
+fix), tool-card presentation (improved), diff preview refresh after revert
+(invalidates git queries), long-title truncation (exists). Deferred: image
+attachment source-path preservation (needs Tauri dialog plumbing), Feishu /
+macOS installer items (not applicable on Windows).
 
 ## Validation
 

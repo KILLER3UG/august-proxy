@@ -50,6 +50,7 @@ import {
 import { buildHandoffSummary, markHandoffPending } from './handoff-summary';
 import { SkillEvolvedChip } from '@/components/chat/SkillEvolvedChip';
 import { MemorySuggestionBar } from './MemorySuggestionBar';
+import { CuratorSuggestionBar } from './CuratorSuggestionBar';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useStickToBottomScroll } from './hooks/useStickToBottomScroll';
@@ -1196,6 +1197,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const composer = (
     <>
       <MemorySuggestionBar sessionId={sessionId} />
+      <CuratorSuggestionBar />
       <ChatThreadComposer
       sessionId={sessionId}
       loadedSessionId={loadedSessionId}

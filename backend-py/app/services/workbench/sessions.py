@@ -60,6 +60,9 @@ class WorkbenchSession:
     # update_state(phase='complete') passes the verifier gate (see the
     # _verifier_gated_emit wrapper in the workbench chat loop).
     verifierEnforced: bool = False
+    # Agent mode: '' | 'chat' (text only, tools blocked) | 'agent' (native tool
+    # calling) | 'code' (fenced python blocks via the code runner).
+    agent_mode: str = ''
     createdAt: str = ''
     updatedAt: str = ''
     startedAt: str = ''

@@ -184,6 +184,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     send,
     stop,
     streaming,
+    sessionId,
   });
 
   // Command palette "Switch model" → bump the counter so the model menu

@@ -172,28 +172,32 @@ def test_quota_endpoint_contract(isolatedData):
     assert r2.json()['limit'] is None
 
 
-# ── 9. /v1/responses rejects streaming loudly ────────────────────────────
+# ── 9. /v1/responses streaming ───────────────────────────────────────────
 
 
-def test_responses_endpoint_rejects_streaming(isolatedData):
-    import json as _json
+def test_responses_event_line_format():
+    from app.adapters.openai import _responsesEventLine
 
-    from app.config import settings
-    from app.lib.paths import dataPath
-
-    dataPath('config.json').write_text(
-        _json.dumps({'gateway': {'externalAccess': {'enabled': True}}}), 'utf-8'
+    line = _responsesEventLine(
+        {'_event_type': 'response.output_text.delta', 'type': 'response.output_text.delta', 'delta': 'Hi'}
     )
-    settings.reload()
-    settings.gatewayApiKey = 's3cret'
+    assert line.startswith('event: response.output_text.delta\n')
+    assert '"_event_type"' not in line
+    assert '"delta": "Hi"' in line
+
+    plain = _responsesEventLine({'type': 'response.completed', 'response': {'id': 'r_1'}})
+    assert plain.startswith('event: response.completed\n')
+
+
+def test_responses_endpoint_no_longer_rejects_streaming(isolatedData):
+    """stream:true is now wired (upstream-native pass-through). The request
+    proceeds past the old 400; with no reachable provider it fails upstream
+    instead of returning the 'not supported' rejection."""
     client = TestClient(app)
-    r = client.post(
-        '/v1/responses',
-        json={'model': 'x', 'input': 'hi', 'stream': True},
-        headers={'Authorization': 'Bearer s3cret'},
-    )
-    assert r.status_code == 400
-    assert 'stream' in r.json()['error']['message'].lower()
+    r = client.post('/v1/responses', json={'model': 'x', 'input': 'hi', 'stream': True})
+    assert r.status_code != 400
+    body = r.json()
+    assert 'not supported' not in str(body).lower()
 
 
 # ── 10. Stream rules ─────────────────────────────────────────────────────

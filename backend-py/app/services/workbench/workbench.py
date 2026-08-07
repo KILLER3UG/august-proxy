@@ -58,6 +58,8 @@ MAX_MANAGED_TOOL_ROUNDS = 25
 # the model to reflect instead of letting it spin on repeated tool calls.
 MAX_STALLED_ROUNDS = 8
 MIN_ROUNDS_BEFORE_STALL_CHECK = 12
+# Code-mode (fenced python) execution cap.
+_CODE_RUN_TIMEOUT_S = 60
 # Legacy fallback only — auto-compact keys off the model's real contextWindow.
 WORKBENCH_TOKEN_BUDGET = 2000000
 # Auto-compact when estimated history reaches this fraction of the model window.
@@ -1368,6 +1370,40 @@ def drainQueuedMessages(
     return entries
 
 
+async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: int) -> str | None:
+    """Execute the model's fenced ```python block in code mode.
+
+    Extracts the last fenced block, prepends the workspace-bound tool API,
+    writes it under ``<workspace>/.aug/code_runs/`` and runs it through the
+    existing sandboxed ``run_command`` machinery (same policy / approvals as
+    any shell command). Returns None when the text has no fenced block.
+    """
+    try:
+        from app.services.workbench.code_runner import (
+            build_runner_source,
+            extract_fenced_python,
+            format_result,
+            runner_path,
+        )
+
+        block = extract_fenced_python(text)
+        if block is None:
+            return None
+        ws = as_str(getattr(session, 'workspacePath', '') or '')
+        _run_dir, path = runner_path(ws, session.id, toolRound)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(build_runner_source(block, ws))
+        result = await _executeTool(
+            'run_command',
+            {'command': f'python -u "{path}"', 'timeout': _CODE_RUN_TIMEOUT_S},
+            session,
+        )
+        return format_result(result)
+    except Exception as exc:
+        logger.debug('code-mode run failed', exc_info=True)
+        return f'Error running code block: {exc}'
+
+
 async def sendWorkbenchMessageStream(
     sessionId: str,
     message: str,
@@ -1638,14 +1674,32 @@ async def _sendWorkbenchMessageStreamImpl(
     if emit:
         emit({'type': 'started', 'sessionId': sessionId, 'model': resolvedModel})
     # Recurring-task daemon (B7): fire due reminders at turn start — surfaced
-    # to the UI as recurringTask SSE events → notification bell.
+    # to the UI as recurringTask SSE events → notification bell. Tasks may
+    # carry an `[agent:ID model:MODEL]` directive: the reminder ALSO dispatches
+    # a sub-agent with that agent + model on schedule.
     try:
-        from app.services.recurring_tasks import check_and_fire
+        from app.services.recurring_tasks import check_and_fire, parse_agent_directive
 
         workspace = as_str(getattr(session, 'workspacePath', '') or '')
         for taskMsg in check_and_fire(sessionId, workspace):
+            cleanMsg, agentId, modelOverride = parse_agent_directive(taskMsg)
             if emit:
-                emit({'type': 'recurringTask', 'message': taskMsg[:2000]})
+                emit({'type': 'recurringTask', 'message': cleanMsg[:2000]})
+            if agentId:
+                try:
+                    from app.services.workbench.subagent import executeSubAgent
+
+                    asyncio.create_task(
+                        executeSubAgent(
+                            session,
+                            agentId,
+                            cleanMsg[:2000] or f'Recurring task ({agentId})',
+                            emit=emit,
+                            model_override=modelOverride or '',
+                        )
+                    )
+                except Exception:
+                    logger.debug('recurring-task subagent dispatch failed', exc_info=True)
     except Exception:
         logger.debug('recurring tasks check failed', exc_info=True)
     # Opt-in verifier enforcement: while session.verifierEnforced is set,
@@ -1738,6 +1792,26 @@ async def _sendWorkbenchMessageStreamImpl(
                 '<model_handoff>\n'
                 f'{handoff}\n'
                 '</model_handoff>'
+            )
+        agentMode = as_str(getattr(session, 'agent_mode', '') or '')
+        if agentMode == 'code':
+            text = (
+                f'{text}\n\n<agent_mode>\n'
+                'You are in CODE MODE. Do NOT call tools. Instead, write a single fenced '
+                '```python block that solves the task using these workspace-bound functions:\n'
+                '- read_file(path) → file contents\n'
+                '- write_file(path, content) → "ok"\n'
+                '- run_command(cmd, timeout=30) → "Exit code: N\\nstdout\\nstderr"\n'
+                '- list_files(path=".") → newline-separated paths\n'
+                'The block runs in a sandbox inside the workspace. Print your final '
+                'answer (or assign it to a variable named `result`).\n'
+                '</agent_mode>'
+            )
+        elif agentMode == 'chat':
+            text = (
+                f'{text}\n\n<agent_mode>\n'
+                'You are in CHAT MODE: answer in text only. Tool calls are blocked.\n'
+                '</agent_mode>'
             )
         return text
 
@@ -2168,6 +2242,27 @@ async def _sendWorkbenchMessageStreamImpl(
             attach_openai_reasoning(assistantMsg, thinkingContent)
             toolUses = cast('list[dict[str, object]]', as_list(response.get('tool_uses', []), []))
         if not toolUses:
+            # Code mode (smolagents CodeAgent lesson): the model wrote a fenced
+            # ```python block instead of native tool calls — execute it with
+            # the workspace-bound tool API and feed the output back.
+            if getattr(session, 'agent_mode', '') == 'code' and textContent:
+                codeResult = await _runFencedCodeBlock(session, textContent, toolRound)
+                if codeResult is not None:
+                    currentMessages.append(assistantMsg)
+                    currentMessages.append(
+                        {'role': 'tool', 'tool_use_id': f'code_{toolRound}', 'content': codeResult}
+                    )
+                    if emit:
+                        emit(
+                            {
+                                'type': 'toolResult',
+                                'id': f'code_{toolRound}',
+                                'name': 'code_run',
+                                'content': codeResult[:4000],
+                                'status': 'done',
+                            }
+                        )
+                    continue
             stop_reason = as_str(response.get('stop_reason') or response.get('finish_reason'))
             if toolRound > 1 and (not textContent) and (not thinkingContent):
                 logger.warning(
@@ -2214,6 +2309,21 @@ async def _sendWorkbenchMessageStreamImpl(
             toolName = as_str(tu.get('name', ''))
             toolInput = as_dict(tu.get('input', {}))
             toolUseId = as_str(tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}'))
+            # Chat mode: tool calls are blocked — the model answers in text only.
+            if getattr(session, 'agent_mode', '') == 'chat':
+                msg = '[Blocked] Chat mode: tool calls are disabled. Answer in text only.'
+                if emit:
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': msg,
+                            'status': 'done',
+                        }
+                    )
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
+                continue
             # Tool-call recovery (surpass): malformed JSON arguments must never
             # execute as an empty dict — the model would silently do the wrong
             # thing. The OpenAI path marks failures `_invalid_json`; the
@@ -2229,7 +2339,8 @@ async def _sendWorkbenchMessageStreamImpl(
                             'type': 'warning',
                             'message': (
                                 f'Tool arguments failed to parse {parseFailures} times in a row — '
-                                'the model is improvising JSON instead of using the tool schema.'
+                                'the model is improvising JSON instead of using the tool schema. '
+                                'Consider set_agent_mode(mode="code") to write fenced python instead.'
                             ),
                         }
                     )

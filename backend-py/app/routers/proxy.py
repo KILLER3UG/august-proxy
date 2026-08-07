@@ -469,22 +469,6 @@ async def openaiResponses(request: Request, _auth: bool = Depends(require_gatewa
     body = await _readJsonBody(request, 'responses')
     if isinstance(body, JSONResponse):
         return body
-    if body.get('stream'):
-        # Streaming the Responses API is not wired: the adapter emits Chat
-        # Completions SSE chunks, which Responses-API clients cannot parse.
-        # Reject loudly instead of streaming a mismatched wire format.
-        return JSONResponse(
-            status_code=400,
-            content={
-                'error': {
-                    'type': 'invalid_request_error',
-                    'message': (
-                        'stream: true is not supported for /v1/responses yet. '
-                        'Set stream to false, or use /v1/chat/completions for streaming.'
-                    ),
-                }
-            },
-        )
     body['_endpoint'] = 'responses'
     reqId = await _trackRequest('responses', body, request)
     result, headers = await openaiAdapter.handleChatCompletions(body, request)

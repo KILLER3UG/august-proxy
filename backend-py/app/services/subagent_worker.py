@@ -33,6 +33,8 @@ async def runSubagent(
     taskId: str | None = None,
     restrictedTools: list[str] | None = None,
     yieldSchema: dict[str, Any] | None = None,
+    effort: str = 'medium',
+    model: str = '',
     parentToolRegistry: Callable | None = None,
     parentOpenaiTools: Callable | None = None,
     emit: Callable[[dict[str, Any]], None] | None = None,
@@ -50,6 +52,9 @@ async def runSubagent(
             from using. If None, all tools are inherited.
         yieldSchema: Optional JSON Schema — the sub-agent returns a single
             JSON object matching it (validated before delivery).
+        effort: Reasoning/thinking budget for this sub-agent ('low'|'medium'|'high'|'max').
+        model: Optional model override (agent alias / smol role routing is
+            the default when blank).
         parentToolRegistry: Function returning the parent's tool list.
         parentOpenaiTools: Function returning the parent's OpenAI-format tools.
         emit: Optional callback for direct event emission (legacy path).
@@ -97,6 +102,8 @@ async def runSubagent(
             emit=_combinedEmit,
             restricted_names=restrictedNames,
             yield_schema=yieldSchema,
+            effort=effort or 'medium',
+            model_override=model or '',
         )
         elapsed = time.time() - startedAt
         status = as_str(subResult.get('status'), 'completed')

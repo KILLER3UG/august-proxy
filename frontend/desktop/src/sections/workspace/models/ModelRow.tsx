@@ -55,6 +55,12 @@ export function ModelRow({
     model.supportsReasoningEffort === true ? 'yes' : model.supportsReasoningEffort === false ? 'no' : '',
   );
   const [maxReasoningEffort, setMaxReasoningEffort] = useState<string>(model.maxReasoningEffort ?? '');
+  const [maxTools, setMaxTools] = useState<string>(
+    ((model as { maxTools?: number }).maxTools ?? 0).toString(),
+  );
+  const [maxToolResultChars, setMaxToolResultChars] = useState<string>(
+    ((model as { maxToolResultChars?: number }).maxToolResultChars ?? 0).toString(),
+  );
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
     error?: string;
@@ -71,6 +77,10 @@ export function ModelRow({
       model.supportsReasoningEffort === true ? 'yes' : model.supportsReasoningEffort === false ? 'no' : '',
     );
     setMaxReasoningEffort(model.maxReasoningEffort ?? '');
+    setMaxTools(((model as { maxTools?: number }).maxTools ?? 0).toString());
+    setMaxToolResultChars(
+      ((model as { maxToolResultChars?: number }).maxToolResultChars ?? 0).toString(),
+    );
   }, [model.id, model.name, model.contextWindow, model.reasoning, model.apiFormat, model.supportsReasoningEffort, model.maxReasoningEffort]);
 
   const update = useMutation({
@@ -82,6 +92,8 @@ export function ModelRow({
       supportsReasoningEffort?: boolean | null;
       maxReasoningEffort?: string | null;
       toolSurface?: string | null;
+      maxTools?: number | null;
+      maxToolResultChars?: number | null;
     }) => providersApi.updateModel(providerId, model.id, body),
     onSuccess: () => {
       setEditing(false);
@@ -231,6 +243,30 @@ export function ModelRow({
               </select>
             </label>
             <label className="flex items-center gap-2 text-xs">
+              <span className="shrink-0">Max tools</span>
+              <input
+                type="number"
+                min={0}
+                value={maxTools}
+                onChange={(e) => setMaxTools(e.target.value)}
+                aria-label="Max tools"
+                placeholder="0 = no cap"
+                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <span className="shrink-0">Result cap (KB)</span>
+              <input
+                type="number"
+                min={0}
+                value={maxToolResultChars}
+                onChange={(e) => setMaxToolResultChars(e.target.value)}
+                aria-label="Max tool result chars"
+                placeholder="0 = 64 KB default"
+                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-xs">
               <span className="shrink-0">Max effort</span>
               <select
                 value={maxReasoningEffort}
@@ -259,6 +295,8 @@ export function ModelRow({
                   supportsReasoningEffort: reasoningEffortSupport === '' ? null : reasoningEffortSupport === 'yes',
                   maxReasoningEffort: maxReasoningEffort || null,
                   toolSurface: toolSurface || null,
+                  maxTools: maxTools.trim() ? Number(maxTools) : null,
+                  maxToolResultChars: maxToolResultChars.trim() ? Number(maxToolResultChars) : null,
                 })
               }
               disabled={update.isPending}

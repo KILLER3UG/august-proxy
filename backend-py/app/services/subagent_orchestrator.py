@@ -40,6 +40,7 @@ import time
 import uuid
 from typing import Any
 
+from app.json_narrowing import as_str
 from app.services.agent_message_bus import AgentMessageBus, Handler, Subscription
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,8 @@ class SubagentOrchestrator:
             context = item.get('context', '')
             restrictedTools = item.get('restrictedTools')
             yieldSchema = item.get('yieldSchema')
+            effort = as_str(item.get('effort'), 'medium') or 'medium'
+            model = as_str(item.get('model'), '')
             taskId = f'task_{uuid.uuid4().hex[:12]}'
             sid = ''
             if hasattr(request.session, 'id'):
@@ -193,6 +196,8 @@ class SubagentOrchestrator:
                     context=context,
                     restrictedTools=restrictedTools,
                     yieldSchema=yieldSchema,
+                    effort=effort,
+                    model=model,
                 )
             )
             self._tasks[taskId] = task
@@ -294,6 +299,8 @@ class SubagentOrchestrator:
         context: str,
         restrictedTools: list[str] | None,
         yieldSchema: dict[str, Any] | None = None,
+        effort: str = 'medium',
+        model: str = '',
     ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         async with self._semaphore:
@@ -311,6 +318,8 @@ class SubagentOrchestrator:
                     context=context,
                     restrictedTools=restrictedTools,
                     yieldSchema=yieldSchema,
+                    effort=effort,
+                    model=model,
                     taskId=handle.taskId,
                 )
                 handle.result = result

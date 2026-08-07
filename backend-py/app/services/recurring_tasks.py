@@ -110,6 +110,23 @@ def _matches_workspace(trigger: str, workspace_name: str) -> bool:
     return True
 
 
+_AGENT_DIRECTIVE_RE = re.compile(r'\[agent:([\w.-]+)(?:\s+model:([\w.\-/@]+))?\]', re.IGNORECASE)
+
+
+def parse_agent_directive(message: str) -> tuple[str, str, str]:
+    """Extract an optional ``[agent:ID model:MODEL]`` directive from a task message.
+
+    Returns ``(clean_message, agent_id, model)`` — the directive is stripped
+    from the message, and blank strings mean "not set". Lets a recurring task
+    dispatch a sub-agent with a chosen agent + model on schedule.
+    """
+    m = _AGENT_DIRECTIVE_RE.search(message or '')
+    if not m:
+        return (message or '', '', '')
+    clean = _AGENT_DIRECTIVE_RE.sub('', message).strip()
+    return (clean, m.group(1) or '', m.group(2) or '')
+
+
 def check_and_fire(session_id: str, workspace_path: str = '') -> list[str]:
     """Evaluate all active tasks against a session start / turn.
 

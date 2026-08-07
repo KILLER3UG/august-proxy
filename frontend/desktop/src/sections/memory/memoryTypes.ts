@@ -1,6 +1,6 @@
 import {
   Brain, Database, Search,
-  Shield, Network, Tag, Box,
+  Shield, Network, Tag, Box, Inbox,
 } from 'lucide-react';
 
 export const TABS = [
@@ -11,6 +11,7 @@ export const TABS = [
   { key: 'graph', label: 'Graph', icon: Network },
   { key: 'search', label: 'Search', icon: Search },
   { key: 'prompt', label: 'Prompt', icon: Box },
+  { key: 'proposals', label: 'Proposals', icon: Inbox },
 ] as const;
 
 export type Tab = typeof TABS[number]['key'];

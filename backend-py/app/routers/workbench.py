@@ -398,6 +398,49 @@ async def activeChats():
     return active
 
 
+@router.get('/workspace/files')
+async def workspaceFiles(sessionId: str = '', path: str = '', q: str = '', limit: int = 60):
+    """Bounded workspace file listing for the composer @-mention file search.
+
+    Lists files under the active session's workspace (or ``path`` when given),
+    filtered by the ``q`` prefix. Never recurses deeper than 3 levels and caps
+    the result so the mention picker stays fast.
+    """
+    import os
+    from pathlib import Path
+
+    try:
+        if path:
+            root: Path | None = Path(path).expanduser()
+        else:
+            session = wb.getWorkbenchSession(sessionId) if sessionId else None
+            ws = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
+            root = Path(ws).expanduser() if ws else None
+        if root is None or not root.is_dir():
+            return {'results': []}
+        query = (q or '').strip().lower()
+        results: list[str] = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            rel_dir = os.path.relpath(dirpath, root)
+            depth = 0 if rel_dir == '.' else rel_dir.count(os.sep) + 1
+            if depth > 3:
+                dirnames[:] = []
+                continue
+            dirnames[:] = [d for d in dirnames if d not in ('.git', 'node_modules', 'dist', 'build', '.venv', '__pycache__')]
+            for name in filenames:
+                if name.startswith('.'):
+                    continue
+                rel = os.path.relpath(os.path.join(dirpath, name), root).replace('\\', '/')
+                if query and query not in rel.lower():
+                    continue
+                results.append(rel)
+                if len(results) >= max(1, min(limit, 200)):
+                    return {'results': results}
+        return {'results': results}
+    except Exception:
+        return {'results': []}
+
+
 @router.post('/chat/queue')
 async def queueMessage(request: Request):
     """Enqueue a user message for delivery to the model mid-response.

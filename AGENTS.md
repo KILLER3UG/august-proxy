@@ -59,6 +59,17 @@ a better model for the task type emits `routingSuggestion` (SSE) or auto-routes
 with `AUGUST_AUTO_ROUTE=1`. Sub-agents inherit the parent retry policy,
 compact mid-run, and support `yieldSchema` for structured results.
 
+**Agent modes (0.12.55+)** — `set_agent_mode(chat|agent|code)` switches the
+session: `chat` blocks tool calls (text only), `agent` is native tool calling
+(default), `code` executes a fenced ```python block through the existing
+sandboxed `run_command` with a workspace-bound tool API (`read_file`,
+`write_file`, `run_command`, `list_files` — see
+`app/services/workbench/code_runner.py`). The verifier gate can add an
+independent one-shot reviewer critique when `AUGUST_VERIFIER_REVIEWER=1`.
+`/v1/responses` supports `stream: true` via upstream-native pass-through.
+Loop-level golden evals live in `tests/test_harness_evals.py` (scripted-model
+scenarios against the real loop); results feed `GET /api/brain/harness/evals`.
+
 ## Directory map & validation routing
 
 | Area | Owns | Validate with |

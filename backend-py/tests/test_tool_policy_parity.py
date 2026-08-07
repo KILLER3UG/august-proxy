@@ -47,7 +47,7 @@ _ORACLE_DESTRUCTIVE = frozenset({
 _ORACLE_SHELL = frozenset({'run_command'})
 _ORACLE_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
-    'spawn_subagent', 'spawn_subagents', 'update_agent',
+    'spawn_subagent', 'spawn_subagents', 'update_agent', 'set_agent_mode',
 })
 _ORACLE_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills', 'skill_manage'})
 _ORACLE_BRIDGE = frozenset({'tool_call', 'tool_describe', 'tool_search'})

@@ -17,7 +17,7 @@ import {
 import { api } from '@/api/client';
 import { voiceCommandEvents } from '@/api/voice/registry-events';
 import { getDisplayCommands } from '@/api/voice/registry';
-import { COMPOSER_TOOLS as TOOLS, parseAtMention, type MentionItem } from '../composer-mentions';
+import { COMPOSER_TOOLS as TOOLS, fetchFileMentions, fetchMcpMentions, parseAtMention, type MentionItem } from '../composer-mentions';
 
 /** Closers useChatSend calls after a send so open popovers dismiss. */
 export type ComposerDropdownApi = {
@@ -68,6 +68,8 @@ export interface UseComposerPopoversArgs {
   stop?: () => void;
   /** Whether a generation is currently streaming (enables the stop key). */
   streaming?: boolean;
+  /** UI session id — used for the @-mention workspace-file search. */
+  sessionId?: string | null;
 }
 
 /**
@@ -81,6 +83,7 @@ export function useComposerPopovers({
   send,
   stop,
   streaming,
+  sessionId,
 }: UseComposerPopoversArgs) {
   const [showComposerActionsDropdown, setShowComposerActionsDropdown] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
@@ -89,6 +92,8 @@ export function useComposerPopovers({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionStart, setMentionStart] = useState(0);
   const [skillMentions, setSkillMentions] = useState<MentionItem[]>([]);
+  const [mcpMentions, setMcpMentions] = useState<MentionItem[]>([]);
+  const [fileMentions, setFileMentions] = useState<MentionItem[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
 
@@ -153,9 +158,34 @@ export function useComposerPopovers({
     };
   }, [mentionQuery]);
 
+  // MCP plugin tools (loaded once — they do not change mid-session).
+  useEffect(() => {
+    let cancelled = false;
+    void fetchMcpMentions().then((items) => {
+      if (!cancelled) setMcpMentions(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Workspace files for the current session (bounded, filtered by query).
+  useEffect(() => {
+    if (mentionQuery === null || !sessionId) return;
+    let cancelled = false;
+    void fetchFileMentions(sessionId, mentionQuery.trim()).then((items) => {
+      if (!cancelled) setFileMentions(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mentionQuery, sessionId]);
+
   const mentionItems: MentionItem[] = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
+    const matches = (m: MentionItem) =>
+      !q || m.name.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q);
     const tools: MentionItem[] = TOOLS.filter((t) => {
       if (!q) return true;
       return t.name.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q);
@@ -165,12 +195,11 @@ export function useComposerPopovers({
       desc: t.desc,
       insert: t.name.startsWith('@') ? `${t.name} ` : `@${t.name} `,
     }));
-    const skills = skillMentions.filter((s) => {
-      if (!q) return true;
-      return s.name.toLowerCase().includes(q) || s.desc.toLowerCase().includes(q);
-    });
-    return [...skills, ...tools];
-  }, [mentionQuery, skillMentions]);
+    const skills = skillMentions.filter(matches);
+    const mcp = mcpMentions.filter(matches);
+    const files = fileMentions.filter(matches);
+    return [...skills, ...tools, ...mcp, ...files];
+  }, [mentionQuery, skillMentions, mcpMentions, fileMentions]);
 
   const closeAllPopovers = useCallback(() => {
     setShowComposerActionsDropdown(false);
