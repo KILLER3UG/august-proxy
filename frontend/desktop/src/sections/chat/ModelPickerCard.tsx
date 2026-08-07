@@ -11,11 +11,14 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, X, Zap, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModels } from '@/hooks/useModels';
+import { useProviderAvailability } from '@/hooks/useProviderAvailability';
+import { StatusDot } from '@/components/StatusDot';
 import type { VoiceCommandCardProps } from '@/api/voice/registry';
 import { useNavigate } from 'react-router-dom';
 
 export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
   const { models, isLoading, error } = useModels();
+  const { providers: providerAvailability } = useProviderAvailability();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -26,6 +29,16 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
   useEffect(() => {
     searchRef.current?.focus();
   }, []);
+
+  // Map provider name → availability status.
+  const providerStatus = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const p of providerAvailability) {
+      map.set(p.id, p.isAvailable);
+      map.set(p.name, p.isAvailable);
+    }
+    return map;
+  }, [providerAvailability]);
 
   // Group by provider.
   const grouped = useMemo(() => {
@@ -202,6 +215,10 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
+                        <StatusDot
+                          tone={providerStatus.get(model.provider) === false ? 'bad' : 'good'}
+                          className="shrink-0"
+                        />
                         <span className="text-sm font-medium">{model.name}</span>
                         {model.isFree && (
                           <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400">

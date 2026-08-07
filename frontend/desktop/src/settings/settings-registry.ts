@@ -30,6 +30,7 @@ import {
   Bot,
   BrainCircuit,
   StickyNote,
+  FileText,
   Code2,
   FolderLock,
   GitBranch,
@@ -253,6 +254,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'advanced',
     keywords: ['added', 'add memory', 'remember this', 'user memory', 'saved fact'],
     legacyAliases: ['added-memories', 'user-memories'],
+  },
+  {
+    id: 'prompt-templates',
+    label: 'Prompt Templates',
+    description:
+      'Reusable prompt templates with variable placeholders for common tasks.',
+    icon: FileText,
+    category: 'intelligence',
+    tier: 'basic',
+    // 'prompt' is owned by memory-knowledge — keep this section's keywords
+    // distinct so the registry audit (unique ownership) stays green.
+    keywords: ['templates', 'template', 'reusable', 'variable', 'shortcut'],
   },
 
   /* ── Tools & Skills ──────────────────────────────────────────── */

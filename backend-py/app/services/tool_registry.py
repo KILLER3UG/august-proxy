@@ -188,13 +188,16 @@ def listTools(*, include_host_agent: bool | None = None) -> list[dict[str, objec
     result: list[dict[str, object]] = []
     for t in _registry.values():
         name = t.get('name')
-        assert isinstance(name, str)
+        if not isinstance(name, str):
+            continue
         if not show_host and is_host_agent_tool(name):
             continue
         description = t.get('description')
         parameters = t.get('parameters')
-        assert isinstance(description, str)
-        assert isinstance(parameters, dict)
+        if not isinstance(description, str):
+            description = ''
+        if not isinstance(parameters, dict):
+            parameters = {}
         result.append(
             {'type': 'function', 'function': {'name': name, 'description': description, 'parameters': parameters}}
         )
@@ -223,12 +226,14 @@ async def dispatch(name: str, args: dict[str, object]) -> str:
                 )
     if name == 'run_command' and isDaemonContext():
         command = args.get('command', '')
-        assert isinstance(command, str)
+        if not isinstance(command, str):
+            command = ''
         if isCommandBlocked(command):
             return f"[BLOCKED] run_command rejected in daemon context: '{command}' contains a mutating pattern. Daemons are read-only."
     try:
         handler = tool['handler']
-        assert callable(handler)
+        if not callable(handler):
+            return f'Error: Tool "{name}" handler is not callable.'
         result: str = await handler(**args)
         return result
     except Exception as e:

@@ -85,18 +85,16 @@ export function AssistantMessageActions({
           <ArrowLeftRight className="size-3" />
         </button>
       )}
-      {isLast && (
-        <button
-          onClick={onRegen}
-          disabled={streaming || isRegenerating}
-          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
-          title="Retry / Regenerate"
-        >
-          <RefreshCw
-            className={cn("size-3", isRegenerating && "animate-spin")}
-          />
-        </button>
-      )}
+      <button
+        onClick={onRegen}
+        disabled={streaming || isRegenerating}
+        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+        title="Retry / Regenerate"
+      >
+        <RefreshCw
+          className={cn("size-3", isRegenerating && "animate-spin")}
+        />
+      </button>
       {onFork && (
         <button
           onClick={onFork}

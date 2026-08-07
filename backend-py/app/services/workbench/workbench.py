@@ -1700,9 +1700,6 @@ async def _sendWorkbenchMessageStreamImpl(
             currentMessages = list(session.messages)
     except Exception:
         currentMessages = list(session.messages)
-    totalInputTokens = 0
-    totalOutputTokens = 0
-    finalContextTokens = 0
     toolRound = 0
     while True:
         toolRound += 1

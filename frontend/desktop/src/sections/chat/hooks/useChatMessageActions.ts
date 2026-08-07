@@ -110,7 +110,17 @@ export function useChatMessageActions({
       setMessages((prev) => {
         const current = prev[index];
         if (!current || current.role !== 'user') return prev;
-        const next = prev.slice(0, index).concat({ ...current, content: newText.trim() });
+        // Preserve the previous content in edit history before overwriting.
+        const history = current.editHistory ?? [];
+        const updatedHistory = [
+          ...history,
+          { content: current.content, timestamp: Date.now() },
+        ];
+        const next = prev.slice(0, index).concat({
+          ...current,
+          content: newText.trim(),
+          editHistory: updatedHistory,
+        });
         persistMessages(sessionId, next);
         return next;
       });

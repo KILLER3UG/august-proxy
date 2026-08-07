@@ -49,14 +49,17 @@ def validateToolArguments(
             return {'valid': False, 'error': f'Invalid JSON in arguments: {argsRaw[:200]}'}
     else:
         args = argsRaw
-    assert isinstance(args, dict)
+    if not isinstance(args, dict):
+        return {'valid': False, 'error': f'Arguments must be a dict, got {type(args).__name__}'}
     schema = toolDef.get('parameters') or toolDef.get('input_schema')
     if isinstance(schema, dict):
         pass
     elif isinstance(toolDef.get('function'), dict):
         func = toolDef.get('function')
-        assert isinstance(func, dict)
-        schema = func.get('parameters')
+        if not isinstance(func, dict):
+            schema = None
+        else:
+            schema = func.get('parameters')
     else:
         schema = None
     if not schema or not isinstance(schema, dict):
@@ -66,9 +69,11 @@ def validateToolArguments(
     if not gateResult.get('valid'):
         return gateResult
     required = schema.get('required', [])
-    assert isinstance(required, list)
+    if not isinstance(required, list):
+        required = []
     for field in required:
-        assert isinstance(field, str)
+        if not isinstance(field, str):
+            continue
         if field not in args:
             return {'valid': False, 'error': f"Missing required field: '{field}'"}
         val = args[field]
@@ -78,7 +83,8 @@ def validateToolArguments(
             return {'valid': False, 'error': f"Missing required field: '{field}'"}
     if schema.get('additionalProperties') is False:
         props = schema.get('properties', {})
-        assert isinstance(props, dict)
+        if not isinstance(props, dict):
+            props = {}
         allowed = set(props.keys())
         extra = set(args.keys()) - allowed
         if extra:
@@ -87,10 +93,12 @@ def validateToolArguments(
                 'error': f'Unknown fields: {", ".join(sorted(extra))}. Allowed fields: {", ".join(sorted(allowed))}',
             }
     properties = schema.get('properties', {})
-    assert isinstance(properties, dict)
+    if not isinstance(properties, dict):
+        properties = {}
     for field, value in args.items():
         propSchema = properties.get(field, {})
-        assert isinstance(propSchema, dict)
+        if not isinstance(propSchema, dict):
+            propSchema = {}
         propType = propSchema.get('type', '')
         if propType == 'string' and (not isinstance(value, str)):
             return {'valid': False, 'error': f"Field '{field}' must be a string"}
@@ -148,27 +156,35 @@ _MUTATINGToolPatterns = re.compile(
 )
 
 
+_PLAN_APPROVAL_PATTERNS = re.compile(
+    r'(\.aug/plans/|plan\.md|plan_approved|Plan approved)',
+    re.IGNORECASE,
+)
+
+
 def _checkProxyExecutionGate(
     tool_name: str, args: dict[str, object], messages: list[dict[str, object]]
 ) -> dict[str, object]:
-    """Proxy Execution Gate: block mutating tools if no plan.md in context.
+    """Proxy Execution Gate: block mutating tools until a plan is approved.
 
-    This prevents the model from making changes before a plan has been
-    explicitly approved.
+    Checks for plan approval signals in the conversation context:
+    - ``.aug/plans/`` path references (session plan files)
+    - ``plan.md`` references (legacy plan files)
+    - ``plan_approved`` or ``Plan approved`` markers
     """
     if not _MUTATINGToolPatterns.match(tool_name):
         return {'valid': True}
     for msg in messages:
         content = msg.get('content', '')
-        if isinstance(content, str) and 'plan.md' in content:
+        if isinstance(content, str) and _PLAN_APPROVAL_PATTERNS.search(content):
             return {'valid': True}
         if isinstance(content, list):
             for block in content:
                 if isinstance(block, dict):
                     text = block.get('text', '')
-                    if isinstance(text, str) and 'plan.md' in text:
+                    if isinstance(text, str) and _PLAN_APPROVAL_PATTERNS.search(text):
                         return {'valid': True}
     return {
         'valid': False,
-        'error': f"Tool '{tool_name}' is blocked by the Proxy Execution Gate. No plan.md was found in the conversation. Create and approve a plan before using mutating tools.",
+        'error': f"Tool '{tool_name}' is blocked by the Proxy Execution Gate. No approved plan was found in the conversation. Create and approve a plan before using mutating tools.",
     }

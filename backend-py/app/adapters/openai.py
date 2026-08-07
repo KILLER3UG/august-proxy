@@ -14,6 +14,7 @@ Key responsibilities:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -310,7 +311,8 @@ async def streamOpenaiSseToClient(
     """
     body['stream'] = True
     bodyJson = cast(dict[str, object], as_dict(camelToSnake(body), {}))
-    async for rawEvent in _getClient().streamSse(upstreamUrl, upstreamHeaders, bodyJson):
+    client = await _getClient()
+    async for rawEvent in client.streamSse(upstreamUrl, upstreamHeaders, bodyJson):
         event = cast('dict[str, object]', rawEvent)
         if as_str(event.get('type'), '') == 'error':
             yield write_openai_sse_error(as_str(event.get('body'), as_str(event.get('error'), '')))
@@ -348,7 +350,8 @@ async def streamUpstreamAndResolveToolsOpenai(
     raw_body = dump_openai_upstream_body(body)
     currentMessages = cast('list[dict[str, object]]', as_list(raw_body.get('messages'), []))
     streamBody = cast('dict[str, object]', camelToSnake({**raw_body, 'stream': True}))
-    async for chunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, streamBody):
+    client = await _getClient()
+    async for chunk in client.streamSse(upstreamUrl, upstreamHeaders, streamBody):
         if chunk.get('type') == 'error':
             yield write_openai_sse_error(as_str(chunk.get('body'), as_str(chunk.get('error'), '')))
             yield write_openai_sse_done()
@@ -390,7 +393,8 @@ async def streamUpstreamAndResolveToolsOpenai(
                             {'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True}
                         ),
                     )
-                    async for nextChunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, nextBody):
+                    client = await _getClient()
+                    async for nextChunk in client.streamSse(upstreamUrl, upstreamHeaders, nextBody):
                         if nextChunk.get('type') == 'error':
                             yield write_openai_sse_error(as_str(nextChunk.get('body'), ''))
                             yield write_openai_sse_done()
@@ -571,6 +575,7 @@ async def handleChatCompletions(
 
 
 _stream_client: BaseProviderClient | None = None
+_stream_client_lock = asyncio.Lock()
 
 
 # --- OpenAI-format request → Anthropic Messages upstream --------------------
@@ -826,7 +831,7 @@ async def _handleOpenaiBodyToAnthropicUpstream(
     return (_anthropicJsonToOpenaiResponse(resp.body, model), None)
 
 
-def _getClient() -> BaseProviderClient:
+async def _getClient() -> BaseProviderClient:
     """Lazy shared HTTP client for passthrough streaming.
 
     Auth/base URL come from the caller-supplied ``upstreamUrl`` /
@@ -835,7 +840,9 @@ def _getClient() -> BaseProviderClient:
     """
     global _stream_client
     if _stream_client is None:
-        from app.providers.clients.openai import OpenAIClient
+        async with _stream_client_lock:
+            if _stream_client is None:
+                from app.providers.clients.openai import OpenAIClient
 
-        _stream_client = OpenAIClient({})
+                _stream_client = OpenAIClient({})
     return _stream_client

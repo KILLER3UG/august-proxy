@@ -1,4 +1,5 @@
-import { Check } from 'lucide-react';
+import { useState } from 'react';
+import { Check, History } from 'lucide-react';
 import { cn, formatClockTime } from '@/lib/utils';
 import type { ChatMessage } from '@/types/chat';
 import { Markdown } from '../ChatMarkdown';
@@ -51,6 +52,8 @@ export function UserMessageBubble({
   );
   const hasAttachments = (message.attachments?.length ?? 0) > 0;
   const isLong = displayContent.length > LONG_MSG_THRESHOLD;
+  const editCount = message.editHistory?.length ?? 0;
+  const [showHistory, setShowHistory] = useState(false);
 
   return (
     <>
@@ -116,6 +119,33 @@ export function UserMessageBubble({
           <span className="bubble-footer-text mr-0.5 font-medium text-muted-foreground/50">
             {formatClockTime(message.timestamp)}
           </span>
+        )}
+        {!editing && editCount > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="flex items-center gap-0.5 rounded p-1 text-muted-foreground/70 transition-colors duration-150 hover:text-foreground"
+              title={`${editCount} previous version${editCount > 1 ? 's' : ''}`}
+            >
+              <History className="size-3" />
+              <span className="text-[10px]">{editCount}</span>
+            </button>
+            {showHistory && (
+              <div className="absolute bottom-full right-0 mb-1 w-64 bg-card border border-border rounded-lg shadow-lg p-2 z-50 max-h-48 overflow-y-auto">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1.5">
+                  Version History
+                </div>
+                {message.editHistory?.map((v, i) => (
+                  <div key={i} className="text-xs p-1.5 rounded bg-muted/30 mb-1 last:mb-0">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">
+                      {new Date(v.timestamp).toLocaleString()}
+                    </div>
+                    <div className="line-clamp-3 text-foreground/80">{v.content}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {!editing && (
           <button

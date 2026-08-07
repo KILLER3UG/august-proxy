@@ -22,7 +22,7 @@ import {
 } from '@/components/chat/WorkbenchModeSelector';
 import { onUiAction } from '@/api/ui-events';
 import type { ChatMessage } from '@/types/chat';
-import { downloadConversation, copyConversationToClipboard } from '@/lib/export-conversation';
+import { downloadConversation, copyConversationToClipboard, exportConversationToPdf } from '@/lib/export-conversation';
 import { persistMessages } from '../message-storage';
 
 export interface UseChatUiActionsOptions {
@@ -211,6 +211,20 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
         } catch (err: unknown) {
           toast.error(
             `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      if (e.action === 'export_conversation_pdf') {
+        if (messages.length === 0) {
+          toast.message('Nothing to export yet.');
+          return;
+        }
+        try {
+          exportConversationToPdf(messages, activeSession?.title);
+          toast.success('PDF export opened');
+        } catch (err: unknown) {
+          toast.error(
+            `PDF export failed: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
       }

@@ -113,3 +113,83 @@ export async function copyConversationToClipboard(
   document.execCommand('copy');
   textarea.remove();
 }
+
+/** Export the conversation as PDF via the browser's print dialog. */
+export function exportConversationToPdf(
+  messages: ChatMessage[],
+  title?: string | null,
+): void {
+  const markdown = messagesToMarkdown(messages, title);
+  const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(title || 'August Conversation')}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 24px; border-bottom: 2px solid #e5e5e5; padding-bottom: 8px; }
+  h2 { font-size: 18px; margin-top: 24px; color: #444; }
+  p { margin: 8px 0; }
+  code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; font-size: 14px; }
+  pre { background: #f5f5f5; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  hr { border: none; border-top: 1px solid #e5e5e5; margin: 24px 0; }
+  em { color: #666; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+${(() => {
+  let inCodeBlock = false;
+  return markdown
+    .split('\n')
+    .map((line) => {
+      if (line.trim().startsWith('```')) {
+        // Fenced code: toggle open/close (``` or ```lang both open).
+        inCodeBlock = !inCodeBlock;
+        return inCodeBlock ? '<pre><code>' : '</code></pre>';
+      }
+      if (inCodeBlock) return escapeHtml(line);
+      if (line.startsWith('# ')) return `<h1>${escapeHtml(line.slice(2))}</h1>`;
+      if (line.startsWith('## ')) return `<h2>${escapeHtml(line.slice(3))}</h2>`;
+      if (line.startsWith('- ')) return `<li>${escapeHtml(line.slice(2))}</li>`;
+      if (line.startsWith('_') && line.endsWith('_')) return `<em>${escapeHtml(line.slice(1, -1))}</em>`;
+      if (line.trim() === '') return '<br>';
+      return `<p>${escapeHtml(line)}</p>`;
+    })
+    .join('\n');
+})()}
+</body>
+</html>`;
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.left = '-9999px';
+  iframe.style.top = '-9999px';
+  iframe.style.width = '800px';
+  iframe.style.height = '600px';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument;
+  if (!doc) {
+    document.body.removeChild(iframe);
+    throw new Error('Could not create print frame');
+  }
+  doc.open();
+  doc.write(htmlContent);
+  doc.close();
+
+  // Wait for content to render, then trigger print.
+  setTimeout(() => {
+    iframe.contentWindow?.print();
+    setTimeout(() => document.body.removeChild(iframe), 1000);
+  }, 500);
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

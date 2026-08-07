@@ -147,7 +147,8 @@ def dedupe_and_canonicalize_anthropic_tools(tools: list[dict[str, object]]) -> l
         if not t:
             continue
         name = t.get('name')
-        assert isinstance(name, str)
+        if not isinstance(name, str):
+            continue
         if is_browser_automation_tool_name(name):
             continue
         kind = get_managed_web_tool_kind(name)
@@ -163,7 +164,8 @@ def dedupe_and_canonicalize_anthropic_tools(tools: list[dict[str, object]]) -> l
         sanitized.append(t)
     for ct in get_managed_anthropic_web_tool_definitions():
         ctName = ct.get('name')
-        assert isinstance(ctName, str)
+        if not isinstance(ctName, str):
+            continue
         kind = get_managed_web_tool_kind(ctName)
         if kind == 'search' and includeManagedSearch or (kind == 'fetch' and includeManagedFetch):
             if ctName not in seenNames:
@@ -172,7 +174,8 @@ def dedupe_and_canonicalize_anthropic_tools(tools: list[dict[str, object]]) -> l
     bashDefs = [t for t in get_managed_anthropic_web_tool_definitions() if t.get('name') == 'mcp__workspace__bash']
     for bd in bashDefs:
         bdName = bd.get('name')
-        assert isinstance(bdName, str)
+        if not isinstance(bdName, str):
+            continue
         if bdName not in seenNames:
             seenNames.add(bdName)
             sanitized.append(bd)
@@ -192,7 +195,8 @@ def openai_to_anthropic_tool_definition(tool: dict[str, object]) -> dict[str, ob
     """Convert an OpenAI-format tool definition to Anthropic format."""
     if tool and tool.get('type') == 'function':
         func = tool.get('function')
-        assert isinstance(func, dict)
+        if not isinstance(func, dict):
+            return tool
         return {
             'name': func.get('name'),
             'description': func.get('description', ''),

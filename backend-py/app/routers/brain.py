@@ -171,7 +171,8 @@ async def getSkillDraft(name: str):
     if not row or not row['draft_path'] or not os.path.exists(row['draft_path']):
         raise HTTPException(status_code=404, detail='Draft not found')
     try:
-        raw = open(row['draft_path'], encoding='utf-8').read()
+        with open(row['draft_path'], encoding='utf-8') as f:
+            raw = f.read()
     except OSError:
         raise HTTPException(status_code=404, detail='Draft not found')
     m = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', raw, re.DOTALL)

@@ -16,6 +16,7 @@ export type UiAction =
   | 'compact_now'
   | 'branch_session'
   | 'export_conversation'
+  | 'export_conversation_pdf'
   | 'copy_conversation'
   | 'stop_chat'
   | 'open_model_picker';

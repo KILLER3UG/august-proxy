@@ -63,24 +63,29 @@ def is_parallel_safe(toolName: str, args: dict[str, object] | None = None) -> bo
 def isOpenaiToolCallParallelSafe(toolCall: dict[str, object]) -> bool:
     """Check if an OpenAI-format tool call is parallel-safe."""
     func = toolCall.get('function', {})
-    assert isinstance(func, dict)
+    if not isinstance(func, dict):
+        return False
     name = func.get('name', '')
-    assert isinstance(name, str)
+    if not isinstance(name, str):
+        return False
     argsStr = func.get('arguments', '{}')
     try:
         args = json.loads(argsStr) if isinstance(argsStr, str) else argsStr
     except (json.JSONDecodeError, TypeError):
         args = {}
-    assert isinstance(args, dict)
+    if not isinstance(args, dict):
+        return False
     return isManagedToolParallelSafe(name, args)
 
 
 def isAnthropicToolUseParallelSafe(toolUse: dict[str, object]) -> bool:
     """Check if an Anthropic-format tool use is parallel-safe."""
     name = toolUse.get('name', '')
-    assert isinstance(name, str)
+    if not isinstance(name, str):
+        return False
     args = toolUse.get('input', {})
-    assert isinstance(args, dict)
+    if not isinstance(args, dict):
+        return False
     return isManagedToolParallelSafe(name, args)
 
 
@@ -93,7 +98,8 @@ def parseOpenaiToolArgs(toolCall: dict[str, object]) -> dict[str, object]:
     if isinstance(argsStr, str):
         try:
             result = json.loads(argsStr)
-            assert isinstance(result, dict)
+            if not isinstance(result, dict):
+                return {}
             return result
         except (json.JSONDecodeError, TypeError):
             return {}

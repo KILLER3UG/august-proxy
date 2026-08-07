@@ -149,7 +149,16 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
-              <FileDown className="size-3.5" /> Export conversation
+              <FileDown className="size-3.5" /> Export conversation (Markdown)
+            </Command.Item>
+            <Command.Item
+              value="action export conversation pdf print"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'export_conversation_pdf', target: 'active' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <FileDown className="size-3.5" /> Export conversation (PDF)
             </Command.Item>
             <Command.Item
               value="action copy conversation clipboard markdown"

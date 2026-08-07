@@ -2,7 +2,7 @@
 /* Scrollable message list, working indicator, scroll affordances, and the */
 /* sticky composer / plan banner strip under the transcript.               */
 
-import type { ReactNode, RefObject } from 'react';
+import { useCallback, useState, type ReactNode, type RefObject } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,6 +10,7 @@ import { messagePop, userMessagePop } from '@/lib/motion';
 import { ScrollToTopButton } from '@/components/chat/ScrollToTopButton';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { MessageBubble } from './MessageBubble';
+import { InThreadSearch } from './InThreadSearch';
 import type { ModelItem } from './model-display';
 import { ModelPickerCard } from './ModelPickerCard';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
@@ -70,9 +71,55 @@ export function ChatThreadMessagePane({
   models?: ModelItem[];
   onReanswerWithModel?: (model: ModelItem, index: number) => void;}) {
   const shouldAnimateEnter = useMessageEnterAnimation(messages, sessionId);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [matchedIndices, setMatchedIndices] = useState<number[]>([]);
+
+  const handleSearch = useCallback(
+    (query: string): number => {
+      setSearchQuery(query);
+      if (!query.trim()) {
+        setMatchedIndices([]);
+        return 0;
+      }
+      const lower = query.toLowerCase();
+      const indices = messages
+        .map((m, i) => {
+          // Search the visible content AND block payloads (assistant
+          // answers usually live in blocks, not raw content).
+          const blocksText = (m.blocks ?? [])
+            .map((b) => b.content ?? '')
+            .join(' ');
+          return { text: `${m.content ?? ''}\n${blocksText}`.toLowerCase(), i };
+        })
+        .filter(({ text }) => text.includes(lower))
+        .map(({ i }) => i);
+      setMatchedIndices(indices);
+      return indices.length;
+    },
+    [messages],
+  );
+
+  const handleNavigate = useCallback((matchIndex: number) => {
+    if (matchIndex < 0 || matchIndex >= matchedIndices.length) return;
+    const msgIndex = matchedIndices[matchIndex];
+    // Scroll the message into view.
+    const el = document.querySelector(`[data-message-index="${msgIndex}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [matchedIndices]);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('');
+    setMatchedIndices([]);
+  }, []);
 
   return (
     <div className="august-message-pane flex-1 flex flex-col min-h-0 relative">
+      <InThreadSearch
+        messageCount={messages.length}
+        onSearch={handleSearch}
+        onNavigate={handleNavigate}
+        onClear={handleClearSearch}
+      />
       <div
         ref={scrollRef}
         className="august-chat-scroll flex-1 overflow-y-auto overflow-x-hidden chat-scroll"
@@ -92,6 +139,7 @@ export function ChatThreadMessagePane({
             const pop = m.role === 'user' ? userMessagePop : messagePop;
             return (
               <motion.div
+                data-message-index={realIndex}
                 initial={animateIn ? pop.initial : false}
                 animate={
                   isReverting
@@ -106,6 +154,9 @@ export function ChatThreadMessagePane({
                 style={{ transformOrigin: m.role === 'user' ? 'right bottom' : 'left bottom' }}
                 className={cn(
                   isReverting && 'pointer-events-none',
+                  searchQuery.trim() &&
+                    matchedIndices.includes(realIndex) &&
+                    'ring-1 ring-primary/50 rounded-lg',
                 )}
               >
                 <MessageBubble

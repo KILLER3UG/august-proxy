@@ -234,6 +234,8 @@ export interface ChatMessage {
   /** Transient "retrying after rate limit" notice while the backend backs
    *  off (from `retrying` SSE events). Cleared when the turn finalizes. */
   retryNotice?: string;
+  /** Edit history for user messages — each entry is a prior content version. */
+  editHistory?: Array<{ content: string; timestamp: number }>;
 }
 
 /** Per-session sub-agent container rendered nested under the parent
