@@ -469,6 +469,22 @@ async def openaiResponses(request: Request, _auth: bool = Depends(require_gatewa
     body = await _readJsonBody(request, 'responses')
     if isinstance(body, JSONResponse):
         return body
+    if body.get('stream'):
+        # Streaming the Responses API is not wired: the adapter emits Chat
+        # Completions SSE chunks, which Responses-API clients cannot parse.
+        # Reject loudly instead of streaming a mismatched wire format.
+        return JSONResponse(
+            status_code=400,
+            content={
+                'error': {
+                    'type': 'invalid_request_error',
+                    'message': (
+                        'stream: true is not supported for /v1/responses yet. '
+                        'Set stream to false, or use /v1/chat/completions for streaming.'
+                    ),
+                }
+            },
+        )
     body['_endpoint'] = 'responses'
     reqId = await _trackRequest('responses', body, request)
     result, headers = await openaiAdapter.handleChatCompletions(body, request)
@@ -542,12 +558,19 @@ def _translateToResponsesFormat(chatCompletion: dict) -> dict:
 
 @router.get('/v1/models')
 async def listModels(_auth: bool = Depends(require_gateway_key)):
-    """List available models from all configured providers."""
+    """List available models from all configured providers.
+
+    NOTE: this route is shadowed by ``app/routers/models.py`` (mounted first,
+    no gateway auth, model_service-backed aggregate). Kept for direct-import
+    callers; the served OpenAI-compatible endpoint is ``models.openaiModels``.
+    """
     providers = providerResolver.list_available()
     models = []
     for p in providers:
         name = as_str(p.get('name'), '')
-        modelProfiles = as_dict(p.get('model_profiles'), {})
+        # The resolver emits `modelProfiles`; older stores / snake_case dumps
+        # use `model_profiles` — read both so /v1/models is never empty.
+        modelProfiles = as_dict(p.get('modelProfiles') or p.get('model_profiles'), {})
         for modelId, profile in modelProfiles.items():
             if modelId == '*':
                 continue

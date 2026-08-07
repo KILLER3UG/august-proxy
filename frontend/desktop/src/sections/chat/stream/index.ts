@@ -46,6 +46,7 @@ export {
   ensureSessionSubscriber,
   detachSessionSubscriber,
   getSessionSubscriberLastSeq,
+  advanceSessionSubscriberLastSeq,
   hasSessionSubscriber,
   syncActiveStreams,
   registerStreamResync,

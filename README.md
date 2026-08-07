@@ -146,6 +146,11 @@ export OPENAI_API_KEY=dummy   # the proxy uses the key from your config
 codex
 ```
 
+> The `dummy` key above is only accepted when **external access** is enabled
+> in the proxy (Settings → Gateway). When external access is off, `/v1/*`
+> requests are rejected with 403 regardless of key — see
+> [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+
 ---
 
 ## Configuration

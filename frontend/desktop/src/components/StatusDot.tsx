@@ -13,7 +13,6 @@ const TONE_BG: Record<StatusTone, string> = {
 export function StatusDot({ className, tone, ...props }: ComponentProps<'span'> & { tone: StatusTone }) {
   return (
     <span
-      aria-hidden="true"
       className={cn('inline-block size-1.5 rounded-full', TONE_BG[tone], className)}
       {...props}
     />

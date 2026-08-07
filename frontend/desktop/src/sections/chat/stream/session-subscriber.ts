@@ -227,14 +227,32 @@ export function getSessionSubscriberLastSeq(sessionOrWorkbenchId: string): numbe
   return sessionSubscribers.get(wbId)?.lastSeq ?? readLastSeq(wbId);
 }
 
+/** Advance the persisted lastSeq (and a live subscriber entry, if any). */
+export function advanceSessionSubscriberLastSeq(sessionOrWorkbenchId: string, seq: number): void {
+  if (!Number.isFinite(seq) || seq <= 0) return;
+  const wbId = resolveWorkbenchSessionId(sessionOrWorkbenchId);
+  const entry = sessionSubscribers.get(wbId);
+  if (entry) {
+    if (seq > entry.lastSeq) entry.lastSeq = seq;
+    writeLastSeq(wbId, seq);
+  } else {
+    writeLastSeq(wbId, seq);
+  }
+}
+
 // Sync all active streams with the backend
-export async function syncActiveStreams(_ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
+export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
   try {
     const active = await api.get<Record<string, string>>('/api/workbench/chat/active');
+    // Lazy import avoids a static cycle (start-stop-stream imports this module).
+    const { reconnectChatStream } = await import('./start-stop-stream');
     for (const wbId of Object.keys(active)) {
       if (active[wbId] === 'streaming') {
-        // Only attach durable SSE when no per-turn consumer owns this session.
-        ensureSessionSubscriber(wbId);
+        // Reconnect with FULL per-turn handlers (text / toolUse / done) so a
+        // reply truncated by a reload mid-stream actually completes. The
+        // durable subscriber alone drops main-turn events and leaves the
+        // assistant bubble stuck at its persisted prefix forever.
+        void reconnectChatStream(wbId, ensureWorkbenchSession);
       }
     }
   } catch (err) {

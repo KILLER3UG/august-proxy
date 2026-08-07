@@ -402,7 +402,21 @@ async def _runCommand(
         firstWord = firstWord[:-4]
     if firstWord not in _ALLOWEDCommandPrefixes and (not command.startswith('./')):
         return f"Error: Command '{firstWord}' is not in the allowed list."
-    dangerous = ['rm -rf /', 'rm -rf ~', ':(){ :|:& };:', 'dd if=', '> /dev/', 'mkfs.']
+    dangerous = [
+        'rm -rf /',
+        'rm -rf ~',
+        ':(){ :|:& };:',
+        'dd if=',
+        '> /dev/',
+        'mkfs.',
+        # Relative-path destructive patterns the soft sandbox cannot catch by
+        # path resolution alone (they operate on the whole cwd tree).
+        'rm -rf *',
+        'rm -rf .',
+        'git clean -fdx',
+        'del /s',
+        'format c:',
+    ]
     for pattern in dangerous:
         if pattern in command:
             return f'Error: Command contains dangerous pattern: {pattern}'

@@ -10,6 +10,7 @@ Extracted from workbench.py for Phase 3 modularization.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Callable
 
@@ -466,11 +467,18 @@ async def call_anthropic_workbench(
     from app.lib.async_subprocess import current_subprocess_cancel
 
     _cancel_event = current_subprocess_cancel.get()
+    _stream_rule_hit: str | None = None
     try:
         async for event in client.messages_stream(body):
             if _cancel_event is not None and _cancel_event.is_set():
                 break
             agg.on_event(event)
+            # Stream rules: abort mid-stream when the model narrates a tool
+            # call instead of emitting one.
+            if tools and agg.accumulated_text and _stream_rule_hit is None:
+                _stream_rule_hit = _match_stream_rule(agg.accumulated_text)
+                if _stream_rule_hit:
+                    break
             if agg.error:
                 errResp: dict[str, object] = {'error': agg.error}
                 if agg.error_status is not None:
@@ -480,7 +488,39 @@ async def call_anthropic_workbench(
                 return errResp
     except Exception as exc:
         return {'error': str(exc)}
+    if _stream_rule_hit:
+        return {
+            'stream_rule': _stream_rule_hit,
+            'text': agg.accumulated_text,
+            'usage': dict(agg.usage),
+            'finish_reason': agg.stop_reason or 'end_turn',
+        }
     return agg.result()
+
+
+# ── Stream rules (Oh My Pi lesson) ───────────────────────────────────────
+# Mid-stream self-correction: when the model NARRATES a tool call in prose
+# instead of emitting it (a code-fenced JSON tool call, "I'll use the X tool"),
+# abort the generation and let the turn loop inject a reminder + retry from
+# the same point — far cheaper than letting a wasted round complete.
+_STREAM_RULE_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
+    (
+        'code_fence_tool_call',
+        re.compile(r'```(?:json)?\s*\{\s*["\']?(?:name|tool|function)["\']?\s*:'),
+    ),
+    (
+        'narrated_tool_call',
+        re.compile(r"\bI['\u2019]?ll (?:now )?(?:use|call|invoke) (?:the )?[\w:]+ (?:tool|function)\b", re.IGNORECASE),
+    ),
+)
+
+
+def _match_stream_rule(text: str) -> str | None:
+    """Return the first stream-rule name matching the accumulated text."""
+    for name, pattern in _STREAM_RULE_PATTERNS:
+        if pattern.search(text):
+            return name
+    return None
 
 
 def _reasoning_effort_rejected(status: object, msg: str | None) -> bool:
@@ -590,6 +630,7 @@ async def call_openai_workbench(
         finishReason: str | None = None
         usage: dict[str, int] = {}
         _retry_stream = False
+        _stream_rule_hit: str | None = None
         try:
             async for event in client.chat_completions_stream(body):
                 if _cancel_event is not None and _cancel_event.is_set():
@@ -649,6 +690,13 @@ async def call_openai_workbench(
                     contentText += textDelta
                     if emit:
                         emit({'type': 'finalOutput', 'content': textDelta})
+                    # Stream rules: abort mid-stream when the model narrates a
+                    # tool call instead of emitting it (only when tools were
+                    # offered — otherwise it is just prose).
+                    if tools and _stream_rule_hit is None:
+                        _stream_rule_hit = _match_stream_rule(contentText)
+                        if _stream_rule_hit:
+                            break
                 for rawTc in as_list(delta.get('tool_calls', []), []):
                     tc = as_dict(rawTc)
                     idx = as_int(tc.get('index', 0))
@@ -685,6 +733,15 @@ async def call_openai_workbench(
                 return {'error': str(exc)}
         if _retry_stream:
             continue
+        if _stream_rule_hit:
+            # Stream rule fired mid-generation — hand control back to the turn
+            # loop so it can inject the reminder and retry from this point.
+            return {
+                'stream_rule': _stream_rule_hit,
+                'text': contentText,
+                'usage': usage,
+                'finish_reason': finishReason or 'stop',
+            }
         break
 
     if not contentText and not toolCallsAccum and not thinkingText and not preservedReasoning:
@@ -707,10 +764,18 @@ async def call_openai_workbench(
         for idx in sorted(toolCallsAccum):
             tc = toolCallsAccum[idx]
             fn = as_dict(tc['function'])
+            argsRaw = as_str(fn.get('arguments'))
             try:
-                parsedArgs = json.loads(as_str(fn.get('arguments'))) if fn.get('arguments') else {}
-            except (json.JSONDecodeError, TypeError):
-                parsedArgs = {}
+                parsedArgs = json.loads(argsRaw) if argsRaw else {}
+                if not isinstance(parsedArgs, dict):
+                    raise ValueError('arguments must be an object')
+            except (json.JSONDecodeError, TypeError, ValueError):
+                # Malformed tool arguments must NEVER execute as {} — the model
+                # would silently do the wrong thing. Mark the call so the
+                # workbench loop surfaces a validation-error tool result and
+                # the model self-heals (see `_invalid_json` handling in the
+                # turn loop).
+                parsedArgs = {'_invalid_json': argsRaw[:2000]}
             tcList.append(
                 {
                     'id': tc['id'],

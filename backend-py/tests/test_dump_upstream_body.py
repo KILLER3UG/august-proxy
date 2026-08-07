@@ -22,12 +22,21 @@ def test_openai_dump_strips_august_keys_from_dict():
             'messages': [{'role': 'user', 'content': 'hi'}],
             'session_id': None,
             'sessionId': 'keep-me-out',
-            'user': None,
+            'user': 'client-abc',
             'metadata': {'a': 1},
             'temperature': None,
         }
     )
-    assert body == {'model': 'x', 'messages': [{'role': 'user', 'content': 'hi'}]}
+    # Only August-internal routing keys are stripped. `user`/`metadata` are
+    # legitimate OpenAI fields (abuse tracking, project ids) and must be
+    # forwarded when non-null; nulls are dropped so strict gateways
+    # (OpenCode Console rejects `session_id: null`) do not 400.
+    assert body == {
+        'model': 'x',
+        'messages': [{'role': 'user', 'content': 'hi'}],
+        'user': 'client-abc',
+        'metadata': {'a': 1},
+    }
 
 
 def test_anthropic_dump_excludes_null_session_id():

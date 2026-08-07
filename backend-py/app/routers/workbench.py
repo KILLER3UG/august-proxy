@@ -274,7 +274,10 @@ async def startChat(request: Request):
             except Exception:
                 pass
         finally:
-            _cancelled.pop(sessionId, None)
+            # Identity-checked pops: a stale task finishing after Stop+restart
+            # must not remove the replacement turn's cancel event / task slot.
+            if _cancelled.get(sessionId) is cancelEvent:
+                _cancelled.pop(sessionId, None)
             if _activeStreams.get(sessionId) is task:
                 _activeStreams.pop(sessionId, None)
             _notify_chat_idle()

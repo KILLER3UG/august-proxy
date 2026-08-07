@@ -8,6 +8,10 @@ never hit "Unsupported API format" after picking a dropdown option.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Formats understood by workbench / proxy clients.
 # Users paste baseUrl + choose one of these; no first-class Gemini/MiniMax/Bedrock.
 VALID_API_FORMATS = frozenset({
@@ -63,7 +67,9 @@ def normalize_api_format(api_format: object | None, *, default: str = 'openaiCha
     mapped = _FORMAT_ALIASES.get(raw.lower())
     if mapped:
         return mapped
-    # Unknown values: keep default rather than failing closed as "unsupported".
+    # Unknown values: log so config typos are visible (previously they fell
+    # back silently and the mismatch surfaced later as a runtime 400).
+    logger.warning('normalize_api_format: unknown apiFormat %r — using default %r', raw, default)
     return default
 
 

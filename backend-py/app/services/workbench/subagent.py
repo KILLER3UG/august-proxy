@@ -103,11 +103,18 @@ async def executeSubAgent(
     context: str = '',
     emit: Callable[[dict[str, object]], None] | None = None,
     job_id: str | None = None,
+    restricted_names: set[str] | None = None,
+    yield_schema: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``.
 
     When ``job_id`` is provided (API-created jobs), reuse that row instead of
-    creating a second pending job.
+    creating a second pending job. ``restricted_names`` filters the tool
+    surface (both wire formats) for worker-launched sub-agents — callers must
+    never mutate the module-level ``toolDefinitions``, which races across
+    concurrent workers. ``yield_schema`` (optional JSON Schema) makes the
+    agent return a single JSON object; the result is validated and returned
+    as parsed JSON when it matches.
     """
     from app.providers.model_resolver import resolve_or_fallback
     from app.providers.route_resolver import resolve_for_model
@@ -121,6 +128,9 @@ async def executeSubAgent(
         _extractText,
         _isAnthropicProvider,
         _isOpenaiProvider,
+        _isRetryableModelError,
+        _modelRetryDelayMs,
+        _modelRetryPolicy,
         _resolveModel,
         _resolveWorkbenchProvider,
         openaiToolDefinitions,
@@ -277,6 +287,9 @@ async def executeSubAgent(
             pass
     fullTools = toolDefinitions(cast(WorkbenchSession, session))
     fullOpenaiTools = openaiToolDefinitions(cast(WorkbenchSession, session))
+    if restricted_names:
+        fullTools = [t for t in fullTools if _toolName(t) not in restricted_names]
+        fullOpenaiTools = [t for t in fullOpenaiTools if _toolName(t) not in restricted_names]
     allowedNames = {
         _toolName(t) for t in fullTools if _toolAllowed(agent, _toolName(t)) and _toolName(t) != 'spawn_subagent'
     }
@@ -316,41 +329,73 @@ async def executeSubAgent(
                 }
             )
 
+    goalText = goal
+    if yield_schema:
+        import json as _json
+
+        goalText += (
+            '\n\nReturn your final answer as a SINGLE JSON object (no prose, no markdown '
+            'fences) matching this schema:\n'
+            f'{_json.dumps(yield_schema, indent=2)}\n'
+            'The parent agent reads your result programmatically, so every field the '
+            'schema requires must be present and correctly typed.'
+        )
     messages: list[dict[str, object]] = [
-        {'role': 'user', 'content': f'Goal: {goal}\n\nContext: {context}' if context else f'Goal: {goal}'}
+        {'role': 'user', 'content': f'Goal: {goalText}\n\nContext: {context}' if context else f'Goal: {goalText}'}
     ]
     finalText = ''
     token = currentSessionId.set(getattr(session, 'id', 'default'))
     try:
         toolRound = 0
+        # Sub-agents get the same retry discipline as the parent loop: a
+        # transient 429/5xx must not kill the agent outright.
+        retryPolicy = _modelRetryPolicy()
         while True:
             toolRound += 1
             # 0 = unlimited (same default as main workbench loop)
             if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
                 break
-            if isAnthropic:
-                response = await _callAnthropicWorkbench(
-                    messages, systemText, resolvedModel, tools, 'medium', provider=provider, emit=_subEmit
-                )
-            elif isOpenai:
-                response = await _callOpenaiWorkbench(
-                    messages, systemText, resolvedModel, openaiTools, 'medium', provider=provider, emit=_subEmit
-                )
-            else:
-                err = 'Unsupported provider type for sub-agent.'
-                if emit:
-                    emit(
-                        {
-                            'type': 'subagentDone',
-                            'agentId': resolvedAgentId,
-                            'jobId': jobId,
-                            'status': 'error',
-                            'error': err,
-                        }
+            # Context compaction: long tool runs must not overflow the window.
+            try:
+                from app.providers.clients.base import estimateTokens as _estimateTokens
+                from app.services.memory.context_compressor import compressMessages
+
+                if _estimateTokens(messages) > 110_000:
+                    messages = await compressMessages(messages, threshold=90_000)
+            except Exception:
+                pass
+            response: dict[str, object] | None = None
+            for retryAttempt in range(retryPolicy['maxRetries'] + 1):
+                if isAnthropic:
+                    response = await _callAnthropicWorkbench(
+                        messages, systemText, resolvedModel, tools, 'medium', provider=provider, emit=_subEmit
                     )
-                updateJob(jobId, {'status': 'failed', 'error': err})
-                _cleanup_agent_worktree(session, workspace, worktree_path)
-                return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
+                elif isOpenai:
+                    response = await _callOpenaiWorkbench(
+                        messages, systemText, resolvedModel, openaiTools, 'medium', provider=provider, emit=_subEmit
+                    )
+                else:
+                    err = 'Unsupported provider type for sub-agent.'
+                    if emit:
+                        emit(
+                            {
+                                'type': 'subagentDone',
+                                'agentId': resolvedAgentId,
+                                'jobId': jobId,
+                                'status': 'error',
+                                'error': err,
+                            }
+                        )
+                    updateJob(jobId, {'status': 'failed', 'error': err})
+                    _cleanup_agent_worktree(session, workspace, worktree_path)
+                    return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
+                if response is None or not _isRetryableModelError(response):
+                    break
+                if retryAttempt >= retryPolicy['maxRetries']:
+                    break
+                delayMs = _modelRetryDelayMs(retryAttempt + 1, response, retryPolicy)
+                await asyncio.sleep(delayMs / 1000)
+            response = response or {'error': 'Sub-agent model call failed'}
             if as_str(response.get('error')):
                 err = as_str(response.get('error')) or 'Sub-agent model error'
                 if emit:
@@ -442,7 +487,39 @@ async def executeSubAgent(
                     )
                 toolResults.append({'tool_use_id': tId, 'role': 'tool', 'content': resultStr})
             messages.extend(toolResults)
-        updateJob(jobId, {'status': 'completed', 'result': finalText[:2000]})
+        # Schema-validated yields (Oh My Pi lesson): when a yield_schema was
+        # requested, parse the final text as JSON and validate it before
+        # returning — the parent reads a structured object, not prose.
+        resultText = finalText
+        if yield_schema and finalText.strip():
+            try:
+                import json as _json
+
+                parsed = _json.loads(finalText.strip().strip('`'))
+                if isinstance(parsed, dict):
+                    from app.services.workbench.validator import validateToolArguments
+
+                    check = validateToolArguments(
+                        {
+                            'function': {
+                                'name': 'yield',
+                                'arguments': _json.dumps(parsed),
+                            }
+                        },
+                        [{'function': {'name': 'yield', 'parameters': yield_schema}}],
+                    )
+                    if as_bool(check.get('valid'), False):
+                        resultText = _json.dumps(parsed, ensure_ascii=False)
+                    else:
+                        resultText = (
+                            f'[yield validation failed: {as_str(check.get("error"), "schema mismatch")}]\n'
+                            f'Raw answer:\n{finalText[:4000]}'
+                        )
+                else:
+                    resultText = f'[yield validation failed: expected a JSON object]\nRaw answer:\n{finalText[:4000]}'
+            except Exception:
+                resultText = f'[yield validation failed: answer was not valid JSON]\nRaw answer:\n{finalText[:4000]}'
+        updateJob(jobId, {'status': 'completed', 'result': resultText[:2000]})
         if emit:
             emit(
                 {
@@ -450,11 +527,11 @@ async def executeSubAgent(
                     'agentId': resolvedAgentId,
                     'jobId': jobId,
                     'status': 'completed',
-                    'result': finalText[:4000],
+                    'result': resultText[:4000],
                     'isFallback': isFallback,
                 }
             )
-        return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'completed', 'result': finalText}
+        return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'completed', 'result': resultText}
     except Exception as exc:
         updateJob(jobId, {'status': 'failed', 'error': str(exc)})
         if emit:

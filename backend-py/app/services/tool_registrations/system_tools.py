@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services import tool_registry
@@ -46,7 +47,11 @@ async def _describeEnvironment() -> str:
     """Describe the workspace environment: paths, VCS, available tools."""
     from app.config import settings
 
-    parts = ['Proxy version: 0.1.0', f'Data directory: {settings.dataDir}', 'Platform: win32']
+    parts = [
+        'Proxy version: 0.1.0',
+        f'Data directory: {settings.dataDir}',
+        f'Platform: {sys.platform}',
+    ]
     try:
         import subprocess
 
@@ -123,15 +128,19 @@ async def _writeScratchpad(text: str) -> str:
         session = get_session()
         if not session:
             return 'Error: no active workbench session.'
-        await updateSessionState(
-            session,
-            executionState={
-                'phase': as_str(getattr(session, '_execution_state', {}).get('phase'), 'research'),
-                'step': as_int(getattr(session, '_execution_state', {}).get('step'), 1),
-                'completed': as_list(getattr(session, '_execution_state', {}).get('completed'), []),
-                'blockers': as_list(getattr(session, '_execution_state', {}).get('blockers'), []),
-            },
-        )
+        # Merge with the current execution state — rewriting from scratch
+        # silently drops keys like verification_command, breaking the
+        # verifier auto-run on the next turn.
+        prevState = as_dict(getattr(session, '_execution_state', None), {})
+        state: dict[str, object] = {
+            'phase': as_str(prevState.get('phase'), 'research'),
+            'step': as_int(prevState.get('step'), 1),
+            'completed': as_list(prevState.get('completed'), []),
+            'blockers': as_list(prevState.get('blockers'), []),
+        }
+        if prevState.get('verification_command'):
+            state['verification_command'] = prevState['verification_command']
+        await updateSessionState(session, executionState=state)
         setattr(session, '_working_memory', text)
         return 'Scratchpad updated.'
     except Exception as exc:
@@ -196,6 +205,15 @@ async def _updateState(
         prevState = getattr(session, '_execution_state', None)
         currentPhase = as_str(as_dict(prevState).get('phase'), 'research') if prevState else 'research'
         targetPhase = (phase or currentPhase).strip().lower()
+        # Validate against the known phase set — a typo'd phase (e.g.
+        # `completed`) would otherwise skip the verifier gate below while
+        # leaving `phase != 'complete'`, stranding the final answer.
+        _VALID_PHASES = ('research', 'plan', 'implement', 'review', 'complete')
+        if targetPhase not in _VALID_PHASES:
+            return (
+                f'Error: unknown phase "{targetPhase}". Valid phases: {", ".join(_VALID_PHASES)}. '
+                'Use update_state to move research → plan → implement → review → complete.'
+            )
         # Verifier gate (enforced, not honor-system): entering review/complete
         # requires a command run THIS turn whose output looks like a pass.
         # Receipts are recorded by the workbench tool loop for command tools

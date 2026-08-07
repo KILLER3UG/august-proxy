@@ -25,7 +25,7 @@ export function ChatEmptyState({
         <h1 className="text-2xl font-semibold tracking-tight text-center text-foreground/90 mb-2">
           What should we build in{' '}
           <span className="text-muted-foreground font-mono">
-            {workspacePath ? workspaceBaseName(workspacePath) : 'august-proxy'}
+            {workspacePath ? workspaceBaseName(workspacePath) : 'your project'}
           </span>
           ?
         </h1>

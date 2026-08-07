@@ -40,6 +40,8 @@ import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan'
 import { buildCompactionNoticeMessage } from '@/sections/chat/message/CompactionNoticeCard';
 import { setSessionContextUsed } from './context-used-store';
 import { setMemorySuggestions } from './memory-suggestions-store';
+import { upsertQueuedMessage, removeQueuedMessage } from './queue-store';
+import { resolveUiSessionId } from './stream/session-id-map';
 import { pushNotification } from '@/store/notifications';
 import { toast } from 'sonner';
 import { useArenaStore } from './arena/arena-store';
@@ -628,6 +630,46 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       setMessages(prev => prev.map(msg =>
         msg.id === assistantMsgId ? { ...msg, clarify: data } : msg
       ));
+      scheduleUpdate();
+    },
+    onUserMessageQueued: (data) => {
+      // A follow-up was parked behind the running turn — surface the pill.
+      if (!data?.messageId || !data?.sessionId) return;
+      upsertQueuedMessage(resolveUiSessionId(data.sessionId), {
+        id: data.messageId,
+        text: data.text ?? '',
+        queuedAt: data.queuedAt ?? new Date().toISOString(),
+      });
+    },
+    onUserMessageDequeued: (data) => {
+      if (!data?.messageId || !data?.sessionId) return;
+      removeQueuedMessage(resolveUiSessionId(data.sessionId), data.messageId);
+    },
+    onUserMessageInjected: (data) => {
+      // The queued message was drained into the conversation (backend drains
+      // in-loop, so it arrives on THIS stream). Drop the pill and render the
+      // user bubble BEFORE this turn's assistant bubble — the reply streams
+      // into the placeholder id, so ordering would look wrong if appended.
+      if (!data?.messageId || !data?.sessionId) return;
+      const queueUiId = resolveUiSessionId(data.sessionId);
+      removeQueuedMessage(queueUiId, data.messageId);
+      const injected: ChatMessage = {
+        id: `qm-${data.messageId}`,
+        role: 'user',
+        content: data.text ?? '',
+        timestamp: data.queuedAt ?? new Date().toISOString(),
+        queued: true,
+      };
+      setMessages(prev => {
+        // Drop stale "Your message is queued…" placeholder bubbles from a
+        // previous queued turn — the message now runs for real.
+        const cleaned = prev.filter(msg =>
+          !(msg.role === 'assistant' && typeof msg.content === 'string' && msg.content.includes('queued and will run'))
+        );
+        const idx = cleaned.findIndex(m => m.id === assistantMsgId);
+        if (idx >= 0) return [...cleaned.slice(0, idx), injected, ...cleaned.slice(idx)];
+        return [...cleaned, injected];
+      });
       scheduleUpdate();
     },
     onCompaction: (info) => {

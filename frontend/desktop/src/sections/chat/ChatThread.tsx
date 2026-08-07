@@ -876,79 +876,32 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       const sid = sessionId;
       const msgs = chatMessagesRef.current;
       const prev = selectedModelRef.current;
-      const modelChanged = !!(sid && prev && prev.id !== model.id);
 
-      // 1) Streaming: stop the turn (queue preserved) and capture a handoff
-      //    brief before stream state is torn down.
-      let interrupted = false;
-      if (streamingRef.current && sid) {
-        interrupted = true;
-        const summary = buildHandoffSummary(msgs, prev?.name || prev?.id);
-        await stopRef.current();
-        markHandoffPending(sid, summary, prev?.id);
-      } else if (modelChanged && sid) {
-        const { peekHandoffPending } = await import('./handoff-summary');
-        if (!peekHandoffPending(sid)) {
-          const last = msgs[msgs.length - 1];
-          const incomplete =
-            last?.role === 'assistant' &&
-            (!last.content?.trim() ||
-              last.blocks?.some(
-                (b) =>
-                  b.type === 'thinking' ||
-                  (b.type === 'toolCall' && b.tool?.status === 'running'),
-              ));
-          if (incomplete) {
-            markHandoffPending(
-              sid,
-              buildHandoffSummary(msgs, prev?.name || prev?.id),
-              prev?.id,
-            );
-          }
-        }
-      }
-
-      // 2) Server-computed handoff for ANY model change with prior messages —
-      //    non-blocking, upgrades the pending summary and drops a notice card.
-      if (modelChanged && msgs.length > 0 && sid) {
-        const fromLabel = prev?.name || prev?.id || '';
-        void (async () => {
+      // Shared stop → handoff → apply flow (single source of truth with the
+      // composer model menu).
+      const { switchChatModel } = await import('./switch-model');
+      const { interrupted } = await switchChatModel({
+        sessionId: sid,
+        prevModel: prev,
+        nextModel: model,
+        streaming: streamingRef.current,
+        stopStream: async () => {
+          await stopRef.current();
+        },
+        getMessages: () => chatMessagesRef.current,
+        setMessages: (updater) => setChatMessagesRef.current(updater),
+        onModelApplied: (m) => {
+          setSelectedModel(m);
+          userSelectedRef.current = m.id;
           try {
-            const { requestSessionHandoff } = await import('@/api/workbench');
-            const record = await requestSessionHandoff(sid, prev?.id ?? '', model.id);
-            const { buildHandoffNoticeMessage } = await import('./handoff-summary');
-            markHandoffPending(
-              sid,
-              `Previous model (${fromLabel}) context handoff:\n${record.summary}`,
-              prev?.id,
-            );
-            setChatMessagesRef.current((list) => [
-              ...list,
-              buildHandoffNoticeMessage(record, fromLabel),
-            ]);
-          } catch (error) {
-            console.warn(
-              '[ChatThread] Server handoff summary failed, using local fallback:',
-              error,
-            );
-            const { peekHandoffPending, buildHandoffSummary } = await import('./handoff-summary');
-            if (!peekHandoffPending(sid)) {
-              markHandoffPending(sid, buildHandoffSummary(msgs, fromLabel), prev?.id);
-            }
+            localStorage.setItem('august_last_model', JSON.stringify(m));
+          } catch {
+            /* silent */
           }
-        })();
-      }
-
-      // 3) Apply the selection (next turn / auto-continue uses the new model).
-      setSelectedModel(model);
-      userSelectedRef.current = model.id;
-      try {
-        localStorage.setItem('august_last_model', JSON.stringify(model));
-      } catch {
-        /* silent */
-      }
-      if (sid) updateSessionModel(sid, modelId, provider);
-      toast.success(`Switched to ${model.name}`);
+          if (sid) updateSessionModel(sid, m.id, m.provider);
+          toast.success(`Switched to ${m.name}`);
+        },
+      });
 
       // 4) Auto-continue: re-answer the interrupted prompt with the new
       //    model. The backend is truncated at the interrupted turn and the
@@ -961,7 +914,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           setChatMessagesRef.current(trimmed);
           const wbId = resolveWorkbenchSessionId(sid);
           void truncateWorkbenchSession(wbId, lastUserIdx).catch(() => undefined);
+          // Guard: if the user typed + sent a new message in the interim,
+          // do not clobber it with a stale auto-continue of the old prompt.
+          const expectedLen = trimmed.length;
           window.setTimeout(() => {
+            if (chatMessagesRef.current.length !== expectedLen) return;
             void generateRef.current?.(trimmed);
           }, 0);
         }
@@ -975,19 +932,27 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   useEffect(() => {
     void syncActiveStreams(ensureWorkbenchSession);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+    // Debounced resync: rapid focus/visibility churn must not fire a GET +
+    // reconnect per event. Reconnect/attach are guarded internally against
+    // already-active controllers/subscribers.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const resync = () => {
+      if (debounceTimer !== null) return;
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
         void syncActiveStreams(ensureWorkbenchSession);
-      }
+      }, 2000);
     };
-    const handleFocus = () => {
-      void syncActiveStreams(ensureWorkbenchSession);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') resync();
     };
+    const handleFocus = () => resync();
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleFocus);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
+      if (debounceTimer !== null) clearTimeout(debounceTimer);
     };
   }, [ensureWorkbenchSession, sessionId]);
 

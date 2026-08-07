@@ -173,6 +173,7 @@ class SubagentOrchestrator:
             agentId = item.get('agentId', 'general')
             context = item.get('context', '')
             restrictedTools = item.get('restrictedTools')
+            yieldSchema = item.get('yieldSchema')
             taskId = f'task_{uuid.uuid4().hex[:12]}'
             sid = ''
             if hasattr(request.session, 'id'):
@@ -191,6 +192,7 @@ class SubagentOrchestrator:
                     goal=goal,
                     context=context,
                     restrictedTools=restrictedTools,
+                    yieldSchema=yieldSchema,
                 )
             )
             self._tasks[taskId] = task
@@ -291,6 +293,7 @@ class SubagentOrchestrator:
         goal: str,
         context: str,
         restrictedTools: list[str] | None,
+        yieldSchema: dict[str, Any] | None = None,
     ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         async with self._semaphore:
@@ -307,6 +310,7 @@ class SubagentOrchestrator:
                     goal=goal,
                     context=context,
                     restrictedTools=restrictedTools,
+                    yieldSchema=yieldSchema,
                     taskId=handle.taskId,
                 )
                 handle.result = result

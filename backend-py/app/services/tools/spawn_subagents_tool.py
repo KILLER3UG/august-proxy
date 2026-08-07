@@ -75,6 +75,14 @@ TOOL_DEFINITION = {
                             'items': {'type': 'string'},
                             'description': 'Tool names this sub-agent is restricted from using.',
                         },
+                        'yieldSchema': {
+                            'type': 'object',
+                            'description': (
+                                'Optional JSON Schema. When set, the sub-agent returns a SINGLE '
+                                'JSON object matching it; you read the result programmatically '
+                                'instead of parsing prose.'
+                            ),
+                        },
                         'context': {'type': 'string', 'description': 'Additional context for the sub-agent.'},
                     },
                     'required': ['goal'],
@@ -401,6 +409,7 @@ async def _doSpawn(
                 'goal': item.get('goal', ''),
                 'agentId': item.get('agentId', 'general'),
                 'restrictedTools': item.get('restrictedTools'),
+                'yieldSchema': item.get('yieldSchema'),
                 'context': item.get('context', ''),
             }
             for item in workItems

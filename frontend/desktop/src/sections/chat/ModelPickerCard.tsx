@@ -18,7 +18,7 @@ import { useNavigate } from 'react-router-dom';
 
 export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
   const { models, isLoading, error } = useModels();
-  const { providers: providerAvailability } = useProviderAvailability();
+  const { providers: providerAvailability, refetch: refetchAvailability } = useProviderAvailability();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -57,6 +57,17 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
       ),
     }));
   }, [models, searchQuery]);
+
+  // F2: providers confirmed unavailable sink to a collapsed group with a
+  // "check again" action instead of masquerading as first-class options.
+  const availableGroups = useMemo(
+    () => grouped.filter(g => providerStatus.get(g.provider) !== false),
+    [grouped, providerStatus],
+  );
+  const unavailableGroups = useMemo(
+    () => grouped.filter(g => providerStatus.get(g.provider) === false),
+    [grouped, providerStatus],
+  );
 
   const handleSelect = useCallback((modelId: string, provider: string) => {
     window.dispatchEvent(
@@ -190,12 +201,17 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
       </div>
 
       {/* Grouped model list */}
-      <div ref={listRef} className="max-h-80 overflow-y-auto">
-        {grouped.map(group => {
+      <div
+        ref={listRef}
+        role="listbox"
+        aria-label="Available models"
+        className="max-h-80 overflow-y-auto"
+      >
+        {availableGroups.map(group => {
           if (group.items.length === 0) return null;
           const groupStart = flatItems.indexOf(group.items[0]);
           return (
-            <div key={group.provider}>
+            <div key={group.provider} role="presentation">
               <div className="px-4 py-1.5 text-[11px] uppercase tracking-wide text-muted-foreground font-semibold bg-muted/10">
                 {group.provider}
               </div>
@@ -206,6 +222,8 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
                   <button
                     key={model.id}
                     data-model-item
+                    role="option"
+                    aria-selected={isFocused}
                     onClick={() => handleSelect(model.id, model.provider)}
                     className={cn(
                       'w-full px-4 py-3 flex items-start gap-3 text-left transition-colors',
@@ -216,8 +234,21 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <StatusDot
-                          tone={providerStatus.get(model.provider) === false ? 'bad' : 'good'}
+                          tone={
+                            providerStatus.get(model.provider) === false
+                              ? 'bad'
+                              : providerStatus.get(model.provider) === true
+                                ? 'good'
+                                : 'muted'
+                          }
                           className="shrink-0"
+                          title={
+                            providerStatus.get(model.provider) === false
+                              ? 'Provider unavailable'
+                              : providerStatus.get(model.provider) === true
+                                ? 'Provider available'
+                                : 'Provider status not checked yet'
+                          }
                         />
                         <span className="text-sm font-medium">{model.name}</span>
                         {model.isFree && (
@@ -243,6 +274,33 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
             </div>
           );
         })}
+        {unavailableGroups.length > 0 && (
+          <details className="border-t border-border/60">
+            <summary className="px-4 py-1.5 text-[11px] uppercase tracking-wide text-muted-foreground/60 font-semibold cursor-pointer hover:text-muted-foreground flex items-center justify-between gap-2">
+              <span>
+                Unavailable providers ({unavailableGroups.reduce((n, g) => n + g.items.length, 0)})
+              </span>
+              <button
+                type="button"
+                className="normal-case tracking-normal text-[11px] text-primary hover:underline"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void refetchAvailability();
+                }}
+              >
+                Check again
+              </button>
+            </summary>
+            <div className="px-4 pb-2">
+              {unavailableGroups.map(group => (
+                <p key={group.provider} className="text-xs text-muted-foreground/70 py-0.5">
+                  {group.provider} — {group.items.map(m => m.name).join(', ')}
+                </p>
+              ))}
+            </div>
+          </details>
+        )}
         {flatItems.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             No models matching &ldquo;{searchQuery}&rdquo;

@@ -30,6 +30,7 @@ import {
 import { activeStreamControllers } from './active-stream-controllers';
 import { bindTurnStreamHandlers } from './bind-turn-handlers';
 import {
+  advanceSessionSubscriberLastSeq,
   detachSessionSubscriber,
   getSessionSubscriberLastSeq,
   hasSessionSubscriber,
@@ -218,15 +219,20 @@ export async function stopChatStream(sessionId: string) {
 
 // Reconnect/sync stream with the backend
 export async function reconnectChatStream(
-  sessionId: string,
+  sessionOrWorkbenchId: string,
   _ensureWorkbenchSession: () => Promise<WorkbenchSession | null>
 ) {
-  if (activeStreamControllers.has(sessionId)) {
+  // Accept either id: the store / runtime / controllers are keyed by the UI
+  // sess_* id; the SSE API and lastSeq are keyed by the workbench wb_* id.
+  const uiSessionId = resolveUiSessionId(sessionOrWorkbenchId);
+  const wbSessionId = resolveWorkbenchSessionId(sessionOrWorkbenchId);
+
+  if (activeStreamControllers.has(uiSessionId)) {
     // Already active
     return;
   }
 
-  const state = getOrInitSessionStreamState(sessionId);
+  const state = getOrInitSessionStreamState(uiSessionId);
   const messages = state.messages;
   const lastUserIdx = messages.map(m => m.role).lastIndexOf('user');
   const initialMessages = lastUserIdx !== -1 ? messages.slice(0, lastUserIdx + 1) : messages;
@@ -239,37 +245,46 @@ export async function reconnectChatStream(
   }
 
   const turn = chatRuntime.startTurn({
-    sessionId,
+    sessionId: uiSessionId,
     assistantMsgId,
     transport: 'none',
   });
 
   // Use the turn's controller so aborting the turn also cancels fetches.
   const abortController = turn.controller;
-  activeStreamControllers.set(sessionId, abortController);
+  activeStreamControllers.set(uiSessionId, abortController);
 
   const { handlers, finalize } = bindTurnStreamHandlers({
-    sessionId,
+    sessionId: uiSessionId,
     assistantMsgId,
     initialMessages,
     turn,
   });
 
+  // The per-turn handler bundle has no onSeq — advance the persisted
+  // lastSeq ourselves so a second reconnect never replays already-applied
+  // events (subagent/browser events would otherwise double-apply).
+  const originalOnSeq = handlers.onSeq;
+  handlers.onSeq = (seq: number) => {
+    advanceSessionSubscriberLastSeq(wbSessionId, seq);
+    originalOnSeq?.(seq);
+  };
+
   try {
     chatRuntime.setTransport(turn.turnId, 'http');
 
-    const lastSeq = getSessionSubscriberLastSeq(sessionId);
-    await streamWorkbenchReconnect(sessionId, handlers, abortController.signal, lastSeq || undefined);
+    const lastSeq = getSessionSubscriberLastSeq(wbSessionId);
+    await streamWorkbenchReconnect(wbSessionId, handlers, abortController.signal, lastSeq || undefined);
     finalize(abortController.signal.aborted ? 'aborted' : 'done');
   } catch (e) {
     if (e instanceof Error && e.name === 'AbortError') {
-      clearSessionStatus(sessionId);
+      clearSessionStatus(uiSessionId);
       finalize('aborted');
       return;
     }
     console.warn('Reconnect error:', e);
     finalize('done');
   } finally {
-    activeStreamControllers.delete(sessionId);
+    activeStreamControllers.delete(uiSessionId);
   }
 }

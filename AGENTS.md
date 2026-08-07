@@ -40,7 +40,24 @@ models reached via `/v1/chat/completions`). See `docs/TROUBLESHOOTING.md` and
 **Verifier enforcement is opt-in per session** (`verifierEnforced`, composer
 shield toggle / session creation). While on, the final answer is withheld
 until `update_state(phase='complete')` passes; a `verifierBlocked` SSE event
-drives the amber banner. Casual chat (flag off) is unaffected.
+drives the amber banner. Casual chat (flag off) is unaffected. `run_command`
+always surfaces the exit code (zero included) so the verifier gate judges
+receipts deterministically.
+
+**Harness budgets & self-correction (0.12.55)** — `MAX_MANAGED_TOOL_ROUNDS`
+defaults to 25 (brain-config `maxWorkbenchToolLoops` overrides); a turn whose
+`update_state` phase/step never advances across 8+ rounds gets a reflection
+nudge, then hard-stops. Malformed tool JSON never executes as `{}` — the loop
+returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
+bare tool surface after 3 consecutive failures. Stream rules abort
+mid-generation when the model *narrates* a tool call ("I'll use the X tool",
+code-fenced JSON) and retry with a reminder. Per-model capability profiles
+(`toolSurface` full/reduced/bare, `maxTools`, `maxToolResultChars` in Model
+settings) are honored by both tool-definition paths and result truncation.
+Routing evidence records real outcomes (`ok` = no turn error); with ≥3 samples
+a better model for the task type emits `routingSuggestion` (SSE) or auto-routes
+with `AUGUST_AUTO_ROUTE=1`. Sub-agents inherit the parent retry policy,
+compact mid-run, and support `yieldSchema` for structured results.
 
 ## Directory map & validation routing
 
@@ -57,6 +74,10 @@ drives the amber banner. Casual chat (flag off) is unaffected.
 - Version files (see below) — must stay in sync across 4 files.
 - `dump_openai_upstream_body` / `dump_anthropic_upstream_body` — upstream serialization; a wrong key breaks all chat.
 - `backend-py/app/services/sandbox/` — permission policy; changes affect tool execution safety.
+- `_executeTool` hash-anchored edits + `toolDefinitions`/`openaiToolDefinitions`
+  capability filtering — both wire formats must stay in sync.
+- `adapters/stream_state.py` `AnthropicNativeStreamState` — tool_use input
+  accumulation; a regression re-runs managed tools with empty args.
 
 **Fast path for backend-only changes:**
 

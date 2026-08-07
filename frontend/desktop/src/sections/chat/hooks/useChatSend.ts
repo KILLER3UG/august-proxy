@@ -40,6 +40,7 @@ import {
   persistMessages,
 } from '../message-storage';
 import { enqueueOfflineMessage } from '../offline-queue-store';
+import { $gateway } from '@/store/gateway';
 import type { ModelItem } from '../model-display';
 import { ChatSendService } from '../services/ChatSendService';
 import { playSendChime } from '@/lib/chat-chime';
@@ -407,11 +408,29 @@ export function useChatSend(opts: UseChatSendOptions) {
       // flushes automatically when the backend returns.
       const readyForSend = readyAttachments;
       try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 2000);
-        const res = await fetch('/api/health', { signal: ctrl.signal });
-        clearTimeout(timer);
-        if (!res.ok) throw new Error('backend unhealthy');
+        // The gateway store is authoritative for boot state: while the
+        // backend is still starting (status 'connecting'), a 2s health probe
+        // false-positives and parks the message as "Offline" on first launch
+        // (backend can take 45s+ to bootstrap).
+        const gw = $gateway.get();
+        if (gw.status === 'open') {
+          // Poller already confirmed the backend — send directly.
+        } else if (gw.status === 'closed' || gw.status === 'error') {
+          // Tie-break: the poller may be stale (backend just came back).
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 2000);
+          const res = await fetch('/api/health', { signal: ctrl.signal });
+          clearTimeout(timer);
+          if (!res.ok) throw new Error('backend unhealthy');
+        } else {
+          // Still booting — wait (capped) for the poller to flip to open
+          // instead of mislabeling a cold start as offline.
+          const deadline = Date.now() + 10_000;
+          while ($gateway.get().status === 'connecting' && Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 250));
+          }
+          if ($gateway.get().status !== 'open') throw new Error('backend not ready');
+        }
       } catch {
         enqueueOfflineMessage(
           sessionId,

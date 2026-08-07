@@ -111,14 +111,11 @@ export function useProviderOnboardingState() {
   const requiredDone = hasProvider; // workspace is strongly recommended but provider is the hard gate
   const allCoreDone = hasProvider && hasWorkspace;
 
-  // Show until user skips/completes, or while core setup is incomplete on first load
-  const shouldShow = !dismissed && !providersQ.isLoading;
-
-  // Prefer showing whenever provider list is empty OR checklist not marked done and incomplete
-  const shouldShowChecklist =
-    !dismissed &&
-    !providersQ.isLoading &&
-    (!allCoreDone || !hasProvider);
+  // Show the setup checklist while core setup is incomplete AND the user has
+  // not skipped/marked it done. Fully-configured users never see it again —
+  // previously the tautology `shouldShowChecklist || shouldShow` re-showed
+  // the modal on every launch until an explicit Done/Skip.
+  const shouldShow = !dismissed && !providersQ.isLoading && !allCoreDone;
 
   const skip = () => {
     localStorage.setItem(SKIP_KEY, 'true');
@@ -138,7 +135,7 @@ export function useProviderOnboardingState() {
   };
 
   return {
-    shouldShow: shouldShowChecklist || shouldShow,
+    shouldShow,
     providers,
     checks,
     hasProvider,

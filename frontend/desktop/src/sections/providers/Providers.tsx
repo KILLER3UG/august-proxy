@@ -293,7 +293,10 @@ export function Providers() {
                     <span className={cn(
                       'inline-block size-2.5 rounded-full shrink-0',
                       hasKey ? 'bg-success shadow-[0_0_16px_rgba(16,185,129,.45)]' : 'bg-muted-foreground/30'
-                    )} />
+                    )}
+                    title={hasKey ? 'API key configured' : 'No API key configured'}
+                    aria-label={hasKey ? 'API key configured' : 'No API key configured'}
+                    />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{p.name}</span>
@@ -320,6 +323,18 @@ export function Providers() {
                         {saving === p.id ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
                         <span className="ml-1">Save</span>
                       </Button>
+                      {hasKey && !showKeyField && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setShowKeyFieldFor((prev) => ({ ...prev, [p.id]: true }))}
+                          title="Reveal the key field to rotate the API key (leave blank to keep the current one)"
+                        >
+                          <Key className="size-3" />
+                          <span className="ml-1">Change key</span>
+                        </Button>
+                      )}
                     </div>
                     {showKeyField && (
                       <div className="space-y-1">

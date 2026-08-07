@@ -87,7 +87,11 @@ def path_looks_outside_workspace(token: str, workspace: str | None) -> bool:
     try:
         p = Path(cleaned).expanduser()
         if not p.is_absolute():
-            return False
+            # Resolve relative tokens against the workspace cwd — a bare
+            # relative token is not "inside" just because it is relative;
+            # `cat ../../etc/passwd` or `echo x > ../../evil.txt` must be
+            # caught here (the soft sandbox runs with cwd=workspace).
+            p = root / p
         return not is_within_root(p, root)
     except OSError:
         return False

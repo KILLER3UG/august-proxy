@@ -82,6 +82,47 @@ def _emit_heuristic_event(summary: str, rule_id: int, source: str, category: str
         pass
 
 
+def _record_heuristic_trail(
+    ruleId: int,
+    action: str,
+    rule: str,
+    source: str,
+    category: str,
+    session_id: str = '',
+) -> None:
+    """Versioned rollback trail (Prime /refine lean).
+
+    Every heuristic mutation is recorded (last 20 per rule) so a bad learned
+    rule can be identified and reverted from the Brain surface. Never raises.
+    """
+    try:
+        import time as _time
+
+        from app.json_narrowing import as_list
+        from app.services.memory_store import get_memory, save_memory
+
+        key = f'heuristic_trail:{ruleId}'
+        existing = get_memory(key)
+        entries: list[object] = []
+        if isinstance(existing, dict):
+            entries = as_list(existing.get('entries'), [])
+        elif isinstance(existing, list):
+            entries = list(existing)
+        entries.append(
+            {
+                'action': action,
+                'rule': rule[:500],
+                'source': source,
+                'category': category,
+                'sessionId': session_id or '',
+                'at': _time.time(),
+            }
+        )
+        save_memory(key, {'entries': entries[-20:]})
+    except Exception:
+        pass
+
+
 def addHeuristic(
     rule: str,
     source: str = 'auto',
@@ -139,6 +180,7 @@ def addHeuristic(
             source,
             category,
         )
+        _record_heuristic_trail(int(best['id']), 'upgrade', stripped, source, category, session_id)
         return int(best['id'])
     conf = _clamp_confidence(confidence)
     conn.execute(
@@ -154,14 +196,26 @@ def addHeuristic(
         source,
         category,
     )
+    _record_heuristic_trail(rowId, 'add', stripped, source, category, session_id)
     return rowId
 
 
 def removeHeuristic(ruleId: int) -> bool:
     """Remove a heuristic by id. Returns True if it existed."""
     conn = _conn()
+    row = conn.execute('SELECT rule, source, category FROM learned_heuristics WHERE id = ?', (ruleId,)).fetchone()
     cursor = conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (ruleId,))
     conn.commit()
+    if cursor.rowcount > 0 and row:
+        from app.json_narrowing import as_str
+
+        _record_heuristic_trail(
+            ruleId,
+            'remove',
+            as_str(row['rule'], ''),
+            as_str(row['source'], 'auto'),
+            as_str(row['category'], 'general'),
+        )
     return cursor.rowcount > 0
 
 

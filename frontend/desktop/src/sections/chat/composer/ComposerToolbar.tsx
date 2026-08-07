@@ -3,6 +3,7 @@
 
 import { useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { Loader2, Mic, Send, ShieldCheck, Square } from 'lucide-react';
+import { toast } from 'sonner';
 import { updateSessionModel } from '@/store/sessions';
 import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchVerifier } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
@@ -186,6 +187,14 @@ export function ComposerToolbar({
     void setWorkbenchVerifier(workbenchSession.id, next)
       .then((updated) => {
         if (updated) setWorkbenchSession(updated);
+        if (next) {
+          // First-use explainer — the amber banner + withheld answer is jargon
+          // until you have seen it once.
+          toast('Verifier ON', {
+            description:
+              'August will withhold the final answer until a verification run passes (update_state(phase="complete")). Watch for the amber banner.',
+          });
+        }
       })
       .catch((error) => {
         console.warn('[ChatThread] Failed to persist verifier enforcement:', error);
@@ -253,13 +262,16 @@ export function ComposerToolbar({
           }
           data-testid="verifier-toggle"
           className={cn(
-            'grid size-7 place-items-center rounded transition disabled:opacity-40',
+            'flex items-center gap-1 rounded px-1.5 transition disabled:opacity-40',
             verifierEnforced
               ? 'text-amber-400 hover:bg-white/[0.06]'
               : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
           )}
         >
           <ShieldCheck className="size-3.5" />
+          {verifierEnforced && (
+            <span className="text-[9px] font-bold uppercase tracking-wide">On</span>
+          )}
         </button>
         <ModelEffortMenu
           models={models}
@@ -279,7 +291,6 @@ export function ComposerToolbar({
           onSelect={(m) => {
             void (async () => {
               const prev = selectedModel;
-              const modelChanged = !!(sessionId && prev && prev.id !== m.id);
               const { getOrInitSessionStreamState } = await import(
                 '@/sections/chat/stream/session-stream-store'
               );
@@ -287,92 +298,35 @@ export function ComposerToolbar({
                 ? getOrInitSessionStreamState(sessionId).messages || []
                 : [];
 
-              if (streaming && sessionId) {
-                const { stopChatStream } = await import(
-                  '@/sections/chat/stream/start-stop-stream'
-                );
-                const {
-                  buildHandoffSummary,
-                  markHandoffPending,
-                } = await import('@/sections/chat/handoff-summary');
-                // Capture handoff before stop clears stream state.
-                const summary = buildHandoffSummary(
-                  msgs,
-                  prev?.name || prev?.id,
-                );
-                await stopChatStream(sessionId);
-                markHandoffPending(sessionId, summary, prev?.id);
-              } else if (modelChanged) {
-                // Model change after a prior cancel — still attach handoff if pending empty.
-                const { peekHandoffPending, buildHandoffSummary, markHandoffPending } =
-                  await import('@/sections/chat/handoff-summary');
-                if (!peekHandoffPending(sessionId)) {
-                  const last = msgs[msgs.length - 1];
-                  const incomplete =
-                    last?.role === 'assistant' &&
-                    (!last.content?.trim() ||
-                      last.blocks?.some(
-                        (b) =>
-                          b.type === 'thinking' ||
-                          (b.type === 'toolCall' && b.tool?.status === 'running'),
-                      ));
-                  if (incomplete) {
-                    markHandoffPending(
-                      sessionId,
-                      buildHandoffSummary(msgs, prev.name || prev.id),
-                      prev.id,
-                    );
-                  }
-                }
-              }
-
-              // Server-computed handoff for ANY model change with prior
-              // messages — runs non-blocking, upgrades the pending summary
-              // once resolved, and drops a collapsed card in the transcript.
-              if (modelChanged && msgs.length > 0) {
-                const sid = sessionId;
-                const fromLabel = prev.name || prev.id;
-                setHandoffPreparing(true);
-                void (async () => {
+              // Shared stop → handoff → apply flow (single source of truth
+              // with the chat-thread model-selected event handler).
+              const { switchChatModel } = await import('@/sections/chat/switch-model');
+              await switchChatModel({
+                sessionId,
+                prevModel: prev,
+                nextModel: m,
+                streaming,
+                stopStream: async () => {
+                  if (!sessionId) return;
+                  const { stopChatStream } = await import(
+                    '@/sections/chat/stream/start-stop-stream'
+                  );
+                  await stopChatStream(sessionId);
+                },
+                getMessages: () => msgs,
+                setMessages: (updater) => setMessages?.(updater),
+                onModelApplied: (mm) => {
+                  setSelectedModel(mm);
+                  userSelectedRef.current = mm.id;
                   try {
-                    const { requestSessionHandoff } = await import('@/api/workbench');
-                    const record = await requestSessionHandoff(sid, prev.id, m.id);
-                    const { markHandoffPending, buildHandoffNoticeMessage } = await import(
-                      '@/sections/chat/handoff-summary'
-                    );
-                    markHandoffPending(
-                      sid,
-                      `Previous model (${fromLabel}) context handoff:\n${record.summary}`,
-                      prev.id,
-                    );
-                    setMessages?.((list) => [
-                      ...list,
-                      buildHandoffNoticeMessage(record, fromLabel),
-                    ]);
-                  } catch (error) {
-                    console.warn(
-                      '[ComposerToolbar] Server handoff summary failed, using local fallback:',
-                      error,
-                    );
-                    const { peekHandoffPending, buildHandoffSummary, markHandoffPending } =
-                      await import('@/sections/chat/handoff-summary');
-                    if (!peekHandoffPending(sid)) {
-                      markHandoffPending(sid, buildHandoffSummary(msgs, fromLabel), prev.id);
-                    }
-                  } finally {
-                    setHandoffPreparing(false);
+                    localStorage.setItem('august_last_model', JSON.stringify(mm));
+                  } catch {
+                    /* silent */
                   }
-                })();
-              }
-
-              setSelectedModel(m);
-              userSelectedRef.current = m.id;
-              try {
-                localStorage.setItem('august_last_model', JSON.stringify(m));
-              } catch {
-                /* silent */
-              }
-              if (sessionId) updateSessionModel(sessionId, m.id, m.provider);
+                  if (sessionId) updateSessionModel(sessionId, mm.id, mm.provider);
+                },
+                onHandoffPreparingChange: setHandoffPreparing,
+              });
             })();
           }}
         />

@@ -138,7 +138,10 @@ class SandboxResult:
             parts.append(self.stdout)
         if self.stderr:
             parts.append(f'STDERR:\n{self.stderr}')
-        if self.exit_code not in (None, 0):
+        # Always surface the exit code when known (zero included) — the
+        # verifier gate judges receipts deterministically by exit code, and
+        # the model benefits from seeing it too.
+        if self.exit_code is not None:
             parts.append(f'Exit code: {self.exit_code}')
         body = '\n'.join(parts) if parts else '(no output)'
         badge = 'sandboxed' if self.sandboxed and not self.is_full_marker() else 'unsandboxed'

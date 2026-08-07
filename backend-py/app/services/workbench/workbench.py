@@ -26,7 +26,7 @@ import time
 import uuid
 from typing import Any, Callable, Coroutine, cast
 
-from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_float, as_int, as_list, as_str
 from app.services.tool_policy import is_mutating, is_shell_mutation
 from app.services.workbench import providers as _providers_mod
 from app.services.workbench import sessions as _sessions_mod
@@ -48,9 +48,16 @@ from app.services.workbench.sessions import (
 from app.type_aliases import JsonValue
 
 logger = logging.getLogger('workbench')
-# 0 = unlimited tool rounds by default. Safety nets: cancel signal, empty
-# model responses, and brain-orchestrator maxWorkbenchToolLoops when set.
-MAX_MANAGED_TOOL_ROUNDS = 0
+# Default tool-round cap (25). Unlimited loops let weak models burn unbounded
+# tokens; brain-orchestrator maxWorkbenchToolLoops can raise/lower it at
+# runtime via config. The stall detector below stops loops that spin without
+# making progress even before the cap.
+MAX_MANAGED_TOOL_ROUNDS = 25
+# Stall detection: if the session's execution phase/step has not advanced for
+# this many consecutive rounds (and the turn is already deep), stop and ask
+# the model to reflect instead of letting it spin on repeated tool calls.
+MAX_STALLED_ROUNDS = 8
+MIN_ROUNDS_BEFORE_STALL_CHECK = 12
 # Legacy fallback only — auto-compact keys off the model's real contextWindow.
 WORKBENCH_TOKEN_BUDGET = 2000000
 # Auto-compact when estimated history reaches this fraction of the model window.
@@ -524,6 +531,11 @@ def buildSystemPrompt(
             model=modelName or None,
             provider=providerName or None,
             maxContext=window,
+            api_mode=(
+                as_str((provider or {}).get('apiMode') or (provider or {}).get('apiFormat'), '')
+                if isinstance(provider, dict)
+                else None
+            ),
         )
     except Exception:
         logger.debug('prompt: cognitive budget failed', exc_info=True)
@@ -872,7 +884,83 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         # Already in plan mode — the mode-switch tool has done its job.
         blocked_in_plan = {'enter_plan_mode', 'request_plan_mode'}
         tools = [t for t in tools if as_str(t.get('name')) not in blocked_in_plan]
+    return _applyModelCapabilityProfile(session, tools)
+
+
+# Per-model capability profiles (harness adaptation): a weak model gets a
+# smaller tool surface and tighter result caps; a strong model keeps the full
+# set. Configurable per model in Model settings.
+_HEAVY_TOOL_PREFIXES = ('web_', 'browser', 'voice', 'notion', 'slack', 'discord', 'search', 'fetch')
+_BARE_TOOL_ALLOW = frozenset(
+    {
+        'read_file',
+        'read_multiple_files',
+        'list_files',
+        'write_file',
+        'edit_file',
+        'str_replace_editor',
+        'str_replace',
+        'run_command',
+        'update_state',
+        'write_scratchpad',
+        'memory_search',
+        'diagnose_proxy',
+        'get_session_info',
+    }
+)
+
+
+def _toolDefName(t: dict[str, object]) -> str:
+    """Extract a tool definition's name (Anthropic or OpenAI shape)."""
+    fn = as_dict(t.get('function'), {})
+    return as_str(t.get('name') or fn.get('name'), '')
+
+
+def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
+    """Per-model tool profile from the provider config (never raises)."""
+    modelId = as_str(getattr(session, 'model', '') or '')
+    providerName = as_str(getattr(session, 'provider', '') or '')
+    if not modelId:
+        return {}
+    try:
+        from app.services import config_service
+
+        for p in config_service.getProvidersAsModels():
+            if p.name != providerName and p.id != providerName:
+                continue
+            for m in p.models:
+                if m.id == modelId:
+                    return {
+                        'tool_surface': m.tool_surface or 'full',
+                        'max_tools': int(m.max_tools or 0),
+                        'max_tool_result_chars': int(m.max_tool_result_chars or 0),
+                    }
+    except Exception:
+        pass
+    return {}
+
+
+def _applyModelCapabilityProfile(
+    session: WorkbenchSession, tools: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    """Filter the tool surface by the session model's capability profile."""
+    profile = _modelCapabilityProfile(session)
+    surface = as_str(profile.get('tool_surface'), 'full')
+    if surface == 'bare':
+        tools = [t for t in tools if _toolDefName(t) in _BARE_TOOL_ALLOW]
+    elif surface == 'reduced':
+        tools = [t for t in tools if not _toolDefName(t).startswith(_HEAVY_TOOL_PREFIXES)]
+    maxTools = as_int(profile.get('max_tools'), 0)
+    if maxTools > 0 and len(tools) > maxTools:
+        tools = tools[:maxTools]
     return tools
+
+
+def _toolResultCap(session: WorkbenchSession) -> int:
+    """Per-model tool-result truncation cap (falls back to the harness default)."""
+    profile = _modelCapabilityProfile(session)
+    cap = as_int(profile.get('max_tool_result_chars'), 0)
+    return cap if cap > 0 else MAX_TOOL_RESULT_CHARS
 
 
 def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
@@ -925,7 +1013,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             return as_str(fn.get('name') or t.get('name'))
 
         tools = [t for t in tools if _tool_name_plan(t) not in blocked_in_plan]
-    return tools
+    return _applyModelCapabilityProfile(session, tools)
 
 
 def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
@@ -1482,6 +1570,71 @@ async def _sendWorkbenchMessageStreamImpl(
         pname = as_str(resolvedProvider.get('name') or resolvedProvider.get('id'))
         if pname:
             session.provider = pname
+    # Routing-evidence consult (surpass #7 closed loop): with enough samples,
+    # a materially better model for this task type is surfaced as a
+    # routingSuggestion SSE event; with AUGUST_AUTO_ROUTE=1 it replaces the
+    # resolved model for this turn instead.
+    try:
+        from app.services.routing_evidence import classify_task_type, get_suggestions
+
+        taskType = classify_task_type(message or _lastUserMessageText(session))
+        if taskType and taskType != 'general':
+            topSuggestions = get_suggestions(taskType, min_samples=3, limit=5)
+            if topSuggestions:
+                top = topSuggestions[0]
+                topModel = as_str(top.get('model'), '')
+                topProvider = as_str(top.get('provider'), '')
+                topWinRate = as_float(top.get('winRate'), 0.0)
+                currentProviderName = (
+                    as_str(resolvedProvider.get('name') or resolvedProvider.get('id'), '')
+                    if resolvedProvider
+                    else ''
+                )
+                different = bool(topModel) and topModel != resolvedModel and topProvider != currentProviderName
+                if different and topWinRate >= 0.6 and emit:
+                    import os
+
+                    if os.environ.get('AUGUST_AUTO_ROUTE') == '1':
+                        from app.providers.resolver import apply_model_format_override
+                        from app.services.workbench.providers import resolve_model, resolve_workbench_provider
+
+                        suggested = resolve_workbench_provider('', topModel)
+                        if suggested:
+                            resolvedProvider = suggested
+                            resolvedModel = resolve_model(suggested, topModel)
+                            resolvedProvider = apply_model_format_override(resolvedProvider, resolvedModel)
+                            if resolvedProvider:
+                                session.model = resolvedModel
+                                pname = as_str(resolvedProvider.get('name') or resolvedProvider.get('id'))
+                                if pname:
+                                    session.provider = pname
+                            emit(
+                                {
+                                    'type': 'routingSuggestion',
+                                    'applied': True,
+                                    'taskType': taskType,
+                                    'model': resolvedModel,
+                                    'provider': pname,
+                                    'winRate': topWinRate,
+                                    'currentModel': '',
+                                    'reason': 'Evidence shows this model wins this task type more often.',
+                                }
+                            )
+                    else:
+                        emit(
+                            {
+                                'type': 'routingSuggestion',
+                                'applied': False,
+                                'taskType': taskType,
+                                'model': topModel,
+                                'provider': topProvider,
+                                'winRate': topWinRate,
+                                'currentModel': resolvedModel,
+                                'reason': 'Evidence shows this model wins this task type more often.',
+                            }
+                        )
+    except Exception:
+        logger.debug('routing-evidence consult failed (non-fatal)', exc_info=True)
     if emit:
         emit({'type': 'started', 'sessionId': sessionId, 'model': resolvedModel})
     # Recurring-task daemon (B7): fire due reminders at turn start — surfaced
@@ -1671,6 +1824,9 @@ async def _sendWorkbenchMessageStreamImpl(
                 compressedTokens = estimateTokens(compressed)
                 if compressedTokens < originalTokens:
                     compressedCount = len(currentMessages) - len(compressed)
+                    # Audit trail (Letta-style persistence beyond the window):
+                    # the summarized middle must never be unrecoverable.
+                    removedMiddle = currentMessages[4:-6] if len(currentMessages) > 10 else currentMessages
                     currentMessages = compressed
                     # Persist so later turns / reload don't re-send the bloated history.
                     session.messages = list(compressed)
@@ -1680,6 +1836,23 @@ async def _sendWorkbenchMessageStreamImpl(
                         saveSessions()
                     except Exception:
                         logger.exception('workbench save_sessions failed after auto-compact')
+                    try:
+                        import json as _json
+
+                        from app.services.brain_write_facade import save_kv
+
+                        save_kv(
+                            f'compaction_audit:{sessionId}',
+                            {
+                                'at': time.time(),
+                                'originalTokens': originalTokens,
+                                'compressedTokens': compressedTokens,
+                                'removedCount': compressedCount,
+                                'removedMiddle': _json.dumps(removedMiddle, ensure_ascii=False)[:50000],
+                            },
+                        )
+                    except Exception:
+                        logger.debug('compaction audit persist failed', exc_info=True)
                     if emit:
                         emit(
                             {
@@ -1706,7 +1879,45 @@ async def _sendWorkbenchMessageStreamImpl(
             currentMessages = list(session.messages)
     except Exception:
         currentMessages = list(session.messages)
+    # Context pressure event (context UX): one emit per turn so the UI can
+    # show a live server-accurate meter / "compact now" affordance. Cheap —
+    # token estimation is cached-ish and this is one SSE event per turn.
+    if emit:
+        try:
+            from app.services.workbench.token_budget import computeBudget as _computeBudget
+
+            _budget = _computeBudget(
+                session.messages,
+                model=resolvedModel,
+                provider=as_str(resolvedProvider.get('name') or resolvedProvider.get('id'), '') if resolvedProvider else '',
+                maxContext=_resolveModelContextWindow(resolvedModel, resolvedProvider),
+                api_mode=(
+                    as_str(resolvedProvider.get('apiMode') or resolvedProvider.get('apiFormat'), '')
+                    if resolvedProvider
+                    else ''
+                ),
+            )
+            if isinstance(_budget, dict):
+                emit(
+                    {
+                        'type': 'contextPressure',
+                        'contextUsedPct': _budget.get('context_used_pct'),
+                        'attentionPressure': _budget.get('attention_pressure'),
+                        'totalTokens': _budget.get('total_tokens'),
+                        'maxContext': _budget.get('max_context'),
+                        'remainingTokens': _budget.get('remaining_tokens'),
+                    }
+                )
+        except Exception:
+            logger.debug('contextPressure emit failed (non-fatal)', exc_info=True)
     toolRound = 0
+    lastExecSig: tuple[str, int] | None = None
+    stalledRounds = 0
+    stallMessageSent = False
+    # Set when the turn ends on an error path — the done-event block below
+    # still runs (to flush usage/evidence), and routing evidence must record
+    # ok=False for error turns, not a hardcoded win.
+    turnError: str | None = None
     while True:
         toolRound += 1
         if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
@@ -1717,7 +1928,50 @@ async def _sendWorkbenchMessageStreamImpl(
             logger.warning('workbench %s', msg)
             if emit:
                 emit({'type': 'error', 'message': msg})
+            turnError = turnError or msg
             break
+        # Stall detection: a turn that never advances phase/step is a weak
+        # model spinning on repeated tool calls. Inject a reflection prompt
+        # (the model answers on the next round); hard-stop if it ignores it.
+        if toolRound >= MIN_ROUNDS_BEFORE_STALL_CHECK:
+            try:
+                est = as_dict(getattr(session, '_execution_state', None), {})
+                sig = (as_str(est.get('phase'), ''), as_int(est.get('step'), 0))
+            except Exception:
+                sig = None
+            if sig is not None:
+                if sig != lastExecSig:
+                    lastExecSig = sig
+                    stalledRounds = 0
+                else:
+                    stalledRounds += 1
+                    if stalledRounds >= MAX_STALLED_ROUNDS and not stallMessageSent:
+                        stallMessageSent = True
+                        currentMessages.append(
+                            {
+                                'role': 'user',
+                                'content': (
+                                    f'[Proxy Self-Heal] {toolRound} tool rounds have elapsed without '
+                                    'advancing your execution phase/step. Reflect on what is blocking '
+                                    'you, record where you are with update_state(phase=..., step=...), '
+                                    'then either take a different approach or finish with a final answer.'
+                                ),
+                            }
+                        )
+                        if emit:
+                            emit(
+                                {
+                                    'type': 'warning',
+                                    'message': 'No progress across many tool rounds — nudged the model to reflect.',
+                                }
+                            )
+                    elif stallMessageSent and stalledRounds >= MAX_STALLED_ROUNDS + 2:
+                        msg = 'Stopped: the model did not recover after the stall warning.'
+                        logger.warning('workbench %s', msg)
+                        if emit:
+                            emit({'type': 'error', 'message': msg})
+                        turnError = turnError or msg
+                        break
         if _isCancelled():
             break
         if toolRound > 1:
@@ -1848,6 +2102,7 @@ async def _sendWorkbenchMessageStreamImpl(
         if not isAnthropic and not isOpenai:
             if emit:
                 emit({'type': 'error', 'message': f'Unknown provider format for {resolvedProvider}'})
+            turnError = turnError or f'Unknown provider format for {resolvedProvider}'
             break
         if response.get('error'):
             if toolRound > 1:
@@ -1856,7 +2111,34 @@ async def _sendWorkbenchMessageStreamImpl(
                 )
             if emit:
                 emit({'type': 'error', 'message': response['error']})
+            turnError = turnError or as_str(response['error'])
             break
+        if response.get('stream_rule'):
+            # Stream rule fired mid-generation (the model narrated a tool call
+            # instead of emitting one) — inject a reminder and retry from this
+            # point instead of wasting the round.
+            ruleName = as_str(response.get('stream_rule'))
+            if emit:
+                emit(
+                    {
+                        'type': 'warning',
+                        'message': (
+                            f'The model began narrating a tool call instead of emitting it '
+                            f'({ruleName}) — nudging it to call tools directly.'
+                        ),
+                    }
+                )
+            currentMessages.append(
+                {
+                    'role': 'user',
+                    'content': (
+                        '[Proxy Self-Heal] Stop narrating tool calls in prose. When you need a '
+                        'tool, emit it as an actual tool call; do not describe it in text. '
+                        'Continue with the task.'
+                    ),
+                }
+            )
+            continue
         respUsage = as_dict(response.get('usage'), {})
         if respUsage:
             totalInputTokens += as_int(respUsage.get('input_tokens', 0))
@@ -1925,12 +2207,49 @@ async def _sendWorkbenchMessageStreamImpl(
         planSubmittedThisRound = False
         clarifySubmittedThisRound = False
         pending_regular: list[tuple[str, dict[str, object], str]] = []
+        parseFailures = 0
         for tu in toolUses:
             if _isCancelled():
                 break
             toolName = as_str(tu.get('name', ''))
             toolInput = as_dict(tu.get('input', {}))
             toolUseId = as_str(tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}'))
+            # Tool-call recovery (surpass): malformed JSON arguments must never
+            # execute as an empty dict — the model would silently do the wrong
+            # thing. The OpenAI path marks failures `_invalid_json`; the
+            # Anthropic stream aggregator marks them `_raw`. Surface a
+            # validation-error tool result so the loop self-heals, and after
+            # repeated failures send a hard nudge (weak models drift).
+            invalidRaw = as_str(toolInput.get('_invalid_json') or toolInput.get('_raw'), '')
+            if invalidRaw:
+                parseFailures += 1
+                if parseFailures >= 3 and emit:
+                    emit(
+                        {
+                            'type': 'warning',
+                            'message': (
+                                f'Tool arguments failed to parse {parseFailures} times in a row — '
+                                'the model is improvising JSON instead of using the tool schema.'
+                            ),
+                        }
+                    )
+                msg = (
+                    f"[Validation Error] Tool '{toolName}' received malformed JSON arguments:\n"
+                    f'{invalidRaw[:500]}\n\n'
+                    '[Proxy Self-Heal]: Fix the tool arguments (valid JSON matching the tool schema) and retry. Do NOT stop.'
+                )
+                if emit:
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': msg,
+                            'status': 'done',
+                        }
+                    )
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
+                continue
             if toolName in ('enter_plan_mode', 'request_plan_mode'):
                 msg = enterPlanMode(session, emit=emit)
                 # enterPlanMode flips the session into plan mode, but the tool
@@ -2418,11 +2737,13 @@ async def _sendWorkbenchMessageStreamImpl(
                             }
                         )
             # Truncate what the model sees next turn — SSE already truncates for the UI.
+            # The cap is per-model when the capability profile sets one.
             historyContent = result
-            if len(historyContent) > MAX_TOOL_RESULT_CHARS:
+            resultCap = _toolResultCap(session)
+            if len(historyContent) > resultCap:
                 historyContent = (
-                    historyContent[:MAX_TOOL_RESULT_CHARS]
-                    + f'\n\n[... Tool result truncated at {MAX_TOOL_RESULT_CHARS // 1024} KB '
+                    historyContent[:resultCap]
+                    + f'\n\n[... Tool result truncated at {resultCap // 1024} KB '
                     f'— full length: {len(result)} bytes]'
                 )
             return {'tool_use_id': toolUseId, 'role': 'tool', 'content': historyContent}
@@ -2434,6 +2755,24 @@ async def _sendWorkbenchMessageStreamImpl(
                 is_cancelled=_isCancelled,
             )
         )
+        # Graceful degradation (mini-swe-agent / smolagents lesson): after
+        # repeated malformed tool calls this round, downgrade the NEXT round
+        # to the bare tool surface — fewer tools means less JSON to improvise.
+        if parseFailures >= 3:
+            tools = [t for t in toolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW]
+            openaiTools = [
+                t for t in openaiToolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW
+            ]
+            if emit:
+                emit(
+                    {
+                        'type': 'warning',
+                        'message': (
+                            'Repeated malformed tool calls — downgrading the tool surface to the '
+                            'essential set (read/write/run_command/state) for the next round.'
+                        ),
+                    }
+                )
         if not toolResults:
             try:
                 if hasattr(session, '_tool_tracker') and session._tool_tracker:
@@ -2555,13 +2894,32 @@ async def _sendWorkbenchMessageStreamImpl(
                     receipts.append({'name': 'run_command', 'content': vout})
                     if len(receipts) > 12:
                         del receipts[: len(receipts) - 12]
-                    enqueueUserMessage(
-                        sessionId,
-                        '[VERIFIER AUTO-RUN] The verification command ran automatically with this output:\n'
-                        f'{vout}\n'
-                        "If it passed, call update_state(phase='complete') to release the final answer.",
-                        kind='steer',
-                    )
+                    # Deterministic verdict (exit code is always surfaced by
+                    # run_command now); marker scan is the fallback only.
+                    exitMatch = re.search(r'exit code:\s*(-?\d+)', vout, re.IGNORECASE)
+                    verifierPassed: bool | None
+                    exitCodeStr = ''
+                    if exitMatch:
+                        exitCodeStr = exitMatch.group(1)
+                        verifierPassed = int(exitCodeStr) == 0
+                    else:
+                        verifierPassed = None
+                    if verifierPassed is True:
+                        steer = (
+                            '[VERIFIER AUTO-RUN] The verification command passed (exit code 0). '
+                            "Call update_state(phase='complete') to release the final answer."
+                        )
+                    else:
+                        verdictDetail = (
+                            f'failed with exit code {exitCodeStr}' if verifierPassed is False else 'did not produce a clear exit code'
+                        )
+                        steer = (
+                            '[VERIFIER AUTO-RUN] The verification command ran automatically and '
+                            f'{verdictDetail}:\n{vout}\n'
+                            'Fix the failures, re-run the command, and only then call '
+                            "update_state(phase='complete')."
+                        )
+                    enqueueUserMessage(sessionId, steer, kind='steer')
         except Exception:
             logger.debug('verifier auto-run failed', exc_info=True)
         if emit:
@@ -2616,7 +2974,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     provider=as_str(
                         (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
                     ),
-                    ok=True,
+                    ok=turnError is None,
                     input_tokens=totalInputTokens,
                     output_tokens=totalOutputTokens,
                     duration_ms=int(totalGenerationMs),

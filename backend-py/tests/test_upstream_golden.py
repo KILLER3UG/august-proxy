@@ -108,15 +108,19 @@ class TestOpenAIGolden:
         }
 
     def test_dict_input_null_stripping(self):
-        """Dict inputs (raw proxy passthrough) also strip nulls + August keys."""
+        """Dict inputs (raw proxy passthrough) strip nulls + August routing keys.
+
+        `user`/`metadata` are legitimate OpenAI fields and are kept when
+        non-null (only nulls and August-internal `session_id`/`sessionId` go).
+        """
         raw = {
             'model': 'gpt-4o-mini',
             'messages': [{'role': 'user', 'content': 'test'}],
             'stream': True,
             'session_id': 'sess_123',  # August-only, must be stripped
             'sessionId': 'sess_123',  # camelCase variant, also stripped
-            'user': 'user_456',  # August-only
-            'metadata': {'source': 'workbench'},  # August-only
+            'user': 'user_456',  # legitimate OpenAI field → kept
+            'metadata': {'source': 'workbench'},  # legitimate OpenAI field → kept
             'temperature': None,  # null → stripped
             'max_tokens': 1024,  # non-null → kept
         }
@@ -126,6 +130,8 @@ class TestOpenAIGolden:
             'messages': [{'role': 'user', 'content': 'test'}],
             'stream': True,
             'max_tokens': 1024,
+            'user': 'user_456',
+            'metadata': {'source': 'workbench'},
         }
 
 

@@ -48,6 +48,9 @@ export function ModelRow({
   );
   const [reasoning, setReasoning] = useState(!!model.reasoning);
   const [format, setFormat] = useState<ApiFormat | ''>(model.apiFormat ?? '');
+  const [toolSurface, setToolSurface] = useState<'full' | 'reduced' | 'bare' | ''>(
+    (model as { toolSurface?: string }).toolSurface as 'full' | 'reduced' | 'bare' | '' ?? '',
+  );
   const [reasoningEffortSupport, setReasoningEffortSupport] = useState<'' | 'yes' | 'no'>(
     model.supportsReasoningEffort === true ? 'yes' : model.supportsReasoningEffort === false ? 'no' : '',
   );
@@ -78,6 +81,7 @@ export function ModelRow({
       apiFormat?: ApiFormat | null;
       supportsReasoningEffort?: boolean | null;
       maxReasoningEffort?: string | null;
+      toolSurface?: string | null;
     }) => providersApi.updateModel(providerId, model.id, body),
     onSuccess: () => {
       setEditing(false);
@@ -214,6 +218,19 @@ export function ModelRow({
               </select>
             </label>
             <label className="flex items-center gap-2 text-xs">
+              <span className="shrink-0">Tool surface</span>
+              <select
+                value={toolSurface}
+                onChange={(e) => setToolSurface(e.target.value as 'full' | 'reduced' | 'bare' | '')}
+                aria-label="Tool surface"
+                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+              >
+                <option value="">Full (default)</option>
+                <option value="reduced">Reduced — drop heavy tools</option>
+                <option value="bare">Bare — read/write/run_command/state only</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-xs">
               <span className="shrink-0">Max effort</span>
               <select
                 value={maxReasoningEffort}
@@ -241,6 +258,7 @@ export function ModelRow({
                   apiFormat: format || null,
                   supportsReasoningEffort: reasoningEffortSupport === '' ? null : reasoningEffortSupport === 'yes',
                   maxReasoningEffort: maxReasoningEffort || null,
+                  toolSurface: toolSurface || null,
                 })
               }
               disabled={update.isPending}

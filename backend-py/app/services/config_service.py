@@ -18,7 +18,8 @@ from app.models.config import ModelConfig, ProviderConfig
 # ── read cache (avoids hitting disk on every hot-path call) ──────────────
 _CONFIG_CACHE_TTL_S = 2.0  # seconds — long enough to dedup burst reads,
 # short enough that editors / external writes propagate quickly.
-_config_cache: tuple[float, dict[str, object]] | None = None
+# Validated against file mtime: (read_ts, path, mtime_ns, data).
+_config_cache: tuple[float, str, int, dict[str, object]] | None = None
 
 
 def _readJson(path: Path) -> dict[str, object]:
@@ -34,16 +35,27 @@ def _writeJson(path: Path, data: dict[str, object]) -> None:
 
 
 def getConfig() -> dict[str, object]:
-    """Return config.json contents, cached for _CONFIG_CACHE_TTL_S seconds."""
+    """Return config.json contents, cached for _CONFIG_CACHE_TTL_S seconds.
+
+    The cache is validated against the file's mtime, so direct/external writes
+    (editors, tests, other processes) propagate immediately instead of serving
+    up to the TTL of stale data. Returns a shallow copy each call so callers
+    that mutate the returned dict cannot poison the cache.
+    """
     global _config_cache  # noqa: PLW0603
     now = time.monotonic()
+    path = dataPath('config.json')
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        mtime = -1
     if _config_cache is not None:
-        cached_at, cached_data = _config_cache
-        if now - cached_at < _CONFIG_CACHE_TTL_S:
-            return cached_data
-    data = _readJson(dataPath('config.json'))
-    _config_cache = (now, data)
-    return data
+        cached_at, cached_path, cached_mtime, cached_data = _config_cache
+        if cached_path == str(path) and cached_mtime == mtime and now - cached_at < _CONFIG_CACHE_TTL_S:
+            return dict(cached_data)
+    data = _readJson(path)
+    _config_cache = (now, str(path), mtime, data)
+    return dict(data)
 
 
 def saveConfig(config: dict[str, object]) -> None:
@@ -102,6 +114,13 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                         max_reasoning_effort=(
                             str(m.get('maxReasoningEffort') or m.get('max_reasoning_effort') or '')
                             or None
+                        ),
+                        tool_surface=(
+                            str(m.get('toolSurface') or m.get('tool_surface') or '') or None
+                        ),
+                        max_tools=as_int(m.get('maxTools') or m.get('max_tools'), 0),
+                        max_tool_result_chars=as_int(
+                            m.get('maxToolResultChars') or m.get('max_tool_result_chars'), 0
                         ),
                     )
                 )

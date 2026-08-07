@@ -25,8 +25,15 @@ def write_openai_sse_headers() -> dict[str, str]:
 
 
 def write_openai_sse_data(chunk: dict[str, object]) -> str:
-    """Serialize a chunk as SSE data line."""
-    return f'data: {json.dumps(chunk)}\n\n'
+    """Serialize a chunk as SSE data line (internal keys stripped)."""
+    return f'data: {json.dumps(_clean_payload(chunk))}\n\n'
+
+
+def _clean_payload(chunk: dict[str, object]) -> dict[str, object]:
+    """Drop internal bookkeeping keys (``_event_type``) from upstream chunks."""
+    if '_event_type' in chunk:
+        return {k: v for k, v in chunk.items() if k != '_event_type'}
+    return chunk
 
 
 def write_openai_sse_error(error: str) -> str:

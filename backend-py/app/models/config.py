@@ -30,6 +30,14 @@ class ModelConfig(ExtraAllowBaseModel):
     # Cap the mapped reasoning_effort value (e.g. 'medium' means max→medium).
     # None → no cap (max maps to 'high' as usual).
     max_reasoning_effort: str | None = None
+    # Per-model capability profile (harness adaptation). None → tool defaults.
+    # tool_surface: 'full' (default) | 'reduced' (drop heavy tools) | 'bare'
+    # (read/write/run_command/state only). max_tools caps the number of tool
+    # definitions shown (0 = no cap). max_tool_result_chars caps per-result
+    # truncation (0 = harness default).
+    tool_surface: str | None = None
+    max_tools: int = 0
+    max_tool_result_chars: int = 0
 
 
 class ProviderConfig(ExtraAllowBaseModel):
@@ -93,3 +101,6 @@ class ModelUpdate(ExtraAllowBaseModel):
     api_format: str | None = None
     supports_reasoning_effort: bool | None = None
     max_reasoning_effort: str | None = None
+    tool_surface: str | None = None
+    max_tools: int | None = None
+    max_tool_result_chars: int | None = None

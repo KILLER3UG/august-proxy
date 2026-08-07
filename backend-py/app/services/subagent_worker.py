@@ -32,6 +32,7 @@ async def runSubagent(
     context: str = '',
     taskId: str | None = None,
     restrictedTools: list[str] | None = None,
+    yieldSchema: dict[str, Any] | None = None,
     parentToolRegistry: Callable | None = None,
     parentOpenaiTools: Callable | None = None,
     emit: Callable[[dict[str, Any]], None] | None = None,
@@ -47,6 +48,8 @@ async def runSubagent(
         taskId: Unique task identifier (auto-generated if not provided).
         restrictedTools: Optional list of tool names the agent is restricted
             from using. If None, all tools are inherited.
+        yieldSchema: Optional JSON Schema — the sub-agent returns a single
+            JSON object matching it (validated before delivery).
         parentToolRegistry: Function returning the parent's tool list.
         parentOpenaiTools: Function returning the parent's OpenAI-format tools.
         emit: Optional callback for direct event emission (legacy path).
@@ -82,26 +85,19 @@ async def runSubagent(
     try:
         from app.services.workbench.subagent import executeSubAgent
 
-        if restrictedTools:
-            originalDefs = parentToolRegistry(session) if parentToolRegistry else None
-            if originalDefs:
-                import app.services.workbench.workbench as wb
-
-                originalTd = wb.toolDefinitions
-
-                def filteredToolDefs(s):
-                    allTools = originalTd(s)
-                    return [t for t in allTools if t.get('name') not in restrictedTools]
-
-                wb.toolDefinitions = filteredToolDefs
-                try:
-                    subResult = await executeSubAgent(session, agentId, goal, context, emit=_combinedEmit)
-                finally:
-                    wb.toolDefinitions = originalTd
-            else:
-                subResult = await executeSubAgent(session, agentId, goal, context, emit=_combinedEmit)
-        else:
-            subResult = await executeSubAgent(session, agentId, goal, context, emit=_combinedEmit)
+        # restrictedTools is applied inside executeSubAgent (both wire formats)
+        # — never monkeypatch the module-level toolDefinitions, which races
+        # across concurrent workers.
+        restrictedNames = set(restrictedTools) if restrictedTools else None
+        subResult = await executeSubAgent(
+            session,
+            agentId,
+            goal,
+            context,
+            emit=_combinedEmit,
+            restricted_names=restrictedNames,
+            yield_schema=yieldSchema,
+        )
         elapsed = time.time() - startedAt
         status = as_str(subResult.get('status'), 'completed')
         if status == 'completed':

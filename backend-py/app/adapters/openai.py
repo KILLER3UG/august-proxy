@@ -274,9 +274,12 @@ async def resolveManagedOpenaiToolCalls(
         resp = await cast('BaseProviderClient', client).requestJson('POST', upstreamUrl, upstreamHeaders, reqBody)
         if resp.is_error:
             raise UpstreamError(resp)
+        rawBody = as_dict(cast(JsonValue, resp.body_json), {})
+        if rawBody.get('usage'):
+            # Read usage from the raw body BEFORE snakeToCamel — OpenAI clients
+            # read `prompt_tokens`/`completion_tokens`, not camelCase keys.
+            finalUsage = cast('dict[str, object]', rawBody['usage'])
         responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.body_json)), {})
-        if responseBody.get('usage'):
-            finalUsage = cast('dict[str, object]', responseBody['usage'])
         choices = as_list(responseBody.get('choices'), [])
         if not choices:
             break
@@ -698,9 +701,15 @@ def _openaiToAnthropicBody(body: dict[str, object]) -> dict[str, object]:
     }
     if system_parts:
         out['system'] = '\n\n'.join(system_parts)
-    for key in ('temperature', 'top_p', 'stop'):
+    for key in ('temperature', 'top_p'):
         if body.get(key) is not None:
             out[key] = body[key]
+    if body.get('stop') is not None:
+        # Anthropic's parameter is `stop_sequences`; forwarding `stop` (str or
+        # list) makes strict Anthropic gateways 400 — this path is what the
+        # per-model apiFormat override uses for Claude models behind OpenAI
+        # clients.
+        out['stop_sequences'] = body['stop']
     tools = as_list(body.get('tools'), [])
     if tools:
         out['tools'] = [_openaiToolToAnthropic(t) for t in tools if isinstance(t, dict)]

@@ -162,10 +162,19 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const focusedSubagent = useFocusedSubagent();
-  // Live markdown preview is opt-in; toolbar toggle removed for now.
-  // TODO: re-enable via keyboard shortcut (e.g. Ctrl/Cmd+Shift+P)
+  // Live markdown preview is opt-in — Ctrl/Cmd+Shift+P toggles it.
   const [showPreview, setShowPreview] = useState(false);
-  void setShowPreview;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const cmd = e.metaKey || e.ctrlKey;
+      if (cmd && e.shiftKey && !e.altKey && e.key === 'P') {
+        e.preventDefault();
+        setShowPreview(v => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const popovers = useComposerPopovers({
     input,

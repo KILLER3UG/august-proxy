@@ -142,6 +142,24 @@ def extractRequestHeaders(request: object) -> dict[str, str]:
     return _extractRequestHeaders(request)
 
 
+def _toolResultContentToText(block: dict[str, object]) -> str:
+    """Extract plain text from an Anthropic tool_result content block.
+
+    Content may be a string or a list of typed blocks (text / image); images
+    are dropped, text is concatenated.
+    """
+    content = block.get('content', '')
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        text = ''
+        for part in content:
+            if isinstance(part, dict) and as_str(part.get('type'), '') == 'text':
+                text += as_str(part.get('text'), '')
+        return text
+    return ''
+
+
 def translateMessages(
     messages: list[dict[str, object]], system: list[dict[str, object]] | None = None
 ) -> list[dict[str, object]]:
@@ -166,6 +184,7 @@ def translateMessages(
                 openaiMessages.append({'role': 'user', 'content': content})
             elif isinstance(content, list):
                 parts: list[dict[str, object]] = []
+                toolResults: list[dict[str, object]] = []
                 for block in content:
                     if not isinstance(block, dict):
                         continue
@@ -176,9 +195,19 @@ def translateMessages(
                         source = as_dict(block.get('source'), {})
                         parts.append({'type': 'image_url', 'image_url': {'url': as_str(source.get('data'), '')}})
                     elif blockType == 'tool_result':
-                        pass
+                        # Tool results become OpenAI tool-role messages. Without
+                        # this the upstream model never sees tool output and
+                        # re-invokes stale tools.
+                        toolResults.append(
+                            {
+                                'role': 'tool',
+                                'tool_call_id': as_str(block.get('tool_use_id'), ''),
+                                'content': _toolResultContentToText(block),
+                            }
+                        )
                 if parts:
                     openaiMessages.append({'role': 'user', 'content': cast(JsonValue, parts)})
+                openaiMessages.extend(toolResults)
         elif role == 'assistant':
             asstMsg: dict[str, object] = {'role': 'assistant'}
             if isinstance(content, str):
@@ -395,13 +424,16 @@ async def resolveManagedAnthropicToolUses(
             openaiBodyJson = cast(dict[str, object], as_dict(camelToSnake(openaiBody), {}))
             resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, openaiBodyJson)
         if resp.status != 200:
-            errBody: dict[str, object] = (
-                as_dict(resp.body, {}) if isinstance(resp.body, dict) else {'error': str(resp.body or '')}
-            )
-            return (currentMessages, errBody)
+            # Never fabricate a 200 with the client's own messages. Return a
+            # router-friendly {error, type, status} shape in the usage slot —
+            # callers distinguish it from a real usage dict by the 'error' key.
+            return (currentMessages, normalize_upstream_error(resp))
+        rawBody = as_dict(cast(JsonValue, resp.body_json), {})
+        if rawBody.get('usage'):
+            # Read from the raw body BEFORE snakeToCamel so usage keys stay
+            # snake_case (input_tokens/output_tokens) for downstream readers.
+            finalUsage = as_dict(rawBody.get('usage'), {})
         responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.body_json)), {})
-        if responseBody.get('usage'):
-            finalUsage = as_dict(responseBody.get('usage'), {})
         if isAnthropicUpstream:
             content = as_list(responseBody.get('content'), [])
             assistantMsg: dict[str, object] = {'role': 'assistant', 'content': content}
@@ -500,6 +532,22 @@ async def handleMessages(
     from app.providers.api_format import provider_endpoint_url
 
     fmt = as_str(getattr(client, 'apiFormat', None) or provider.get('apiMode') or provider.get('apiFormat'))
+    if fmt == 'openaiResponses':
+        # The messages adapter speaks only chat-completions / native Messages
+        # wire formats; a responses-format gateway would receive a chat body
+        # at the /responses leaf (provider_endpoint_url kind='chat' → /responses).
+        # Fail loudly instead of 400-ing upstream with a mismatched body.
+        return (
+            {
+                'error': (
+                    f'Model "{resolvedModel}" is a responses-format model and cannot be used '
+                    'with /v1/messages. Use /v1/responses instead.'
+                ),
+                'type': 'error',
+                'status': 400,
+            },
+            None,
+        )
     isAnthropicUpstream = client.apiFormat == 'anthropicMessages'
     if isAnthropicUpstream:
         upstreamUrl = provider_endpoint_url(client.resolveBaseUrl(), 'anthropicMessages', kind='messages')
@@ -610,6 +658,10 @@ async def _handleMessagesNonStreaming(
                 clientToolNames,
                 client=client,
             )
+            if usage and 'error' in usage:
+                # A tool-loop round failed upstream — surface the real error
+                # instead of answering 200 with the client's own last message.
+                return (cast('dict[str, object]', usage), None)
             lastMsg = updatedMessages[-1] if updatedMessages else {}
             resolvedUsage: dict[str, object] = as_dict(usage, {})
             resp_usage = AnthropicUsage(
@@ -762,37 +814,39 @@ async def _streamOpenaiAsAnthropic(
             events = st.convert_chunk(chunk)
             for eventStr in events:
                 yield eventStr
-            choices = as_list(chunk.get('choices'), [])
-            if choices and isinstance(choices[0], dict) and as_str(choices[0].get('finish_reason'), '') == 'tool_calls':
-                toolCalls = []
-                for tc in st.pending_tool_calls:
-                    toolCalls.append(tc.to_anthropic_tool_use())
-                if not toolCalls:
-                    break
-                classification = cast(
-                    'dict[str, object]', classifyAnthropicToolUses(toolCalls, managedLocalToolNames, clientToolNames)
-                )
-                if not classification.get('has_managed'):
-                    break
-                toolRound += 1
-                currentMessages.append(
-                    {'role': 'assistant', 'content': [{'type': 'text', 'text': st.accumulated_text}, *toolCalls]}
-                )
-                for tu in as_list(classification.get('managed_tool_uses'), []):
-                    if not isinstance(tu, dict):
-                        continue
-                    tuName = as_str(tu.get('name'), '')
-                    tuInput = as_dict(tu.get('input'), {})
-                    tuId = as_str(tu.get('id'), '')
-                    try:
-                        result = await execute_managed_proxy_tool(tuName, tuInput)
-                        tr = ToolResultBlock(tool_use_id=tuId, content=format_managed_tool_result(tuName, result))
-                        currentMessages.append(tr.model_dump())  # type: ignore[misc]
-                    except Exception as exc:
-                        tr = ToolResultBlock(tool_use_id=tuId, content=f'Error: {exc}', is_error=True)
-                        currentMessages.append(tr.model_dump())  # type: ignore[misc]
+        # Stream ended — resolve tool calls now. Executing tools mid-stream and
+        # `continue`ing the inner loop never re-called upstream, so managed-tool
+        # work was executed and discarded while the stream died with
+        # message_stop. Mirror _streamAnthropicNative: act after the inner
+        # stream, then re-run the outer loop with the tool results appended.
+        toolCalls = [tc.to_anthropic_tool_use() for tc in st.pending_tool_calls]
+        if not toolCalls:
+            break
+        classification = cast(
+            'dict[str, object]', classifyAnthropicToolUses(toolCalls, managedLocalToolNames, clientToolNames)
+        )
+        if not classification.get('has_managed'):
+            break
+        toolRound += 1
+        assistantContent: list[dict[str, object]] = list(toolCalls)
+        if st.accumulated_text:
+            assistantContent.insert(0, {'type': 'text', 'text': st.accumulated_text})
+        currentMessages.append({'role': 'assistant', 'content': cast(JsonValue, assistantContent)})
+        for tu in as_list(classification.get('managed_tool_uses'), []):
+            if not isinstance(tu, dict):
                 continue
-        break
+            tuName = as_str(tu.get('name'), '')
+            tuInput = as_dict(tu.get('input'), {})
+            tuId = as_str(tu.get('id'), '')
+            try:
+                result = await execute_managed_proxy_tool(tuName, tuInput)
+                tr = ToolResultBlock(tool_use_id=tuId, content=format_managed_tool_result(tuName, result))
+                currentMessages.append(tr.model_dump())  # type: ignore[misc]
+            except Exception as exc:
+                tr = ToolResultBlock(tool_use_id=tuId, content=f'Error: {exc}', is_error=True)
+                currentMessages.append(tr.model_dump())  # type: ignore[misc]
+        continue
+    yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
     yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
 
 

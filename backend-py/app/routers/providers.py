@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from app.json_narrowing import as_bool, as_dict, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.models.config import ModelCreate, ModelUpdate, ProviderConfig, ProviderCreate, ProviderUpdate
 from app.services import config_service, model_service
 
@@ -40,6 +40,9 @@ def _provider_to_dict(p: object) -> dict:
                     'apiFormat': m.api_format,
                     'supportsReasoningEffort': m.supports_reasoning_effort,
                     'maxReasoningEffort': m.max_reasoning_effort,
+                    'toolSurface': m.tool_surface,
+                    'maxTools': m.max_tools or None,
+                    'maxToolResultChars': m.max_tool_result_chars or None,
                 }
                 for m in p.models
             ],
@@ -75,6 +78,97 @@ async def listTemplates():
 @router.get('/health')
 async def providersHealth():
     return {'status': 'ok'}
+
+
+# Static `/quota` must also precede `/{providerId}` or "quota" is captured as an id.
+@router.get('/quota')
+async def getQuota(provider: str | None = None, model: str | None = None, range: str = '30d'):
+    """Per-model quota estimates derived from local usage events.
+
+    August has no native per-model quota API, so this reports tokens consumed
+    in the window from ``/api/usage`` events, mapped model → provider via the
+    configured provider list. ``limit`` is null (no configured cap) and
+    ``source`` is 'local'; a provider-native quota integration can extend this
+    later without changing the contract.
+
+    Query contract (frontend ``quota.ts``):
+      • ``?provider=X``          → ``{results: ModelQuota[]}``
+      • ``?provider=X&model=Y``  → ``ModelQuota``
+      • no query                 → ``{results: [{provider, quotas: []}]}``
+    """
+    from collections import defaultdict
+    from datetime import datetime, timedelta, timezone
+
+    from app.services import memory_store
+
+    days = 7 if range in ('7d', '7') else 30
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Map model ids → provider name from configured providers.
+    modelProvider: dict[str, str] = {}
+    for p in config_service.getProvidersAsModels():
+        for m in p.models:
+            if m.id and m.id != '*':
+                modelProvider[m.id] = p.name
+
+    def _ts(e: dict) -> datetime | None:
+        raw = as_str(e.get('createdAt') or e.get('created_at'))
+        if not raw:
+            return None
+        try:
+            if raw.endswith('Z'):
+                raw = raw[:-1] + '+00:00'
+            dt = datetime.fromisoformat(raw)
+        except ValueError:
+            try:
+                dt = datetime.strptime(raw[:19], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+            except ValueError:
+                return None
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    agg: dict[tuple[str, str], dict[str, int]] = defaultdict(
+        lambda: {'used': 0, 'prompt': 0, 'completion': 0}
+    )
+    for e in memory_store.list_usage(limit=10000):
+        ts = _ts(e)
+        if ts is None or ts < cutoff:
+            continue
+        modelId = as_str(e.get('model') or 'unknown') or 'unknown'
+        inp = as_int(e.get('inputTokens') if e.get('inputTokens') is not None else e.get('input_tokens'), 0)
+        out = as_int(e.get('outputTokens') if e.get('outputTokens') is not None else e.get('output_tokens'), 0)
+        a = agg[(modelProvider.get(modelId, 'unknown'), modelId)]
+        a['used'] += inp + out
+        a['prompt'] += inp
+        a['completion'] += out
+
+    resets_at = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+
+    def _row(providerName: str, modelId: str, a: dict) -> dict:
+        return {
+            'provider': providerName,
+            'model': modelId,
+            'used': a['used'],
+            'prompt': a['prompt'],
+            'completion': a['completion'],
+            'limit': None,
+            'percent': 0.0,
+            'resetsAt': resets_at,
+            'source': 'local',
+        }
+
+    rows = [_row(p, m, a) for (p, m), a in sorted(agg.items())]
+    if provider and model:
+        match = next((r for r in rows if r['provider'] == provider and r['model'] == model), None)
+        if match is not None:
+            return match
+        # No usage yet — still return a zeroed row so the UI never blanks.
+        return _row(provider, model, {'used': 0, 'prompt': 0, 'completion': 0})
+    if provider:
+        return {'results': [r for r in rows if r['provider'] == provider]}
+    grouped: dict[str, list] = defaultdict(list)
+    for r in rows:
+        grouped[r['provider']].append(r)
+    return {'results': [{'provider': p, 'quotas': qs} for p, qs in grouped.items()]}
 
 
 @router.post('/refresh-all')
@@ -496,6 +590,25 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                             m.pop('maxReasoningEffort', None)
                         else:
                             m['maxReasoningEffort'] = val
+                    # Per-model capability profile (tool surface / caps).
+                    if 'tool_surface' in dumped:
+                        val = dumped['tool_surface']
+                        if val is None:
+                            m.pop('toolSurface', None)
+                        else:
+                            m['toolSurface'] = val
+                    if 'max_tools' in dumped:
+                        val = dumped['max_tools']
+                        if val is None:
+                            m.pop('maxTools', None)
+                        else:
+                            m['maxTools'] = val
+                    if 'max_tool_result_chars' in dumped:
+                        val = dumped['max_tool_result_chars']
+                        if val is None:
+                            m.pop('maxToolResultChars', None)
+                        else:
+                            m['maxToolResultChars'] = val
                     config_service.saveProvidersStore(store)
                     model_service.invalidate_cache()
                     return {'updated': True}

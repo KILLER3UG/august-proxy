@@ -93,32 +93,40 @@ def localSummarize(messages: list[dict[str, object]], maxSummaryChars: int = DEF
 
 
 def buildSummaryMessage(
-    middleMessages: list[dict[str, object]], summaryText: str, summaryMarker: str = DEFAULT_SUMMARY_MARKER
+    middleMessages: list[dict[str, object]],
+    summaryText: str,
+    summaryMarker: str = DEFAULT_SUMMARY_MARKER,
+    role: str = 'user',
 ) -> dict[str, object]:
-    """Build a fenced summary message from the middle messages."""
+    """Build a fenced summary message from the middle messages.
+
+    Role defaults to ``user`` — a mid-transcript ``system`` message breaks the
+    Anthropic wire format (the Messages API has no system role inside
+    ``messages``) and would 400 the next turn after compaction.
+    """
     import json
 
     meta = json.dumps({'marker': 'august.summary', 'compressed_count': len(middleMessages)})
     return {
-        'role': 'system',
+        'role': role,
         'content': f'{summaryMarker}\n{meta}\n{summaryText}\n{summaryMarker.replace("<", "</")}>>',
     }
 
 
 def _isSummaryMessage(msg: dict[str, object], summaryMarker: str = DEFAULT_SUMMARY_MARKER) -> bool:
-    """True if msg is a prior compressed-summary system block.
+    """True if msg is a prior compressed-summary block (any role).
 
-    Detected by the opening marker (`<<compressed_summary`) in a system
-    message's string content. The compactor emits exactly this shape from
-    build_summary_message, so this reliably identifies prior summaries that
-    would otherwise accumulate across repeated compactions (s4).
+    Detected by the full fenced shape — opening marker ``<<compressed_summary``
+    plus the closing fence — in string content. Role-agnostic so legacy
+    system-role summaries (older builds) and current user-role summaries are
+    both recognized, while a user message that merely starts with the marker
+    text is not mistaken for one.
     """
-    if msg.get('role') != 'system':
-        return False
     content = msg.get('content', '')
     if not isinstance(content, str):
         return False
-    return content.startswith(summaryMarker)
+    closing = f'{summaryMarker.replace("<", "</")}>>'
+    return content.startswith(summaryMarker) and closing in content
 
 
 def _extractSummaryText(msg: dict[str, object], summaryMarker: str = DEFAULT_SUMMARY_MARKER) -> str:
@@ -169,11 +177,11 @@ async def compressMessages(
     currentTokens = estimateTokens(messages)
     if currentTokens <= threshold:
         return list(messages)
-    nonSystem = [m for m in messages if m.get('role') != 'system']
-    systemMsgs = [m for m in messages if m.get('role') == 'system']
-    priorSummaryTexts = [_extractSummaryText(m) for m in systemMsgs if _isSummaryMessage(m)]
+    nonSystem = [m for m in messages if m.get('role') != 'system' and not _isSummaryMessage(m)]
+    systemMsgs = [m for m in messages if m.get('role') == 'system' and not _isSummaryMessage(m)]
+    priorSummaryTexts = [_extractSummaryText(m) for m in messages if _isSummaryMessage(m)]
     priorSummaryTexts = [t for t in priorSummaryTexts if t]
-    otherSystem = [m for m in systemMsgs if not _isSummaryMessage(m)]
+    otherSystem = systemMsgs
     if len(nonSystem) <= head_count + tail_count:
         return list(messages)
     head = nonSystem[:head_count]

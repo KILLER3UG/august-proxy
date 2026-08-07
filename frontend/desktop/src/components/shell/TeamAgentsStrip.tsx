@@ -127,7 +127,7 @@ export function TeamAgentsStrip({
             title="Open Workbench tasks"
             onClick={() => {
               addRightDrawerSection('tasks');
-              window.dispatchEvent(new CustomEvent('august-open-right-sidebar'));
+              window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
             }}
           >
             <ScrollText className="size-3" />

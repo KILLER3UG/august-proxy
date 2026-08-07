@@ -21,7 +21,9 @@ _CRITICALThresholdHeuristic = 0.85
 _CRITICALThresholdDefault = 0.9
 
 
-def estimateTokens(text: str, model: str | None = None, provider: str | None = None) -> int:
+def estimateTokens(
+    text: str, model: str | None = None, provider: str | None = None, api_mode: str | None = None
+) -> int:
     """Estimate the number of tokens in ``text``.
 
     Uses the highest-accuracy tokenizer available for the given model/provider.
@@ -32,6 +34,10 @@ def estimateTokens(text: str, model: str | None = None, provider: str | None = N
         return 0
     if provider and provider.lower() in ('anthropic', 'anthropic-compatible'):
         return _anthropicTokens(text)
+    # User-named providers (e.g. "OpenCode Zen") never match the literal
+    # "anthropic" name — the wire format is the reliable signal.
+    if api_mode == 'anthropicMessages':
+        return _anthropicTokens(text)
     if model and _isOpenaiModel(model):
         return _openaiTokens(text, model)
     if model and _isGeminiModel(model):
@@ -39,13 +45,17 @@ def estimateTokens(text: str, model: str | None = None, provider: str | None = N
     return _heuristicTokens(text)
 
 
-def getCriticalThreshold(model: str | None = None, provider: str | None = None) -> float:
+def getCriticalThreshold(
+    model: str | None = None, provider: str | None = None, api_mode: str | None = None
+) -> float:
     """Return the critical attention-pressure threshold.
 
     Returns 90% when an accurate tokenizer is available (Anthropic/OpenAI),
     85% when using the heuristic fallback.
     """
     if provider and provider.lower() in ('anthropic', 'anthropic-compatible'):
+        return _CRITICALThresholdDefault
+    if api_mode == 'anthropicMessages':
         return _CRITICALThresholdDefault
     if model and (_isOpenaiModel(model) or _isGeminiModel(model)):
         return _CRITICALThresholdDefault
@@ -57,6 +67,7 @@ def computeBudget(
     model: str | None = None,
     provider: str | None = None,
     maxContext: int = 200000,
+    api_mode: str | None = None,
 ) -> dict[str, object]:
     """Compute a full cognitive budget dict for a conversation or text.
 
@@ -74,10 +85,10 @@ def computeBudget(
         text = messages
     else:
         text = _flattenMessages(messages)
-    total = estimateTokens(text, model, provider)
+    total = estimateTokens(text, model, provider, api_mode)
     remaining = max(0, maxContext - total)
     pct = total / maxContext * 100 if maxContext > 0 else 0
-    threshold = getCriticalThreshold(model, provider)
+    threshold = getCriticalThreshold(model, provider, api_mode)
     if pct >= threshold * 100:
         pressure = 'critical'
     elif pct >= 75:
@@ -88,6 +99,8 @@ def computeBudget(
         pressure = 'low'
     tokenizer = 'heuristic'
     if provider and provider.lower() in ('anthropic', 'anthropic-compatible'):
+        tokenizer = 'anthropic_sdk'
+    elif api_mode == 'anthropicMessages':
         tokenizer = 'anthropic_sdk'
     elif model and _isOpenaiModel(model):
         tokenizer = 'tiktoken'

@@ -270,7 +270,7 @@ export function SessionList({
         toast.success(`Switched to session for folder: ${folderName}`, { id: toastId });
       }
       onNavigate(`/c/${session.id}`);
-      window.dispatchEvent(new CustomEvent("august-open-right-sidebar"));
+      window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error(`Access failed: ${message}`, { id: toastId });
@@ -299,7 +299,7 @@ export function SessionList({
           toast.success(`Switched to session for folder: ${folderName}`, { id: toastId });
         }
         onNavigate(`/c/${session.id}`);
-        window.dispatchEvent(new CustomEvent('august-open-right-sidebar'));
+        window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         toast.error(`Access failed: ${message}`, { id: toastId });

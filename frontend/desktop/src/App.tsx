@@ -1,7 +1,9 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { ChatLayout } from '@/components/shell/ChatLayout';
 import { ALL_ROUTES, SECTION_ROUTES, SETTINGS_PAGE_ELEMENT } from '@/routes';
 import { CommandPalette } from '@/components/overlays/CommandPalette';
+import { ShortcutsModal } from '@/components/overlays/ShortcutsModal';
 import { ConversationSearchModal } from '@/components/overlays/ConversationSearchModal';
 import { OnboardingTour } from '@/components/overlays/OnboardingTour';
 import { ProviderOnboardingModal } from '@/components/overlays/ProviderOnboardingModal';
@@ -10,13 +12,52 @@ import { QuitConfirmModal } from '@/components/overlays/QuitConfirmModal';
 import { UpdateRelaunchOverlay } from '@/components/overlays/UpdateRelaunchOverlay';
 import { useStartupProviderRefresh } from '@/hooks/useStartupProviderRefresh';
 import { useUiCustomizationSync } from '@/hooks/useUiCustomizationSync';
+import { toggleCommandPalette } from '@/store/command-palette';
+import { toggleShortcutsModal } from '@/store/shortcuts-modal';
+
+/** True when keystrokes belong to a text-editing surface (skip global hotkeys). */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  );
+}
 
 export default function App() {
+  const navigate = useNavigate();
   // Sync provider model lists from upstream once per launch so the model
   // dropdown reflects models added/removed since the app last ran.
   useStartupProviderRefresh();
   // Server-stored UI colors (model's customize_ui tool) win over the local cache.
   useUiCustomizationSync();
+
+  // Global hotkeys: ⌘/Ctrl+K|P palette, `?` shortcuts reference, `,` settings.
+  // (Formerly lived in the never-mounted AppShell — mounted here so they work.)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const cmd = e.metaKey || e.ctrlKey;
+      if (cmd && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'p')) {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+      if (cmd || e.altKey || e.metaKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (e.key === '?') {
+        e.preventDefault();
+        toggleShortcutsModal();
+      } else if (e.key === ',') {
+        e.preventDefault();
+        void navigate('/settings');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navigate]);
+
   return (
     <>
       <BackendBootstrapGate>
@@ -38,6 +79,7 @@ export default function App() {
           </Route>
         </Routes>
         <CommandPalette />
+        <ShortcutsModal />
         <ConversationSearchModal />
         <OnboardingTour />
         <ProviderOnboardingModal />

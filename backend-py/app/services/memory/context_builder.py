@@ -15,10 +15,13 @@ drop Tier 2/3 blocks.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.services.memory_store import get_memory
+
+logger = logging.getLogger(__name__)
 
 AUGUST_PLATFORM: str = (
     'Identity: You are the underlying model. "August" / "August Proxy" is the platform '
@@ -275,13 +278,27 @@ def buildTier2(session: dict[str, object] | None = None) -> str:
         dirParts.append(f'Plan ({status}):\n{_trunc(planText, 2000, "plan")}')
     if dirParts:
         blocks.append(wrapTag('directives', '\n'.join(dirParts)))
+    # Code map (Aider repo-map lite): bounded skeleton + signatures so the
+    # model navigates the workspace without guessing paths.
+    if wsPath:
+        try:
+            from app.services.workbench.code_map import build_code_map
+
+            codeMap = build_code_map(wsPath)
+            if codeMap:
+                blocks.append(wrapTag('code_map', codeMap))
+        except Exception:
+            logger.debug('code map build failed', exc_info=True)
     augMd = as_str(_get(session, 'augMd', 'aug_md'), '')
     if augMd:
         blocks.append(wrapTag('aug_directives', _trunc(augMd, 4000, 'AUG.md')))
     heuristics = as_list(_get(session, 'learnedHeuristics', 'learned_heuristics'), [])
     if heuristics:
         lines = []
-        for h in heuristics:
+        # Bounded prompt weight (gptme lessons / Prime /refine lean): only the
+        # most recent rules are injected — stale rules are kept in the store
+        # (Brain UI / tool list) but do not bloat every prompt.
+        for h in heuristics[:12]:
             if isinstance(h, dict):
                 rule = as_str(h.get('rule'), '')
                 category = as_str(h.get('category'), '')

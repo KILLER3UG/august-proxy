@@ -219,6 +219,9 @@ class AnthropicNativeStreamState:
     """
 
     data: AnthropicStreamData = field(default_factory=AnthropicStreamData)
+    # Raw input_json_delta fragments per content-block index. Kept off the
+    # block dict so nothing leaks into round-2 upstream bodies.
+    _input_json_fragments: dict[int, str] = field(default_factory=dict)
 
     def process_message_start(self, event: dict[str, Any]) -> None:
         """Extract id, model, and input_tokens from message_start."""
@@ -238,12 +241,47 @@ class AnthropicNativeStreamState:
         self.data.current_index = event.get('index', -1)
 
     def process_content_block_delta(self, event: dict[str, Any]) -> None:
-        """No state update needed; delta is forwarded as-is."""
-        pass
+        """Merge deltas into the block currently streaming.
+
+        ``input_json_delta`` fragments accumulate here — without this the
+        tool_use block's ``input`` stays ``{}`` and managed tools execute
+        with empty arguments. ``signature_delta`` must land on the open
+        thinking block so round-2 re-sends stay valid for extended-thinking
+        models.
+        """
+        delta = event.get('delta')
+        if not isinstance(delta, dict):
+            return
+        delta_type = delta.get('type', '')
+        idx = event.get('index', self.data.current_index)
+        if delta_type == 'input_json_delta':
+            partial = delta.get('partial_json', '')
+            if not isinstance(partial, str):
+                return
+            parts = self._input_json_fragments.get(idx, '')
+            self._input_json_fragments[idx] = parts + partial
+        elif delta_type == 'signature_delta':
+            blocks = self.data.content_blocks
+            if 0 <= idx < len(blocks) and blocks[idx].get('type') == 'thinking':
+                sig = delta.get('signature', '')
+                if isinstance(sig, str) and sig:
+                    blocks[idx]['signature'] = sig
 
     def process_content_block_stop(self, event: dict[str, Any]) -> None:
-        """No state update needed; forwarded as-is."""
-        pass
+        """Finalize the tool_use block's input from accumulated deltas."""
+        idx = event.get('index', self.data.current_index)
+        raw = self._input_json_fragments.pop(idx, '')
+        if not raw:
+            return
+        blocks = self.data.content_blocks
+        if not (0 <= idx < len(blocks)) or blocks[idx].get('type') != 'tool_use':
+            return
+        try:
+            blocks[idx]['input'] = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            # Keep the raw text so the executor can surface the model's
+            # malformed arguments instead of silently running with {}.
+            blocks[idx]['input'] = {'_raw': raw}
 
     def process_message_delta(self, event: dict[str, Any]) -> None:
         """Extract stop_reason and output_tokens."""

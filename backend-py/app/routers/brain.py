@@ -217,6 +217,49 @@ async def routingSuggestions(prompt: str = '', taskType: str = '', limit: int = 
     }
 
 
+@router.get('/harness/trends')
+async def harnessTrends(days: int = 30):
+    """Harness fleet health: win-rate / token / duration trends per model.
+
+    The routing-evidence table is the harness's own eval signal — per-day
+    aggregates let the Brain surface show whether the fleet is improving
+    (and which models regress) over time.
+    """
+    try:
+        from app.services.memory_store import _conn as getConn
+
+        conn = getConn()
+        rows = conn.execute(
+            "SELECT date(created_at) AS day, model, provider, "
+            "SUM(ok) AS wins, COUNT(*) AS total, "
+            "AVG(input_tokens + output_tokens) AS avg_tokens, "
+            "AVG(duration_ms) AS avg_duration "
+            "FROM routing_evidence WHERE created_at > datetime('now', ?) "
+            "GROUP BY day, model, provider ORDER BY day",
+            (f'-{max(1, min(days, 90))} days',),
+        ).fetchall()
+        daily = []
+        for r in rows:
+            total = as_int(r['total'], 0)
+            if total <= 0:
+                continue
+            daily.append(
+                {
+                    'day': as_str(r['day'], ''),
+                    'model': as_str(r['model'], ''),
+                    'provider': as_str(r['provider'], ''),
+                    'wins': as_int(r['wins'], 0),
+                    'total': total,
+                    'winRate': round(as_int(r['wins'], 0) / total, 2),
+                    'avgTokens': int(round(as_int(r['avg_tokens'], 0))),
+                    'avgDurationMs': int(round(as_int(r['avg_duration'], 0))),
+                }
+            )
+        return {'rangeDays': max(1, min(days, 90)), 'daily': daily}
+    except Exception:
+        return {'rangeDays': max(1, min(days, 90)), 'daily': []}
+
+
 @router.post('/routing/arena')
 async def routingArena(body: dict):
     """Record an arena/debate verdict: the picked lane won, the rest lost.
