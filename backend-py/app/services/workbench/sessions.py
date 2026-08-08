@@ -734,12 +734,33 @@ def create_workbench_session(
 
 
 def get_workbench_session(session_id: str | None) -> WorkbenchSession | None:
-    """Get a session by ID. Returns None if not found."""
+    """Get a session by ID. Returns None if not found.
+
+    When the id is missing from the in-memory map (the debounced snapshot
+    prunes it to the top-50 by recency), reload it from SQLite so replying
+    resumes the ORIGINAL conversation instead of silently creating a new
+    session (audit finding).
+    """
     if not session_id:
         return None
     if not _sessions:
         _load_sessions()
-    return _sessions.get(session_id)
+    session = _sessions.get(session_id)
+    if session is not None:
+        return session
+    try:
+        from app.services.memory_store import get_workbench_blob
+
+        blob = get_workbench_blob(session_id)
+        if not blob:
+            return None
+        restored = WorkbenchSession.fromDict(blob)
+        if restored.id:
+            _sessions[restored.id] = restored
+            return restored
+    except Exception:
+        logger.debug('workbench session reload from SQLite failed', exc_info=True)
+    return None
 
 
 def set_workbench_session_agent(session_id: str, agent_id: str) -> WorkbenchSession | None:

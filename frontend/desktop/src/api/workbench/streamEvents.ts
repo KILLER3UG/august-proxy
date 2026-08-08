@@ -265,6 +265,17 @@ export function dispatchWorkbenchEvent(
         message: typeof p?.message === 'string' ? p.message : '',
       });
       break;
+    case 'contextPressure':
+      handlers.onContextPressure?.({
+        contextUsedPct: typeof p?.contextUsedPct === 'number' ? p.contextUsedPct : undefined,
+        attentionPressure:
+          typeof p?.attentionPressure === 'number' ? p.attentionPressure : undefined,
+        totalTokens: typeof p?.totalTokens === 'number' ? p.totalTokens : undefined,
+        maxContext: typeof p?.maxContext === 'number' ? p.maxContext : undefined,
+        remainingTokens:
+          typeof p?.remainingTokens === 'number' ? p.remainingTokens : undefined,
+      });
+      break;
     case 'done': {
       const u = p?.usage;
       const durationRaw = Number((u as Record<string, unknown> | undefined)?.durationMs);
@@ -279,6 +290,23 @@ export function dispatchWorkbenchEvent(
           : undefined,
         usedFallback:
           typeof p?.usedFallback === 'string' ? p.usedFallback : undefined,
+        // Forwarded so the live context badge + memory-suggestion chips
+        // actually arrive (audit finding: they were dropped here).
+        context: p?.context as
+          | {
+              profileSummaryUsed?: boolean;
+              heuristicsUsed?: number;
+              addedMemories?: number;
+              recalledMemories?: Array<{ key?: string; category?: string; snippet?: string }>;
+              currentContextUsed?: boolean;
+              activeProjects?: number;
+              coreFactsUsed?: boolean;
+              augDirectiveUsed?: boolean;
+            }
+          | undefined,
+        memorySuggestions: Array.isArray(p?.memorySuggestions)
+          ? (p.memorySuggestions as string[]).filter((s): s is string => typeof s === 'string')
+          : undefined,
       });
       break;
     }

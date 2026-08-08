@@ -319,6 +319,7 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
     recognition.lang = 'en-US';
 
     let finalTranscript = '';
+    let lastInterim = '';
 
     recognition.onresult = (event) => {
       let interim = '';
@@ -332,8 +333,19 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
       }
       if (finalTranscript || interim) {
         setInput((prev) => {
-          const space = prev.length > 0 && !prev.endsWith(' ') ? ' ' : '';
-          return prev + space + finalTranscript + interim;
+          // Splice out the previous interim span before appending the new
+          // one — otherwise interim words duplicate on every onresult
+          // (audit finding: speech dictation repeated text).
+          let base = prev;
+          if (lastInterim) {
+            base = base.slice(0, Math.max(0, base.length - lastInterim.length));
+            base = base.replace(/\s+$/, '');
+          }
+          const next = finalTranscript + interim;
+          lastInterim = interim;
+          if (!next) return prev;
+          const space = base.length > 0 && !base.endsWith(' ') ? ' ' : '';
+          return base + space + next;
         });
       }
     };

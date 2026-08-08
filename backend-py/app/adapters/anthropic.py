@@ -721,6 +721,12 @@ async def _streamAnthropicNative(
         if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound >= MAX_MANAGED_TOOL_ROUNDS:
             break
         st = AnthropicNativeStreamState()
+        # Whether THIS round's upstream stream ended with its own
+        # message_stop — the synthetic stop below is only emitted when the
+        # round ended without one (else clients see message_stop twice,
+        # audit finding — the OpenAI→Anthropic converter already tracks
+        # sawTerminalStop for the same reason).
+        sawTerminalStop = False
         roundBody = dict(reqBody)
         roundBody['messages'] = cast(JsonValue, currentMessages)
         roundBodyJson = cast(dict[str, object], as_dict(camelToSnake(roundBody), {}))
@@ -744,6 +750,7 @@ async def _streamAnthropicNative(
             elif eventTypePayload == 'message_delta':
                 st.process_message_delta(event)
             elif eventTypePayload == 'message_stop':
+                sawTerminalStop = True
                 st.process_message_stop(event)
             elif eventTypePayload == 'ping':
                 st.process_ping(event)
@@ -775,7 +782,11 @@ async def _streamAnthropicNative(
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
                 currentMessages.append(tr.model_dump())  # type: ignore[misc]
         continue
-    yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
+    # Only synthesize the terminal stop when the last round's upstream
+    # stream did not already end with message_stop (audit finding: clients
+    # saw it twice on the native path).
+    if not sawTerminalStop:
+        yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
 
 
 async def _streamOpenaiAsAnthropic(

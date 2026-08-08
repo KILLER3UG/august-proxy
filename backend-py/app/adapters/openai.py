@@ -419,8 +419,16 @@ async def streamUpstreamAndResolveToolsOpenai(
                 currentMessages.append(assistantMsg)
                 classification = classifyOpenaiToolCalls(toolCallDicts, managedLocalToolNames, clientToolNames)
                 under_cap = MAX_MANAGED_TOOL_ROUNDS <= 0 or toolRound < MAX_MANAGED_TOOL_ROUNDS
-                if classification['has_managed'] and (
-                    classification['can_execute_managed'] or under_cap
+                # Mixed rounds (managed + client-owned tool calls) must NOT
+                # continue the managed loop: the round-1 tool_calls were
+                # already forwarded to the client (finish_reason: tool_calls)
+                # for IT to execute, and continuing would silently drop them
+                # (audit finding — the non-streaming loop already breaks via
+                # has_client_or_unknown).
+                if (
+                    classification['has_managed']
+                    and not classification.get('has_client_or_unknown')
+                    and (classification['can_execute_managed'] or under_cap)
                 ):
                     toolResults = await execute_managed_openai_tool_calls(
                         classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent
@@ -745,11 +753,12 @@ def _openaiToAnthropicBody(body: dict[str, object]) -> dict[str, object]:
         if body.get(key) is not None:
             out[key] = body[key]
     if body.get('stop') is not None:
-        # Anthropic's parameter is `stop_sequences`; forwarding `stop` (str or
-        # list) makes strict Anthropic gateways 400 — this path is what the
-        # per-model apiFormat override uses for Claude models behind OpenAI
-        # clients.
-        out['stop_sequences'] = body['stop']
+        # Anthropic's parameter is `stop_sequences` and it must be an ARRAY —
+        # forwarding an OpenAI `stop: "word"` string makes strict Anthropic
+        # gateways 400. This path is what the per-model apiFormat override
+        # uses for Claude models behind OpenAI clients (audit finding).
+        stop = body['stop']
+        out['stop_sequences'] = [stop] if isinstance(stop, str) else stop
     tools = as_list(body.get('tools'), [])
     if tools:
         out['tools'] = [_openaiToolToAnthropic(t) for t in tools if isinstance(t, dict)]

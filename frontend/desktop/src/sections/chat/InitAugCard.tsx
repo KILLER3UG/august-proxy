@@ -16,6 +16,10 @@ interface InitAugCardProps {
   existing: boolean;
   workspacePath: string;
   sessionId?: string;
+  /** Dismiss the card WITHOUT sending anything (previously close() emitted
+   *  'reset-session', which typed /reset and SENT it as a real message —
+   *  audit finding). */
+  onClose?: () => void;
 }
 
 function simpleDiff(existing: string, next: string): { type: 'same' | 'add' | 'del'; text: string }[] {
@@ -35,7 +39,7 @@ function simpleDiff(existing: string, next: string): { type: 'same' | 'add' | 'd
   return out;
 }
 
-export function InitAugCard({ draft, existing, workspacePath, sessionId }: InitAugCardProps) {
+export function InitAugCard({ draft, existing, workspacePath, sessionId, onClose }: InitAugCardProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentDraft, setCurrentDraft] = useState(draft);
@@ -77,7 +81,8 @@ export function InitAugCard({ draft, existing, workspacePath, sessionId }: InitA
   }
 
   function close() {
-    voiceCommandEvents.emit({ type: 'reset-session' } as never);
+    // Dismiss only — never send a message (see onClose docs).
+    onClose?.();
   }
 
   if (savedPath) {

@@ -142,10 +142,9 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
   { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings/traffic-activity', replace: true }), nav: false },
 ] as const;
 
-/* Settings tabs are derived from the reduced settings registry so the
- * sidebar, routes, and command palette all stay in sync. The legacy 18
- * tab keys still resolve via the registry's LEGACY_TAB_MAP (see
- * resolveLegacyTab) — we just expose the 10 canonical entries here. */
+/* Settings tabs are derived from the settings registry so the sidebar,
+ * routes, and command palette all stay in sync. Legacy tab keys still
+ * resolve via the registry's LEGACY_TAB_MAP (see resolveLegacyTab). */
 export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.map((section) => ({
   key: section.id,
   label: section.label,

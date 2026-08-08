@@ -22,7 +22,27 @@ from app.services.sandbox.policy import (
     SandboxResult,
 )
 
-_REDIRECT_RE = re.compile(r'(?:^|[\s;|&])(?:>>?|tee\s+)\s*([^\s;|&]+)')
+_REDIRECT_RE = re.compile(
+    r'(?:^|[\s;|&])(?:>>?|tee\s+)\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s;|&]+))'
+)
+
+
+def _shell_tokens_for_scan(command: str) -> list[str]:
+    """Tokens for the outside-workspace scan.
+
+    Windows shlex with ``posix=False`` does NOT group quoted strings — a
+    quoted path with spaces splits mid-path and each fragment, once quote-
+    stripped, resolves *under* the workspace (``"C:\\Program Files\\x"`` →
+    ``C:\\Program`` + ``Files\\x"``). Quoted spans are therefore captured
+    whole and checked alongside the shlex tokens, closing the escape.
+    """
+    try:
+        tokens = shlex.split(command, posix=os.name != 'nt')
+    except ValueError:
+        tokens = command.split()
+    for quoted in re.findall(r'"([^"]*)"|\'([^\']*)\'', command):
+        tokens.append(quoted[0] or quoted[1])
+    return tokens
 
 
 def _ps_literal(path: str) -> str:
@@ -130,14 +150,10 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
     root = resolve_workspace_root(policy.workspace_root)
     if root is not None:
         for match in _REDIRECT_RE.finditer(command):
-            target = match.group(1)
+            target = match.group(1) or match.group(2) or match.group(3)
             if path_looks_outside_workspace(target, policy.workspace_root):
                 return f'write redirect outside workspace blocked: {target}'
-        try:
-            tokens = shlex.split(command, posix=os.name != 'nt')
-        except ValueError:
-            tokens = command.split()
-        for tok in tokens:
+        for tok in _shell_tokens_for_scan(command):
             if path_looks_outside_workspace(tok, policy.workspace_root):
                 return f'path outside workspace blocked: {tok}'
     return None

@@ -19,7 +19,7 @@ export interface SubagentInfo {
   taskId: string;
   agentId: string;
   goal: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'recovered';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'partial' | 'recovered';
   result?: string;
   error?: string;
   startedAt: number;

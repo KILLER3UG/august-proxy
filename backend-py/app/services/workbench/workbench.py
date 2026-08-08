@@ -1364,6 +1364,19 @@ def drainQueuedMessages(
             from app.services import event_log
 
             for entry in entries:
+                # Emit on the LIVE stream too — the frontend renders each
+                # queued message as an inline user bubble via the
+                # user_message_injected SSE event (audit finding: entries
+                # were only appended to the event log, never emitted).
+                emit(
+                    {
+                        'type': 'userMessageInjected',
+                        'sessionId': sessionId,
+                        'messageId': entry.get('id', ''),
+                        'text': entry.get('text', ''),
+                        'queuedAt': entry.get('queuedAt', ''),
+                    }
+                )
                 event_log.event_log.append(
                     sessionId,
                     'userMessageInjected',
@@ -2688,6 +2701,7 @@ async def _sendWorkbenchMessageStreamImpl(
                             )
             except Exception:
                 logger.debug('checkpoint before tool failed', exc_info=True)
+            result: str | None = None
             try:
                 from app.services.workbench.tool_guardrails import ToolCallTracker
 
@@ -2888,8 +2902,15 @@ async def _sendWorkbenchMessageStreamImpl(
                     if guardStatus == 'warn':
                         result = guardMsg + '\n' + result
             except Exception:
-                with _trace.span('tool_exec', tool=toolName):
-                    result = await _executeTool(toolName, toolInput, session)
+                # Never re-dispatch a tool that may have already executed —
+                # a partial apply followed by an unrelated tracker/emit
+                # exception would run mutating tools TWICE (audit finding).
+                # Only the "never started" case (result unset) retries once.
+                if result is None:
+                    with _trace.span('tool_exec', tool=toolName):
+                        result = await _executeTool(toolName, toolInput, session)
+                else:
+                    logger.debug('tool %s raised after dispatch; not re-running', toolName, exc_info=True)
             # Verifier gate receipt: keep the tail of command output for this turn
             # so update_state can require a real verification run before it allows
             # a review/complete transition (see system_tools._updateState). The
@@ -3115,10 +3136,16 @@ async def _sendWorkbenchMessageStreamImpl(
         current_subprocess_cancel.reset(_cancel_token)
         # Verifier auto-run (D3): when enforcement is on and the model ended
         # without completing the gate, run the stated verification command
-        # once and steer the model to finish (phase='complete').
+        # once and steer the model to finish (phase='complete'). Only in
+        # `full` guard mode — in ask/edit modes run_command requires user
+        # approval, and auto-running it would bypass the approval gate
+        # (audit finding).
         try:
-            if getattr(session, 'verifierEnforced', False) and not getattr(
-                session, '_verifier_auto_ran', False
+            _guard_mode = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+            if (
+                _guard_mode == 'full'
+                and getattr(session, 'verifierEnforced', False)
+                and not getattr(session, '_verifier_auto_ran', False)
             ):
                 vstate = getattr(session, '_execution_state', None) or {}
                 vphase = as_str(vstate.get('phase'), '') if isinstance(vstate, dict) else ''
@@ -4438,13 +4465,16 @@ def get_session() -> WorkbenchSession | None:
 
     Used by the update_state tool to read/write execution state.
     In a production setting this would use a contextvar; for now it
-    returns the most recently touched session as a best-effort approach,
-    since tools run synchronously within a session's turn.
+    returns the most recently TOUCHED session (max ``updatedAt``) as a
+    best-effort approach — insertion order (``list(...)[-1]``) picked the
+    most recently *created* session, so with two sessions open a model's
+    execution state / verifier receipts / scratchpad landed on the wrong
+    one (audit finding).
     """
     if not _sessions:
         return None
     try:
-        return list(_sessions.values())[-1]
+        return max(_sessions.values(), key=lambda s: s.updatedAt or '')
     except (IndexError, ValueError):
         return None
 

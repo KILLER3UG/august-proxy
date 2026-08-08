@@ -285,8 +285,12 @@ class DaemonManager:
             return keyword.lower() in output.lower()
         if condition == 'on_change':
             currentHash = hashlib.md5(output.encode()).hexdigest()
-            previous = info['result'].previous_hash
-            info['result'].previous_hash = currentHash
+            # Persist the hash on `info`, NOT on the ephemeral DaemonResult —
+            # every poll creates a fresh result, so reading previous_hash
+            # from it was always '' and on_change could never fire (audit
+            # finding).
+            previous = info.get('last_hash')
+            info['last_hash'] = currentHash
             if previous and currentHash != previous:
                 return True
             return False

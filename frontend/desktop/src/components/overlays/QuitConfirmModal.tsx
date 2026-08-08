@@ -32,7 +32,12 @@ export function QuitConfirmModal() {
     for (const [id, status] of Object.entries(activeChatSessions)) {
       if (!merged[id]) merged[id] = status;
     }
-    return sessions.filter((s) => isActiveStatus(merged[s.id]));
+    // Status maps are keyed by WORKBENCH id (realtime bridge writes
+    // wb_*); look up both id forms so background work on a session is
+    // never missed (audit finding).
+    return sessions.filter(
+      (s) => isActiveStatus(merged[s.id]) || (s.workbenchSessionId ? isActiveStatus(merged[s.workbenchSessionId]) : false),
+    );
   }, [sessions, sessionStates, activeChatSessions]);
 
   const hasActive = activeSessions.length > 0;

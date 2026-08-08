@@ -302,7 +302,7 @@ export function ComposerToolbar({
               // Shared stop → handoff → apply flow (single source of truth
               // with the chat-thread model-selected event handler).
               const { switchChatModel } = await import('@/sections/chat/switch-model');
-              await switchChatModel({
+              const result = await switchChatModel({
                 sessionId,
                 prevModel: prev,
                 nextModel: m,
@@ -328,6 +328,17 @@ export function ComposerToolbar({
                 },
                 onHandoffPreparingChange: setHandoffPreparing,
               });
+              // Auto-continue the interrupted turn with the new model: the
+              // chat-thread event handler owns the truncate+regenerate logic,
+              // so re-dispatch with skipSwitch (audit finding: the composer
+              // path previously dropped the interrupted turn entirely).
+              if (result.interrupted && sessionId) {
+                window.dispatchEvent(
+                  new CustomEvent('august:model-selected', {
+                    detail: { modelId: m.id, provider: m.provider, skipSwitch: true, interrupted: true },
+                  }),
+                );
+              }
             })();
           }}
         />

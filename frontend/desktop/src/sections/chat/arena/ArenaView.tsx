@@ -65,7 +65,11 @@ export function ArenaView() {
   // so finished-lane counts and the diff button stay live.
   useSyncExternalStore($sessionStreamStates.subscribe, $sessionStreamStates.get);
 
-  const laneAnswers = useMemo(() => {
+  // Lane answers: read from the subscribed store snapshot EVERY render —
+  // a useMemo keyed on `run` would freeze the diff button at the mount
+  // snapshot (the store re-renders via useSyncExternalStore but the memo
+  // deps never change — audit finding: 'Diff answers' was dead).
+  const laneAnswers = (() => {
     if (!run) return new Map<string, string>();
     const out = new Map<string, string>();
     for (const lane of run.lanes) {
@@ -75,7 +79,7 @@ export function ArenaView() {
       if (body.trim()) out.set(lane.uiSessionId, body);
     }
     return out;
-  }, [run]);
+  })();
 
   // Arena archive: recent verdicts (results used to vanish when the overlay
   // closed — the routing_evidence arena rows are the durable record).

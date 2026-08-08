@@ -291,6 +291,15 @@ export interface WorkbenchEventHandlers {
     toolUseId?: string;
     extras?: Record<string, unknown>;
   }) => void;
+  /** Backend context-pressure warning: the context window is nearly full
+   *  (emitted by the workbench loop when the token budget is exhausted). */
+  onContextPressure?: (data: {
+    contextUsedPct?: number;
+    attentionPressure?: number;
+    totalTokens?: number;
+    maxContext?: number;
+    remainingTokens?: number;
+  }) => void;
   /** Informational messages (auto-memory sync, guideline updates, etc.).
    *  Unknown fields go into `extras` for the same reason as onWarning. */
   onInfo?: (data: {

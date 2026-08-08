@@ -31,23 +31,26 @@ import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/PageLoader';
 
 interface HealthData {
-  claude?: { status: string };
-  codex?: { status: string };
-  uptime?: number;
-  memory?: { used: number; total: number };
-  origin?: string;
+  status?: string;
+  backgroundIssues?: string[];
+  mode?: string;
   port?: number;
-  endpoints?: {
-    anthropic: { url: string; label: string; client: string };
-    openai: { url: string; label: string; client: string };
-    models: { url: string; label: string; client: string };
-  };
-  activeUpstream?: { provider: string; baseUrl: string } | null;
+  data_dir?: string;
   externalAccess?: {
     enabled: boolean;
     hasKey: boolean;
     configured: boolean;
   };
+  brainSync?: Record<string, unknown> | { error?: string };
+  cognitiveBoot?: Record<string, unknown> | { error?: string };
+}
+
+/** Basic /api/health — carries uptime + port. */
+interface BasicHealthData {
+  status?: string;
+  version?: string;
+  port?: number;
+  uptime?: number;
 }
 
 function fmtUptime(s?: number) {
@@ -147,6 +150,11 @@ export function SystemHealthSection() {
     queryFn: () => api.get<HealthData>('/api/health/detailed'),
     refetchInterval: 5_000,
   });
+  const { data: basic } = useQuery({
+    queryKey: ['health', 'basic'],
+    queryFn: () => api.get<BasicHealthData>('/api/health'),
+    refetchInterval: 5_000,
+  });
   const { data: hostData } = useQuery({
     queryKey: ['host-agent-status'],
     queryFn: () => getHostAgentStatus(),
@@ -160,15 +168,15 @@ export function SystemHealthSection() {
 
   if (isLoading) return <PageLoader label="Checking health…" />;
 
-  const port = data?.port || (g.status === 'open' ? g.port : 0) || 8085;
-  const endpoints = data?.endpoints;
+  const port = data?.port || basic?.port || (g.status === 'open' ? g.port : 0) || 8085;
   const gatewayOpen = g.status === 'open';
   const hostStatus = hostData?.status || 'unknown';
   const hostConnected = hostStatus === 'connected' || hostStatus === 'open';
-  const memPct = data?.memory && data.memory.total > 0
-    ? Math.round((data.memory.used / data.memory.total) * 100)
-    : null;
   const platforms = gwStatus?.platforms ?? [];
+  const issues = data?.backgroundIssues ?? [];
+  const backendOk = (data?.status ?? 'ok') === 'ok';
+  const brainSyncErr = (data?.brainSync as { error?: string } | undefined)?.error;
+  const cognitiveErr = (data?.cognitiveBoot as { error?: string } | undefined)?.error;
 
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col overflow-auto">
@@ -190,7 +198,7 @@ export function SystemHealthSection() {
         </StatCard>
 
         <StatCard icon={Clock} title="Uptime" description="How long the gateway has been running without restarting.">
-          <p className="text-2xl font-bold">{fmtUptime(data?.uptime)}</p>
+          <p className="text-2xl font-bold">{fmtUptime(basic?.uptime)}</p>
         </StatCard>
 
         <StatCard
@@ -205,24 +213,25 @@ export function SystemHealthSection() {
           </div>
         </StatCard>
 
-        <StatCard icon={Cpu} title="Memory" description="RAM used by the proxy process.">
-          {data?.memory ? (
-            <>
-              <p className="font-mono text-xs">
-                {data.memory.used} MB / {data.memory.total} MB
-              </p>
-              {memPct !== null && (
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
-                  <div
-                    className={`h-full rounded-full ${memPct > 85 ? 'bg-warning' : 'bg-primary'}`}
-                    style={{ width: `${memPct}%` }}
-                  />
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-xs text-muted-foreground">—</p>
-          )}
+        <StatCard
+          icon={Cpu}
+          title="Backend services"
+          description="Brain sync + cognitive boot — the background layers behind the chat loop."
+          status={<Badge variant={backendOk ? 'success' : 'destructive'}>{data?.status ?? 'unknown'}</Badge>}
+        >
+          <ul className="space-y-0.5 text-xs text-muted-foreground">
+            <li>
+              brain sync: {brainSyncErr ? <span className="text-danger">{brainSyncErr}</span> : 'ok'}
+            </li>
+            <li>
+              cognitive boot: {cognitiveErr ? <span className="text-danger">{cognitiveErr}</span> : 'ok'}
+            </li>
+            {issues.map((issue) => (
+              <li key={issue} className="text-danger/90 truncate" title={issue}>
+                {issue}
+              </li>
+            ))}
+          </ul>
         </StatCard>
       </div>
 
@@ -237,43 +246,34 @@ export function SystemHealthSection() {
         <p className="text-xs text-muted-foreground">
           Point any OpenAI- or Anthropic-compatible app at this proxy. Models from every provider are available on all paths.
         </p>
-        {endpoints ? (
-          <div className="space-y-3">
-            <EndpointRow url={endpoints.anthropic.url} label={endpoints.anthropic.label} hint="ANTHROPIC_BASE_URL — Claude Code, Anthropic SDKs." icon={<Brain className="size-3.5" />} />
-            <EndpointRow url={endpoints.openai.url} label={endpoints.openai.label} hint="OPENAI_API_BASE — OpenAI SDKs, Cursor, codex CLI." icon={<Terminal className="size-3.5" />} />
-            <EndpointRow url={endpoints.models.url} label={endpoints.models.label} hint="Fetch the model list. Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <EndpointRow url="http://127.0.0.1:8085/v1/messages" label="Anthropic (Claude Code)" hint="Sends /v1/messages." icon={<Brain className="size-3.5" />} />
-            <EndpointRow url="http://127.0.0.1:8085/v1/chat/completions" label="OpenAI Chat Completions" hint="Sends /v1/chat/completions." icon={<Terminal className="size-3.5" />} />
-            <EndpointRow url="http://127.0.0.1:8085/v1/models" label="Model list" hint="Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
-          </div>
-        )}
-
-        {data?.activeUpstream?.baseUrl && (
-          <div className="mt-3 pt-2 border-t border-white/[0.06] text-[11px] text-muted-foreground font-mono">
-            active upstream: {data.activeUpstream.provider} → {data.activeUpstream.baseUrl}
-          </div>
-        )}
+        <div className="space-y-2">
+          <EndpointRow url={`http://127.0.0.1:${port}/v1/messages`} label="Anthropic (Claude Code)" hint="Sends /v1/messages." icon={<Brain className="size-3.5" />} />
+          <EndpointRow url={`http://127.0.0.1:${port}/v1/chat/completions`} label="OpenAI Chat Completions" hint="Sends /v1/chat/completions." icon={<Terminal className="size-3.5" />} />
+          <EndpointRow url={`http://127.0.0.1:${port}/v1/models`} label="Model list" hint="Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <StatCard
           icon={Brain}
-          title="Claude"
-          description="Upstream Anthropic connectivity."
-          status={<Badge variant={data?.claude?.status === 'ok' ? 'success' : 'secondary'}>{data?.claude?.status ?? 'unknown'}</Badge>}
+          title="External access"
+          description="Whether the proxy gateway accepts requests from external clients."
+          status={<Badge variant={data?.externalAccess?.enabled ? 'success' : 'secondary'}>{data?.externalAccess?.enabled ? 'open' : 'closed'}</Badge>}
         >
-          <p className="text-xs text-muted-foreground">Anthropic API reachability.</p>
+          <p className="text-xs text-muted-foreground">
+            {data?.externalAccess?.configured
+              ? 'API key configured — external clients can connect.'
+              : data?.externalAccess?.hasKey
+                ? 'Key set but gateway is closed.'
+                : 'No external API key configured.'}
+          </p>
         </StatCard>
         <StatCard
           icon={Terminal}
-          title="Codex"
-          description="Upstream OpenAI connectivity."
-          status={<Badge variant={data?.codex?.status === 'ok' ? 'success' : 'secondary'}>{data?.codex?.status ?? 'unknown'}</Badge>}
+          title="Data directory"
+          description="Where config, the brain DB, and logs live on this machine."
         >
-          <p className="text-xs text-muted-foreground">OpenAI API reachability.</p>
+          <p className="font-mono text-[11px] text-muted-foreground break-all">{data?.data_dir ?? '—'}</p>
         </StatCard>
       </div>
 

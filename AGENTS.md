@@ -98,7 +98,11 @@ cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q
 
 ## Version files to bump together on desktop ship
 
+All 7 sources must match (`scripts/check-version-sync.mjs` verifies):
+
 - `package.json`
 - `frontend/desktop/package.json`
 - `frontend/desktop/src-tauri/tauri.conf.json`
 - `frontend/desktop/src-tauri/Cargo.toml`
+- `frontend/desktop/src-tauri/Cargo.lock` (august-desktop entry)
+- `package-lock.json` (root + `packages['frontend/desktop']`)

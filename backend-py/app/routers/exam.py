@@ -26,7 +26,7 @@ def _db():
 async def generateExam(body: dict[str, object]):
     """Generate a new exam via Prefrontal. Topic can be a string or derived from uploaded files."""
     topic = as_str(body.get('topic')).strip()
-    count = min(as_int(body.get('count'), 5), 50)
+    count = max(1, min(as_int(body.get('count'), 5), 50))
     difficulty = as_str(body.get('difficulty'), 'medium')
     model_raw = body.get('model')
     if isinstance(model_raw, dict):
@@ -41,16 +41,38 @@ async def generateExam(body: dict[str, object]):
     sourceFiles = ''
     if files:
         import os
+        import tempfile
+        from pathlib import Path
+
+        # Only read files the user actually owns: inside the session
+        # workspace when one is given, else the system temp dir (mirrors
+        # the sandbox's no-workspace write gate). Arbitrary absolute paths
+        # are rejected (audit finding — arbitrary file disclosure).
+        ws = as_str(body.get('workspacePath')) or as_str(body.get('workspace_path'))
+        ws_root = Path(ws).resolve() if ws and os.path.isdir(ws) else None
+        tmp_root = Path(tempfile.gettempdir()).resolve()
 
         chunks = []
         for fp in files:
             path = as_str(fp)
-            if os.path.exists(path):
+            try:
+                p = Path(path).resolve()
+            except OSError:
+                continue
+            if not p.is_file():
+                continue
+            if ws_root is not None:
                 try:
-                    with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                        chunks.append(f.read()[:5000])
-                except Exception:
+                    p.relative_to(ws_root)
+                except ValueError:
                     continue
+            elif not p.is_absolute() or (tmp_root not in p.parents and p != tmp_root):
+                continue
+            try:
+                with open(p, 'r', encoding='utf-8', errors='ignore') as f:
+                    chunks.append(f.read()[:5000])
+            except Exception:
+                continue
         context = '\n\n'.join(chunks)[:10000]
         sourceFiles = json.dumps(files)
     if not topic:
@@ -176,7 +198,7 @@ async def answerQuestion(examId: int, body: dict[str, object]):
     ).fetchone()
     if not q:
         raise HTTPException(status_code=404, detail='Question not found')
-    isCorrect = 1 if selectedIndex == q['correct_index'] else 0
+    isCorrect = 1 if as_int(selectedIndex, -1) == as_int(q['correct_index'], -1) else 0
     conn.execute(
         "INSERT INTO exam_attempts (exam_id, question_id, selected_index, is_correct, answered_at) VALUES (?, ?, ?, ?, datetime('now'))",
         (examId, questionId, selectedIndex, isCorrect),
@@ -201,7 +223,10 @@ async def helpQuestion(examId: int, body: dict[str, object]):
         stem=q['stem'], options=options, userQuestion=ask or 'Explain this question.'
     )
     try:
-        conn.execute('UPDATE exam_attempts SET asked_for_help = 1 WHERE question_id = ?', (questionId,))
+        conn.execute(
+            'UPDATE exam_attempts SET asked_for_help = 1 WHERE question_id = ? AND exam_id = ?',
+            (questionId, examId),
+        )
         conn.commit()
     except Exception:
         pass

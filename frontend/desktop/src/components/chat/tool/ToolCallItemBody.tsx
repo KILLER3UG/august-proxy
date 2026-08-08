@@ -282,7 +282,11 @@ export function ToolCallItemBody({
   if (
     tool.pendingApproval &&
     approvalStatus !== 'confirmed' &&
-    !tool.pendingApproval.confirmationToken
+    // The Approve button needs the confirmation token the backend sends
+    // with `mutation_pending_confirmation` — the old condition was
+    // INVERTED, so the button never rendered when it could work (audit
+    // finding: pending mutations were unapprovable from the chat UI).
+    tool.pendingApproval.confirmationToken
   ) {
     parts.push(
       <div key="approval" className="mt-2">

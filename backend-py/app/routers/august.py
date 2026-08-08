@@ -200,7 +200,7 @@ async def manage_sessions(body: ActionBody):
     if action == 'create':
         s = wb.createWorkbenchSession()
         return {'ok': True, 'session': s.toDict()}
-    if action in ('delete', 'archive') and body.id:
+    if action == 'delete' and body.id:
         ok = wb.deleteWorkbenchSession(body.id)
         return {'ok': ok, 'id': body.id}
     if action == 'rename' and body.id and body.title:
@@ -210,6 +210,10 @@ async def manage_sessions(body: ActionBody):
         if not renamed:
             raise HTTPException(404, detail='Session not found')
         return {'ok': True, 'session': renamed.toDict()}
+    # Archive/restore/update are NOT implemented — 'archive' previously
+    # silently DELETED the session (data loss). Fail loudly instead.
+    if action in ('archive', 'restore', 'update'):
+        raise HTTPException(400, detail=f'action "{action}" is not implemented')
     return {'ok': True, 'sessions': wb.listWorkbenchSessions()}
 
 

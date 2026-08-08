@@ -152,6 +152,39 @@ def save_workbench_session_sot(
         raise
 
 
+def get_workbench_blob(session_id: str) -> dict[str, object] | None:
+    """Load ONE workbench session blob from SQLite by id, or None.
+
+    Used when a session was pruned from the in-memory map (the snapshot
+    keeps only the top-50 by recency) — replying to a pruned session must
+    resume the ORIGINAL conversation, not silently create a new one.
+    """
+    if not session_id:
+        return None
+    try:
+        conn = _conn()
+        row = conn.execute(
+            'SELECT workbench_blob FROM sessions WHERE id = ? '
+            'AND workbench_blob IS NOT NULL AND workbench_blob != \'\'',
+            (session_id,),
+        ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    try:
+        raw = row['workbench_blob'] if hasattr(row, 'keys') else row[0]
+    except (KeyError, IndexError, TypeError):
+        raw = row[0] if row else None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return data if isinstance(data, dict) and data.get('id') else None
+
+
 def list_workbench_blobs(limit: int = 200) -> list[dict[str, object]]:
     """Load workbench session blobs from SQLite (newest first)."""
     conn = _conn()

@@ -117,7 +117,10 @@ export function Providers() {
     setSaving(providerId);
     setSaveMsg(null);
     try {
-      await api.put('/api/config/activeProvider', { provider: providerId });
+      // PUT /api/config/activeProvider does not exist — the working route
+      // is POST /api/august/models/select (audit finding: the button always
+      // 404'd).
+      await api.post('/api/august/models/select', { provider: providerId });
       void refreshProviderCatalog(queryClient);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

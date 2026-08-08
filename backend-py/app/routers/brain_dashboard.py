@@ -355,7 +355,7 @@ async def brainSearch(q: str = Query(default='')) -> dict[str, object]:
                     'provider': 'facts',
                     'type': 'fact',
                     'title': as_str(f.get('key')) or as_str(f.get('fact_key')) or '',
-                    'text': as_str(f.get('value')) or as_str(f.get('fact_value')) or ''[:500],
+                    'text': (as_str(f.get('value')) or as_str(f.get('fact_value')) or '')[:500],
                     'score': as_float(f.get('confidence'), 1.0),
                     'key': as_str(f.get('key')) or as_str(f.get('fact_key')) or '',
                     'quality': {

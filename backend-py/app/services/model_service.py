@@ -383,7 +383,11 @@ async def _aggregateModels() -> list[dict[str, object]]:
                 continue
             for m_raw in as_list(entry.get('models'), []):
                 m = as_dict(m_raw)
-                mid = as_str(m['id'])
+                mid = as_str(m.get('id'), '')
+                if not mid:
+                    # A malformed model entry must never abort aggregation for
+                    # every other provider (audit finding) — skip it.
+                    continue
                 mid_l = mid.lower()
                 likely_reasoning = bool(
                     re.search(
@@ -403,7 +407,7 @@ async def _aggregateModels() -> list[dict[str, object]]:
                     {
                         'id': mid,
                         'name': as_str(m.get('name'), mid),
-                        'provider': entry['name'],
+                        'provider': as_str(entry.get('name'), '') or as_str(entry.get('id'), ''),
                         'contextWindow': _getContextWindow(
                             mid,
                             entry,

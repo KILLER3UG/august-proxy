@@ -49,8 +49,12 @@ export function SubagentRow({ agent, subagentBlock }: SubagentRowProps) {
 
   useEffect(() => {
     if (agent.status === 'running') {
+      // Normalize the start time: the backend seeds startedAt in epoch
+      // SECONDS while the SSE path stores ms — mixing units made the
+      // running timer display ~1.7e9 "seconds" (audit finding).
+      const startedMs = agent.startedAt > 1e12 ? agent.startedAt : agent.startedAt * 1000;
       const interval = setInterval(() => {
-        setElapsed((Date.now() - agent.startedAt) / 1000);
+        setElapsed((Date.now() - startedMs) / 1000);
       }, 200);
       return () => clearInterval(interval);
     }

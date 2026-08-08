@@ -457,6 +457,26 @@ async def resizeTerminalSession(sessionId: str, cols: int = 80, rows: int = 24) 
     return _summarize(session) if session else {'error': 'Session not found'}
 
 
+def _terminal_workspace_root(cwd: str) -> str | None:
+    """Derive the bound workspace from ``cwd`` (when the terminal runs
+    inside one) so one-shot commands get the same soft sandbox as the
+    workbench shell — without this, the terminal API was a second
+    execution surface outside the documented sandbox policy."""
+    try:
+        from app.services.workbench.sessions import list_workbench_sessions
+
+        cwd_res = os.path.normcase(os.path.abspath(cwd))
+        for summary in list_workbench_sessions():
+            ws = as_str(summary.get('workspacePath'), '')
+            if ws:
+                ws_res = os.path.normcase(os.path.abspath(ws))
+                if cwd_res == ws_res or cwd_res.startswith(ws_res + os.sep):
+                    return ws
+    except Exception:
+        pass
+    return None
+
+
 async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
     """Run a one-shot command and return output."""
     command = as_str(params.get('command'), '')
@@ -476,6 +496,23 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
                 'createdAt': _now(),
             }
             return {'status': 'approval_required', 'requestId': reqId, 'reason': danger}
+    # Soft sandbox for terminals bound to a workspace: block path escapes,
+    # redirects outside the workspace, and network prefixes (audit finding —
+    # this surface previously bypassed the sandbox entirely).
+    workspace = _terminal_workspace_root(cwd)
+    if workspace:
+        try:
+            from app.services.sandbox.backends.fallback import soft_preflight
+            from app.services.sandbox.policy import SandboxPolicy
+
+            denial = soft_preflight(
+                command,
+                SandboxPolicy(mode='workspace-write', workspace_root=workspace, network=False),
+            )
+            if denial:
+                return {'status': 'error', 'command': command, 'error': f'Sandbox blocked: {denial}'}
+        except Exception:
+            pass
     try:
         from app.lib.async_subprocess import (
             SubprocessAborted,

@@ -36,6 +36,7 @@ import { classifyTool } from '@/lib/tool-classify';
 import { pathBasename } from '@/lib/tool-labels';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { playReceiveChime } from '@/lib/chat-chime';
+import { getOrInitSessionStreamState } from './stream/session-stream-store';
 import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
 import { buildCompactionNoticeMessage } from '@/sections/chat/message/CompactionNoticeCard';
 import { setSessionContextUsed } from './context-used-store';
@@ -157,15 +158,26 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
 
   // Push the assistant placeholder into message state so the bubble
   // exists from frame 0. Persist to storage so refresh restores it.
+  // MERGE onto the existing store transcript instead of replacing it:
+  // callers can pass a trimmed chatHistory (regenerate / model-switch
+  // re-answer), and a wholesale replace wipes the whole conversation
+  // from view + persistence (audit P0).
   const placeholder: ChatMessage = {
     id: assistantMsgId,
     role: 'assistant',
     content: '',
     timestamp: new Date().toISOString(),
   };
-  const nextMessages = [...initialMessages, placeholder];
-  setMessages(nextMessages);
-  persistMessages(sessionId, nextMessages);
+  const prevMessages = getOrInitSessionStreamState(sessionId).messages ?? [];
+  const mergedMessages = prevMessages.some((m) => m.id === assistantMsgId)
+    ? prevMessages
+    : (() => {
+        const existingIds = new Set(prevMessages.map((m) => m.id));
+        const missing = initialMessages.filter((m) => !existingIds.has(m.id));
+        return [...prevMessages, ...missing, placeholder];
+      })();
+  setMessages(mergedMessages);
+  persistMessages(sessionId, mergedMessages);
   setSubagentPrompts(new Map());
 
   // ---- update / scheduleUpdate (throttled flush to React state) ----
@@ -700,6 +712,20 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       const warning = `⚠️ ${message || 'Warning'}`;
       // Push as a THINKING block with system:true — it collapses into the
       // thinking pack but does NOT demote the real final answer.
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: warning, system: true });
+      scheduleUpdate();
+    },
+    onContextPressure: ({ contextUsedPct, totalTokens, maxContext, remainingTokens }) => {
+      // Backend context-pressure warning: surface it as a system block so
+      // the user sees the window is nearly full (audit finding: the event
+      // was dropped at the SSE dispatcher).
+      const pct = Number(contextUsedPct);
+      const label = Number.isFinite(pct) && pct > 0 ? ` (${Math.round(pct)}% used)` : '';
+      const detail =
+        Number.isFinite(Number(totalTokens)) && Number(remainingTokens) > 0
+          ? ` — ${Number(remainingTokens).toLocaleString()} tokens left${Number(maxContext) ? ` of ${Number(maxContext).toLocaleString()}` : ''}`
+          : '';
+      const warning = `⚠️ Context window nearly full${label}${detail}. Consider compacting or starting a new session.`;
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: warning, system: true });
       scheduleUpdate();
     },

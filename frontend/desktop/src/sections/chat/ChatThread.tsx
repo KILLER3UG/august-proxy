@@ -890,8 +890,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   useEffect(() => {
     const handleModelSelected = async (e: Event) => {
-      const { modelId, provider } =
-        (e as CustomEvent<{ modelId?: string; provider?: string }>).detail ?? {};
+      const detail = (e as CustomEvent<{ modelId?: string; provider?: string; skipSwitch?: boolean; interrupted?: boolean }>).detail ?? {};
+      const { modelId, provider } = detail;
       if (!modelId || !provider) return;
       const model = models.find((m) => m.id === modelId);
       if (!model) return;
@@ -899,45 +899,68 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       const msgs = chatMessagesRef.current;
       const prev = selectedModelRef.current;
 
-      // Shared stop → handoff → apply flow (single source of truth with the
-      // composer model menu).
-      const { switchChatModel } = await import('./switch-model');
-      const { interrupted } = await switchChatModel({
-        sessionId: sid,
-        prevModel: prev,
-        nextModel: model,
-        streaming: streamingRef.current,
-        stopStream: async () => {
-          await stopRef.current();
-        },
-        getMessages: () => chatMessagesRef.current,
-        setMessages: (updater) => setChatMessagesRef.current(updater),
-        onModelApplied: (m) => {
-          setSelectedModel(m);
-          userSelectedRef.current = m.id;
-          try {
-            localStorage.setItem('august_last_model', JSON.stringify(m));
-          } catch {
-            /* silent */
-          }
-          if (sid) updateSessionModel(sid, m.id, m.provider);
-          toast.success(`Switched to ${m.name}`);
-        },
-      });
+      // The composer model menu applies the switch itself and re-dispatches
+      // with skipSwitch — only run the shared switch flow when this event is
+      // the original (model picker / voice) source.
+      if (!detail.skipSwitch) {
+        // Shared stop → handoff → apply flow (single source of truth with the
+        // composer model menu).
+        const { switchChatModel } = await import('./switch-model');
+        const { interrupted } = await switchChatModel({
+          sessionId: sid,
+          prevModel: prev,
+          nextModel: model,
+          streaming: streamingRef.current,
+          stopStream: async () => {
+            await stopRef.current();
+          },
+          getMessages: () => chatMessagesRef.current,
+          setMessages: (updater) => setChatMessagesRef.current(updater),
+          onModelApplied: (m) => {
+            setSelectedModel(m);
+            userSelectedRef.current = m.id;
+            try {
+              localStorage.setItem('august_last_model', JSON.stringify(m));
+            } catch {
+              /* silent */
+            }
+            if (sid) updateSessionModel(sid, m.id, m.provider);
+            toast.success(`Switched to ${m.name}`);
+          },
+        });
 
-      // 4) Auto-continue: re-answer the interrupted prompt with the new
-      //    model. The backend is truncated at the interrupted turn and the
-      //    re-send runs after re-render so the fresh generateAIResponse
-      //    closure (new modelForRequest) is used.
-      if (interrupted && sid) {
+        // 4) Auto-continue: re-answer the interrupted prompt with the new
+        //    model. The backend is truncated at the interrupted turn and the
+        //    re-send runs after re-render so the fresh generateAIResponse
+        //    closure (new modelForRequest) is used.
+        if (interrupted && sid) {
+          const lastUserIdx = [...msgs].map((m) => m.role).lastIndexOf('user');
+          if (lastUserIdx >= 0) {
+            const trimmed = msgs.slice(0, lastUserIdx + 1);
+            setChatMessagesRef.current(trimmed);
+            const wbId = resolveWorkbenchSessionId(sid);
+            void truncateWorkbenchSession(wbId, lastUserIdx).catch(() => undefined);
+            // Guard: if the user typed + sent a new message in the interim,
+            // do not clobber it with a stale auto-continue of the old prompt.
+            const expectedLen = trimmed.length;
+            window.setTimeout(() => {
+              if (chatMessagesRef.current.length !== expectedLen) return;
+              void generateRef.current?.(trimmed);
+            }, 0);
+          }
+        }
+        return;
+      }
+
+      // skipSwitch: the composer menu already applied the model; only the
+      // interrupted-turn auto-continue is requested here.
+      if (detail.interrupted && sid) {
         const lastUserIdx = [...msgs].map((m) => m.role).lastIndexOf('user');
         if (lastUserIdx >= 0) {
           const trimmed = msgs.slice(0, lastUserIdx + 1);
           setChatMessagesRef.current(trimmed);
           const wbId = resolveWorkbenchSessionId(sid);
           void truncateWorkbenchSession(wbId, lastUserIdx).catch(() => undefined);
-          // Guard: if the user typed + sent a new message in the interim,
-          // do not clobber it with a stale auto-continue of the old prompt.
           const expectedLen = trimmed.length;
           window.setTimeout(() => {
             if (chatMessagesRef.current.length !== expectedLen) return;
@@ -1291,6 +1314,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               existing={augPreview.existing}
               workspacePath={augPreview.workspacePath}
               sessionId={sessionId ?? undefined}
+              onClose={() => setAugPreview(null)}
             />
           </div>
         )}

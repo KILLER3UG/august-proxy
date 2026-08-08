@@ -51,10 +51,15 @@ export function useSubagentStream(sessionId: string | null): UseSubagentStreamRe
 
       // Update agent status from events
       if (event.taskId && (event.type === 'subagentCompleted' || event.type === 'subagentDone')) {
+        // `partial` is NOT full completion for tallies (backend semantics —
+        // a partially-failed batch must not render "2/2 agents complete",
+        // audit finding).
         const status =
           event.status === 'failed' || event.status === 'error' || event.status === 'cancelled'
             ? (event.status as SubagentInfo['status'])
-            : 'completed';
+            : event.status === 'partial'
+              ? 'partial'
+              : 'completed';
         setAgents((prev) =>
           prev.map((a) =>
             a.taskId === event.taskId

@@ -219,6 +219,13 @@ export function SessionList({
     return next;
   })();
 
+  /** Status for a session row: live maps are keyed by WORKBENCH id
+   *  (realtime bridge writes wb_*); look up both id forms so the pulse
+   *  dot shows for background work (audit finding). */
+  const statusFor = (s: { id: string; workbenchSessionId?: string }): SessionStatus | undefined =>
+    mergedSessionStates[s.id] ??
+    (s.workbenchSessionId ? mergedSessionStates[s.workbenchSessionId] : undefined);
+
   // Hidden file input for native folder picker (browser fallback)
   const dirInputRef = useRef<HTMLInputElement>(null);
 
@@ -467,7 +474,7 @@ export function SessionList({
                     session={s}
                     active={activeId === s.id}
                     pinned
-                    status={mergedSessionStates[s.id]}
+                    status={statusFor(s)}
                     folders={folders}
                     {...sessionRowHandlers(s)}
                   />
@@ -499,7 +506,7 @@ export function SessionList({
                       folder={folder}
                       count={folderSessions.length}
                       hasActiveSession={folderSessions.some(
-                        (s) => mergedSessionStates[s.id] === "working" || mergedSessionStates[s.id] === "streaming",
+                        (s) => statusFor(s) === "working" || statusFor(s) === "streaming",
                       )}
                       onToggleCollapse={() => toggleFolderCollapse(folder.id)}
                       onNewSession={() => onNewInFolder?.(folder.id)}
@@ -518,7 +525,7 @@ export function SessionList({
                               session={s}
                               active={activeId === s.id}
                               pinned={false}
-                              status={mergedSessionStates[s.id]}
+                              status={statusFor(s)}
                               folders={folders}
                               {...sessionRowHandlers(s)}
                             />
@@ -559,7 +566,7 @@ export function SessionList({
                               session={s}
                               active={activeId === s.id}
                               pinned={false}
-                              status={mergedSessionStates[s.id]}
+                              status={statusFor(s)}
                               folders={folders}
                               {...sessionRowHandlers(s)}
                             />

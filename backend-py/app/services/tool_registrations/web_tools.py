@@ -105,46 +105,97 @@ async def _emit_progress(
         pass
 
 
+def _is_private_ip(ip) -> bool:
+    """True for loopback / private / link-local / reserved / unspecified IPs."""
+    return bool(
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _is_private_url(url: str) -> bool:
+    """SSRF guard: reject loopback, private, link-local, and metadata
+    addresses — including IPv6, decimal/hex forms, and hosts that RESOLVE
+    to private IPs (the old startswith prefix check missed all of those,
+    and redirects were never re-checked)."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return True
+    host = (parsed.hostname or '').strip().strip('[]')
+    if not host:
+        return True
+    if host.lower() == 'localhost':
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return _is_private_ip(ip)
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception:
+        # Unresolvable — safest to block; a legit public host will resolve.
+        return True
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if _is_private_ip(ip):
+            return True
+    return False
+
+
 async def _fetchUrlContent(url: str, maxLength: int = 50000, timeout_s: float = 30.0) -> str:
-    """Fetch a URL and return its content as Markdown (no aux compress)."""
+    """Fetch a URL and return its content as Markdown (no aux compress).
+
+    SSRF-guarded per hop: the URL and every redirect target are checked
+    against private/local/loopback ranges before the request is made.
+    """
     import httpx
 
-    blockedPrefixes = [
-        'http://localhost',
-        'http://127.0.0.1',
-        'http://10.',
-        'http://172.16.',
-        'http://192.168.',
-        'https://localhost',
-    ]
-    if any((url.startswith(prefix) for prefix in blockedPrefixes)):
-        return f'Error: Private/local network addresses are blocked: {url}'
-    try:
-        timeout = httpx.Timeout(timeout_s, connect=min(5.0, timeout_s))
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            resp = await client.get(
-                url,
-                headers={
-                    'User-Agent': 'August-Proxy/1.0',
-                    'Accept': 'text/html,text/markdown,text/plain,*/*',
-                },
-            )
+    timeout = httpx.Timeout(timeout_s, connect=min(5.0, timeout_s))
+    headers = {
+        'User-Agent': 'August-Proxy/1.0',
+        'Accept': 'text/html,text/markdown,text/plain,*/*',
+    }
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+        current = url
+        for _hop in range(6):
+            if _is_private_url(current):
+                return f'Error: Private/local network addresses are blocked: {current}'
+            try:
+                resp = await client.get(current, headers=headers)
+            except httpx.TimeoutException:
+                return f'Error: Timed out fetching {url}'
+            except httpx.RequestError as exc:
+                return f'Error: Request failed fetching {url}: {exc}'
+            if resp.is_redirect and resp.headers.get('location'):
+                current = str(httpx.URL(current).join(resp.headers['location']))
+                continue
+            break
+        else:
+            return f'Error: Too many redirects fetching {url}'
+        try:
             resp.raise_for_status()
-            contentType = as_str(resp.headers.get('content-type'), '')
-            raw = resp.content[:_FETCH_BODY_CAP_BYTES]
-            text = raw.decode(resp.encoding or 'utf-8', errors='replace')
-            if 'text/html' in contentType:
-                loop = asyncio.get_running_loop()
-                text = await loop.run_in_executor(_search_pool, _htmlToMarkdown, text)
-            return f'URL: {url}\nStatus: {resp.status_code}\n\n{text[:maxLength]}'
-    except httpx.TimeoutException:
-        return f'Error: Timed out fetching {url}'
-    except httpx.HTTPStatusError as exc:
-        return f'Error: HTTP {exc.response.status_code} fetching {url}'
-    except httpx.RequestError as exc:
-        return f'Error: Request failed: {exc}'
-    except Exception as exc:
-        return f'Error: {exc}'
+        except httpx.HTTPStatusError as exc:
+            return f'Error: HTTP {exc.response.status_code} fetching {url}'
+        contentType = as_str(resp.headers.get('content-type'), '')
+        raw = resp.content[:_FETCH_BODY_CAP_BYTES]
+        text = raw.decode(resp.encoding or 'utf-8', errors='replace')
+        if 'text/html' in contentType:
+            loop = asyncio.get_running_loop()
+            text = await loop.run_in_executor(_search_pool, _htmlToMarkdown, text)
+        return f'URL: {url}\nStatus: {resp.status_code}\n\n{text[:maxLength]}'
 
 
 async def _webFetch(

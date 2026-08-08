@@ -88,6 +88,9 @@ def run_migrations(conn: sqlite3.Connection) -> int:
             logger.warning('Migration %03d (%s) failed: %s', version, name, exc)
             # Do not re-raise — allow app to start with partial schema.
             # The migration will be retried on next boot.
-            break
+            # CONTINUE to later migrations: a failing ALTER (e.g. duplicate
+            # column on a DB that already has it) must not block the rest of
+            # the chain (007–012) forever (audit finding).
+            continue
 
     return newly_applied

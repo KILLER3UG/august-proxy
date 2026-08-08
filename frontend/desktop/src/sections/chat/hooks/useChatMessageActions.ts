@@ -146,7 +146,10 @@ export function useChatMessageActions({
       const trimmed = messages.slice(0, userIndex + 1);
       setMessages(trimmed);
       persistMessages(sessionId, trimmed);
-      await generateAIResponse([msg]);
+      // Pass the FULL trimmed prefix — a partial list (e.g. just the user
+      // message) makes the stream store REPLACE the transcript and wipes
+      // the whole conversation from view + persistence (audit P0).
+      await generateAIResponse(trimmed);
     },
     [streaming, messages, setMessages, sessionId, generateAIResponse, truncateBackend],
   );

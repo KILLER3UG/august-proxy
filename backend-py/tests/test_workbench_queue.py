@@ -115,11 +115,18 @@ class TestDrain:
         assert session.queuedUserMessages == []
 
     def testDrainEmitsInjectedEvents(self, session):
+        """Each drained queued message is emitted as userMessageInjected SSE
+        (audit fix — they were previously only appended to the event log,
+        so the UI never rendered queued messages as inline bubbles)."""
         wb.enqueueUserMessage(session.id, 'first')
         wb.enqueueUserMessage(session.id, 'second')
         captured = []
-        wb.drainQueuedMessages(session.id, emit=captured.append)
-        assert captured == []
+        drained = wb.drainQueuedMessages(session.id, emit=captured.append)
+        assert len(captured) == 2
+        assert [e['type'] for e in captured] == ['userMessageInjected', 'userMessageInjected']
+        assert [e['text'] for e in captured] == ['first', 'second']
+        assert all(e['sessionId'] == session.id for e in captured)
+        assert len(drained) == 2
 
     def testDrainEmptyReturnsEmpty(self, session):
         drained = wb.drainQueuedMessages(session.id)
