@@ -53,6 +53,9 @@ import {
   ArrowUpCircle,
   Bell,
   HeartPulse,
+  Wand2,
+  Database,
+  Stethoscope,
 } from 'lucide-react';
 
 /** Visibility tier for the rail. `basic` items are always shown; the
@@ -162,6 +165,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['accounts', 'user'],
   },
   {
+    id: 'ai-setup',
+    label: 'AI Setup',
+    description: 'Guided first-run wizard: connect a provider, test it, pick models, and choose a safety mode.',
+    icon: Wand2,
+    category: 'general',
+    tier: 'basic',
+    // Note: 'onboarding' is owned by profile-preferences — this section is
+    // reached via 'wizard' / 'setup' / 'first run' instead.
+    keywords: ['setup', 'wizard', 'getting started', 'first run', 'beginner', 'welcome'],
+  },
+  {
     id: 'profile-preferences',
     label: 'Appearance & Behavior',
     description: 'Theme, appearance, text size, presets, keyboard shortcuts, and onboarding.',
@@ -200,6 +214,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'basic',
     keywords: ['update', 'release', 'version', 'download app', 'upgrade', 'changelog'],
     legacyAliases: ['updates', 'updater', 'version', 'about'],
+  },
+  {
+    id: 'privacy',
+    label: 'Data & Privacy',
+    description: 'What August stores on this device — export, purge memories, clear logs, and delete usage.',
+    icon: Database,
+    category: 'general',
+    tier: 'basic',
+    // Note: 'delete' is owned by skills; 'history' by conversations-history.
+    // This section is reached via its own vocabulary.
+    keywords: ['privacy', 'data', 'export', 'retention', 'purge', 'wipe', 'cleanup', 'clear data', 'erase'],
   },
 
   /* ── Intelligence ────────────────────────────────────────────── */
@@ -446,6 +471,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // 'error' by conversation-inspector. This section is reached via its
     // own vocabulary: win/pass rates, latency, fleet, regression.
     keywords: ['reliability', 'win rate', 'pass rate', 'latency', 'fleet', 'trend', 'regression', 'harness'],
+  },
+  {
+    id: 'health-simulator',
+    label: 'Provider Health Simulator',
+    description: 'Preflight a provider + model: connectivity, tool support, and fallback route before relying on it.',
+    icon: Stethoscope,
+    category: 'activity',
+    tier: 'advanced',
+    // Note: 'health' is owned by system-health; 'test'/'connect' are not
+    // claimed keywords — this section owns the simulator vocabulary.
+    keywords: ['simulate', 'simulator', 'probe', 'preflight', 'diagnose', 'tool support', 'fallback route'],
   },
   /* ── Security & Access ──────────────────────────────────────── */
   {

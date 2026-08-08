@@ -638,15 +638,12 @@ async def deleteModel(providerId: str, modelId: str):
     raise HTTPException(status_code=404, detail='Provider not found')
 
 
-@router.post('/{providerId}/models/{modelId:path}/test')
-async def testModel(providerId: str, modelId: str):
-    """Probe a model with a real chat request.
-
-    Instructs the model to reply with exactly ``Connected!``.
-    Returns ``success: true`` only when the trimmed reply matches that
-    string. Any upstream/auth/billing failure is returned as
-    ``success: false`` with the exact error message.
-    """
+async def _probe_connectivity(
+    provider: dict[str, object], model: str
+) -> dict[str, object]:
+    """Shared connectivity probe (Test button + health simulator): a real
+    chat request expecting an exact reply. Returns
+    ``{success, latencyMs, error, content}``."""
     import time
 
     from app.services.workbench.providers import (
@@ -654,38 +651,7 @@ async def testModel(providerId: str, modelId: str):
         call_openai_workbench,
         is_anthropic_provider,
         is_openai_provider,
-        resolve_chat_llm,
     )
-
-    # Prefer explicit provider id/name, then model id ownership.
-    provider, resolved_model = resolve_chat_llm(
-        model=modelId,
-        model_provider=providerId,
-        session_provider=providerId,
-        session_model=modelId,
-    )
-    if not provider:
-        return {
-            'success': False,
-            'latencyMs': 0,
-            'error': f'Provider "{providerId}" not found or has no API key configured.',
-            'content': None,
-        }
-
-    # Ensure the resolved provider matches the one the user clicked when possible.
-    pid = as_str(provider.get('id'))
-    pname = as_str(provider.get('name'))
-    if providerId and providerId not in (pid, pname) and providerId.lower() not in (
-        pid.lower(),
-        pname.lower(),
-    ):
-        # Still try the named provider first for a clearer error
-        from app.providers import resolver as providerResolver
-
-        explicit = providerResolver.resolve(providerId)
-        if explicit:
-            provider = explicit
-            resolved_model = modelId
 
     t0 = time.perf_counter()
     messages: list[dict[str, object]] = [
@@ -704,7 +670,7 @@ async def testModel(providerId: str, modelId: str):
             resp = await call_anthropic_workbench(
                 messages,
                 system,
-                resolved_model or modelId,
+                model,
                 [],
                 'low',
                 provider=provider,
@@ -719,7 +685,7 @@ async def testModel(providerId: str, modelId: str):
             resp = await call_openai_workbench(
                 messages,
                 system,
-                resolved_model or modelId,
+                model,
                 [],
                 'low',
                 provider=provider,
@@ -731,7 +697,7 @@ async def testModel(providerId: str, modelId: str):
             return {
                 'success': False,
                 'latencyMs': 0,
-                'error': f'Unsupported API format for provider "{pname or providerId}".',
+                'error': f'Unsupported API format for provider "{as_str(provider.get("name")) or model}".',
                 'content': None,
             }
     except Exception as exc:
@@ -770,7 +736,7 @@ async def testModel(providerId: str, modelId: str):
             'success': False,
             'latencyMs': latency_ms,
             'error': (
-                f'Model "{modelId}" returned an empty response. '
+                f'Model "{model}" returned an empty response. '
                 'Check the model id, API key, and provider billing/credits.'
             ),
             'content': None,
@@ -788,3 +754,225 @@ async def testModel(providerId: str, modelId: str):
         'content': text[:200],
         'error': None,
     }
+
+
+async def _probe_tool_support(
+    provider: dict[str, object], model: str
+) -> dict[str, object]:
+    """Tool-support probe: expose one trivial function and ask the model to
+    call it. Success = the model emitted a tool call (not just prose)."""
+    import time
+
+    from app.services.workbench.providers import (
+        call_anthropic_workbench,
+        call_openai_workbench,
+        is_anthropic_provider,
+        is_openai_provider,
+    )
+
+    # Each upstream family expects its own tool wire format.
+    if is_anthropic_provider(provider):
+        tools: list[dict[str, object]] = [
+            {
+                'name': 'probe_ping',
+                'description': 'Report that the model supports tool calling. Reply by calling this function.',
+                'input_schema': {
+                    'type': 'object',
+                    'properties': {'note': {'type': 'string', 'description': 'free-form note'}},
+                },
+            }
+        ]
+    elif is_openai_provider(provider):
+        tools = [
+            {
+                'type': 'function',
+                'function': {
+                    'name': 'probe_ping',
+                    'description': 'Report that the model supports tool calling. Reply by calling this function.',
+                    'parameters': {
+                        'type': 'object',
+                        'properties': {'note': {'type': 'string', 'description': 'free-form note'}},
+                    },
+                },
+            }
+        ]
+    else:
+        return {'success': False, 'latencyMs': 0, 'detail': 'Unsupported API format — cannot probe tools'}
+
+    t0 = time.perf_counter()
+    messages: list[dict[str, object]] = [
+        {
+            'role': 'user',
+            'content': 'Use the probe_ping function to confirm tool calling works. Call it now.',
+        }
+    ]
+    system = 'You are a tool-support probe. Call the provided function once — do not explain in prose.'
+    try:
+        if is_anthropic_provider(provider):
+            resp = await call_anthropic_workbench(
+                messages, system, model, tools, 'low', provider=provider, emit=None, thinking_enabled=False
+            )
+        else:
+            resp = await call_openai_workbench(
+                messages, system, model, tools, 'low', provider=provider, emit=None, thinking_enabled=False
+            )
+    except Exception as exc:
+        return {
+            'success': False,
+            'latencyMs': int((time.perf_counter() - t0) * 1000),
+            'detail': f'Tool probe failed: {str(exc) or "unknown error"}',
+        }
+
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+    err = as_str(resp.get('error')) if isinstance(resp, dict) else ''
+    if err:
+        return {'success': False, 'latencyMs': latency_ms, 'detail': err}
+    tool_uses = as_list(resp.get('tool_uses'), []) if isinstance(resp, dict) else []
+    if tool_uses:
+        names = ', '.join(as_str(as_dict(t).get('name') or as_str(t)) for t in tool_uses[:3])
+        return {'success': True, 'latencyMs': latency_ms, 'detail': f'Emitted tool call: {names}'}
+    text = as_str(resp.get('text') if isinstance(resp, dict) else '').strip()
+    return {
+        'success': False,
+        'latencyMs': latency_ms,
+        'detail': text[:160] or 'Model replied without calling the function — tool support not confirmed',
+    }
+
+
+def _probe_fallback(provider: dict[str, object], model: str) -> dict[str, object]:
+    """Fallback-route check: where does this model resolve today, and is
+    that resolution itself a fallback (alias → active provider)?"""
+    from app.providers.model_resolver import resolve_or_fallback
+
+    resolved = resolve_or_fallback(model, provider_hint=as_str(provider.get('id')))
+    if not resolved:
+        return {'success': False, 'detail': 'No active provider available to resolve this model'}
+    alias = as_str(resolved.get('alias'))
+    target = as_str(resolved.get('model'))
+    target_provider = as_str(resolved.get('provider'))
+    is_fallback = bool(resolved.get('is_fallback'))
+    route = f"alias '{alias}' → {target_provider}/{target}"
+    return {
+        'success': True,
+        'detail': f"{route} ({'fallback' if is_fallback else 'direct'})",
+    }
+
+
+@router.post('/simulate')
+async def simulateProvider(body: dict):
+    """Provider health simulator: connectivity + tool support + fallback.
+
+    Body: ``{"providerId": str, "modelId": str}``. Runs three checks the
+    way August would actually use the route — a real chat probe, a
+    tool-call probe, and alias/fallback resolution — and returns
+    per-check results plus an overall ``healthy`` verdict.
+    """
+    from app.services.workbench.providers import resolve_chat_llm
+
+    providerId = as_str(body.get('providerId'))
+    modelId = as_str(body.get('modelId'))
+    if not providerId or not modelId:
+        return {'healthy': False, 'checks': [], 'error': 'providerId and modelId are required'}
+
+    provider, resolved_model = resolve_chat_llm(
+        model=modelId,
+        model_provider=providerId,
+        session_provider=providerId,
+        session_model=modelId,
+    )
+    if not provider:
+        return {
+            'healthy': False,
+            'checks': [],
+            'error': f'Provider "{providerId}" not found or has no API key configured.',
+        }
+
+    checks: list[dict[str, object]] = []
+    connectivity = await _probe_connectivity(provider, resolved_model or modelId)
+    checks.append(
+        {
+            'id': 'connectivity',
+            'name': 'Connectivity',
+            'success': bool(connectivity.get('success')),
+            'latencyMs': as_int(connectivity.get('latencyMs'), 0),
+            'detail': as_str(connectivity.get('error') or connectivity.get('content'))[:300] or 'OK',
+        }
+    )
+
+    tool = await _probe_tool_support(provider, resolved_model or modelId)
+    checks.append(
+        {
+            'id': 'tool-support',
+            'name': 'Tool support',
+            'success': bool(tool.get('success')),
+            'latencyMs': as_int(tool.get('latencyMs'), 0),
+            'detail': as_str(tool.get('detail'))[:300],
+        }
+    )
+
+    fallback = _probe_fallback(provider, resolved_model or modelId)
+    checks.append(
+        {
+            'id': 'fallback',
+            'name': 'Fallback route',
+            'success': bool(fallback.get('success')),
+            'latencyMs': 0,
+            'detail': as_str(fallback.get('detail'))[:300],
+        }
+    )
+
+    # Connectivity is the hard gate; tool support is a capability (some
+    # providers legitimately lack it) — report healthy when connected and
+    # resolvable, and let the user weigh the tool probe themselves.
+    healthy = bool(connectivity.get('success')) and bool(fallback.get('success'))
+    return {
+        'healthy': healthy,
+        'provider': as_str(provider.get('name') or provider.get('id')),
+        'model': resolved_model or modelId,
+        'apiFormat': as_str(provider.get('apiFormat') or ''),
+        'checks': checks,
+    }
+
+
+@router.post('/{providerId}/models/{modelId:path}/test')
+async def testModel(providerId: str, modelId: str):
+    """Probe a model with a real chat request.
+
+    Instructs the model to reply with exactly ``Connected!``.
+    Returns ``success: true`` only when the trimmed reply matches that
+    string. Any upstream/auth/billing failure is returned as
+    ``success: false`` with the exact error message.
+    """
+    from app.services.workbench.providers import resolve_chat_llm
+
+    # Prefer explicit provider id/name, then model id ownership.
+    provider, resolved_model = resolve_chat_llm(
+        model=modelId,
+        model_provider=providerId,
+        session_provider=providerId,
+        session_model=modelId,
+    )
+    if not provider:
+        return {
+            'success': False,
+            'latencyMs': 0,
+            'error': f'Provider "{providerId}" not found or has no API key configured.',
+            'content': None,
+        }
+
+    # Ensure the resolved provider matches the one the user clicked when possible.
+    pid = as_str(provider.get('id'))
+    if providerId and providerId not in (pid, as_str(provider.get('name'))) and providerId.lower() not in (
+        pid.lower(),
+        as_str(provider.get('name')).lower(),
+    ):
+        # Still try the named provider first for a clearer error
+        from app.providers import resolver as providerResolver
+
+        explicit = providerResolver.resolve(providerId)
+        if explicit:
+            provider = explicit
+            resolved_model = modelId
+
+    return await _probe_connectivity(provider, resolved_model or modelId)
+

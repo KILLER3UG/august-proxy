@@ -49,10 +49,22 @@ import { AddedMemorySection } from './AddedMemorySection';
 import { RecurringTasksSection } from './RecurringTasksSection';
 import { PromptTemplatesSection } from './PromptTemplatesSection';
 import { ReliabilitySection } from './ReliabilitySection';
+import { AISetupWizardSection } from './AISetupWizardSection';
+import { PrivacySection } from './PrivacySection';
+import { HealthSimulatorSection } from './HealthSimulatorSection';
+import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
 const DEFAULT_SECTION_ID = 'model-providers';
+
+/** While first-run setup is incomplete (no provider + workspace yet),
+ *  bare /settings lands on the guided AI Setup wizard instead. */
+function useLandingSectionId(): string {
+  const onboarding = useProviderOnboardingState();
+  const setupPending = !onboarding.dismissed && !onboarding.isLoading && !onboarding.allCoreDone;
+  return setupPending ? 'ai-setup' : DEFAULT_SECTION_ID;
+}
 
 export function SettingsPage() {
   const params = useParams<{ section?: string }>();
@@ -60,7 +72,8 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const rawSection = params.section;
-  const activeId = rawSection ? resolveLegacyTab(rawSection) : DEFAULT_SECTION_ID;
+  const landingSectionId = useLandingSectionId();
+  const activeId = rawSection ? resolveLegacyTab(rawSection) : landingSectionId;
   const active: SettingsSection =
     SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0];
   const prevSectionRef = useRef(active.id);
@@ -80,7 +93,7 @@ export function SettingsPage() {
     }
 
     if (!rawSection) {
-      void navigate(`/settings/${DEFAULT_SECTION_ID}`, { replace: true });
+      void navigate(`/settings/${landingSectionId}`, { replace: true });
       return;
     }
     // Rewrite legacy aliases in the URL (e.g. /settings/traffic → traffic-activity).
@@ -88,7 +101,7 @@ export function SettingsPage() {
       const qs = sectionQuery ? `?section=${encodeURIComponent(sectionQuery)}` : '';
       void navigate(`/settings/${active.id}${qs}`, { replace: true });
     }
-  }, [rawSection, active.id, navigate, searchParams]);
+  }, [rawSection, active.id, navigate, searchParams, landingSectionId]);
 
   // Tab switch: remounted section queries may still be within the global
   // 5s staleTime. Invalidate so the newly active tab always hits the network
@@ -163,6 +176,9 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'app-updates': AppUpdatesWrapper,
   'prompt-templates': PromptTemplatesWrapper,
   reliability: ReliabilityWrapper,
+  'ai-setup': AISetupWizardWrapper,
+  privacy: PrivacyWrapper,
+  'health-simulator': HealthSimulatorWrapper,
 };
 
 function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
@@ -196,6 +212,9 @@ function PythonSandboxWrapper() { return <PythonSandboxSection />; }
 function AgentSandboxWrapper() { return <AgentSandboxSection />; }
 function PromptTemplatesWrapper() { return <PromptTemplatesSection />; }
 function ReliabilityWrapper() { return <ReliabilitySection />; }
+function AISetupWizardWrapper({ active }: SectionProps) { return <AISetupWizardSection active={active} />; }
+function PrivacyWrapper() { return <PrivacySection />; }
+function HealthSimulatorWrapper() { return <HealthSimulatorSection />; }
 
 /** Placeholder for sections not yet wired. With all 10 entries now
  *  mapped, this only renders for genuinely-unknown :section params. */

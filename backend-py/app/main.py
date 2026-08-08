@@ -295,6 +295,7 @@ from app.routers import models as modelsRoutes  # noqa: E402
 from app.routers import monitor_feature_flow as monitorFeatureFlowRoutes  # noqa: E402
 from app.routers import monitoring as monitoringRoutes  # noqa: E402
 from app.routers import preview as previewRoutes  # noqa: E402
+from app.routers import privacy as privacyRoutes  # noqa: E402
 from app.routers import providers as providersRoutes  # noqa: E402
 from app.routers import proxy as proxyRoutes  # noqa: E402
 from app.routers import realtime as realtimeRoutes  # noqa: E402
@@ -314,6 +315,7 @@ app.include_router(configRoutes.router)
 app.include_router(hooksRoutes.router)
 app.include_router(harnessRoutes.router)
 app.include_router(providersRoutes.router)
+app.include_router(privacyRoutes.router)
 app.include_router(skillsRoutes.router)
 app.include_router(curatorRoutes.router)
 app.include_router(modelsRoutes.router)

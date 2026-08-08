@@ -1,7 +1,8 @@
 /* ── DebateView — round controls + turn orchestrator for the active debate ── */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Gavel, Pause, Play, Square, X } from 'lucide-react';
+import { toast } from 'sonner';
 import type { WorkbenchSession } from '@/types/workbench';
 import {
   useDebateStore,
@@ -11,9 +12,11 @@ import {
   debateRoundMessage,
   debateJudgeMessage,
   type DebateRun,
+  type DebateLane,
 } from './debate-store';
 import { startChatStream } from '../chat-stream-manager';
 import { getOrInitSessionStreamState } from '../stream/session-stream-store';
+import { api } from '@/api/client';
 import type { ChatMessage } from '@/types/chat';
 
 function laneUserMessage(run: DebateRun, text: string): ChatMessage {
@@ -68,6 +71,34 @@ export function DebateView({
   const run = useDebateStore((s) => s.run);
   const ensureRef = useRef(ensureWorkbenchSession);
   ensureRef.current = ensureWorkbenchSession;
+
+  // Verdict recording: one click per finished debate → routing evidence.
+  // The arena archive + reliability dashboard consume these rows, so
+  // judged debates feed the same loop as arena comparisons.
+  const [postingWinner, setPostingWinner] = useState<string | null>(null);
+  const [winnerRecorded, setWinnerRecorded] = useState(false);
+
+  const recordWinner = async (lane: DebateLane) => {
+    if (!run || winnerRecorded) return;
+    const losers = run.models
+      .filter((m) => m.modelId !== lane.modelId)
+      .map((m) => ({ modelId: m.modelId, provider: m.provider }));
+    setPostingWinner(lane.modelId);
+    try {
+      await api.post('/api/brain/routing/arena', {
+        sessionId: run.sessionId,
+        prompt: run.prompt,
+        winner: { modelId: lane.modelId, provider: lane.provider },
+        losers,
+      });
+      setWinnerRecorded(true);
+      toast.success('Verdict recorded to routing evidence');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not record verdict');
+    } finally {
+      setPostingWinner(null);
+    }
+  };
 
   // Orchestrator: advance when a turn we initiated finishes.
   useEffect(() => {
@@ -252,6 +283,27 @@ export function DebateView({
             </>
           )}
         </div>
+
+        {finished && !winnerRecorded ? (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-white/[0.06]">
+            <span className="text-[10px] text-muted-foreground/70">Who made the better case?</span>
+            {run.models.map((m) => (
+              <button
+                key={m.modelId}
+                type="button"
+                disabled={postingWinner !== null}
+                onClick={() => void recordWinner(m)}
+                className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-1 text-[10px] text-foreground hover:bg-muted disabled:opacity-50"
+                data-testid={`debate-winner-${m.modelId}`}
+              >
+                {postingWinner === m.modelId ? 'Recording…' : m.modelName}
+              </button>
+            ))}
+            <span className="text-[10px] text-muted-foreground/50">
+              Feeds the routing-evidence loop.
+            </span>
+          </div>
+        ) : null}
       </div>
     </div>
   );

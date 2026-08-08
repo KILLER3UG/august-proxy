@@ -145,6 +145,44 @@ Search results should visibly label Advanced and Developer settings.
   tones; 14-day turn-volume/win-rate bars; recent harness eval runs
   (PASS/FAIL). Empty states explain the data sources instead of dead
   charts. Fed by `/api/brain/harness/trends` + `/api/brain/harness/evals`.
-- **Parked, still open**: guided AI Setup wizard as the `/settings` landing,
-  Data & Privacy center, provider health simulator, first-run safety
-  choice, image attachment source-path preservation.
+- **Parked, still open**: Data & Privacy center, provider health simulator,
+  first-run safety choice, image attachment source-path preservation.
+
+## Done in the wizard + privacy + simulator pass
+
+- **AI Setup wizard** — new `/settings/ai-setup` section (Essentials, basic
+  tier) that becomes the landing section for bare `/settings` while first-run
+  setup is incomplete (no provider + workspace yet; same state that drives the
+  onboarding checklist). Six guided steps: add provider (embeds the real
+  `AddProviderForm`) → test connection (strict "Connected!" probe) → discover
+  models → pick default model (`august_last_model`) → **safety mode choice**
+  (`read-only` / `workspace-write` / `danger-full-access`, persisted to
+  `august_last_sandbox_mode` — the same key new sessions read, so the
+  first-run safety choice is live) + workspace folder picker → start chatting
+  (marks onboarding done). "Skip setup" leaves the landing.
+- **Data & Privacy center** — new `/settings/privacy` section (Essentials)
+  backed by a new `app/routers/privacy.py`:
+  - `GET /api/privacy/summary` — counts of facts, auto-memories, heuristics,
+    proposals, timeline, sessions, messages, usage events, audit events,
+    routing evidence, sub-agent runs, observation screenshots, DB size.
+  - `POST /api/privacy/export` — one readable JSON bundle (memories, usage
+    by model, sessions, messages) written to the backend data dir.
+  - `POST /api/privacy/purge-memories` — erase the agent's memory of you
+    (facts/auto-memories/heuristics/proposals/timeline; system KV kept).
+  - `POST /api/privacy/clear-logs` — audit/config/guardrail/consolidation/
+    friction tables + observation PNGs.
+  - `POST /api/privacy/delete-usage` and `POST /api/privacy/delete-sessions`
+    (the latter cascade-aware through `delete_workbench_session`).
+  - UI: storage stat cards + confirm-gated action rows that report exactly
+    what was removed.
+- **Provider Health Simulator** — new `/settings/health-simulator` section
+  (Diagnostics, advanced) + `POST /api/providers/simulate`: three real probes
+  (connectivity via the shared strict probe, tool support via a
+  `probe_ping` tool call, fallback route via `resolve_or_fallback`).
+  `testModel` now shares `_probe_connectivity` (behavior unchanged).
+- **Debate verdicts feed the evidence loop** — finished debates get a "who
+  made the better case?" winner row that POSTs to `/api/brain/routing/arena`
+  (winner ok=1, losers ok=0), so judged debates count like arena comparisons
+  in the reliability dashboard + arena archive.
+- **Parked, still open**: image attachment source-path preservation (needs
+  Tauri dialog plumbing).
