@@ -12,6 +12,9 @@ export interface KanbanCard {
   column: KanbanColumnId;
   agentId?: string;
   sessionId?: string;
+  /** Sub-agent run task id (multi-agent teams) — lets the board track a
+   *  card's live run status and auto-advance it on completion. */
+  taskId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -22,7 +25,7 @@ interface KanbanState {
   hydrate: () => void;
   addCard: (title: string, column?: KanbanColumnId, meta?: Partial<KanbanCard>) => KanbanCard;
   moveCard: (id: string, column: KanbanColumnId) => void;
-  updateCard: (id: string, patch: Partial<Pick<KanbanCard, 'title' | 'body' | 'agentId'>>) => void;
+  updateCard: (id: string, patch: Partial<Pick<KanbanCard, 'title' | 'body' | 'agentId' | 'taskId' | 'sessionId'>>) => void;
   removeCard: (id: string) => void;
   clearDone: () => void;
 }
@@ -72,6 +75,7 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
       column,
       agentId: meta.agentId,
       sessionId: meta.sessionId,
+      taskId: meta.taskId,
       createdAt: ts,
       updatedAt: ts,
     };

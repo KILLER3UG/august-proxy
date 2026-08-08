@@ -22,5 +22,8 @@ describe('SessionListNav', () => {
     fireEvent.click(screen.getByTestId('sidebar-nav-runs'));
     expect(onNavigate).toHaveBeenCalledWith('/runs');
 
+    fireEvent.click(screen.getByTestId('sidebar-nav-board'));
+    expect(onNavigate).toHaveBeenCalledWith('/board');
+
   });
 });

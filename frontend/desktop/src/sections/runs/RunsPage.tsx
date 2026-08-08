@@ -6,6 +6,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Clock,
   Coins,
@@ -14,9 +15,20 @@ import {
   MessageSquare,
   Plus,
   RefreshCw,
+  RotateCcw,
+  Square,
 } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
+import {
+  startChatStream,
+  stopChatStream,
+  getOrInitSessionStreamState,
+  resolveUiSessionId,
+} from '@/sections/chat/chat-stream-manager';
+import { getWorkbenchSession } from '@/api/workbench';
+import { normalizeWorkbenchSession } from '@/lib/workbench-plan';
+import type { ChatMessage } from '@/types/chat';
 
 interface WorkbenchRun {
   id: string;
@@ -114,6 +126,7 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
 export function RunsPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>('all');
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const { data, isFetching } = useQuery<WorkbenchRun[]>({
     queryKey: ['workbench-runs'],
@@ -127,6 +140,70 @@ export function RunsPage() {
     },
     staleTime: 2_000,
   });
+
+  /** Re-send the run's last user message as a fresh turn (same session,
+   *  same model — the backend appends the message like a normal send). */
+  const retryRun = async (run: WorkbenchRun) => {
+    const uiId = resolveUiSessionId(run.id);
+    const msgs = getOrInitSessionStreamState(uiId).messages ?? [];
+    const lastUserIdx = msgs.map((m) => m.role).lastIndexOf('user');
+    let content = '';
+    let chatHistory: ChatMessage[] | undefined;
+    if (lastUserIdx !== -1) {
+      const lastUser = msgs[lastUserIdx];
+      content = typeof lastUser.content === 'string' ? lastUser.content : '';
+      // Replay prefix WITHOUT the last user message — the backend appends it.
+      chatHistory = msgs.slice(0, lastUserIdx);
+    }
+    if (!content) {
+      // Fallback: pull the workbench session's own transcript.
+      try {
+        const full = await getWorkbenchSession(run.id);
+        const wbMsgs = (full as unknown as { messages?: Array<{ role?: string; content?: unknown }> })
+          .messages ?? [];
+        const wbUser = [...wbMsgs].reverse().find((m) => m.role === 'user');
+        content = typeof wbUser?.content === 'string' ? wbUser.content : '';
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!content) {
+      toast.error('No user message to retry');
+      return;
+    }
+    setRetryingId(run.id);
+    try {
+      const loaded = await getWorkbenchSession(run.id).catch(() => null);
+      const session = normalizeWorkbenchSession(loaded) ?? loaded;
+      const result = await startChatStream(uiId, {
+        message: content,
+        chatHistory: chatHistory ?? [],
+        workbenchMode: 'full',
+        effort: 'medium',
+        thinkingEnabled: true,
+        model: run.model || undefined,
+        modelProvider: run.provider || undefined,
+        provider: run.provider || undefined,
+        ensureWorkbenchSession: async () => session,
+      });
+      if (result === 'error') {
+        toast.error('Retry failed — check the backend');
+      } else {
+        toast.success('Retrying last message');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Retry failed');
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
+  /** Abort the run's active stream (if any). */
+  const cancelRun = (run: WorkbenchRun) => {
+    const uiId = resolveUiSessionId(run.id);
+    stopChatStream(uiId);
+    toast.success('Run stopped');
+  };
 
   const runs = useMemo(() => data ?? [], [data]);
 
@@ -273,15 +350,41 @@ export function RunsPage() {
                   </span>
                   <span title="Last updated">{fmtTime(run.updatedAt)}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/c/${run.id}`)}
-                  className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-foreground hover:bg-muted"
-                  data-testid={`run-open-${run.id}`}
-                >
-                  <ExternalLink className="size-3" />
-                  Open
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {phase.live ? (
+                    <button
+                      type="button"
+                      onClick={() => cancelRun(run)}
+                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-foreground hover:bg-rose-500/15 hover:text-rose-400"
+                      title="Stop the active stream"
+                      data-testid={`run-cancel-${run.id}`}
+                    >
+                      <Square className="size-3" />
+                      Cancel
+                    </button>
+                  ) : run.messageCount > 0 ? (
+                    <button
+                      type="button"
+                      disabled={retryingId === run.id}
+                      onClick={() => void retryRun(run)}
+                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-foreground hover:bg-muted disabled:opacity-50"
+                      title="Re-send the last user message"
+                      data-testid={`run-retry-${run.id}`}
+                    >
+                      <RotateCcw className={`size-3 ${retryingId === run.id ? 'animate-spin' : ''}`} />
+                      {retryingId === run.id ? 'Retrying…' : 'Retry'}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/c/${resolveUiSessionId(run.id)}`)}
+                    className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-foreground hover:bg-muted"
+                    data-testid={`run-open-${run.id}`}
+                  >
+                    <ExternalLink className="size-3" />
+                    Open
+                  </button>
+                </div>
               </li>
             );
           })}

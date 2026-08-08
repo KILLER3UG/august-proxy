@@ -6,6 +6,7 @@ import {
   Bot,
   Brain,
   History,
+  Kanban,
   PanelLeft,
   Plus,
   Wrench,
@@ -65,6 +66,12 @@ const brainIconMotion = {
 const historyIconMotion = {
   rest: { scale: 1, rotate: 0 },
   hover: { scale: 1.12, rotate: -12, transition: t.spring },
+  tap: { scale: 0.92, transition: t.fast },
+};
+
+const kanbanIconMotion = {
+  rest: { scale: 1, rotate: 0 },
+  hover: { scale: 1.12, rotate: -6, transition: t.spring },
   tap: { scale: 0.92, transition: t.fast },
 };
 
@@ -168,6 +175,22 @@ export function SessionListNav({
           <History className="size-3.5" />
         </motion.span>
         <span>Runs</span>
+      </motion.button>
+
+      <motion.button
+        type="button"
+        onClick={() => onNavigate("/board")}
+        className={quietRow}
+        initial="rest"
+        whileHover="hover"
+        whileTap="tap"
+        variants={rowMotion}
+        data-testid="sidebar-nav-board"
+      >
+        <motion.span className="inline-flex shrink-0 opacity-60" variants={kanbanIconMotion}>
+          <Kanban className="size-3.5" />
+        </motion.span>
+        <span>Board</span>
       </motion.button>
 
     </div>

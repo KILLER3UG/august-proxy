@@ -11,6 +11,7 @@ import {
   Bot,
   Wrench,
   History,
+  Kanban,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -37,6 +38,9 @@ const LiveSurface = lazy(() =>
 );
 const RunsPage = lazy(() =>
   import('@/sections/runs/RunsPage').then((m) => ({ default: m.RunsPage })),
+);
+const BoardPage = lazy(() =>
+  import('@/sections/board/BoardPage').then((m) => ({ default: m.BoardPage })),
 );
 const DesignRoute = lazy(() =>
   import('@/pages/DesignRoute').then((m) => ({ default: m.DesignRoute })),
@@ -112,6 +116,13 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     label: 'Runs',
     Icon: History,
     element: React.createElement(LazySection, { name: 'Runs' }, React.createElement(RunsPage)),
+    nav: true,
+  },
+  {
+    path: '/board',
+    label: 'Board',
+    Icon: Kanban,
+    element: React.createElement(LazySection, { name: 'Board' }, React.createElement(BoardPage)),
     nav: true,
   },
   {
