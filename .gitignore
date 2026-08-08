@@ -115,3 +115,4 @@ frontend/desktop/src-tauri/resources/backend-runtime.stamp
 
 frontend/desktop/src-tauri/resources/skills/**
 !frontend/desktop/src-tauri/resources/skills/.keep
+/.tools/

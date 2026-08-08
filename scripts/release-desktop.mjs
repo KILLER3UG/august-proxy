@@ -279,7 +279,11 @@ async function buildLatestJsonFromSignatures(tauriBundleDir, nextVersion) {
     let artifact = null;
     let sigPath = null;
     if (existsSync(nsisDir)) {
-        const exe = readdirSync(nsisDir).find((f) => f.endsWith('-setup.exe'));
+        // Tauri names the NSIS bundle August_0.13.0_x64-setup.exe — match
+        // any <platform>-setup.exe form, not just the documented '-setup.exe'.
+        const exe = readdirSync(nsisDir).find(
+            (f) => f.endsWith('-setup.exe') || /setup\.exe$/i.test(f),
+        );
         if (exe && existsSync(join(nsisDir, `${exe}.sig`))) {
             artifact = exe;
             sigPath = join(nsisDir, `${exe}.sig`);
