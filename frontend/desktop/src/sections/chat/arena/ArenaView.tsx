@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import {
   useArenaStore,
   clearArenaRun,
+  closeArenaArchive,
   type ArenaRunLane,
 } from './arena-store';
 import { launchArenaRun, type ArenaLaunchOpts } from './launchArenaRun';
@@ -56,6 +57,7 @@ interface ArenaGroup {
 
 export function ArenaView() {
   const run = useArenaStore((s) => s.run);
+  const archiveOpen = useArenaStore((s) => s.archiveOpen);
   const navigate = useNavigate();
   const [diffPair, setDiffPair] = useState<[ArenaRunLane, ArenaRunLane] | null>(null);
 
@@ -122,68 +124,99 @@ export function ArenaView() {
     });
   };
 
+  if (!run && !archiveOpen) {
+    // No run and the archive isn't open — the chat area stays clean.
+    return null;
+  }
+
   if (!run) {
-    // Idle state = the archive screen, so past verdicts never disappear.
+    // Idle state = the full-screen archive, so past verdicts never
+    // disappear. Only rendered while `archiveOpen` is true.
     return (
-      <div className="p-6 space-y-4">
-        <SectionHeader
-          title="Arena archive"
-          subtitle="Past arena / debate verdicts — the routing-evidence loop's training data. Replay re-runs the same lanes on the stored prompt."
-        />
-        {groups.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No arena verdicts recorded yet — run an arena comparison and pick a
-            winner; the verdict is recorded here for the routing-evidence loop.
-          </p>
-        )}
-        <div className="space-y-2">
-          {groups.map((g) => (
-            <div
-              key={g.sessionId}
-              className="rounded-xl border border-border bg-card/60 px-3 py-2.5 text-xs"
-              data-testid={`arena-group-${g.sessionId}`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground/70 shrink-0">{g.taskType || 'general'}</span>
-                <span className="text-muted-foreground/50 truncate flex-1 min-w-0" title={g.prompt}>
-                  {g.prompt ? `“${g.prompt.slice(0, 80)}${g.prompt.length > 80 ? '…' : ''}”` : 'verdict recorded before prompts were stored'}
-                </span>
-                <span className="text-muted-foreground/50 shrink-0">
-                  {new Date(g.at).toLocaleString()}
-                </span>
-                {g.prompt && g.rows.length >= 2 ? (
-                  <button
-                    type="button"
-                    onClick={() => void replayGroup(g)}
-                    className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] text-primary hover:bg-primary/20 shrink-0"
-                    title="Re-run these models on the same prompt"
-                    data-testid={`arena-replay-${g.sessionId}`}
-                  >
-                    <RotateCcw className="size-3" />
-                    Replay
-                  </button>
-                ) : null}
-              </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-3">
-                {g.rows.map((r, i) => (
-                  <span
-                    key={`${r.model}-${i}`}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px]',
-                      r.won
-                        ? 'bg-emerald-500/15 text-emerald-500'
-                        : 'bg-muted/60 text-muted-foreground',
-                    )}
-                    title={r.won ? 'Won' : 'Lost'}
-                  >
-                    <span className={cn('inline-block size-1.5 rounded-full', r.won ? 'bg-success' : 'bg-muted-foreground/40')} />
-                    {r.model}
-                    <span className="text-muted-foreground/60">{r.provider}</span>
+      <div
+        className="fixed inset-0 z-40 flex flex-col bg-background/95 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Arena archive"
+        data-testid="arena-archive"
+      >
+        <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+          <Swords className="size-4 text-primary" />
+          <h2 className="text-sm font-semibold">Arena</h2>
+          <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">
+            Archive — past verdicts
+          </span>
+          <button
+            type="button"
+            onClick={closeArenaArchive}
+            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 shrink-0"
+            title="Close archive"
+            aria-label="Close archive"
+            data-testid="arena-archive-close"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
+          <SectionHeader
+            title="Arena archive"
+            subtitle="Past arena / debate verdicts — the routing-evidence loop's training data. Replay re-runs the same lanes on the stored prompt."
+          />
+          {groups.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No arena verdicts recorded yet — run an arena comparison and pick a
+              winner; the verdict is recorded here for the routing-evidence loop.
+            </p>
+          )}
+          <div className="space-y-2">
+            {groups.map((g) => (
+              <div
+                key={g.sessionId}
+                className="rounded-xl border border-border bg-card/60 px-3 py-2.5 text-xs"
+                data-testid={`arena-group-${g.sessionId}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground/70 shrink-0">{g.taskType || 'general'}</span>
+                  <span className="text-muted-foreground/50 truncate flex-1 min-w-0" title={g.prompt}>
+                    {g.prompt ? `“${g.prompt.slice(0, 80)}${g.prompt.length > 80 ? '…' : ''}”` : 'verdict recorded before prompts were stored'}
                   </span>
-                ))}
+                  <span className="text-muted-foreground/50 shrink-0">
+                    {new Date(g.at).toLocaleString()}
+                  </span>
+                  {g.prompt && g.rows.length >= 2 ? (
+                    <button
+                      type="button"
+                      onClick={() => void replayGroup(g)}
+                      className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] text-primary hover:bg-primary/20 shrink-0"
+                      title="Re-run these models on the same prompt"
+                      data-testid={`arena-replay-${g.sessionId}`}
+                    >
+                      <RotateCcw className="size-3" />
+                      Replay
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                  {g.rows.map((r, i) => (
+                    <span
+                      key={`${r.model}-${i}`}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px]',
+                        r.won
+                          ? 'bg-emerald-500/15 text-emerald-500'
+                          : 'bg-muted/60 text-muted-foreground',
+                      )}
+                      title={r.won ? 'Won' : 'Lost'}
+                    >
+                      <span className={cn('inline-block size-1.5 rounded-full', r.won ? 'bg-success' : 'bg-muted-foreground/40')} />
+                      {r.model}
+                      <span className="text-muted-foreground/60">{r.provider}</span>
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     );

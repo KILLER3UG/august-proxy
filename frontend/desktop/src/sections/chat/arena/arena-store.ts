@@ -5,6 +5,9 @@
  * with a per-turn model override. The ArenaView overlay renders the lanes
  * side by side; picking a winner navigates to that lane's session (it holds
  * the full conversation + the winning answer, so the chat continues there).
+ *
+ * The arena ARCHIVE (past verdicts) is a separate full-screen surface —
+ * it only renders while `archiveOpen` is true, so the chat area stays clean.
  */
 import { create } from 'zustand';
 
@@ -30,16 +33,27 @@ export interface ArenaRun {
 
 interface ArenaState {
   run: ArenaRun | null;
+  /** True while the full-screen arena archive overlay is open. */
+  archiveOpen: boolean;
 }
 
 export const useArenaStore = create<ArenaState>(() => ({
   run: null,
+  archiveOpen: false,
 }));
 
 export function setArenaRun(run: ArenaRun | null): void {
-  useArenaStore.setState({ run });
+  useArenaStore.setState({ run, archiveOpen: false });
 }
 
 export function clearArenaRun(): void {
-  useArenaStore.setState({ run: null });
+  useArenaStore.setState({ run: null, archiveOpen: false });
+}
+
+export function openArenaArchive(): void {
+  useArenaStore.setState({ archiveOpen: true });
+}
+
+export function closeArenaArchive(): void {
+  useArenaStore.setState({ archiveOpen: false });
 }

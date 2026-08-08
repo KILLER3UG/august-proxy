@@ -4,9 +4,10 @@
  * pick the winner to continue. Supports saved templates (A3, localStorage). */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bookmark, Sparkles, Swords, X } from 'lucide-react';
+import { Bookmark, History, Sparkles, Swords, X } from 'lucide-react';
 import { api } from '@/api/client';
 import type { ModelItem } from '../model-display';
+import { openArenaArchive } from '../arena/arena-store';
 
 const MAX_LANES = 3;
 const MIN_LANES = 2;
@@ -153,6 +154,18 @@ export function ArenaLaunchModal({
           <span className="text-[10px] text-muted-foreground/70 ml-auto">
             {targets.length}/{MAX_LANES} models
           </span>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              openArenaArchive();
+            }}
+            className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground"
+            data-testid="arena-open-archive"
+          >
+            <History className="size-3" />
+            Archive
+          </button>
           <button
             type="button"
             onClick={onClose}
