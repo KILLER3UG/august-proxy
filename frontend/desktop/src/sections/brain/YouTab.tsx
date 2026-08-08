@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   Gauge,
+  History,
   Pencil,
   Plus,
   RotateCcw,
@@ -345,6 +346,49 @@ export function YouTab() {
     onError: (e: Error) => toast.error(e.message || 'Delete failed'),
   });
 
+  // ── Version history + rollback (Prime /refine) ───────────────────────
+  interface TrailEntry {
+    action: string;
+    rule: string;
+    source?: string;
+    category?: string;
+    sessionId?: string;
+    at: number;
+  }
+  const [trailFor, setTrailFor] = useState<number | null>(null);
+  const [trailData, setTrailData] = useState<TrailEntry[]>([]);
+  const [trailLoading, setTrailLoading] = useState(false);
+
+  const toggleTrail = async (id: number) => {
+    if (trailFor === id) {
+      setTrailFor(null);
+      return;
+    }
+    setTrailLoading(true);
+    try {
+      const res = await api.get<{ trail: TrailEntry[] }>(`/api/brain/heuristics/${id}/trail`);
+      setTrailData(res.trail ?? []);
+      setTrailFor(id);
+    } catch {
+      toast.error('Could not load version history');
+    } finally {
+      setTrailLoading(false);
+    }
+  };
+
+  const rollbackHeuristic = useMutation({
+    mutationFn: (id: number) =>
+      api.post<{ rolledBack: boolean }>(`/api/brain/heuristics/${id}/rollback`),
+    onSuccess: (res) => {
+      toast.success(
+        res.rolledBack ? 'Rolled back to the previous version' : 'No earlier version to roll back to',
+      );
+      setTrailFor(null);
+      invalidate([['brain-learning']]);
+    },
+    onError: (e: Error) => toast.error(e.message || 'Rollback failed'),
+  });
+
   if (error) {
     return <div className="p-4 text-danger">Error loading profile data: {error.message}</div>;
   }
@@ -573,6 +617,12 @@ export function YouTab() {
                         <span>{Math.round(h.confidence * 100)}% confident</span>
                       </>
                     ) : null}
+                    {typeof h.useCount === 'number' && h.useCount > 0 ? (
+                      <>
+                        {' · '}
+                        <span title="Times injected into prompts">used {h.useCount}×</span>
+                      </>
+                    ) : null}
                     {h.suppressed ? (
                       <>
                         {' · '}
@@ -588,7 +638,58 @@ export function YouTab() {
                       </>
                     ) : null}
                   </span>
+                  {trailFor === h.id ? (
+                    <div className="mt-1.5 rounded border border-white/[0.06] bg-muted/20 p-2 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Version history
+                        </span>
+                        <button
+                          type="button"
+                          disabled={rollbackHeuristic.isPending || trailData.length === 0}
+                          onClick={() => rollbackHeuristic.mutate(h.id)}
+                          className="ml-auto inline-flex items-center gap-1 rounded bg-muted/50 px-2 py-0.5 text-[10px] text-foreground hover:bg-muted disabled:opacity-50"
+                          data-testid={`rollback-heuristic-${h.id}`}
+                        >
+                          <RotateCcw className="size-2.5" />
+                          Rollback
+                        </button>
+                      </div>
+                      {trailLoading ? (
+                        <p className="text-[10px] text-muted-foreground">Loading…</p>
+                      ) : trailData.length === 0 ? (
+                        <p className="text-[10px] text-muted-foreground">No version history yet.</p>
+                      ) : (
+                        trailData.slice(0, 6).map((t, i) => (
+                          <div key={`${t.at}-${i}`} className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                            <span
+                              className={`shrink-0 rounded px-1 py-px ${
+                                t.action === 'rollback' ? 'bg-primary/15 text-primary' : 'bg-muted/60'
+                              }`}
+                            >
+                              {t.action}
+                            </span>
+                            <span className="truncate" title={t.rule}>
+                              {t.rule}
+                            </span>
+                            <span className="ml-auto shrink-0">
+                              {new Date(t.at * 1000).toLocaleString()}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
                 </div>
+                <button
+                  type="button"
+                  title="Version history / rollback"
+                  className="p-1 text-muted-foreground hover:text-foreground shrink-0"
+                  data-testid={`history-heuristic-${h.id}`}
+                  onClick={() => void toggleTrail(h.id)}
+                >
+                  <History className="size-3.5" />
+                </button>
                 <button
                   type="button"
                   title={h.suppressed ? 'Re-enable (inject in prompts again)' : 'Suppress (stop using this rule)'}

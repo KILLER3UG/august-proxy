@@ -31,22 +31,25 @@ def listHeuristics(category: str = '') -> list[dict[str, object]]:
     """List all learned heuristics, optionally filtered by category.
 
     Highest-confidence rules first; row keys are camelCase on the wire via
-    ``_row_as_wire``.
+    ``_row_as_wire`` (use_count → useCount, last_surfaced_at →
+    lastSurfacedAt).
     """
     from app.services.memory_store import _row_as_wire
 
     conn = _conn()
+    cols = (
+        'id, rule, source, category, confidence, source_session_id, suppressed, '
+        'use_count, last_surfaced_at, created_at, updated_at'
+    )
     if category:
         rows = conn.execute(
-            'SELECT id, rule, source, category, confidence, source_session_id, suppressed, created_at, updated_at '
-            'FROM learned_heuristics WHERE category = ? '
+            f'SELECT {cols} FROM learned_heuristics WHERE category = ? '
             'ORDER BY confidence DESC, updated_at DESC',
             (category,),
         ).fetchall()
     else:
         rows = conn.execute(
-            'SELECT id, rule, source, category, confidence, source_session_id, suppressed, created_at, updated_at '
-            'FROM learned_heuristics ORDER BY confidence DESC, updated_at DESC'
+            f'SELECT {cols} FROM learned_heuristics ORDER BY confidence DESC, updated_at DESC'
         ).fetchall()
     return [_row_as_wire(r) for r in rows]
 
@@ -257,12 +260,26 @@ def removeHeuristicById(heuristicId: int) -> bool:
 
 
 def updateHeuristic(heuristicId: int, newRule: str) -> bool:
-    """v3: Update a heuristic's rule text. Returns True if found and updated."""
+    """v3: Update a heuristic's rule text. Returns True if found and updated.
+
+    Records an ``edit`` trail entry so the version history stays complete.
+    """
     conn = _conn()
+    row = conn.execute('SELECT rule, source, category FROM learned_heuristics WHERE id = ?', (heuristicId,)).fetchone()
     cur = conn.execute(
         "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (newRule, heuristicId)
     )
     conn.commit()
+    if cur.rowcount > 0 and row:
+        from app.json_narrowing import as_str
+
+        _record_heuristic_trail(
+            heuristicId,
+            'edit',
+            as_str(row['rule'], ''),
+            as_str(row['source'], 'auto'),
+            as_str(row['category'], 'general'),
+        )
     return cur.rowcount > 0
 
 
@@ -274,9 +291,159 @@ def setHeuristicSuppressed(heuristicId: int, suppressed: bool) -> bool:
     re-enable them in the Brain "You" surface.
     """
     conn = _conn()
+    row = conn.execute('SELECT rule, source, category FROM learned_heuristics WHERE id = ?', (heuristicId,)).fetchone()
     cur = conn.execute(
         'UPDATE learned_heuristics SET suppressed = ?, updated_at = datetime(\'now\') WHERE id = ?',
         (1 if suppressed else 0, heuristicId),
     )
     conn.commit()
+    if cur.rowcount > 0 and row:
+        from app.json_narrowing import as_str
+
+        _record_heuristic_trail(
+            heuristicId,
+            'suppress' if suppressed else 'restore',
+            as_str(row['rule'], ''),
+            as_str(row['source'], 'auto'),
+            as_str(row['category'], 'general'),
+        )
     return cur.rowcount > 0
+
+
+def listHeuristicTrail(ruleId: int) -> list[dict[str, object]]:
+    """Version history for one heuristic (newest first). Never raises.
+
+    Trail entries: ``{action, rule, source, category, sessionId, at}`` —
+    'add' / 'upgrade' / 'edit' / 'suppress' / 'restore' / 'remove' /
+    'rollback'.
+    """
+    try:
+        from app.json_narrowing import as_list
+        from app.services.memory_store import get_memory
+
+        existing = get_memory(f'heuristic_trail:{ruleId}')
+        if isinstance(existing, dict):
+            entries = as_list(existing.get('entries'), [])
+        elif isinstance(existing, list):
+            entries = list(existing)
+        else:
+            entries = []
+        return [dict(e) for e in entries if isinstance(e, dict)][::-1]
+    except Exception:
+        return []
+
+
+def rollbackHeuristic(ruleId: int) -> bool:
+    """Restore a heuristic's previous rule text from its version trail.
+
+    The trail is append-only, so the entry BEFORE the most recent one holds
+    the previous rule. Returns True when a rollback happened (the restored
+    text becomes the current rule and a ``rollback`` trail entry is
+    recorded).
+    """
+    conn = _conn()
+    row = conn.execute(
+        'SELECT rule, source, category FROM learned_heuristics WHERE id = ?', (ruleId,)
+    ).fetchone()
+    if not row:
+        return False
+    from app.json_narrowing import as_str
+
+    current = as_str(row['rule'], '')
+    trail = listHeuristicTrail(ruleId)
+    # Newest first; the first entry is (usually) the current rule. Walk past
+    # it (and any trailing entries matching the current text) to find the
+    # previous version.
+    for entry in trail:
+        if entry.get('action') in ('suppress', 'restore', 'remove'):
+            continue
+        candidate = as_str(entry.get('rule'), '')
+        if candidate and candidate != current:
+            cur = conn.execute(
+                "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?",
+                (candidate, ruleId),
+            )
+            conn.commit()
+            if cur.rowcount > 0:
+                _record_heuristic_trail(
+                    ruleId,
+                    'rollback',
+                    candidate,
+                    as_str(row['source'], 'auto'),
+                    as_str(row['category'], 'general'),
+                )
+                return True
+            return False
+    return False
+
+
+def markHeuristicSurfaced(ruleIds: list[int]) -> None:
+    """Bump ``use_count`` + ``last_surfaced_at`` for rules injected into a
+    prompt (called from the workbench prompt builder). Repeated surfacing is
+    the "this rule keeps winning" signal that feeds skill promotion. Never
+    raises."""
+    ids = [int(i) for i in ruleIds if isinstance(i, int) or str(i).isdigit()]
+    if not ids:
+        return
+    try:
+        conn = _conn()
+        conn.execute(
+            f'UPDATE learned_heuristics SET use_count = COALESCE(use_count, 0) + 1, '
+            f"last_surfaced_at = datetime('now') WHERE id IN ({','.join('?' * len(ids))})",
+            ids,
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+
+def promoteFrequentHeuristics(
+    *, threshold: int = 8, min_confidence: float = 0.8
+) -> int:
+    """Promote rules that keep winning into pending-skill proposals.
+
+    A heuristic that has been injected (surfaced) at least ``threshold``
+    times at high confidence is a proven pattern — queue it as a pending
+    skill so the user can approve it as a first-class skill (Prime /refine:
+    learned rules graduate into reusable skills). Idempotent: only rules
+    without an existing pending skill of the same name are queued. Returns
+    how many were queued.
+    """
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            'SELECT id, rule, category, source FROM learned_heuristics '
+            'WHERE COALESCE(suppressed, 0) = 0 '
+            'AND COALESCE(use_count, 0) >= ? AND COALESCE(confidence, 0) >= ? '
+            'ORDER BY use_count DESC LIMIT 10',
+            (max(1, int(threshold)), float(min_confidence)),
+        ).fetchall()
+    except Exception:
+        return 0
+    if not rows:
+        return 0
+    from app.json_narrowing import as_str
+
+    queued = 0
+    for r in rows:
+        rule = as_str(r['rule'], '').strip()
+        if not rule:
+            continue
+        name = rule.split('—')[0].split('(')[0].strip().lower().replace(' ', '-')[:40] or 'learned-rule'
+        try:
+            from app.services.memory.background_review import _queue_pending_skill
+
+            _queue_pending_skill(
+                name=name,
+                description=(
+                    f'Learned from repeated use ({as_str(r["category"], "general")}) — '
+                    f'{as_str(r["source"], "auto")}'
+                )[:60],
+                body=rule,
+                trigger='',
+                category='learned',
+            )
+            queued += 1
+        except Exception:
+            pass
+    return queued

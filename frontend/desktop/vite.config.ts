@@ -15,6 +15,22 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
     target: 'es2022',
+    // Code-split stable vendor chunks so the main bundle stays lean and
+    // the Tauri shell loads faster on cold start (kills the 3.3MB index
+    // chunk warning). React + UI libs get their own cached chunks.
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) return 'react';
+          if (id.includes('framer-motion')) return 'motion';
+          if (id.includes('lucide-react')) return 'icons';
+          if (id.includes('@tanstack')) return 'query';
+          if (id.includes('sonner') || id.includes('cmdk') || id.includes('recharts')) return 'ui';
+          return undefined;
+        },
+      },
+    },
   },
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },

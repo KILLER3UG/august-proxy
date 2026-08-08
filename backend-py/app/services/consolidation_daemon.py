@@ -287,6 +287,25 @@ async def runConsolidation() -> ConsolidationSummaryDict:
         layer='consolidation_daemon',
         summary='Sleep cycle started (will update on completion)',
     )
+    # Skills self-improvement (Prime /refine): heuristics that keep winning
+    # (injected into prompts repeatedly at high confidence) graduate into
+    # pending-skill proposals the user can approve in the Brain.
+    try:
+        from app.services.heuristics_service import promoteFrequentHeuristics
+
+        queued = promoteFrequentHeuristics()
+        if queued:
+            logger.info('consolidation: queued %d frequent heuristics as pending skills', queued)
+    except Exception:
+        logger.debug('heuristic → pending-skill promotion failed', exc_info=True)
+    # Longitudinal trends: weekly harness snapshot (self-gating — writes
+    # once per week; feeds GET /api/harness/trends).
+    try:
+        from app.services.memory.trends import record_weekly_snapshot
+
+        record_weekly_snapshot()
+    except Exception:
+        logger.debug('weekly harness snapshot failed', exc_info=True)
     plan = await _build_consolidation_plan()
     if plan is None:
         stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}

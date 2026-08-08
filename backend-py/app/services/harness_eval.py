@@ -330,6 +330,22 @@ EVAL_SCENARIOS: list[dict[str, Any]] = [
         'expect': ['done'],
         'mustNotHave': ['verifierBlocked'],
     },
+    {
+        'taskId': 'stream-rule-narration',
+        'script': [
+            {'type': 'text', 'text': "I'll use the read_file tool to check the file"},
+        ],
+        'expect': ['warning'],
+        'mustHaveText': ['narrating'],
+    },
+    {
+        'taskId': 'round-cap-runaway',
+        'script': [{'type': 'tool', 'name': 'eval_probe', 'arguments': {}} for _ in range(30)],
+        'expect': ['error'],
+        # The loop stops via the round cap OR the stall hard-stop — either
+        # verdict is a pass (never an infinite loop).
+        'mustHaveAnyText': ['Tool loop exceeded', 'did not recover'],
+    },
 ]
 
 
@@ -349,6 +365,9 @@ def _scenario_passed(events: list[dict[str, Any]], spec: dict[str, Any]) -> tupl
     for needle in as_list_of_str(spec.get('mustHaveText')):
         if needle.lower() not in all_text:
             return False, f'missing text: {needle!r}'
+    anyText = as_list_of_str(spec.get('mustHaveAnyText'))
+    if anyText and not any(n.lower() in all_text for n in anyText):
+        return False, f'missing any of: {", ".join(anyText)!r}'
     for needle in as_list_of_str(spec.get('mustNotHaveText')):
         if needle.lower() in all_text:
             return False, f'unexpected text: {needle!r}'

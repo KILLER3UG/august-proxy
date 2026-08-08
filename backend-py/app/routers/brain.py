@@ -136,6 +136,29 @@ async def editHeuristic(heuristic_id: int, body: dict):
     return {'updated': True}
 
 
+@router.get('/heuristics/{heuristic_id}/trail')
+async def heuristicTrail(heuristic_id: int):
+    """Version history for one learned heuristic (newest first).
+
+    Every mutation records a trail entry (add/upgrade/edit/suppress/
+    restore/remove/rollback) — the rollback button restores the previous
+    rule text from this history.
+    """
+    from app.services.heuristics_service import listHeuristicTrail
+
+    return {'trail': listHeuristicTrail(heuristic_id)}
+
+
+@router.post('/heuristics/{heuristic_id}/rollback')
+async def heuristicRollback(heuristic_id: int):
+    """Restore a learned heuristic's previous rule text (Prime /refine:
+    versioned self-improvement state with rollback)."""
+    from app.services.heuristics_service import rollbackHeuristic
+
+    ok = rollbackHeuristic(heuristic_id)
+    return {'rolledBack': ok}
+
+
 @router.post('/skills/{name}/approve')
 async def approveSkill(name: str):
     """v3: Approve a pending skill — move staging to active."""

@@ -451,13 +451,22 @@ def buildSystemPrompt(
 
         conn = brainConn()
         heuristicsRows = conn.execute(
-            'SELECT rule, source, category, confidence FROM learned_heuristics '
+            'SELECT id, rule, source, category, confidence FROM learned_heuristics '
             "WHERE COALESCE(suppressed, 0) = 0 "
             'ORDER BY confidence DESC, updated_at DESC LIMIT ?',
             (_HEURISTIC_CAP,),
         ).fetchall()
         if heuristicsRows:
             memory['learnedHeuristics'] = [dict(r) for r in heuristicsRows]
+            # "This rule keeps winning" bookkeeping: bump use_count for the
+            # injected rules (feeds skill promotion — see
+            # heuristics_service.promoteFrequentHeuristics).
+            try:
+                from app.services.heuristics_service import markHeuristicSurfaced
+
+                markHeuristicSurfaced([int(r['id']) for r in heuristicsRows])
+            except Exception:
+                logger.debug('heuristic surfaced-count update failed', exc_info=True)
         totalHeuristics = conn.execute('SELECT COUNT(*) FROM learned_heuristics').fetchone()[0]
         if totalHeuristics > _HEURISTIC_CAP:
             from app.services.brain_event_bus import emitBrainEvent

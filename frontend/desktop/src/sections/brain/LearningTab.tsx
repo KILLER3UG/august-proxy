@@ -433,8 +433,21 @@ export function LearningTab() {
               <li key={s.id} className="text-xs p-2 rounded border border-border">
                 <div className="flex items-start gap-2">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium">{s.name}</p>
+                    <p className="font-medium flex items-center gap-1.5">
+                      {s.name}
+                      {s.createdAt && Date.now() - new Date(s.createdAt).getTime() < 24 * 3600 * 1000 ? (
+                        <span className="rounded-full bg-primary/15 px-1.5 py-px text-[9px] text-primary animate-pulse" title="Proposed in the last 24h">
+                          new
+                        </span>
+                      ) : null}
+                    </p>
                     <p className="text-muted-foreground">{s.description}</p>
+                    {s.createdAt ? (
+                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                        proposed {new Date(s.createdAt).toLocaleString()}
+                        {typeof s.useCount === 'number' && s.useCount > 0 ? ` · used ${s.useCount}×` : ''}
+                      </p>
+                    ) : null}
                   </div>
                   <button
                     type="button"

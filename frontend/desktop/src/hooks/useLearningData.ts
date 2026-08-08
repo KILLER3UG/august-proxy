@@ -13,6 +13,9 @@ export interface Heuristic {
   confidence?: number;
   sourceSessionId?: string;
   suppressed?: number;
+  /** Times this rule was injected into prompts — the "keeps winning" signal
+   *  that feeds skill promotion. */
+  useCount?: number;
   createdAt: string;
 }
 
@@ -39,6 +42,9 @@ export interface PendingSkill {
   description: string;
   triggerText?: string;
   draftPath?: string;
+  status?: string;
+  useCount?: number;
+  createdAt?: string;
 }
 
 export interface ActiveProject {
