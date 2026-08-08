@@ -186,3 +186,39 @@ Search results should visibly label Advanced and Developer settings.
   in the reliability dashboard + arena archive.
 - **Parked, still open**: image attachment source-path preservation (needs
   Tauri dialog plumbing).
+
+## Done in the self-improvement + evals + bug pass
+
+- **Self-improvement loop (turn-level lessons)** — failed turns now record
+  `provider_reliability` heuristics (upstream errors, stall hard-stops,
+  format rejections) and verifier blocks record `verifier` correction
+  heuristics — merged/confidence-bumped on repeats, scrubbed of secrets,
+  injected into future system prompts (top-N by confidence) with
+  rollback/suppress UI already in the Brain You tab. Verified end-to-end
+  via the eval scenarios.
+- **Scheduled golden evals** — `run_turn` now works without pytest
+  (`_DirectPatch` stand-in), so the 7-scenario golden suite runs in the
+  background every 6h from app boot (`scheduled_evals_loop`) and on demand
+  via `POST /api/brain/harness/evals/run` — with a **"Run evals now"**
+  button in the Reliability dashboard. Verified 7/7 passing through the
+  real loop.
+- **Arena replay + history** — migration `011` adds a `prompt` column to
+  `routing_evidence`; verdicts store the original prompt, the archive
+  groups rows per verdict with winner/loser chips, and **Replay** re-runs
+  the same lanes on the stored prompt (shared `launchArenaRun` extracted
+  from ChatThread so replay uses the exact launch path). Old rows (no
+  prompt) show a hint instead of a dead button.
+- **Bug & UX batch** —
+  - `GET /api/providers/health` now returns the `{results, at}` shape the
+    desktop polls (was `{'status':'ok'}` — the Health dot never rendered);
+    the health monitor diff-syncs the provider store so probes self-heal.
+  - Right drawer capped at 60% of the viewport (was 80% — at minimum
+    window widths it swallowed the conversation).
+  - New shared `useFocusTrap` applied to CommandPalette, Shortcuts,
+    Conversation Search, Onboarding, and Quit-Confirm (focus moves in on
+    open, Tab is contained, focus restores on close).
+  - Image attachments preserve their **source path**: dropped files in
+    Tauri are read via a new `read_file_base64` shell command and the
+    attachment keeps its real path (`FileAttachment.path`).
+- **Parked, still open**: none of the roadmap items remain — future work
+  is new territory (guided AI Setup landing was folded into the wizard).

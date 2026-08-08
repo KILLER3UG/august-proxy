@@ -52,13 +52,14 @@ def record_turn(
     output_tokens: int = 0,
     duration_ms: int = 0,
     source: str = 'turn',
+    prompt: str = '',
 ) -> None:
     """Record one turn's outcome (fire-and-forget, never raises)."""
     try:
         _conn().execute(
             'INSERT INTO routing_evidence '
-            '(session_id, task_type, model, provider, ok, input_tokens, output_tokens, duration_ms, source) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            '(session_id, task_type, model, provider, ok, input_tokens, output_tokens, duration_ms, source, prompt) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 as_str(session_id, '')[:120],
                 as_str(task_type, 'general')[:40],
@@ -69,6 +70,7 @@ def record_turn(
                 as_int(output_tokens, 0),
                 as_int(duration_ms, 0),
                 as_str(source, 'turn')[:20],
+                as_str(prompt, '')[:4000],
             ),
         )
         _conn().commit()
@@ -83,8 +85,12 @@ def record_arena(
     winner_model: str,
     winner_provider: str,
     loser_models: list[tuple[str, str]],
+    prompt: str = '',
 ) -> None:
-    """Record an arena/debate verdict: winner ok=1, losers ok=0."""
+    """Record an arena/debate verdict: winner ok=1, losers ok=0.
+
+    ``prompt`` is stored verbatim so the archive can offer replay.
+    """
     record_turn(
         session_id=session_id,
         task_type=task_type,
@@ -92,6 +98,7 @@ def record_arena(
         provider=winner_provider,
         ok=True,
         source='arena',
+        prompt=prompt,
     )
     for model, provider in loser_models:
         record_turn(
@@ -101,6 +108,7 @@ def record_arena(
             provider=provider,
             ok=False,
             source='arena',
+            prompt=prompt,
         )
 
 

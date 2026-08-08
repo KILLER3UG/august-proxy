@@ -4,9 +4,9 @@
  * /api/brain/harness/evals (loop-level golden tasks). Empty states teach
  * the data source instead of showing dead charts. */
 
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { HeartPulse, TrendingUp, FlaskConical, Timer, Trophy, AlertTriangle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { HeartPulse, TrendingUp, FlaskConical, Timer, Trophy, AlertTriangle, Play } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 
@@ -79,6 +79,8 @@ function StatCard({ label, value, hint, icon: Icon }: {
 }
 
 export function ReliabilitySection() {
+  const qc = useQueryClient();
+  const [evalsRunning, setEvalsRunning] = useState(false);
   const { data: trends, isFetching: trendsFetching } = useQuery<TrendsData>({
     queryKey: ['harness-trends', 30],
     queryFn: async () => api.get<TrendsData>('/api/brain/harness/trends?days=30'),
@@ -88,6 +90,21 @@ export function ReliabilitySection() {
     queryKey: ['harness-evals', 25],
     queryFn: async () => api.get<EvalsData>('/api/brain/harness/evals?limit=25'),
     staleTime: 15_000,
+  });
+
+  const runEvals = useMutation({
+    mutationFn: async () => {
+      setEvalsRunning(true);
+      try {
+        return await api.post<{ started: boolean; note?: string }>('/api/brain/harness/evals/run');
+      } finally {
+        // The suite runs in the background — poll for fresh results.
+        setTimeout(() => {
+          void qc.invalidateQueries({ queryKey: ['harness-evals'] });
+          setEvalsRunning(false);
+        }, 8_000);
+      }
+    },
   });
 
   const models = useMemo(() => {
@@ -277,10 +294,23 @@ export function ReliabilitySection() {
 
       {/* Eval runs */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4">
-        <h2 className="text-sm font-medium text-foreground flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <FlaskConical className="size-4 text-primary" />
-          Recent harness evals
-        </h2>
+          <h2 className="text-sm font-medium text-foreground">Recent harness evals</h2>
+          <span className="ml-auto inline-flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={evalsRunning || runEvals.isPending}
+              onClick={() => runEvals.mutate()}
+              className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] text-primary-foreground disabled:opacity-50"
+              data-testid="run-evals-now"
+            >
+              {evalsRunning ? <span className="size-3 animate-pulse rounded-full bg-primary-foreground/60" /> : <Play className="size-3" />}
+              {evalsRunning ? 'Running…' : 'Run evals now'}
+            </button>
+            <span className="text-[10px] text-muted-foreground/60">auto-runs every 6h</span>
+          </span>
+        </div>
         {!hasEvals ? (
           <p className="mt-3 text-xs text-muted-foreground">
             No eval runs recorded — the loop-level golden suite lives in <code className="font-mono text-[10px]">tests/test_harness_evals.py</code>; run it and results land here so harness changes are measurable.

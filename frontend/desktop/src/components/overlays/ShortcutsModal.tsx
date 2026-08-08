@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Backdrop } from './Backdrop';
 import { useShortcutsModalStore, closeShortcutsModal } from '@/store/shortcuts-modal';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 const SHORTCUT_GROUPS: Array<{
   heading: string;
@@ -53,6 +54,7 @@ function KeyCap({ children }: { children: string }) {
 
 export function ShortcutsModal() {
   const open = useShortcutsModalStore((s) => s.open);
+  const trapRef = useFocusTrap<HTMLDivElement>();
 
   useEffect(() => {
     if (!open) return;
@@ -71,6 +73,7 @@ export function ShortcutsModal() {
   return (
     <Backdrop onClose={closeShortcutsModal} className="items-start pt-[12vh]">
       <div
+        ref={trapRef}
         className="w-[min(90vw,480px)] rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         role="dialog"

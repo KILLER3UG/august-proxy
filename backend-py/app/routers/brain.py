@@ -281,6 +281,22 @@ async def harnessEvals(limit: int = 50):
     }
 
 
+@router.post('/harness/evals/run')
+async def runHarnessEvals():
+    """Run the loop-level golden suite now, in the background.
+
+    The scheduler also runs it every 6h; this endpoint forces an immediate
+    run so the Reliability dashboard can measure a change right after it
+    lands. Results stream into ``GET /api/brain/harness/evals``.
+    """
+    import asyncio
+
+    from app.services import harness_eval
+
+    asyncio.create_task(harness_eval.run_all_scenarios())
+    return {'started': True, 'note': 'eval suite running in the background'}
+
+
 @router.post('/routing/arena')
 async def routingArena(body: dict):
     """Record an arena/debate verdict: the picked lane won, the rest lost.
@@ -305,6 +321,7 @@ async def routingArena(body: dict):
         winner_model=as_str(winner.get('modelId'), ''),
         winner_provider=as_str(winner.get('provider'), ''),
         loser_models=loser_pairs,
+        prompt=as_str(body.get('prompt'), ''),
     )
     return {'recorded': True}
 
@@ -314,7 +331,7 @@ async def routingArenaHistory(limit: int = 50, days: int = 30):
     """Arena/debate verdict history (source='arena' rows, newest first).
 
     Feeds the Brain arena archive UI — results previously vanished when the
-    overlay closed.
+    overlay closed. ``prompt`` is included so the archive can offer replay.
     """
     try:
         from app.services.memory_store import _conn as getConn
@@ -322,7 +339,7 @@ async def routingArenaHistory(limit: int = 50, days: int = 30):
         conn = getConn()
         rows = conn.execute(
             "SELECT session_id, task_type, model, provider, ok, "
-            "input_tokens + output_tokens AS tokens, duration_ms, created_at "
+            "input_tokens + output_tokens AS tokens, duration_ms, created_at, prompt "
             "FROM routing_evidence WHERE source = 'arena' "
             "AND created_at > datetime('now', ?) "
             "ORDER BY created_at DESC LIMIT ?",
@@ -340,6 +357,7 @@ async def routingArenaHistory(limit: int = 50, days: int = 30):
                     'tokens': as_int(r['tokens'], 0),
                     'durationMs': as_int(r['duration_ms'], 0),
                     'at': as_str(r['created_at'], ''),
+                    'prompt': as_str(r['prompt'], ''),
                 }
             )
         return {'results': results}

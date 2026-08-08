@@ -101,6 +101,33 @@ class HealthMonitor:
         """Remove a provider from monitoring."""
         self._providers.pop(provider_id, None)
 
+    def sync_providers(self, providers: list) -> None:
+        """Diff-register the provider store into the monitor.
+
+        Adds new providers, drops removed ones — so config edits self-heal
+        the probe set without restarting the app. Called on every health
+        poll and after provider create/update/delete.
+        """
+        from app.json_narrowing import as_bool, as_str
+
+        wanted = {
+            as_str(p.get('id'))
+            for p in providers
+            if isinstance(p, dict)
+            and as_str(p.get('id'))
+            and as_bool(p.get('enabled', True))
+            and as_str(p.get('baseUrl', ''))
+        }
+        for pid in list(self._providers.keys()):
+            if pid not in wanted:
+                self.unregister_provider(pid)
+        for p in providers:
+            if not isinstance(p, dict):
+                continue
+            pid = as_str(p.get('id'))
+            if pid in wanted:
+                self.register_provider(pid, as_str(p.get('name')), as_str(p.get('baseUrl')))
+
     async def probe_provider(self, provider_id: str) -> ProbeResult:
         """Probe a single provider's base URL."""
         health = self._providers.get(provider_id)

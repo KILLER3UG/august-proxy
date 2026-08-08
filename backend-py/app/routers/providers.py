@@ -76,8 +76,36 @@ async def listTemplates():
 
 # Static `/health` must be registered before `/{providerId}` or "health" is captured as an id.
 @router.get('/health')
-async def providersHealth():
-    return {'status': 'ok'}
+async def providersHealth(force: int = 0):
+    """Health status per configured provider (background-probed).
+
+    Returns the ``{results: [...], at}`` shape the desktop UI's
+    ``useProviderHealth`` polls — previously this endpoint returned a bare
+    ``{'status': 'ok'}``, so the Health indicator never rendered. The
+    provider store is diff-synced into the health monitor here so
+    registrations self-heal on every poll.
+    """
+    import time
+
+    from app.services.health_monitor import health_monitor
+
+    store = config_service.getProvidersStore()
+    providers = as_list(store.get('providers', []))
+    health_monitor.sync_providers(providers)
+    if force:
+        await health_monitor.probe_all()
+    rows = []
+    for h in health_monitor.get_all_health():
+        rows.append(
+            {
+                'provider': as_str(h.get('providerId'), ''),
+                'online': as_str(h.get('status'), 'unknown') == 'healthy',
+                'lastSuccessAt': h.get('lastSuccess'),
+                'latencyMs': as_int(h.get('avgLatencyMs'), 0),
+                'error': h.get('lastError'),
+            }
+        )
+    return {'results': rows, 'at': time.time()}
 
 
 # Static `/quota` must also precede `/{providerId}` or "quota" is captured as an id.

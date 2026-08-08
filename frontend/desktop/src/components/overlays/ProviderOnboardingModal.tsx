@@ -18,6 +18,7 @@ import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { Backdrop } from '@/components/overlays/Backdrop';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { cn } from '@/lib/utils';
 
 const ICONS = {
@@ -39,6 +40,7 @@ export function ProviderOnboardingModal() {
   } = useProviderOnboardingState();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const [showImport, setShowImport] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState('');
@@ -81,6 +83,7 @@ export function ProviderOnboardingModal() {
     // setup checklist mid-flow — use Skip / the X button.
     <Backdrop>
       <div
+        ref={trapRef}
         className="relative w-full max-w-md rounded-2xl border border-white/[0.06] bg-card p-6 shadow-2xl"
         role="dialog"
         aria-modal="true"

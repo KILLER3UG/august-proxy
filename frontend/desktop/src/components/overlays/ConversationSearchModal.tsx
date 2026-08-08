@@ -8,6 +8,7 @@ import {
   useConversationSearchStore,
   closeConversationSearch,
 } from '@/store/conversation-search';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 interface SearchHit {
   sessionId: string;
@@ -20,6 +21,7 @@ interface SearchHit {
 export function ConversationSearchModal() {
   const open = useConversationSearchStore((s) => s.open);
   const navigate = useNavigate();
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const [q, setQ] = useState('');
   const [results, setResults] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -64,6 +66,7 @@ export function ConversationSearchModal() {
 
   return (
     <div
+      ref={trapRef}
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-24"
       role="dialog"
       aria-modal="true"

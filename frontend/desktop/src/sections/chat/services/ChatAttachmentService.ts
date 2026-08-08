@@ -155,6 +155,36 @@ export class ChatAttachmentService {
     }
   }
 
+  /** Build an attachment from a real filesystem path (Tauri drag-drop).
+   *  The webview only receives the path from drop events — bytes are read
+   *  via the shell's read_file_base64 command, and the attachment keeps
+   *  its source ``path`` so tools that need the real file can find it. */
+  static async fromPath(path: string): Promise<FileAttachment | null> {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const res = await invoke<{ ok: boolean; data: string; name: string; path: string }>(
+        'read_file_base64',
+        { path },
+      );
+      const binary = atob(res.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const file = new File([bytes], res.name, { lastModified: Date.now() });
+      const pending = this.createPending(file);
+      pending.path = res.path;
+      const done = await this.readInto(file, pending);
+      // Drop ephemeral blob preview once we have a stable data URL (or on error).
+      if (done.previewUrl && (done.dataUrl || done.status === 'error')) {
+        URL.revokeObjectURL(done.previewUrl);
+        done.previewUrl = undefined;
+      }
+      return done;
+    } catch (err) {
+      console.warn('[attachments] path read failed:', err);
+      return null;
+    }
+  }
+
   /** Read browser File objects into chat attachments (blocking, no live progress). */
   static async fromFiles(files: Iterable<File>): Promise<FileAttachment[]> {
     const out: FileAttachment[] = [];

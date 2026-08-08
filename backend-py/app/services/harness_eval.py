@@ -16,13 +16,20 @@ Usage (pytest)::
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import time
 from typing import Any, Callable
 
 from app.json_narrowing import as_str
 
+logger = logging.getLogger(__name__)
+
 EVAL_RESULTS_KEY = 'harness_eval:runs'
+EVAL_LAST_RUN_KEY = 'harness_eval:last_run'
+# Golden suite cadence for the background scheduler (6h; manual runs force).
+EVAL_SCHEDULE_INTERVAL_S = 6 * 3600
 
 
 # ── Result persistence (feeds /api/brain/harness/evals + trends) ─────────
@@ -152,8 +159,28 @@ class ScriptedClient:
 # ── Turn runner ───────────────────────────────────────────────────────────
 
 
+class _DirectPatch:
+    """Minimal duck-typed stand-in for pytest's monkeypatch: setattr with a
+    save/restore stack, so ``run_turn`` works outside pytest (the scheduled
+    eval runner + POST /api/brain/harness/evals/run)."""
+
+    def __init__(self) -> None:
+        self._stack: list[tuple[object, str, object]] = []
+
+    def setattr(self, obj: object, name: str, value: object) -> None:
+        self._stack.append((obj, name, getattr(obj, name)))
+        setattr(obj, name, value)
+
+    def undo(self) -> None:
+        for obj, name, old in reversed(self._stack):
+            try:
+                setattr(obj, name, old)
+            except Exception:
+                pass
+
+
 async def run_turn(
-    monkeypatch: Any,
+    monkeypatch: Any = None,
     *,
     script: list[dict[str, Any]],
     message: str = 'do the task',
@@ -166,6 +193,10 @@ async def run_turn(
 
     Returns ``(events, session)``. Events are the SSE-shaped dicts the loop
     emitted (done/error/toolResult/warning/…).
+
+    ``monkeypatch`` may be pytest's fixture (tests) or ``None`` (scheduled
+    runner / endpoint) — when None, a save/restore stand-in is used so the
+    real loop is still driven, just without pytest.
     """
     import app.providers.clients as clients
 
@@ -184,14 +215,15 @@ async def run_turn(
     # ONE client instance for the whole turn: getClient is called per round,
     # and a fresh client would replay the script from round 1 every time.
     client = ScriptedClient(script)
-    monkeypatch.setattr(clients, 'getClient', lambda provider: client)
+    patcher = _DirectPatch() if monkeypatch is None else monkeypatch
+    patcher.setattr(clients, 'getClient', lambda provider: client)
     providerConfig: dict[str, object] = {
         'name': provider_name,
         'apiKey': 'test-key',
         'apiMode': 'openaiChat',
         'modelProfiles': {'eval-model': {'maxOutputTokens': 64000, 'contextWindow': 128000}},
     }
-    monkeypatch.setattr(wb, '_resolveChatLlm', lambda **kwargs: (providerConfig, 'eval-model'))
+    patcher.setattr(wb, '_resolveChatLlm', lambda **kwargs: (providerConfig, 'eval-model'))
     # Hermetic registry: snapshot what existed before register_all and restore
     # it afterwards — eval scenarios must not leak tools into later tests.
     from app.services import tool_registry
@@ -210,6 +242,8 @@ async def run_turn(
             emit=events.append if emit is None else emit,
         )
     finally:
+        if isinstance(patcher, _DirectPatch):
+            patcher.undo()
         for name in _registered_names() - before:
             try:
                 tool_registry.unregister(name)
@@ -229,3 +263,197 @@ def find_event(events: list[dict[str, Any]], etype: str) -> dict[str, Any] | Non
         if as_str(e.get('type'), '') == etype:
             return e
     return None
+
+
+# ── Golden scenario catalog + scheduled runner ────────────────────────────
+# Same scenarios the pytest suite drives (tests/test_harness_evals.py), so
+# the background scheduler and the "Run evals" button measure the same
+# properties. `eval_probe` is registered by the runner (mirrors the test
+# fixture) and unregistered afterwards — the registry stays hermetic.
+
+
+EVAL_SCENARIOS: list[dict[str, Any]] = [
+    {
+        'taskId': 'well-behaved-turn',
+        'script': [{'type': 'text', 'text': 'hello world'}],
+        'expect': ['done'],
+        'mustNotHave': ['error'],
+    },
+    {
+        'taskId': 'tool-round-trip',
+        'script': [
+            {'type': 'tool', 'name': 'eval_probe', 'arguments': {'arg': 1}},
+            {'type': 'text', 'text': 'done with the probe'},
+        ],
+        'expect': ['toolResult', 'done'],
+        'mustNotHave': ['error'],
+    },
+    {
+        'taskId': 'malformed-json-self-heal',
+        'script': [
+            {'type': 'malformed_tool', 'name': 'eval_probe', 'raw': '{"arg": '},
+            {'type': 'text', 'text': 'fixed it'},
+        ],
+        'expect': ['done'],
+        'mustHaveText': ['[Validation Error]'],
+        'mustNotHaveText': ['probe-ok'],  # never executed with empty args
+    },
+    {
+        'taskId': 'empty-response-error',
+        'script': [{'type': 'empty'}],
+        'expect': ['error'],
+        'mustHaveText': ['empty response'],
+    },
+    {
+        'taskId': 'stall-detection',
+        'script': [{'type': 'tool', 'name': 'eval_probe', 'arguments': {}} for _ in range(20)],
+        'expect': ['warning'],
+        'mustHaveText': ['No progress'],
+    },
+    {
+        'taskId': 'verifier-gate-blocks',
+        'script': [
+            {'type': 'tool', 'name': 'update_state', 'arguments': {'phase': 'complete'}},
+            {'type': 'text', 'text': 'this answer must be withheld'},
+        ],
+        'verifier_enforced': True,
+        'expect': ['verifierBlocked'],
+    },
+    {
+        'taskId': 'verifier-gate-passes',
+        'script': [
+            {'type': 'tool', 'name': 'run_command', 'arguments': {'command': 'echo ok'}},
+            {'type': 'tool', 'name': 'update_state', 'arguments': {'phase': 'complete'}},
+            {'type': 'text', 'text': 'verified answer'},
+        ],
+        'verifier_enforced': True,
+        'expect': ['done'],
+        'mustNotHave': ['verifierBlocked'],
+    },
+]
+
+
+def _scenario_passed(events: list[dict[str, Any]], spec: dict[str, Any]) -> tuple[bool, str]:
+    types = event_types(events)
+    missing = [t for t in as_list_of_str(spec.get('expect')) if t not in types]
+    if missing:
+        return False, f'missing events: {", ".join(missing)}'
+    forbidden = [t for t in as_list_of_str(spec.get('mustNotHave')) if t in types]
+    if forbidden:
+        return False, f'unexpected events: {", ".join(forbidden)}'
+    tool_text = ''.join(as_str(e.get('content'), '') for e in events if e.get('type') == 'toolResult')
+    warn_text = ' '.join(as_str(e.get('message'), '') for e in events if e.get('type') == 'warning')
+    err = find_event(events, 'error')
+    err_text = as_str(err.get('message'), '') if err else ''
+    all_text = f'{tool_text} {warn_text} {err_text}'.lower()
+    for needle in as_list_of_str(spec.get('mustHaveText')):
+        if needle.lower() not in all_text:
+            return False, f'missing text: {needle!r}'
+    for needle in as_list_of_str(spec.get('mustNotHaveText')):
+        if needle.lower() in all_text:
+            return False, f'unexpected text: {needle!r}'
+    return True, 'ok'
+
+
+def as_list_of_str(value: object) -> list[str]:
+    return [as_str(v, '') for v in value] if isinstance(value, list) else []
+
+
+async def run_all_scenarios() -> dict[str, Any]:
+    """Run every golden scenario through the REAL loop (no pytest, no LLM).
+
+    Used by the background scheduler and POST /api/brain/harness/evals/run.
+    Registers the probe tool for the run (fixture equivalent) and restores
+    the registry afterwards.
+    """
+    from app.services import tool_registry
+
+    async def _probe(**kwargs: object) -> str:
+        return 'probe-ok'
+
+    tool_registry.register(
+        'eval_probe',
+        'Eval probe tool.',
+        _probe,
+        {'type': 'object', 'properties': {}},
+    )
+    results: list[dict[str, Any]] = []
+    try:
+        for spec in EVAL_SCENARIOS:
+            t0 = time.time()
+            try:
+                events, _session = await run_turn(
+                    None,
+                    script=spec['script'],
+                    message=as_str(spec.get('message'), 'do the task'),
+                    verifier_enforced=bool(spec.get('verifier_enforced')),
+                )
+                passed, note = _scenario_passed(events, spec)
+            except Exception as exc:  # scenario must never break the suite
+                events = []
+                passed, note = False, f'runner error: {exc}'
+            duration_ms = int((time.time() - t0) * 1000)
+            record_eval_run(
+                task_id=as_str(spec.get('taskId'), ''),
+                passed=passed,
+                rounds=len(event_types(events)),
+                duration_ms=duration_ms,
+                notes=note,
+            )
+            results.append(
+                {
+                    'taskId': as_str(spec.get('taskId'), ''),
+                    'passed': passed,
+                    'note': note,
+                    'durationMs': duration_ms,
+                }
+            )
+    finally:
+        try:
+            tool_registry.unregister('eval_probe')
+        except Exception:
+            pass
+    return {
+        'results': results,
+        'passed': sum(1 for r in results if r['passed']),
+        'total': len(results),
+    }
+
+
+def _last_eval_run() -> float:
+    try:
+        from app.services.memory_store import get_memory
+
+        v = get_memory(EVAL_LAST_RUN_KEY)
+        return float(v) if isinstance(v, (int, float)) else 0.0
+    except Exception:
+        return 0.0
+
+
+def _mark_eval_run() -> None:
+    try:
+        from app.services.memory_store import save_memory
+
+        save_memory(EVAL_LAST_RUN_KEY, time.time())
+    except Exception:
+        pass
+
+
+async def maybe_run_scheduled_evals(*, force: bool = False) -> dict[str, Any] | None:
+    """Run the suite if the interval elapsed (or when forced). Returns the
+    result dict, or None when skipped."""
+    if not force and (time.time() - _last_eval_run()) < EVAL_SCHEDULE_INTERVAL_S:
+        return None
+    _mark_eval_run()
+    return await run_all_scenarios()
+
+
+async def scheduled_evals_loop() -> None:
+    """Background cadence loop (started at app boot): runs the golden suite
+    every interval. Never raises — the harness must not take the app down."""
+    while True:
+        try:
+            await maybe_run_scheduled_evals()
+        except Exception:
+            logger.exception('scheduled eval run failed')
+        await asyncio.sleep(1800)  # re-check every 30 minutes

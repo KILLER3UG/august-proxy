@@ -25,7 +25,9 @@ const DEFAULT_WIDE_WIDTH = 640;   // 3-4 sections — doubles so they don't squi
 const BASE_WIDTH_KEY = 'august-right-drawer-width-base';
 const WIDE_WIDTH_KEY = 'august-right-drawer-width-wide';
 const MIN_WIDTH = 200;
-const MAX_VIEWPORT_FRACTION = 0.8;
+// Leave at least 40% of the viewport for chat — at minimum window widths
+// the drawer previously swallowed the conversation (audit finding).
+const MAX_VIEWPORT_FRACTION = 0.6;
 
 /** Shared panel open/close — matches session sidebar feel. */
 const PANEL_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];

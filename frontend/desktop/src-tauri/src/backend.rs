@@ -1313,6 +1313,35 @@ pub fn select_directory(app: AppHandle) -> Option<String> {
         .map(|path| path.to_string_lossy().to_string().replace('\\', "/"))
 }
 
+/// Base64 payload for a file read (image attachments preserve their
+/// source path — see the desktop drag-drop handler).
+#[derive(serde::Serialize)]
+pub struct FileData {
+    ok: bool,
+    data: String,
+    name: String,
+    path: String,
+}
+
+/// Read a user-dropped file's bytes as base64 so the webview can attach it
+/// while keeping the real source path (drag-drop events only hand us paths).
+#[tauri::command]
+pub fn read_file_base64(path: String) -> Result<FileData, String> {
+    use base64::Engine;
+
+    let bytes = std::fs::read(&path).map_err(|e| format!("read failed: {e}"))?;
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.clone());
+    Ok(FileData {
+        ok: true,
+        data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        name,
+        path,
+    })
+}
+
 #[tauri::command]
 pub fn backend_setup_status(app: AppHandle) -> SetupPhase {
     if let Some(state) = app.try_state::<BackendSetupStatus>() {

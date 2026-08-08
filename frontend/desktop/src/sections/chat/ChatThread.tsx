@@ -76,8 +76,7 @@ import {
   truncateWorkbenchSession,
 } from '@/api/workbench';
 import { resolveWorkbenchSessionId } from './stream/session-id-map';
-import { getOrInitSessionStreamState } from './stream/session-stream-store';
-import { setArenaRun, type ArenaRunLane } from './arena/arena-store';
+import { launchArenaRun } from './arena/launchArenaRun';
 import { ArenaView } from './arena/ArenaView';
 import { setDebateRun, type DebateRun as DebateRunType } from './debate/debate-store';
 import { DebateView } from './debate/DebateView';
@@ -188,6 +187,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const {
     attachments,
     attachFiles,
+    attachPaths,
     handleFileUpload,
     handleComposerPaste,
     removeAttachment,
@@ -198,6 +198,27 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   } = useChatAttachments();
 
   const queryClient = useQueryClient();
+
+  // Tauri drag-drop: drop events deliver real filesystem paths (not File
+  // objects). Read them via the shell command so attachments preserve
+  // their source path — used by tools that need the real file.
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.__TAURI_INTERNALS__ === undefined) return;
+    let unlisten: (() => void) | undefined;
+    void import('@tauri-apps/api/window').then(async ({ getCurrentWindow }) => {
+      unlisten = await getCurrentWindow().onDragDropEvent((event) => {
+        if (event.payload.type !== 'drop' || event.payload.paths.length === 0) return;
+        void attachPaths(event.payload.paths).then((count) => {
+          if (count > 0) {
+            toast.message(`Attached ${count} file${count === 1 ? '' : 's'}`);
+          }
+        });
+      });
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, [attachPaths]);
   const [input, setInput] = useState(() => loadComposerDraft(sessionId));
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
   const [_runtimeVersion, _setRuntimeVersion] = useState(0);
@@ -1054,69 +1075,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const launchArena = useCallback(
     async (targets: ModelItem[], prompt: string) => {
       if (!sessionId || targets.length < 2) return;
-      const wbId = resolveWorkbenchSessionId(sessionId);
-      const prefix = getOrInitSessionStreamState(sessionId).messages ?? [];
-      const lanes: ArenaRunLane[] = [];
-      try {
-        for (let i = 0; i < targets.length; i++) {
-          const m = targets[i];
-          const branch = await branchWorkbenchSession(wbId);
-          const ui = createSession(
-            activeSession?.folderId ?? null,
-            `⚔ ${m.name || m.id}`,
-            activeSession?.workspacePath || null,
-          );
-          updateSessionWorkbenchMetadata(ui.id, {
-            workbenchSessionId: branch.id,
-            workbenchAgentId: branch.agentId,
-            workbenchProvider: branch.provider,
-          });
-          const userMsg: ChatMessage = {
-            id: `m${Date.now()}_a${i}`,
-            role: 'user',
-            content: prompt,
-            timestamp: new Date().toISOString(),
-          };
-          const seeded = [...prefix, userMsg];
-          persistMessages(ui.id, seeded);
-          lanes.push({
-            uiSessionId: ui.id,
-            modelId: m.id,
-            modelName: m.name || m.id,
-            provider: m.provider,
-          });
-          void startChatStream(ui.id, {
-            message: prompt,
-            chatHistory: seeded,
-            workbenchMode,
-            effort,
-            thinkingEnabled,
-            model: m.id,
-            modelProvider: m.provider,
-            provider: m.provider,
-            ensureWorkbenchSession: async () => normalizeWorkbenchSession(branch) ?? branch,
-          }).then((r) => {
-            if (r === 'error') {
-              toast.error(`Arena lane on ${m.name || m.id} failed — check the backend`);
-            }
-          });
-        }
-        setArenaRun({
-          runId: `arena_${Date.now()}`,
-          sourceSessionId: sessionId,
-          prompt,
-          lanes,
-          startedAt: Date.now(),
-          workbenchMode,
-          effort,
-          thinkingEnabled,
-        });
-        toast.success(
-          `Arena launched — ${lanes.length} models answering in parallel`,
-        );
-      } catch (err) {
-        toast.error(`Arena launch failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      await launchArenaRun({
+        sourceSessionId: sessionId,
+        prompt,
+        targets,
+        workbenchMode,
+        effort,
+        thinkingEnabled,
+        folderId: activeSession?.folderId ?? null,
+        workspacePath: activeSession?.workspacePath ?? null,
+      });
     },
     [
       sessionId,
@@ -1379,6 +1347,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             }
           }}
           onDrop={(e) => {
+            // Under Tauri the shell's drag-drop event handles drops (it
+            // delivers real paths); the browser path would double-attach.
+            if (window.__TAURI_INTERNALS__ !== undefined) return;
             const files = e.dataTransfer.files;
             if (!files || files.length === 0) return;
             e.preventDefault();

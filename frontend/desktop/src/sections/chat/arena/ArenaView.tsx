@@ -7,7 +7,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { FileDiff, Swords, X } from 'lucide-react';
+import { FileDiff, RotateCcw, Swords, X } from 'lucide-react';
 import { DiffView } from '@/components/chat/DiffView';
 import { SectionHeader } from '@/components/SectionHeader';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,7 @@ import {
   clearArenaRun,
   type ArenaRunLane,
 } from './arena-store';
+import { launchArenaRun, type ArenaLaunchOpts } from './launchArenaRun';
 import { ArenaPane } from './ArenaPane';
 import { stopChatStream, startChatStream } from '../chat-stream-manager';
 import {
@@ -32,6 +33,26 @@ import {
 } from '@/components/chat/WorkbenchModeSelector';
 import type { WorkbenchMode } from '@/types/chat';
 import type { EffortLevel } from '../hooks/useChatSend';
+
+interface ArenaHistoryRow {
+  sessionId: string;
+  taskType: string;
+  model: string;
+  provider: string;
+  won: boolean;
+  tokens: number;
+  durationMs: number;
+  at: string;
+  prompt: string;
+}
+
+interface ArenaGroup {
+  sessionId: string;
+  prompt: string;
+  taskType: string;
+  at: string;
+  rows: Array<{ model: string; provider: string; won: boolean }>;
+}
 
 export function ArenaView() {
   const run = useArenaStore((s) => s.run);
@@ -56,52 +77,111 @@ export function ArenaView() {
 
   // Arena archive: recent verdicts (results used to vanish when the overlay
   // closed — the routing_evidence arena rows are the durable record).
-  const historyQ = useQuery<{ results: Array<{
-    sessionId: string; taskType: string; model: string; provider: string;
-    won: boolean; tokens: number; durationMs: number; at: string;
-  }> }>({
+  const historyQ = useQuery<{ results: ArenaHistoryRow[] }>({
     queryKey: ['arena-history'],
-    queryFn: () => api.get<{ results: Array<{
-      sessionId: string; taskType: string; model: string; provider: string;
-      won: boolean; tokens: number; durationMs: number; at: string;
-    }> }>('/api/brain/routing/arena'),
+    queryFn: () => api.get<{ results: ArenaHistoryRow[] }>('/api/brain/routing/arena'),
     refetchInterval: 30_000,
   });
 
+  // Group per verdict (session) so one archive entry = one arena/debate,
+  // and replay can re-run all its lanes on the stored prompt.
+  const groups = useMemo<ArenaGroup[]>(() => {
+    const map = new Map<string, ArenaGroup>();
+    for (const h of historyQ.data?.results ?? []) {
+      const g = map.get(h.sessionId) ?? {
+        sessionId: h.sessionId,
+        prompt: h.prompt ?? '',
+        taskType: h.taskType,
+        at: h.at,
+        rows: [],
+      };
+      g.rows.push({ model: h.model, provider: h.provider, won: h.won });
+      map.set(h.sessionId, g);
+    }
+    return [...map.values()];
+  }, [historyQ.data]);
+
+  const replayGroup = async (g: ArenaGroup) => {
+    const seen = new Set<string>();
+    const targets: ArenaLaunchOpts['targets'] = [];
+    for (const r of g.rows) {
+      const key = `${r.model}::${r.provider}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push({ id: r.model, name: r.model, provider: r.provider });
+    }
+    await launchArenaRun({
+      sourceSessionId: g.sessionId,
+      prompt: g.prompt,
+      targets,
+      workbenchMode: 'full',
+      effort: 'medium',
+      thinkingEnabled: true,
+      folderId: null,
+      workspacePath: null,
+    });
+  };
+
   if (!run) {
     // Idle state = the archive screen, so past verdicts never disappear.
-    const history = historyQ.data?.results ?? [];
     return (
       <div className="p-6 space-y-4">
         <SectionHeader
           title="Arena archive"
-          subtitle="Past arena / debate verdicts — the routing-evidence loop's training data."
+          subtitle="Past arena / debate verdicts — the routing-evidence loop's training data. Replay re-runs the same lanes on the stored prompt."
         />
-        {history.length === 0 && (
+        {groups.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No arena verdicts recorded yet — run an arena comparison and pick a
             winner; the verdict is recorded here for the routing-evidence loop.
           </p>
         )}
         <div className="space-y-2">
-          {history.map((h, i) => (
+          {groups.map((g) => (
             <div
-              key={`${h.sessionId}-${i}`}
-              className="rounded-xl border border-border bg-card/60 px-3 py-2.5 text-xs flex items-center gap-3"
+              key={g.sessionId}
+              className="rounded-xl border border-border bg-card/60 px-3 py-2.5 text-xs"
+              data-testid={`arena-group-${g.sessionId}`}
             >
-              <span
-                className={cn(
-                  'inline-block size-2 rounded-full shrink-0',
-                  h.won ? 'bg-success' : 'bg-muted-foreground/40',
-                )}
-                title={h.won ? 'Won' : 'Lost'}
-              />
-              <span className="font-medium truncate">{h.model}</span>
-              <span className="text-muted-foreground truncate">{h.provider}</span>
-              <span className="text-muted-foreground/70">{h.taskType}</span>
-              <span className="ml-auto text-muted-foreground/50 shrink-0">
-                {new Date(h.at).toLocaleString()}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground/70 shrink-0">{g.taskType || 'general'}</span>
+                <span className="text-muted-foreground/50 truncate flex-1 min-w-0" title={g.prompt}>
+                  {g.prompt ? `“${g.prompt.slice(0, 80)}${g.prompt.length > 80 ? '…' : ''}”` : 'verdict recorded before prompts were stored'}
+                </span>
+                <span className="text-muted-foreground/50 shrink-0">
+                  {new Date(g.at).toLocaleString()}
+                </span>
+                {g.prompt && g.rows.length >= 2 ? (
+                  <button
+                    type="button"
+                    onClick={() => void replayGroup(g)}
+                    className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] text-primary hover:bg-primary/20 shrink-0"
+                    title="Re-run these models on the same prompt"
+                    data-testid={`arena-replay-${g.sessionId}`}
+                  >
+                    <RotateCcw className="size-3" />
+                    Replay
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                {g.rows.map((r, i) => (
+                  <span
+                    key={`${r.model}-${i}`}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px]',
+                      r.won
+                        ? 'bg-emerald-500/15 text-emerald-500'
+                        : 'bg-muted/60 text-muted-foreground',
+                    )}
+                    title={r.won ? 'Won' : 'Lost'}
+                  >
+                    <span className={cn('inline-block size-1.5 rounded-full', r.won ? 'bg-success' : 'bg-muted-foreground/40')} />
+                    {r.model}
+                    <span className="text-muted-foreground/60">{r.provider}</span>
+                  </span>
+                ))}
+              </div>
             </div>
           ))}
         </div>

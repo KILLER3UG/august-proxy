@@ -1472,6 +1472,44 @@ async def sendWorkbenchMessageStream(
             clear_current()
 
 
+def _record_turn_lesson(
+    *,
+    turn_error: str,
+    model: str,
+    provider: str,
+    task_type: str,
+    session_id: str,
+) -> None:
+    """Self-improvement (turn-level): record a heuristic when a turn fails.
+
+    Tool-level failures already have deterministic-signal lessons; this
+    covers upstream/loop failures (provider errors, stall hard-stops,
+    format rejections). The rule is injected into future system prompts
+    (top-N by confidence), so the model is nudged away from the failing
+    path — confidence grows on repeats via ``addHeuristic``'s merge, and
+    secrets never land in a rule (memory_scrubber gate).
+    """
+    try:
+        from app.services.heuristics_service import addHeuristic
+
+        first_line = (turn_error or '').strip().splitlines()[0][:120] if turn_error else ''
+        if not first_line:
+            return
+        rule = (
+            f'Turn failed on {model or "model"} via {provider or "provider"} '
+            f'({task_type or "general"} task): {first_line} — prefer a different '
+            'model or check provider configuration for this task type.'
+        )
+        addHeuristic(
+            rule,
+            source='turn-lesson',
+            category='provider_reliability',
+            session_id=session_id,
+        )
+    except Exception:
+        logger.debug('turn lesson record failed', exc_info=True)
+
+
 def _verifier_gated_emit(session: object, emit):
     """Wrap a turn's emit callback with the opt-in verifier final-answer gate.
 
@@ -1520,6 +1558,29 @@ def _verifier_gated_emit(session: object, emit):
                             },
                         }
                     )
+                    # Self-improvement: the verifier rejected completion — record
+                    # a correction heuristic so future turns run the declared
+                    # verification command before declaring done (merged/confidence-
+                    # bumped on repeats; scrubbed of secrets upstream).
+                    try:
+                        from app.services.heuristics_service import addHeuristic
+
+                        blockers = as_list(stateDict.get('blockers'), [])[:2]
+                        detail = '; '.join(as_str(b, '') for b in blockers)[:160]
+                        rule = (
+                            'Verifier gate: final answer is withheld until '
+                            "update_state(phase='complete') runs after a passing "
+                            'verification command.'
+                            + (f' Blockers seen: {detail}.' if detail else '')
+                        )
+                        addHeuristic(
+                            rule,
+                            source='verifier-lesson',
+                            category='verifier',
+                            session_id=as_str(getattr(session, 'id', '')),
+                        )
+                    except Exception:
+                        logger.debug('verifier lesson record failed', exc_info=True)
                 return
         emit(evt)
 
@@ -3092,12 +3153,14 @@ async def _sendWorkbenchMessageStreamImpl(
                 logger.debug('memory suggestions extract failed', exc_info=True)
             # Routing evidence (surpass #1/#7): record this turn's outcome by
             # task type so the harness learns which model wins what.
+            task_type = 'general'
             try:
                 from app.services.routing_evidence import classify_task_type, record_turn
 
+                task_type = classify_task_type(_lastUserMessageText(session))
                 record_turn(
                     session_id=sessionId,
-                    task_type=classify_task_type(_lastUserMessageText(session)),
+                    task_type=task_type,
                     model=as_str(resolvedModel, ''),
                     provider=as_str(
                         (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
@@ -3109,6 +3172,18 @@ async def _sendWorkbenchMessageStreamImpl(
                 )
             except Exception:
                 logger.debug('routing evidence record failed', exc_info=True)
+            # Self-improvement: failed turns become provider-reliability lessons
+            # (injected into future prompts, merged/confidence-bumped on repeats).
+            if turnError is not None:
+                _record_turn_lesson(
+                    turn_error=as_str(turnError, ''),
+                    model=as_str(resolvedModel, ''),
+                    provider=as_str(
+                        (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
+                    ),
+                    task_type=task_type,
+                    session_id=sessionId,
+                )
             emit(doneEvent)
     review_model = _backgroundTaskModel('reviewModel', resolvedModel)
     auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)

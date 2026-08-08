@@ -9,6 +9,7 @@ import { listen } from '@tauri-apps/api/event';
 import { LogOut } from 'lucide-react';
 import { Backdrop } from '@/components/overlays/Backdrop';
 import { isTauri } from '@/lib/tauri-detect';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useSessionsStore } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
 import type { SessionStatus } from '@/store/sessions/types';
@@ -21,6 +22,7 @@ function isActiveStatus(status: SessionStatus | undefined): boolean {
 export function QuitConfirmModal() {
   const [open, setOpen] = useState(false);
   const [quitting, setQuitting] = useState(false);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const sessions = useSessionsStore((s) => s.sessions);
   const sessionStates = useSessionsStore((s) => s.sessionStates);
   const activeChatSessions = useActiveChatStreamsStore((s) => s.active);
@@ -80,6 +82,7 @@ export function QuitConfirmModal() {
   return (
     <Backdrop onClose={onCancel} className="z-[70]">
       <div
+        ref={trapRef}
         className={cn(
           'w-[min(92vw,400px)] rounded-2xl border border-border bg-card shadow-2xl',
           'px-5 pt-5 pb-4',

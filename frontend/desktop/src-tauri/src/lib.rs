@@ -84,6 +84,7 @@ pub fn run() {
             backend::restart_proxy,
             backend::proxy_status,
             backend::select_directory,
+            backend::read_file_base64,
             backend::backend_last_error,
             backend::backend_setup_status,
             backend::sync_backend_deps,

@@ -82,6 +82,21 @@ export function useChatAttachments() {
     [patchAttachment],
   );
 
+  /** Attach files from real filesystem paths (Tauri drag-drop). Returns how
+   *  many succeeded — failed reads are dropped with a console warning. */
+  const attachPaths = useCallback(
+    async (paths: string[]): Promise<number> => {
+      if (paths.length === 0) return 0;
+      const results = await Promise.all(paths.map((p) => ChatAttachmentService.fromPath(p)));
+      const ok = results.filter((r): r is FileAttachment => r !== null);
+      if (ok.length > 0) {
+        setAttachments((prev) => [...prev, ...ok]);
+      }
+      return ok.length;
+    },
+    [setAttachments],
+  );
+
   const handleFileUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
@@ -167,6 +182,7 @@ export function useChatAttachments() {
     attachments,
     setAttachments,
     attachFiles,
+    attachPaths,
     handleFileUpload,
     handleComposerPaste,
     removeAttachment,

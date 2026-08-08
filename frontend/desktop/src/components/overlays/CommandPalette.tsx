@@ -38,6 +38,7 @@ import { Backdrop } from "./Backdrop";
 import { useQueryClient } from "@tanstack/react-query";
 import { dispatchUiAction } from "@/api/ui-events";
 import { openConversationSearch } from "@/store/conversation-search";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 export function CommandPalette() {
   const open = useCommandPaletteStore((s) => s.open);
@@ -45,6 +46,7 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const location = useLocation();
+  const trapRef = useFocusTrap<HTMLDivElement>();
 
   useEffect(() => {
     if (!open) return;
@@ -65,6 +67,10 @@ export function CommandPalette() {
   return (
     <Backdrop onClose={closeCommandPalette} className="items-start pt-[15vh]">
       <Command
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         className="w-[min(90vw,600px)] rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         label="Command palette"

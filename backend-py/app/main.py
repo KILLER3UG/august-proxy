@@ -183,6 +183,14 @@ async def lifespan(app: FastAPI):
         await start_cognitive_services(app)
     except Exception:
         logger.exception('Cognitive boot failed (continuing without background layers)')
+    # Loop-level golden evals: run the scripted suite every 6h so the
+    # reliability surface shows whether harness changes actually help.
+    try:
+        from app.services.harness_eval import scheduled_evals_loop
+
+        asyncio.create_task(scheduled_evals_loop())
+    except Exception:
+        logger.exception('Scheduled eval loop failed to start (continuing)')
     _gateway = None
     try:
         from app.services.gateway.runner import startGateway
