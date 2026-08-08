@@ -1,0 +1,261 @@
+/* ── RightDrawerSubagentsSection — compact roster + live detail ─────── */
+
+import { CheckCircle2, CircleAlert, Loader2, Sparkles, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
+import {
+  listWorkbenchSessionAgents,
+  type SessionAgentRow,
+} from '@/api/workbench';
+import { getAgentRoleLabel } from '@/lib/tool-labels';
+import { useSessionStreamStore } from '@/sections/chat/stream/session-stream-store';
+import { SubagentTimeline } from '@/components/chat/SubagentTimeline';
+import { closeRightDrawerSection } from './RightDrawerState';
+
+const ACTIVE_STATUSES = new Set(['pending', 'running']);
+
+const AVATAR_COLORS = [
+  'text-violet-300 bg-violet-400/15',
+  'text-emerald-300 bg-emerald-400/15',
+  'text-orange-300 bg-orange-400/15',
+  'text-cyan-300 bg-cyan-400/15',
+];
+
+function statusText(status: string): string {
+  if (ACTIVE_STATUSES.has(status)) return 'is working';
+  if (status === 'completed' || status === 'recovered') return 'completed';
+  if (status === 'cancelled') return 'cancelled';
+  return 'failed';
+}
+
+function AgentGlyph({ index, status }: { index: number; status: string }) {
+  const Icon = ACTIVE_STATUSES.has(status)
+    ? Loader2
+    : status === 'completed' || status === 'recovered'
+      ? CheckCircle2
+      : CircleAlert;
+
+  return (
+    <span
+      className={cn(
+        'flex size-5 shrink-0 items-center justify-center rounded-md',
+        AVATAR_COLORS[index % AVATAR_COLORS.length],
+      )}
+    >
+      <Icon className={cn('size-3', ACTIVE_STATUSES.has(status) && 'animate-spin')} />
+    </span>
+  );
+}
+
+export function RightDrawerSubagentsSection({
+  sessionId,
+  workbenchSessionId,
+}: {
+  sessionId: string | null;
+  workbenchSessionId: string | null;
+}) {
+  const [openTaskIds, setOpenTaskIds] = useState<string[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const subagentBlocks = useSessionStreamStore((state) => {
+    const session = sessionId ? state.bySession[sessionId] : undefined;
+    return session?.subagentBlocks;
+  });
+  const subagentPrompts = useSessionStreamStore((state) => {
+    const session = sessionId ? state.bySession[sessionId] : undefined;
+    return session?.subagentPrompts;
+  });
+  const query = useQuery({
+    queryKey: ['session-agents', workbenchSessionId],
+    queryFn: () => listWorkbenchSessionAgents(workbenchSessionId!),
+    enabled: !!workbenchSessionId,
+    refetchInterval: (current) => {
+      const agents = current.state.data?.agents ?? [];
+      return agents.some((agent) => ACTIVE_STATUSES.has(agent.status)) ? 2_000 : 10_000;
+    },
+  });
+
+  const activeAgents = (query.data?.agents ?? []).filter((agent) =>
+    ACTIVE_STATUSES.has(agent.status),
+  );
+  const selectedBlock = selectedTaskId
+    ? subagentBlocks?.get(selectedTaskId) ?? null
+    : null;
+  const selectedApiAgent = selectedTaskId
+    ? query.data?.agents.find((agent) => agent.taskId === selectedTaskId) ?? null
+    : null;
+  const selectedAgent: SessionAgentRow | null = selectedApiAgent ?? (selectedBlock
+    ? {
+        taskId: selectedBlock.jobId,
+        agentId: selectedBlock.agentId,
+        goal: selectedBlock.task || '',
+        status: selectedBlock.status,
+      }
+    : null);
+  const agents = selectedAgent && !activeAgents.some((agent) => agent.taskId === selectedAgent.taskId)
+    ? [...activeAgents, selectedAgent]
+    : activeAgents;
+  const openAgents = openTaskIds
+    .map((taskId) => {
+      const apiAgent = query.data?.agents.find((agent) => agent.taskId === taskId);
+      if (apiAgent) return apiAgent;
+      const block = subagentBlocks?.get(taskId);
+      return block
+        ? {
+            taskId: block.jobId,
+            agentId: block.agentId,
+            goal: block.task || '',
+            status: block.status,
+          }
+        : null;
+    })
+    .filter((agent): agent is SessionAgentRow => agent !== null);
+
+  const selectAgent = (taskId: string) => {
+    setOpenTaskIds((current) => (current.includes(taskId) ? current : [...current, taskId]));
+    setSelectedTaskId(taskId);
+  };
+
+  const closeAgent = (taskId: string) => {
+    setOpenTaskIds((current) => {
+      const next = current.filter((id) => id !== taskId);
+      setSelectedTaskId((selected) => {
+        if (selected !== taskId) return selected;
+        return next[next.length - 1] ?? null;
+      });
+      return next;
+    });
+  };
+
+  // Keep the completed detail visible long enough for its final output to be
+  // read. If nobody opened a row, dismiss the progress-only section shortly
+  // after the last worker settles.
+  useEffect(() => {
+    if (!query.data || activeAgents.length > 0 || openTaskIds.length > 0) return;
+    const timer = window.setTimeout(() => closeRightDrawerSection('subagents'), 3_000);
+    return () => window.clearTimeout(timer);
+  }, [query.data, activeAgents.length, openTaskIds.length]);
+
+  if (selectedTaskId && selectedAgent) {
+    return (
+      <div className="flex h-full min-h-0 flex-col drawer-section-text">
+        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border/50 px-2 py-1">
+          {openAgents.map((agent) => (
+            <div
+              key={agent.taskId}
+              className={cn(
+                'group flex max-w-[12rem] shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs',
+                agent.taskId === selectedTaskId
+                  ? 'bg-primary/10 text-foreground'
+                  : 'text-muted-foreground hover:bg-white/[0.05]',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => setSelectedTaskId(agent.taskId)}
+                className="min-w-0 truncate text-left"
+                aria-label={`Show ${getAgentRoleLabel(agent.agentId)} details`}
+              >
+                {getAgentRoleLabel(agent.agentId)}
+              </button>
+              <button
+                type="button"
+                onClick={() => closeAgent(agent.taskId)}
+                className="shrink-0 rounded p-0.5 text-muted-foreground/65 hover:bg-white/[0.08] hover:text-foreground"
+                aria-label={`Remove ${getAgentRoleLabel(agent.agentId)} view`}
+                title="Remove view"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div
+          className="min-h-0 flex-1 overflow-y-auto px-3 py-3"
+          data-testid={`right-drawer-subagent-view-${selectedTaskId}`}
+        >
+          <div className="mb-3 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-semibold text-foreground">
+                {getAgentRoleLabel(selectedAgent.agentId)}
+              </h3>
+              <p className="text-xs text-muted-foreground/70">
+                {statusText(selectedAgent.status)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => closeAgent(selectedTaskId)}
+              className="rounded p-1 text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+              aria-label="Remove subagent view"
+              title="Remove view"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+
+          {selectedBlock ? (
+            <SubagentTimeline
+              state={selectedBlock}
+              subBlocks={subagentBlocks}
+              subPrompts={subagentPrompts}
+              hideTaskPrompt
+            />
+          ) : (
+            <div className="text-xs italic text-muted-foreground/70">
+              Waiting for subagent output…
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full min-h-0 overflow-y-auto drawer-section-text">
+      <div className="flex items-center justify-between px-2 py-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Subagents</span>
+        {activeAgents.length > 0 && (
+          <span className="text-[11px] tabular-nums text-muted-foreground/55">
+            {activeAgents.length}
+          </span>
+        )}
+      </div>
+
+      {agents.length === 0 ? (
+        <div className="px-2 py-3 text-xs text-muted-foreground/60">
+          No active subagents.
+        </div>
+      ) : (
+        <div className="border-t border-border/50 px-2 py-1">
+          {agents.map((agent: SessionAgentRow, index) => (
+            <button
+              key={agent.taskId}
+              type="button"
+              onClick={() => selectAgent(agent.taskId)}
+              className="flex w-full min-w-0 items-center gap-2 border-b border-border/35 py-2 text-left last:border-b-0 hover:bg-white/[0.04]"
+              data-testid={`right-drawer-subagent-${agent.taskId}`}
+              title={agent.goal || agent.agentId}
+            >
+              <AgentGlyph index={index} status={agent.status} />
+              <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">
+                {getAgentRoleLabel(agent.agentId) || agent.goal || 'Agent'}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground/65">
+                {statusText(agent.status)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {query.isError && (
+        <div className="flex items-center gap-1.5 px-2 py-2 text-xs text-destructive/75">
+          <Sparkles className="size-3" />
+          Unable to refresh subagents.
+        </div>
+      )}
+    </div>
+  );
+}

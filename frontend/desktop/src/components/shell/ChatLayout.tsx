@@ -11,11 +11,10 @@ import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySe
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
-import { TeamAgentsStrip } from "./TeamAgentsStrip";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
 import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
-import { approveWorkbenchPlan, getWorkbenchSession, rejectWorkbenchPlan, setWorkbenchGuardMode, streamWorkbenchRevision } from "@/api/workbench";
+import { approveWorkbenchPlan, getWorkbenchSession, listWorkbenchSessionAgents, rejectWorkbenchPlan, setWorkbenchGuardMode, streamWorkbenchRevision } from "@/api/workbench";
 import { isNonEmptyPlan, normalizeWorkbenchSession } from "@/lib/workbench-plan";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
@@ -145,7 +144,7 @@ export function ChatLayout() {
           break;
         case 'set_drawer_section': {
           const section = e.target as RightDrawerSectionId;
-          if (['preview', 'diff', 'terminal', 'tasks', 'plan', 'browser'].includes(section)) {
+          if (['preview', 'diff', 'terminal', 'tasks', 'plan', 'browser', 'subagents'].includes(section)) {
             addRightDrawerSection(section);
             setActiveRightDrawerSection(section);
             setShowRightSidebar(true);
@@ -207,6 +206,35 @@ export function ChatLayout() {
   });
   const workbenchSession: WorkbenchSession | null =
     normalizeWorkbenchSession(workbench.data) || null;
+
+  // Keep the compact subagent roster in the right drawer while workers are
+  // active. The drawer section shares this query through React Query.
+  const sessionAgents = useQuery({
+    queryKey: ['session-agents', workbenchSessionId],
+    queryFn: () => listWorkbenchSessionAgents(workbenchSessionId!),
+    enabled: !!workbenchSessionId,
+    refetchInterval: 2_000,
+  });
+  const activeSubagentCount = (sessionAgents.data?.agents ?? []).filter(
+    (agent) => agent.status === 'pending' || agent.status === 'running',
+  ).length;
+  const autoOpenedSubagentsForSessionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!workbenchSessionId || activeSubagentCount === 0) {
+      if (activeSubagentCount === 0) {
+        autoOpenedSubagentsForSessionRef.current = null;
+      }
+      return;
+    }
+    // Auto-open once per run. If the user closes the drawer while a worker is
+    // still running, respect that choice until the next subagent run.
+    if (autoOpenedSubagentsForSessionRef.current !== workbenchSessionId) {
+      addRightDrawerSection('subagents');
+      setShowRightSidebar(true);
+      autoOpenedSubagentsForSessionRef.current = workbenchSessionId;
+    }
+  }, [activeSubagentCount, workbenchSessionId]);
 
   // Auto-open Tasks when todos appear; close the section when they clear.
   const hasTodosRef = useRef(false);
@@ -480,9 +508,6 @@ export function ChatLayout() {
             onToggleSidebar={() => setCollapsed((c) => !c)}
             onSelectRightDrawerSection={openWorkbenchSidebar}
           />
-          {!isSettings && (
-            <TeamAgentsStrip workbenchSessionId={active?.workbenchSessionId} />
-          )}
           <div className="august-content-area flex-1 min-h-0 overflow-hidden relative flex">
             {/* Settings takes the full width (its own internal layout).
                 Do NOT key Outlet on location.pathname here — that remounted

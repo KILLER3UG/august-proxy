@@ -16,6 +16,7 @@ import { RightDrawerPreviewSection } from './RightDrawerPreviewSection';
 import { RightDrawerBrowserSection } from './RightDrawerBrowserSection';
 import { RightDrawerNotesSection } from './RightDrawerNotesSection';
 import { RightDrawerFileSection } from './RightDrawerFileSection';
+import { RightDrawerSubagentsSection } from './RightDrawerSubagentsSection';
 import type { WorkbenchSession } from '@/types/workbench';
 import { useRightDrawer } from './RightDrawerState';
 import { getFileIcon } from '@/lib/file-icon';
@@ -259,6 +260,13 @@ function renderSection(
       return <RightDrawerBrowserSection />;
     case 'notes':
       return <RightDrawerNotesSection sessionId={ctx.sessionId} />;
+    case 'subagents':
+      return (
+        <RightDrawerSubagentsSection
+          sessionId={ctx.sessionId}
+          workbenchSessionId={ctx.workbenchSession?.id ?? null}
+        />
+      );
   }
 }
 

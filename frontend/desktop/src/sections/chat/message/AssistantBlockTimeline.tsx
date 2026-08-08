@@ -13,7 +13,6 @@ import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { EditRailRow } from '@/components/chat/EditRailRow';
 import { RailDoneRow } from '@/components/chat/RailDoneRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
-import { SubagentLaunchList } from '@/components/chat/SubagentLaunchList';
 import { RecalledMemoryStep } from '@/components/chat/RecalledMemoryStep';
 import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
@@ -29,176 +28,11 @@ import {
   type LiveActivityKind,
 } from '@/store/liveActivity';
 import { getToolLabel } from '@/lib/tool-labels';
-import { modelDisplayParts } from '../model-display';
 import { resolveUiSessionId, resolveWorkbenchSessionId } from '../stream/session-id-map';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 
 type DisplayBlock = MessageBlock;
-
-function extractSubagentGoal(context?: string): string | undefined {
-  if (!context) return undefined;
-  try {
-    const parsed = JSON.parse(context) as Record<string, unknown>;
-    for (const key of ['goal', 'task', 'prompt', 'description', 'userMessage', 'message']) {
-      const v = parsed?.[key];
-      if (typeof v === 'string' && v.trim()) return v.trim();
-    }
-    // spawn_subagents: first work item goal as fallback title
-    const items = parsed?.workItems;
-    if (Array.isArray(items) && items[0] && typeof items[0] === 'object') {
-      const g = (items[0] as Record<string, unknown>).goal;
-      if (typeof g === 'string' && g.trim()) return g.trim();
-    }
-  } catch {
-    /* not JSON */
-  }
-  return undefined;
-}
-
-function toolStatusToSubagentStatus(
-  status: string | undefined,
-): SubagentBlockState['status'] {
-  if (status === 'error') return 'failed';
-  if (status === 'running') return 'running';
-  if (status === 'done' || status === 'completed') return 'completed';
-  return 'running';
-}
-
-/** Build checklist rows from live subagent blocks and/or the parent tool call. */
-function resolveChecklistAgents(
-  toolBlocks: DisplayBlock[],
-  subagentBlocks?: Map<string, SubagentBlockState>,
-): SubagentBlockState[] {
-  const toolIds = new Set(
-    toolBlocks.map((b) => b.tool?.id).filter((id): id is string => !!id),
-  );
-  const toolGoals = new Set<string>();
-  for (const block of toolBlocks) {
-    const g = extractSubagentGoal(block.tool?.context);
-    if (g) toolGoals.add(g);
-    try {
-      const parsed = block.tool?.context
-        ? (JSON.parse(block.tool.context) as Record<string, unknown>)
-        : null;
-      const items = parsed?.workItems;
-      if (Array.isArray(items)) {
-        for (const item of items) {
-          if (item && typeof item === 'object') {
-            const goal = (item as Record<string, unknown>).goal;
-            if (typeof goal === 'string' && goal.trim()) toolGoals.add(goal.trim());
-          }
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const fromLive = subagentBlocks
-    ? Array.from(subagentBlocks.values())
-        .filter((s) => {
-          if (toolIds.has(s.parentToolId) || toolIds.has(s.jobId)) return true;
-          // Mis-parented SSE rows still match when the goal text lines up.
-          if (s.task && toolGoals.has(s.task)) return true;
-          return false;
-        })
-        .sort((a, b) => a.startedAt - b.startedAt)
-    : [];
-
-  const withToolOutput = (agent: SubagentBlockState): SubagentBlockState => {
-    const hasOutput = agent.blocks.some(
-      (b) =>
-        b.type === 'finalOutput' &&
-        !!(b.content && String(b.content).trim()),
-    );
-    if (hasOutput) return agent;
-    const tool =
-      toolBlocks.find(
-        (b) => b.tool?.id === agent.parentToolId || b.tool?.id === agent.jobId,
-      )?.tool ||
-      toolBlocks.find((b) => extractSubagentGoal(b.tool?.context) === agent.task)
-        ?.tool;
-    const summary = tool?.summary?.trim();
-    if (!summary) return agent;
-    return {
-      ...agent,
-      blocks: [
-        ...agent.blocks,
-        {
-          id: `fo_${agent.jobId}`,
-          type: 'finalOutput' as const,
-          content: summary,
-        },
-      ],
-      status:
-        agent.status === 'running' && tool?.status === 'done'
-          ? 'completed'
-          : agent.status,
-      finishedAt: agent.finishedAt || (tool?.status === 'done' ? Date.now() : undefined),
-    };
-  };
-
-  if (fromLive.length > 0) return fromLive.map(withToolOutput);
-
-  // Before SSE subagentStart arrives (or for singular tools), synthesize rows.
-  const synthesized: SubagentBlockState[] = [];
-  for (const block of toolBlocks) {
-    const tool = block.tool;
-    if (!tool?.id) continue;
-    const agentId = extractAgentId(tool.context) || 'general';
-    const goal = extractSubagentGoal(tool.context);
-    const summary = tool.summary?.trim();
-    const resultBlocks = summary
-      ? [{ id: `fo_${tool.id}`, type: 'finalOutput' as const, content: summary }]
-      : [];
-    try {
-      const parsed = tool.context
-        ? (JSON.parse(tool.context) as Record<string, unknown>)
-        : null;
-      const items = parsed?.workItems;
-      if (Array.isArray(items) && items.length > 0) {
-        items.forEach((item, i) => {
-          if (!item || typeof item !== 'object') return;
-          const row = item as Record<string, unknown>;
-          const rowGoal =
-            typeof row.goal === 'string' ? row.goal : goal || `Work item ${i + 1}`;
-          const rowAgent = typeof row.agentId === 'string' ? row.agentId : agentId;
-          synthesized.push(
-            withToolOutput({
-              id: `sb_${tool.id}_${i}`,
-              jobId: `${tool.id}_${i}`,
-              parentToolId: tool.id,
-              agentId: rowAgent,
-              task: rowGoal,
-              status: toolStatusToSubagentStatus(tool.status),
-              startedAt: tool.startedAt || Date.now(),
-              finishedAt: tool.status === 'done' ? Date.now() : undefined,
-              blocks: resultBlocks,
-            }),
-          );
-        });
-        continue;
-      }
-    } catch {
-      /* ignore */
-    }
-    synthesized.push(
-      withToolOutput({
-        id: `sb_${tool.id}`,
-        jobId: tool.id,
-        parentToolId: tool.id,
-        agentId,
-        task: goal,
-        status: toolStatusToSubagentStatus(tool.status),
-        startedAt: tool.startedAt || Date.now(),
-        finishedAt: tool.status === 'done' ? Date.now() : undefined,
-        blocks: resultBlocks,
-      }),
-    );
-  }
-  return synthesized;
-}
 
 function isFinalOutput(block: DisplayBlock): boolean {
   return (
@@ -295,13 +129,17 @@ export function AssistantBlockTimeline({
   showPendingThinking: boolean;
   toolProgress?: ToolProgressMap;
   subagentPrompts?: Map<string, SubagentPromptEntry>;
+  /** Retained for stream-store compatibility; the roster lives in the drawer. */
   subagentBlocks?: Map<string, SubagentBlockState>;
   /** Parent session model id — shown as muted tag on subagent launch rows. */
   modelId?: string | null;
 }) {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const liveSessionKey = resolveUiSessionId(routeSessionId || message.id);
-  const modelLabel = modelId ? modelDisplayParts(modelId).name : undefined;
+  // Kept in the public props for message-pane compatibility; subagent
+  // progress no longer renders an inline model label.
+  void modelId;
+  void subagentBlocks;
 
   const { processBlocks, finalBlocks, hasFinalOutput } =
     splitProcessAndFinal(displayBlocks);
@@ -549,9 +387,9 @@ export function AssistantBlockTimeline({
         const isCommand = block.type === 'command';
         const isSubagentCall = !isCommand && isSubagentToolName(tool.name);
 
-        // Coalesce consecutive subagent launches into one Cursor-style checklist.
+        // Consume consecutive subagent launch blocks; live progress is shown
+        // in the persistent right drawer.
         if (isSubagentCall) {
-          const batch: DisplayBlock[] = [];
           while (
             ti < blocks.length &&
             (blocks[ti].type === 'toolCall' || blocks[ti].type === 'command') &&
@@ -559,26 +397,9 @@ export function AssistantBlockTimeline({
             blocks[ti].type !== 'command' &&
             isSubagentToolName(blocks[ti].tool!.name)
           ) {
-            batch.push(blocks[ti]);
             ti++;
           }
-          const agents = resolveChecklistAgents(batch, subagentBlocks);
-          const batchKey = batch
-            .map((b) => b.tool?.id || b.id)
-            .filter(Boolean)
-            .join('-');
-          tagged.push({
-            kind: 'block',
-            node: (
-              <SubagentLaunchList
-                key={`subagents-${batchKey || ti}`}
-                agents={agents}
-                subBlocks={subagentBlocks}
-                subPrompts={subagentPrompts}
-                modelLabel={modelLabel}
-              />
-            ),
-          });
+          // Subagent progress is rendered in the persistent right drawer.
           continue;
         }
 

@@ -12,6 +12,7 @@ export type RightDrawerSectionId =
   | 'plan'
   | 'browser'
   | 'notes'
+  | 'subagents'
   | 'file';
 
 export interface RightDrawerState {
@@ -32,6 +33,7 @@ const SECTION_ORDER: RightDrawerSectionId[] = [
   'plan',
   'browser',
   'notes',
+  'subagents',
 ];
 
 const initialState: RightDrawerState = {

@@ -14,6 +14,7 @@ import {
   Check,
   Globe,
   StickyNote,
+  Users,
 } from 'lucide-react';
 import { useRightDrawer, type RightDrawerSectionId } from './RightDrawerState';
 
@@ -56,6 +57,11 @@ const SECTION_META: Record<
     hint: 'Scratch notes for this chat (autosaved)',
     Icon: StickyNote,
   },
+  subagents: {
+    label: 'Subagents',
+    hint: 'Live progress for delegated workers',
+    Icon: Users,
+  },
 };
 
 const OPTIONS: Array<Exclude<RightDrawerSectionId, 'file'>> = [
@@ -66,6 +72,7 @@ const OPTIONS: Array<Exclude<RightDrawerSectionId, 'file'>> = [
   'preview',
   'browser',
   'notes',
+  'subagents',
 ];
 
 export function RightDrawerDropdown({ drawerOpen, onSelect }: {
