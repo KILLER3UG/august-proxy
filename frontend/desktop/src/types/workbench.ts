@@ -291,11 +291,12 @@ export interface WorkbenchEventHandlers {
     toolUseId?: string;
     extras?: Record<string, unknown>;
   }) => void;
-  /** Backend context-pressure warning: the context window is nearly full
-   *  (emitted by the workbench loop when the token budget is exhausted). */
+  /** Backend context-pressure event — emitted once per turn as a live meter,
+   *  NOT only when the window is full. `attentionPressure` is the server's
+   *  low/medium/high/critical classification; warn only on high/critical. */
   onContextPressure?: (data: {
     contextUsedPct?: number;
-    attentionPressure?: number;
+    attentionPressure?: 'low' | 'medium' | 'high' | 'critical';
     totalTokens?: number;
     maxContext?: number;
     remainingTokens?: number;

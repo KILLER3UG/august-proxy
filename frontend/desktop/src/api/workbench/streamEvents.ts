@@ -265,17 +265,21 @@ export function dispatchWorkbenchEvent(
         message: typeof p?.message === 'string' ? p.message : '',
       });
       break;
-    case 'contextPressure':
+    case 'contextPressure': {
+      const pressureLevel =
+        typeof p?.attentionPressure === 'string' ? p.attentionPressure : '';
       handlers.onContextPressure?.({
         contextUsedPct: typeof p?.contextUsedPct === 'number' ? p.contextUsedPct : undefined,
-        attentionPressure:
-          typeof p?.attentionPressure === 'number' ? p.attentionPressure : undefined,
+        attentionPressure: ['low', 'medium', 'high', 'critical'].includes(pressureLevel)
+          ? (pressureLevel as 'low' | 'medium' | 'high' | 'critical')
+          : undefined,
         totalTokens: typeof p?.totalTokens === 'number' ? p.totalTokens : undefined,
         maxContext: typeof p?.maxContext === 'number' ? p.maxContext : undefined,
         remainingTokens:
           typeof p?.remainingTokens === 'number' ? p.remainingTokens : undefined,
       });
       break;
+    }
     case 'done': {
       const u = p?.usage;
       const durationRaw = Number((u as Record<string, unknown> | undefined)?.durationMs);

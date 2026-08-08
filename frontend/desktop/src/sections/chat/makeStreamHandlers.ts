@@ -117,6 +117,21 @@ export interface StreamHandlers {
   };
 }
 
+/** True when the server's context-pressure classification means the window
+ *  is actually stressed — high/critical per the backend, or ≥75% used as a
+ *  fallback when the classification is missing. Low/medium pressure is a
+ *  live meter only (the composer's ContextRing shows the gauge); surfacing
+ *  the "nearly full" warning for it is a false alarm on fresh sessions. */
+export function isContextPressured(
+  attentionPressure: 'low' | 'medium' | 'high' | 'critical' | undefined,
+  contextUsedPct?: number,
+): boolean {
+  if (attentionPressure === 'high' || attentionPressure === 'critical') return true;
+  if (attentionPressure === 'low' || attentionPressure === 'medium') return false;
+  const pct = Number(contextUsedPct);
+  return Number.isFinite(pct) && pct >= 75;
+}
+
 export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandlers {
   const {
     sessionId,
@@ -715,10 +730,12 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: warning, system: true });
       scheduleUpdate();
     },
-    onContextPressure: ({ contextUsedPct, totalTokens, maxContext, remainingTokens }) => {
-      // Backend context-pressure warning: surface it as a system block so
-      // the user sees the window is nearly full (audit finding: the event
-      // was dropped at the SSE dispatcher).
+    onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens }) => {
+      // Live-meter event — the backend emits one per turn, not only when the
+      // window is nearly full. Only surface the warning when the budget is
+      // actually stressed (see isContextPressured); low/medium pressure is a
+      // silent no-op and the composer's ContextRing shows the gauge instead.
+      if (!isContextPressured(attentionPressure, contextUsedPct)) return;
       const pct = Number(contextUsedPct);
       const label = Number.isFinite(pct) && pct > 0 ? ` (${Math.round(pct)}% used)` : '';
       const detail =
