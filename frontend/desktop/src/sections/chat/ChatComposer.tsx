@@ -241,13 +241,13 @@ export function ChatComposer({
                       : 'Message August…'
               }
               rows={1}
-              className="w-full resize-none bg-transparent px-4 pt-2 pb-1 bubble-body outline-none placeholder:text-muted-foreground"
-              style={{ minHeight: '44px', maxHeight: '360px' }}
+              className="w-full resize-none bg-transparent px-4 pt-1.5 pb-0.5 bubble-body outline-none placeholder:text-muted-foreground"
+              style={{ minHeight: '32px', maxHeight: '360px' }}
             />
           </>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1.5 pb-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1.5 pb-1">
           <div className="flex items-center text-muted-foreground">
             <ToolBtn Icon={Paperclip} label="Attach file" onClick={onOpenFilePicker} />
             <ToolBtn Icon={AtSign} label="Mention tool" onClick={() => { onToggleToolsDropdown(!showToolsDropdown); onToggleCommandsDropdown(false); }} />
@@ -307,7 +307,7 @@ function ToolBtn({ Icon, label, onClick }: { Icon: LucideIcon; label: string; on
   return (
     <button
       onClick={onClick}
-      className="p-1.5 rounded-lg hover:bg-muted hover:text-foreground transition text-muted-foreground"
+      className="p-1 rounded-lg hover:bg-muted hover:text-foreground transition text-muted-foreground"
       title={label}
     >
       <Icon className="size-4" />
