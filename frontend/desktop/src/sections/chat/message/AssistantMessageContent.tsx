@@ -10,7 +10,7 @@ import {
   type ToolProgressMap,
 } from './AssistantBlockTimeline';
 import { AssistantMessageActions } from './AssistantMessageActions';
-import { formatTokenCount, formatTokensPerSecond } from './token-display';
+import { formatTokenCount } from './token-display';
 
 type DisplayBlock = MessageBlock;
 
@@ -61,8 +61,6 @@ export function AssistantMessageContent({
   onReanswer?: () => void;
   reanswerOpen?: boolean;
 }) {
-  const tokensPerSecond = message.usage ? formatTokensPerSecond(message.usage) : null;
-
   // Live generation-rate estimate while the last message streams: output
   // tokens ≈ chars/4 over elapsed time (same heuristic ChatThread blends).
   // Replaced by the real chip once the `done` event lands usage+durationMs.
@@ -150,29 +148,6 @@ export function AssistantMessageContent({
             {message.retryNotice}
           </div>
         )}
-        {/* Per-turn token usage chip (from the `done` SSE event). */}
-        {!(isLast && streaming) &&
-          (message.usage &&
-            (message.usage.inputTokens > 0 || message.usage.outputTokens > 0)) && (
-            <div
-              className="text-[10px] tabular-nums text-muted-foreground/60"
-              title={`Input ${message.usage.inputTokens.toLocaleString()} tokens · Output ${message.usage.outputTokens.toLocaleString()} tokens${
-                message.usage.contextTokens
-                  ? ` · Context ${message.usage.contextTokens.toLocaleString()} tokens`
-                  : ''
-              }${
-                message.usage.durationMs
-                  ? ` · Generated in ${(message.usage.durationMs / 1000).toFixed(1)}s`
-                  : ''
-              }`}
-            >
-              ↑{formatTokenCount(message.usage.inputTokens)} · ↓
-              {formatTokenCount(message.usage.outputTokens)}
-              {tokensPerSecond && ` · ${tokensPerSecond} t/s`}
-              {message.usage.contextTokens > 0 &&
-                ` · ctx ${formatTokenCount(message.usage.contextTokens)}`}
-            </div>
-          )}
         {/* Fallback chip (D8): a chain/promotion switch answered this turn. */}
         {!(isLast && streaming) && message.usedFallback ? (
           <div

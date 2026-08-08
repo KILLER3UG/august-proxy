@@ -241,8 +241,8 @@ export function ChatComposer({
                       : 'Message August…'
               }
               rows={1}
-              className="w-full resize-none bg-transparent px-4 pt-3 pb-1.5 bubble-body outline-none placeholder:text-muted-foreground"
-              style={{ minHeight: '64px', maxHeight: '360px' }}
+              className="w-full resize-none bg-transparent px-4 pt-2 pb-1 bubble-body outline-none placeholder:text-muted-foreground"
+              style={{ minHeight: '44px', maxHeight: '360px' }}
             />
           </>
         )}
