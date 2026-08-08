@@ -30,6 +30,11 @@ _ALLCamelKeys = {
     'reviewLearnedGuidelines',
     'maxAgentDepth',
     'maxWorkbenchToolLoops',
+    # Evidence-driven auto-routing (surpass #1 closed loop).
+    'autoRoute',
+    'autoRouteMinSamples',
+    'autoRouteMinWinRate',
+    'autoRouteWinGap',
 }
 
 

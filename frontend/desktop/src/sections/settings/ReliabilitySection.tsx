@@ -6,9 +6,10 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { HeartPulse, TrendingUp, FlaskConical, Timer, Trophy, AlertTriangle, Play } from 'lucide-react';
+import { HeartPulse, TrendingUp, FlaskConical, Timer, Trophy, AlertTriangle, Play, Route, ArrowRight } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
+import { toast } from 'sonner';
 
 interface TrendDay {
   day: string;
@@ -41,6 +42,34 @@ interface EvalsData {
   total: number;
   passed: number;
   passRate: number | null;
+}
+
+interface BrainConfig {
+  autoRoute?: boolean;
+  autoRouteMinSamples?: number;
+  autoRouteMinWinRate?: number;
+  autoRouteWinGap?: number;
+}
+
+interface BestByTaskRow {
+  taskType: string;
+  model: string;
+  provider: string;
+  winRate: number;
+  total: number;
+  avgTokens: number;
+  avgDurationMs: number;
+}
+
+interface RouteDecision {
+  at: number;
+  taskType: string;
+  fromModel: string;
+  fromProvider: string;
+  toModel: string;
+  toProvider: string;
+  winRate: number;
+  gap: number;
 }
 
 function pct(v: number | null | undefined): string {
@@ -106,6 +135,36 @@ export function ReliabilitySection() {
       }
     },
   });
+
+  // ── Auto-routing (surpass #1 closed loop) ───────────────────────────
+  const { data: brainConfig } = useQuery<{ config: BrainConfig }>({
+    queryKey: ['brain-config'],
+    queryFn: () => api.get<{ config: BrainConfig }>('/api/brain/config'),
+    staleTime: 15_000,
+  });
+  const { data: bestByTask } = useQuery<{ results: BestByTaskRow[] }>({
+    queryKey: ['routing-best-by-task'],
+    queryFn: () => api.get<{ results: BestByTaskRow[] }>('/api/brain/routing/best-by-task?days=30&minSamples=3'),
+    staleTime: 30_000,
+  });
+  const { data: decisions } = useQuery<{ decisions: RouteDecision[] }>({
+    queryKey: ['routing-decisions'],
+    queryFn: () => api.get<{ decisions: RouteDecision[] }>('/api/brain/routing/decisions?limit=10'),
+    refetchInterval: 30_000,
+  });
+
+  const toggleAutoRoute = useMutation({
+    mutationFn: (next: boolean) =>
+      api.put<{ ok: boolean }>('/api/brain/config', { autoRoute: next }),
+    onSuccess: () => {
+      toast.success('Auto-routing updated');
+      void qc.invalidateQueries({ queryKey: ['brain-config'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Could not update auto-routing'),
+  });
+
+  const cfg = brainConfig?.config ?? {};
+  const autoRoute = cfg.autoRoute === true;
 
   const models = useMemo(() => {
     const acc = new Map<string, TrendDay & { wins: number; total: number }>();
@@ -184,6 +243,113 @@ export function ReliabilitySection() {
         {(trendsFetching || evalsFetching) && (
           <span className="ml-auto text-[10px] text-muted-foreground/70 animate-pulse">Refreshing…</span>
         )}
+      </div>
+
+      {/* Auto-routing */}
+      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-medium text-foreground flex items-center gap-2">
+              <Route className="size-4 text-primary" />
+              Evidence-driven auto-routing
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              When routing evidence shows a materially better model for a task type, August
+              switches this turn to it automatically — every routed turn is recorded
+              (source <code className="font-mono text-[10px]">auto-route</code>) so the loop measures its own decisions.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoRoute}
+            disabled={toggleAutoRoute.isPending}
+            onClick={() => toggleAutoRoute.mutate(!autoRoute)}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+              autoRoute ? 'bg-primary' : 'bg-muted-foreground/30'
+            }`}
+            data-testid="auto-route-toggle"
+          >
+            <span
+              className={`absolute top-0.5 size-5 rounded-full bg-background shadow transition-all ${
+                autoRoute ? 'left-[22px]' : 'left-0.5'
+              }`}
+            />
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground/80">
+          <span className="rounded-full bg-muted/40 px-2 py-0.5">≥ {cfg.autoRouteMinSamples ?? 3} samples</span>
+          <span className="rounded-full bg-muted/40 px-2 py-0.5">win rate ≥ {Math.round((cfg.autoRouteMinWinRate ?? 0.6) * 100)}%</span>
+          <span className="rounded-full bg-muted/40 px-2 py-0.5">beats current by ≥ {Math.round((cfg.autoRouteWinGap ?? 0.15) * 100)}pts</span>
+          <span className="ml-auto text-muted-foreground/60">thresholds live in brain config</span>
+        </div>
+
+        {/* Best model per task type */}
+        <div>
+          <h3 className="text-[11px] uppercase tracking-wider text-muted-foreground">Best model per task type</h3>
+          {!bestByTask || (bestByTask.results ?? []).length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              No task-type evidence yet — the consult needs ≥3 turns of the same task type before it routes.
+            </p>
+          ) : (
+            <table className="mt-2 w-full text-xs">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <th className="pb-1.5 font-medium">Task</th>
+                  <th className="pb-1.5 font-medium">Model</th>
+                  <th className="pb-1.5 font-medium text-right">Win rate</th>
+                  <th className="pb-1.5 font-medium text-right">Turns</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bestByTask.results.map((row) => (
+                  <tr key={row.taskType} className="border-t border-white/[0.04]">
+                    <td className="py-1.5 capitalize">{row.taskType}</td>
+                    <td className="py-1.5 font-mono text-foreground/90">
+                      {row.model}
+                      <span className="ml-1.5 text-muted-foreground/60">{row.provider}</span>
+                    </td>
+                    <td className="py-1.5 text-right">
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] ${
+                        row.winRate >= 0.75 ? 'bg-emerald-500/15 text-emerald-500'
+                        : row.winRate >= 0.5 ? 'bg-amber-500/15 text-amber-500'
+                        : 'bg-rose-500/15 text-rose-500'
+                      }`}>
+                        {pct(row.winRate)}
+                      </span>
+                    </td>
+                    <td className="py-1.5 text-right text-muted-foreground">{row.total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Recent decisions */}
+        <div>
+          <h3 className="text-[11px] uppercase tracking-wider text-muted-foreground">Recent auto-route decisions</h3>
+          {!decisions || (decisions.decisions ?? []).length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              No decisions yet — {autoRoute ? 'auto-routing is on, waiting for a materially better model.' : 'auto-routing is off; suggestions still appear in the model picker.'}
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1.5">
+              {decisions.decisions.map((d, i) => (
+                <li key={`${d.at}-${i}`} className="flex items-center gap-2 text-xs py-1 border-t border-white/[0.04] first:border-t-0">
+                  <ArrowRight className="size-3 text-primary shrink-0" />
+                  <span className="font-mono text-foreground/90 truncate">{d.fromModel || '—'}</span>
+                  <span className="text-muted-foreground/50">→</span>
+                  <span className="font-mono text-foreground/90 truncate">{d.toModel}</span>
+                  <span className="text-muted-foreground/70 capitalize shrink-0">{d.taskType}</span>
+                  <span className="ml-auto text-muted-foreground/60 shrink-0">
+                    {Math.round(d.winRate * 100)}% · +{Math.round(d.gap * 100)}pts · {new Date(d.at * 1000).toLocaleString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       {/* Stat strip */}

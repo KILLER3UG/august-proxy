@@ -297,6 +297,25 @@ async def runHarnessEvals():
     return {'started': True, 'note': 'eval suite running in the background'}
 
 
+@router.get('/routing/best-by-task')
+async def routingBestByTask(days: int = 30, minSamples: int = 3):
+    """Best model per task type (win-rate desc) — the Reliability
+    dashboard's routing table. Same evidence as /routing/suggestions,
+    but one row per task type instead of per prompt."""
+    from app.services.routing_evidence import best_by_task
+
+    return {'results': best_by_task(days=days, min_samples=max(1, minSamples))}
+
+
+@router.get('/routing/decisions')
+async def routingDecisions(limit: int = 20):
+    """Recent auto-route decisions — who was routed where, and by what
+    margin. Makes auto-routing auditable instead of a black box."""
+    from app.services.routing_evidence import list_auto_route_decisions
+
+    return {'decisions': list_auto_route_decisions(limit=max(1, min(limit, 100)))}
+
+
 @router.post('/routing/arena')
 async def routingArena(body: dict):
     """Record an arena/debate verdict: the picked lane won, the rest lost.

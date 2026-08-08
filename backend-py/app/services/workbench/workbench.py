@@ -1670,14 +1670,32 @@ async def _sendWorkbenchMessageStreamImpl(
             session.provider = pname
     # Routing-evidence consult (surpass #7 closed loop): with enough samples,
     # a materially better model for this task type is surfaced as a
-    # routingSuggestion SSE event; with AUGUST_AUTO_ROUTE=1 it replaces the
-    # resolved model for this turn instead.
+    # routingSuggestion SSE event; with auto-routing enabled (brain config
+    # `autoRoute`, or AUGUST_AUTO_ROUTE=1 for legacy env setups) it replaces
+    # the resolved model for this turn instead. Flap guard: the candidate
+    # must beat the CURRENT model's win rate by `autoRouteWinGap` (or the
+    # current model has no evidence yet) — otherwise routing would oscillate
+    # between two good models.
+    session._auto_routed = False
     try:
-        from app.services.routing_evidence import classify_task_type, get_suggestions
+        import os as _os
+
+        from app.services.brain_config_service import getRuntimeConfig
+        from app.services.routing_evidence import (
+            classify_task_type,
+            get_suggestions,
+            record_auto_route_decision,
+        )
+
+        bc = getRuntimeConfig()
+        autoRoute = bool(bc.get('autoRoute')) or _os.environ.get('AUGUST_AUTO_ROUTE') == '1'
+        minSamples = max(1, as_int(bc.get('autoRouteMinSamples'), 3))
+        minWinRate = max(0.05, min(1.0, as_float(bc.get('autoRouteMinWinRate'), 0.6)))
+        minGap = max(0.0, min(0.9, as_float(bc.get('autoRouteWinGap'), 0.15)))
 
         taskType = classify_task_type(message or _lastUserMessageText(session))
         if taskType and taskType != 'general':
-            topSuggestions = get_suggestions(taskType, min_samples=3, limit=5)
+            topSuggestions = get_suggestions(taskType, min_samples=minSamples, limit=5)
             if topSuggestions:
                 top = topSuggestions[0]
                 topModel = as_str(top.get('model'), '')
@@ -1689,23 +1707,45 @@ async def _sendWorkbenchMessageStreamImpl(
                     else ''
                 )
                 different = bool(topModel) and topModel != resolvedModel and topProvider != currentProviderName
-                if different and topWinRate >= 0.6 and emit:
-                    import os
-
-                    if os.environ.get('AUGUST_AUTO_ROUTE') == '1':
+                # Current model's own evidence (if any) — used for the gap check.
+                currentRow = next(
+                    (s for s in topSuggestions if as_str(s.get('model'), '') == resolvedModel),
+                    None,
+                )
+                currentWinRate = as_float(currentRow.get('winRate'), 0.0) if currentRow else None
+                gap = topWinRate - (currentWinRate if currentWinRate is not None else 0.0)
+                qualifies = (
+                    different
+                    and topWinRate >= minWinRate
+                    and (currentWinRate is None or gap >= minGap)
+                )
+                if qualifies and emit:
+                    if autoRoute:
                         from app.providers.resolver import apply_model_format_override
                         from app.services.workbench.providers import resolve_model, resolve_workbench_provider
 
+                        prevModel = as_str(resolvedModel, '')
+                        prevProvider = currentProviderName
                         suggested = resolve_workbench_provider('', topModel)
                         if suggested:
                             resolvedProvider = suggested
                             resolvedModel = resolve_model(suggested, topModel)
                             resolvedProvider = apply_model_format_override(resolvedProvider, resolvedModel)
                             if resolvedProvider:
+                                session._auto_routed = True
                                 session.model = resolvedModel
                                 pname = as_str(resolvedProvider.get('name') or resolvedProvider.get('id'))
                                 if pname:
                                     session.provider = pname
+                                record_auto_route_decision(
+                                    task_type=taskType,
+                                    from_model=prevModel,
+                                    from_provider=prevProvider,
+                                    to_model=resolvedModel,
+                                    to_provider=pname,
+                                    win_rate=topWinRate,
+                                    gap=gap,
+                                )
                             emit(
                                 {
                                     'type': 'routingSuggestion',
@@ -1714,7 +1754,8 @@ async def _sendWorkbenchMessageStreamImpl(
                                     'model': resolvedModel,
                                     'provider': pname,
                                     'winRate': topWinRate,
-                                    'currentModel': '',
+                                    'gap': gap,
+                                    'currentModel': prevModel,
                                     'reason': 'Evidence shows this model wins this task type more often.',
                                 }
                             )
@@ -1727,6 +1768,7 @@ async def _sendWorkbenchMessageStreamImpl(
                                 'model': topModel,
                                 'provider': topProvider,
                                 'winRate': topWinRate,
+                                'gap': gap,
                                 'currentModel': resolvedModel,
                                 'reason': 'Evidence shows this model wins this task type more often.',
                             }
@@ -3169,6 +3211,9 @@ async def _sendWorkbenchMessageStreamImpl(
                     input_tokens=totalInputTokens,
                     output_tokens=totalOutputTokens,
                     duration_ms=int(totalGenerationMs),
+                    # Auto-routed turns keep their source so the decision is
+                    # measurable (they still count toward model win rates).
+                    source='auto-route' if getattr(session, '_auto_routed', False) else 'turn',
                 )
             except Exception:
                 logger.debug('routing evidence record failed', exc_info=True)

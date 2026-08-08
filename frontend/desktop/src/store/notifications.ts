@@ -9,7 +9,7 @@ export interface AppNotification {
   id: string;
   title: string;
   body?: string;
-  kind?: 'error' | 'verifier' | 'arena' | 'info';
+  kind?: 'error' | 'verifier' | 'arena' | 'routing' | 'info';
   at: number;
   seen: boolean;
 }

@@ -350,6 +350,29 @@ process env.
 | `AUGUST_HOST_AGENT_URL` | unset | External host-agent URL |
 | `AUGUST_PROXY_ALLOWED_ROOTS` | unset | Semicolon-separated FS roots |
 | `AUGUST_PROXY_WORKDIR` | unset | Default workdir |
+| `AUGUST_AUTO_ROUTE` | unset | `1` forces evidence-driven auto-routing on (equivalent to brain config `autoRoute: true`) |
+
+### Evidence-driven auto-routing
+
+The routing-evidence loop picks the best model per task type from recorded
+turn outcomes. With **auto-routing** on (Settings → Diagnostics →
+Reliability, or `AUGUST_AUTO_ROUTE=1`), a turn whose task type has enough
+samples is automatically switched to the evidence-best model; otherwise the
+candidate is surfaced as a suggestion only (shown in the model picker).
+
+Thresholds (brain config, `PUT /api/brain/config`, defaults in parens):
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `autoRoute` | `false` | Master switch (UI toggle in the Reliability dashboard) |
+| `autoRouteMinSamples` | `3` | Minimum evidence turns for a task type before routing |
+| `autoRouteMinWinRate` | `0.6` | Candidate must win ≥ this share of its turns |
+| `autoRouteWinGap` | `0.15` | Candidate must beat the current model's win rate by ≥ this much (flap guard) |
+
+Routed turns are recorded with `source='auto-route'` (still counting toward
+model win rates) and every decision is logged — see
+`GET /api/brain/routing/decisions` and the Reliability dashboard's
+"Recent auto-route decisions".
 
 ### Gateway bot tokens
 

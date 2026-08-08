@@ -9,10 +9,16 @@ and costs least?" — feeding the harness's routing decisions over time.
 from __future__ import annotations
 
 import logging
+import time
 
 from app.json_narrowing import as_float, as_int, as_str
 
 logger = logging.getLogger(__name__)
+
+# Auto-route decision log (surpass #1 closed loop): who was routed where,
+# and by what margin — capped, newest last. The Reliability dashboard
+# renders these so auto-routing is auditable, not a black box.
+ROUTING_DECISIONS_KEY = 'routing:auto-route:decisions'
 
 _TASK_TYPE_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ('tests', ('test', 'pytest', 'jest', 'vitest', 'unit test', 'e2e', 'ci')),
@@ -153,6 +159,95 @@ def get_suggestions(task_type: str, min_samples: int = 1, limit: int = 5) -> lis
         )
     )
     return out[: max(1, min(limit, 10))]
+
+
+def record_auto_route_decision(
+    *,
+    task_type: str,
+    from_model: str,
+    from_provider: str,
+    to_model: str,
+    to_provider: str,
+    win_rate: float,
+    gap: float,
+) -> None:
+    """Log one auto-route decision (fire-and-forget, never raises)."""
+    try:
+        from app.services.memory_store import get_memory, save_memory
+
+        entries = get_memory(ROUTING_DECISIONS_KEY)
+        entries = entries if isinstance(entries, list) else []
+        entries.append(
+            {
+                'at': time.time(),
+                'taskType': as_str(task_type, 'general')[:40],
+                'fromModel': as_str(from_model, '')[:120],
+                'fromProvider': as_str(from_provider, '')[:120],
+                'toModel': as_str(to_model, '')[:120],
+                'toProvider': as_str(to_provider, '')[:120],
+                'winRate': round(max(0.0, min(1.0, as_float(win_rate, 0.0))), 2),
+                'gap': round(max(0.0, as_float(gap, 0.0)), 2),
+            }
+        )
+        save_memory(ROUTING_DECISIONS_KEY, entries[-100:])
+    except Exception as exc:
+        logger.debug('auto-route decision log failed (non-fatal): %s', exc)
+
+
+def list_auto_route_decisions(limit: int = 20) -> list[dict]:
+    """Recent auto-route decisions, newest first."""
+    try:
+        from app.services.memory_store import get_memory
+
+        entries = get_memory(ROUTING_DECISIONS_KEY)
+        if not isinstance(entries, list):
+            return []
+        out: list[dict] = []
+        for e in entries[-max(1, min(limit, 100)):]:
+            out.append(e if isinstance(e, dict) else {})
+        return out[::-1]
+    except Exception:
+        return []
+
+
+def best_by_task(days: int = 30, min_samples: int = 3) -> list[dict]:
+    """Best model per task type (win-rate desc, tokens asc) — the
+    Reliability dashboard's routing table."""
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT task_type, model, provider, SUM(ok) AS wins, COUNT(*) AS total, "
+            "AVG(input_tokens + output_tokens) AS avg_tokens, AVG(duration_ms) AS avg_duration "
+            "FROM routing_evidence WHERE task_type != 'general' "
+            "AND created_at > datetime('now', ?) "
+            "GROUP BY task_type, model, provider HAVING total >= ? "
+            "ORDER BY task_type, wins DESC, avg_tokens ASC",
+            (f'-{max(1, min(days, 90))} days', max(1, min_samples)),
+        ).fetchall()
+    except Exception:
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for r in rows:
+        task_type = as_str(r['task_type'], '')
+        if task_type in seen:
+            continue
+        seen.add(task_type)
+        total = as_int(r['total'], 0)
+        if total <= 0:
+            continue
+        out.append(
+            {
+                'taskType': task_type,
+                'model': as_str(r['model'], ''),
+                'provider': as_str(r['provider'], ''),
+                'winRate': round(as_int(r['wins'], 0) / total, 2),
+                'total': total,
+                'avgTokens': int(round(as_int(r['avg_tokens'], 0))),
+                'avgDurationMs': int(round(as_int(r['avg_duration'], 0))),
+            }
+        )
+    return out
 
 
 def get_stats(days: int = 30) -> dict:

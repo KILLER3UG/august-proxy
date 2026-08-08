@@ -47,11 +47,16 @@ boolKeys: tuple[str, ...] = (
     'adapterParallelTools',
     'parallelReadTools',
     'reviewLearnedGuidelines',
+    'autoRoute',
 )
-numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops')
-allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys)
+numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops', 'autoRouteMinSamples')
+floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap')
+allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys + floatKeys)
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
+minSamplesRange = (1, 20)
+minWinRateRange = (0.05, 1.0)
+winGapRange = (0.0, 0.9)
 fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'),
     ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'),
@@ -64,6 +69,12 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('reviewLearnedGuidelines', 'review_learned_guidelines', True, 'bool'),
     ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'),
     ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 100), 'num'),
+    # Evidence-driven auto-routing (surpass #1 closed loop): opt-in per
+    # config, with threshold knobs the Reliability dashboard exposes.
+    ('autoRoute', 'auto_route', False, 'bool'),
+    ('autoRouteMinSamples', 'auto_route_min_samples', 3, 'num'),
+    ('autoRouteMinWinRate', 'auto_route_min_win_rate', 0.6, 'float'),
+    ('autoRouteWinGap', 'auto_route_win_gap', 0.15, 'float'),
 )
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}
@@ -81,6 +92,15 @@ def _defaultsCamel() -> BrainConfigDict:
 def getDefaults() -> BrainConfigDict:
     """Public accessor — returns the camelCase defaults the frontend renders."""
     return _defaultsCamel()
+
+
+def getRuntimeConfig() -> BrainConfigDict:
+    """Merged camelCase config for runtime readers (the routing consult).
+
+    No session/source wrappers — just the effective values, defaults
+    filled in. Cheap (fresh read of the cognitive tree per call).
+    """
+    return _snakeToCamel(_loadPersisted())
 
 
 def _loadPersisted() -> dict[str, object]:
@@ -146,11 +166,19 @@ def validatePatch(patch: object) -> tuple[bool, str]:
         if kind == 'bool':
             if not isinstance(value, bool):
                 return (False, f'{key!r} must be a boolean (got {type(value).__name__})')
+        elif kind == 'float':
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return (False, f'{key!r} must be a number (got {type(value).__name__})')
+            lo, hi = minWinRateRange if key == 'autoRouteMinWinRate' else winGapRange
+            if value < lo or value > hi:
+                return (False, f'{key!r} must be between {lo} and {hi} (got {value})')
         else:
             if isinstance(value, bool) or not isinstance(value, int):
                 return (False, f'{key!r} must be an integer (got {type(value).__name__})')
             if key == 'maxAgentDepth':
                 lo, hi = maxAgentDepthRange
+            elif key == 'autoRouteMinSamples':
+                lo, hi = minSamplesRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:

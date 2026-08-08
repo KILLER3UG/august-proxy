@@ -500,6 +500,18 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       pushNotification('Verification required', message, 'verifier');
       scheduleUpdate();
     },
+    onRoutingSuggestion: ({ applied, model, provider, winRate, taskType, currentModel }) => {
+      // Evidence-driven routing: when auto-routing applied, this turn is
+      // running on a different model than the user picked — say so once
+      // (a toast), so the reroute is never a silent surprise.
+      if (applied && model && currentModel && currentModel !== model) {
+        pushNotification(
+          'Auto-routed',
+          `This ${taskType || 'task'} was routed from ${currentModel} to ${model} (${Math.round(winRate * 100)}% win rate) — edit in the Reliability dashboard.`,
+          'routing',
+        );
+      }
+    },
     onPlanProposed: ({ plan }) => {
       if (!isNonEmptyPlan(plan)) return;
       setWorkbenchSession((prev) => {

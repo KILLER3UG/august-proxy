@@ -248,6 +248,18 @@ export function dispatchWorkbenchEvent(
           | undefined,
       });
       break;
+    case 'routingSuggestion':
+      handlers.onRoutingSuggestion?.({
+        applied: p?.applied === true,
+        taskType: typeof p?.taskType === 'string' ? p.taskType : '',
+        model: typeof p?.model === 'string' ? p.model : '',
+        provider: typeof p?.provider === 'string' ? p.provider : '',
+        winRate: typeof p?.winRate === 'number' ? p.winRate : 0,
+        gap: typeof p?.gap === 'number' ? p.gap : undefined,
+        currentModel: typeof p?.currentModel === 'string' ? p.currentModel : undefined,
+        reason: typeof p?.reason === 'string' ? p.reason : undefined,
+      });
+      break;
     case 'recurringTask':
       handlers.onRecurringTask?.({
         message: typeof p?.message === 'string' ? p.message : '',

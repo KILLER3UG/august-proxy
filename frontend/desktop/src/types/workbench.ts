@@ -374,6 +374,18 @@ export interface WorkbenchEventHandlers {
       receiptCount?: number;
     };
   }) => void;
+  /** Routing-evidence consult: a better model exists for this task type.
+   *  `applied` is true when auto-routing replaced the turn's model. */
+  onRoutingSuggestion?: (data: {
+    applied: boolean;
+    taskType: string;
+    model: string;
+    provider: string;
+    winRate: number;
+    gap?: number;
+    currentModel?: string;
+    reason?: string;
+  }) => void;
   /** Emitted once per turn when auto-memory recall (`getRelevantMemories`)
    *  prefetched rows into the system prompt. The chat thread renders a
    *  collapsed "Recalled: {category} — {snippet}" card, same style as a

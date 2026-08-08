@@ -126,6 +126,10 @@ class BrainConfigDict(TypedDict, total=False):
     reviewLearnedGuidelines: bool
     maxAgentDepth: int
     maxWorkbenchToolLoops: int
+    autoRoute: bool
+    autoRouteMinSamples: int
+    autoRouteMinWinRate: float
+    autoRouteWinGap: float
 
 
 class ProviderConfigDict(TypedDict, total=False):

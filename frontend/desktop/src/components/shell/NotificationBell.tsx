@@ -1,7 +1,7 @@
 /* ── NotificationBell — unread badge + dropdown panel (C1) ────────────── */
 
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Bell, CheckCheck, ShieldAlert, Swords, Trash2 } from 'lucide-react';
+import { AlertTriangle, Bell, CheckCheck, Route, ShieldAlert, Swords, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   useNotificationsStore,
@@ -14,6 +14,7 @@ const KIND_ICONS: Record<NonNullable<AppNotification['kind']>, typeof Bell> = {
   error: AlertTriangle,
   verifier: ShieldAlert,
   arena: Swords,
+  routing: Route,
   info: Bell,
 };
 
