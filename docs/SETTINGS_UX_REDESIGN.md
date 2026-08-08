@@ -128,3 +128,23 @@ Search results should visibly label Advanced and Developer settings.
 - **"Wire format" → "Request format"** in the model editor.
 - **Chat errors are actionable**: Retry (re-sends the message) + Provider
   settings in the failure toast.
+
+## Done in the runs + reliability pass
+
+- **Runs view** — new top-level `/runs` surface (sidebar nav + command
+  palette entry): workbench sessions as a run tracker with stat strip
+  (total / active / awaiting approval / completed / tokens·cost), status
+  filter chips, per-run model · provider · messages · turns · tokens ·
+  cost · duration, and one-click jump back into the chat. Polls fast while
+  anything is live. Backend: `summarize_session` now carries
+  `turnCount` / `totalInputTokens` / `totalOutputTokens` / `totalCost`
+  (additive; `GET /api/workbench/sessions` unchanged shape otherwise).
+- **Reliability dashboard** — new Diagnostics section (`/settings/reliability`,
+  advanced tier): eval pass rate, fleet win rate, weighted latency, and
+  avg tokens per turn cards; per-model track-record table with win-rate
+  tones; 14-day turn-volume/win-rate bars; recent harness eval runs
+  (PASS/FAIL). Empty states explain the data sources instead of dead
+  charts. Fed by `/api/brain/harness/trends` + `/api/brain/harness/evals`.
+- **Parked, still open**: guided AI Setup wizard as the `/settings` landing,
+  Data & Privacy center, provider health simulator, first-run safety
+  choice, image attachment source-path preservation.

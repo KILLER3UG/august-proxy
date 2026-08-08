@@ -1,10 +1,11 @@
 /* ── Session list nav — top actions ─────────────────────────────────── */
-/* Collapse · New chat · Automations · Skills & Tools                     */
+/* Collapse · New chat · Automations · Skills & Tools · Runs              */
 
 import { motion } from "framer-motion";
 import {
   Bot,
   Brain,
+  History,
   PanelLeft,
   Plus,
   Wrench,
@@ -58,6 +59,12 @@ const wrenchIconMotion = {
 const brainIconMotion = {
   rest: { scale: 1, rotate: 0 },
   hover: { scale: 1.12, rotate: -6, transition: t.spring },
+  tap: { scale: 0.92, transition: t.fast },
+};
+
+const historyIconMotion = {
+  rest: { scale: 1, rotate: 0 },
+  hover: { scale: 1.12, rotate: -12, transition: t.spring },
   tap: { scale: 0.92, transition: t.fast },
 };
 
@@ -145,6 +152,22 @@ export function SessionListNav({
           <Wrench className="size-3.5" />
         </motion.span>
         <span>Skills & Tools</span>
+      </motion.button>
+
+      <motion.button
+        type="button"
+        onClick={() => onNavigate("/runs")}
+        className={quietRow}
+        initial="rest"
+        whileHover="hover"
+        whileTap="tap"
+        variants={rowMotion}
+        data-testid="sidebar-nav-runs"
+      >
+        <motion.span className="inline-flex shrink-0 opacity-60" variants={historyIconMotion}>
+          <History className="size-3.5" />
+        </motion.span>
+        <span>Runs</span>
       </motion.button>
 
     </div>

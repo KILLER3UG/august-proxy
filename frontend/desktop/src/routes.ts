@@ -10,6 +10,7 @@ import {
   Mic,
   Bot,
   Wrench,
+  History,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,6 +34,9 @@ const SkillsPage = lazy(() =>
 );
 const LiveSurface = lazy(() =>
   import('@/sections/live/LiveSurface').then((m) => ({ default: m.LiveSurface })),
+);
+const RunsPage = lazy(() =>
+  import('@/sections/runs/RunsPage').then((m) => ({ default: m.RunsPage })),
 );
 const DesignRoute = lazy(() =>
   import('@/pages/DesignRoute').then((m) => ({ default: m.DesignRoute })),
@@ -101,6 +105,13 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     label: 'Skills & Tools',
     Icon: Wrench,
     element: React.createElement(LazySection, { name: 'Skills' }, React.createElement(SkillsPage)),
+    nav: true,
+  },
+  {
+    path: '/runs',
+    label: 'Runs',
+    Icon: History,
+    element: React.createElement(LazySection, { name: 'Runs' }, React.createElement(RunsPage)),
     nav: true,
   },
   {

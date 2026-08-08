@@ -48,6 +48,7 @@ import { RecalledMemorySection } from './RecalledMemorySection';
 import { AddedMemorySection } from './AddedMemorySection';
 import { RecurringTasksSection } from './RecurringTasksSection';
 import { PromptTemplatesSection } from './PromptTemplatesSection';
+import { ReliabilitySection } from './ReliabilitySection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -161,6 +162,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'agent-sandbox': AgentSandboxWrapper,
   'app-updates': AppUpdatesWrapper,
   'prompt-templates': PromptTemplatesWrapper,
+  reliability: ReliabilityWrapper,
 };
 
 function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
@@ -193,6 +195,7 @@ function KanbanWrapper() { return <KanbanSection />; }
 function PythonSandboxWrapper() { return <PythonSandboxSection />; }
 function AgentSandboxWrapper() { return <AgentSandboxSection />; }
 function PromptTemplatesWrapper() { return <PromptTemplatesSection />; }
+function ReliabilityWrapper() { return <ReliabilitySection />; }
 
 /** Placeholder for sections not yet wired. With all 10 entries now
  *  mapped, this only renders for genuinely-unknown :section params. */

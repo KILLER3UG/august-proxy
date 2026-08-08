@@ -1132,11 +1132,16 @@ def summarize_session(session: WorkbenchSession) -> dict[str, object]:
         'planApproved': session.planApproved,
         'messageCount': session.messageCount,
         'mutationCount': session.mutationCount,
+        'turnCount': session.turnCount,
         'status': session.status,
         'createdAt': session.createdAt,
         'updatedAt': session.updatedAt,
         'startedAt': session.startedAt,
         'workspacePath': session.workspacePath,
+        # Usage roll-ups — feed the Runs view's stat strip (tokens/cost per run).
+        'totalInputTokens': session.totalInputTokens,
+        'totalOutputTokens': session.totalOutputTokens,
+        'totalCost': session.totalCost,
     }
 
 

@@ -52,6 +52,7 @@ import {
   UserRound,
   ArrowUpCircle,
   Bell,
+  HeartPulse,
 } from 'lucide-react';
 
 /** Visibility tier for the rail. `basic` items are always shown; the
@@ -433,6 +434,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'advanced',
     keywords: ['feature', 'flow', 'pipeline', 'animation', 'inventory', 'sse', 'execution'],
     legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
+  },
+  {
+    id: 'reliability',
+    label: 'Reliability',
+    description: 'Fleet health: win rates, latency, token cost, and harness eval pass rates.',
+    icon: HeartPulse,
+    category: 'activity',
+    tier: 'advanced',
+    // Note: 'model' is owned by model-providers; 'tokens'/'cost' by usage;
+    // 'error' by conversation-inspector. This section is reached via its
+    // own vocabulary: win/pass rates, latency, fleet, regression.
+    keywords: ['reliability', 'win rate', 'pass rate', 'latency', 'fleet', 'trend', 'regression', 'harness'],
   },
   /* ── Security & Access ──────────────────────────────────────── */
   {
