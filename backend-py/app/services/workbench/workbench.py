@@ -1170,11 +1170,11 @@ def enqueueUserMessage(
         'queuedAt': _now(),
         'kind': kind_n,
     }
-    # Steers and subagent completions jump to the front so they apply first
-    if kind_n in ('steer', 'subagent'):
-        session.queuedUserMessages.insert(0, entry)
-    else:
-        session.queuedUserMessages.append(entry)
+    # FIFO for every kind: steers/subagent completions get PRIORITY as a
+    # group in the drain formatter (steer → subagent → queue), but within a
+    # group the user's order must hold — front-inserting here made three
+    # steers drain as 3,2,1 (both to the model and to the injected bubbles).
+    session.queuedUserMessages.append(entry)
     session.updatedAt = _now()
     saveSessions()
     try:

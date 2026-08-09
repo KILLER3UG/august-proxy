@@ -172,7 +172,8 @@ async def _startSubagentAutoTurn(sessionId: str) -> None:
     )
     if not entries:
         return
-    message = '\n\n'.join(str(e.get('text') or '') for e in reversed(entries))
+    # Queue is FIFO for every kind — join in arrival order.
+    message = '\n\n'.join(str(e.get('text') or '') for e in entries)
     if not message.strip():
         return
     _startTurnTask(

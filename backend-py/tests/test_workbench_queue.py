@@ -140,16 +140,31 @@ class TestDrain:
         wb.enqueueUserMessage(session.id, '[SUBAGENT_COMPLETE ...] #2', kind='subagent')
         captured = []
         drained = wb.drainQueuedMessages(session.id, emit=captured.append, kinds={'subagent'})
-        # Subagent entries drain (front-inserted, so reversed), user entry stays.
-        assert [e['text'] for e in drained] == ['[SUBAGENT_COMPLETE ...] #2', '[SUBAGENT_COMPLETE ...]']
+        # FIFO for every kind — arrival order, not reversed (a front-inserted
+        # queue made three steers/completions drain as 3,2,1).
+        assert [e['text'] for e in drained] == ['[SUBAGENT_COMPLETE ...]', '[SUBAGENT_COMPLETE ...] #2']
         assert [e['kind'] for e in drained] == ['subagent', 'subagent']
         assert [e['text'] for e in session.queuedUserMessages] == ['user follow-up']
-        # Emits only for the popped entries.
-        assert [e['text'] for e in captured] == ['[SUBAGENT_COMPLETE ...] #2', '[SUBAGENT_COMPLETE ...]']
+        # Emits only for the popped entries, in the same order.
+        assert [e['text'] for e in captured] == ['[SUBAGENT_COMPLETE ...]', '[SUBAGENT_COMPLETE ...] #2']
         # A second selective drain finds nothing new.
         assert wb.drainQueuedMessages(session.id, kinds={'subagent'}) == []
         # The user entry is still intact for the real turn.
         assert [e['text'] for e in wb.drainQueuedMessages(session.id)] == ['user follow-up']
+
+    def testSteersDrainInArrivalOrder(self, session):
+        """Three queued steers must reach the model and the injected bubbles
+        as 1,2,3 — the drain formatter groups steers first, but never
+        reverses them."""
+        wb.enqueueUserMessage(session.id, 'steer one', kind='steer')
+        wb.enqueueUserMessage(session.id, 'steer two', kind='steer')
+        wb.enqueueUserMessage(session.id, 'steer three', kind='steer')
+        drained = wb.drainQueuedMessages(session.id)
+        assert [e['text'] for e in drained] == ['steer one', 'steer two', 'steer three']
+        # Formatter: steers grouped first, order preserved.
+        formatted = wb._formatQueuedMessagesAsUserTurn(drained)
+        content = str(formatted.get('content', ''))
+        assert content.index('steer one') < content.index('steer two') < content.index('steer three')
 
     def testDrainKindsNoMatchReturnsEmpty(self, session):
         wb.enqueueUserMessage(session.id, 'user follow-up')
