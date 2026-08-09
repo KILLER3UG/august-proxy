@@ -40,7 +40,7 @@ const ADV_KEY = 'august-settings-advanced';
 // test exercises the same id/label/icon/category/tier wiring production
 // uses. Cover both tiers and both security + activity categories.
 const BASIC_IDS = ['system-health', 'skills', 'api-access'];
-const ADVANCED_IDS = ['memory-knowledge', 'computer-access', 'developer-console'];
+const ADVANCED_IDS = ['memory-knowledge', 'computer-access', 'observability'];
 
 function pickSections(): WorkspaceSectionMeta[] {
   const ids = [...BASIC_IDS, ...ADVANCED_IDS];
@@ -114,7 +114,7 @@ describe('WorkspaceShell — tier filter', () => {
     const mem = SETTINGS_SECTIONS.find((s) => s.id === 'memory-knowledge')!;
     expect(labels.some((l) => l.includes(mem.label)), 'active advanced section must render').toBe(true);
     // Other advanced items still hidden.
-    const dev = SETTINGS_SECTIONS.find((s) => s.id === 'developer-console')!;
+    const dev = SETTINGS_SECTIONS.find((s) => s.id === 'observability')!;
     expect(labels.some((l) => l.includes(dev.label))).toBe(false);
   });
 
@@ -126,14 +126,14 @@ describe('WorkspaceShell — tier filter', () => {
       </WorkspaceShell>,
     );
 
-    // Search bypasses tier filter — 'developer' is a keyword of
-    // developer-console (advanced). It should appear even though
+    // Search bypasses tier filter — 'audit' is a keyword of
+    // observability (advanced). It should appear even though
     // showAdvanced=false.
     const input = screen.getByLabelText(/Search settings/i);
-    fireEvent.change(input, { target: { value: 'developer' } });
+    fireEvent.change(input, { target: { value: 'audit' } });
 
     const labels = visibleRailLabels();
-    const dev = SETTINGS_SECTIONS.find((s) => s.id === 'developer-console')!;
+    const dev = SETTINGS_SECTIONS.find((s) => s.id === 'observability')!;
     expect(labels.some((l) => l.includes(dev.label))).toBe(true);
   });
 

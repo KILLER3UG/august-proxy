@@ -29,7 +29,6 @@ import { SystemHealthSection } from './SystemHealthSection';
 import { IntegrationsSection } from './IntegrationsSection';
 import { ConversationsHistorySection } from './ConversationsHistorySection';
 import { AgentsAutomationSection } from './AgentsAutomationSection';
-import { DeveloperConsoleSection } from './DeveloperConsoleSection';
 import { ComputerAccessSettings } from './ComputerAccessSettings';
 import { ObservabilitySection } from './ObservabilitySection';
 import { BackendMonitorSection } from './BackendMonitorSection';
@@ -157,7 +156,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'tools-connections': ToolsConnectionsWrapper,
   'conversations-history': ConversationsHistoryWrapper,
   'agents-automation': AgentsAutomationWrapper,
-  'developer-console': DeveloperConsoleWrapper,
   'computer-access': ComputerAccessSettingsWrapper,
   // traffic-activity is now an alias for observability (handled by
   // resolveLegacyTab + legacyAliases in the registry), so no entry here.
@@ -203,7 +201,6 @@ function SystemHealthWrapper() { return <SystemHealthSection />; }
 function ToolsConnectionsWrapper() { return <IntegrationsSection />; }
 function ConversationsHistoryWrapper() { return <ConversationsHistorySection />; }
 function AgentsAutomationWrapper() { return <AgentsAutomationSection />; }
-function DeveloperConsoleWrapper() { return <DeveloperConsoleSection />; }
 function SkillsWrapper() { return <SkillsSection />; }
 function ComputerUseWrapper() { return <ComputerUseSection />; }
 function ToolGrantsWrapper() { return <ToolGrantsSection />; }

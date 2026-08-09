@@ -73,10 +73,9 @@ export const $sessionStreamStates = {
   },
 };
 
-/** Stream-local message hydrate (no demo-thread fallback). Empty array when
- *  nothing is stored — ChatThread supplies demos on its own load path. */
+/** Stream-local message hydrate. Empty array when nothing is stored. */
 export function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
-  return loadMessagesFromStorage(sessionId, () => []);
+  return loadMessagesFromStorage(sessionId);
 }
 
 export function persistMessages(sessionId: string, messages: ChatMessage[]): void {

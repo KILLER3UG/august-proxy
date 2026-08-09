@@ -47,7 +47,6 @@ import {
   Shield,
   ShieldCheck,
   SlidersHorizontal,
-  TerminalSquare,
   Palette,
   UserRound,
   ArrowUpCircle,
@@ -504,16 +503,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // Note: 'token' is owned by model-providers (token cost tracking).
     // API auth tokens are reached via 'bearer' here.
     keywords: ['api', 'access', 'gateway', 'key', 'external', 'client', 'curl', 'openai', 'anthropic', 'bearer', 'sdk', 'endpoint'],
-  },
-  {
-    id: 'developer-console',
-    label: 'Developer Console',
-    description: 'August console and advanced debug/reset options (experimental).',
-    icon: TerminalSquare,
-    category: 'activity',
-    tier: 'advanced',
-    keywords: ['developer', 'console', 'august', 'debug', 'reset', 'experimental'],
-    legacyAliases: ['advanced'],
   },
 ] as const;
 

@@ -13,7 +13,6 @@ import {
   useCallback,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockChatThread } from '@/lib/mock';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { UploadCloud } from 'lucide-react';
@@ -147,7 +146,7 @@ const EMPTY_QUEUED_MESSAGES: QueuedUserMessage[] = [];
 let visibleSessionId: string | null = null;
 
 function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
-  return loadMessagesForSessionBase(sessionId, buildDemoThread);
+  return loadMessagesForSessionBase(sessionId);
 }
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
@@ -1473,26 +1472,4 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       </div>
     </div>
   );
-}
-
-function buildDemoThread(sessionId: string | null): ChatMessage[] {
-  if (sessionId !== 'demo') return [];
-  return mockChatThread.map((m) => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    timestamp: m.timestamp,
-    thinking:
-      m.role === 'assistant' && m.id === 'm2'
-        ? 'The user wants a full React 19 + Tauri 2 refactor. I need to assess the current codebase size, identify key pain points (like the Providers tab bug), and plan a phased migration. Starting with codebase inspection...'
-        : m.role === 'assistant' && m.id === 'm3'
-          ? 'Found 12 vanilla JS sections, no build step, and a hoisting bug in the Providers tab. The bug is a ReferenceError in init.js caused by loadProviderList being hoisted incorrectly — easy fix but requires careful testing since there are no unit tests.'
-          : undefined,
-    thinkingDuration:
-      m.role === 'assistant' && m.id === 'm2'
-        ? 3.4
-        : m.role === 'assistant' && m.id === 'm3'
-          ? 1.2
-          : undefined,
-  }));
 }

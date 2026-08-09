@@ -166,8 +166,9 @@ describe('legacy alias resolution', () => {
     ['inspector',       'conversation-inspector'],
     ['conversation',    'conversation-inspector'],
     ['thinking',        'conversation-inspector'],
-    // developer-console aliases
-    ['advanced',        'developer-console'],
+    // developer-console was removed (demo console) — unknown aliases fall
+    // back to the default (first) section.
+    ['advanced',        SETTINGS_SECTIONS[0].id],
   ];
 
   for (const [raw, expected] of SPOT_CHECKS) {

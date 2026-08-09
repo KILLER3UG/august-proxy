@@ -12,14 +12,9 @@ export const messagesStorageKey = (sessionId: string | null) =>
 export const composerDraftStorageKey = (sessionId: string | null) =>
   sessionId ? `${COMPOSER_DRAFT_PREFIX}${sessionId}` : null;
 
-export type DemoThreadBuilder = (sessionId: string | null) => ChatMessage[];
-
-export function loadMessagesForSession(
-  sessionId: string | null,
-  buildDemo: DemoThreadBuilder,
-): ChatMessage[] {
+export function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
   const key = messagesStorageKey(sessionId);
-  if (!key) return buildDemo(sessionId);
+  if (!key) return [];
 
   try {
     const saved = localStorage.getItem(key);
@@ -28,7 +23,7 @@ export function loadMessagesForSession(
     /* ignore parse errors */
   }
 
-  return buildDemo(sessionId);
+  return [];
 }
 
 export function loadComposerDraft(sessionId: string | null): string {
