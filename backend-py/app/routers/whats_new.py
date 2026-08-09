@@ -117,3 +117,13 @@ async def get_whats_new(hours: int = Query(default=48, ge=1, le=168)):
         'repoUrl': f'https://github.com/{repo}',
         'errors': errors,
     }
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute — httpx is imported on first use (cold-start win;
+    the request path carries its own local import)."""
+    if name == 'httpx':
+        import httpx
+
+        return httpx
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
