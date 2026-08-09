@@ -440,6 +440,7 @@ async def _doSpawn(
             for item in workItems
         ],
         mode='auto',
+        emit=emit,
     )
     handles = await orchestrator.spawn(request)
     dispatch = [

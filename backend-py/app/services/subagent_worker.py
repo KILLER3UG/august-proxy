@@ -71,8 +71,19 @@ async def runSubagent(
     # subscribed to task:{taskId}:{progress|result|failure}.
 
     def _combinedEmit(ev: dict[str, Any]) -> None:
-        if emit:
-            emit(ev)
+        if not emit:
+            return
+        # Forward only LIVE output events to the parent stream. Start/done
+        # are owned by the spawn tool (keyed by taskId); executeSubAgent
+        # emits them with its own job_xxx id, so they must stay dropped.
+        evType = as_str(ev.get('type'), '')
+        if evType not in ('subagentText', 'subagentToolCall', 'subagentToolResult'):
+            return
+        # Rewrite jobId → taskId so the events match the sub-agent blocks the
+        # spawn tool seeded (the UI keys subagent state by jobId/taskId).
+        forwarded = dict(ev)
+        forwarded['jobId'] = taskId
+        emit(forwarded)
 
     async def _failAndBroadcast(errorMsg: str) -> dict[str, Any]:
         return {'taskId': taskId, 'agentId': agentId, 'status': 'failed', 'error': errorMsg}

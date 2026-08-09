@@ -7,10 +7,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, AsyncIterator
 
-import httpx
-
 if TYPE_CHECKING:
-    pass
+    import httpx
 
 
 async def streamSse(

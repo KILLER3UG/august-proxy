@@ -136,6 +136,20 @@ export function ReliabilitySection() {
     },
   });
 
+  // Pass-rate trend: bucket eval runs by day so harness changes are
+  // measurable over the scheduled 6h loop (bars = pass share per day).
+  const evalTrend = useMemo(() => {
+    const byDay = new Map<string, { passed: number; total: number }>();
+    for (const r of evals?.runs ?? []) {
+      const day = r.at ? new Date(r.at * 1000).toISOString().slice(0, 10) : '?';
+      const e = byDay.get(day) ?? { passed: 0, total: 0 };
+      e.total += 1;
+      if (r.passed) e.passed += 1;
+      byDay.set(day, e);
+    }
+    return [...byDay.entries()].map(([day, v]) => ({ day, ...v }));
+  }, [evals]);
+
   // ── Auto-routing (surpass #1 closed loop) ───────────────────────────
   const { data: brainConfig } = useQuery<{ config: BrainConfig }>({
     queryKey: ['brain-config'],
@@ -482,7 +496,36 @@ export function ReliabilitySection() {
             No eval runs recorded — the loop-level golden suite lives in <code className="font-mono text-[10px]">tests/test_harness_evals.py</code>; run it and results land here so harness changes are measurable.
           </p>
         ) : (
-          <ul className="mt-3 space-y-1.5">
+          <>
+            {evalTrend.length > 1 ? (
+              <div
+                className="mt-3 flex items-end gap-1 h-10"
+                data-testid="eval-pass-trend"
+                aria-label="Eval pass rate by day"
+              >
+                {evalTrend.map((t) => {
+                  const share = t.total > 0 ? t.passed / t.total : 0;
+                  const tone =
+                    share === 0 ? 'bg-rose-500/50' : share === 1 ? 'bg-emerald-500/50' : 'bg-amber-500/50';
+                  return (
+                    <div
+                      key={t.day}
+                      className="flex-1 min-w-0 flex flex-col items-center gap-0.5"
+                      title={`${t.day}: ${t.passed}/${t.total} passed`}
+                    >
+                      <div
+                        className={`w-full rounded-sm ${tone}`}
+                        style={{ height: `${Math.max(10, Math.round(36 * share))}px` }}
+                      />
+                      <span className="text-[9px] text-muted-foreground/50 truncate w-full text-center">
+                        {t.day.slice(5)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            <ul className="mt-3 space-y-1.5">
             {evals.runs.slice(0, 10).map((r, i) => (
               <li key={`${r.at}-${i}`} className="flex items-center gap-2 text-xs py-1 border-t border-white/[0.04] first:border-t-0">
                 <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
@@ -500,6 +543,7 @@ export function ReliabilitySection() {
               </li>
             ))}
           </ul>
+          </>
         )}
       </div>
     </div>

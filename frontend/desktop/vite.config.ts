@@ -27,6 +27,15 @@ export default defineConfig({
           if (id.includes('lucide-react')) return 'icons';
           if (id.includes('@tanstack')) return 'query';
           if (id.includes('sonner') || id.includes('cmdk') || id.includes('recharts')) return 'ui';
+          // Heavy single-purpose libs get their own cached chunks so the
+          // main entry (chat thread) doesn't carry them: xlsx (~1 MB),
+          // katex (~300 KB), xterm, and the code highlighter.
+          if (id.includes('katex')) return 'katex';
+          if (id.includes('xlsx')) return 'xlsx';
+          if (id.includes('xterm')) return 'xterm';
+          if (id.includes('highlight.js')) return 'highlight';
+          if (id.includes('marked') || id.includes('mammoth')) return 'markdown';
+          if (id.includes('zod') || id.includes('zustand')) return 'state';
           return undefined;
         },
       },

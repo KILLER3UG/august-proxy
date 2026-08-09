@@ -13,9 +13,10 @@ import asyncio
 import json
 import random
 import time
-from typing import AsyncIterator, Callable
+from typing import TYPE_CHECKING, AsyncIterator, Callable
 
-import httpx
+if TYPE_CHECKING:
+    import httpx
 
 from app.json_narrowing import as_dict, as_list, as_str
 
@@ -288,6 +289,10 @@ class BaseProviderClient:
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
+            # Lazy import — httpx costs ~170 ms of module-import time and is
+            # only needed once a provider call actually runs.
+            import httpx
+
             self._client = httpx.AsyncClient(timeout=self.timeout, follow_redirects=True)
         return self._client
 

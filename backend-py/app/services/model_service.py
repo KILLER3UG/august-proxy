@@ -17,8 +17,6 @@ import asyncio
 import re
 import time
 
-import httpx
-
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.providers.clients import getClient
 from app.services.workbench.providers import supports_thinking
@@ -303,6 +301,7 @@ def _getModelDisplayAlias(model: dict[str, object]) -> str:
 
 
 async def _fetchProviderModels(provider: dict[str, object], timeoutS: float = 5.0) -> list[dict[str, object]]:
+    import httpx
     """Fetch models from a provider's /models endpoint.
 
     Falls back to static list if the endpoint is unavailable.
@@ -503,3 +502,13 @@ def getModelDisplayAlias(model: dict[str, object]) -> str:
 
 def isFreeModelId(modelId: str) -> bool:
     return _isFreeModelId(modelId)
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute — httpx is imported on first use (cold-start win;
+    function bodies also carry local imports so bare-name references resolve)."""
+    if name == 'httpx':
+        import httpx
+
+        return httpx
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

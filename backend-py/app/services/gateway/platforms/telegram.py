@@ -31,8 +31,6 @@ import os
 import secrets
 from typing import Optional
 
-import httpx
-
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 
@@ -47,6 +45,7 @@ class TelegramAdapter(BasePlatformAdapter):
     platform = 'telegram'
 
     def __init__(self, config: dict[str, object] | None = None, bridge=None):
+        import httpx
         super().__init__(config, bridge)
         self._token: str = os.environ.get('AUGUST_TELEGRAM_BOT_TOKEN', '')
         self._client: httpx.AsyncClient | None = None
@@ -70,10 +69,10 @@ class TelegramAdapter(BasePlatformAdapter):
             return {'ok': False, 'description': str(exc)}
 
     async def connect(self) -> bool:
+        import httpx
         if not self._token:
             log.error('telegram: AUGUST_TELEGRAM_BOT_TOKEN not set')
             return False
-        import httpx
 
         self._client = httpx.AsyncClient()
         me = await self._request('getMe')
@@ -203,3 +202,13 @@ class TelegramAdapter(BasePlatformAdapter):
             text=text,
             raw=raw,
         )
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute — httpx is imported on first use (cold-start win;
+    function bodies also carry local imports so bare-name references resolve)."""
+    if name == 'httpx':
+        import httpx
+
+        return httpx
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

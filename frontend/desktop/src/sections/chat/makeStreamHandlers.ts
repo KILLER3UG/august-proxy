@@ -44,6 +44,7 @@ import { setMemorySuggestions } from './memory-suggestions-store';
 import { upsertQueuedMessage, removeQueuedMessage } from './queue-store';
 import { resolveUiSessionId, resolveWorkbenchSessionId } from './stream/session-id-map';
 import { advanceSessionSubscriberLastSeq } from './stream/session-subscriber';
+import { setSubagentProposal } from './subagent-proposals-store';
 import { pushNotification } from '@/store/notifications';
 import { toast } from 'sonner';
 import { useArenaStore } from './arena/arena-store';
@@ -313,46 +314,22 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       if (wbId) advanceSessionSubscriberLastSeq(wbId, seq);
     },
     onSubagentProposed: ({ proposalId, workBreakdown }) => {
-      // The model asked for a work breakdown before spawning. Surface it
-      // where the user can act: the pending proposals list in Brain → Runs
-      // (RunsTab) approves/rejects via POST /api/subagents/propose-breakdown.
+      // The model asked for a work breakdown before spawning. Surface it as
+      // an inline approval bar above the composer (Launch/Reject post to
+      // /api/subagents/propose-breakdown); the Runs tab mirrors the same
+      // pending proposals.
+      if (!proposalId) return;
+      setSubagentProposal(sessionId, { proposalId, workBreakdown });
       const count = Array.isArray(workBreakdown) ? workBreakdown.length : 0;
       toast.message('💡 Sub-agent breakdown proposed', {
         description: count > 0
-          ? `${count} agent(s) await your approval — review them in Brain → Runs.`
-          : 'Review and approve it in Brain → Runs.',
+          ? `${count} agent(s) await your approval — approve or reject above.`
+          : 'Approve or reject the breakdown above.',
       });
-      if (proposalId) {
-        pushNotification('Sub-agent proposal', `Proposal ${proposalId} awaits approval`, 'info');
-      }
     },
-    onPrompt: ({ content, systemPrompt, userMessage, tokens, toolUseId, subagentId, jobId }) => {
-      const key = toolUseId || (jobId ? `subagent-${jobId}` : `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-      setSubagentPrompts(prev => {
-        const next = new Map(prev);
-        next.set(key, {
-          content,
-          systemPrompt: systemPrompt ?? '',
-          userMessage: userMessage ?? '',
-          tokens: tokens ?? 0,
-          subagentId: subagentId || undefined,
-          jobId: jobId || undefined,
-        });
-        return next;
-      });
-      // Also seed the live sub-agent container so the parent tool call
-      // can render the nested block immediately, even if a separate
-      // `subagentStart` event arrives later (or was missed during a
-      // reconnect).
-      if (jobId) {
-        applySubagentEvent(sessionId, {
-          type: 'subagentStart',
-          jobId,
-          agentId: subagentId || 'subagent',
-          parentToolUseId: toolUseId,
-        });
-      }
-    },
+    // NOTE: the legacy onPrompt handler was removed — the backend never
+    // emits 'prompt' events (sub-agent prompts are seeded via
+    // subagentStart + the live subagentText/ToolCall/ToolResult stream).
     ...subagentHandlers,
     onStarted: ({ sinceSeq }) => {
       // The backend reports the seq of the 'started' event so callers

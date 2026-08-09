@@ -12,8 +12,6 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
-
 from app.json_narrowing import as_dict, as_str
 from app.services.config_service import getConfig, saveConfig
 
@@ -306,6 +304,7 @@ async def connect_slack(bot_token: str, team_id: str = '') -> dict[str, Any]:
 
 
 async def test_github(token: str | None = None) -> dict[str, Any]:
+    import httpx
     """Validate a GitHub PAT via GET /user. Uses stored token when token is empty."""
     tok = (token or '').strip()
     if not tok:
@@ -352,6 +351,7 @@ async def test_github(token: str | None = None) -> dict[str, Any]:
 
 
 async def test_slack(bot_token: str | None = None, channel: str = '') -> dict[str, Any]:
+    import httpx
     """Validate Slack bot token via auth.test; optional chat.postMessage test send."""
     tok = (bot_token or '').strip()
     if not tok:
@@ -670,6 +670,7 @@ async def google_auth_url(email: str = '', facet: str = 'gmail') -> dict[str, An
 
 
 async def google_oauth_callback(code: str = '', state: str = '', error: str = '') -> dict[str, Any]:
+    import httpx
     """Handle Google OAuth redirect: exchange code (PKCE and/or secret), store tokens."""
     if error:
         return {
@@ -1089,3 +1090,13 @@ def set_mcp_env(
         if v:
             os.environ[k] = v
     return get_mcp_env()
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute — httpx is imported on first use (cold-start win;
+    function bodies also carry local imports so bare-name references resolve)."""
+    if name == 'httpx':
+        import httpx
+
+        return httpx
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

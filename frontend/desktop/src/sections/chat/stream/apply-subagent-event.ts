@@ -10,7 +10,6 @@ import { appendBlockEvent } from './append-block-event';
 
 export type SubagentStreamEvent =
   | { type: 'subagentStart'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; goal?: string; depth?: number }
-  | { type: 'subagent_thinking'; jobId: string; content?: string }
   | { type: 'subagentText'; jobId: string; content?: string }
   | { type: 'subagentToolCall'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
   | { type: 'subagentToolResult'; jobId: string; id: string; content?: unknown; isError?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
@@ -108,17 +107,13 @@ export function applySubagentEvent(
     return mutated;
   }
 
-  // For thinking/text/toolCall/toolResult events, mutate the inner
+  // For text/toolCall/toolResult events, mutate the inner
   // blocks array via appendBlockEvent (same reducer as the parent).
   updateSessionStreamState(sessionId, (prev) => {
     const blocks = new Map(prev.subagentBlocks);
     const current = blocks.get(jobId);
     if (!current) return {};
-    if (event.type === 'subagent_thinking') {
-      const inner = appendBlockEvent(current.blocks, { type: 'thinking', content: event.content || '' });
-      blocks.set(jobId, { ...current, blocks: inner });
-      mutated = true;
-    } else if (event.type === 'subagentText') {
+    if (event.type === 'subagentText') {
       const inner = appendBlockEvent(current.blocks, { type: 'text', content: event.content || '' });
       blocks.set(jobId, { ...current, blocks: inner });
       mutated = true;

@@ -38,7 +38,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from app.json_narrowing import as_str
 from app.services.agent_message_bus import AgentMessageBus, Handler, Subscription
@@ -112,10 +112,21 @@ def _record_run(handle: SubagentHandle) -> None:
 class SubagentSpawnRequest:
     """Parameters for spawning one or more sub-agents."""
 
-    def __init__(self, session: object, workItems: list[dict[str, Any]], mode: str = 'auto') -> None:
+    def __init__(
+        self,
+        session: object,
+        workItems: list[dict[str, Any]],
+        mode: str = 'auto',
+        emit: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         self.session = session
         self.workItems = workItems
         self.mode = mode
+        # Optional parent SSE emitter. Live sub-agent output (text / tool
+        # calls / tool results) is forwarded to it so the chat thread shows
+        # progress instead of only start + done. Start/done events are NOT
+        # forwarded — the spawn tool owns those (keyed by taskId).
+        self.emit = emit
 
 
 class SubagentHandle:
@@ -360,6 +371,7 @@ class SubagentOrchestrator:
                     effort=effort,
                     model=model,
                     taskId=handle.taskId,
+                    emit=request.emit,
                 )
                 handle.result = result
                 handle.finishedAt = time.time()

@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 
-import httpx
 from fastapi import APIRouter, Query
 
 router = APIRouter(prefix='/api/whats-new', tags=['whats-new'])
@@ -54,6 +53,8 @@ async def get_whats_new(hours: int = Query(default=48, ge=1, le=168)):
     commits: list[dict] = []
     releases: list[dict] = []
     errors: list[str] = []
+
+    import httpx
 
     async with httpx.AsyncClient(timeout=12.0) as client:
         try:

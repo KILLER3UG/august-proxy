@@ -7,10 +7,9 @@ from __future__ import annotations
 
 import os
 
-import httpx
-
 
 async def getHostInfo() -> dict[str, object]:
+    import httpx
     """Host-agent health shaped for both simple status and HostAgentHealth UI.
 
     When the URL is unset, reports ``local_desktop`` if local automation is
@@ -89,6 +88,7 @@ async def getHostInfo() -> dict[str, object]:
 
 
 async def executeHostCommand(command: str, args: list[str] | None = None) -> dict[str, object]:
+    import httpx
     baseUrl = os.environ.get('AUGUST_HOST_AGENT_URL', '')
     if not baseUrl:
         return {'error': 'Host agent not available'}
@@ -98,3 +98,13 @@ async def executeHostCommand(command: str, args: list[str] | None = None) -> dic
             return resp.json() if resp.status_code == 200 else {'error': resp.text}
     except httpx.RequestError as exc:
         return {'error': str(exc)}
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute — httpx is imported on first use (cold-start win;
+    function bodies also carry local imports so bare-name references resolve)."""
+    if name == 'httpx':
+        import httpx
+
+        return httpx
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
