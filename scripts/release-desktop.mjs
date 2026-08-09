@@ -279,18 +279,22 @@ async function buildLatestJsonFromSignatures(tauriBundleDir, nextVersion) {
     let artifact = null;
     let sigPath = null;
     if (existsSync(nsisDir)) {
-        // Tauri names the NSIS bundle August_0.13.0_x64-setup.exe — match
-        // any <platform>-setup.exe form, not just the documented '-setup.exe'.
-        const exe = readdirSync(nsisDir).find(
+        // Tauri names the NSIS bundle August_<version>_x64-setup.exe — match
+        // any <platform>-setup.exe form, but PREFER the file for the version
+        // being released (stale bundles from older builds may share the dir
+        // and must never land in the updater manifest).
+        const setups = readdirSync(nsisDir).filter(
             (f) => f.endsWith('-setup.exe') || /setup\.exe$/i.test(f),
         );
+        const exe = setups.find((f) => f.includes(nextVersion)) ?? setups[0];
         if (exe && existsSync(join(nsisDir, `${exe}.sig`))) {
             artifact = exe;
             sigPath = join(nsisDir, `${exe}.sig`);
         }
     }
     if (!artifact && existsSync(msiDir)) {
-        const msi = readdirSync(msiDir).find((f) => f.endsWith('.msi'));
+        const msies = readdirSync(msiDir).filter((f) => f.endsWith('.msi'));
+        const msi = msies.find((f) => f.includes(nextVersion)) ?? msies[0];
         if (msi && existsSync(join(msiDir, `${msi}.sig`))) {
             artifact = msi;
             sigPath = join(msiDir, `${msi}.sig`);
@@ -357,6 +361,21 @@ async function prepareTauriUpdaterManifest(nextVersion) {
 
 async function buildTauriApp() {
     if (!buildTauri) return;
+    // Stale installers from older builds can linger in the bundle dirs and
+    // would otherwise be swept into the release upload + updater manifest.
+    // Remove anything that is not for the version being released.
+    const bundleRoot = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
+    for (const sub of ['msi', 'nsis']) {
+        const dir = join(bundleRoot, sub);
+        if (!existsSync(dir)) continue;
+        for (const f of readdirSync(dir)) {
+            if (f.endsWith('.msi') || f.endsWith('.exe') || f.endsWith('.sig') || f === 'latest.json') {
+                if (!f.includes(version)) {
+                    rm(join(dir, f), { force: true });
+                }
+            }
+        }
+    }
     run('npm', ['run', 'download:node-binaries']);
     run('npm', ['run', 'prepare:desktop-backend']);
     run('npm', ['run', 'tauri', '-w', 'frontend/desktop', 'build']);
