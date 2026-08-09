@@ -21,7 +21,6 @@ import type { WorkbenchSession } from '@/types/workbench';
 import type { WorkbenchEventHandlers } from '@/types/workbench';
 import { api } from '@/api/client';
 import { streamWorkbenchReconnect } from '@/api/workbench';
-import { chatRuntime } from '../chat-runtime';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { upsertQueuedMessage, removeQueuedMessage } from '../queue-store';
 import { updateSessionStreamState, useSessionStreamStore } from './session-stream-store';
@@ -77,19 +76,12 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
   // Per-turn startChatStream owns the SSE — avoid a second connection.
   if (activeStreamControllers.has(uiSessionId)) return;
 
-  // Ensure there is an active turn in chatRuntime so the AUG streaming
-  // indicator (WorkingIndicator) shows while the backend is generating.
-  // Key the turn by UI session id so ChatThread's sess_* checks work.
-  let dummyTurnId: string | null = null;
-  if (!chatRuntime.isSessionStreaming(uiSessionId)) {
-    const assistantMsgId = `subscriber-${uiSessionId}-${Date.now()}`;
-    const turn = chatRuntime.startTurn({
-      sessionId: uiSessionId,
-      assistantMsgId,
-      transport: 'none',
-    });
-    dummyTurnId = turn.turnId;
-  }
+  // NOTE: no dummy chatRuntime turn here. This subscriber attaches while the
+  // session is IDLE, so a fabricated 'streaming' turn would make a fresh
+  // session show the Stop button and the working indicator forever (the
+  // subscriber stays connected on keepalives). Streaming state comes from
+  // real per-turn turns (poller-driven reconnect) and the backend
+  // /chat/active map.
 
   const controller = new AbortController();
   const sinceSeq = readLastSeq(wbId);
@@ -226,9 +218,6 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
       }
     })
     .finally(() => {
-      if (dummyTurnId) {
-        chatRuntime.finishTurn(dummyTurnId, 'done');
-      }
       if (!controller.signal.aborted) {
         sessionSubscribers.delete(wbId);
         // Background subagents often settle after the turn's `done`, when
