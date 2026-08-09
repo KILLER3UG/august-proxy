@@ -14,7 +14,12 @@ export interface SubagentPromptEntry {
 
 export const SUBAGENT_STATUS_LABEL = {
   running: 'Running',
+  pending: 'Pending',
   completed: 'Completed',
+  recovered: 'Recovered',
+  partial: 'Partial',
   failed: 'Failed',
+  error: 'Failed',
+  blocked: 'Blocked',
   cancelled: 'Cancelled',
 } as const;

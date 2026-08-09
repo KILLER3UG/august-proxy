@@ -46,6 +46,11 @@ from app.services.agent_message_bus import AgentMessageBus, Handler, Subscriptio
 logger = logging.getLogger(__name__)
 MAX_CONCURRENT_WORKERS = 5
 PEER_HELP_WINDOW_SECONDS = 5.0
+# A worker that hangs (e.g. a provider call that never returns) must not
+# occupy a slot forever — and a queued sub-agent must not wait forever for
+# a slot while hung workers hold them all.
+SLOT_ACQUIRE_TIMEOUT_SECONDS = 600
+_MAX_RETAINED_HANDLES = 12
 
 
 def _record_run(handle: SubagentHandle) -> None:
@@ -222,7 +227,32 @@ class SubagentOrchestrator:
         return True
 
     def listActive(self, sessionId: str | None = None) -> list[dict[str, Any]]:
-        """List active (running/pending) sub-agents, optionally filtered by session."""
+        """List recent sub-agents (active + recently finished), optionally filtered by session.
+
+        Finished handles are pruned (capped at ``_MAX_RETAINED_HANDLES`` per
+        session, 8× that for the unfiltered view) so a long-lived backend
+        does not accumulate them in memory forever — the Runs tab holds the
+        durable history. The roster UI still needs recently-finished rows
+        (to show completion chips), so they are only pruned past the cap.
+        """
+        max_retained = _MAX_RETAINED_HANDLES
+        if sessionId:
+            finished = [
+                tid
+                for tid, h in self._handles.items()
+                if h.sessionId == sessionId and h.status not in ('pending', 'running')
+            ]
+            if len(finished) > max_retained:
+                for tid in finished[: len(finished) - max_retained]:
+                    self._handles.pop(tid, None)
+                    self._tasks.pop(tid, None)
+        else:
+            finished = [tid for tid, h in self._handles.items() if h.status not in ('pending', 'running')]
+            cap = max_retained * 8
+            if len(finished) > cap:
+                for tid in finished[: len(finished) - cap]:
+                    self._handles.pop(tid, None)
+                    self._tasks.pop(tid, None)
         result = []
         for h in self._handles.values():
             if sessionId and h.sessionId != sessionId:
@@ -303,7 +333,16 @@ class SubagentOrchestrator:
         model: str = '',
     ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
-        async with self._semaphore:
+        try:
+            await asyncio.wait_for(self._semaphore.acquire(), timeout=SLOT_ACQUIRE_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            handle.status = 'failed'
+            handle.error = 'Timed out waiting for a worker slot (all sub-agent slots busy).'
+            handle.finishedAt = time.time()
+            _record_run(handle)
+            await self._fireEvent('subagentFailed', handle.toDict())
+            return
+        try:
             handle.status = 'running'
             _record_run(handle)
             await self._fireEvent('subagentStarted', {'taskId': handle.taskId, 'agentId': agentId, 'goal': goal})
@@ -361,6 +400,8 @@ class SubagentOrchestrator:
                 logger.exception('[Orchestrator] unexpected error for task %s', handle.taskId)
                 await self._handleFailure(handle, request)
                 await self._fireEvent('subagentFailed', handle.toDict())
+        finally:
+            self._semaphore.release()
 
     @staticmethod
     def _result_payload_text(result: dict[str, Any]) -> str:

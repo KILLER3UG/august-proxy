@@ -42,7 +42,8 @@ import { buildCompactionNoticeMessage } from '@/sections/chat/message/Compaction
 import { setSessionContextUsed } from './context-used-store';
 import { setMemorySuggestions } from './memory-suggestions-store';
 import { upsertQueuedMessage, removeQueuedMessage } from './queue-store';
-import { resolveUiSessionId } from './stream/session-id-map';
+import { resolveUiSessionId, resolveWorkbenchSessionId } from './stream/session-id-map';
+import { advanceSessionSubscriberLastSeq } from './stream/session-subscriber';
 import { pushNotification } from '@/store/notifications';
 import { toast } from 'sonner';
 import { useArenaStore } from './arena/arena-store';
@@ -303,6 +304,28 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   const subagentHandlers = makeSubagentEventHandlers(sessionId);
 
   const handlers: WorkbenchEventHandlers = {
+    // Persist the SSE position so a later reconnect (mid-stream reload, or
+    // a backend-started auto-turn) resumes from here instead of replaying
+    // from 0 — a from-0 replay stops at the first historical done event and
+    // renders nothing new.
+    onSeq: (seq: number) => {
+      const wbId = resolveWorkbenchSessionId(sessionId);
+      if (wbId) advanceSessionSubscriberLastSeq(wbId, seq);
+    },
+    onSubagentProposed: ({ proposalId, workBreakdown }) => {
+      // The model asked for a work breakdown before spawning. Surface it
+      // where the user can act: the pending proposals list in Brain → Runs
+      // (RunsTab) approves/rejects via POST /api/subagents/propose-breakdown.
+      const count = Array.isArray(workBreakdown) ? workBreakdown.length : 0;
+      toast.message('💡 Sub-agent breakdown proposed', {
+        description: count > 0
+          ? `${count} agent(s) await your approval — review them in Brain → Runs.`
+          : 'Review and approve it in Brain → Runs.',
+      });
+      if (proposalId) {
+        pushNotification('Sub-agent proposal', `Proposal ${proposalId} awaits approval`, 'info');
+      }
+    },
     onPrompt: ({ content, systemPrompt, userMessage, tokens, toolUseId, subagentId, jobId }) => {
       const key = toolUseId || (jobId ? `subagent-${jobId}` : `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
       setSubagentPrompts(prev => {

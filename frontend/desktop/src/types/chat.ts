@@ -248,7 +248,7 @@ export interface SubagentBlockState {
   scope?: string;
   task?: string;
   depth?: number;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'partial';
   startedAt: number;
   finishedAt?: number;
   /** Inner blocks (thinking/text/toolCall/toolResult) — same shape as

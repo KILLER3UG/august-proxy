@@ -69,7 +69,23 @@ async function poll(): Promise<void> {
   inFlight = true;
   try {
     const active = await api.get<unknown>('/api/workbench/chat/active');
-    useActiveChatStreamsStore.setState({ active: normalizeActiveChatMap(active) });
+    const next = normalizeActiveChatMap(active);
+    const prev = useActiveChatStreamsStore.getState().active;
+    useActiveChatStreamsStore.setState({ active: next });
+    // A session that just went streaming without the user sending a message
+    // (backend-started auto-turn for late subagent completions) needs the
+    // chat thread to attach an SSE consumer — otherwise its events land in
+    // the event log with nobody rendering them. Reconnect newly-streaming
+    // sessions here so auto-turns appear without waiting for focus churn.
+    const fresh = Object.keys(next).some((id) => !prev[id]);
+    if (fresh) {
+      try {
+        const { syncActiveStreams } = await import('@/sections/chat/stream/session-subscriber');
+        await syncActiveStreams(() => Promise.resolve(null));
+      } catch {
+        /* non-fatal: the focus/visibility resync will cover it */
+      }
+    }
   } catch (_e: unknown) {
     // Network errors are non-fatal — keep the last known state.
   } finally {

@@ -170,11 +170,25 @@ export function dispatchWorkbenchEvent(
       handlers.onSubagentDone?.({
         jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
         agentId: typeof p?.agentId === 'string' ? p.agentId : JSON.stringify(p?.agentId ?? ''),
-        status: (['completed', 'failed', 'cancelled'].includes(p?.status as string)
-          ? (p.status as 'completed' | 'failed' | 'cancelled')
-          : 'completed'),
-        message: p?.message as string | undefined,
+        // Backend statuses: completed | failed | error | blocked | partial |
+        // cancelled | recovered. Coercing error/blocked/partial to completed
+        // hid failures as successes — pass them through so the UI can render
+        // them honestly.
+        status: (['completed', 'failed', 'cancelled', 'error', 'blocked', 'partial', 'recovered'].includes(
+          p?.status as string,
+        )
+          ? (p.status as 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered')
+          : 'failed'),
+        // Failure reasons arrive in `error` (executeSubAgent path) or
+        // `message` (orchestrator path) — surface whichever is present.
+        message: (p?.message as string | undefined) ?? (p?.error as string | undefined),
         result: p?.result as string | undefined,
+      });
+      break;
+    case 'subagentProposed':
+      handlers.onSubagentProposed?.({
+        proposalId: typeof p?.proposalId === 'string' ? p.proposalId : '',
+        workBreakdown: Array.isArray(p?.workBreakdown) ? (p.workBreakdown as Array<{ goal?: string; agentId?: string }>) : [],
       });
       break;
     case 'warning':

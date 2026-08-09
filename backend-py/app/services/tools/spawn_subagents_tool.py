@@ -315,6 +315,17 @@ def _enqueue_completion(session: object, result: dict[str, Any]) -> None:
         enqueueUserMessage(sid, _format_completion_notice(result), kind='subagent')
     except Exception:
         logger.debug('failed to enqueue subagent completion', exc_info=True)
+        return
+    # The parent turn may already have ended — a completion enqueued on an
+    # idle session would otherwise sit in the queue until the user's next
+    # message (the spawn tool promises per-completion delivery). The router
+    # starts a coalesced, capped auto-turn for late completions.
+    try:
+        from app.routers.workbench import scheduleSubagentAutoTurn
+
+        scheduleSubagentAutoTurn(sid)
+    except Exception:
+        logger.debug('failed to schedule subagent auto-turn', exc_info=True)
 
 
 async def executeSpawnSubagents(
@@ -484,7 +495,10 @@ async def _doSpawn(
             ),
         }
 
-    # Blocking: still emit/enqueue incrementally as each settles, then return join.
+    # Blocking: still emit incrementally as each settles, then return join.
+    # No _enqueue_completion here — the joined results are already the tool
+    # result; enqueuing them too would inject a duplicate [SUBAGENT_COMPLETE]
+    # block into the next round.
     results: list[dict[str, Any]] = []
     async for result in orchestrator.waitForEach(handles):
         results.append(result)
@@ -498,7 +512,6 @@ async def _doSpawn(
                     'message': result.get('error') or '',
                 }
             )
-        _enqueue_completion(session, result)
 
     succeeded = sum((1 for r in results if r['status'] == 'completed'))
     failed = sum((1 for r in results if r['status'] in ('failed', 'error')))

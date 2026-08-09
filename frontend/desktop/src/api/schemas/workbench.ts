@@ -197,23 +197,26 @@ export const WorkbenchFinalOutputEventSchema = WorkbenchBaseSchema.extend({
 /** Sub-agent events */
 export const WorkbenchSubagentStartEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('subagentStart'),
-  agentId: z.string(),
+  agentId: z.string().optional(),
   jobId: z.string(),
-  name: z.string(),
-  role: z.string(),
-  goal: z.string(),
+  task: z.string().optional(),
+  name: z.string().optional(),
+  role: z.string().optional(),
+  goal: z.string().optional(),
+  worktreePath: z.unknown().optional(),
+  isolated: z.boolean().optional(),
 });
 
 export const WorkbenchSubagentTextEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('subagentText'),
-  agentId: z.string(),
+  agentId: z.string().optional(),
   jobId: z.string(),
   content: z.string(),
 });
 
 export const WorkbenchSubagentToolCallEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('subagentToolCall'),
-  agentId: z.string(),
+  agentId: z.string().optional(),
   jobId: z.string(),
   id: z.string(),
   name: z.string(),
@@ -222,7 +225,7 @@ export const WorkbenchSubagentToolCallEventSchema = WorkbenchBaseSchema.extend({
 
 export const WorkbenchSubagentToolResultEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('subagentToolResult'),
-  agentId: z.string(),
+  agentId: z.string().optional(),
   jobId: z.string(),
   id: z.string(),
   name: z.string(),
@@ -232,12 +235,20 @@ export const WorkbenchSubagentToolResultEventSchema = WorkbenchBaseSchema.extend
 
 export const WorkbenchSubagentDoneEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('subagentDone'),
-  agentId: z.string(),
+  agentId: z.string().optional(),
   jobId: z.string().optional(),
   status: z.string(),
   error: z.string().optional(),
+  message: z.string().optional(),
   result: z.string().optional(),
   isFallback: z.boolean().optional(),
+});
+
+/** User-approval proposal from spawn_subagents (mode='proposed') */
+export const WorkbenchSubagentProposedEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('subagentProposed'),
+  proposalId: z.string(),
+  workBreakdown: z.array(z.object({ goal: z.string().optional(), agentId: z.string().optional() })).optional(),
 });
 
 /** Warning events (e.g. model fallback notices) */
@@ -332,6 +343,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchSubagentToolCallEventSchema,
   WorkbenchSubagentToolResultEventSchema,
   WorkbenchSubagentDoneEventSchema,
+  WorkbenchSubagentProposedEventSchema,
   WorkbenchWarningEventSchema,
   WorkbenchUserMessageInjectedEventSchema,
   WorkbenchRecalledMemoriesEventSchema,

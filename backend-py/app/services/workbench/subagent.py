@@ -27,6 +27,11 @@ from app.services.tools.agent_registry import (
 )
 from app.services.workbench.context import currentSessionId
 
+# A provider call that never returns must not hang the worker (and with it
+# a semaphore slot) forever. Timeouts surface as retryable 503s, then the
+# worker fails per the retry policy.
+SUBAGENT_MODEL_TIMEOUT_S = 240
+
 
 def _toolName(t: dict[str, object]) -> str:
     return as_str(t.get('name')) or as_str(as_dict(t.get('function')).get('name', ''))
@@ -370,29 +375,45 @@ async def executeSubAgent(
                 pass
             response: dict[str, object] | None = None
             for retryAttempt in range(retryPolicy['maxRetries'] + 1):
-                if isAnthropic:
-                    response = await _callAnthropicWorkbench(
-                        messages, systemText, resolvedModel, tools, effort, provider=provider, emit=_subEmit
-                    )
-                elif isOpenai:
-                    response = await _callOpenaiWorkbench(
-                        messages, systemText, resolvedModel, openaiTools, effort, provider=provider, emit=_subEmit
-                    )
-                else:
-                    err = 'Unsupported provider type for sub-agent.'
-                    if emit:
-                        emit(
-                            {
-                                'type': 'subagentDone',
-                                'agentId': resolvedAgentId,
-                                'jobId': jobId,
-                                'status': 'error',
-                                'error': err,
-                            }
+                try:
+                    if isAnthropic:
+                        response = await asyncio.wait_for(
+                            _callAnthropicWorkbench(
+                                messages, systemText, resolvedModel, tools, effort, provider=provider, emit=_subEmit
+                            ),
+                            timeout=SUBAGENT_MODEL_TIMEOUT_S,
                         )
-                    updateJob(jobId, {'status': 'failed', 'error': err})
-                    _cleanup_agent_worktree(session, workspace, worktree_path)
-                    return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
+                    elif isOpenai:
+                        response = await asyncio.wait_for(
+                            _callOpenaiWorkbench(
+                                messages, systemText, resolvedModel, openaiTools, effort, provider=provider, emit=_subEmit
+                            ),
+                            timeout=SUBAGENT_MODEL_TIMEOUT_S,
+                        )
+                    else:
+                        err = 'Unsupported provider type for sub-agent.'
+                        if emit:
+                            emit(
+                                {
+                                    'type': 'subagentDone',
+                                    'agentId': resolvedAgentId,
+                                    'jobId': jobId,
+                                    'status': 'error',
+                                    'error': err,
+                                }
+                            )
+                        updateJob(jobId, {'status': 'failed', 'error': err})
+                        _cleanup_agent_worktree(session, workspace, worktree_path)
+                        return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
+                except asyncio.TimeoutError:
+                    # A provider call that never returns must not hang the
+                    # worker (and with it a semaphore slot) forever — surface
+                    # it as a retryable transient error, then give up per the
+                    # retry policy below.
+                    response = {
+                        'error': f'Sub-agent model call timed out after {SUBAGENT_MODEL_TIMEOUT_S}s',
+                        'errorStatus': 503,
+                    }
                 if response is None or not _isRetryableModelError(response):
                     break
                 if retryAttempt >= retryPolicy['maxRetries']:
@@ -523,6 +544,12 @@ async def executeSubAgent(
                     resultText = f'[yield validation failed: expected a JSON object]\nRaw answer:\n{finalText[:4000]}'
             except Exception:
                 resultText = f'[yield validation failed: answer was not valid JSON]\nRaw answer:\n{finalText[:4000]}'
+        elif not resultText.strip():
+            # A tool-only sub-agent that finishes cleanly returns no text.
+            # The orchestrator treats a completed-but-empty payload as a
+            # failure (B27), so synthesize an honest summary instead of
+            # letting a clean run tally as failed.
+            resultText = f'(Sub-agent completed after {toolRound} tool round(s) with no textual answer.)'
         updateJob(jobId, {'status': 'completed', 'result': resultText[:2000]})
         if emit:
             emit(

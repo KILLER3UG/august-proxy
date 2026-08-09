@@ -14,7 +14,7 @@ export type SubagentStreamEvent =
   | { type: 'subagentText'; jobId: string; content?: string }
   | { type: 'subagentToolCall'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
   | { type: 'subagentToolResult'; jobId: string; id: string; content?: unknown; isError?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
-  | { type: 'subagentDone'; jobId: string; status?: 'completed' | 'failed' | 'cancelled'; message?: string; result?: string };
+  | { type: 'subagentDone'; jobId: string; status?: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered'; message?: string; result?: string };
 
 /**
  * Returns `true` when the event mutated state so callers can decide
@@ -59,8 +59,14 @@ export function applySubagentEvent(
       const blocks = new Map(prev.subagentBlocks);
       const current = blocks.get(jobId);
       if (!current) return {};
-      const status = event.status === 'failed' ? 'failed'
+      // Backend statuses pass through: error/blocked/partial/recovered must
+      // not masquerade as completed (they used to be coerced to 'completed',
+      // hiding failures).
+      const status = event.status === 'failed' || event.status === 'error' || event.status === 'blocked'
+        ? 'failed'
         : event.status === 'cancelled' ? 'cancelled'
+        : event.status === 'partial' ? 'partial'
+        : event.status === 'recovered' ? 'completed'
         : 'completed';
       let inner = current.blocks;
       // Defensive coercion: the backend is supposed to send a string, but a
@@ -163,7 +169,7 @@ export function makeSubagentEventHandlers(sessionId: string): {
   }) => void;
   onSubagentDone: (data: {
     jobId?: string;
-    status?: 'completed' | 'failed' | 'cancelled';
+    status?: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered';
     message?: string;
     result?: string;
   }) => void;

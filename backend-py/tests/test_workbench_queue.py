@@ -132,6 +132,30 @@ class TestDrain:
         drained = wb.drainQueuedMessages(session.id)
         assert drained == []
 
+    def testDrainKindsSelective(self, session):
+        """kind-scoped drain pops only matching entries (auto-turn must never
+        consume a user's own queued message)."""
+        wb.enqueueUserMessage(session.id, 'user follow-up')
+        wb.enqueueUserMessage(session.id, '[SUBAGENT_COMPLETE ...]', kind='subagent')
+        wb.enqueueUserMessage(session.id, '[SUBAGENT_COMPLETE ...] #2', kind='subagent')
+        captured = []
+        drained = wb.drainQueuedMessages(session.id, emit=captured.append, kinds={'subagent'})
+        # Subagent entries drain (front-inserted, so reversed), user entry stays.
+        assert [e['text'] for e in drained] == ['[SUBAGENT_COMPLETE ...] #2', '[SUBAGENT_COMPLETE ...]']
+        assert [e['kind'] for e in drained] == ['subagent', 'subagent']
+        assert [e['text'] for e in session.queuedUserMessages] == ['user follow-up']
+        # Emits only for the popped entries.
+        assert [e['text'] for e in captured] == ['[SUBAGENT_COMPLETE ...] #2', '[SUBAGENT_COMPLETE ...]']
+        # A second selective drain finds nothing new.
+        assert wb.drainQueuedMessages(session.id, kinds={'subagent'}) == []
+        # The user entry is still intact for the real turn.
+        assert [e['text'] for e in wb.drainQueuedMessages(session.id)] == ['user follow-up']
+
+    def testDrainKindsNoMatchReturnsEmpty(self, session):
+        wb.enqueueUserMessage(session.id, 'user follow-up')
+        assert wb.drainQueuedMessages(session.id, kinds={'subagent'}) == []
+        assert len(session.queuedUserMessages) == 1
+
     def testDrainUnknownSession(self):
         drained = wb.drainQueuedMessages('wb_nope')
         assert drained == []

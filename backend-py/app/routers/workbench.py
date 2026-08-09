@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from typing import Callable
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -23,6 +24,193 @@ _chatTasks: set[asyncio.Task] = set()
 _cancelled: dict[str, asyncio.Event] = {}
 # One in-flight stream per session (gateway parity). Extra POSTs enqueue.
 _activeStreams: dict[str, asyncio.Task] = {}
+
+
+def _log_emit(sessionId: str) -> Callable[[dict[str, object]], None]:
+    """Return an SSE emitter that appends events to the session event log."""
+
+    def _emit(event: dict[str, object]) -> None:
+        event_log.event_log.append(sessionId, str(event.get('type') or 'message'), event)
+
+    return _emit
+
+
+def _startTurnTask(
+    sessionId: str,
+    *,
+    message: str,
+    provider: str = '',
+    agentId: str = '',
+    effort: str = '',
+    thinking_enabled: bool = True,
+    model: str = '',
+    modelProvider: str = '',
+    guardMode: str = '',
+    handoff_summary: str = '',
+) -> int:
+    """Start one workbench turn in the background.
+
+    Registers the cancel event + active-stream task and runs the streaming
+    loop. Shared by the POST /chat handler and the subagent auto-turn so
+    both participate in the same concurrency gate (``/chat/active`` and
+    the queue check see either). Returns the ``started`` event sequence
+    number for resumable SSE clients.
+    """
+    seq = event_log.event_log.append(sessionId, 'started', {'sinceSeq': 0})
+    cancelEvent = asyncio.Event()
+    _cancelled[sessionId] = cancelEvent
+
+    def _notify_chat_idle() -> None:
+        try:
+            from app.services.realtime_bus import emit_realtime
+
+            emit_realtime('chat.idle', sessionId=sessionId)
+        except Exception:
+            pass
+
+    async def safeStream():
+        try:
+            await wb.sendWorkbenchMessageStream(
+                sessionId=sessionId,
+                message=message,
+                provider=provider,
+                agentId=agentId,
+                effort=effort,
+                thinking_enabled=thinking_enabled,
+                model=model,
+                modelProvider=modelProvider,
+                guardMode=guardMode,
+                handoff_summary=handoff_summary,
+                emit=_log_emit(sessionId),
+                signal=cancelEvent,
+            )
+        except asyncio.CancelledError:
+            try:
+                session = wb.getWorkbenchSession(sessionId)
+                if session:
+                    session.status = 'idle'
+                    session.updatedAt = wb._now()
+                    wb.saveSessions()
+                    wb._emitSessionStatus(sessionId)
+            except Exception:
+                pass
+            try:
+                event_log.event_log.append(sessionId, 'aborted', {})
+                event_log.event_log.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
+            except Exception:
+                pass
+        except Exception as exc:
+            import traceback
+
+            traceback.print_exc()
+            try:
+                session = wb.getWorkbenchSession(sessionId)
+                if session:
+                    session.status = 'idle'
+                    session.updatedAt = wb._now()
+                    wb.saveSessions()
+                    wb._emitSessionStatus(sessionId)
+            except Exception:
+                pass
+            try:
+                event_log.event_log.append(
+                    sessionId, 'error', {'type': 'error', 'message': f'Fatal background error: {exc}'}
+                )
+                event_log.event_log.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
+            except Exception:
+                pass
+        finally:
+            # Identity-checked pops: a stale task finishing after Stop+restart
+            # must not remove the replacement turn's cancel event / task slot.
+            if _cancelled.get(sessionId) is cancelEvent:
+                _cancelled.pop(sessionId, None)
+            if _activeStreams.get(sessionId) is task:
+                _activeStreams.pop(sessionId, None)
+            _notify_chat_idle()
+
+    task = asyncio.create_task(safeStream())
+    _activeStreams[sessionId] = task
+    _chatTasks.add(task)
+    task.add_done_callback(_chatTasks.discard)
+    try:
+        from app.services.realtime_bus import emit_realtime
+
+        emit_realtime('chat.active', sessionId=sessionId, status='streaming')
+    except Exception:
+        pass
+    return seq
+
+
+# ── Auto-turn for late subagent completions ─────────────────────────────
+# Background sub-agents settle after the parent turn may already have
+# ended. The spawn tool enqueues each completion (kind='subagent'); when
+# the session is idle we start a fresh turn so the parent model actually
+# receives the result instead of waiting for the user's next message.
+# Coalesced (1.5 s), deduped per session, and capped so a model that keeps
+# spawning cannot drive the session forever.
+_AUTO_TURN_COALESCE_S = 1.5
+_AUTO_TURN_MAX_CONSECUTIVE = 4
+_autoTurnWakes: dict[str, asyncio.Task] = {}
+
+
+async def _startSubagentAutoTurn(sessionId: str) -> None:
+    """Run one turn from the session's queued subagent completions."""
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        return
+    existing = _activeStreams.get(sessionId)
+    if existing is not None and not existing.done():
+        return  # a turn is live — its next loop boundary drains the queue
+    consecutive = int(getattr(session, '_autoTurnsSinceUser', 0) or 0)
+    if consecutive >= _AUTO_TURN_MAX_CONSECUTIVE:
+        return
+    session._autoTurnsSinceUser = consecutive + 1  # type: ignore[attr-defined]
+    entries = wb.drainQueuedMessages(
+        sessionId,
+        emit=_log_emit(sessionId),
+        kinds={'subagent'},
+    )
+    if not entries:
+        return
+    message = '\n\n'.join(str(e.get('text') or '') for e in reversed(entries))
+    if not message.strip():
+        return
+    _startTurnTask(
+        sessionId,
+        message=message,
+        provider=as_str(getattr(session, 'provider', '') or ''),
+        agentId=as_str(getattr(session, 'agentId', '') or ''),
+        guardMode=as_str(getattr(session, 'guardMode', '') or ''),
+    )
+
+
+def scheduleSubagentAutoTurn(sessionId: str) -> None:
+    """Schedule a coalesced auto-turn once queued subagent completions settle.
+
+    Safe to call from any async context; dedupes per session and never
+    raises. The parent session's own loop drains mid-turn completions at
+    its next round boundary — this only covers completions that arrive
+    after the turn already ended.
+    """
+    wake = _autoTurnWakes.get(sessionId)
+    if wake is not None and not wake.done():
+        return
+
+    async def _wake() -> None:
+        try:
+            await asyncio.sleep(_AUTO_TURN_COALESCE_S)
+            await _startSubagentAutoTurn(sessionId)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
+        finally:
+            _autoTurnWakes.pop(sessionId, None)
+
+    try:
+        _autoTurnWakes[sessionId] = asyncio.create_task(_wake())
+    except RuntimeError:
+        pass  # no running event loop (import-time/thread call) — skip
 
 
 @router.post('/sessions')
@@ -197,9 +385,14 @@ async def startChat(request: Request):
     if existing and existing.done():
         _activeStreams.pop(sessionId, None)
 
-    seq = event_log.event_log.append(sessionId, 'started', {'sinceSeq': 0})
-    cancelEvent = asyncio.Event()
-    _cancelled[sessionId] = cancelEvent
+    # A real user turn breaks any chain of backend-started continuation
+    # turns (subagent auto-turns are capped per user turn).
+    try:
+        user_session = wb.getWorkbenchSession(sessionId)
+        if user_session is not None and message:
+            user_session._autoTurnsSinceUser = 0  # type: ignore[attr-defined]
+    except Exception:
+        pass
 
     handoff_summary = as_str(body.get('handoffSummary') or body.get('handoff_summary') or '')
     if not handoff_summary:
@@ -214,84 +407,18 @@ async def startChat(request: Request):
         except Exception:
             pass
 
-    def _notify_chat_idle() -> None:
-        try:
-            from app.services.realtime_bus import emit_realtime
-
-            emit_realtime('chat.idle', sessionId=sessionId)
-        except Exception:
-            pass
-
-    async def safeStream():
-        try:
-            await wb.sendWorkbenchMessageStream(
-                sessionId=sessionId,
-                message=message,
-                provider=provider,
-                agentId=agentId,
-                effort=effort,
-                thinking_enabled=thinking_enabled,
-                model=model,
-                modelProvider=modelProvider,
-                guardMode=guardMode,
-                handoff_summary=handoff_summary,
-                emit=lambda event: event_log.event_log.append(sessionId, event.get('type', 'message'), event),
-                signal=cancelEvent,
-            )
-        except asyncio.CancelledError:
-            try:
-                session = wb.getWorkbenchSession(sessionId)
-                if session:
-                    session.status = 'idle'
-                    session.updatedAt = wb._now()
-                    wb.saveSessions()
-                    wb._emitSessionStatus(sessionId)
-            except Exception:
-                pass
-            try:
-                event_log.event_log.append(sessionId, 'aborted', {})
-                event_log.event_log.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
-            except Exception:
-                pass
-        except Exception as exc:
-            import traceback
-
-            traceback.print_exc()
-            try:
-                session = wb.getWorkbenchSession(sessionId)
-                if session:
-                    session.status = 'idle'
-                    session.updatedAt = wb._now()
-                    wb.saveSessions()
-                    wb._emitSessionStatus(sessionId)
-            except Exception:
-                pass
-            try:
-                event_log.event_log.append(
-                    sessionId, 'error', {'type': 'error', 'message': f'Fatal background error: {exc}'}
-                )
-                event_log.event_log.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
-            except Exception:
-                pass
-        finally:
-            # Identity-checked pops: a stale task finishing after Stop+restart
-            # must not remove the replacement turn's cancel event / task slot.
-            if _cancelled.get(sessionId) is cancelEvent:
-                _cancelled.pop(sessionId, None)
-            if _activeStreams.get(sessionId) is task:
-                _activeStreams.pop(sessionId, None)
-            _notify_chat_idle()
-
-    task = asyncio.create_task(safeStream())
-    _activeStreams[sessionId] = task
-    _chatTasks.add(task)
-    task.add_done_callback(_chatTasks.discard)
-    try:
-        from app.services.realtime_bus import emit_realtime
-
-        emit_realtime('chat.active', sessionId=sessionId, status='streaming')
-    except Exception:
-        pass
+    seq = _startTurnTask(
+        sessionId,
+        message=message,
+        provider=provider,
+        agentId=agentId,
+        effort=effort,
+        thinking_enabled=thinking_enabled,
+        model=model,
+        modelProvider=modelProvider,
+        guardMode=guardMode,
+        handoff_summary=handoff_summary,
+    )
     return {'status': 'started', 'sessionId': sessionId, 'sinceSeq': seq}
 
 

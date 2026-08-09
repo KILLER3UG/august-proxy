@@ -1342,9 +1342,15 @@ def clearQueuedMessages(sessionId: str) -> int:
 
 
 def drainQueuedMessages(
-    sessionId: str, emit: Callable[[dict[str, object]], None] | None = None
+    sessionId: str,
+    emit: Callable[[dict[str, object]], None] | None = None,
+    kinds: set[str] | None = None,
 ) -> list[dict[str, object]]:
-    """Pop all queued messages and return them in FIFO order.
+    """Pop queued messages and return them in FIFO order.
+
+    When ``kinds`` is given, only entries whose ``kind`` is in the set are
+    popped — the rest stay queued for a later drain (auto-turn consumers
+    must never consume a user's own queued message).
 
     Also emits a ``user_message_injected`` event per entry so the
     frontend can render each queued message as an inline user bubble
@@ -1356,7 +1362,20 @@ def drainQueuedMessages(
     entries = list(getattr(session, 'queuedUserMessages', None) or [])
     if not entries:
         return []
-    session.queuedUserMessages = []
+    if kinds:
+        popped: list[dict[str, object]] = []
+        kept: list[dict[str, object]] = []
+        for entry in entries:
+            if str(entry.get('kind') or 'queue').lower() in kinds:
+                popped.append(entry)
+            else:
+                kept.append(entry)
+        if not popped:
+            return []
+        session.queuedUserMessages = kept
+        entries = popped
+    else:
+        session.queuedUserMessages = []
     session.updatedAt = _now()
     saveSessions()
     if emit is not None:
@@ -1815,15 +1834,28 @@ async def _sendWorkbenchMessageStreamImpl(
                 try:
                     from app.services.workbench.subagent import executeSubAgent
 
-                    asyncio.create_task(
-                        executeSubAgent(
-                            session,
-                            agentId,
-                            cleanMsg[:2000] or f'Recurring task ({agentId})',
-                            emit=emit,
-                            model_override=modelOverride or '',
-                        )
-                    )
+                    async def _run_recurring_subagent() -> None:
+                        try:
+                            result = await executeSubAgent(
+                                session,
+                                agentId,
+                                cleanMsg[:2000] or f'Recurring task ({agentId})',
+                                emit=emit,
+                                model_override=modelOverride or '',
+                            )
+                            if not result or as_str(result.get('status')) in ('failed', 'error', 'blocked'):
+                                return
+                            # The parent model must see the outcome — enqueue
+                            # the completion notice like the spawn tool does
+                            # (kind='subagent' also triggers the auto-turn if
+                            # this turn has already ended).
+                            from app.services.tools.spawn_subagents_tool import _enqueue_completion
+
+                            _enqueue_completion(session, result)
+                        except Exception:
+                            logger.debug('recurring-task subagent failed', exc_info=True)
+
+                    asyncio.create_task(_run_recurring_subagent())
                 except Exception:
                     logger.debug('recurring-task subagent dispatch failed', exc_info=True)
     except Exception:

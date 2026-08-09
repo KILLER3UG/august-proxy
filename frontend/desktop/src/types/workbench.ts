@@ -250,9 +250,14 @@ export interface WorkbenchEventHandlers {
   onSubagentDone?: (data: {
     jobId: string;
     agentId: string;
-    status: 'completed' | 'failed' | 'cancelled';
+    status: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered';
     message?: string;
     result?: string;
+  }) => void;
+  /** User-approval proposal from the model (spawn_subagents mode='proposed'). */
+  onSubagentProposed?: (data: {
+    proposalId: string;
+    workBreakdown: Array<{ goal?: string; agentId?: string }>;
   }) => void;
   /** Text block emitted from inside a running sub-agent. Rendered as a
    *  `finalOutput` block inside the matching nested sub-agent block. */
