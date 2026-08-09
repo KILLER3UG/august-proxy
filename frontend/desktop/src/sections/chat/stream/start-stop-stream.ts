@@ -232,6 +232,14 @@ export async function reconnectChatStream(
     return;
   }
 
+  // The durable background subscriber must never share a session with a
+  // per-turn consumer — two SSEs on one session would race on event
+  // application. Detach it here; the idle effect re-attaches when this
+  // turn ends.
+  if (hasSessionSubscriber(wbSessionId)) {
+    detachSessionSubscriber(wbSessionId);
+  }
+
   const state = getOrInitSessionStreamState(uiSessionId);
   const messages = state.messages;
   const lastUserIdx = messages.map(m => m.role).lastIndexOf('user');

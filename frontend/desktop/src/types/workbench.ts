@@ -230,9 +230,12 @@ export interface WorkbenchEventHandlers {
    * don't replay events they've already consumed.
    */
   onStarted?: (data: { sinceSeq?: number }) => void;
-  /** Fired once per `id:` SSE frame so the subscriber can record the
-   *  highest seq it has consumed (used for `sinceSeq` on reconnect). */
-  onSeq?: (seq: number) => void;
+  /** Fired once per SSE data frame so the subscriber can record the
+   *  highest seq it has consumed (used for `sinceSeq` on reconnect).
+   *  `eventType` is the SSE event name — durable subscribers advance
+   *  lastSeq only for events they render, leaving turn-content events
+   *  replayable for the per-turn consumer. */
+  onSeq?: (seq: number, eventType?: string) => void;
   /** Emitted when a sub-agent (`august__spawn_subagent` / `august__run_team`)
    *  begins. The chat thread renders a nested sub-agent block under the
    *  matching parent `toolCall`, keyed by `parentToolUseId`. */

@@ -41,6 +41,7 @@ import {
   stopChatStream,
   syncActiveStreams,
 } from './chat-stream-manager';
+import { ensureSessionSubscriber } from './stream/session-subscriber';
 import {
   useQueuedMessagesStore,
   setQueuedMessages,
@@ -1000,6 +1001,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (debounceTimer !== null) clearTimeout(debounceTimer);
     };
   }, [ensureWorkbenchSession, sessionId]);
+
+  // Durable background subscriber: while this session is open and idle,
+  // keep a lightweight SSE bound so subagent/browser/queue events that
+  // arrive outside an active turn still reach the UI (late subagent
+  // completions render here; the subscriber detaches on `started` when a
+  // turn takes over). startChatStream/reconnectChatStream detach it while
+  // a per-turn stream owns the session; this effect re-attaches when the
+  // turn ends and the session goes idle again.
+  useEffect(() => {
+    if (!sessionId || streaming) return;
+    ensureSessionSubscriber(sessionId);
+  }, [sessionId, streaming]);
 
   const maxContext = modelForRequest?.contextWindow && modelForRequest.contextWindow > 0
     ? modelForRequest.contextWindow

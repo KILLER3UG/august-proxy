@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,8 @@ def record_weekly_snapshot() -> dict | None:
         from app.services.memory_store import _conn
 
         conn = _conn()
+        # Local-week key (writer + reader agree) — bucketing only, not a
+        # comparison against DB timestamps.
         week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime('%Y-%m-%d')
 
         # Check if already recorded
@@ -32,7 +34,8 @@ def record_weekly_snapshot() -> dict | None:
         if existing:
             return None
 
-        week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+        # friction_events.created_at is UTC 'YYYY-MM-DD HH:MM:SS'.
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
 
         # Friction stats
         friction_rows = conn.execute('''

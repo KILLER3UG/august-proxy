@@ -13,3 +13,8 @@ from __future__ import annotations
 from contextvars import ContextVar
 
 currentSessionId: ContextVar[str] = ContextVar('workbench_session_id', default='default')
+
+# Id of the tool call currently being executed. Set by ``workbench._execute_tool``
+# so tool handlers (e.g. the subagent spawner) can stamp their emitted events
+# with the parent tool call — the UI nests sub-agent blocks under it.
+currentToolUseId: ContextVar[str] = ContextVar('workbench_tool_use_id', default='')

@@ -7,7 +7,7 @@ Part of Better Harness Plan Phase 3.1.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,10 @@ def mark_stale_memories(days: int = 30) -> int:
         from app.services.memory_store import _conn
 
         conn = _conn()
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        # SQLite created_at is UTC 'YYYY-MM-DD HH:MM:SS' (datetime('now'));
+        # a naive-local ISO cutoff compared lexicographically would shift the
+        # window by the local-UTC offset and mis-sort at the format boundary.
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
 
         # Find keys that have been created but never retrieved (or last retrieved before cutoff)
         stale_keys = conn.execute('''

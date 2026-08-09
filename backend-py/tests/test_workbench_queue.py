@@ -365,7 +365,7 @@ class TestChatLoopInjection:
                 'usage': {},
             }
 
-        async def fakeExec(name, args, sess):
+        async def fakeExec(name, args, sess, toolUseId=''):
             return 'file contents'
 
         monkeypatch.setattr(wb, '_callAnthropicWorkbench', fakeAnthropic)

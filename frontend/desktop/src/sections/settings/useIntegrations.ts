@@ -105,6 +105,7 @@ export interface McpServer {
   error?: string | null;
   tools?: string[];
   catalogId?: string;
+  transport?: string;
 }
 
 export type IntegrationLogoSpec =

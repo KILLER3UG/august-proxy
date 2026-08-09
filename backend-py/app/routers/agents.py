@@ -86,6 +86,54 @@ async def getTree(root: str = '', maxDepth: int = Query(4)):
     return agent_registry.getAgentTreeRooted(root=root, maxDepth=maxDepth)
 
 
+def _record_api_job_run(
+    job_id: str,
+    session_id: str,
+    agent_id: str,
+    goal: str,
+    status: str,
+    result: str = '',
+    error: str = '',
+) -> None:
+    """Write one API-agent job into subagent_runs (fire-and-forget)."""
+    try:
+        import time
+
+        from app.services.memory_store import _conn
+
+        now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        conn = _conn()
+        existing = conn.execute(
+            'SELECT id FROM subagent_runs WHERE task_id = ?', (job_id,)
+        ).fetchone()
+        if existing:
+            conn.execute(
+                'UPDATE subagent_runs SET status = ?, result_summary = ?, error = ?, '
+                'finished_at = ? WHERE task_id = ?',
+                (status, (result or '')[:500], (error or '')[:500], now, job_id),
+            )
+        else:
+            conn.execute(
+                'INSERT INTO subagent_runs '
+                '(task_id, session_id, agent_id, goal, status, started_at, finished_at, '
+                'result_summary, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (
+                    job_id,
+                    session_id or '',
+                    agent_id or 'general',
+                    (goal or '')[:500],
+                    status,
+                    now,
+                    now,
+                    (result or '')[:500],
+                    (error or '')[:500],
+                ),
+            )
+        conn.commit()
+    except Exception:
+        logger.debug('api job run record failed (non-fatal)', exc_info=True)
+
+
 async def _run_api_agent_job(
     job_id: str,
     agent_id: str,
@@ -97,6 +145,9 @@ async def _run_api_agent_job(
     import os
 
     timeout_s = float(os.environ.get('AUGUST_AGENT_JOB_TIMEOUT', '180') or '180')
+    status = 'failed'
+    result_text = ''
+    error_text = ''
     try:
         from app.services.config_service import getConfig
         from app.services.workbench import workbench as wb
@@ -126,7 +177,7 @@ async def _run_api_agent_job(
                 session.provider = as_str(cfg.get('activeProvider')) or ''
             if not session.model:
                 session.model = as_str(cfg.get('activeModel')) or ''
-        await asyncio.wait_for(
+        outcome = await asyncio.wait_for(
             executeSubAgent(
                 session,
                 agent_id,
@@ -136,22 +187,42 @@ async def _run_api_agent_job(
             ),
             timeout=max(5.0, timeout_s),
         )
+        status = as_str(outcome.get('status'), 'completed') or 'completed'
+        result_text = as_str(outcome.get('result'), '')
+        error_text = as_str(outcome.get('error'), '')
     except asyncio.TimeoutError:
         logger.error('api agent job %s timed out after %ss', job_id, timeout_s)
+        error_text = f'Timed out after {int(timeout_s)}s'
         try:
             agent_registry.updateJob(
                 job_id,
-                {'status': 'failed', 'error': f'Timed out after {int(timeout_s)}s'},
+                {'status': 'failed', 'error': error_text},
             )
         except Exception:
             pass
     except Exception as exc:
         logger.exception('api agent job %s failed', job_id)
+        error_text = str(exc)
         try:
-            agent_registry.updateJob(job_id, {'status': 'failed', 'error': str(exc)})
+            agent_registry.updateJob(job_id, {'status': 'failed', 'error': error_text})
         except Exception:
             pass
     finally:
+        # Mirror the outcome into subagent_runs so API jobs appear in the
+        # Runs tab (the orchestrator path records its own rows; this path
+        # runs executeSubAgent directly with a job_xxx id).
+        try:
+            _record_api_job_run(
+                job_id=job_id,
+                session_id=session_id,
+                agent_id=agent_id,
+                goal=goal,
+                status=status,
+                result=result_text,
+                error=error_text,
+            )
+        except Exception:
+            pass
         # Never leave API jobs stuck in pending/running.
         try:
             for job in agent_registry.listJobs():

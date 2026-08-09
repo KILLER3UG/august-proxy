@@ -17,6 +17,11 @@ from app.atomic_write import write_json_atomic
 from app.json_narrowing import as_str
 from app.lib.paths import dataPath
 
+# Cron parsing lives in automations_schedule (single implementation).
+# These wrappers keep the legacy private names for existing callers.
+from app.services.automations_schedule import _parse_cron_fields as _parseCron  # noqa: F401
+from app.services.automations_schedule import matches_cron as _matchesCron  # noqa: F401
+
 _JOBSFile = dataPath('scheduled-jobs.json')
 
 
@@ -26,57 +31,6 @@ def _jobsPath() -> Path:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-
-
-def _parseCron(expression: str) -> tuple[list[int], list[int], list[int], list[int], list[int]]:
-    """Parse a cron expression into field values.
-
-    Returns (minutes, hours, days_of_month, months, days_of_week).
-    Each is a list of matching values.
-    """
-    fields = expression.strip().split()
-    if len(fields) != 5:
-        raise ValueError(f'Invalid cron expression: {expression}')
-
-    def parseField(field: str, minVal: int, maxVal: int) -> list[int]:
-        if field == '*':
-            return list(range(minVal, maxVal + 1))
-        values: list[int] = []
-        for part in field.split(','):
-            if '/' in part:
-                base, step = part.split('/')
-                start = minVal if base == '*' else int(base)
-                values.extend(range(start, maxVal + 1, int(step)))
-            elif '-' in part:
-                low, high = part.split('-')
-                values.extend(range(int(low), int(high) + 1))
-            else:
-                values.append(int(part))
-        return sorted(set((v for v in values if minVal <= v <= maxVal)))
-
-    return (
-        parseField(fields[0], 0, 59),
-        parseField(fields[1], 0, 23),
-        parseField(fields[2], 1, 31),
-        parseField(fields[3], 1, 12),
-        parseField(fields[4], 0, 6),
-    )
-
-
-def _matchesCron(expr: str, dt: datetime | None = None) -> bool:
-    """Check if the current time matches a cron expression."""
-    if dt is None:
-        dt = datetime.now(timezone.utc)
-    minutes, hours, days, months, weekdays = _parseCron(expr)
-    return (
-        dt.minute in minutes
-        and dt.hour in hours
-        and (dt.day in days)
-        and (dt.month in months)
-        # Cron day-of-week is 0=Sunday…6=Saturday; dt.weekday() is
-        # 0=Monday…6=Sunday — shift before comparing.
-        and ((dt.weekday() + 1) % 7) in weekdays
-    )
 
 
 _jobs: dict[str, dict[str, object]] = {}

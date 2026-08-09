@@ -422,6 +422,31 @@ async def writeTerminalInput(sessionId: str, inputText: str, approved: bool = Fa
             'createdAt': _now(),
         }
         return {'status': 'approval_required', 'requestId': reqId}
+    # Interactive input in a workspace-bound terminal gets the same soft
+    # sandbox as one-shot commands. Navigation (`cd …`) and single-token
+    # inputs (answers, keystrokes, bare commands) pass through; multi-token
+    # command lines that escape the workspace (path tokens, redirects) are
+    # blocked — the drawer terminal was a second execution surface outside
+    # the documented sandbox policy.
+    session_cwd = as_str(session.get('cwd'), '')
+    workspace = _terminal_workspace_root(session_cwd) if session_cwd else None
+    if workspace and _interactive_needs_preflight(inputText):
+        try:
+            from app.services.sandbox.backends.fallback import soft_preflight
+            from app.services.sandbox.policy import SandboxPolicy
+
+            denial = soft_preflight(
+                inputText,
+                SandboxPolicy(mode='workspace-write', workspace_root=workspace, network=False),
+            )
+            if denial:
+                return {
+                    'status': 'error',
+                    'command': inputText,
+                    'error': f'Sandbox blocked: {denial}',
+                }
+        except Exception:
+            pass
     pty = cast(PtyIO | None, session.get('pty_io'))
     if pty and as_bool(session.get('pty', False)):
         try:
@@ -455,6 +480,24 @@ async def resizeTerminalSession(sessionId: str, cols: int = 80, rows: int = 24) 
             except Exception:
                 pass
     return _summarize(session) if session else {'error': 'Session not found'}
+
+
+def _interactive_needs_preflight(text: str) -> bool:
+    """True when an interactive input line warrants a soft-sandbox check.
+
+    Navigation (``cd …``) and single-token inputs (answers like ``y``,
+    keystrokes, bare command names) pass through — the terminal is a
+    user-driven surface. Multi-token command lines (``cat ../../x``,
+    ``rm -rf …``, redirects) get the same preflight as one-shot commands.
+    """
+    t = (text or '').strip()
+    if not t:
+        return False
+    if t.startswith('cd ') or t.startswith('cd\\') or t.startswith('cd/'):
+        return False
+    if len(t.split()) <= 1:
+        return False
+    return True
 
 
 def _terminal_workspace_root(cwd: str) -> str | None:

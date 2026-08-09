@@ -37,36 +37,6 @@ def _toolName(t: dict[str, object]) -> str:
     return as_str(t.get('name')) or as_str(as_dict(t.get('function')).get('name', ''))
 
 
-def _cleanup_agent_worktree(session: object, workspace: str, worktree_path: str) -> None:
-    """Best-effort remove of a sub-agent worktree and session metadata bookkeeping."""
-    if not worktree_path or not workspace:
-        return
-    try:
-        from app.services.workbench.worktree_service import remove_agent_worktree
-
-        remove_agent_worktree(workspace, worktree_path)
-    except Exception:
-        pass
-    try:
-        import os
-
-        if os.environ.get('AUGUST_SUBAGENT_WORKTREE') == worktree_path:
-            os.environ.pop('AUGUST_SUBAGENT_WORKTREE', None)
-    except Exception:
-        pass
-    try:
-        meta2 = as_dict(getattr(session, 'metadata', None)) if getattr(session, 'metadata', None) else {}
-        active = [
-            a
-            for a in as_list(meta2.get('activeAgentWorktrees'), [])
-            if not (isinstance(a, dict) and str(a.get('path')) == worktree_path)
-        ]
-        meta2['activeAgentWorktrees'] = active
-        session.metadata = meta2  # type: ignore[attr-defined]
-    except Exception:
-        pass
-
-
 def _agentOrGeneral(agentId: str, parentAlias: str) -> dict[str, object]:
     """Return the persisted agent, or a synthetic fallback for known roles."""
     agent = getAgent(agentId)
@@ -175,18 +145,19 @@ async def executeSubAgent(
         jobId = as_str(job['id'])
         updateJob(jobId, {'status': 'running'})
 
-    # Git worktree isolation for parallel agents.
-    # Default ON when isolateSubagents is unset (parallel agents keep files separate).
-    # Explicit False (via isolateSubagentsExplicit + isolateSubagents=false) opts out.
-    worktree_path = ''
-    meta = as_dict(getattr(session, 'metadata', None)) if getattr(session, 'metadata', None) is not None else {}
-    if 'isolateSubagents' in meta:
-        isolate = bool(meta.get('isolateSubagents'))
-    else:
-        # Default: isolate so parallel agents do not collide on the main tree
-        isolate = True
-    workspace = as_str(getattr(session, 'workspacePath', ''))
+    # NOTE: automatic git-worktree isolation is intentionally NOT performed
+    # here. Tool dispatch resolves paths against the parent session's
+    # workspace, so a per-subagent worktree would be created and then never
+    # used (misleading). Isolated workspaces remain available on demand via
+    # POST /api/workbench/sessions/{id}/worktree; parallel agents share the
+    # main tree by default.
     if emit:
+        try:
+            from app.services.workbench.context import currentToolUseId
+
+            parentToolUseId = currentToolUseId.get()
+        except Exception:
+            parentToolUseId = ''
         emit(
             {
                 'type': 'subagentStart',
@@ -196,43 +167,9 @@ async def executeSubAgent(
                 'role': as_str(agent.get('role'), ''),
                 'goal': goal,
                 'task': goal,
-                'worktreePath': None,
-                'isolated': bool(isolate and workspace),
+                'parentToolUseId': parentToolUseId or None,
             }
         )
-    if isolate and workspace:
-        try:
-            from app.services.workbench.worktree_service import create_agent_worktree
-
-            # Worktree creation shells out to git.  Running it on the event
-            # loop paused every active stream, making a sub-agent launch look
-            # like it had failed.  It is independent setup work, so move it to
-            # a worker thread.
-            wt = await asyncio.to_thread(
-                create_agent_worktree,
-                workspace,
-                session_id=as_str(getattr(session, 'id', '')),
-                agent_label=resolvedAgentId or 'agent',
-            )
-            if wt.get('ok') and wt.get('path'):
-                worktree_path = str(wt['path'])
-                # Persist active worktree path for UI badge / cleanup
-                try:
-                    meta = dict(meta)
-                    active = list(as_list(meta.get('activeAgentWorktrees'), []))
-                    active.append(
-                        {
-                            'agentId': resolvedAgentId,
-                            'path': worktree_path,
-                        }
-                    )
-                    meta['activeAgentWorktrees'] = active
-                    meta['isolateSubagents'] = True
-                    setattr(session, 'metadata', meta)
-                except Exception:
-                    pass
-        except Exception:
-            worktree_path = ''
 
     aliasHint = model_override or as_str(agent.get('modelAlias')) or parentAlias or ''
     resolution = resolve_or_fallback(aliasHint, provider_hint=getattr(session, 'provider', '') or '')
@@ -282,7 +219,6 @@ async def executeSubAgent(
         if emit:
             emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'jobId': jobId, 'status': 'error', 'error': err})
         updateJob(jobId, {'status': 'failed', 'error': err})
-        _cleanup_agent_worktree(session, workspace, worktree_path)
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
     resolvedModel = _resolveModel(provider, model)
     agentCtx = renderAgentContext(resolvedAgentId) if not as_bool(agent.get('_synthetic', False)) else ''
@@ -403,7 +339,6 @@ async def executeSubAgent(
                                 }
                             )
                         updateJob(jobId, {'status': 'failed', 'error': err})
-                        _cleanup_agent_worktree(session, workspace, worktree_path)
                         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
                 except asyncio.TimeoutError:
                     # A provider call that never returns must not hang the
@@ -577,6 +512,4 @@ async def executeSubAgent(
             )
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': str(exc)}
     finally:
-        # Cleanup isolated worktree when the agent ends (files stay separate while running)
-        _cleanup_agent_worktree(session, workspace, worktree_path)
         currentSessionId.reset(token)

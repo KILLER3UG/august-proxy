@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from app.json_narrowing import as_dict, as_list
 from app.models.camel_base import CamelModel
 from app.services.tools import mcp_client
 
@@ -112,6 +113,51 @@ async def deleteServer(serverId: str):
     if not mcp_client.unregisterServer(serverId):
         raise HTTPException(status_code=404, detail='Server not found')
     return {'status': 'ok'}
+
+
+class MCPServerUpdate(CamelModel):
+    """MCP server update body — only provided fields are changed."""
+
+    name: str = ''
+    command: str = ''
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+    url: str = ''
+    transport: str = ''
+    enabled: bool | None = None
+
+
+@router.patch('/servers/{serverId}')
+async def updateServer(serverId: str, body: MCPServerUpdate):
+    """Update an MCP server in place (preserves its id and persisted config).
+
+    A running process is stopped first so the new command/args/env actually
+    apply on the next start.
+    """
+    current = _resolve_server(serverId)
+    if not current:
+        raise HTTPException(status_code=404, detail='Server not found')
+    command = body.command or str(current.get('command') or '')
+    url = body.url or str(current.get('url') or '')
+    if not command and not url:
+        raise HTTPException(status_code=400, detail='command or url is required')
+    try:
+        await mcp_client.stopServer(str(current.get('id')))
+    except Exception:
+        pass
+    current_args = [str(a) for a in as_list(current.get('args'), [])]
+    current_env = {str(k): str(v) for k, v in as_dict(current.get('env'), {}).items()}
+    return mcp_client.registerServer(
+        body.name or str(current.get('name') or ''),
+        command or url or 'true',
+        args=body.args if body.args is not None else current_args,
+        env=body.env if body.env is not None else current_env,
+        enabled=body.enabled if body.enabled is not None else bool(current.get('enabled', True)),
+        transport=body.transport or str(current.get('transport') or 'stdio'),
+        url=url,
+        server_id=str(current.get('id')),
+        persist=True,
+    )
 
 
 def _resolve_server(server_id: str) -> dict[str, object] | None:

@@ -452,6 +452,12 @@ async def _doSpawn(
         for h in handles
     ]
     if emit:
+        try:
+            from app.services.workbench.context import currentToolUseId
+
+            parentToolUseId = currentToolUseId.get()
+        except Exception:
+            parentToolUseId = ''
         for h in handles:
             emit(
                 {
@@ -459,6 +465,7 @@ async def _doSpawn(
                     'jobId': h.taskId,
                     'agentId': h.agentId,
                     'task': h.goal,
+                    'parentToolUseId': parentToolUseId or None,
                 }
             )
 

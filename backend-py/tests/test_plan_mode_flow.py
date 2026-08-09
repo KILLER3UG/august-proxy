@@ -28,6 +28,7 @@ def _session(tmp_path, *, guardMode='full'):
         sandboxMode='workspace-write',
         plan=None,
         planApproved=False,
+        metadata={},
     )
 
 
@@ -70,6 +71,32 @@ def test_enter_plan_mode_is_noop_when_already_plan(monkeypatch, tmp_path):
     assert session.guardMode == 'plan'
     assert 'Already in Plan mode' in msg
     assert emitted == []  # no duplicate UI event
+
+
+def test_enter_plan_mode_stashes_agent_role_and_restores(monkeypatch, tmp_path):
+    """Plan mode must not permanently clobber a user-selected agent role —
+    entering stashes the previous agentId; leaving plan mode restores it."""
+    _patchSideEffects(monkeypatch)
+    session = _session(tmp_path, guardMode='full')
+    session.agentId = 'general'
+
+    wb.enterPlanMode(session)
+    assert session.guardMode == 'plan'
+    assert session.agentId == 'plan'
+    assert session.metadata.get('planAgentId') == 'general'
+
+    # Leaving plan mode (guard-mode switch) restores the stashed role.
+    from app.routers.workbench import restoreAgentAfterPlan
+
+    session.agentId = 'plan'
+    restoreAgentAfterPlan(session)
+    assert session.agentId == 'general'
+    assert session.metadata.get('planAgentId') is None
+
+    # Without a stash the default role mapping applies.
+    session2 = _session(tmp_path)
+    restoreAgentAfterPlan(session2)
+    assert session2.agentId == 'build'
 
 
 # ── plan-file guard exception ──────────────────────────────────────────

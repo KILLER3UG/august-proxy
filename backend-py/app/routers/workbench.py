@@ -1759,6 +1759,22 @@ async def createSessionHandoff(sessionId: str, request: Request):
     return record
 
 
+def restoreAgentAfterPlan(session: object) -> None:
+    """Restore the agent role stashed when the session entered plan mode.
+
+    Leaving plan mode must not permanently clobber a user-selected agent
+    role. When no role was stashed, falls back to the default 'build'
+    mapping the guard-mode selector expects.
+    """
+    meta = dict(getattr(session, 'metadata', None) or {})
+    stashed = as_str(meta.pop('planAgentId', '') or '')
+    if stashed and as_str(getattr(session, 'agentId', '') or '') == 'plan':
+        session.agentId = stashed  # type: ignore[attr-defined]
+    else:
+        session.agentId = 'build'  # type: ignore[attr-defined]
+    session.metadata = meta  # type: ignore[attr-defined]
+
+
 @router.post('/guard-mode')
 async def setGuardMode(request: Request):
     """Update guard mode on a workbench session (system barrier).
@@ -1778,11 +1794,18 @@ async def setGuardMode(request: Request):
         raise HTTPException(status_code=404, detail='Session not found')
     mode = wb.normalizeGuardMode(str(guardMode or 'full'))
     session.guardMode = mode
-    # Keep agent role aligned with the barrier the UI selected.
+    # Keep agent role aligned with the barrier the UI selected — but never
+    # clobber a user-selected agent permanently: entering plan mode stashes
+    # the previous role; leaving plan mode restores it when one was stashed.
     if mode == 'plan':
+        meta = dict(session.metadata or {})
+        prev_agent = as_str(getattr(session, 'agentId', '') or '')
+        if prev_agent and prev_agent != 'plan':
+            meta['planAgentId'] = prev_agent
+        session.metadata = meta
         session.agentId = 'plan'
     else:
-        session.agentId = 'build'
+        restoreAgentAfterPlan(session)
     if mode == 'full':
         # Drop pending plan gate — Full Access must not present a plan.
         session.plan = None

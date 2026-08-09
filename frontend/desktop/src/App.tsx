@@ -12,6 +12,7 @@ import { QuitConfirmModal } from '@/components/overlays/QuitConfirmModal';
 import { UpdateRelaunchOverlay } from '@/components/overlays/UpdateRelaunchOverlay';
 import { useStartupProviderRefresh } from '@/hooks/useStartupProviderRefresh';
 import { useUiCustomizationSync } from '@/hooks/useUiCustomizationSync';
+import { registerStreamResync } from '@/sections/chat/stream/session-subscriber';
 import { toggleCommandPalette } from '@/store/command-palette';
 import { toggleShortcutsModal } from '@/store/shortcuts-modal';
 
@@ -33,6 +34,14 @@ export default function App() {
   useStartupProviderRefresh();
   // Server-stored UI colors (model's customize_ui tool) win over the local cache.
   useUiCustomizationSync();
+
+  // App-global SSE resync (idempotent): on focus/visibility/online, reconnect
+  // any session the backend reports as streaming — covers backend-started
+  // auto-turns while the user is on a non-chat route where ChatThread is not
+  // mounted (its own resync effect covers the visible thread).
+  useEffect(() => {
+    registerStreamResync(() => Promise.resolve(null));
+  }, []);
 
   // Global hotkeys: ⌘/Ctrl+K|P palette, `?` shortcuts reference, `,` settings.
   // (Formerly lived in the never-mounted AppShell — mounted here so they work.)

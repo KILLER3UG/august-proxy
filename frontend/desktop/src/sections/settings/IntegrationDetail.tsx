@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ExternalLink,
   Loader2,
+  Pencil,
   Plug,
   PowerOff,
   RotateCw,
@@ -511,21 +512,157 @@ function McpAction({ item }: { item: IntegrationItem }) {
 }
 
 function McpServerDetails({ server }: { server: McpServer }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [name, setName] = useState(server.name ?? '');
+  const [command, setCommand] = useState(server.command ?? '');
+  const [argsText, setArgsText] = useState((server.args ?? []).join(' '));
+  const [url, setUrl] = useState(server.url ?? '');
+  const [envText, setEnvText] = useState(
+    Object.entries(server.env ?? {})
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n'),
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    if (!name.trim() || (!command.trim() && !url.trim())) {
+      setError('Name plus a command or URL is required.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const env: Record<string, string> = {};
+      for (const line of envText.split('\n')) {
+        const t = line.trim();
+        if (!t || t.startsWith('#')) continue;
+        const eq = t.indexOf('=');
+        if (eq <= 0) continue;
+        env[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+      }
+      const res = await fetch(`/api/mcp/servers/${encodeURIComponent(server.id ?? server.name)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          command: command.trim(),
+          args: argsText.split(/\s+/).filter(Boolean),
+          env,
+          url: url.trim(),
+          transport: server.transport ?? 'stdio',
+          enabled: server.enabled ?? true,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error((body as { detail?: string } | null)?.detail || `PATCH failed (${res.status})`);
+      }
+      void qc.invalidateQueries({ queryKey: ['integrations-mcp'] });
+      void qc.invalidateQueries({ queryKey: ['integrations'] });
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section className="rounded-xl border border-border/60 bg-card p-5 space-y-2 text-xs">
-      <p className="font-semibold text-foreground">Server config</p>
-      <dl className="grid grid-cols-[7rem_1fr] gap-y-1.5 text-muted-foreground">
-        <dt>Status</dt>
-        <dd className="font-mono text-foreground/80">{server.status}</dd>
-        <dt>Command</dt>
-        <dd className="font-mono break-all text-foreground/80">{server.command || '—'}</dd>
-        <dt>Args</dt>
-        <dd className="font-mono break-all text-foreground/80">
-          {server.args?.length ? server.args.join(' ') : '—'}
-        </dd>
-        <dt>Tools</dt>
-        <dd className="font-mono text-foreground/80">{server.toolCount}</dd>
-      </dl>
+      <div className="flex items-center justify-between">
+        <p className="font-semibold text-foreground">Server config</p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setEditing((v) => !v)}
+          disabled={busy}
+          data-testid="mcp-edit-toggle"
+        >
+          <Pencil className="size-3" />
+          {editing ? 'Cancel' : 'Edit'}
+        </Button>
+      </div>
+      {editing ? (
+        <div className="space-y-2 pt-1">
+          <label className="block">
+            <span className="text-muted-foreground">Name</span>
+            <input
+              className={MCP_EDIT_FIELD}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              aria-label="MCP server name"
+            />
+          </label>
+          <label className="block">
+            <span className="text-muted-foreground">Command</span>
+            <input
+              className={MCP_EDIT_FIELD}
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              placeholder="npx -y @modelcontextprotocol/server-filesystem"
+              aria-label="MCP server command"
+            />
+          </label>
+          <label className="block">
+            <span className="text-muted-foreground">Args (space-separated)</span>
+            <input
+              className={MCP_EDIT_FIELD}
+              value={argsText}
+              onChange={(e) => setArgsText(e.target.value)}
+              aria-label="MCP server args"
+            />
+          </label>
+          <label className="block">
+            <span className="text-muted-foreground">URL (remote transports)</span>
+            <input
+              className={MCP_EDIT_FIELD}
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://mcp.example.com/sse"
+              aria-label="MCP server URL"
+            />
+          </label>
+          <label className="block">
+            <span className="text-muted-foreground">Env (KEY=value per line)</span>
+            <textarea
+              className={`${MCP_EDIT_FIELD} font-mono resize-y min-h-16`}
+              value={envText}
+              onChange={(e) => setEnvText(e.target.value)}
+              aria-label="MCP server env"
+            />
+          </label>
+          {error ? <p className="text-danger">{error}</p> : null}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => { void save(); }} disabled={busy}>
+              {busy ? <Loader2 className="size-3 animate-spin" /> : <CheckCircle2 className="size-3" />}
+              Save config
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <dl className="grid grid-cols-[7rem_1fr] gap-y-1.5 text-muted-foreground">
+          <dt>Status</dt>
+          <dd className="font-mono text-foreground/80">{server.status}</dd>
+          <dt>Command</dt>
+          <dd className="font-mono break-all text-foreground/80">{server.command || '—'}</dd>
+          <dt>Args</dt>
+          <dd className="font-mono break-all text-foreground/80">
+            {server.args?.length ? server.args.join(' ') : '—'}
+          </dd>
+          <dt>Tools</dt>
+          <dd className="font-mono text-foreground/80">{server.toolCount}</dd>
+        </dl>
+      )}
     </section>
   );
 }
+
+const MCP_EDIT_FIELD =
+  'mt-1 w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-1.5 text-xs ' +
+  'text-foreground placeholder:text-muted-foreground focus:border-primary/40 ' +
+  'focus:outline-none focus:ring-1 focus:ring-primary/30 shadow-none';

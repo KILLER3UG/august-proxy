@@ -164,7 +164,50 @@ process death.
 `POST /api/workbench/chat/stop` with `{sessionId}` sets the cancellation signal
 and emits `aborted`.
 
+### Sub-agents: background completions continue on their own
+
+The spawn tools (`spawn_subagent` / `spawn_subagents`) default to background
+execution. When a sub-agent settles **after the parent turn already ended**, the
+backend starts a coalesced continuation turn (drained within ~1.5 s of the last
+completion) so the parent model still receives the result. Consecutive
+auto-started turns are capped at **4 per user turn**; beyond that the
+completions stay queued for the next user message. The chat thread shows these
+auto-turns because the active-streams poller reconnects newly-streaming
+sessions and the per-turn handler bundle persists its SSE position.
+
+### Sub-agent roster & runs
+
+- Live roster: right-drawer **Subagents** section (auto-opens while workers are
+  active); per-run history in **Brain → Runs**.
+- API-created agent jobs (`POST /api/agents/jobs`) now also appear in Runs.
+- Workbench sessions persist `agentMode` and `turnCount` across restarts —
+  a session switched to `chat`/`code` mode stays in that mode.
+
+### Sub-agents and git worktrees
+
+Automatic per-sub-agent worktree isolation was **removed** — tool dispatch
+resolves paths against the parent session's workspace, so the worktrees were
+created but never used. Parallel agents share the main tree by default. An
+explicit isolated worktree is still available on demand via
+`POST /api/workbench/sessions/{id}/worktree`.
+
+### Terminal sandbox
+
+The in-app terminal is a real shell. One-shot commands
+(`POST /api/terminal/command`) and multi-token interactive input lines in a
+workspace-bound terminal get the same soft sandbox as the workbench shell:
+path escapes outside the workspace, redirects, and network prefixes are
+blocked. `cd …` navigation and single-token inputs (answers, bare commands)
+pass through. Non-workspace terminals are unrestricted.
+
+### MCP server edit
+
+MCP servers can be added, started/stopped, edited (`PATCH /api/mcp/servers/{id}`),
+and removed from **Settings → Integrations**. Editing stops a running server so
+the new command/args/env apply on the next start.
+
 ---
+
 
 ## Gateway (Telegram / Slack / Discord)
 

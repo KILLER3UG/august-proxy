@@ -155,6 +155,7 @@ async function readSseStream(
 
     let lineStart = 0;
     let newlineIdx: number;
+    let pendingSeq: number | null = null;
     while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
       const line = buffer.slice(lineStart, newlineIdx).trim();
       lineStart = newlineIdx + 1;
@@ -169,7 +170,7 @@ async function readSseStream(
       } else if (line.startsWith('id:')) {
         const idStr = line.slice(3).trim();
         const n = Number(idStr);
-        if (Number.isFinite(n) && handlers.onSeq) handlers.onSeq(n);
+        if (Number.isFinite(n)) pendingSeq = n;
       } else if (line.startsWith('data:')) {
         const dataStr = line.slice(5).trim();
         if (!dataStr) continue;
@@ -182,6 +183,14 @@ async function readSseStream(
             receivedTerminalEvent = true;
           }
           dispatchWorkbenchEvent(currentEvent, payload, handlers);
+          // onSeq AFTER dispatch so handlers know the event type (the
+          // durable subscriber advances lastSeq only for events it renders;
+          // turn-content events must stay replayable for the per-turn
+          // consumer that renders them).
+          if (pendingSeq !== null) {
+            handlers.onSeq?.(pendingSeq, currentEvent);
+            pendingSeq = null;
+          }
         } catch (e: unknown) {
           if (e instanceof DOMException && e.name === 'AbortError') throw e;
           // Ignore non-JSON data lines

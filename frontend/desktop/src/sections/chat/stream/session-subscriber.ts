@@ -98,12 +98,46 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
 
   const subagentHandlers = makeSubagentEventHandlers(uiSessionId);
 
+  // Events this subscriber actually renders. Turn-content events (text,
+  // thinking, toolUse, …) are NOT here: if this subscriber were attached
+  // while a turn is running (e.g. a backend auto-turn before the 15s poll
+  // notices it), advancing lastSeq past those events would make the
+  // per-turn reconnect skip them and the reply would never render. Instead
+  // the per-turn consumer replays them from the persisted position.
+  const RENDERED_EVENT_TYPES = new Set([
+    'subagentStart',
+    'subagentDone',
+    'subagentText',
+    'subagentToolCall',
+    'subagentToolResult',
+    'browserAction',
+    'userMessageQueued',
+    'userMessageDequeued',
+    'userMessageInjected',
+    'clarifyProposed',
+    'warning',
+    'info',
+    'compaction',
+  ]);
+
   const handlers: WorkbenchEventHandlers = {
-    onSeq: (seq) => {
-      if (seq > entry.lastSeq) {
+    onSeq: (seq, eventType) => {
+      if (seq > entry.lastSeq && (!eventType || RENDERED_EVENT_TYPES.has(eventType))) {
         entry.lastSeq = seq;
         writeLastSeq(wbId, seq);
       }
+    },
+    onStarted: () => {
+      // A turn is now running — the per-turn consumer (startChatStream or
+      // the poller-driven reconnect) owns the stream from here. Detach so
+      // this subscriber never consumes turn events it doesn't render.
+      detachSessionSubscriber(wbId);
+    },
+    onDone: () => {
+      // Turn ended while we were attached (attached after `started` was
+      // missed). Nothing further to render — detach; the next attachment
+      // resumes from the persisted position.
+      detachSessionSubscriber(wbId);
     },
     ...subagentHandlers,
     onCompaction: (_data) => {

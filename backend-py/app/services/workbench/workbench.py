@@ -53,6 +53,11 @@ logger = logging.getLogger('workbench')
 # runtime via config. The stall detector below stops loops that spin without
 # making progress even before the cap.
 MAX_MANAGED_TOOL_ROUNDS = 25
+# Recurring-task / daemon sub-agents run unbounded today (they bypass the
+# orchestrator's worker pool). Cap concurrent runs so a burst of due tasks
+# cannot spawn an arbitrary number of model calls at once.
+MAX_RECURRING_SUBAGENT_CONCURRENCY = 3
+_recurringSubagentSlots = asyncio.Semaphore(MAX_RECURRING_SUBAGENT_CONCURRENCY)
 # Stall detection: if the session's execution phase/step has not advanced for
 # this many consecutive rounds (and the turn is already deep), stop and ask
 # the model to reflect instead of letting it spin on repeated tool calls.
@@ -1835,14 +1840,22 @@ async def _sendWorkbenchMessageStreamImpl(
                     from app.services.workbench.subagent import executeSubAgent
 
                     async def _run_recurring_subagent() -> None:
+                        # Cap concurrent recurring sub-agents (they bypass the
+                        # orchestrator worker pool) so a burst of due tasks
+                        # cannot spawn unbounded model calls at once.
                         try:
-                            result = await executeSubAgent(
-                                session,
-                                agentId,
-                                cleanMsg[:2000] or f'Recurring task ({agentId})',
-                                emit=emit,
-                                model_override=modelOverride or '',
-                            )
+                            async with _recurringSubagentSlots:
+                                result = await executeSubAgent(
+                                    session,
+                                    agentId,
+                                    cleanMsg[:2000] or f'Recurring task ({agentId})',
+                                    emit=emit,
+                                    model_override=modelOverride or '',
+                                )
+                        except Exception:
+                            logger.debug('recurring-task subagent failed', exc_info=True)
+                            return
+                        try:
                             if not result or as_str(result.get('status')) in ('failed', 'error', 'blocked'):
                                 return
                             # The parent model must see the outcome — enqueue
@@ -1853,7 +1866,7 @@ async def _sendWorkbenchMessageStreamImpl(
 
                             _enqueue_completion(session, result)
                         except Exception:
-                            logger.debug('recurring-task subagent failed', exc_info=True)
+                            logger.debug('recurring-task subagent enqueue failed', exc_info=True)
 
                     asyncio.create_task(_run_recurring_subagent())
                 except Exception:
@@ -2876,7 +2889,7 @@ async def _sendWorkbenchMessageStreamImpl(
 
                                 beat_task = asyncio.create_task(_idle_beat())
                                 try:
-                                    return await _executeTool(toolName, toolInput, session)
+                                    return await _executeTool(toolName, toolInput, session, toolUseId)
                                 finally:
                                     stop.set()
                                     current_command_output.reset(out_token)
@@ -2921,7 +2934,7 @@ async def _sendWorkbenchMessageStreamImpl(
 
                             _hb_task = asyncio.create_task(_tool_heartbeat())
                             try:
-                                result = await _executeTool(toolName, toolInput, session)
+                                result = await _executeTool(toolName, toolInput, session, toolUseId)
                             finally:
                                 _tool_stop.set()
                                 _hb_task.cancel()
@@ -2940,7 +2953,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 # Only the "never started" case (result unset) retries once.
                 if result is None:
                     with _trace.span('tool_exec', tool=toolName):
-                        result = await _executeTool(toolName, toolInput, session)
+                        result = await _executeTool(toolName, toolInput, session, toolUseId)
                 else:
                     logger.debug('tool %s raised after dispatch; not re-running', toolName, exc_info=True)
             # Verifier gate receipt: keep the tail of command output for this turn
@@ -3467,7 +3480,9 @@ def _extract_memory_suggestions(session: WorkbenchSession) -> list[str]:
     return candidates
 
 
-async def _executeTool(toolName: str, args: dict[str, object], session: WorkbenchSession) -> str:
+async def _executeTool(
+    toolName: str, args: dict[str, object], session: WorkbenchSession, toolUseId: str = ''
+) -> str:
     """Execute a workbench tool by dispatching to the correct handler.
 
     Two dispatch paths:
@@ -3475,11 +3490,16 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
         (``execute_mcp_tool_call``), which talks to the relevant MCP
         server subprocess over JSON-RPC.
       * everything else dispatches through ``tool_registry``.
+
+    ``toolUseId`` (the parent tool call id) is published as a ContextVar so
+    tool handlers can stamp their emitted events (e.g. subagentStart) with
+    the parent call — the UI nests sub-agent blocks under it.
     """
     from app.services.tool_registry import dispatch as dispatchTool
-    from app.services.workbench.context import currentSessionId
+    from app.services.workbench.context import currentSessionId, currentToolUseId
 
     token = currentSessionId.set(session.id)
+    toolToken = currentToolUseId.set(toolUseId or '')
     try:
         from app.services.tools.mcp_client import executeMcpToolCall, isMcpToolName
 
@@ -3607,6 +3627,7 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
         return f'Tool {toolName} failed: {feedback["error_type"]}: {feedback["error_message"]}'
     finally:
         currentSessionId.reset(token)
+        currentToolUseId.reset(toolToken)
 
 
 def _bulk_paths_from_args(args: dict[str, object]) -> list[str]:
@@ -3999,6 +4020,13 @@ def enterPlanMode(session: WorkbenchSession, emit: object | None = None) -> str:
             f'plan to {plan_file_relpath(session.id)}, then call submit_plan and wait for approval.'
         )
     session.guardMode = 'plan'
+    # Stash the pre-plan agent role so leaving plan mode can restore it —
+    # plan mode must not permanently clobber a user-selected agent.
+    prev_agent = as_str(getattr(session, 'agentId', '') or '')
+    if prev_agent and prev_agent != 'plan':
+        meta = dict(session.metadata or {})
+        meta['planAgentId'] = prev_agent
+        session.metadata = meta
     session.agentId = 'plan'
     session.updatedAt = _now()
     # Prompt cache is content-hash keyed — guardMode change alters the hash

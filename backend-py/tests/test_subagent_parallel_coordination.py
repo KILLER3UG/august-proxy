@@ -359,8 +359,9 @@ async def _spawn_and_wait(coord_env, goals, execution_log=None, busy_sleep=0.0):
     """Spawn sub-agents in parallel with one stub instance and wait for all.
 
     Returns ``(handles, results, stub, bus_events)`` where ``bus_events`` maps
-    each taskId to the lifecycle messages published on the AgentMessageBus
-    (captured before the bus is closed).
+    each taskId to the topics captured on the AgentMessageBus (lifecycle
+    topics are dead letters since the worker stopped publishing; peer-help
+    claims still use the bus).
     """
     stub = CoordinationStub(coord_env['session_id'], execution_log=execution_log, busy_sleep=busy_sleep)
     coord_env['holder']['client'] = stub
@@ -472,7 +473,7 @@ async def test_parallel_resource_allocation_no_contradiction(coord_env):
 
 
 # ---------------------------------------------------------------------------
-# Test 4 (concurrency): sub-agents run in parallel and publish bus events.
+# Test 4 (concurrency): sub-agents run in parallel with results delivered.
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_subagents_run_concurrently(coord_env):
@@ -489,10 +490,12 @@ async def test_subagents_run_concurrently(coord_env):
     for h in handles:
         assert h.status == 'completed', f'sub-agent {h.taskId} failed: {h.error}'
 
-    # Both sub-agents must have published lifecycle events on the bus.
+    # Lifecycle signaling runs through the orchestrator handle + return
+    # dict (the worker's old task:{id}:progress/result bus topics were dead
+    # letters and were removed) — every handle must carry a final result.
     for h in handles:
-        assert bus_events[h.taskId]['progress'], f'no progress event for {h.taskId}'
-        assert bus_events[h.taskId]['result'], f'no result event for {h.taskId}'
+        assert h.result, f'no result payload for {h.taskId}'
+        assert 'result' in h.result, f'worker result missing text for {h.taskId}'
 
     # Execution intervals must overlap -> they ran concurrently, not serially.
     by_worker: dict[str, list[float]] = {}

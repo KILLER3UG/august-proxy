@@ -37,44 +37,6 @@ export interface SpawnResult {
   message?: string;
 }
 
-export interface SubagentEvent {
-  type: string;
-  taskId?: string;
-  agentId?: string;
-  goal?: string;
-  content?: string;
-  [key: string]: unknown;
-}
-
-/**
- * Subscribe to sub-agent SSE events for a session.
- * Returns an unsubscribe function.
- */
-export function subscribeToSubagentEvents(
-  sessionId: string,
-  onEvent: (event: SubagentEvent) => void,
-): () => void {
-  const url = `/api/subagents/stream?sessionId=${encodeURIComponent(sessionId)}`;
-  const source = new EventSource(url);
-
-  source.onmessage = (msg: MessageEvent) => {
-    try {
-      const data = JSON.parse(msg.data) as SubagentEvent;
-      onEvent(data);
-    } catch {
-      // ignore parse errors
-    }
-  };
-
-  source.onerror = () => {
-    // EventSource auto-reconnects
-  };
-
-  return () => {
-    source.close();
-  };
-}
-
 /** List active sub-agents for a session. */
 export async function listActive(sessionId?: string): Promise<SubagentInfo[]> {
   const params = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';

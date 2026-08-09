@@ -13,9 +13,7 @@ Pipeline
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
 from typing import Any, Callable
 
 from app.json_narrowing import as_str
@@ -66,26 +64,18 @@ async def runSubagent(
 
     if taskId is None:
         taskId = f'task_{uuid.uuid4().hex[:12]}'
-    startedAt = time.time()
-    topicPrefix = f'task:{taskId}'
-    await bus.publish(
-        f'{topicPrefix}:progress',
-        {'type': 'subagentStarted', 'taskId': taskId, 'agentId': agentId, 'goal': goal, 'timestamp': startedAt},
-    )
+
+    # NOTE: lifecycle signaling is handled by the orchestrator (handle
+    # status + return dict) and the spawn tool's SSE emits. The message-bus
+    # topic publishes that used to live here were dead letters — nothing
+    # subscribed to task:{taskId}:{progress|result|failure}.
 
     def _combinedEmit(ev: dict[str, Any]) -> None:
         if emit:
             emit(ev)
-        evType = as_str(ev.get('type'), '')
-        if evType in ('subagentText', 'subagentToolCall', 'subagentToolResult'):
-            asyncio.ensure_future(
-                bus.publish(f'{topicPrefix}:progress', {'type': evType, 'taskId': taskId, 'agentId': agentId, **ev})
-            )
 
     async def _failAndBroadcast(errorMsg: str) -> dict[str, Any]:
-        result = {'taskId': taskId, 'agentId': agentId, 'status': 'failed', 'error': errorMsg}
-        await bus.publish(f'{topicPrefix}:failure', result)
-        return result
+        return {'taskId': taskId, 'agentId': agentId, 'status': 'failed', 'error': errorMsg}
 
     try:
         from app.services.workbench.subagent import executeSubAgent
@@ -105,20 +95,8 @@ async def runSubagent(
             effort=effort or 'medium',
             model_override=model or '',
         )
-        elapsed = time.time() - startedAt
         status = as_str(subResult.get('status'), 'completed')
-        if status == 'completed':
-            await bus.publish(
-                f'{topicPrefix}:result',
-                {
-                    'type': 'subagentCompleted',
-                    'taskId': taskId,
-                    'agentId': agentId,
-                    'result': as_str(subResult.get('result'), ''),
-                    'elapsedS': round(elapsed, 2),
-                },
-            )
-        else:
+        if status != 'completed':
             return await _failAndBroadcast(as_str(subResult.get('error'), 'Unknown error'))
         return {'taskId': taskId, 'agentId': agentId, 'status': status, 'result': as_str(subResult.get('result'), '')}
     except Exception as exc:

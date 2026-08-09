@@ -6,7 +6,6 @@ Endpoints
 - ``POST /api/subagents/spawn`` — spawn one or more sub-agents
 - ``GET /api/subagents/active?sessionId=X`` — list active sub-agents
 - ``POST /api/subagents/{taskId}/terminate`` — terminate a sub-agent
-- ``GET /api/subagents/stream?sessionId=X`` — SSE stream of subagent events
 - ``POST /api/subagents/propose-breakdown`` — approve a proposed breakdown
 
 Request bodies inherit :class:`CamelModel` so internals are snake_case while
@@ -15,13 +14,10 @@ JSON from the frontend stays camelCase.
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
 
 from app.models.camel_base import CamelModel
 from app.services.subagent_orchestrator import SubagentOrchestrator
@@ -189,84 +185,3 @@ async def listProposals():
         if p['proposalId'] not in seen:
             out.append(p)
     return {'proposals': out}
-
-
-@router.get('/stream')
-async def streamSubagentEvents(request: Request, sessionId: Optional[str] = None):
-    """SSE stream of sub-agent events for a session.
-
-    Fans out orchestrator lifecycle events (and, when ``sessionId`` is set,
-    workbench ``event_log`` subagent payloads). Stays open across many
-    parallel completions — does not close after the first done event.
-    """
-    from app.services.event_log import event_log
-
-    orch = _getOrchestrator(request)
-
-    async def eventGenerator():
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=256)
-
-        def _push(ev: dict[str, Any]) -> None:
-            if sessionId:
-                sid = str(ev.get('sessionId') or '')
-                if sid and sid != sessionId:
-                    return
-            try:
-                queue.put_nowait(ev)
-            except asyncio.QueueFull:
-                pass
-
-        for name in ('subagentStarted', 'subagentCompleted', 'subagentFailed'):
-            orch.on(name, _push)
-
-        log_task: asyncio.Task | None = None
-        if sessionId:
-
-            async def _forward_log() -> None:
-                async for ev in event_log.subscribe(sessionId):
-                    et = str(ev.get('type') or '')
-                    payload = ev.get('payload') if isinstance(ev.get('payload'), dict) else {}
-                    inner = str(payload.get('type') or '') if isinstance(payload, dict) else ''
-                    if not (
-                        et.startswith('subagent')
-                        or inner.startswith('subagent')
-                        or et in ('subagent_event', 'subagentStart', 'subagentDone')
-                    ):
-                        continue
-                    out = dict(payload) if isinstance(payload, dict) else {}
-                    out.setdefault('type', inner or et)
-                    out.setdefault('sessionId', sessionId)
-                    _push(out)
-
-            log_task = asyncio.create_task(_forward_log())
-
-        try:
-            while True:
-                if await request.is_disconnected():
-                    break
-                try:
-                    ev = await asyncio.wait_for(queue.get(), timeout=25.0)
-                    yield f'data: {json.dumps(ev, default=str)}\n\n'
-                except asyncio.TimeoutError:
-                    yield ': keepalive\n\n'
-        except asyncio.CancelledError:
-            pass
-        finally:
-            for name in ('subagentStarted', 'subagentCompleted', 'subagentFailed'):
-                handlers = orch._eventHandlers.get(name) or []
-                try:
-                    handlers.remove(_push)
-                except ValueError:
-                    pass
-            if log_task is not None:
-                log_task.cancel()
-                try:
-                    await log_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-
-    return StreamingResponse(
-        eventGenerator(),
-        media_type='text/event-stream',
-        headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'},
-    )

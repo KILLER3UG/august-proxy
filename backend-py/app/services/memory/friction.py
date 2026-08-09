@@ -64,12 +64,15 @@ def get_friction_stats(since_days: int = 7) -> dict:
     Returns: {total, byCategory: {category: count}, daily: [{date, count}], topTools: [...]}
     """
     try:
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         from app.services.memory_store import _conn
 
         conn = _conn()
-        cutoff = (datetime.now() - timedelta(days=since_days)).isoformat()
+        # friction_events.created_at is UTC 'YYYY-MM-DD HH:MM:SS'
+        # (datetime('now') default) — a naive-local ISO cutoff would shift
+        # the window by the local-UTC offset.
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=since_days)).strftime('%Y-%m-%d %H:%M:%S')
 
         # Total and by-category
         rows = conn.execute('''

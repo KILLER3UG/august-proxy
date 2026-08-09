@@ -138,6 +138,11 @@ class WorkbenchSession:
             'mutationLog': self.mutationLog,
             'status': self.status,
             'metadata': self.metadata,
+            # Agent mode + turn counter survive restarts (set_agent_mode is a
+            # session-level behavior switch; a restart must not silently
+            # re-enable tools in a chat-mode session).
+            'agentMode': self.agent_mode,
+            'turnCount': self.turnCount,
             'totalInputTokens': self.totalInputTokens,
             'totalOutputTokens': self.totalOutputTokens,
             'totalCost': self.totalCost,
@@ -174,6 +179,8 @@ class WorkbenchSession:
             mutationLog=cast('list[dict[str, object]]', as_list(d.get('mutationLog', []))),
             status=as_str(d.get('status', 'idle')),
             metadata=as_dict(d.get('metadata', {})),
+            agent_mode=as_str(d.get('agentMode', '')),
+            turnCount=as_int(d.get('turnCount', 0)),
             totalInputTokens=as_int(d.get('totalInputTokens', 0)),
             totalOutputTokens=as_int(d.get('totalOutputTokens', 0)),
             totalCost=as_float(d.get('totalCost', 0.0)),
