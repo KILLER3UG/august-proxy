@@ -582,6 +582,14 @@ def buildSystemPrompt(
     # deeper past-session context via memory_search / fact_search /
     # context_read / brain_query when the user asks about prior work.
     _HEURISTIC_CAP = 15
+    _modelWindowForMemory = 128000
+    try:
+        _modelWindowForMemory = _resolveModelContextWindow(
+            as_str(getattr(session, 'model', ''), ''), None
+        )
+    except Exception:
+        pass
+    _HEURISTIC_LIMIT = _scaledMemoryLimit(_HEURISTIC_CAP, _modelWindowForMemory)
     try:
         from app.services.memory_store import _conn as brainConn
 
@@ -590,7 +598,7 @@ def buildSystemPrompt(
             'SELECT id, rule, source, category, confidence FROM learned_heuristics '
             "WHERE COALESCE(suppressed, 0) = 0 "
             'ORDER BY confidence DESC, updated_at DESC LIMIT ?',
-            (_HEURISTIC_CAP,),
+            (_HEURISTIC_LIMIT,),
         ).fetchall()
         if heuristicsRows:
             memory['learnedHeuristics'] = [dict(r) for r in heuristicsRows]
@@ -621,7 +629,7 @@ def buildSystemPrompt(
     try:
         from app.services.memory.auto_memory import list_user_added_memories
 
-        added = list_user_added_memories(limit=40)
+        added = list_user_added_memories(limit=_scaledMemoryLimit(40, _modelWindowForMemory))
         if added:
             memory['addedMemories'] = cast(list[JsonValue], added)
     except Exception:
@@ -694,7 +702,9 @@ def buildSystemPrompt(
             from app.services.memory.auto_memory import getRelevantMemories
 
             recalled = getRelevantMemories(
-                _lastUserMessageText(session), limit=5, durable_only=True
+                _lastUserMessageText(session),
+                limit=_scaledMemoryLimit(5, _modelWindowForMemory),
+                durable_only=True,
             ) or []
             if recalled:
                 session._last_recalled_memories = recalled
@@ -863,6 +873,29 @@ def _resolveModelContextWindow(
     except Exception:
         logger.debug('resolveModelContextWindow failed', exc_info=True)
     return 128000
+
+
+def _memoryInjectionScale(context_window: int) -> float:
+    """Memory injection scale for the model's context window.
+
+    A 32k model gets half the memory payload of a 128k one; a 200k model
+    gets 1.5x. Applied to recalled/added memories and heuristics so weak
+    windows are not drowned by memory context.
+    """
+    if context_window < 32768:
+        return 0.5
+    if context_window < 65536:
+        return 0.75
+    if context_window < 131072:
+        return 1.0
+    if context_window < 262144:
+        return 1.5
+    return 2.0
+
+
+def _scaledMemoryLimit(base: int, context_window: int) -> int:
+    """Scale a memory injection cap by the model's context window."""
+    return max(1, int(base * _memoryInjectionScale(context_window)))
 
 
 def _shouldAutoCompact(attention_pressure: str, turns_since_compaction: int) -> bool:
@@ -1988,8 +2021,12 @@ async def _sendWorkbenchMessageStreamImpl(
         from app.services.recurring_tasks import check_and_fire, parse_agent_directive
 
         workspace = as_str(getattr(session, 'workspacePath', '') or '')
-        for taskMsg in check_and_fire(sessionId, workspace):
+        for taskMsg, taskModel in check_and_fire(sessionId, workspace):
             cleanMsg, agentId, modelOverride = parse_agent_directive(taskMsg)
+            # The task's pinned model (structured field) fills in when the
+            # text directive does not name one.
+            if not modelOverride and taskModel:
+                modelOverride = taskModel
             if emit:
                 emit({'type': 'recurringTask', 'message': cleanMsg[:2000]})
             if agentId:
