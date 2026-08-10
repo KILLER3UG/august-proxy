@@ -46,7 +46,7 @@ Ensure `.env` exists (copy `.env.example`). Compose maps **`8085:8085`** (not
 `GET /api/health` is defined **once** in `main.py` and returns:
 
 ```json
-{"status":"ok","version":"0.1.0","python":true,"port":8085,"uptime":12.3}
+{"status":"ok","version":"0.13.1","python":true,"port":8085,"uptime":12.3}
 ```
 
 Use `GET /api/health/detailed` for mode, data dir, external access, brain sync,

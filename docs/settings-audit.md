@@ -1,5 +1,12 @@
 # Settings IA Audit & Migration Notes
 
+> **SUPERSEDED (0.13.1):** the section inventory below is stale — the
+> registry now has 32 sections (18 basic / 13 advanced / 1 hidden) with 5
+> groups (Essentials / AI & Memory / Capabilities / Diagnostics /
+> Permissions). The source of truth is
+> `frontend/desktop/src/settings/settings-registry.ts`; this file is kept
+> as the historical v3-IA record.
+
 ## Why this document exists
 
 The settings-registry header comment used to promise a

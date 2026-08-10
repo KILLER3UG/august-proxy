@@ -36,6 +36,9 @@ Bug fixes and pipeline completion since 0.13.0:
 - `agentMode` (chat/agent/code) and `turnCount` persist across restarts.
 - Entering plan mode no longer permanently clobbers the agent role — it is
   stashed and restored on exit.
+- Queued messages drain in arrival order (steers no longer jump the queue at
+  send time; steer priority is applied when the turn is formatted).
+- Stop button no longer inserts a dummy user turn on idle sessions.
 - Removed the inert automatic sub-agent git-worktree creation (tool dispatch
   is workspace-bound); the manual worktree endpoint remains.
 - Interactive terminal input in a workspace-bound terminal gets the same
@@ -67,6 +70,8 @@ Bug fixes and pipeline completion since 0.13.0:
   bus topics, and the dead SubagentPanel/useSubagentStream frontend chain.
 - Cron parsing consolidated onto one implementation; duplicate `_BRAINStores`
   catalog removed.
+- Release script prefers the current-version artifact and cleans stale
+  bundles; all demo/mock data removed from fresh installs.
 
 ## 0.13.0 (2026-08-08)
 

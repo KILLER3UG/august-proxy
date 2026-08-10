@@ -10,7 +10,7 @@ Living list. Prefer fixing code first, then ticking items off here.
 |------|------------|
 | OpenCode Zen: models list ≠ usable chat path | **Per-model `apiFormat` override** — a model entry can carry its own format, which wins over the provider-level format. Honored by workbench chat, Test button, Live/BTW, and the `/v1` proxy adapters (OpenAI→Anthropic body + SSE translation added for Claude models reached via `/v1/chat/completions`). UI: model row → Wire format dropdown with family hint. See `CONFIGURATION.md`. Tests: `test_model_format_override.py` (21) |
 | Verifier gate advisory w.r.t. final-response emission | **Opt-in per-session `verifierEnforced` flag** (chosen over guard-mode scoping to keep casual chat untouched). While on, `finalOutput` text is withheld until `update_state(phase='complete')` passes; a `verifierBlocked` SSE event + amber banner explains why. Toggle: composer shield button; also settable at session creation. Tests: `test_verifier_enforced_flag.py` |
-| Naming debt guardrail | New `scripts/check-naming.mjs` + checked-in `scripts/naming-baseline.json` — CI fails only on **new** camelCase params in service signatures (221 legacy entries grandfathered; 4 renamed: `terminal_service.requestId`, `validator.toolCallId/toolName/errorMsg`, `delta_engine.filePath`). Bulk rename remains deferred (see below) |
+| Naming debt guardrail | New `scripts/check-naming.mjs` + checked-in `scripts/naming-baseline.json` — CI fails only on **new** camelCase params in service signatures (221 legacy entries grandfathered; 5 renamed incl. `heuristics_service.ruleIds → rule_ids`). Bulk rename remains deferred (see below) |
 
 ## Closed (2026-07-25)
 

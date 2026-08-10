@@ -281,7 +281,6 @@ Snapshot, alias CRUD, settings put — operator convenience surface.
 | `GET /api/subagents/active` | Active tasks |
 | `POST /api/subagents/{taskId}/terminate` | Terminate |
 | `POST /api/subagents/propose-breakdown` | Breakdown proposal |
-| `GET /api/subagents/stream` | SSE status stream |
 
 ### `/api/sessions`
 

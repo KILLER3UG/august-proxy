@@ -348,8 +348,6 @@ process env.
 | `AUGUST_SQLITE_MMAP_MB` | unset | Opt-in mmap |
 | `AUGUST_SQLITE_SYNC` | unset | Opt-in `NORMAL`/`FULL`/`OFF` |
 | `AUGUST_HOST_AGENT_URL` | unset | External host-agent URL |
-| `AUGUST_PROXY_ALLOWED_ROOTS` | unset | Semicolon-separated FS roots |
-| `AUGUST_PROXY_WORKDIR` | unset | Default workdir |
 | `AUGUST_AUTO_ROUTE` | unset | `1` forces evidence-driven auto-routing on (equivalent to brain config `autoRoute: true`) |
 
 ### Evidence-driven auto-routing
