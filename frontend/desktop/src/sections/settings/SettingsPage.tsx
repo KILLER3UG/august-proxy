@@ -65,6 +65,48 @@ function useLandingSectionId(): string {
   return setupPending ? 'ai-setup' : DEFAULT_SECTION_ID;
 }
 
+/** First-element query keys owned by settings sections — tab switches
+ *  invalidate only these, not the whole app cache. */
+const SETTINGS_QUERY_DOMAINS = new Set([
+  'audit',
+  'brain-config',
+  'ci-conversations',
+  'ci-details',
+  'computer-apps',
+  'computer-roots',
+  'external-access',
+  'feature-flow-events',
+  'feature-inventory',
+  'gateway-status',
+  'harness-evals',
+  'harness-trends',
+  'health',
+  'host-agent',
+  'host-agent-status',
+  'inject-aug-on-proxy',
+  'integrations',
+  'integrations-connections',
+  'integrations-mcp',
+  'models',
+  'mp-aggregated-models',
+  'mp-providers',
+  'observability',
+  'observations',
+  'privacy-summary',
+  'providers',
+  'quota',
+  'recurring-tasks',
+  'rollback',
+  'routing-best-by-task',
+  'routing-decisions',
+  'ta-activity',
+  'ta-requests',
+  'ta-stats',
+  'tc-connections',
+  'tc-host-agent',
+  'usage',
+]);
+
 export function SettingsPage() {
   const params = useParams<{ section?: string }>();
   const [searchParams] = useSearchParams();
@@ -103,12 +145,15 @@ export function SettingsPage() {
   }, [rawSection, active.id, navigate, searchParams, landingSectionId]);
 
   // Tab switch: remounted section queries may still be within the global
-  // 5s staleTime. Invalidate so the newly active tab always hits the network
-  // for real-time data without reloading the settings shell.
+  // 5s staleTime. Invalidate only the settings-domain keys so the newly
+  // active tab hits the network — a bare invalidateQueries() refetched
+  // every app query (chat-side hooks included) on each tab switch.
   useEffect(() => {
     if (prevSectionRef.current === active.id) return;
     prevSectionRef.current = active.id;
-    void queryClient.invalidateQueries();
+    void queryClient.invalidateQueries({
+      predicate: (q) => SETTINGS_QUERY_DOMAINS.has(String(q.queryKey[0] ?? '')),
+    });
   }, [active.id, queryClient]);
 
   const SectionComponent = SECTION_COMPONENTS[active.id] ?? SettingsStub;

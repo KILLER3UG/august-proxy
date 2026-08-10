@@ -77,7 +77,7 @@ export function CommandPalette() {
       >
         <Command.Input
           autoFocus
-          placeholder="Type a command, search sessions, or jump to a section…"
+          placeholder="Type a command or action…"
           className="w-full bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground border-b border-border"
         />
         <Command.List className="max-h-[55vh] overflow-y-auto p-2">

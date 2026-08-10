@@ -39,8 +39,8 @@ import { openFolderViaTauri } from '@/api/folder';
 const SCHEDULE_PRESETS: Array<{ label: string; value: string }> = [
   { label: 'Every hour', value: '0 * * * *' },
   { label: 'Daily at 9:00', value: '0 9 * * *' },
-  { label: 'Weekdays at 9:00', value: '0 9 * * 0-4' },
-  { label: 'Weekly Monday 9:00', value: '0 9 * * 0' },
+  { label: 'Weekdays at 9:00', value: '0 9 * * 1-5' },
+  { label: 'Weekly Monday 9:00', value: '0 9 * * 1' },
   { label: 'Every 30 minutes', value: 'every 30m' },
   { label: 'Every 2 hours', value: 'every 2h' },
   { label: 'Custom…', value: '' },

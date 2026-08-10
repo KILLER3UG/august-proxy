@@ -65,6 +65,9 @@ export interface MessageBlock {
     | 'verifierBlocked'
     | 'error';
   content?: string;
+  /** For type === 'error': the raw upstream error text, kept for the
+   *  expandable details — content holds the friendly copy. */
+  rawContent?: string;
   tool?: MessageBlockToolCall;
   /** Set on toolCall blocks whose context represents a revised plan
    *  (august__submit_plan with isRevisedPlan=true). */
@@ -299,6 +302,8 @@ export interface AppendBlockEvent {
     | 'verifierBlocked'
     | 'error';
   content?: string;
+  /** For type === 'error': raw upstream text (friendly copy goes in content). */
+  rawContent?: string;
   name?: string;
   id?: string;
   context?: string;

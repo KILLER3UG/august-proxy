@@ -10,6 +10,8 @@ import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
 import { isTauri } from "@/lib/tauri-detect";
 import { t } from "@/lib/motion";
 import { useAppUpdate } from "@/hooks/useAppUpdate";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import {
   useSessionsStore,
   renameSession,
@@ -184,11 +186,18 @@ export function SessionList({
     startChatActiveStreamsPoller();
   }, []);
 
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
+
   /** Confirm + delete with exit animation (store remove drives AnimatePresence). */
-  const confirmDeleteSession = (s: Session) => {
-    if (
-      !confirm("Are you sure you want to permanently delete this chat?")
-    ) {
+  const confirmDeleteSession = async (s: Session) => {
+    const ok = await confirmStyled({
+      title: "Delete chat?",
+      message: "This permanently deletes the chat. This cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "destructive",
+    });
+    if (!ok) {
       return;
     }
     // Drop pin entry so localStorage does not accumulate dead ids
@@ -343,12 +352,15 @@ export function SessionList({
     }
   };
 
-  const handleDeleteFolder = (id: string) => {
-    if (
-      confirm(
-        "Are you sure you want to delete this folder? All sessions inside will be moved to uncategorized.",
-      )
-    ) {
+  const handleDeleteFolder = async (id: string) => {
+    const ok = await confirmStyled({
+      title: "Delete folder?",
+      message:
+        "All sessions inside will be moved to uncategorized (Other chats).",
+      confirmLabel: "Delete folder",
+      variant: "destructive",
+    });
+    if (ok) {
       deleteFolder(id);
     }
   };
@@ -359,7 +371,7 @@ export function SessionList({
     localStorage.setItem("august-uncategorized-collapsed", next ? "1" : "0");
   };
 
-  const handleDeleteUncategorized = () => {
+  const handleDeleteUncategorized = async () => {
     // Match the sidebar group: unfiled and not pinned (pinned lives under Pinned).
     const unfiled = useSessionsStore
       .getState()
@@ -368,7 +380,13 @@ export function SessionList({
           !session.isArchived && !session.folderId && !pinnedIds.has(session.id),
       );
     if (!unfiled.length) return;
-    if (!confirm(`Permanently delete all ${unfiled.length} chat${unfiled.length === 1 ? "" : "s"} in Other chats?`)) {
+    const ok = await confirmStyled({
+      title: "Delete Other chats?",
+      message: `Permanently delete all ${unfiled.length} chat${unfiled.length === 1 ? "" : "s"} in Other chats?`,
+      confirmLabel: "Delete",
+      variant: "destructive",
+    });
+    if (!ok) {
       return;
     }
     const deletedIds = new Set(
@@ -644,6 +662,16 @@ export function SessionList({
       <NotificationsPanel
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
+      />
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
       />
       <SwitchAccountModal
         open={switchAccountOpen}

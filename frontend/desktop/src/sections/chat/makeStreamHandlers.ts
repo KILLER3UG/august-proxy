@@ -33,6 +33,7 @@ import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
 import { classifyTool } from '@/lib/tool-classify';
+import { friendlyError } from '@/lib/error-copy';
 import { pathBasename } from '@/lib/tool-labels';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { playReceiveChime } from '@/lib/chat-chime';
@@ -821,13 +822,16 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onError: ({ message }) => {
       // Real error block (rendered as a red banner with the message-level
       // Retry button), NOT a thinking block — a collapsed disclosure hid
-      // failures entirely.
+      // failures entirely. The raw upstream text is kept in rawContent and
+      // shown inside an expandable details element; content is friendly copy.
+      const friendly = friendlyError(message);
       streamBlocks = appendBlockEvent(streamBlocks, {
         type: 'error',
-        content: message || 'Generation failed',
+        content: `${friendly.title} — ${friendly.detail}`,
+        rawContent: friendly.raw,
         system: true,
       });
-      pushNotification('Turn failed', message || 'Generation failed', 'error');
+      pushNotification('Turn failed', friendly.title, 'error');
       scheduleUpdate();
       finalize('error');
     },

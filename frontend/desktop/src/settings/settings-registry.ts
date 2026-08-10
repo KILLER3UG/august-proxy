@@ -2,7 +2,7 @@
 /* Drives the left rail, global search, route resolution, and the
  * parallel chat-side workspace panel.
  *
- * 5 categories, 32 sections (18 basic, 14 advanced, 1 hidden — Agent Board).
+ * 5 categories, 32 sections (18 basic, 13 advanced, 1 hidden — Agent Board).
  * Sections are tagged `tier: 'basic' | 'advanced'` so the rail can show
  * a short beginner list by default and reveal advanced surfaces behind
  * a "Show advanced" toggle (persisted to localStorage by

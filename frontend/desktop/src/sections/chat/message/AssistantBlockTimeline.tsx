@@ -516,8 +516,10 @@ export function AssistantBlockTimeline({
 
       if (block.type === 'error') {
         // Real generation/tool failure — red banner, never collapsed away.
-        // The message-level Retry button (last assistant message) re-runs
-        // the turn from the same user prompt.
+        // Friendly copy up front; the raw upstream text sits in an
+        // expandable details so power users can still see the provider's
+        // exact words (the message-level Retry button re-runs the turn).
+        const raw = block.rawContent;
         tagged.push({
           kind: 'block',
           node: (
@@ -530,8 +532,18 @@ export function AssistantBlockTimeline({
               <span className="shrink-0" aria-hidden="true">
                 ⚠
               </span>
-              <span className="min-w-0 break-words">
+              <span className="min-w-0 flex-1 break-words">
                 {block.content || 'Generation failed.'}
+                {raw ? (
+                  <details className="mt-1 opacity-80">
+                    <summary className="cursor-pointer select-none">
+                      Show provider details
+                    </summary>
+                    <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-rose-950/40 p-2 font-mono text-[10px]">
+                      {raw}
+                    </pre>
+                  </details>
+                ) : null}
               </span>
             </div>
           ),

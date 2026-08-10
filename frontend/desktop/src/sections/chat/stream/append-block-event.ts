@@ -138,6 +138,7 @@ export function appendBlockEvent(
       id: `b_error_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       type: 'error',
       content: event.content || 'Generation failed',
+      ...(event.rawContent ? { rawContent: event.rawContent } : {}),
     };
     if (prevErrIdx !== -1) {
       blocks[prevErrIdx] = errBlock;

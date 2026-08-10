@@ -61,6 +61,57 @@ export const useSessionStreamStore = create<SessionStreamStoreState>(() => ({
   bySession: {},
 }));
 
+/** Max number of session transcripts kept in memory. Streams are heavy
+ *  (tool previews can be tens of KB per session) and a long-lived desktop
+ *  app must not accumulate every session ever opened. */
+const MAX_CACHED_SESSIONS = 12;
+const _accessOrder: string[] = [];
+
+function _touchSession(sessionId: string): void {
+  const idx = _accessOrder.indexOf(sessionId);
+  if (idx !== -1) _accessOrder.splice(idx, 1);
+  _accessOrder.push(sessionId);
+}
+
+/** Drop the least-recently-touched transcripts beyond the cache cap. */
+function _evictIfNeeded(): void {
+  const bySession = useSessionStreamStore.getState().bySession;
+  const keys = Object.keys(bySession);
+  if (keys.length <= MAX_CACHED_SESSIONS) return;
+  const excess = keys.length - MAX_CACHED_SESSIONS;
+  const toEvict = new Set<string>();
+  for (const k of _accessOrder) {
+    if (toEvict.size >= excess) break;
+    if (bySession[k]) toEvict.add(k);
+  }
+  if (toEvict.size < excess) {
+    for (const k of keys) {
+      if (toEvict.size >= excess) break;
+      if (!toEvict.has(k)) toEvict.add(k);
+    }
+  }
+  if (toEvict.size === 0) return;
+  const next = { ...bySession };
+  for (const k of toEvict) delete next[k];
+  useSessionStreamStore.setState({ bySession: next });
+  for (const k of toEvict) {
+    const i = _accessOrder.indexOf(k);
+    if (i !== -1) _accessOrder.splice(i, 1);
+  }
+}
+
+/** Drop one session's in-memory transcript (session deleted / cleared). */
+export function evictSessionStreamState(sessionId: string | null | undefined): void {
+  if (!sessionId) return;
+  const bySession = useSessionStreamStore.getState().bySession;
+  if (!bySession[sessionId]) return;
+  const next = { ...bySession };
+  delete next[sessionId];
+  useSessionStreamStore.setState({ bySession: next });
+  const i = _accessOrder.indexOf(sessionId);
+  if (i !== -1) _accessOrder.splice(i, 1);
+}
+
 /** Nanostores-shaped shim for imperative get/set/subscribe callers. */
 export const $sessionStreamStates = {
   get: (): Record<string, SessionStreamState> => useSessionStreamStore.getState().bySession,
@@ -134,6 +185,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
     return emptyStreamState();
   }
 
+  _touchSession(sessionId);
   const current = useSessionStreamStore.getState().bySession[sessionId];
   if (current) return current;
 
@@ -179,6 +231,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
       [sessionId]: state,
     },
   });
+  _evictIfNeeded();
 
   return state;
 }

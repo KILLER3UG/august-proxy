@@ -178,10 +178,16 @@ export function useChatSend(opts: UseChatSendOptions) {
 
       // Auto-routing (D1): strong evidence may override the model for this
       // turn — opt-in via the local flag, requires ≥5 samples and ≥66% win
-      // rate for the classified task type.
+      // rate for the classified task type. Off by default: never answer on
+      // a model the user didn't pick unless they explicitly enabled it.
+      let autoRouteOn = false;
+      try {
+        autoRouteOn = localStorage.getItem('august_auto_route') === '1';
+      } catch {
+        autoRouteOn = false;
+      }
       let useModel = modelForRequest;
       try {
-        const autoRouteOn = localStorage.getItem('august_auto_route') !== '0';
         const candidate = opts?.autoRouteModel;
         if (autoRouteOn && candidate?.id && candidate.provider) {
           useModel = { ...modelForRequest, ...candidate } as ModelItem;
@@ -496,41 +502,60 @@ export function useChatSend(opts: UseChatSendOptions) {
       persistMessages(sessionId, nextMessages);
       playSendChime();
       // Auto-routing (D1): with strong evidence, let the winning model take
-      // this turn. Fetch is bounded (1.5s) — any failure keeps the pick.
+      // this turn — only when the user opted in. Fetch is bounded (1.5s) —
+      // any failure keeps the pick.
       let autoRouteModel: { id: string; provider: string } | null = null;
+      let autoRouteOn = false;
       try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 1500);
-        const res = await fetch(
-          `/api/brain/routing/suggestions?prompt=${encodeURIComponent(text.slice(0, 400))}`,
-          { signal: ctrl.signal },
-        );
-        clearTimeout(timer);
-        if (res.ok) {
-          const data = (await res.json()) as {
-            suggestions?: Array<{
-              model: string;
-              provider: string;
-              wins: number;
-              total: number;
-              winRate: number;
-            }>;
-          };
-          const top = data.suggestions?.[0];
-          if (
-            top &&
-            top.total >= 5 &&
-            top.winRate >= 0.66 &&
-            top.model !== modelForRequest?.id
-          ) {
-            autoRouteModel = { id: top.model, provider: top.provider };
-            toast.message(`Auto-routed to ${top.model}`, {
-              description: `${top.wins}/${top.total} wins on this task type — disable in Settings → Model Fleet`,
-            });
-          }
-        }
+        autoRouteOn = localStorage.getItem('august_auto_route') === '1';
       } catch {
-        /* keep the selected model */
+        autoRouteOn = false;
+      }
+      if (autoRouteOn) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 1500);
+          const res = await fetch(
+            `/api/brain/routing/suggestions?prompt=${encodeURIComponent(text.slice(0, 400))}`,
+            { signal: ctrl.signal },
+          );
+          clearTimeout(timer);
+          if (res.ok) {
+            const data = (await res.json()) as {
+              suggestions?: Array<{
+                model: string;
+                provider: string;
+                wins: number;
+                total: number;
+                winRate: number;
+              }>;
+            };
+            const top = data.suggestions?.[0];
+            if (
+              top &&
+              top.total >= 5 &&
+              top.winRate >= 0.66 &&
+              top.model !== modelForRequest?.id
+            ) {
+              autoRouteModel = { id: top.model, provider: top.provider };
+              toast.message(`Auto-routed to ${top.model}`, {
+                description: `${top.wins}/${top.total} wins on this task type`,
+                action: {
+                  label: 'Disable auto-route',
+                  onClick: () => {
+                    try {
+                      localStorage.setItem('august_auto_route', '0');
+                    } catch {
+                      /* ignore */
+                    }
+                  },
+                },
+              });
+            }
+          }
+        } catch {
+          /* keep the selected model */
+        }
       }
       // Pass the FULL message history — generateAIResponse builds the new
       // messages state from this argument, so passing only `[userMsg]` would

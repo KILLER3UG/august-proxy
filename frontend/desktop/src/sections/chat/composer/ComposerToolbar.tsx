@@ -193,7 +193,7 @@ export function ComposerToolbar({
           // until you have seen it once.
           toast('Verifier ON', {
             description:
-              'August will withhold the final answer until a verification run passes (update_state(phase="complete")). Watch for the amber banner.',
+              'August will withhold the final answer until a verification check passes. Watch for the amber banner.',
           });
         }
       })
@@ -398,13 +398,21 @@ export function ComposerToolbar({
               void send();
             }}
             disabled={!canSend}
-            title="Send (Enter)"
+            title={
+              canSend
+                ? 'Send (Enter)'
+                : !selectedModel
+                  ? 'Select a model first — open the model picker above'
+                  : !sessionId
+                    ? 'Open a chat session first'
+                    : 'Type a message to send'
+            }
             aria-label="Send"
             className={cn(
               'h-8 w-8 rounded-full flex items-center justify-center transition',
               canSend
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                : 'bg-muted text-muted-foreground opacity-50 pointer-events-none',
+                : 'bg-muted text-muted-foreground opacity-50',
             )}
           >
             <Send className="size-3.5" />

@@ -335,6 +335,16 @@ export function removeSessionLocally(id: string): boolean {
     } catch {
       /* ignore */
     }
+    // Drop the in-memory transcript too — the stream store would otherwise
+    // keep the session's blocks/tool previews alive forever. Dynamic import
+    // avoids a store → chat-section import cycle.
+    try {
+      void import('../sections/chat/stream/session-stream-store').then((m) =>
+        m.evictSessionStreamState(lid),
+      );
+    } catch {
+      /* ignore */
+    }
   }
   return true;
 }
