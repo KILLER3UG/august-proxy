@@ -142,6 +142,17 @@ def extractRequestHeaders(request: object) -> dict[str, str]:
     return _extractRequestHeaders(request)
 
 
+def _toolResultBlockMessage(tr: ToolResultBlock) -> dict[str, object]:
+    """Wrap a tool_result block in a role:'user' message.
+
+    The Messages API requires tool_result blocks to live inside a user
+    message — a bare block appended to ``messages`` 400s strict gateways
+    (real API, MiniMax) on the round-2 call. ``translateMessages`` unwraps
+    this shape back into OpenAI tool-role messages for OpenAI upstreams.
+    """
+    return {'role': 'user', 'content': [tr.model_dump()]}  # type: ignore[misc]
+
+
 def _toolResultContentToText(block: dict[str, object]) -> str:
     """Extract plain text from an Anthropic tool_result content block.
 
@@ -443,19 +454,42 @@ async def resolveManagedAnthropicToolUses(
             if not choices:
                 break
             msg = as_dict(choices[0], {})
-            assistantMsg = msg
+            # OpenAI nests the message under choices[0].message — reading the
+            # choice dict itself misses tool_calls entirely.
+            message = as_dict(msg.get('message'), {})
+            # Normalize the (camelized) OpenAI response into the same
+            # Anthropic content-block shape the native branch appends —
+            # the raw message with camelCase `toolCalls` would neither
+            # match the snake_case reader in translateMessages nor survive
+            # the round-2 body rebuild.
+            contentBlocks: list[dict[str, object]] = []
+            text = as_str(message.get('content'), '')
+            if text:
+                contentBlocks.append({'type': 'text', 'text': text})
+            reasoning = as_str(message.get('reasoning'), '') or as_str(message.get('reasoning_content'), '')
+            if reasoning:
+                contentBlocks.append({'type': 'thinking', 'text': reasoning})
             toolUses = []
-            for tc in as_list(msg.get('tool_calls'), []):
+            rawCalls = message.get('toolCalls')
+            if rawCalls is None:
+                rawCalls = message.get('tool_calls')
+            for tc in as_list(rawCalls, []):
                 if not isinstance(tc, dict):
                     continue
                 tcFn = as_dict(tc.get('function'), {})
-                toolUses.append(
-                    {
-                        'type': 'tool_use',
-                        'name': as_str(tcFn.get('name'), ''),
-                        'input': json.loads(as_str(tcFn.get('arguments'), '{}')),
-                    }
-                )
+                try:
+                    toolInput = json.loads(as_str(tcFn.get('arguments'), '{}'))
+                except (json.JSONDecodeError, TypeError):
+                    toolInput = {}
+                block: dict[str, object] = {
+                    'type': 'tool_use',
+                    'id': as_str(tc.get('id'), ''),
+                    'name': as_str(tcFn.get('name'), ''),
+                    'input': toolInput,
+                }
+                contentBlocks.append(block)
+                toolUses.append(block)
+            assistantMsg = {'role': 'assistant', 'content': contentBlocks}
         if not toolUses:
             currentMessages.append(assistantMsg)
             break
@@ -480,10 +514,10 @@ async def resolveManagedAnthropicToolUses(
             try:
                 result = await execute_managed_proxy_tool(toolName, toolInput, workspacePath, parentSignal=parentSignal)
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=format_managed_tool_result(toolName, result))
-                toolResults.append(tr.model_dump())  # type: ignore[misc]
+                toolResults.append(_toolResultBlockMessage(tr))
             except Exception as exc:
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
-                toolResults.append(tr.model_dump())  # type: ignore[misc]
+                toolResults.append(_toolResultBlockMessage(tr))
         currentMessages.append(assistantMsg)
         currentMessages.extend(toolResults)
         if classification['has_client_or_unknown']:
@@ -777,10 +811,10 @@ async def _streamAnthropicNative(
             try:
                 result = await execute_managed_proxy_tool(toolName, toolInput)
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=format_managed_tool_result(toolName, result))
-                currentMessages.append(tr.model_dump())  # type: ignore[misc]
+                currentMessages.append(_toolResultBlockMessage(tr))
             except Exception as exc:
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
-                currentMessages.append(tr.model_dump())  # type: ignore[misc]
+                currentMessages.append(_toolResultBlockMessage(tr))
         continue
     # Only synthesize the terminal stop when the last round's upstream
     # stream did not already end with message_stop (audit finding: clients

@@ -186,9 +186,15 @@ async def _apply_consolidation_plan(plan: dict) -> ConsolidationSummaryDict:
             mergedRule = merge.get('mergedRule')
             if keepId is None or not removeIds:
                 continue
+            # Same most-recent-N protection as the delete path below: fresh
+            # rules survive consolidation even when the LLM plan removes
+            # them (a prompt-injected plan must not be able to wipe recent
+            # heuristics via the merge path).
+            removedAny = False
             for rid in removeIds:
-                if rid == keepId:
+                if rid == keepId or rid in recentIds:
                     continue
+                removedAny = True
 
                 def _deleteMerged(i: object = rid) -> object:
                     conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
@@ -197,6 +203,8 @@ async def _apply_consolidation_plan(plan: dict) -> ConsolidationSummaryDict:
                     return None
 
                 await enqueue_write(_deleteMerged, must_succeed=True)
+            if not removedAny:
+                continue
             if mergedRule:
 
                 def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
@@ -217,6 +225,11 @@ async def _apply_consolidation_plan(plan: dict) -> ConsolidationSummaryDict:
                 continue
 
             def _insertFact(k: object = factKey, v: object = factValue) -> object:
+                # Dedup: repeated promotions of the same pattern must not
+                # pile up duplicate fact rows.
+                exists = conn.execute('SELECT 1 FROM facts WHERE fact_key = ?', (k,)).fetchone()
+                if exists:
+                    return None
                 conn.execute(
                     'INSERT INTO facts (fact_key, fact_value, category, source, confidence) VALUES (?, ?, ?, ?, ?)',
                     (k, v, 'auto-promoted', 'consolidation', 0.8),

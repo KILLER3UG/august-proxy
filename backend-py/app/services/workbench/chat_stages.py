@@ -93,7 +93,10 @@ async def run_regular_tools_stage(
                 record_tool_friction(currentSessionId.get(''), name, str(exc)[:200])
             except Exception:
                 pass
-            raise
+            # Return an error tool result instead of raising: a crashed tool
+            # must not cancel its parallel siblings (gather) or kill the
+            # round — the model should see the failure and recover.
+            return {'role': 'tool', 'tool_use_id': tid, 'content': f'Error: {exc}', 'is_error': True}
 
     if len(pending) > 1 and all(is_parallel_safe(n) for n, _, _ in pending):
         return list(

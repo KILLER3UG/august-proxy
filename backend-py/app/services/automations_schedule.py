@@ -100,6 +100,9 @@ def parse_schedule(schedule: str) -> dict[str, object]:
         return {'kind': 'interval', 'everySeconds': seconds, 'raw': s}
     parts = s.split()
     if len(parts) == 5:
+        # Validate field values up front so typo'd crons (e.g. hour 99)
+        # fail loudly at creation instead of silently never firing.
+        _parse_cron_fields(s)
         return {'kind': 'cron', 'expr': s, 'raw': s}
     raise ValueError(f'unsupported schedule: {schedule!r}')
 
@@ -123,7 +126,14 @@ def _parse_cron_fields(expression: str) -> tuple[list[int], list[int], list[int]
                 values.extend(range(int(low), int(high) + 1))
             else:
                 values.append(int(part))
-        return sorted({v for v in values if min_val <= v <= max_val})
+        out = sorted({v for v in values if min_val <= v <= max_val})
+        # Silent filtering turned out-of-range values (e.g. hour 99) into
+        # jobs that never fire — reject them instead.
+        if len(out) != len(set(values)):
+            raise ValueError(
+                f'Invalid cron field {field!r}: values must be within {min_val}-{max_val}'
+            )
+        return out
 
     return (
         parse_field(fields[0], 0, 59),
@@ -134,17 +144,25 @@ def _parse_cron_fields(expression: str) -> tuple[list[int], list[int], list[int]
     )
 
 
+def _matches_cron_fields(
+    minutes: list[int], hours: list[int], days: list[int], months: list[int], weekdays: list[int], dt: datetime
+) -> bool:
+    dom_ok = dt.day in days
+    # Cron day-of-week is 0=Sunday…6=Saturday; dt.weekday() is
+    # 0=Monday…6=Sunday — shift before comparing.
+    dow_ok = ((dt.weekday() + 1) % 7) in weekdays
+    # Standard cron semantics: when BOTH day-of-month and day-of-week are
+    # restricted, a match on EITHER fires the job — ANDing them made
+    # "0 9 1 * 1-5" run only on Mondays that happen to be the 1st.
+    dom_restricted = len(days) < 31
+    dow_restricted = len(weekdays) < 7
+    day_ok = (dom_ok or dow_ok) if (dom_restricted and dow_restricted) else (dom_ok and dow_ok)
+    return dt.minute in minutes and dt.hour in hours and day_ok and dt.month in months
+
+
 def matches_cron(expr: str, dt: datetime) -> bool:
     minutes, hours, days, months, weekdays = _parse_cron_fields(expr)
-    return (
-        dt.minute in minutes
-        and dt.hour in hours
-        and dt.day in days
-        and dt.month in months
-        # Cron day-of-week is 0=Sunday…6=Saturday; dt.weekday() is
-        # 0=Monday…6=Sunday — shift before comparing.
-        and ((dt.weekday() + 1) % 7) in weekdays
-    )
+    return _matches_cron_fields(minutes, hours, days, months, weekdays, dt)
 
 
 def compute_next_run_at(
@@ -169,9 +187,19 @@ def compute_next_run_at(
         nxt = base + timedelta(seconds=int(every_seconds))
         return nxt.astimezone(timezone.utc).isoformat()
     expr = str(parsed['expr'])
+    try:
+        fields = _parse_cron_fields(expr)
+        # Standard cron can leave gaps longer than a week (day-of-month
+        # fields) — search a full year when dom is restricted, else the
+        # usual 8-day window covers any dow-only gap.
+        dom_restricted = len(fields[2]) < 31
+    except ValueError:
+        return None
+    window_minutes = 60 * 24 * 366 if dom_restricted else 60 * 24 * 8
     cursor = (base + timedelta(minutes=1)).replace(second=0, microsecond=0)
-    for _ in range(60 * 24 * 8):
-        if matches_cron(expr, cursor):
+    minutes, hours, days, months, weekdays = fields
+    for _ in range(window_minutes):
+        if _matches_cron_fields(minutes, hours, days, months, weekdays, cursor):
             return cursor.astimezone(timezone.utc).isoformat()
         cursor += timedelta(minutes=1)
     return None
@@ -204,4 +232,8 @@ def is_due(
         return True
     tz = resolve_tz(timezone_name)
     local = now_utc.astimezone(tz)
-    return matches_cron(str(parsed['expr']), local)
+    try:
+        return matches_cron(str(parsed['expr']), local)
+    except ValueError:
+        # Corrupted/stale stored cron must never break the scheduler tick.
+        return False

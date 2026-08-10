@@ -150,7 +150,7 @@ async def _writeScratchpad(text: str) -> str:
 _EXIT_CODE_RE = re.compile(r'exit code:\s*(-?\d+)', re.IGNORECASE)
 # Order matters: explicit clean-run signals first, then failure markers, then
 # weak pass markers — so "2 failed, 10 passed" fails and "0 failed" passes.
-_STRONG_PASS_MARKERS = ('0 failed', 'no failures', 'all checks passed', 'build succeeded')
+_STRONG_PASS_MARKERS = ('0 failed', '0 failures', 'no failures', 'all checks passed', 'build succeeded')
 _FAIL_MARKERS = ('failed', 'failure', 'traceback', 'error:', 'assertionerror')
 _WEAK_PASS_MARKERS = ('passed', '✓')
 
@@ -176,10 +176,12 @@ def _verificationVerdict(receipts: list[object], expected_command: str = '') -> 
     if not receipts:
         return ('none', '')
     matched_declared = False
+    saw_content = False
     for receipt in reversed(receipts):
         text = as_str(as_dict(receipt).get('content'), '').lower() if isinstance(receipt, dict) else ''
         if not text:
             continue
+        saw_content = True
         if expected_command:
             cmd = as_str(as_dict(receipt).get('command'), '') if isinstance(receipt, dict) else ''
             if _normalizeCommand(cmd) != _normalizeCommand(expected_command):
@@ -202,6 +204,10 @@ def _verificationVerdict(receipts: list[object], expected_command: str = '') -> 
         # A verification command was DECLARED but no receipt came from it —
         # the gate must not give the benefit of the doubt to other commands.
         return ('none', 'no receipt from the declared verification command')
+    if not saw_content:
+        # Every receipt is empty — a command that produced nothing must not
+        # clear the gate (previously fell through to 'unclear' → pass).
+        return ('none', 'no usable command output recorded this turn')
     return ('unclear', '')
 
 

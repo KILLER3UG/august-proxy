@@ -459,9 +459,13 @@ _persist_io_lock = threading.Lock()
 def _persist_sessions_snapshot() -> None:
     """Take a snapshot under the lock, then write SQLite/JSON without holding
     `_sessions_lock` across I/O so concurrent chat turns are not stalled.
+
+    The in-memory map is a recency window (200, matching ``_load_sessions``);
+    SQLite stays the source of truth and ``list_workbench_sessions`` merges
+    sessions beyond the window so they never silently disappear from the UI.
     """
     with _sessions_lock:
-        sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
+        sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:200]
         keep_ids = {s.id for s in sorted_sessions}
         for sid in list(_sessions.keys()):
             if sid not in keep_ids:
@@ -547,7 +551,7 @@ def export_sessions_json() -> Path:
     with _sessions_lock:
         if not _sessions:
             _load_sessions()
-        sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
+        sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:200]
         path = _sessions_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         write_json_atomic(path, [s.toDict() for s in sorted_sessions], indent=2)
@@ -783,10 +787,26 @@ def set_workbench_session_agent(session_id: str, agent_id: str) -> WorkbenchSess
 
 
 def list_workbench_sessions() -> list[dict[str, object]]:
-    """Return all sessions summarized."""
+    """Return all sessions summarized (memory ∪ SQLite, newest first).
+
+    SQLite is the source of truth and the in-memory map is only a recency
+    window — sessions beyond it must still surface in the list (a hard
+    in-memory cap used to silently hide older chats from the UI).
+    """
     if not _sessions:
         _load_sessions()
-    sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)
+    merged: dict[str, WorkbenchSession] = dict(_sessions)
+    try:
+        from app.services import memory_store
+
+        blobs = memory_store.list_workbench_blobs(limit=500)
+        for blob in blobs:
+            session = WorkbenchSession.fromDict(blob)
+            if session.id and session.id not in merged:
+                merged[session.id] = session
+    except Exception:
+        logger.debug('SQLite session list failed; memory only', exc_info=True)
+    sorted_sessions = sorted(merged.values(), key=lambda s: s.updatedAt, reverse=True)
     return [summarize_session(s) for s in sorted_sessions]
 
 
@@ -815,7 +835,7 @@ def delete_workbench_session(session_id: str) -> bool:
         notify_session_deleted(session_id)
         try:
             path = _sessions_path()
-            remaining = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
+            remaining = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:200]
             write_json_atomic(path, [s.toDict() for s in remaining], indent=2)
         except Exception:
             pass

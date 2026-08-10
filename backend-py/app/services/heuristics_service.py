@@ -377,12 +377,12 @@ def rollbackHeuristic(ruleId: int) -> bool:
     return False
 
 
-def markHeuristicSurfaced(ruleIds: list[int]) -> None:
+def markHeuristicSurfaced(rule_ids: list[int]) -> None:
     """Bump ``use_count`` + ``last_surfaced_at`` for rules injected into a
     prompt (called from the workbench prompt builder). Repeated surfacing is
     the "this rule keeps winning" signal that feeds skill promotion. Never
     raises."""
-    ids = [int(i) for i in ruleIds if isinstance(i, int) or str(i).isdigit()]
+    ids = [int(i) for i in rule_ids if isinstance(i, int) or str(i).isdigit()]
     if not ids:
         return
     try:

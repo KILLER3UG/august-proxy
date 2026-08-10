@@ -15,6 +15,7 @@ of ``/v1/*``.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import AsyncIterator
 
@@ -314,6 +315,13 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
             except Exception:
                 pass
             yield chunk
+    except asyncio.CancelledError:
+        # Client disconnect: finalize the request entry now — leaving it
+        # "pending" until the stale sweep made aborted streams look hung.
+        trafficLogger.capture_error(reqId, 'client disconnected')
+        trafficLogger.endRequest(reqId, {'error': 'client disconnected'})
+        trafficLogger.logActivity('request_aborted', f'[{reqId}] stream aborted by client')
+        raise
     except Exception as exc:
         trafficLogger.capture_error(reqId, str(exc)[:500])
         trafficLogger.endRequest(reqId, {'error': str(exc)})
@@ -367,7 +375,15 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
             trace_id=reqId,
         )
     finally:
-        pass
+        # Close the inner upstream generator even when the outer stream is
+        # closed early (client disconnect) — otherwise the upstream HTTP
+        # connection lingers until GC. Idempotent on normal exhaustion.
+        try:
+            aclose = getattr(stream, 'aclose', None)
+            if aclose is not None:
+                await aclose()
+        except BaseException:
+            pass
 
 
 @router.post('/v1/messages')

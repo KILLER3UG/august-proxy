@@ -103,31 +103,34 @@ def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | Non
 
 
 async def runJobNow(jobId: str) -> dict[str, object]:
-    """Execute a job immediately."""
+    """Execute a job immediately.
+
+    Runs through the standard sandbox (same policy as workbench run_command
+    and automations_store shell jobs) — legacy cron jobs must not be able to
+    bypass the sandbox.
+    """
     job = _jobs.get(jobId)
     if not job:
         return {'error': 'Job not found'}
     job['status'] = 'running'
     try:
-        from app.lib.async_subprocess import SubprocessAborted, communicate_or_kill
+        from app.services.sandbox.policy import SandboxPolicy
+        from app.services.sandbox.runner import run_sandboxed
 
-        proc = await asyncio.create_subprocess_shell(
-            as_str(job['command'], ''),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.DEVNULL,
+        command = as_str(job.get('command'), '')
+        cwd = as_str(job.get('cwd'), '') or ''
+        policy = SandboxPolicy(
+            mode='workspace-write',
+            workspace_root=cwd,
+            network=False,
         )
-        stdout, stderr = await communicate_or_kill(proc, timeout=300)
+        result = await run_sandboxed(command, policy, timeout=300)
         job['lastRun'] = _now()
-        job['status'] = 'idle'
-        job['lastResult'] = stdout.decode('utf-8', errors='replace')[:1000]
-        if proc.returncode != 0:
-            job['lastError'] = stderr.decode('utf-8', errors='replace')[:500]
+        job['status'] = 'idle' if result.exit_code == 0 else 'error'
+        job['lastResult'] = result.as_tool_text()[:1000]
+        if result.exit_code != 0:
+            job['lastError'] = result.as_tool_text()[:500]
         _saveJobs()
-        return job
-    except SubprocessAborted:
-        job['status'] = 'error'
-        job['lastError'] = 'Timeout'
         return job
     except Exception as exc:
         job['status'] = 'error'
@@ -166,7 +169,11 @@ async def startScheduler(intervalS: int = 60) -> None:
         for jobId, job in list(_jobs.items()):
             if not job.get('enabled'):
                 continue
-            if _matchesCron(as_str(job.get('schedule'), '* * * * *'), now):
+            try:
+                due = _matchesCron(as_str(job.get('schedule'), '* * * * *'), now)
+            except ValueError:
+                due = False  # corrupted legacy schedule must not break the tick
+            if due:
                 # Skip jobs still running from a previous tick — a slow job
                 # (longer than the tick interval) must not fire concurrently.
                 prev = _tasks.get(jobId)

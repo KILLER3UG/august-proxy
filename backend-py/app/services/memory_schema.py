@@ -202,11 +202,22 @@ _CORE_SCHEMA_SQL = """
 
 
 def ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
-    """Add a column to a table if it does not already exist (idempotent)."""
+    """Add a column to a table if it does not already exist (idempotent).
+
+    Tolerates the concurrent-init race: two connections (e.g. the debounced
+    session-snapshot thread and the main loop during startup) can both see
+    the column missing and both ALTER — the loser gets "duplicate column
+    name", which is harmless and must not abort schema setup.
+    """
     cols = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})').fetchall()}
     if column not in cols:
-        conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {decl}')
-        conn.commit()
+        try:
+            conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {decl}')
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            if 'duplicate column' in str(exc).lower():
+                return
+            raise
 
 
 def create_core_schema(conn: sqlite3.Connection) -> None:

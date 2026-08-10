@@ -68,6 +68,21 @@ _READER_COMMANDS = frozenset(
 
 _ENV_TEMPLATE_SUFFIX = re.compile(r'\.(?:example|sample|template)$', re.IGNORECASE)
 
+# Readers that can still mutate files in place via flags. A "reader"
+# carrying one of these is treated as a writer — `sed -i`, `awk -i
+# inplace` and `find -delete` can otherwise edit/remove `.env`,
+# `providers.json` and `~/.ssh/*` even in Full Access.
+_MUTATING_FLAG_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    'sed': (re.compile(r'^(?:-i|--in-place)(?:\.[A-Za-z0-9_.-]+)?$', re.IGNORECASE),),
+    'awk': (re.compile(r'^-i.*inplace', re.IGNORECASE),),
+    'find': (
+        re.compile(
+            r'^-(?:delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$', re.IGNORECASE
+        ),
+    ),
+    'sort': (re.compile(r'^-o$', re.IGNORECASE),),
+}
+
 
 def _canonical(text: str) -> str:
     """Canonicalize a path token for matching (backslash → slash)."""
@@ -76,6 +91,28 @@ def _canonical(text: str) -> str:
 
 def _tokenize(command: str) -> list[str]:
     return [tok.strip('"\'').strip() for tok in re.split(r'\s+', command) if tok.strip()]
+
+
+def _segment_is_write(first: str, tokens: list[str]) -> bool:
+    """Judge one command segment's mutating potential.
+
+    Non-readers are always writers; readers are writers when they carry a
+    mutating flag (``sed -i``, ``awk -i inplace``, ``find -delete``,
+    ``sort -o``…).
+    """
+    if first not in _READER_COMMANDS:
+        return True
+    patterns = _MUTATING_FLAG_PATTERNS.get(first)
+    if not patterns:
+        return False
+    for i, tok in enumerate(tokens[1:], start=1):
+        for pat in patterns:
+            if pat.match(tok):
+                return True
+        # gawk's two-token in-place form: `awk -i inplace '...' file`
+        if first == 'awk' and tok == '-i' and i + 1 < len(tokens) and tokens[i + 1].lower() == 'inplace':
+            return True
+    return False
 
 
 def _is_write_intent(command: str) -> bool:
@@ -95,7 +132,7 @@ def _is_write_intent(command: str) -> bool:
         # Strip common invocation prefixes (sudo, xargs, env KEY=...).
         if first in ('sudo', 'xargs', 'env', 'command'):
             first = tokens[1].split('/')[-1].split('\\')[-1].lower() if len(tokens) > 1 else first
-        if first not in _READER_COMMANDS:
+        if _segment_is_write(first, tokens):
             return True
     return False
 
