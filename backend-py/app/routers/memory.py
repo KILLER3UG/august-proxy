@@ -123,6 +123,8 @@ async def listAutoMemoriesRoute(
     category: str = '',
     origin: str = 'all',
     include_telemetry: bool | None = None,
+    folder_id: str = '',
+    session_id: str = '',
 ):
     """List auto-memories, grouped by category.
 
@@ -130,6 +132,8 @@ async def listAutoMemoriesRoute(
     Settings UIs pass ``recalled`` / ``added``; tools use default ``all``.
     Telemetry keys (``tool_failure_*``) are hidden for ``origin=recalled`` unless
     ``include_telemetry=true``.
+    ``folder_id`` filters to memories from sessions in that folder (project
+    memories); ``session_id`` filters to one session.
     """
     from app.services.memory.auto_memory import list_all_auto_memories
 
@@ -137,7 +141,9 @@ async def listAutoMemoriesRoute(
         tele = origin != 'recalled'
     else:
         tele = include_telemetry
-    items = list_all_auto_memories(category, origin=origin, include_telemetry=tele)
+    items = list_all_auto_memories(
+        category, origin=origin, include_telemetry=tele, folder_id=folder_id, session_id=session_id
+    )
     grouped: dict[str, list[object]] = {}
     for item in items:
         cat = str(item.get('category') or 'auto')

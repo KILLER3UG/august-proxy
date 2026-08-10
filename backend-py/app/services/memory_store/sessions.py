@@ -150,6 +150,17 @@ def save_workbench_session_sot(
     except Exception:
         conn.rollback()
         raise
+    # Topic index (deterministic, no LLM): derive a session topic from the
+    # title so workflow detection + topic-based cross-session recall have
+    # data to work with (previously session_topics was never written).
+    try:
+        from app.services.memory_store.rest import index_session_topic
+
+        topic = (title or '').strip()[:48]
+        if topic:
+            index_session_topic(sid, topic)
+    except Exception:
+        pass
 
 
 def get_workbench_blob(session_id: str) -> dict[str, object] | None:

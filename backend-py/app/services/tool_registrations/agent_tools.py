@@ -162,12 +162,14 @@ async def _spawnSubagent(
     context: str = '',
     toolsets: list[str] | None = None,
     background: bool = False,
+    effort: str = 'medium',
 ) -> str:
     """Dispatch a sub-agent for a focused task.
 
     Prefer calling this several times in one turn (or use spawn_subagents) to
     parallelize investigation. With ``background=true``, returns as soon as the
     worker is dispatched; completion is delivered individually when it settles.
+    ``effort``: low | medium | high | max — reasoning effort for the sub-agent.
     """
     from app.services import event_log
     from app.services.runtime_services import get_orchestrator
@@ -191,6 +193,7 @@ async def _spawnSubagent(
         'goal': goal,
         'agentId': agentId or 'general',
         'context': context or '',
+        'effort': effort if effort in ('low', 'medium', 'high', 'max') else 'medium',
     }
     if toolsets:
         # Restrict to named toolsets is not a denylist; pass through as context hint.
@@ -381,6 +384,12 @@ def register() -> None:
                         'If true, return as soon as the worker is dispatched; completion is '
                         'delivered to you when it settles. Prefer true when launching several in parallel.'
                     ),
+                },
+                'effort': {
+                    'type': 'string',
+                    'enum': ['low', 'medium', 'high', 'max'],
+                    'default': 'medium',
+                    'description': 'Reasoning effort for the sub-agent. Default medium.',
                 },
             },
             'required': ['goal'],

@@ -34,6 +34,8 @@ class WorkItem(CamelModel):
     agent_id: str = 'general'
     restricted_tools: list[str] | None = None
     context: str = ''
+    model: str = ''
+    effort: str = 'medium'
 
 
 class SpawnRequest(CamelModel):
@@ -82,6 +84,8 @@ async def spawnSubagents(body: SpawnRequest, request: Request):
             'agentId': w.agent_id,
             'restrictedTools': w.restricted_tools,
             'context': w.context,
+            'model': w.model,
+            'effort': w.effort if w.effort in ('low', 'medium', 'high', 'max') else 'medium',
         }
         for w in body.work_items
     ]

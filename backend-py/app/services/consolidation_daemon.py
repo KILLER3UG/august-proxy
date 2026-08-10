@@ -14,9 +14,16 @@ import json
 import logging
 import os
 import time
+from datetime import timezone
 
-from app.json_narrowing import as_dict, as_list
+from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.type_aliases import ConsolidationSummaryDict
+
+# Memories older than this (with low importance, unpinned, non-user) are
+# proposed for archival by the sleep cycle. Deterministic guard — the LLM
+# plan is advisory, the apply step enforces this.
+_ARCHIVE_AGE_DAYS = 60
+_ARCHIVE_MAX_IMPORTANCE = 0.7
 
 logger = logging.getLogger(__name__)
 _CONSOLIDATIONInterval = 86400
@@ -147,7 +154,7 @@ async def _build_consolidation_plan() -> dict | None:
         heuristics = [dict(r) for r in conn.execute('SELECT * FROM learned_heuristics ORDER BY id DESC').fetchall()]
         if not (heuristics or autoMemories):
             return None
-        prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": []}}.\n"""
+        prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...],\n 'archiveMemories': [{{'id': int, 'reason': str}}]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\narchiveMemories may only propose stale (old, low-importance, unpinned, auto) memories —\nthe apply step enforces this.\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": [], "archiveMemories": []}}.\n"""
         raw = await _callHippocampus(prompt)
         if not raw:
             return None
@@ -167,7 +174,7 @@ async def _apply_consolidation_plan(plan: dict) -> ConsolidationSummaryDict:
     Writes go through db_writer (single-write-queue); every mutation is
     mirrored to the audit trail. Most-recent 20 rules are protected.
     """
-    stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
+    stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'archived': 0, 'errors': []}
     try:
         from app.services.db_writer import enqueue_write
         from app.services.memory_store import _conn
@@ -252,6 +259,51 @@ async def _apply_consolidation_plan(plan: dict) -> ConsolidationSummaryDict:
 
             await enqueue_write(_deleteStale, must_succeed=True)
             stats['deleted_stale'] += 1
+        # Stale auto-memory archival (deterministic guard): the LLM plan may
+        # propose memory ids, but only old, low-importance, unpinned,
+        # non-user memories are actually archived — with a timeline trail.
+        for arcRaw in as_list(plan.get('archiveMemories'), []):
+            arc = as_dict(arcRaw)
+            mid = arc.get('id')
+            if mid is None:
+                continue
+            row = conn.execute(
+                'SELECT id, key, importance, pinned, source, created_at FROM auto_memories WHERE id = ?',
+                (mid,),
+            ).fetchone()
+            if row is None:
+                continue
+            created = as_str(row['created_at'], '')
+            try:
+                from datetime import datetime as _dt
+
+                created_dt = _dt.fromisoformat(created.replace('Z', '+00:00'))
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+                age_days = (_dt.now(timezone.utc) - created_dt).days
+            except Exception:
+                age_days = 0
+            if age_days < _ARCHIVE_AGE_DAYS:
+                continue
+            if float(row['importance'] or 0) >= _ARCHIVE_MAX_IMPORTANCE:
+                continue
+            if int(row['pinned'] or 0) == 1 or as_str(row['source'], '') == 'user':
+                continue
+
+            def _archiveMem(i: object = mid, k: object = row['key']) -> object:
+                conn.execute('DELETE FROM auto_memories WHERE id = ?', (i,))
+                conn.commit()
+                try:
+                    from app.services.memory_store import write_timeline_event
+
+                    write_timeline_event(None, f'Consolidation archived stale memory: {k}', 'memory')
+                except Exception:
+                    pass
+                _record_audit('archive-memory', target_key=str(k), reason='stale low-importance memory')
+                return None
+
+            await enqueue_write(_archiveMem, must_succeed=True)
+            stats['archived'] = as_int(stats.get('archived'), 0) + 1
     except Exception as exc:
         stats['errors'].append(str(exc))
         logger.error('Consolidation error: %s', exc)

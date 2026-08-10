@@ -41,12 +41,12 @@ def list_tasks(active_only: bool = True) -> list[dict]:
     try:
         if active_only:
             rows = _conn().execute(
-                'SELECT id, trigger, message, active, created_at, last_fired_at '
+                'SELECT id, trigger, message, model, active, created_at, last_fired_at '
                 'FROM recurring_tasks WHERE active = 1 ORDER BY id DESC'
             ).fetchall()
         else:
             rows = _conn().execute(
-                'SELECT id, trigger, message, active, created_at, last_fired_at '
+                'SELECT id, trigger, message, model, active, created_at, last_fired_at '
                 'FROM recurring_tasks ORDER BY id DESC'
             ).fetchall()
         return [dict(r) for r in rows]
@@ -55,7 +55,7 @@ def list_tasks(active_only: bool = True) -> list[dict]:
         return []
 
 
-def add_task(trigger: str, message: str) -> int | None:
+def add_task(trigger: str, message: str, model: str = '') -> int | None:
     trigger = (trigger or '').strip()
     message = (message or '').strip()
     if not trigger or not message:
@@ -63,8 +63,8 @@ def add_task(trigger: str, message: str) -> int | None:
     try:
         conn = _conn()
         conn.execute(
-            'INSERT INTO recurring_tasks (trigger, message) VALUES (?, ?)',
-            (trigger[:300], message[:2000]),
+            'INSERT INTO recurring_tasks (trigger, message, model) VALUES (?, ?, ?)',
+            (trigger[:300], message[:2000], (model or '').strip()[:120]),
         )
         conn.commit()
         return conn.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -127,13 +127,15 @@ def parse_agent_directive(message: str) -> tuple[str, str, str]:
     return (clean, m.group(1) or '', m.group(2) or '')
 
 
-def check_and_fire(session_id: str, workspace_path: str = '') -> list[str]:
+def check_and_fire(session_id: str, workspace_path: str = '') -> list[tuple[str, str]]:
     """Evaluate all active tasks against a session start / turn.
 
-    Returns the messages of tasks that fire now (and records their
-    ``last_fired_at``). Never raises.
+    Returns ``(message, model)`` pairs of tasks that fire now — ``model`` is
+    the task's pinned sub-agent model ('' when unset; the ``[agent:ID
+    model:MODEL]`` text directive still wins when present). Records each
+    task's ``last_fired_at``. Never raises.
     """
-    fired: list[str] = []
+    fired: list[tuple[str, str]] = []
     try:
         from pathlib import Path
 
@@ -177,7 +179,7 @@ def check_and_fire(session_id: str, workspace_path: str = '') -> list[str]:
                 conn.commit()
             except Exception:
                 pass
-            fired.append(message)
+            fired.append((message, as_str(task.get('model'), '')))
     except Exception as exc:
         logger.debug('recurring task check failed: %s', exc)
     return fired

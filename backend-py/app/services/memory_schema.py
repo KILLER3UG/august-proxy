@@ -383,6 +383,10 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     conn.execute('CREATE INDEX IF NOT EXISTS idx_blackboard_session ON blackboard(session_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_exam_attempts_exam ON exam_attempts(exam_id)')
     conn.commit()
+    # auto_memories.source_session_id is written by saveAutoMemory and read by
+    # the project-memories view — ensure it exists on fresh installs (the
+    # CREATE TABLE predates the column).
+    ensure_column(conn, 'auto_memories', 'source_session_id', 'TEXT')
     ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
     # Full workbench session JSON + last-update time (primary session store).
     ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')

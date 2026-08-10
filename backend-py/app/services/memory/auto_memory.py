@@ -17,12 +17,13 @@ import re
 import sqlite3
 from datetime import datetime, timezone
 
+from app.json_narrowing import as_dict, as_int, as_str
 from app.services.memory_store import get_memory, save_memory
 
 _MAXMemories = 100
 _AREAS_CATEGORIES = frozenset({'correction', 'learning', 'preference', 'user'})
 _TELEMETRY_KEY_PREFIXES = ('tool_failure_',)
-_ROW_COLS = 'id, key, content, category, importance, source, pinned, created_at, updated_at'
+_ROW_COLS = 'id, key, content, category, importance, source, pinned, created_at, updated_at, source_session_id'
 _NEAR_DUP_THRESHOLD = 0.85
 _NEAR_DUP_IMPORTANCE_STEP = 0.1
 _EPISODE_MERGE_MIN = 8
@@ -551,6 +552,41 @@ def getRelevantMemories(
                     except (json.JSONDecodeError, TypeError):
                         pass
                     result.append(enrich_memory_for_model(item))
+                # Hybrid recall: merge top semantic (vector) hits that FTS
+                # missed — different wording should still recall the memory.
+                try:
+                    from app.services.memory.vector_db import search as _vectorSearch
+
+                    vec_hits = _vectorSearch(query, namespace='auto_memory', top_k=max(lim * 2, 8))
+                    seen_ids = {as_int(r.get('id'), 0) for r in result}
+                    added = 0
+                    for hit in vec_hits:
+                        if added >= max(1, lim // 2):
+                            break
+                        meta = as_dict(hit.get('metadata'), {})
+                        key = as_str(meta.get('key'), '')
+                        if not key:
+                            continue
+                        row = conn.execute(
+                            'SELECT id FROM auto_memories WHERE key = ?', (key,)
+                        ).fetchone()
+                        if row is None or as_int(row['id'], 0) in seen_ids:
+                            continue
+                        mrow = conn.execute(
+                            f'SELECT {cols} FROM auto_memories WHERE id = ?', (as_int(row['id'], 0),)
+                        ).fetchone()
+                        if mrow is None:
+                            continue
+                        item = _row_as_wire(mrow)
+                        try:
+                            item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                        result.append(enrich_memory_for_model(item))
+                        seen_ids.add(as_int(row['id'], 0))
+                        added += 1
+                except Exception:
+                    pass
                 return result
     except Exception:
         pass
@@ -617,10 +653,14 @@ def list_all_auto_memories(
     category: str = '',
     origin: str = 'all',
     include_telemetry: bool = True,
+    folder_id: str = '',
+    session_id: str = '',
 ) -> list[dict[str, object]]:
     """List ``auto_memories`` rows with optional origin / telemetry filters.
 
     ``origin``: ``all`` | ``recalled`` | ``added``
+    ``folder_id``: only memories whose source session lives in that folder
+    (project memories); ``session_id``: only memories from one session.
     """
     conn = _conn()
     from app.services.memory_store import _row_as_wire
@@ -635,10 +675,23 @@ def list_all_auto_memories(
         clauses.append("source = 'user'")
     elif origin_n == 'recalled':
         clauses.append("COALESCE(source, '') != 'user'")
+    if folder_id:
+        clauses.append('s.folder_id = ?')
+        params.append(folder_id)
+    if session_id:
+        clauses.append('m.source_session_id = ?')
+        params.append(session_id)
     where = f'WHERE {" AND ".join(clauses)}' if clauses else ''
+    joining = bool(folder_id or session_id)
+    from_clause = (
+        'FROM auto_memories m LEFT JOIN sessions s ON m.source_session_id = s.id'
+        if joining
+        else 'FROM auto_memories'
+    )
+    select_cols = ', '.join(f'm.{c}' for c in _ROW_COLS.split(', ')) if joining else _ROW_COLS
+    order = 'ORDER BY m.category ASC, m.updated_at DESC, m.id DESC' if joining else 'ORDER BY category ASC, updated_at DESC, id DESC'
     rows = conn.execute(
-        f'SELECT {_ROW_COLS} '
-        f'FROM auto_memories {where} ORDER BY category ASC, updated_at DESC, id DESC',
+        f'SELECT {select_cols} {from_clause} {where} {order}',
         params,
     ).fetchall()
     result = []

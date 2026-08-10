@@ -32,7 +32,11 @@ async def addRecurringTask(body: dict):
     """
     from app.services.recurring_tasks import add_task
 
-    task_id = add_task(as_str(body.get('trigger'), ''), as_str(body.get('message'), ''))
+    task_id = add_task(
+        as_str(body.get('trigger'), ''),
+        as_str(body.get('message'), ''),
+        as_str(body.get('model'), ''),
+    )
     if task_id is None:
         raise HTTPException(status_code=400, detail='trigger and message are required')
     return {'id': task_id}
