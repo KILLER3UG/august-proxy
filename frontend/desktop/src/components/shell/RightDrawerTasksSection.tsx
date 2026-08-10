@@ -59,47 +59,66 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
         </div>
       )}
 
-      <div className="space-y-1">
-        {todos.map((todo, index) => (
-          <div
-            key={todo.id}
-            className={cn(
-              'flex items-start gap-2 rounded-lg border px-2.5 py-2',
-              todo.status === 'completed' && 'border-success/15 bg-success/5',
-              todo.status === 'in_progress' && 'border-primary/25 bg-primary/5',
-              todo.status === 'pending' && 'border-border/60 bg-card/40'
-            )}
-          >
-            <span className="pt-0.5 shrink-0">
-              {todo.status === 'completed' ? (
-                <Check className="size-3 text-success" />
-              ) : todo.status === 'in_progress' ? (
-                <ArrowRight className="size-3 text-primary" />
-              ) : (
-                <Circle className="size-3 text-muted-foreground/45" />
-              )}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground/55 tabular-nums">
-                  A{index + 1}
-                </span>
-                {index === activeIndex && (
-                  <CheckSquare className="size-3 text-primary" />
-                )}
-              </div>
-              <div className={cn(
-                'mt-0.5 leading-relaxed',
-                todo.status === 'completed' && 'text-muted-foreground line-through',
-                todo.status === 'in_progress' && 'text-foreground',
-                todo.status === 'pending' && 'text-muted-foreground/75'
-              )}>
-                {todo.content}
-              </div>
+      {(['in_progress', 'pending', 'completed'] as const).map((section) => {
+        const items = todos.filter((todo) => todo.status === section);
+        if (items.length === 0) return null;
+        const labels = {
+          in_progress: 'In progress',
+          pending: 'Pending',
+          completed: 'Completed',
+        } as const;
+        return (
+          <div key={section} className="space-y-1">
+            <div className="flex items-center gap-1.5 px-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
+              <span className="size-1.5 rounded-full bg-current" />
+              {labels[section]}
+              <span className="ml-auto font-mono tabular-nums opacity-70">{items.length}</span>
             </div>
+            {items.map((todo) => {
+              const index = todos.indexOf(todo);
+              return (
+                <div
+                  key={todo.id}
+                  className={cn(
+                    'flex items-start gap-2 rounded-lg border px-2.5 py-2',
+                    section === 'completed' && 'border-success/15 bg-success/5',
+                    section === 'in_progress' && 'border-primary/25 bg-primary/5',
+                    section === 'pending' && 'border-border/60 bg-card/40'
+                  )}
+                >
+                  <span className="pt-0.5 shrink-0">
+                    {section === 'completed' ? (
+                      <Check className="size-3 text-success" />
+                    ) : section === 'in_progress' ? (
+                      <ArrowRight className="size-3 text-primary" />
+                    ) : (
+                      <Circle className="size-3 text-muted-foreground/45" />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground/55 tabular-nums">
+                        A{index + 1}
+                      </span>
+                      {index === activeIndex && (
+                        <CheckSquare className="size-3 text-primary" />
+                      )}
+                    </div>
+                    <div className={cn(
+                      'mt-0.5 leading-relaxed',
+                      section === 'completed' && 'text-muted-foreground line-through',
+                      section === 'in_progress' && 'text-foreground',
+                      section === 'pending' && 'text-muted-foreground/75'
+                    )}>
+                      {todo.content}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }

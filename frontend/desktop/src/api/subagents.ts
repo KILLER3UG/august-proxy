@@ -8,6 +8,8 @@ export interface WorkItem {
   agentId?: string;
   restrictedTools?: string[];
   context?: string;
+  model?: string;
+  effort?: 'low' | 'medium' | 'high' | 'max';
 }
 
 export interface SpawnRequest {

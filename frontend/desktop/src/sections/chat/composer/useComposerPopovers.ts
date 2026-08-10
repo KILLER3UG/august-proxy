@@ -15,9 +15,10 @@ import {
   type SetStateAction,
 } from 'react';
 import { api } from '@/api/client';
+import { useSessionsStore } from '@/store/sessions';
 import { voiceCommandEvents } from '@/api/voice/registry-events';
 import { getDisplayCommands } from '@/api/voice/registry';
-import { COMPOSER_TOOLS as TOOLS, fetchFileMentions, fetchMcpMentions, parseAtMention, type MentionItem } from '../composer-mentions';
+import { COMPOSER_TOOLS as TOOLS, fetchFileMentions, fetchMcpMentions, parseAtMention, type MentionItem , fetchConversationMentions } from '../composer-mentions';
 
 /** Closers useChatSend calls after a send so open popovers dismiss. */
 export type ComposerDropdownApi = {
@@ -94,6 +95,7 @@ export function useComposerPopovers({
   const [skillMentions, setSkillMentions] = useState<MentionItem[]>([]);
   const [mcpMentions, setMcpMentions] = useState<MentionItem[]>([]);
   const [fileMentions, setFileMentions] = useState<MentionItem[]>([]);
+  const [conversationMentions, setConversationMentions] = useState<MentionItem[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
 
@@ -181,6 +183,22 @@ export function useComposerPopovers({
     };
   }, [mentionQuery, sessionId]);
 
+  // @conversation mentions: recent chats from the local sessions store.
+  useEffect(() => {
+    if (mentionQuery === null) return;
+    let cancelled = false;
+    const sessions = useSessionsStore.getState().sessions ?? [];
+    const items = fetchConversationMentions(
+      sessions,
+      mentionQuery.trim(),
+      sessionId,
+    );
+    if (!cancelled) setConversationMentions(items);
+    return () => {
+      cancelled = true;
+    };
+  }, [mentionQuery, sessionId]);
+
   const mentionItems: MentionItem[] = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
@@ -198,8 +216,9 @@ export function useComposerPopovers({
     const skills = skillMentions.filter(matches);
     const mcp = mcpMentions.filter(matches);
     const files = fileMentions.filter(matches);
-    return [...skills, ...tools, ...mcp, ...files];
-  }, [mentionQuery, skillMentions, mcpMentions, fileMentions]);
+    const conversations = conversationMentions.filter(matches);
+    return [...skills, ...tools, ...mcp, ...files, ...conversations];
+  }, [mentionQuery, skillMentions, mcpMentions, fileMentions, conversationMentions]);
 
   const closeAllPopovers = useCallback(() => {
     setShowComposerActionsDropdown(false);

@@ -31,6 +31,7 @@ import {
   Bot,
   BrainCircuit,
   StickyNote,
+  FolderOpen,
   FileText,
   Code2,
   FolderLock,
@@ -280,6 +281,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'advanced',
     keywords: ['added', 'add memory', 'remember this', 'user memory', 'saved fact'],
     legacyAliases: ['added-memories', 'user-memories'],
+  },
+  {
+    id: 'project-memories',
+    label: 'Project Memories',
+    description:
+      'Memories August learned from chats inside each project folder.',
+    icon: FolderOpen,
+    category: 'intelligence',
+    tier: 'basic',
+    keywords: ['project', 'folder', 'workspace', 'project memories', 'by project'],
+    legacyAliases: ['project-memory', 'folder-memories'],
   },
   {
     id: 'prompt-templates',

@@ -100,6 +100,18 @@ export function RightDrawer({
     };
   }, [isDragging]);
 
+  // Re-clamp when the window shrinks below the stored drawer width — the
+  // drawer previously overflowed the viewport until the next drag.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => {
+      setBaseWidth((w) => clampWidth(w));
+      setWideWidth((w) => clampWidth(w));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const startResize = (clientX: number) => {
     const startX = clientX;
     const startW = width;

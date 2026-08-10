@@ -70,3 +70,27 @@ export async function fetchFileMentions(
     return [];
   }
 }
+
+/** Recent chat sessions for the @ picker — from the local sessions store. */
+export function fetchConversationMentions(
+  sessions: Array<{ id: string; title?: string; workbenchSessionId?: string; model?: string }>,
+  query: string,
+  excludeId?: string | null,
+): MentionItem[] {
+  const q = (query || '').toLowerCase();
+  const out: MentionItem[] = [];
+  for (const s of sessions) {
+    if (excludeId && (s.id === excludeId || s.workbenchSessionId === excludeId)) continue;
+    const title = (s.title || s.id || '').trim();
+    if (!title) continue;
+    if (q && !title.toLowerCase().includes(q)) continue;
+    out.push({
+      kind: 'conversation' as const,
+      name: `@chat:${title.slice(0, 32)}`,
+      desc: s.model ? `Past conversation · ${s.model}` : 'Past conversation',
+      insert: `@chat:${title} `,
+    });
+    if (out.length >= 8) break;
+  }
+  return out;
+}

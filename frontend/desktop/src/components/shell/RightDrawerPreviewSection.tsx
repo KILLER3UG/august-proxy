@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Check, Globe, Loader2, Play, ShieldAlert, Square, X } from 'lucide-react';
+import { Activity, Check, Globe, Loader2, Play, RefreshCw, ShieldAlert, Square, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -29,6 +29,7 @@ export function RightDrawerPreviewSection({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [command, setCommand] = useState('npm run dev');
   const [previewUrl, setPreviewUrl] = useState('');
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   const { data, isLoading } = useQuery({
     queryKey: ['preview-sessions', sessionId],
@@ -183,14 +184,22 @@ export function RightDrawerPreviewSection({
               )}
 
               {canEmbed ? (
-                <div className="h-[180px] overflow-hidden rounded-lg border border-border bg-background">
+                <div className="relative h-[180px] overflow-hidden rounded-lg border border-border bg-background">
                   <iframe
-                    key={url}
+                    key={`${url}#r${refreshNonce}`}
                     src={url}
                     className="h-full w-full border-0"
                     title="Local preview"
                     sandbox="allow-scripts allow-same-origin allow-forms"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setRefreshNonce((n) => n + 1)}
+                    title="Reload preview"
+                    className="absolute right-1.5 top-1.5 z-10 grid size-6 place-items-center rounded-md bg-background/90 text-muted-foreground shadow hover:text-foreground transition"
+                  >
+                    <RefreshCw className="size-3" />
+                  </button>
                 </div>
               ) : (
                 <div className="flex h-[180px] flex-col items-center justify-center rounded-lg border border-border/50 bg-card/40 text-center text-muted-foreground">

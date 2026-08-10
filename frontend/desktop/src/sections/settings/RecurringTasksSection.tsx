@@ -14,6 +14,7 @@ interface RecurringTask {
   id: number;
   trigger: string;
   message: string;
+  model?: string;
   active: number;
   created_at?: string;
   last_fired_at?: string | null;
@@ -23,6 +24,7 @@ export function RecurringTasksSection() {
   const qc = useQueryClient();
   const [trigger, setTrigger] = useState('');
   const [message, setMessage] = useState('');
+  const [model, setModel] = useState('');
 
   const { data, error, isFetching } = useQuery<{ tasks: RecurringTask[] }>({
     queryKey: ['recurring-tasks'],
@@ -34,11 +36,12 @@ export function RecurringTasksSection() {
 
   const addTask = useMutation({
     mutationFn: () =>
-      api.post<{ id: number }>('/api/tasks/recurring', { trigger, message }),
+      api.post<{ id: number }>('/api/tasks/recurring', { trigger, message, model }),
     onSuccess: () => {
       toast.success('Reminder added');
       setTrigger('');
       setMessage('');
+      setModel('');
       invalidate();
     },
     onError: (e: Error) => toast.error(e.message || 'Could not add reminder'),
@@ -90,6 +93,14 @@ export function RecurringTasksSection() {
           placeholder="What to remind you about"
           aria-label="Reminder message"
           data-testid="reminder-message"
+        />
+        <input
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="w-full rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs"
+          placeholder='Sub-agent model (optional) — e.g. "claude-sonnet-4-5"'
+          aria-label="Reminder sub-agent model"
+          data-testid="reminder-model"
         />
         <button
           type="button"

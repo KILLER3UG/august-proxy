@@ -320,6 +320,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [hasNewContentWhileUnpinned, setHasNewContentWhileUnpinned] = useState(false);
   /** True while the user is near the bottom — gates stick-to-bottom during stream. */
   const pinnedToBottomRef = useRef(true);
+  const messageVirtRef = useRef<{ scrollToIndex: (index: number, opts?: object) => void } | null>(null);
   const mountedRef = useRef(false);
 
   const NEAR_BOTTOM_PX = 80;
@@ -753,6 +754,56 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
   }, [sessionId]);
 
+  // Reconnect hydration (bugfix): a turn that finished while the client was
+  // disconnected has no SSE replay, so an empty local transcript stays blank.
+  // Hydrate once per session from the backend transcript when local storage
+  // has nothing — never clobbers a live or locally-restored conversation.
+  const hydratedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sessionId || hydratedForRef.current === sessionId) return;
+    if (messages.length > 0) return;
+    hydratedForRef.current = sessionId;
+    let cancelled = false;
+    void api
+      .get<{ messages: unknown[] }>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+      )
+      .then((res) => {
+        if (cancelled) return;
+        const remote = Array.isArray(res?.messages) ? res.messages : [];
+        const mapped: ChatMessage[] = [];
+        for (const raw of remote) {
+          const r = raw as Record<string, unknown>;
+          if (!r || typeof r !== 'object') continue;
+          const role = String(r.role ?? 'user');
+          let content: unknown = r.content;
+          // Tool/assistant payloads are stored as dicts {content, tool_calls}.
+          if (content && typeof content === 'object') {
+            const c = content as Record<string, unknown>;
+            content = typeof c.content === 'string' ? c.content : JSON.stringify(c);
+          }
+          if (!content || String(content).trim() === '') continue;
+          mapped.push({
+            id: String(r.id ?? `m_remote_${mapped.length}`),
+            role: role === 'tool' ? 'assistant' : role,
+            content: String(content),
+            timestamp: String(r.created_at ?? new Date().toISOString()),
+            remote: true,
+          } as ChatMessage);
+        }
+        if (mapped.length === 0) return;
+        setMessages((prev) => (prev.length > 0 ? prev : mapped));
+        persistMessages(sessionId, mapped);
+      })
+      .catch(() => {
+        /* offline — local storage is the fallback */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
   useEffect(() => {
     persistMessages(sessionId, messages);
   }, [messages, sessionId]);
@@ -871,7 +922,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       const matched = models.find(
         (m) => m.id === targetId || m.id.toLowerCase() === targetId.toLowerCase(),
       );
-      return matched || prev || models[0];
+      if (matched) return matched;
+      // Saved selection is not in the freshly-loaded catalog (provider
+      // refresh in flight, runtime/environment switch): keep the previous
+      // pick instead of silently falling back to models[0] — the saved id
+      // rematches once the provider finishes loading.
+      return prev ?? null;
     });
   }, [models, setSelectedModel, userSelectedRef]);
 
@@ -1431,6 +1487,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               </ChatEmptyState>
             ) : (
               <ChatThreadMessagePane
+          virtRef={messageVirtRef}
+          onBeforeJump={() => setPinned(false)}
                 sessionId={sessionId}
                 messages={messages}
                 streaming={streaming}

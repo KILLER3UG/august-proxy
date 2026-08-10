@@ -940,9 +940,9 @@ input::placeholder {
 }
 
 .bubble-footer-text {
-  font-size: 0.65625rem;
+  font-size: 0.6875rem;
   line-height: 1.2;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 500;
 }

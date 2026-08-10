@@ -5,6 +5,7 @@
  */
 
 import { useVirtualizer } from '@tanstack/react-virtual';
+import type { MutableRefObject } from 'react';
 import type { ChatMessage } from '@/types/chat';
 import type { ReactNode, RefObject } from 'react';
 
@@ -16,6 +17,8 @@ export interface VirtualizedMessageListProps {
   scrollParentRef: RefObject<HTMLDivElement | null>;
   renderMessage: (message: ChatMessage, index: number) => ReactNode;
   footer?: ReactNode;
+  /** Exposes the virtualizer for programmatic jumps (in-thread search). */
+  virtRef?: MutableRefObject<{ scrollToIndex: (index: number, opts?: object) => void } | null>;
 }
 
 export function VirtualizedMessageList({
@@ -23,6 +26,7 @@ export function VirtualizedMessageList({
   scrollParentRef,
   renderMessage,
   footer,
+  virtRef,
 }: VirtualizedMessageListProps) {
   const useVirt = messages.length >= VIRTUALIZE_AFTER;
 
@@ -37,6 +41,10 @@ export function VirtualizedMessageList({
     overscan: 8,
     enabled: useVirt,
   });
+
+  if (virtRef) {
+    virtRef.current = virt;
+  }
 
   if (!useVirt) {
     return (

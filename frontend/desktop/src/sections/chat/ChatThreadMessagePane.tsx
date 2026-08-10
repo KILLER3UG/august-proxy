@@ -43,6 +43,8 @@ export function ChatThreadMessagePane({
   footerSlot,
   models,
   onReanswerWithModel,
+  onBeforeJump,
+  virtRef,
 }: {
   sessionId: string | null;
   messages: ChatMessage[];
@@ -69,7 +71,12 @@ export function ChatThreadMessagePane({
   footerSlot: ReactNode;
   /** Visible model catalog for "answer this with another model" (A4). */
   models?: ModelItem[];
-  onReanswerWithModel?: (model: ModelItem, index: number) => void;}) {
+  onReanswerWithModel?: (model: ModelItem, index: number) => void;
+  /** Fired before an in-thread search jump (unpins stick-to-bottom). */
+  onBeforeJump?: () => void;
+  /** Virtualizer handle for jumping to virtualized rows. */
+  virtRef?: React.MutableRefObject<{ scrollToIndex: (index: number, opts?: object) => void } | null>;
+}) {
   const shouldAnimateEnter = useMessageEnterAnimation(messages, sessionId);
   const [searchQuery, setSearchQuery] = useState('');
   const [matchedIndices, setMatchedIndices] = useState<number[]>([]);
@@ -102,10 +109,18 @@ export function ChatThreadMessagePane({
   const handleNavigate = useCallback((matchIndex: number) => {
     if (matchIndex < 0 || matchIndex >= matchedIndices.length) return;
     const msgIndex = matchedIndices[matchIndex];
-    // Scroll the message into view.
+    // Unpin stick-to-bottom so the next append doesn't fight the jump.
+    onBeforeJump?.();
+    // Virtualized transcripts only render a window of rows — querySelector
+    // misses out-of-window targets, so jump through the virtualizer.
+    const virt = virtRef?.current;
+    if (virt && typeof virt.scrollToIndex === 'function') {
+      virt.scrollToIndex(msgIndex, { align: 'center' });
+      return;
+    }
     const el = document.querySelector(`[data-message-index="${msgIndex}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [matchedIndices]);
+  }, [matchedIndices, onBeforeJump, virtRef]);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery('');
@@ -130,6 +145,7 @@ export function ChatThreadMessagePane({
         <VirtualizedMessageList
           messages={messages}
           scrollParentRef={scrollRef}
+          virtRef={virtRef}
           renderMessage={(m, realIndex) => {
             const isReverting =
               revertingIndex !== null && realIndex > revertingIndex;

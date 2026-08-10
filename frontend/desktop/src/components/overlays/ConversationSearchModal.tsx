@@ -92,7 +92,7 @@ export function ConversationSearchModal() {
             data-testid="conversation-search-input"
           />
           {searching ? (
-            <span className="text-[10px] text-muted-foreground animate-pulse">searching…</span>
+            <span className="text-[11px] text-muted-foreground animate-pulse">searching…</span>
           ) : null}
           <button
             type="button"
@@ -106,7 +106,7 @@ export function ConversationSearchModal() {
 
         {q.trim() ? (
           results.length === 0 ? (
-            <p className="px-1 py-3 text-center text-[11px] text-muted-foreground">
+            <p className="px-1 py-3 text-center text-xs text-muted-foreground">
               {searching ? 'Searching…' : 'No conversations matched.'}
             </p>
           ) : (
@@ -124,7 +124,7 @@ export function ConversationSearchModal() {
                       <span className="truncate">{r.title}</span>
                     </span>
                     {r.snippet ? (
-                      <span className="block text-[11px] text-muted-foreground line-clamp-2 mt-0.5">
+                      <span className="block text-xs text-muted-foreground line-clamp-2 mt-0.5">
                         {r.snippet}
                       </span>
                     ) : null}
@@ -134,7 +134,7 @@ export function ConversationSearchModal() {
             </ul>
           )
         ) : (
-          <p className="px-1 py-3 text-center text-[11px] text-muted-foreground">
+          <p className="px-1 py-3 text-center text-xs text-muted-foreground">
             Type to search every conversation (FTS over messages).
           </p>
         )}

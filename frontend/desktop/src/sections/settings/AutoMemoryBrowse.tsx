@@ -73,6 +73,7 @@ export function AutoMemoryBrowse({
   listComposerPlaceholder,
   detailComposerPlaceholder,
   showListComposer,
+  folderId,
 }: {
   origin: MemoryOrigin;
   title: string;
@@ -82,20 +83,23 @@ export function AutoMemoryBrowse({
   listComposerPlaceholder: string;
   detailComposerPlaceholder: string;
   showListComposer: boolean;
+  /** Project (folder) filter — only memories from sessions in this folder. */
+  folderId?: string;
 }) {
   const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
     useConfirmDialog();
   const qc = useQueryClient();
-  const queryKey = ['auto-memory', origin] as const;
+  const queryKey = ['auto-memory', origin, folderId ?? ''] as const;
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [composerText, setComposerText] = useState('');
 
   const memoriesQuery = useQuery<AutoMemoryListResponse>({
     queryKey,
-    queryFn: () =>
-      api.get<AutoMemoryListResponse>(
-        `/api/memory/auto?origin=${encodeURIComponent(origin)}`,
-      ),
+    queryFn: () => {
+      const params = new URLSearchParams({ origin });
+      if (folderId) params.set('folder_id', folderId);
+      return api.get<AutoMemoryListResponse>(`/api/memory/auto?${params.toString()}`);
+    },
     refetchInterval: 30_000,
   });
 

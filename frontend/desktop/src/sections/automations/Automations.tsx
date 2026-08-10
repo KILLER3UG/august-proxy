@@ -11,6 +11,8 @@ import {
   Pause,
   PlayCircle,
   Clock,
+  Cpu,
+  Bot,
   Inbox,
   Plus,
   Copy,
@@ -43,6 +45,8 @@ const SCHEDULE_PRESETS: Array<{ label: string; value: string }> = [
   { label: 'Daily at 9:00', value: '0 9 * * *' },
   { label: 'Weekdays at 9:00', value: '0 9 * * 1-5' },
   { label: 'Weekly Monday 9:00', value: '0 9 * * 1' },
+  { label: 'Every 5 minutes', value: 'every 5m' },
+  { label: 'Every 15 minutes', value: 'every 15m' },
   { label: 'Every 30 minutes', value: 'every 30m' },
   { label: 'Every 2 hours', value: 'every 2h' },
   { label: 'Custom…', value: '' },
@@ -409,7 +413,7 @@ function CreateAutomationForm({
           </label>
           {!preset && (
             <label className="block space-y-1">
-              <span className="text-xs text-muted-foreground">Cron or every Nh</span>
+              <span className="text-xs text-muted-foreground">Cron or every Nm / Nh</span>
               <input
                 className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
                 value={customSchedule}
@@ -537,6 +541,21 @@ function AutomationCard({
                 <span className="inline-flex items-center gap-1" title={job.schedule}>
                   <Clock className="size-2.5" /> {scheduleLabel(job.schedule)}
                   {job.timezone ? ` · ${job.timezone}` : ''}
+                </span>
+              )}
+              {(job.model || job.agentId || job.agent) && (
+                <span className="inline-flex items-center gap-2">
+                  {job.model ? (
+                    <span className="inline-flex items-center gap-1" title="Runs on this model">
+                      <Cpu className="size-2.5" /> {job.model}
+                      {job.provider || job.modelProvider ? ` (${job.provider || job.modelProvider})` : ''}
+                    </span>
+                  ) : null}
+                  {job.agentId || job.agent ? (
+                    <span className="inline-flex items-center gap-1" title="Agent target">
+                      <Bot className="size-2.5" /> {job.agentId || job.agent}
+                    </span>
+                  ) : null}
                 </span>
               )}
               {job.lastRunAt && <span>last: {shortDate(job.lastRunAt)}</span>}

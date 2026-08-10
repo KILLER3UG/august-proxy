@@ -45,6 +45,7 @@ import { AccountSection } from './AccountSection';
 import { UpdateSection } from './UpdateSection';
 import { RecalledMemorySection } from './RecalledMemorySection';
 import { AddedMemorySection } from './AddedMemorySection';
+import { ProjectMemoriesSection } from './ProjectMemoriesSection';
 import { RecurringTasksSection } from './RecurringTasksSection';
 import { PromptTemplatesSection } from './PromptTemplatesSection';
 import { ReliabilitySection } from './ReliabilitySection';
@@ -191,6 +192,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'memory-knowledge': MemoryWrapper,
   'recalled-memory': RecalledMemoryWrapper,
   'added-memory': AddedMemoryWrapper,
+  'project-memories': ProjectMemoriesWrapper,
   'recurring-tasks': RecurringTasksWrapper,
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
@@ -235,6 +237,7 @@ function UsageWrapper() { return <WorkspaceUsageSection />; }
 function MemoryWrapper() { return <WorkspaceMemorySection />; }
 function RecalledMemoryWrapper() { return <RecalledMemorySection />; }
 function AddedMemoryWrapper() { return <AddedMemorySection />; }
+function ProjectMemoriesWrapper() { return <ProjectMemoriesSection />; }
 function RecurringTasksWrapper() { return <RecurringTasksSection />; }
 function InspectorWrapper() { return <WorkspaceInspectorSection />; }
 function ModelsWrapper() { return <WorkspaceModelsSection />; }
