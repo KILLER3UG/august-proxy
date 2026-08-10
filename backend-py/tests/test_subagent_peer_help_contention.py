@@ -41,19 +41,20 @@ async def test_peer_help_window_duration_on_no_claim(bus, caplog):
     session.id = 'peer-help-sess'
     t0 = time.perf_counter()
     with patch('app.services.subagent_worker.runSubagent', new=AsyncMock(side_effect=boom)):
-        handles = await orch.spawn(
-            SubagentSpawnRequest(session=session, workItems=[{'goal': 'fail me', 'agentId': 'general'}])
-        )
-        # Failure path awaits peer-help window inside _runWithSlot
-        await asyncio.sleep(PEER_HELP_WINDOW_SECONDS + 1.5)
+        with patch.object(orch_mod, 'PEER_HELP_WINDOW_SECONDS', 0.3):
+            handles = await orch.spawn(
+                SubagentSpawnRequest(session=session, workItems=[{'goal': 'fail me', 'agentId': 'general'}])
+            )
+            # Failure path awaits peer-help window inside _runWithSlot
+            await asyncio.sleep(1.2)
     elapsed = time.perf_counter() - t0
 
     handle = orch.getHandle(handles[0].taskId)
     assert handle is not None
     assert handle.status == 'failed'
-    # Window is ~5s — allow CI slop but require we actually waited (not instant)
-    assert elapsed >= PEER_HELP_WINDOW_SECONDS * 0.85
-    assert elapsed < PEER_HELP_WINDOW_SECONDS + 3.0
+    # Window patched to 0.3s — require we actually waited (not instant)
+    assert elapsed >= 0.25
+    assert elapsed < 3.0
     assert any('No peer claimed failed task' in r.message for r in caplog.records)
     # Docstring says "escalated" — code only logs; no escalated status/event channel
     assert handle.status != 'escalated'
