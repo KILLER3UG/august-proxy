@@ -520,6 +520,28 @@ export function AssistantBlockTimeline({
         continue;
       }
 
+      if (block.type === 'memoryNotice') {
+        // In-chat notice: August remembered / updated / forgot a memory.
+        tagged.push({
+          kind: 'block',
+          node: (
+            <div
+              key={block.id || `memory_${ti}`}
+              className="mx-3 my-1 flex items-start gap-1.5 rounded-md border border-border/40 bg-card/30 px-2.5 py-1.5 text-[11px] leading-relaxed text-muted-foreground"
+            >
+              <span aria-hidden="true" className="shrink-0">
+                🧠
+              </span>
+              <span className="min-w-0 break-words">
+                {block.content || 'August updated its memory.'}
+              </span>
+            </div>
+          ),
+        });
+        ti++;
+        continue;
+      }
+
       if (block.type === 'error') {
         // Real generation/tool failure — red banner, never collapsed away.
         // Friendly copy up front; the raw upstream text sits in an

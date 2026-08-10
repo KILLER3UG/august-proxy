@@ -106,3 +106,64 @@ def test_drift_report_respects_graded_outcome():
     drift = drift_report(recent_days=1, baseline_days=1, min_recent_samples=5, drop=0.5)
     flagged = {r['model'] for r in drift}
     assert 'ref-m1' in flagged, f'refusal-only model should be flagged: {drift}'
+
+
+def test_capability_fingerprint_suggests_text_surface():
+    """A model that never uses tools and keeps refusing gets toolSurface=text."""
+    from app.services.trace_store import capability_fingerprint, record_turn_trace
+
+    for i in range(12):
+        record_turn_trace(
+            session_id=f'fp-sess-{i}',
+            model='fp-model',
+            outcome='refusal',
+            self_heal_events={'parse_failures': 0, 'refusals': 2, 'stall_nudges': 0},
+            tool_calls=[],
+        )
+    fp = capability_fingerprint('fp-model', min_turns=10)
+    assert fp['total'] == 12
+    assert fp['refusal_rate'] >= 0.9
+    assert fp['tool_use_rate'] == 0
+    suggested = fp.get('suggestedProfile')
+    assert isinstance(suggested, dict)
+    assert suggested.get('toolSurface') == 'text'
+
+
+def test_capability_fingerprint_suggests_reduced_for_bad_json():
+    from app.services.trace_store import capability_fingerprint, record_turn_trace
+
+    for i in range(12):
+        record_turn_trace(
+            session_id=f'fj-sess-{i}',
+            model='fj-model',
+            outcome='tool_error',
+            self_heal_events={'parse_failures': 4, 'refusals': 0, 'stall_nudges': 0},
+            tool_calls=['run_command'],
+        )
+    fp = capability_fingerprint('fj-model', min_turns=10)
+    suggested = fp.get('suggestedProfile')
+    assert isinstance(suggested, dict)
+    assert suggested.get('toolSurface') in ('reduced', 'bare')
+
+
+def test_capability_fingerprint_healthy_model_no_suggestion():
+    from app.services.trace_store import capability_fingerprint, record_turn_trace
+
+    for i in range(12):
+        record_turn_trace(
+            session_id=f'ok-sess-{i}',
+            model='ok-model',
+            outcome='verified',
+            self_heal_events={'parse_failures': 0, 'refusals': 0, 'stall_nudges': 0},
+            tool_calls=['read_file'],
+        )
+    fp = capability_fingerprint('ok-model', min_turns=10)
+    assert fp.get('suggestedProfile') is None
+
+
+def test_capability_fingerprint_needs_min_turns():
+    from app.services.trace_store import capability_fingerprint, record_turn_trace
+
+    record_turn_trace(session_id='min-sess', model='min-model', outcome='refusal')
+    fp = capability_fingerprint('min-model', min_turns=10)
+    assert fp.get('suggestedProfile') is None

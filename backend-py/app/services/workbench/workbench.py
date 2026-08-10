@@ -252,6 +252,28 @@ def _setAssistantText(
         assistantMsg['content'] = text
 
 
+def _memoryChangeNotice(
+    toolName: str, toolInput: dict[str, object], result: object
+) -> str:
+    """Friendly one-liner for a memory tool result (in-chat notice)."""
+    text = as_str(result, '')
+    try:
+        if toolName == 'remember':
+            content = as_str(toolInput.get('content'), '')
+            return f'August remembered: {content[:140]}' if content else 'August saved a memory.'
+        if toolName == 'update_memory':
+            content = as_str(toolInput.get('content'), '')
+            return f'August updated a memory: {content[:140]}' if content else 'August updated a memory.'
+        if toolName == 'forget':
+            mid = as_int(toolInput.get('memoryId'), 0)
+            return f'August forgot a memory (id {mid}).' if mid else 'August forgot a memory.'
+        if toolName == 'update_heuristics':
+            return 'August updated a learned rule.'
+    except Exception:
+        pass
+    return text[:140]
+
+
 def _turnOutcomeGrade(
     *,
     turn_error: str | None,
@@ -3299,6 +3321,16 @@ async def _sendWorkbenchMessageStreamImpl(
                             integrationSetup = isu
                     except Exception:
                         integrationSetup = None
+                # In-chat memory notice: when the model changed long-term
+                # memory, tell the user what August now remembers/forgot.
+                _MEMORY_TOOLS = ('remember', 'update_memory', 'forget', 'update_heuristics')
+                if toolName in _MEMORY_TOOLS:
+                    try:
+                        notice = _memoryChangeNotice(toolName, toolInput, result)
+                        if notice:
+                            emit({'type': 'memoryUpdated', 'action': toolName, 'summary': notice})
+                    except Exception:
+                        logger.debug('memory notice emit failed', exc_info=True)
                 emit(
                     {
                         'type': 'toolResult',
@@ -3679,6 +3711,50 @@ async def _sendWorkbenchMessageStreamImpl(
                 )
             except Exception:
                 logger.debug('trace record failed', exc_info=True)
+            # Capability auto-detect: when a model's failure fingerprint
+            # crosses thresholds (malformed JSON / refusals / stalls), suggest
+            # a capability profile (toolSurface/maxTools) — data-driven
+            # replacement for manual per-model config. Deduped per model so a
+            # broken model doesn't spam the suggestion every turn.
+            try:
+                from app.services.trace_store import capability_fingerprint
+
+                modelIdForProfile = as_str(resolvedModel, '')
+                if modelIdForProfile:
+                    fp = capability_fingerprint(modelIdForProfile)
+                    suggestedRaw = fp.get('suggestedProfile')
+                    suggested = (
+                        suggestedRaw if isinstance(suggestedRaw, dict) else None
+                    )
+                    if suggested:
+                        from app.services.memory_store import get_memory, save_memory
+
+                        dedupKey = f'profile-suggested:{modelIdForProfile}'
+                        prev = get_memory(dedupKey)
+                        prevDict = prev if isinstance(prev, dict) else {}
+                        if prevDict.get('toolSurface') != suggested.get('toolSurface'):
+                            save_memory(
+                                dedupKey,
+                                {
+                                    'toolSurface': suggested.get('toolSurface'),
+                                    'at': _now(),
+                                },
+                            )
+                            if emit:
+                                emit(
+                                    {
+                                        'type': 'modelProfileSuggestion',
+                                        'model': modelIdForProfile,
+                                        'suggestedProfile': suggested,
+                                        'message': (
+                                            f'Model {modelIdForProfile} is struggling with the current '
+                                            f'tool surface — consider {suggested.get("toolSurface")} '
+                                            f'tools ({suggested.get("reason", "")}).'
+                                        ),
+                                    }
+                                )
+            except Exception:
+                logger.debug('capability suggestion failed', exc_info=True)
             # Self-improvement: failed turns become provider-reliability lessons
             # (injected into future prompts, merged/confidence-bumped on repeats).
             if turnError is not None:
@@ -3785,7 +3861,20 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
         try:
             from app.services.memory.user_profile import note_user_message
 
-            note_user_message(lastUserMsg)
+            prefHits = note_user_message(lastUserMsg)
+            if prefHits:
+                # Worker-thread context: surface the notice via the session
+                # event log (the durable SSE subscriber relays it to the UI).
+                from app.services import event_log
+
+                event_log.event_log.append(
+                    str(getattr(session, 'id', '') or ''),
+                    'memoryUpdated',
+                    {
+                        'action': 'preference',
+                        'summary': f'August remembered a preference: {prefHits[0][:140]}',
+                    },
+                )
         except Exception:
             logger.debug('preference capture failed', exc_info=True)
         # Cross-session bridge: active_projects + current_context (not userProfile).

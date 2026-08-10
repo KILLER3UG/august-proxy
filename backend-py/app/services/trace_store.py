@@ -147,3 +147,90 @@ def _row(r: object) -> dict[str, object]:
             except (json.JSONDecodeError, TypeError):
                 out[k] = None
     return out
+
+
+def capability_fingerprint(model: str, provider: str = '', min_turns: int = 10) -> dict[str, object]:
+    """Per-model failure fingerprints from traces (toolSurface auto-detect).
+
+    Computes the rates that reveal a model's real capabilities:
+      - invalid_json_rate: turns where tool args failed to parse
+      - refusal_rate:     turns where the model claimed it cannot use tools
+      - stall_rate:       turns that needed a stall/reflection nudge
+      - tool_use_rate:    turns where at least one tool call was dispatched
+
+    Returns the fingerprint plus a suggested capability profile when the
+    model consistently misbehaves (data-driven replacement for manual
+    toolSurface config).
+    """
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            'SELECT self_heal_events, tool_calls, outcome FROM session_traces '
+            'WHERE model = ? ORDER BY id DESC LIMIT 200',
+            (as_str(model, '')[:120],),
+        ).fetchall()
+    except Exception as exc:
+        logger.debug('fingerprint failed: %s', exc)
+        return {'model': model, 'error': 'no traces'}
+    total = len(rows)
+    if total == 0:
+        return {'model': model, 'total': 0}
+    invalid_json = refusals = stalls = with_tools = thinking_only = 0
+    for r in rows:
+        heal = r['self_heal_events']
+        try:
+            heal_dict = json.loads(heal) if isinstance(heal, str) else {}
+        except (json.JSONDecodeError, TypeError):
+            heal_dict = {}
+        if as_int(heal_dict.get('parse_failures'), 0) > 0:
+            invalid_json += 1
+        if as_int(heal_dict.get('refusals'), 0) > 0:
+            refusals += 1
+        if as_int(heal_dict.get('stall_nudges'), 0) > 0:
+            stalls += 1
+        calls = r['tool_calls']
+        try:
+            calls_list = json.loads(calls) if isinstance(calls, str) else []
+        except (json.JSONDecodeError, TypeError):
+            calls_list = []
+        if calls_list:
+            with_tools += 1
+        if as_str(r['outcome'], '') == 'thinking_only':
+            thinking_only += 1
+    def _rate(n: int) -> float:
+        return round(n / total, 3)
+
+    fp: dict[str, object] = {
+        'model': as_str(model, ''),
+        'provider': as_str(provider, '')[:120],
+        'total': total,
+        'invalid_json_rate': _rate(invalid_json),
+        'refusal_rate': _rate(refusals),
+        'stall_rate': _rate(stalls),
+        'tool_use_rate': _rate(with_tools),
+        'thinking_only_rate': _rate(thinking_only),
+    }
+    if total < max(1, min_turns):
+        fp['suggestedProfile'] = None
+        return fp
+    suggested: dict[str, object] = {}
+    from app.json_narrowing import as_float
+
+    tool_rate = as_float(fp.get('tool_use_rate'), 0)
+    json_rate = as_float(fp.get('invalid_json_rate'), 0)
+    refusal_rate = as_float(fp.get('refusal_rate'), 0)
+    stall_rate = as_float(fp.get('stall_rate'), 0)
+    if tool_rate < 0.25 and refusal_rate > 0.3:
+        # Never uses tools AND keeps claiming it cannot → text protocol.
+        suggested['toolSurface'] = 'text'
+    elif json_rate > 0.5 or (stall_rate > 0.4 and tool_rate > 0.5):
+        suggested['toolSurface'] = 'bare'
+    elif json_rate > 0.3 or stall_rate > 0.4:
+        suggested['toolSurface'] = 'reduced'
+    if suggested:
+        suggested['reason'] = (
+            f'over {total} turns: invalid-json {json_rate:.0%}, refusals {refusal_rate:.0%}, '
+            f'stalls {stall_rate:.0%}, tool-use {tool_rate:.0%}'
+        )
+    fp['suggestedProfile'] = suggested or None
+    return fp

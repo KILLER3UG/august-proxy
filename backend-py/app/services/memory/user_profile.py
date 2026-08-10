@@ -188,16 +188,18 @@ def capture_preferences(text: str) -> list[str]:
     return hits
 
 
-def note_user_message(text: str) -> None:
+def note_user_message(text: str) -> list[str]:
     """Per-turn capture: fold deterministic preference hits into the profile.
 
     Called after every user turn (no LLM) so stated preferences are known
     even in a fresh session. Near-dup aware and capped like the reflection
-    path.
+    path. Returns the captured preference strings so the caller can surface
+    an in-chat "August remembered" notice.
     """
     hits = capture_preferences(text)
     if hits:
         consolidateUserProfile(hits)
+    return hits
 
 
 def infer_communication_style(user_messages: list[str]) -> str | None:

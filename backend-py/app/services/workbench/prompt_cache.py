@@ -17,15 +17,20 @@ class PromptCache:
         self.maxSessions = maxSessions
         self.ttlSeconds = ttlSeconds
         self._cache: OrderedDict[str, tuple[float, str]] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
 
     def get(self, sessionId: str) -> str | None:
         """Get cached prompt for a session. Returns None if miss or expired."""
         if sessionId not in self._cache:
+            self.misses += 1
             return None
         cachedAt, content = self._cache[sessionId]
         if time.monotonic() - cachedAt > self.ttlSeconds:
             del self._cache[sessionId]
+            self.misses += 1
             return None
+        self.hits += 1
         self._cache.move_to_end(sessionId)
         return content
 
@@ -45,8 +50,16 @@ class PromptCache:
         self._cache.clear()
 
     def stats(self) -> dict[str, object]:
-        """Return cache statistics."""
-        return {'size': len(self._cache), 'max_sessions': self.maxSessions, 'ttl_seconds': self.ttlSeconds}
+        """Return cache statistics (hit rate for observability)."""
+        total = self.hits + self.misses
+        return {
+            'size': len(self._cache),
+            'max_sessions': self.maxSessions,
+            'ttl_seconds': self.ttlSeconds,
+            'hits': self.hits,
+            'misses': self.misses,
+            'hit_rate': round(self.hits / total, 3) if total else 0.0,
+        }
 
 
 _cache = PromptCache()

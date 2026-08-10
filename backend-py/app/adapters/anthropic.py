@@ -352,6 +352,65 @@ def _budgetToEffort(budget: int) -> str:
     return 'low'
 
 
+def _anthropicCacheControlEnabled() -> bool:
+    """Prompt caching for Anthropic upstreams (AUGUST_ANTHROPIC_CACHE=0 disables)."""
+    import os
+
+    val = os.environ.get('AUGUST_ANTHROPIC_CACHE')
+    if val is not None and str(val).strip() != '':
+        return str(val).strip().lower() not in ('0', 'false', 'no', 'off')
+    return True
+
+
+def apply_prompt_caching(body: dict[str, object]) -> dict[str, object]:
+    """Add Anthropic prompt-cache breakpoints (``cache_control: ephemeral``).
+
+    Marks the last system block, the last tool definition, and the last
+    content block of the final user message — the standard breakpoints that
+    make the stable prefix (system + tools + early history) hit the
+    provider's prompt cache across turns. Byte-stable Tier1/2 prompts
+    (prompt_cache) keep those hits alive for the session's lifetime.
+
+    Idempotent: a block that already carries ``cache_control`` is left as-is.
+    """
+    if not _anthropicCacheControlEnabled():
+        return body
+    try:
+        system = body.get('system')
+        if isinstance(system, list) and system:
+            last = system[-1]
+            if isinstance(last, dict):
+                last.setdefault('cache_control', {'type': 'ephemeral'})
+        elif isinstance(system, str) and system:
+            body['system'] = [
+                {'type': 'text', 'text': system, 'cache_control': {'type': 'ephemeral'}}
+            ]
+        tools = body.get('tools')
+        if isinstance(tools, list) and tools:
+            last_tool = tools[-1]
+            if isinstance(last_tool, dict):
+                last_tool.setdefault('cache_control', {'type': 'ephemeral'})
+        messages = body.get('messages')
+        if isinstance(messages, list) and messages:
+            for msg in reversed(messages):
+                if not isinstance(msg, dict):
+                    continue
+                content = msg.get('content')
+                if isinstance(content, str) and content.strip():
+                    msg['content'] = [
+                        {'type': 'text', 'text': content, 'cache_control': {'type': 'ephemeral'}}
+                    ]
+                    break
+                if isinstance(content, list) and content:
+                    last_block = content[-1]
+                    if isinstance(last_block, dict):
+                        last_block.setdefault('cache_control', {'type': 'ephemeral'})
+                    break
+    except Exception:
+        pass
+    return body
+
+
 def buildAnthropicUpstreamRequest(
     body: AnthropicRequest | dict[str, object], model: str, system: list[dict[str, object]] | None = None
 ) -> dict[str, object]:
@@ -368,7 +427,7 @@ def buildAnthropicUpstreamRequest(
             anthropicBody['thinking'] = thinking
         if system:
             anthropicBody['system'] = cast(JsonValue, system)
-        return anthropicBody
+        return apply_prompt_caching(anthropicBody)
     anthropicBody = {'model': model, 'messages': cast(JsonValue, as_list(body.get('messages'), []))}
     if 'max_tokens' in body or 'max_output_tokens' in body:
         anthropicBody['max_tokens'] = body.get('max_tokens') or body.get('max_output_tokens', 4096)
@@ -381,7 +440,7 @@ def buildAnthropicUpstreamRequest(
         anthropicBody['thinking'] = body['thinking']
     if system:
         anthropicBody['system'] = cast(JsonValue, system)
-    return anthropicBody
+    return apply_prompt_caching(anthropicBody)
 
 
 

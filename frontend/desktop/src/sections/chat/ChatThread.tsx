@@ -386,6 +386,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       const distanceFromBottom =
         scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight;
       const nearBottom = distanceFromBottom < NEAR_BOTTOM_PX;
+      // While a turn is streaming, position tracking may only UNPIN, never
+      // re-pin: the smooth-follow lerp's own scroll events land here right
+      // after the programmatic guard clears, and re-pinning then dragged the
+      // viewport back down the moment the user scrolled up to read. Only an
+      // explicit jump-to-bottom (or a new turn) re-pins mid-stream.
+      if (streaming && !pinnedToBottomRef.current) {
+        setScrolledFromTop(scrollable.scrollTop > SCROLL_TO_TOP_THRESHOLD);
+        return;
+      }
       // Re-pin only when the user scrolls back near the bottom; upward release
       // is handled immediately by wheel/touch in useStickToBottomScroll.
       setPinned(nearBottom);
@@ -404,7 +413,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       scrollable.removeEventListener('scroll', onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [sessionId, getScrollTarget, hasMessages, programmaticScrollRef, setPinned]);
+  }, [sessionId, getScrollTarget, hasMessages, programmaticScrollRef, setPinned, streaming]);
 
   // When unpinned, surface a "↓ New content" pill as the transcript grows.
   const contentVersionRef = useRef(0);

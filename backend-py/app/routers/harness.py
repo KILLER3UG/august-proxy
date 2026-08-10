@@ -6,6 +6,7 @@ API envelope ({ok, formatVersion, data}) per Sprint B.2.
 
 from fastapi import APIRouter, Query
 
+from app.json_narrowing import as_str
 from app.lib.api_envelope import error, success
 
 router = APIRouter(prefix='/api/harness', tags=['harness'])
@@ -129,3 +130,39 @@ async def get_drift(
             )
         }
     )
+
+
+@router.get('/model-profiles')
+async def get_model_profiles(model: str = '', min_turns: int = Query(10, ge=1, le=200)):
+    """Per-model capability fingerprints + suggested profiles (toolSurface
+    auto-detect). Pass a model id for one model, or omit for all models with
+    traces."""
+    from app.services.trace_store import capability_fingerprint
+
+    if model:
+        return success(capability_fingerprint(model, min_turns=min_turns))
+    try:
+        from app.services.trace_store import _conn as _trace_conn
+
+        rows = _trace_conn().execute(
+            'SELECT model, MAX(provider) AS provider FROM session_traces '
+            'GROUP BY model ORDER BY MAX(id) DESC LIMIT 25'
+        ).fetchall()
+        return success(
+            {
+                'profiles': [
+                    capability_fingerprint(as_str(r['model'], ''), as_str(r['provider'], ''), min_turns=min_turns)
+                    for r in rows
+                ]
+            }
+        )
+    except Exception as exc:
+        return success({'profiles': [], 'error': str(exc)})
+
+
+@router.get('/prompt-cache')
+async def get_prompt_cache_stats():
+    """Tier1/2 prompt cache hit rate (observability for prompt-caching work)."""
+    from app.services.workbench.prompt_cache import getCache
+
+    return success(getCache().stats())

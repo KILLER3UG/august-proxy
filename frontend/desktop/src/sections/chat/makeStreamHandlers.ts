@@ -516,6 +516,14 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'recalledMemories', memories: items });
       scheduleUpdate();
     },
+    onMemoryUpdated: ({ action, summary }) => {
+      // In-chat notice when August remembered / updated / forgot a memory.
+      streamBlocks = appendBlockEvent(streamBlocks, {
+        type: 'memoryUpdated',
+        summary: summary || `August ${action ?? 'updated'} its memory.`,
+      });
+      scheduleUpdate();
+    },
     onVerifierBlocked: ({ message, evidence }) => {
       // Opt-in verifier enforcement: final answer withheld until the model
       // passes update_state(phase='complete'). Rendered as an amber notice

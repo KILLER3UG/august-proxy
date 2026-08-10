@@ -460,6 +460,11 @@ async def call_anthropic_workbench(
     body['max_tokens'] = max_tokens
     if tools:
         body['tools'] = tools
+    # Prompt-cache breakpoints (system/tools/last user message) — re-applied
+    # now that messages/tools are final (the builder ran before them).
+    from app.adapters.anthropic import apply_prompt_caching
+
+    apply_prompt_caching(body)
     if thinking_budget > 0:
         body['thinking'] = {'type': 'enabled', 'budget_tokens': thinking_budget}
     agg = AnthropicWorkbenchStreamAggregator(emit=emit)

@@ -411,4 +411,8 @@ export interface WorkbenchEventHandlers {
   onRecalledMemories?: (data: {
     items: Array<{ id: string; key: string; category: string; snippet: string }>;
   }) => void;
+  /** Emitted when the harness changed long-term memory (remember /
+   *  update_memory / forget / preference capture) — the chat renders an
+   *  inline "August remembered…" notice. */
+  onMemoryUpdated?: (data: { action?: string; summary?: string }) => void;
 }

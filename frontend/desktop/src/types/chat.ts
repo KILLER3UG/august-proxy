@@ -63,6 +63,7 @@ export interface MessageBlock {
     | 'finalOutput'
     | 'recalledMemories'
     | 'verifierBlocked'
+    | 'memoryNotice'
     | 'error';
   content?: string;
   /** For type === 'error': the raw upstream error text, kept for the
@@ -300,6 +301,7 @@ export interface AppendBlockEvent {
     | 'toolResult'
     | 'recalledMemories'
     | 'verifierBlocked'
+    | 'memoryUpdated'
     | 'error';
   content?: string;
   /** For type === 'error': raw upstream text (friendly copy goes in content). */

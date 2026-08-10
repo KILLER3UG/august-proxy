@@ -113,6 +113,23 @@ export function appendBlockEvent(
       }
       blocks[targetIdx] = target;
     }
+  } else if (event.type === 'memoryUpdated') {
+    // In-chat memory notice: August remembered/updated/forgot something —
+    // rendered as a subtle chip, capped so a long agent run doesn't stack
+    // an unbounded list.
+    const noticeBlock: MessageBlock = {
+      id: `b_memory_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'memoryNotice',
+      content: event.summary || event.content || 'August updated its memory.',
+    };
+    const memoryBlocks = blocks.filter((b) => b.type === 'memoryNotice');
+    if (memoryBlocks.length >= 4) {
+      const first = blocks.findIndex((b) => b.type === 'memoryNotice');
+      if (first !== -1) blocks[first] = noticeBlock;
+      else blocks.push(noticeBlock);
+    } else {
+      blocks.push(noticeBlock);
+    }
   } else if (event.type === 'recalledMemories') {
     if (event.memories && event.memories.length > 0) {
       blocks.push({
