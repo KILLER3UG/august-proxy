@@ -195,6 +195,53 @@ def _isToolRefusal(text: str) -> bool:
     return bool(_REFUSAL_RE.search(text or ''))
 
 
+# Text tool protocol: models that ignore native `tools` (or gateways that
+# silently drop them) call tools via `[TOOLCALL] name|json` lines — one per
+# line, mirroring smolagents text-protocol patterns.
+_TEXT_TOOLCALL_RE = re.compile(
+    r'^\[TOOLCALL\]\s+([A-Za-z0-9_.-]+)\s*\|\s*(.*)$', re.IGNORECASE | re.MULTILINE
+)
+
+
+def _parseTextToolCalls(text: str) -> list[tuple[str, dict[str, object]]]:
+    """Parse ``[TOOLCALL] name|json`` protocol lines into (name, args) pairs."""
+    calls: list[tuple[str, dict[str, object]]] = []
+    if not text:
+        return calls
+    for m in _TEXT_TOOLCALL_RE.finditer(text):
+        name = m.group(1)
+        raw = m.group(2).strip()
+        from app.services.workbench.json_salvage import salvage_json_object
+
+        saved = salvage_json_object(raw) if raw else {}
+        calls.append((name, saved if saved is not None else {}))
+    return calls
+
+
+def _stripTextToolCallLines(text: str) -> str:
+    """Remove protocol lines from assistant text before it enters history."""
+    lines = [
+        ln for ln in (text or '').splitlines() if not _TEXT_TOOLCALL_RE.match(ln.strip())
+    ]
+    return '\n'.join(lines).strip()
+
+
+def _setAssistantText(
+    assistantMsg: dict[str, object],
+    text: str,
+    isAnthropic: bool,
+    contentBlocks: list[dict[str, object]] | None = None,
+) -> None:
+    """Replace the assistant message's text payload (both wire formats)."""
+    if isAnthropic and contentBlocks is not None:
+        for b in contentBlocks:
+            if isinstance(b, dict) and as_str(b.get('type'), '') == 'text':
+                b['text'] = text
+        assistantMsg['content'] = cast(JsonValue, contentBlocks)
+    else:
+        assistantMsg['content'] = text
+
+
 def _turnOutcomeGrade(
     *,
     turn_error: str | None,
@@ -1033,6 +1080,12 @@ def _applyModelCapabilityProfile(
     """Filter the tool surface by the session model's capability profile."""
     profile = _modelCapabilityProfile(session)
     surface = as_str(profile.get('tool_surface'), 'full')
+    if surface == 'text':
+        # Text tool protocol: no native tools are offered (models that
+        # ignore `tools` must not be tempted); the model calls tools via
+        # `[TOOLCALL] name|json` lines parsed by the turn loop.
+        setattr(session, '_text_tool_protocol', True)
+        return []
     if surface == 'bare':
         tools = [t for t in tools if _toolDefName(t) in _BARE_TOOL_ALLOW]
     elif surface == 'reduced':
@@ -2036,6 +2089,16 @@ async def _sendWorkbenchMessageStreamImpl(
                 '</model_handoff>'
             )
         agentMode = as_str(getattr(session, 'agent_mode', '') or '')
+        if getattr(session, '_text_tool_protocol', False):
+            text = (
+                f'{text}\n\n<tool_protocol>\n'
+                'Native tool calls are DISABLED for this model. To use a tool, write a '
+                'line exactly like:\n'
+                '[TOOLCALL] tool_name|{"arg": "value"}\n'
+                'One tool call per line. The harness executes it and returns the result '
+                'as a tool message. Do not describe tool calls in prose.\n'
+                '</tool_protocol>'
+            )
         if agentMode == 'code':
             text = (
                 f'{text}\n\n<agent_mode>\n'
@@ -2503,6 +2566,30 @@ async def _sendWorkbenchMessageStreamImpl(
             attach_openai_reasoning(assistantMsg, thinkingContent)
             toolUses = cast('list[dict[str, object]]', as_list(response.get('tool_uses', []), []))
         if not toolUses:
+            # Text tool protocol (toolSurface='text' or refusal auto-downgrade):
+            # the model calls tools via `[TOOLCALL] name|json` lines instead of
+            # native tool calls — parse them and fall through to the standard
+            # tool processing path below.
+            if getattr(session, '_text_tool_protocol', False) and textContent:
+                textCalls = _parseTextToolCalls(textContent)
+                if textCalls:
+                    cleaned = _stripTextToolCallLines(textContent)
+                    _setAssistantText(
+                        assistantMsg,
+                        cleaned,
+                        isAnthropic,
+                        contentBlocks if isAnthropic else None,
+                    )
+                    toolUses = [
+                        {
+                            'type': 'tool_use',
+                            'id': f'text_{i}',
+                            'name': name,
+                            'input': args,
+                        }
+                        for i, (name, args) in enumerate(textCalls)
+                    ]
+        if not toolUses:
             # Code mode (smolagents CodeAgent lesson): the model wrote a fenced
             # ```python block instead of native tool calls — execute it with
             # the workspace-bound tool API and feed the output back.
@@ -2567,12 +2654,24 @@ async def _sendWorkbenchMessageStreamImpl(
                 refusalCount = as_int(getattr(session, '_refusal_count', 0), 0) + 1
                 setattr(session, '_refusal_count', refusalCount)
                 if refusalCount <= 2:
+                    if refusalCount == 2:
+                        # Second refusal: switch the model to the text tool
+                        # protocol so it can keep working via [TOOLCALL] lines.
+                        setattr(session, '_text_tool_protocol', True)
                     reminder = (
                         '[Proxy Self-Heal] Tool use IS available in this environment — '
                         'tools are enabled and offered to you. Do not claim you cannot '
                         'use them. Emit an actual tool call for the next step, or answer '
                         'directly in text if the task needs no tools.'
                     )
+                    if refusalCount == 2:
+                        reminder += (
+                            '\n\n[Tool Protocol] Native tool calls are disabled for this model. '
+                            'To use a tool, write a line exactly like:\n'
+                            '[TOOLCALL] tool_name|{"arg": "value"}\n'
+                            'One tool call per line. The harness executes it and returns the '
+                            'result as a tool message.'
+                        )
                     currentMessages.append({'role': 'user', 'content': reminder})
                     if emit:
                         emit(

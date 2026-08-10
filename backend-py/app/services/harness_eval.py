@@ -188,6 +188,7 @@ async def run_turn(
     verifier_enforced: bool = False,
     agent_mode: str = '',
     emit: Callable[[dict[str, Any]], None] | None = None,
+    session_patch: Callable[[Any], None] | None = None,
 ) -> tuple[list[dict[str, Any]], Any]:
     """Run one real workbench turn against a scripted model.
 
@@ -196,7 +197,8 @@ async def run_turn(
 
     ``monkeypatch`` may be pytest's fixture (tests) or ``None`` (scheduled
     runner / endpoint) — when None, a save/restore stand-in is used so the
-    real loop is still driven, just without pytest.
+    real loop is still driven, just without pytest. ``session_patch`` runs
+    on the session before the turn starts (capability flags etc.).
     """
     import app.providers.clients as clients
 
@@ -212,6 +214,8 @@ async def run_turn(
     session.verifierEnforced = verifier_enforced
     if agent_mode:
         session.agent_mode = agent_mode
+    if session_patch is not None:
+        session_patch(session)
     # ONE client instance for the whole turn: getClient is called per round,
     # and a fresh client would replay the script from round 1 every time.
     client = ScriptedClient(script)

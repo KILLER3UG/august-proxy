@@ -224,3 +224,39 @@ async def test_eval_runs_persist(monkeypatch, evalProbe):
     record_eval_run(task_id='persist-check', passed=True, rounds=2, duration_ms=1)
     runs = list_eval_runs(limit=5)
     assert any(r.get('taskId') == 'persist-check' and r.get('passed') for r in runs)
+
+
+@pytest.mark.asyncio
+async def test_text_tool_protocol_executes(monkeypatch, evalProbe):
+    """toolSurface='text': a [TOOLCALL] line executes like a native tool call,
+    the protocol line is stripped from the assistant text, and the loop
+    continues to the next round."""
+    def _enable_text_protocol(session):
+        session._text_tool_protocol = True
+
+    events, _session = await run_turn(
+        monkeypatch,
+        script=[
+            {
+                'type': 'text',
+                'text': '[TOOLCALL] eval_probe|{"arg": 1}\n\nchecking the probe',
+            },
+            {'type': 'text', 'text': 'the probe answered'},
+        ],
+        session_patch=_enable_text_protocol,
+    )
+    toolResults = [e for e in events if e.get('type') == 'toolResult']
+    assert toolResults, 'expected a toolResult from the text protocol call'
+    assert 'probe-ok' in ''.join(str(e.get('content', '')) for e in toolResults)
+    # The protocol line must not leak into the session history (streamed
+    # text before a tool call is displayed by design — history is what the
+    # model sees next round).
+    hist_text = ''.join(
+        str(m.get('content', ''))
+        for m in getattr(_session, 'messages', []) or []
+        if m.get('role') == 'assistant'
+    )
+    assert '[TOOLCALL]' not in hist_text
+    assert 'checking the probe' in hist_text
+    assert 'done' in event_types(events)
+    _record('text-tool-protocol', events)
