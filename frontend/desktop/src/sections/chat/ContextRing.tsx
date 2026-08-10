@@ -193,7 +193,7 @@ export function ContextRing({
               <span className="text-[#ddd]">{modelName}</span>
             </div>
           )}
-          {cacheTotal > 0 && (
+          {promptCache && (
             <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-muted-foreground">
               <div className="flex items-center justify-between">
                 <span className="font-medium text-[#c0c0c0]">Prompt cache</span>

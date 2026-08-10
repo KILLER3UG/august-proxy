@@ -672,6 +672,17 @@ async def call_openai_workbench(
                 if eventUsage:
                     usage['input_tokens'] = as_int(eventUsage.get('prompt_tokens', 0))
                     usage['output_tokens'] = as_int(eventUsage.get('completion_tokens', 0))
+                    # Preserve the provider's prompt-cache split (DeepSeek,
+                    # Moonshot, OpenRouter… stream prompt_cache_hit/miss_tokens
+                    # in the final usage chunk) — the context ring reads it.
+                    if eventUsage.get('prompt_cache_hit_tokens') is not None:
+                        usage['prompt_cache_hit_tokens'] = as_int(
+                            eventUsage.get('prompt_cache_hit_tokens'), 0
+                        )
+                    if eventUsage.get('prompt_cache_miss_tokens') is not None:
+                        usage['prompt_cache_miss_tokens'] = as_int(
+                            eventUsage.get('prompt_cache_miss_tokens'), 0
+                        )
                 choices = as_list(event.get('choices', []), [])
                 if not choices:
                     continue

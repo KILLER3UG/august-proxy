@@ -124,6 +124,16 @@ class AnthropicWorkbenchStreamAggregator:
             if msg_usage:
                 self.usage['input_tokens'] = as_int(msg_usage.get('input_tokens', 0))
                 self.usage['output_tokens'] = as_int(msg_usage.get('output_tokens', 0))
+                # Preserve Anthropic prompt-cache fields — the context ring
+                # reads cache_read/cache_creation for the hit-rate split.
+                if msg_usage.get('cache_read_input_tokens') is not None:
+                    self.usage['cache_read_input_tokens'] = as_int(
+                        msg_usage.get('cache_read_input_tokens'), 0
+                    )
+                if msg_usage.get('cache_creation_input_tokens') is not None:
+                    self.usage['cache_creation_input_tokens'] = as_int(
+                        msg_usage.get('cache_creation_input_tokens'), 0
+                    )
             delta = as_dict(event.get('delta', {}))
             stop = as_str(delta.get('stop_reason') or event.get('stop_reason'))
             if stop:
