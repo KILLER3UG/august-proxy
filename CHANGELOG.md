@@ -1,5 +1,49 @@
 # August Proxy — Changelog
 
+## 0.14.0 (2026-08-10)
+
+Personal-assistant memory, harness model-agnosticism, and cache observability.
+
+**Memory — a real user model**
+- Deterministic preference capture: "I prefer X" / "my favorite Y" / "never Z"
+  folds into the user profile the same turn (no LLM); communication-style
+  inference; structured `<user_profile>` prompt block; stale facts excluded.
+- In-chat 🧠 memory notices when August remembers / updates / forgets /
+  learns a preference.
+- Memory browse by project (Settings → Project Memories); `source_session_id`
+  serialized + folder/session filters.
+- Vector hybrid recall (FTS + embeddings); consolidation sleep cycle archives
+  stale auto-memories (deterministic guard + timeline trail); per-model
+  memory injection budgets (32k gets half of a 128k model's payload);
+  `session_topics` finally written; cross-session recall in memory_search +
+  recent-chat titles in Tier 3.
+
+**Harness — handles every model**
+- Text tool protocol: `toolSurface='text'` or automatic downgrade after a
+  second refusal — non-tool-calling models work via `[TOOLCALL] name|json`.
+- Tolerant JSON salvage (fences/prose/truncation) before self-heal rounds;
+  sub-agent malformed-JSON parity; refusal detection with one reminder retry.
+- Graded turn outcomes (error | refusal | thinking_only | tool_error |
+  verified | ok) feeding routing evidence; per-turn trace store + model drift
+  alerts; per-model capability fingerprints → automatic profile suggestions.
+- Universal prompt caching: Anthropic `cache_control` breakpoints on every
+  Anthropic-format call; OpenAI-compatible prefix stability; cache hit rate
+  captured from both wire formats and shown in the context ring.
+
+**Chat UX**
+- Streaming scroll fix: you can scroll up and read while the model works.
+- In-thread search jumps through the virtualizer; error blocks gain
+  Retry / Switch model; styled confirm dialogs everywhere; grouped task
+  sections; @conversation mentions; sub-agent reasoning effort; recurring
+  tasks with custom models; automation minute presets + model/agent display;
+  reconnect transcript hydration (no more blank conversations).
+
+**Under the hood**
+- Tool-loop caps wired (`maxWorkbenchToolLoops`), fallback-chain wire-format
+  recompute, hardline `sed -i`/`find -delete` guard, sandboxed cron jobs,
+  verifier asymmetries fixed, npm audit critical fixed (desktop workspace 0
+  vulnerabilities), pytest-timeout, ~60 new tests.
+
 ## 0.13.1 (2026-08-09)
 
 Bug fixes and pipeline completion since 0.13.0:
