@@ -256,6 +256,70 @@ def best_by_task(days: int = 30, min_samples: int = 3) -> list[dict]:
     return out
 
 
+def drift_report(
+    recent_days: int = 7, baseline_days: int = 28, min_recent_samples: int = 10, drop: float = 0.15
+) -> list[dict]:
+    """Flag models whose win rate regressed: last ``recent_days`` vs the
+    ``baseline_days`` before that. Feeds the scheduled drift check (Brain
+    event) so a silent provider/model change surfaces instead of degrading
+    routing quietly. Refusal / thinking-only / tool-error outcomes count as
+    losses via the graded outcome column.
+    """
+    try:
+        conn = _conn()
+
+        def _window_stats(days_back: int, days_forward: int | None) -> dict[str, dict[str, int]]:
+            """Per-model win/total within (now - days_back, now - days_forward)."""
+            rows = conn.execute(
+                'SELECT model, provider, '
+                'SUM(CASE WHEN ok = 1 AND outcome NOT IN (\'refusal\', \'thinking_only\', \'tool_error\') '
+                '        THEN 1 ELSE 0 END) AS wins, '
+                'COUNT(*) AS total '
+                'FROM routing_evidence WHERE created_at > datetime(\'now\', ?) '
+                + ('AND created_at <= datetime(\'now\', ?) ' if days_forward is not None else '')
+                + 'GROUP BY model, provider',
+                tuple(
+                    [f'-{max(1, days_back)} days']
+                    + ([f'-{max(1, days_forward)} days'] if days_forward is not None else [])
+                ),
+            ).fetchall()
+            out: dict[str, dict[str, int]] = {}
+            for r in rows:
+                key = f"{as_str(r['model'], '')}|{as_str(r['provider'], '')}"
+                out[key] = {
+                    'wins': as_int(r['wins'], 0),
+                    'total': as_int(r['total'], 0),
+                }
+            return out
+
+        recent = _window_stats(recent_days, None)
+        baseline = _window_stats(recent_days + baseline_days, recent_days)
+    except Exception:
+        return []
+    out: list[dict] = []
+    for key, r in recent.items():
+        base = baseline.get(key)
+        if base is None or base['total'] < max(1, min_recent_samples):
+            continue
+        if r['total'] < max(1, min_recent_samples):
+            continue
+        recent_rate = r['wins'] / r['total']
+        base_rate = base['wins'] / base['total']
+        if base_rate - recent_rate >= drop:
+            model, provider = key.split('|', 1)
+            out.append(
+                {
+                    'model': model,
+                    'provider': provider,
+                    'recentWinRate': round(recent_rate, 3),
+                    'baselineWinRate': round(base_rate, 3),
+                    'recentSamples': r['total'],
+                    'baselineSamples': base['total'],
+                }
+            )
+    return out
+
+
 def get_stats(days: int = 30) -> dict:
     """Model track record + daily token totals (D6/D7).
 

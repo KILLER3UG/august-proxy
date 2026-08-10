@@ -177,6 +177,16 @@ def _isRetryableModelError(response: dict[str, object]) -> bool:
     return any((marker in msg for marker in _MODEL_RETRY_MARKERS))
 
 
+# Auto-recall probe verbs: messages that reach into the past should trigger
+# mid-conversation recall ("what did I say about X", "do you remember…").
+_PROBES_PAST_RE = re.compile(
+    r"\b(remember|recall|what did i (?:say|tell|ask)|last (?:time|week|month|session|chat)|"
+    r"earlier|before|previously|previous (?:chat|session)|"
+    r"(?:my )?(?:preference|setting|habit|goal)s?|"
+    r"do you (?:remember|know) (?:me|about)|who am i|about me)\b",
+    re.IGNORECASE,
+)
+
 # Refusal patterns: a model claiming it cannot use tools despite being
 # offered them (or hosted on a gateway that silently drops `tools`). Narrow
 # by design — "as an AI" prose must not false-positive.
@@ -538,7 +548,7 @@ def buildSystemPrompt(
     from app.services.memory_store import get_memory
     from app.services.workbench import prompt_segments_cache as _seg_cache
 
-    memory = {}
+    memory: dict[str, JsonValue] = {}
     profile = get_memory('userProfile')
     if profile:
         memory['userProfile'] = profile
@@ -548,6 +558,21 @@ def buildSystemPrompt(
     projects = get_memory('active_projects')
     if projects:
         memory['active_projects'] = projects
+    # Cross-session continuity: the last few chat titles are injected into
+    # Tier 3 so the model can reference "that chat about X" — cheap, no
+    # query cost per turn.
+    try:
+        from app.services.workbench.sessions import list_workbench_sessions
+
+        recent_sessions = [
+            as_str(s.get('title') or s.get('id'), '')
+            for s in list_workbench_sessions()[:5]
+            if as_str(s.get('id'), '') != getattr(session, 'id', '')
+        ]
+        if recent_sessions:
+            memory['recentSessions'] = cast(JsonValue, recent_sessions)
+    except Exception:
+        logger.debug('recent sessions preload failed', exc_info=True)
     session._last_recalled_memories = None
     session._last_context_snapshot = None
     # Fresh verifier gate receipts for this turn (see system_tools._updateState).
@@ -854,24 +879,32 @@ def _shouldAutoRecall(
     *,
     session: object | None = None,
 ) -> bool:
-    """Auto-recall only on a fresh session when there is prompt headroom.
+    """Auto-recall when there is prompt headroom.
 
     ``low``/``medium`` attention pressure plus at least ``min_headroom``
-    remaining tokens keeps first-turn recall free of cost under pressure. On
-    later turns the model uses memory_search/fact_search only when the user
-    actually needs past context, so ordinary messages do not trigger recall.
+    remaining tokens keeps recall free of cost under pressure. On later
+    turns, recall fires on a cadence (every 3rd user turn) or when the
+    message probes the past ("what did I say about X", "remember", "last
+    week") — a personal assistant must recall mid-conversation, not only
+    on the first turn.
     """
     if not cognitive_budget:
         return False
     if session is not None:
         messages = getattr(session, 'messages', None)
         if isinstance(messages, list):
-            user_turns = sum(
-                1 for message in messages
-                if isinstance(message, dict) and message.get('role') == 'user'
-            )
+            user_turns = 0
+            last_user_text = ''
+            for message in messages:
+                if isinstance(message, dict) and message.get('role') == 'user':
+                    user_turns += 1
+                    content = message.get('content', '')
+                    if isinstance(content, str):
+                        last_user_text = content
             if user_turns > 1:
-                return False
+                # Later turns: probe verbs or a cadence, never every send.
+                if user_turns % 3 != 0 and not _PROBES_PAST_RE.search(last_user_text or ''):
+                    return False
         elif int(getattr(session, 'messageCount', 0) or 0) > 1:
             return False
     pressure = as_str(cognitive_budget.get('attention_pressure'), '')
@@ -2306,6 +2339,9 @@ async def _sendWorkbenchMessageStreamImpl(
     turnEndedThinkingOnly = False
     toolErrorsThisTurn = 0
     turnEvidenceTracker = None
+    # Trace-store bookkeeping: tool names dispatched this turn + self-heal
+    # counters (recorded with the turn trace for replay/drift analysis).
+    calledTools: set[str] = set()
     while True:
         toolRound += 1
         if managedToolLoopCap > 0 and toolRound > managedToolLoopCap:
@@ -2705,6 +2741,8 @@ async def _sendWorkbenchMessageStreamImpl(
             toolName = as_str(tu.get('name', ''))
             toolInput = as_dict(tu.get('input', {}))
             toolUseId = as_str(tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}'))
+            if toolName:
+                calledTools.add(toolName)
             # Chat mode: tool calls are blocked — the model answers in text only.
             if getattr(session, 'agent_mode', '') == 'chat':
                 msg = '[Blocked] Chat mode: tool calls are disabled. Answer in text only.'
@@ -3566,6 +3604,44 @@ async def _sendWorkbenchMessageStreamImpl(
                 )
             except Exception:
                 logger.debug('routing evidence record failed', exc_info=True)
+            # Per-turn trace (replay/drift): prompt hash, tools, rounds,
+            # self-heal counters, graded outcome. Fire-and-forget.
+            try:
+                import hashlib
+
+                from app.services.trace_store import record_turn_trace
+
+                userText = _lastUserMessageText(session)
+                record_turn_trace(
+                    session_id=sessionId,
+                    turn_seq=as_int(getattr(session, 'turnCount', 0), 0),
+                    prompt_hash=hashlib.sha256((userText or '').encode('utf-8')).hexdigest()[:16],
+                    prompt_preview=(userText or '')[:300],
+                    task_type=task_type,
+                    model=as_str(resolvedModel, ''),
+                    provider=as_str(
+                        (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
+                    ),
+                    outcome=outcome,
+                    rounds=toolRound,
+                    tools_offered=len(tools),
+                    tool_calls=sorted(calledTools),
+                    self_heal_events={
+                        'parse_failures': parseFailures,
+                        'refusals': as_int(getattr(session, '_refusal_count', 0), 0),
+                        'stall_nudges': 1 if stallMessageSent else 0,
+                        'compacted_this_turn': currentTurn == as_int(
+                            getattr(session, '_last_compaction_turn', -1), -1
+                        ),
+                    },
+                    evidence_state=evidence_state,
+                    input_tokens=totalInputTokens,
+                    output_tokens=totalOutputTokens,
+                    duration_ms=int(totalGenerationMs),
+                    error=turnError or '',
+                )
+            except Exception:
+                logger.debug('trace record failed', exc_info=True)
             # Self-improvement: failed turns become provider-reliability lessons
             # (injected into future prompts, merged/confidence-bumped on repeats).
             if turnError is not None:
@@ -3667,6 +3743,14 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
         pass
     try:
         lastUserMsg = _lastUserMessageText(session)
+        # Deterministic preference capture (no LLM): "I prefer X" / "my
+        # favorite Y" / "never Z" folds into the user profile the same turn.
+        try:
+            from app.services.memory.user_profile import note_user_message
+
+            note_user_message(lastUserMsg)
+        except Exception:
+            logger.debug('preference capture failed', exc_info=True)
         # Cross-session bridge: active_projects + current_context (not userProfile).
         sync_from_turn(
             workspace_path=as_str(getattr(session, 'workspacePath', '') or ''),

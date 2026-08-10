@@ -468,7 +468,41 @@ async def maybe_run_scheduled_evals(*, force: bool = False) -> dict[str, Any] | 
     if not force and (time.time() - _last_eval_run()) < EVAL_SCHEDULE_INTERVAL_S:
         return None
     _mark_eval_run()
-    return await run_all_scenarios()
+    result = await run_all_scenarios()
+    try:
+        await check_model_drift()
+    except Exception:
+        logger.exception('model drift check failed')
+    return result
+
+
+async def check_model_drift() -> None:
+    """Compare each model's win rate in the last 7 days vs the prior 28 and
+    emit a Brain event when a model regressed (also catches gateway-side
+    model changes). Fire-and-forget; never raises."""
+    from app.services.routing_evidence import drift_report
+
+    for row in drift_report():
+        try:
+            from app.services.brain_event_bus import emitBrainEvent
+
+            emitBrainEvent(
+                category='model_drift',
+                layer='routing',
+                summary=(
+                    f'Model {row["model"]} win rate dropped from '
+                    f'{row["baselineWinRate"]:.0%} to {row["recentWinRate"]:.0%}'
+                ),
+                meta={
+                    'model': row['model'],
+                    'provider': row['provider'],
+                    'recentWinRate': row['recentWinRate'],
+                    'baselineWinRate': row['baselineWinRate'],
+                    'recentSamples': row['recentSamples'],
+                },
+            )
+        except Exception:
+            logger.debug('drift brain event failed', exc_info=True)
 
 
 async def scheduled_evals_loop() -> None:

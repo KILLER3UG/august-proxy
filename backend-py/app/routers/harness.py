@@ -92,3 +92,40 @@ async def get_ownership_suggestions():
     from app.services.ownership_router import get_suggestions
 
     return success({'suggestions': get_suggestions()})
+
+
+@router.get('/traces')
+async def get_traces(
+    session_id: str | None = Query(None, description='Filter by workbench session id'),
+    limit: int = Query(100, ge=1, le=500, description='Max rows'),
+):
+    """Per-turn execution traces (prompt hash, tools, rounds, self-heal
+    events, graded outcome) for replay / regression diffs."""
+    from app.services.trace_store import list_session_traces, recent_traces
+
+    if session_id:
+        return success({'traces': list_session_traces(session_id, limit)})
+    return success({'traces': recent_traces(limit)})
+
+
+@router.get('/drift')
+async def get_drift(
+    recent_days: int = Query(7, ge=1, le=30),
+    baseline_days: int = Query(28, ge=7, le=90),
+    min_samples: int = Query(10, ge=1, le=200),
+    drop: float = Query(0.15, ge=0.0, le=1.0),
+):
+    """Models whose win rate regressed (recent window vs the baseline before
+    it) — the same check the scheduled drift alert runs."""
+    from app.services.routing_evidence import drift_report
+
+    return success(
+        {
+            'drift': drift_report(
+                recent_days=recent_days,
+                baseline_days=baseline_days,
+                min_recent_samples=min_samples,
+                drop=drop,
+            )
+        }
+    )
