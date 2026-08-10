@@ -34,7 +34,7 @@ _PROMPT_WRITE = frozenset({
     'desktop_open_url', 'desktop_press_key', 'desktop_type', 'rename_session',
     'rename_sessions', 'setup_provider', 'connect_github', 'connect_google',
     'connect_slack', 'install_mcp_server', 'customize_ui', 'enter_plan_mode',
-    'submit_plan', 'update_alias', 'update_heuristics', 'update_state',
+    'submit_plan', 'update_alias', 'update_heuristics', 'update_memory', 'update_state',
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad',
     'remember',
 })

@@ -10,7 +10,8 @@ from app.services import tool_registry
 
 
 async def _memorySearch(query: str) -> str:
-    """Search past conversation memory across KV store and auto_memories."""
+    """Search past conversation memory across KV store, auto_memories, and
+    past session transcripts (cross-session recall)."""
     from app.services.memory.auto_memory import getRelevantMemories
     from app.services.memory_store import search_memory
 
@@ -38,6 +39,40 @@ async def _memorySearch(query: str) -> str:
             title = as_str(m.get('title') or m.get('label'), as_str(m.get('key'), ''))
             desc = as_str(m.get('summary') or m.get('description') or m.get('content'), '')
             lines.append(f'  [{origin}:{title}]: {desc[:500]}')
+        # Cross-session recall: past session transcripts are FTS-indexed —
+        # surface the top hits so the model can reference what was said in
+        # an earlier chat without knowing brain_query exists.
+        try:
+            from app.services.memory_store import brain_query as _bq
+
+            past = _bq('messages', query, None, 3)
+            pastDict: dict[str, object] = {}
+            if isinstance(past, str):
+                try:
+                    parsed = json.loads(past)
+                    if isinstance(parsed, dict):
+                        pastDict = parsed
+                except (json.JSONDecodeError, TypeError):
+                    pastDict = {}
+            elif isinstance(past, dict):
+                pastDict = past
+            rows = pastDict.get('rows') or pastDict.get('data') or []
+            if isinstance(rows, list):
+                for row in rows[:3]:
+                    if not isinstance(row, dict):
+                        continue
+                    found = True
+                    sid = as_str(row.get('session_id') or row.get('sessionId'), '?')
+                    text = as_str(
+                        row.get('content')
+                        or row.get('text')
+                        or row.get('summary')
+                        or row.get('snippet'),
+                        '',
+                    )
+                    lines.append(f'  [past-session:{sid}]: {text[:500]}')
+        except Exception:
+            pass
         if not found:
             return f'No memory results for: {query}'
         return '\n'.join(lines)
@@ -160,6 +195,38 @@ async def _forgetMemory(memoryId: int) -> str:
         return f'Failed to delete memory {memoryId}.'
     except Exception as exc:
         return f'Error deleting memory: {exc}'
+
+
+async def _updateMemory(
+    memoryId: int,
+    content: str = '',
+    category: str = '',
+    importance: float | None = None,
+) -> str:
+    """Update an existing memory in place (amendments must not create twins)."""
+    from app.services.memory.auto_memory import get_auto_memory, update_auto_memory
+    from app.services.memory.memory_scrubber import refuse_reason
+
+    try:
+        mem = get_auto_memory(memoryId)
+        if mem is None:
+            return f'No memory found with id {memoryId}.'
+        if content and content.strip():
+            reason = refuse_reason(content)
+            if reason:
+                return reason
+        ok = update_auto_memory(
+            memory_id=memoryId,
+            content=content.strip() if content and content.strip() else None,
+            category=category.strip() if category and category.strip() else None,
+            importance=max(0.0, min(1.0, float(importance))) if importance is not None else None,
+        )
+        if not ok:
+            return f'Failed to update memory {memoryId}.'
+        title = as_str(mem.get('title') or mem.get('label') or mem.get('key'), str(memoryId))
+        return f'Updated memory: {title} [id: {memoryId}]'
+    except Exception as exc:
+        return f'Error updating memory: {exc}'
 
 
 async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int = 10) -> str:
@@ -398,6 +465,37 @@ def register() -> None:
                     'type': 'integer',
                     'description': 'The memory id (from memory_search / brain_query / remember result).',
                 }
+            },
+            'required': ['memoryId'],
+        },
+    )
+    tool_registry.register(
+        'update_memory',
+        'Update an existing memory in place by its id (from memory_search / '
+        'brain_query / remember). Use this when a stored memory is outdated or '
+        'incomplete — amending via remember would create a duplicate row. '
+        'Pass only the fields that change; omitted fields stay as-is.',
+        _updateMemory,
+        {
+            'type': 'object',
+            'properties': {
+                'memoryId': {
+                    'type': 'integer',
+                    'description': 'The memory id to update (from memory_search / brain_query / remember).',
+                },
+                'content': {
+                    'type': 'string',
+                    'description': 'New content for the memory. Optional.',
+                },
+                'category': {
+                    'type': 'string',
+                    'enum': ['correction', 'preference', 'project', 'reference'],
+                    'description': 'New category. Optional.',
+                },
+                'importance': {
+                    'type': 'number',
+                    'description': 'New importance 0.0-1.0. Optional.',
+                },
             },
             'required': ['memoryId'],
         },

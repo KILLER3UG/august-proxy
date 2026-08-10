@@ -36,6 +36,38 @@ AUGUST_PLATFORM: str = (
 )
 DEFAULT_CONTEXT_MAX_CHARS: int = 24000
 
+# Cap for the rendered <user_profile> block (token-bounded; the raw profile
+# stays fully accessible via context_read / the Brain UI).
+_PROFILE_BLOCK_MAX_CHARS = 1200
+
+
+def _buildUserProfileBlock(profile: object) -> str:
+    """Render the user profile as a structured, bounded prompt block.
+
+    Replaces the old 300-char JSON truncation with labeled fields — the
+    model sees WHO the user is (name/role/stack), what they prefer, and how
+    they communicate, instead of a clipped blob.
+    """
+    if not profile:
+        return ''
+    try:
+        from app.services.memory.user_profile import get_user_profile
+
+        p = get_user_profile()
+    except Exception:
+        p = as_dict(profile, {})
+    lines: list[str] = []
+    summary = as_str(p.get('summary'), '')
+    if summary:
+        lines.append(summary)
+    style = as_str(p.get('communication_style'), '')
+    if style:
+        lines.append(f'Communication style: {style}')
+    text = '\n'.join(lines).strip()
+    if not text:
+        return ''
+    return f'<user_profile>\n{text}\n</user_profile>'[: _PROFILE_BLOCK_MAX_CHARS + 40]
+
 # camelCase (workbench) → snake_case (design/tests) aliases for dual-get.
 _KEY_ALIASES: dict[str, tuple[str, ...]] = {
     'skills_manifest': ('skillsManifest', 'skills_manifest'),
@@ -232,8 +264,9 @@ def buildTier1(session: dict[str, object] | None = None) -> str:
     profile = get_memory('userProfile') if session else None
     if not profile and session:
         profile = _get(session, 'userProfile', 'user_profile')
-    if profile:
-        userParts.append(f'Profile: {_fmtVal(profile, 300)}')
+    profileText = _buildUserProfileBlock(profile)
+    if profileText:
+        userParts.append(profileText)
     if userParts:
         blocks.append(wrapTag('user_state', '\n'.join(userParts)))
     # Capabilities: prefer prebuilt block from workbench; else build from session hints.
@@ -489,6 +522,11 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
     activeContext = as_str(_get(session, 'global_context', 'globalContext'), '')
     if activeContext:
         rcParts.append(f'Active context:\n{_fmtVal(activeContext, 1000)}\n')
+    recentChats = _get(session, 'recent_sessions', 'recentSessions')
+    if isinstance(recentChats, list) and recentChats:
+        titles = [as_str(t, '') for t in recentChats if as_str(t, '')]
+        if titles:
+            rcParts.append(f'Recent chats: {", ".join(titles[:3])}\n')
     projects = as_list(_get(session, 'active_projects', 'activeProjects'), [])
     if isinstance(projects, list) and projects:
         names = []

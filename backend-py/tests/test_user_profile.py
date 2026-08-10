@@ -82,3 +82,56 @@ def test_save_fact_near_dup_refreshes(brain_ready):
     # Near-dups refresh the timestamp but keep the existing (more specific)
     # fact text — never replace detail with a shorter paraphrase.
     assert core[0]['fact'] == 'The user prefers pnpm over npm for installs'
+
+
+def test_capture_preferences_patterns(brain_ready):
+    from app.services.memory.user_profile import capture_preferences
+
+    assert capture_preferences('I prefer pnpm over npm') == ['prefers: pnpm over npm']
+    assert capture_preferences('My favorite editor is VS Code') == ['favorite: VS Code']
+    assert capture_preferences('please do not use emoji in commits') == [
+        'avoid: use emoji in commits'
+    ]
+    assert capture_preferences('the weather is nice today') == []
+
+
+def test_note_user_message_folds_into_profile(brain_ready):
+    from app.services.memory.user_profile import get_user_profile, note_user_message
+
+    note_user_message('I prefer short answers with code examples')
+    profile = get_user_profile()
+    assert profile['summary']
+    assert 'prefers: short answers with code examples' in profile['summary']
+    # Repeated message refreshes rather than duplicating.
+    note_user_message('I prefer short answers with code examples')
+    profile2 = get_user_profile()
+    facts = profile2.get('facts') or []
+    assert len(facts) == 1
+
+
+def test_infer_communication_style(brain_ready):
+    from app.services.memory.user_profile import infer_communication_style
+
+    assert infer_communication_style([]) is None
+    assert infer_communication_style(['ok', 'yes', 'go ahead']) == 'casual'
+    long_msg = (
+        'please explain the full architecture in detail step by step including how '
+        'the proxy layer translates between openai and anthropic wire formats and '
+        'how the workbench loop manages tool calls, streaming, compaction, and the '
+        'verifier gate across multiple rounds of execution with sub agents'
+    )
+    assert len(long_msg.split()) > 40
+    assert infer_communication_style([long_msg]) == 'detailed'
+
+
+def test_profile_block_renders_structured_fields(brain_ready):
+    from app.services.memory.context_builder import _buildUserProfileBlock
+    from app.services.memory.user_profile import get_user_profile, note_user_message
+
+    note_user_message('I prefer TypeScript')
+    block = _buildUserProfileBlock(get_user_profile())
+    assert block.startswith('<user_profile>')
+    assert '</user_profile>' in block
+    assert 'TypeScript' in block
+    assert _buildUserProfileBlock(None) == ''
+    assert _buildUserProfileBlock({}) == ''
