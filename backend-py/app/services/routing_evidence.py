@@ -59,13 +59,18 @@ def record_turn(
     duration_ms: int = 0,
     source: str = 'turn',
     prompt: str = '',
+    outcome: str = '',
 ) -> None:
-    """Record one turn's outcome (fire-and-forget, never raises)."""
+    """Record one turn's outcome (fire-and-forget, never raises).
+
+    ``outcome`` is the graded result (error | refusal | thinking_only |
+    tool_error | verified | ok) — routing quality signals beyond ``ok``.
+    """
     try:
         _conn().execute(
             'INSERT INTO routing_evidence '
-            '(session_id, task_type, model, provider, ok, input_tokens, output_tokens, duration_ms, source, prompt) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            '(session_id, task_type, model, provider, ok, input_tokens, output_tokens, duration_ms, source, prompt, outcome) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 as_str(session_id, '')[:120],
                 as_str(task_type, 'general')[:40],
@@ -77,6 +82,7 @@ def record_turn(
                 as_int(duration_ms, 0),
                 as_str(source, 'turn')[:20],
                 as_str(prompt, '')[:4000],
+                as_str(outcome, '')[:20],
             ),
         )
         _conn().commit()

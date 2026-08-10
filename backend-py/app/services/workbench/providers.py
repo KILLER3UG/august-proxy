@@ -770,12 +770,21 @@ async def call_openai_workbench(
                 if not isinstance(parsedArgs, dict):
                     raise ValueError('arguments must be an object')
             except (json.JSONDecodeError, TypeError, ValueError):
-                # Malformed tool arguments must NEVER execute as {} — the model
-                # would silently do the wrong thing. Mark the call so the
-                # workbench loop surfaces a validation-error tool result and
-                # the model self-heals (see `_invalid_json` handling in the
-                # turn loop).
-                parsedArgs = {'_invalid_json': argsRaw[:2000]}
+                # One tolerant salvage pass before marking the call invalid —
+                # models wrap arguments in fences or prefix prose, and
+                # recovering avoids a full validation-error round.
+                from app.services.workbench.json_salvage import salvage_json_object
+
+                saved = salvage_json_object(argsRaw) if argsRaw else None
+                if saved is not None:
+                    parsedArgs = saved
+                else:
+                    # Malformed tool arguments must NEVER execute as {} — the model
+                    # would silently do the wrong thing. Mark the call so the
+                    # workbench loop surfaces a validation-error tool result and
+                    # the model self-heals (see `_invalid_json` handling in the
+                    # turn loop).
+                    parsedArgs = {'_invalid_json': argsRaw[:2000]}
             tcList.append(
                 {
                     'id': tc['id'],

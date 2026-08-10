@@ -110,7 +110,12 @@ class AnthropicWorkbenchStreamAggregator:
                     try:
                         self.current_tool_block['input'] = json.loads(raw)
                     except json.JSONDecodeError:
-                        self.current_tool_block['input'] = {'_raw': raw}
+                        from app.services.workbench.json_salvage import salvage_json_object
+
+                        saved = salvage_json_object(raw)
+                        self.current_tool_block['input'] = (
+                            saved if saved is not None else {'_raw': raw}
+                        )
                 self.tool_uses.append(self.current_tool_block)
                 self.current_tool_block = None
                 self.current_tool_input_parts = []

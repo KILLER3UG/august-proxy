@@ -105,3 +105,24 @@ async def test_full_access_clean_command_runs():
     policy = SandboxPolicy(mode='danger-full-access', workspace_root='')
     result = await run_with_best_backend('echo hi', policy, timeout=10)
     assert result.ok is True
+
+
+def test_reader_mutating_flags_blocked():
+    """Readers with in-place/delete flags must count as writes (regression:
+    sed -i / find -delete / awk -i inplace bypassed the guard before)."""
+    assert check_hardline_command("sed -i 's/KEY=.*/KEY=evil/' .env") is not None
+    assert check_hardline_command('sed -i.bak "s/x/y/" .env') is not None
+    assert check_hardline_command('sed --in-place "s/x/y/" .env') is not None
+    assert check_hardline_command("awk -i inplace '{print $1}' .env") is not None
+    assert check_hardline_command('find . -name .env -delete') is not None
+    assert check_hardline_command('find . -name .env -exec rm {} \;') is not None
+    assert check_hardline_command('find ~/.ssh -type f -execdir shred {} \;') is not None
+    assert check_hardline_command('sort -o .env < other.txt') is not None
+
+
+def test_reader_plain_uses_still_allowed():
+    """Plain reads with the same executables must stay allowed."""
+    assert check_hardline_command("sed -n '1,5p' .env") is None
+    assert check_hardline_command("awk '{print $1}' .env") is None
+    assert check_hardline_command('find . -name .env -print') is None
+    assert check_hardline_command('grep KEY .env') is None

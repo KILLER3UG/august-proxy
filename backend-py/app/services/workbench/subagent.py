@@ -100,7 +100,6 @@ async def executeSubAgent(
     from app.services.fallback_service import getFallback
     from app.services.tool_registry import dispatch as dispatchTool
     from app.services.workbench.workbench import (
-        MAX_MANAGED_TOOL_ROUNDS,
         WorkbenchSession,
         _callAnthropicWorkbench,
         _callOpenaiWorkbench,
@@ -108,6 +107,7 @@ async def executeSubAgent(
         _isAnthropicProvider,
         _isOpenaiProvider,
         _isRetryableModelError,
+        _managedToolLoopCap,
         _modelRetryDelayMs,
         _modelRetryPolicy,
         _resolveModel,
@@ -295,10 +295,15 @@ async def executeSubAgent(
         # Sub-agents get the same retry discipline as the parent loop: a
         # transient 429/5xx must not kill the agent outright.
         retryPolicy = _modelRetryPolicy()
+        managedToolLoopCap = _managedToolLoopCap()
+        # Same malformed-JSON discipline as the parent loop: consecutive
+        # invalid tool arguments must never execute as a phantom arg.
+        subInvalidCount = 0
+        subInvalidNudged = False
         while True:
             toolRound += 1
             # 0 = unlimited (same default as main workbench loop)
-            if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
+            if managedToolLoopCap > 0 and toolRound > managedToolLoopCap:
                 break
             # Context compaction: long tool runs must not overflow the window.
             try:
@@ -427,11 +432,41 @@ async def executeSubAgent(
                                 'input': tInput,
                             }
                         )
-                    try:
-                        result = await dispatchTool(tName, tInput)
-                    except Exception as exc:
-                        result = f'Error executing {tName}: {exc}'
-                    status = 'done'
+                    # Malformed-JSON parity with the parent loop: a call whose
+                    # arguments failed to parse must not execute with a
+                    # phantom `_invalid_json`/`_raw` arg — surface a
+                    # validation-error result so the sub-agent self-heals.
+                    invalidRaw = as_str(tInput.get('_invalid_json') or tInput.get('_raw'), '')
+                    if invalidRaw:
+                        subInvalidCount += 1
+                        result = (
+                            f"[Validation Error] Tool '{tName}' received malformed JSON arguments:\n"
+                            f'{invalidRaw[:500]}\n\n'
+                            '[Proxy Self-Heal]: Fix the tool arguments (valid JSON matching the '
+                            'tool schema) and retry. Do NOT stop.'
+                        )
+                        status = 'error'
+                        if subInvalidCount >= 3 and not subInvalidNudged:
+                            subInvalidNudged = True
+                            if emit:
+                                emit(
+                                    {
+                                        'type': 'subagentWarning',
+                                        'agentId': resolvedAgentId,
+                                        'jobId': jobId,
+                                        'message': (
+                                            f'Sub-agent tool arguments failed to parse '
+                                            f'{subInvalidCount} times in a row — the model is '
+                                            'improvising JSON instead of using the tool schema.'
+                                        ),
+                                    }
+                                )
+                    else:
+                        try:
+                            result = await dispatchTool(tName, tInput)
+                        except Exception as exc:
+                            result = f'Error executing {tName}: {exc}'
+                        status = 'done'
                 resultStr = str(result)
                 if emit:
                     emit(

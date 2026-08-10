@@ -25,15 +25,16 @@ def _isolate(tmp_path, monkeypatch):
     sess._sessions.clear()
 
 
-def test_steer_prepends_and_formats():
+def test_steer_drains_fifo_and_formats_priority():
     s = create_workbench_session()
     enqueueUserMessage(s.id, 'later follow-up', kind='queue')
     enqueueUserMessage(s.id, 'change approach now', kind='steer')
     entries = drainQueuedMessages(s.id)
-    # steer was inserted at front
-    assert entries[0]['kind'] == 'steer'
-    assert entries[0]['text'] == 'change approach now'
-    assert entries[1]['kind'] == 'queue'
+    # drained in arrival (FIFO) order — steers do not jump the queue
+    assert entries[0]['kind'] == 'queue'
+    assert entries[0]['text'] == 'later follow-up'
+    assert entries[1]['kind'] == 'steer'
+    assert entries[1]['text'] == 'change approach now'
     msg = _formatQueuedMessagesAsUserTurn(entries)
     assert msg['role'] == 'user'
     body = msg['content']
@@ -41,6 +42,8 @@ def test_steer_prepends_and_formats():
     assert '<steer' in body
     assert 'change approach now' in body
     assert '<queued_message' in body
+    # steer takes priority in the formatted body even though it arrived later
+    assert body.index('<steer') < body.index('<queued_message')
 
 
 def test_queue_default_kind():

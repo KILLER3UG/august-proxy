@@ -48,10 +48,10 @@ from app.services.workbench.sessions import (
 from app.type_aliases import JsonValue
 
 logger = logging.getLogger('workbench')
-# Default tool-round cap (25). Unlimited loops let weak models burn unbounded
-# tokens; brain-orchestrator maxWorkbenchToolLoops can raise/lower it at
-# runtime via config. The stall detector below stops loops that spin without
-# making progress even before the cap.
+# Default tool-round cap (25). brain-orchestrator maxWorkbenchToolLoops can
+# raise/lower it at runtime via config (Settings → Brain) — the effective cap
+# is resolved per turn in _managedToolLoopCap. The stall detector below stops
+# loops that spin without making progress even before the cap.
 MAX_MANAGED_TOOL_ROUNDS = 25
 # Recurring-task / daemon sub-agents run unbounded today (they bypass the
 # orchestrator's worker pool). Cap concurrent runs so a burst of due tasks
@@ -177,6 +177,48 @@ def _isRetryableModelError(response: dict[str, object]) -> bool:
     return any((marker in msg for marker in _MODEL_RETRY_MARKERS))
 
 
+# Refusal patterns: a model claiming it cannot use tools despite being
+# offered them (or hosted on a gateway that silently drops `tools`). Narrow
+# by design — "as an AI" prose must not false-positive.
+_REFUSAL_RE = re.compile(
+    r"((?:i|we) (?:can't|cannot|am|are) (?:unable to|not able to|not allowed to) (?:use|run|execute|access) tools?"
+    r"|(?:i|we) (?:don't|do not|can't|cannot) (?:have|get) (?:access to|to use) tools?"
+    r"|no tools? (?:are )?available"
+    r"|tool (?:use|access|usage) (?:is|isn't|is not) (?:not )?(?:available|enabled|supported)"
+    r"|i have no tools?)",
+    re.IGNORECASE,
+)
+
+
+def _isToolRefusal(text: str) -> bool:
+    """True when the assistant text reads as a tool-use refusal."""
+    return bool(_REFUSAL_RE.search(text or ''))
+
+
+def _turnOutcomeGrade(
+    *,
+    turn_error: str | None,
+    refusals: int,
+    thinking_only: bool,
+    tool_errors: int,
+    evidence_state: str,
+) -> str:
+    """Graded turn outcome for routing evidence (task success, not just
+    error-absence). Order matters: an error dominates; a refusal is not a
+    win even though the loop survived; verified mutation beats a bare ok."""
+    if turn_error:
+        return 'error'
+    if refusals > 0:
+        return 'refusal'
+    if thinking_only:
+        return 'thinking_only'
+    if tool_errors > 0:
+        return 'tool_error'
+    if evidence_state == 'verified':
+        return 'verified'
+    return 'ok'
+
+
 def _modelRetryPolicy() -> dict[str, int]:
     """Retry policy with optional config.json overrides (workbench.retry)."""
     policy = {'maxRetries': 10, 'baseDelayMs': 1000, 'maxDelayMs': 30000}
@@ -232,6 +274,23 @@ def _chatContextPromotionModel() -> str:
         return getModelForRole('chat_context_promotion').strip()
     except Exception:
         return ''
+
+
+def _managedToolLoopCap() -> int:
+    """Effective tool-round cap for this turn.
+
+    brain-orchestrator ``maxWorkbenchToolLoops`` (Settings → Brain) overrides
+    the hardcoded default of 25; 0 disables the cap entirely.
+    """
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        value = as_int(getRuntimeConfig().get('maxWorkbenchToolLoops'), 0)
+        if value >= 0:
+            return value
+    except Exception:
+        logger.debug('maxWorkbenchToolLoops read failed; using default', exc_info=True)
+    return MAX_MANAGED_TOOL_ROUNDS
 
 
 def _modelRetryDelayMs(attempt: int, response: dict[str, object], policy: dict[str, int]) -> int:
@@ -885,7 +944,19 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
 
         messages = getattr(session, 'messages', None) or []
         contextMsgs = list(messages) if isinstance(messages, list) else []
-        result = assembleToolDefs(all_tool_defs=tools, context_messages=contextMsgs)
+        # Budget the tool set against the session model's REAL window — a
+        # 32k model must not be offered the same tool budget as a 200k one.
+        contextWindow = 128000
+        try:
+            modelId = as_str(getattr(session, 'model', ''), '')
+            provider = as_dict(getattr(session, 'provider', None), {})
+            if modelId:
+                contextWindow = _resolveModelContextWindow(modelId, provider or None)
+        except Exception:
+            logger.debug('tool-defs context window resolve failed', exc_info=True)
+        result = assembleToolDefs(
+            all_tool_defs=tools, context_messages=contextMsgs, contextLength=contextWindow
+        )
         if result.activated:
             session._tool_assembly = result
             tools = result.tool_defs
@@ -2166,11 +2237,17 @@ async def _sendWorkbenchMessageStreamImpl(
     # still runs (to flush usage/evidence), and routing evidence must record
     # ok=False for error turns, not a hardcoded win.
     turnError: str | None = None
+    managedToolLoopCap = _managedToolLoopCap()
+    # Graded-outcome bookkeeping for routing evidence (task success, not
+    # error-absence).
+    turnEndedThinkingOnly = False
+    toolErrorsThisTurn = 0
+    turnEvidenceTracker = None
     while True:
         toolRound += 1
-        if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
+        if managedToolLoopCap > 0 and toolRound > managedToolLoopCap:
             msg = (
-                f'Tool loop exceeded MAX_MANAGED_TOOL_ROUNDS ({MAX_MANAGED_TOOL_ROUNDS}); '
+                f'Tool loop exceeded maxWorkbenchToolLoops ({managedToolLoopCap}); '
                 'stopping to avoid unbounded cost.'
             )
             logger.warning('workbench %s', msg)
@@ -2255,6 +2332,12 @@ async def _sendWorkbenchMessageStreamImpl(
                 if not nProvider or not nModel:
                     continue
                 resolvedProvider, resolvedModel = nProvider, nModel
+                # The chain model may live on a different-format provider
+                # (e.g. a Zen-style entry serving claude via /v1/messages and
+                # gpt via /chat/completions) — the wire format must follow the
+                # provider, not the turn's first model.
+                isAnthropic = _isAnthropicProvider(resolvedProvider)
+                isOpenai = _isOpenaiProvider(resolvedProvider)
                 chainUsedAt = resolvedModel
                 logger.warning('workbench falling back to chain model %s', resolvedModel)
                 if emit:
@@ -2332,6 +2415,10 @@ async def _sendWorkbenchMessageStreamImpl(
                 pProvider, pModel = _resolveChatLlm(model=promotionModel, role='')
                 if pProvider and pModel:
                     resolvedProvider, resolvedModel = pProvider, pModel
+                    # Same wire-format caveat as the fallback chain: the
+                    # promoted model may be served on a different format.
+                    isAnthropic = _isAnthropicProvider(resolvedProvider)
+                    isOpenai = _isOpenaiProvider(resolvedProvider)
                     chainUsedAt = resolvedModel
                     logger.warning('workbench context overflow — promoting to %s', resolvedModel)
                     if emit:
@@ -2455,6 +2542,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 if emit and (
                     stop_reason in ('max_tokens', 'length') or len(thinkingContent) > 2000
                 ):
+                    turnEndedThinkingOnly = True
                     emit(
                         {
                             'type': 'finalOutput',
@@ -2466,6 +2554,41 @@ async def _sendWorkbenchMessageStreamImpl(
                         }
                     )
             currentMessages.append(assistantMsg)
+            # Refusal detection: a model claiming it cannot use tools (or
+            # hosted on a gateway that silently drops `tools`) would end the
+            # turn with the refusal as its final answer — re-prompt once with
+            # a reminder, then accept on the third refusal.
+            if (
+                textContent
+                and _isToolRefusal(textContent)
+                and getattr(session, 'agent_mode', '') != 'chat'
+                and not getattr(session, '_verifier_blocked', False)
+            ):
+                refusalCount = as_int(getattr(session, '_refusal_count', 0), 0) + 1
+                setattr(session, '_refusal_count', refusalCount)
+                if refusalCount <= 2:
+                    reminder = (
+                        '[Proxy Self-Heal] Tool use IS available in this environment — '
+                        'tools are enabled and offered to you. Do not claim you cannot '
+                        'use them. Emit an actual tool call for the next step, or answer '
+                        'directly in text if the task needs no tools.'
+                    )
+                    currentMessages.append({'role': 'user', 'content': reminder})
+                    if emit:
+                        emit(
+                            {
+                                'type': 'warning',
+                                'message': (
+                                    f'Model refused tool use (attempt {refusalCount}) — '
+                                    're-prompting with a reminder.'
+                                ),
+                            }
+                        )
+                    continue
+                logger.warning(
+                    'workbench model refused tool use %d times; accepting the text answer',
+                    refusalCount,
+                )
             queued = drainQueuedMessages(sessionId, emit=emit)
             if queued:
                 logger.debug('workbench mid-response: injecting %d queued user message(s) after text turn', len(queued))
@@ -3050,13 +3173,40 @@ async def _sendWorkbenchMessageStreamImpl(
                 )
             return {'tool_use_id': toolUseId, 'role': 'tool', 'content': historyContent}
 
-        toolResults.extend(
-            await run_regular_tools_stage(
-                pending_regular,
-                _run_regular,
-                is_cancelled=_isCancelled,
+        try:
+            toolResults.extend(
+                await run_regular_tools_stage(
+                    pending_regular,
+                    _run_regular,
+                    is_cancelled=_isCancelled,
+                )
             )
-        )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Defensive: a tool-stage failure must never masquerade as a
+            # clean turn in routing evidence — record it honestly.
+            logger.warning('regular tool stage failed: %s', exc, exc_info=True)
+            turnError = turnError or f'tool stage failed: {exc}'
+            if emit:
+                emit({'type': 'error', 'message': f'Tool stage failed: {exc}'})
+            break
+        # Graded-outcome bookkeeping: feed the turn evidence tracker
+        # (mutation → verification) and count failed tool results so routing
+        # evidence reflects task success, not just error-absence.
+        try:
+            if turnEvidenceTracker is None:
+                from app.services.evidence import TurnEvidenceTracker
+
+                turnEvidenceTracker = TurnEvidenceTracker()
+            stage_results = toolResults[len(toolResults) - len(pending_regular):]
+            for (_tn, _ti, _tid), _tr in zip(pending_regular, stage_results):
+                result_text = as_str(_tr.get('content', ''), '')
+                turnEvidenceTracker.record_tool(_tn, _ti, result_text[:2000])
+                if _tr.get('is_error') or result_text.startswith('Error:'):
+                    toolErrorsThisTurn += 1
+        except Exception:
+            logger.debug('turn evidence tracking failed', exc_info=True)
         # The model recovered: valid arguments this round reset the turn-scoped
         # malformed counter (it accumulates only across consecutive bad rounds).
         if invalidThisRound == 0:
@@ -3280,6 +3430,24 @@ async def _sendWorkbenchMessageStreamImpl(
             try:
                 from app.services.routing_evidence import classify_task_type, record_turn
 
+                # Graded outcome: routing must reflect task SUCCESS — a
+                # refusal or thinking-only turn is not a win even though the
+                # loop survived without an exception.
+                evidence_state = 'unseen'
+                if turnEvidenceTracker is not None:
+                    try:
+                        evidence_state = as_str(turnEvidenceTracker.classify().value, 'unseen')
+                        if emit:
+                            emit({'type': 'evidenceState', 'state': evidence_state})
+                    except Exception:
+                        pass
+                outcome = _turnOutcomeGrade(
+                    turn_error=turnError,
+                    refusals=as_int(getattr(session, '_refusal_count', 0), 0),
+                    thinking_only=turnEndedThinkingOnly,
+                    tool_errors=toolErrorsThisTurn,
+                    evidence_state=evidence_state,
+                )
                 task_type = classify_task_type(_lastUserMessageText(session))
                 record_turn(
                     session_id=sessionId,
@@ -3289,6 +3457,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
                     ),
                     ok=turnError is None,
+                    outcome=outcome,
                     input_tokens=totalInputTokens,
                     output_tokens=totalOutputTokens,
                     duration_ms=int(totalGenerationMs),

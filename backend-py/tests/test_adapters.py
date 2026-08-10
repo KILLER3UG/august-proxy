@@ -361,3 +361,162 @@ class TestAnthropicAdapter:
         result = await handleCountTokens({'messages': [{'role': 'user', 'content': 'Hello'}]})
         assert 'input_tokens' in result
         assert result['estimated'] is True
+
+
+class TestManagedToolRound2Body:
+    """Round-2 tool_result messages must be role:'user'-wrapped per the
+    Messages API — a bare tool_result block appended to messages 400s
+    strict Anthropic gateways (regression for the managed web/bash tools)."""
+
+    @staticmethod
+    def _toolUseResponse(toolId: str) -> dict[str, object]:
+        return {
+            'id': 'msg_1',
+            'model': 'claude-x',
+            'content': [
+                {'type': 'tool_use', 'id': toolId, 'name': 'bash', 'input': {'command': 'echo hi'}}
+            ],
+            'stop_reason': 'tool_use',
+            'usage': {'input_tokens': 10, 'output_tokens': 5},
+        }
+
+    @staticmethod
+    def _textResponse() -> dict[str, object]:
+        return {
+            'id': 'msg_2',
+            'model': 'claude-x',
+            'content': [{'type': 'text', 'text': 'done'}],
+            'stop_reason': 'end_turn',
+            'usage': {'input_tokens': 10, 'output_tokens': 5},
+        }
+
+    @pytest.mark.asyncio
+    async def testAnthropicUpstreamRound2WrapsToolResults(self, monkeypatch):
+        from app.adapters import anthropic as mod
+
+        async def fake_execute(toolName, args, workspace_path=None, onProgress=None, parentSignal=None):
+            return f'output of {args.get("command", "")}'
+
+        monkeypatch.setattr(mod, 'execute_managed_proxy_tool', fake_execute)
+
+        captured: list[dict[str, object]] = []
+
+        class FakeClient:
+            async def requestJson(self, method, url, headers, body=None):
+                captured.append(body or {})
+                if len(captured) == 1:
+                    from app.providers.clients.base import ProviderResponse
+
+                    return ProviderResponse(status=200, body=TestManagedToolRound2Body._toolUseResponse('toolu_1'))
+                from app.providers.clients.base import ProviderResponse
+
+                return ProviderResponse(status=200, body=TestManagedToolRound2Body._textResponse())
+
+        messages, usage = await mod.resolveManagedAnthropicToolUses(
+            messages=[{'role': 'user', 'content': 'run ls'}],
+            system=[],
+            model='claude-x',
+            upstreamUrl='https://example.test/v1/messages',
+            upstreamHeaders={},
+            isAnthropicUpstream=True,
+            knownTools=[],
+            managedLocalToolNames={'bash'},
+            clientToolNames=set(),
+            client=FakeClient(),
+        )
+        assert len(captured) == 2
+        round2Messages = captured[1].get('messages', [])
+        assert isinstance(round2Messages, list) and round2Messages
+        # The tool result must live inside a role:'user' message.
+        last = round2Messages[-1]
+        assert last.get('role') == 'user'
+        content = last.get('content')
+        assert isinstance(content, list)
+        assert content[0]['type'] == 'tool_result'
+        assert content[0]['tool_use_id'] == 'toolu_1'
+        assert 'echo hi' in content[0]['content']
+        # And the final messages returned carry the same valid shape.
+        assert any(
+            m.get('role') == 'user' and isinstance(m.get('content'), list)
+            and m['content'][0].get('type') == 'tool_result'
+            for m in messages
+        ), 'no user-wrapped tool_result in final messages'
+
+    @pytest.mark.asyncio
+    async def testOpenaiUpstreamRound2UnwrapsToolResults(self, monkeypatch):
+        from app.adapters import anthropic as mod
+
+        async def fake_execute(toolName, args, workspace_path=None, onProgress=None, parentSignal=None):
+            return 'out'
+
+        monkeypatch.setattr(mod, 'execute_managed_proxy_tool', fake_execute)
+
+        captured: list[dict[str, object]] = []
+
+        class FakeClient:
+            async def requestJson(self, method, url, headers, body=None):
+                captured.append(body or {})
+                from app.providers.clients.base import ProviderResponse
+
+                if len(captured) == 1:
+                    return ProviderResponse(
+                        status=200,
+                        body={
+                            'id': 'cmpl_1',
+                            'model': 'gpt-x',
+                            'choices': [
+                                {
+                                    'message': {
+                                        'role': 'assistant',
+                                        'content': '',
+                                        'tool_calls': [
+                                            {
+                                                'id': 'toolu_2',
+                                                'type': 'function',
+                                                'function': {
+                                                    'name': 'bash',
+                                                    'arguments': '{"command": "echo hi"}',
+                                                },
+                                            }
+                                        ],
+                                    },
+                                    'finish_reason': 'tool_calls',
+                                }
+                            ],
+                        },
+                    )
+                return ProviderResponse(
+                    status=200,
+                    body={
+                        'id': 'cmpl_2',
+                        'model': 'gpt-x',
+                        'choices': [{'message': {'role': 'assistant', 'content': 'done'}, 'finish_reason': 'stop'}],
+                    },
+                )
+
+        await mod.resolveManagedAnthropicToolUses(
+            messages=[{'role': 'user', 'content': 'run ls'}],
+            system=[],
+            model='gpt-x',
+            upstreamUrl='https://example.test/chat/completions',
+            upstreamHeaders={},
+            isAnthropicUpstream=False,
+            knownTools=[],
+            managedLocalToolNames={'bash'},
+            clientToolNames=set(),
+            client=FakeClient(),
+        )
+        assert len(captured) == 2
+        round2Messages = captured[1].get('messages', [])
+        assert isinstance(round2Messages, list) and round2Messages
+        # OpenAI wire format: the wrapped user message must translate back
+        # into a role:'tool' message with the tool_call_id preserved.
+        toolMessages = [m for m in round2Messages if m.get('role') == 'tool']
+        assert toolMessages, f'no role:"tool" message in round-2 body: {round2Messages}'
+        assert toolMessages[0].get('tool_call_id') == 'toolu_2'
+        # And the round-1 assistant tool call must survive the round trip
+        # (regression: camelized `toolCalls` used to be lost).
+        assistantWithCalls = [
+            m for m in round2Messages if m.get('role') == 'assistant' and m.get('tool_calls')
+        ]
+        assert assistantWithCalls, f'no assistant tool_calls in round-2 body: {round2Messages}'
