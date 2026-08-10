@@ -32,6 +32,8 @@ import {
   type AutomationUpsertInput,
 } from '@/api/api-client';
 import { PageLoader } from '@/components/PageLoader';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useNavigate } from 'react-router-dom';
 import { OsNotifyService } from '@/lib/os-notify';
 import { openFolderViaTauri } from '@/api/folder';
@@ -63,6 +65,8 @@ function scheduleLabel(schedule?: string | null): string {
 }
 
 export function Automations() {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [tokenFlash, setTokenFlash] = useState<Record<string, string>>({});
@@ -213,8 +217,14 @@ export function Automations() {
               token={tokenFlash[job.id]}
               onRun={() => run.mutate(job)}
               onDelete={() => {
-                if (!confirm(`Delete automation "${job.name || job.id}"?`)) return;
-                remove.mutate(job.id);
+                void confirmStyled({
+                  title: 'Delete automation?',
+                  message: `Delete automation "${job.name || job.id}"?`,
+                  confirmLabel: 'Delete',
+                  variant: 'destructive',
+                }).then((ok) => {
+                  if (ok) remove.mutate(job.id);
+                });
               }}
               onPause={() => patch.mutate({ id: job.id, body: { paused: !job.paused } })}
               onRotate={() => rotate.mutate(job.id)}
@@ -223,6 +233,16 @@ export function Automations() {
           ))}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

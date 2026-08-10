@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 
 interface PrivacyCounts {
   facts: number;
@@ -110,6 +112,8 @@ function ActionRow({
 
 export function PrivacySection() {
   const qc = useQueryClient();
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const { data, isLoading } = useQuery<PrivacySummary>({
     queryKey: ['privacy-summary'],
     queryFn: () => api.get<PrivacySummary>('/api/privacy/summary'),
@@ -215,7 +219,14 @@ export function PrivacySection() {
               destructive
               pending={purgeMemories.isPending}
               onClick={() => {
-                if (confirm('Erase all agent memories? This cannot be undone.')) purgeMemories.mutate();
+                void confirmStyled({
+                  title: 'Purge memory?',
+                  message: 'Erase all agent memories? This cannot be undone.',
+                  confirmLabel: 'Purge',
+                  variant: 'destructive',
+                }).then((ok) => {
+                  if (ok) purgeMemories.mutate();
+                });
               }}
             />
             <ActionRow
@@ -226,7 +237,14 @@ export function PrivacySection() {
               destructive
               pending={clearLogs.isPending}
               onClick={() => {
-                if (confirm('Clear audit logs and observation screenshots? This cannot be undone.')) clearLogs.mutate();
+                void confirmStyled({
+                  title: 'Clear activity logs?',
+                  message: 'Clear audit logs and observation screenshots? This cannot be undone.',
+                  confirmLabel: 'Clear logs',
+                  variant: 'destructive',
+                }).then((ok) => {
+                  if (ok) clearLogs.mutate();
+                });
               }}
             />
             <ActionRow
@@ -237,7 +255,14 @@ export function PrivacySection() {
               destructive
               pending={deleteUsage.isPending}
               onClick={() => {
-                if (confirm('Delete all token usage history? Quota displays will reset.')) deleteUsage.mutate();
+                void confirmStyled({
+                  title: 'Delete usage history?',
+                  message: 'Delete all token usage history? Quota displays will reset.',
+                  confirmLabel: 'Delete',
+                  variant: 'destructive',
+                }).then((ok) => {
+                  if (ok) deleteUsage.mutate();
+                });
               }}
             />
             <ActionRow
@@ -248,7 +273,14 @@ export function PrivacySection() {
               destructive
               pending={deleteSessions.isPending}
               onClick={() => {
-                if (confirm('Delete ALL sessions and transcripts? This cannot be undone.')) deleteSessions.mutate();
+                void confirmStyled({
+                  title: 'Delete all sessions?',
+                  message: 'Delete ALL sessions and transcripts? This cannot be undone.',
+                  confirmLabel: 'Delete all',
+                  variant: 'destructive',
+                }).then((ok) => {
+                  if (ok) deleteSessions.mutate();
+                });
               }}
             />
           </div>
@@ -259,6 +291,16 @@ export function PrivacySection() {
           </p>
         </>
       )}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

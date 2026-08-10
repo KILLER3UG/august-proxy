@@ -8,6 +8,8 @@ import { ArrowLeft, BrainCircuit, Loader2, SendHorizontal, Trash2 } from 'lucide
 import { api } from '@/api/client';
 import { SettingsSectionShell } from '@/components/settings/SettingsSectionShell';
 import { cn, formatTimeAgo } from '@/lib/utils';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 
 export interface AutoMemoryRow {
   id: number;
@@ -81,6 +83,8 @@ export function AutoMemoryBrowse({
   detailComposerPlaceholder: string;
   showListComposer: boolean;
 }) {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const qc = useQueryClient();
   const queryKey = ['auto-memory', origin] as const;
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -159,7 +163,7 @@ export function AutoMemoryBrowse({
     });
   };
 
-  const handleDetailEdit = () => {
+  const handleDetailEdit = async () => {
     if (!selected) return;
     const text = composerText.trim();
     if (!text) return;
@@ -170,7 +174,14 @@ export function AutoMemoryBrowse({
       lower === 'clear' ||
       lower.startsWith('forget')
     ) {
-      if (confirm(`Delete memory "${titleOf(selected)}"?`)) {
+      if (
+        await confirmStyled({
+          title: 'Delete memory?',
+          message: `Delete memory "${titleOf(selected)}"?`,
+          confirmLabel: 'Delete',
+          variant: 'destructive',
+        })
+      ) {
         deleteMutation.mutate(selected.id);
       }
       return;
@@ -248,8 +259,15 @@ export function AutoMemoryBrowse({
             type="button"
             className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-danger hover:bg-danger/10"
             disabled={deleteMutation.isPending}
-            onClick={() => {
-              if (confirm(`Delete memory "${titleOf(selected)}"?`)) {
+            onClick={async () => {
+              if (
+                await confirmStyled({
+                  title: 'Delete memory?',
+                  message: `Delete memory "${titleOf(selected)}"?`,
+                  confirmLabel: 'Delete',
+                  variant: 'destructive',
+                })
+              ) {
                 deleteMutation.mutate(selected.id);
               }
             }}
@@ -369,6 +387,16 @@ export function AutoMemoryBrowse({
           </div>
         </div>
       ) : null}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </SettingsSectionShell>
   );
 }

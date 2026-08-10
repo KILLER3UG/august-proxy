@@ -1,4 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +18,8 @@ export function MemoryFactsTab({
   expandedItem: string | null;
   setExpandedItem: (key: string | null) => void;
 }) {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const qc = useQueryClient();
 
   const remove = useMutation({
@@ -97,9 +101,14 @@ export function MemoryFactsTab({
                           data-testid={`delete-memory-${item.key}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`Delete memory “${item.title || item.key}”?`)) {
-                              remove.mutate(item.key);
-                            }
+                            void confirmStyled({
+                              title: 'Delete memory?',
+                              message: `Delete memory “${item.title || item.key}”?`,
+                              confirmLabel: 'Delete',
+                              variant: 'destructive',
+                            }).then((ok) => {
+                              if (ok) remove.mutate(item.key);
+                            });
                           }}
                         >
                           <Trash2 className="size-3.5" />
@@ -147,6 +156,16 @@ export function MemoryFactsTab({
           </div>
         )}
       </CardContent>
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </Card>
   );
 }

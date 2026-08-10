@@ -121,6 +121,8 @@ export function AssistantBlockTimeline({
   subagentPrompts,
   subagentBlocks,
   modelId,
+  onRetryTurn,
+  onSwitchModel,
 }: {
   displayBlocks: DisplayBlock[];
   message: ChatMessage;
@@ -133,6 +135,10 @@ export function AssistantBlockTimeline({
   subagentBlocks?: Map<string, SubagentBlockState>;
   /** Parent session model id — shown as muted tag on subagent launch rows. */
   modelId?: string | null;
+  /** Rendered on error blocks: re-run the turn from the last user prompt. */
+  onRetryTurn?: () => void;
+  /** Rendered on error blocks: open the "answer with another model" picker. */
+  onSwitchModel?: () => void;
 }) {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const liveSessionKey = resolveUiSessionId(routeSessionId || message.id);
@@ -544,6 +550,28 @@ export function AssistantBlockTimeline({
                     </pre>
                   </details>
                 ) : null}
+                {(onRetryTurn || onSwitchModel) && (
+                  <div className="mt-1.5 flex items-center gap-2">
+                    {onRetryTurn ? (
+                      <button
+                        type="button"
+                        onClick={onRetryTurn}
+                        className="rounded border border-rose-500/30 px-2 py-0.5 text-[10px] font-medium text-rose-200 hover:bg-rose-500/10 transition"
+                      >
+                        ↻ Retry
+                      </button>
+                    ) : null}
+                    {onSwitchModel ? (
+                      <button
+                        type="button"
+                        onClick={onSwitchModel}
+                        className="rounded border border-rose-500/30 px-2 py-0.5 text-[10px] font-medium text-rose-200 hover:bg-rose-500/10 transition"
+                      >
+                        Switch model
+                      </button>
+                    ) : null}
+                  </div>
+                )}
               </span>
             </div>
           ),

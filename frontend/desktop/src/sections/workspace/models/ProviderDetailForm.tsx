@@ -13,6 +13,8 @@ import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { WorkspaceToggle } from '@/components/workspace/WorkspaceToggle';
 import { Input } from '@/components/ui/input';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { API_FORMATS } from './modelSettingsShared';
 import { ModelDiscoveryActions } from './ModelDiscoveryActions';
 import { ModelRow } from './ModelRow';
@@ -29,6 +31,8 @@ export function ProviderDetailForm({
   showAddModel: boolean;
   setShowAddModel: (v: boolean) => void;
 }) {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const [name, setName] = useState(provider.name);
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl);
   const [apiFormat, setApiFormat] = useState<ApiFormat>(provider.apiFormat);
@@ -149,8 +153,16 @@ export function ProviderDetailForm({
             disabled={update.isPending}
           />
           <button
-            onClick={() => {
-              if (confirm(`Delete provider "${provider.name}" and all its models?`)) remove.mutate();
+            onClick={async () => {
+              if (
+                await confirmStyled({
+                  title: 'Delete provider?',
+                  message: `Delete provider "${provider.name}" and all its models?`,
+                  confirmLabel: 'Delete provider',
+                  variant: 'destructive',
+                })
+              )
+                remove.mutate();
             }}
             aria-label="Delete provider"
             className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
@@ -286,6 +298,16 @@ export function ProviderDetailForm({
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

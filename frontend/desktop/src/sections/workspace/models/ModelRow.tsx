@@ -19,6 +19,8 @@ import { providersApi, type ApiFormat, type Provider } from '@/api/providers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { API_FORMATS, fmtContextWindow } from './modelSettingsShared';
 
 /** Suggest a wire format from the model id family (multi-format gateways like
@@ -41,6 +43,8 @@ export function ModelRow({
   model: Provider['models'][number];
   onChanged: () => void;
 }) {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(model.name ?? model.id);
   const [contextWindow, setContextWindow] = useState(
@@ -409,8 +413,16 @@ export function ModelRow({
           <Pencil className="size-3.5" />
         </button>
         <button
-          onClick={() => {
-            if (confirm(`Remove model "${model.id}"?`)) remove.mutate();
+          onClick={async () => {
+            if (
+              await confirmStyled({
+                title: 'Remove model?',
+                message: `Remove model "${model.id}"?`,
+                confirmLabel: 'Remove',
+                variant: 'destructive',
+              })
+            )
+              remove.mutate();
           }}
           aria-label="Delete model"
           title="Remove this model"
@@ -451,6 +463,16 @@ export function ModelRow({
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

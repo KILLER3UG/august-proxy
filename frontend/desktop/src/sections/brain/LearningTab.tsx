@@ -1,5 +1,7 @@
 /* v3 — Learning tab: heuristics, auto-memories, facts, sleep cycle, mutations */
 import { useState } from 'react';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { Sparkles, Brain, Clock, Zap, ListChecks, Trash2, Check, X, Play, Pin, User, ChevronDown, ChevronRight, Eye } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -72,6 +74,8 @@ function formatMemoryContent(memory: {
 }
 
 export function LearningTab() {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const { data, error, isFetching, dataUpdatedAt } = useLearningData();
   const qc = useQueryClient();
   const deleteMemory = useDeleteMemory();
@@ -266,7 +270,14 @@ export function LearningTab() {
                   className="text-muted-foreground hover:text-danger p-1"
                   data-testid={`delete-heuristic-${h.id}`}
                   onClick={() => {
-                    if (confirm('Delete this heuristic?')) deleteHeuristic.mutate(h.id);
+                    void confirmStyled({
+                      title: 'Delete heuristic?',
+                      message: 'Delete this heuristic?',
+                      confirmLabel: 'Delete',
+                      variant: 'destructive',
+                    }).then((ok) => {
+                      if (ok) deleteHeuristic.mutate(h.id);
+                    });
                   }}
                 >
                   <Trash2 className="size-3.5" />
@@ -361,7 +372,14 @@ export function LearningTab() {
                   className="text-muted-foreground hover:text-danger p-1 shrink-0"
                   data-testid={`delete-memory-${m.id}`}
                   onClick={() => {
-                    if (confirm(`Delete this memory?\n\n${m.key}`)) deleteMemory.mutate(m.id);
+                    void confirmStyled({
+                      title: 'Delete this memory?',
+                      message: `Delete this memory?\n\n${m.key}`,
+                      confirmLabel: 'Delete',
+                      variant: 'destructive',
+                    }).then((ok) => {
+                      if (ok) deleteMemory.mutate(m.id);
+                    });
                   }}
                 >
                   <Trash2 className="size-3.5" />
@@ -650,6 +668,16 @@ export function LearningTab() {
           </div>
         </div>
       ) : null}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

@@ -1,6 +1,8 @@
 /* ── Account — local + Google-linked August profiles ───────────────── */
 
 import { useMemo, useState } from 'react';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { UserRound, Plus, LogOut, Trash2, Check } from 'lucide-react';
 import { SiGoogle } from 'react-icons/si';
 import { toast } from 'sonner';
@@ -22,6 +24,8 @@ import { signInWithGoogle } from '@/lib/google-account-signin';
 import { cn } from '@/lib/utils';
 
 export function AccountSection() {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
   const active = useMemo(
@@ -100,8 +104,14 @@ export function AccountSection() {
     toast.message('Signed out of local account');
   };
 
-  const handleDelete = (id: string) => {
-    if (!confirm('Delete this local account? This cannot be undone.')) return;
+  const handleDelete = async (id: string) => {
+    const ok = await confirmStyled({
+      title: 'Delete this account?',
+      message: 'Delete this local account? This cannot be undone.',
+      confirmLabel: 'Delete account',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     deleteAccount(id);
     const nextActive = useAccountStore.getState().accounts.find(
       (a) => a.id === useAccountStore.getState().activeAccountId,
@@ -299,6 +309,16 @@ export function AccountSection() {
           </div>
         </SettingsCard>
       </div>
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

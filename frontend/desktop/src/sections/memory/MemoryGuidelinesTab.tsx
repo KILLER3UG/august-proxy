@@ -1,4 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +10,8 @@ import type { Guideline } from './memoryTypes';
 
 /** Learned guidelines / rules list — delete via /api/memory/facts/:key. */
 export function MemoryGuidelinesTab({ guidelines }: { guidelines: Guideline[] }) {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const qc = useQueryClient();
 
   const remove = useMutation({
@@ -65,7 +69,14 @@ export function MemoryGuidelinesTab({ guidelines }: { guidelines: Guideline[] })
                     disabled={remove.isPending}
                     data-testid={`delete-guideline-${g.id}`}
                     onClick={() => {
-                      if (confirm('Delete this guideline?')) remove.mutate(g.id);
+                      void confirmStyled({
+                        title: 'Delete guideline?',
+                        message: 'Delete this guideline?',
+                        confirmLabel: 'Delete',
+                        variant: 'destructive',
+                      }).then((ok) => {
+                        if (ok) remove.mutate(g.id);
+                      });
                     }}
                   >
                     <Trash2 className="size-3.5" />
@@ -76,6 +87,16 @@ export function MemoryGuidelinesTab({ guidelines }: { guidelines: Guideline[] })
           </div>
         )}
       </CardContent>
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </Card>
   );
 }

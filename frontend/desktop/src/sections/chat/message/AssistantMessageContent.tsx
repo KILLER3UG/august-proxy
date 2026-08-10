@@ -102,6 +102,8 @@ export function AssistantMessageContent({
             subagentPrompts={subagentPrompts}
             subagentBlocks={subagentBlocks}
             modelId={modelId}
+            onRetryTurn={onRegen}
+            onSwitchModel={onReanswer}
           />
         )}
         {(() => {

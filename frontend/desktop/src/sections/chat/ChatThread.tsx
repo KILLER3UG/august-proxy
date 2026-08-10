@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { UploadCloud } from 'lucide-react';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import {
   useSessionsStore,
   isPlaceholderTitle,
@@ -664,6 +665,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     handleEdit,
     handleRegenerate,
     handleClarifyAnswer,
+    confirmState,
+    handleConfirm,
+    handleCancel,
   } = useChatMessageActions({
     sessionId,
     messages,
@@ -1468,6 +1472,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           onRefreshModels={() => {
             void handleRefreshModels();
           }}
+        />
+        <ConfirmDialog
+          open={confirmState.open}
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          cancelLabel={confirmState.cancelLabel}
+          variant={confirmState.variant}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
         />
       </div>
     </div>

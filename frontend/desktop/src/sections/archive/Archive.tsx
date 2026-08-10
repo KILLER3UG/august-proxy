@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -20,6 +22,8 @@ export function Archive() {
 
   const [filter, setFilter] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'alpha'>('newest');
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
 
   // Filter archived sessions
   const archived = sessions.filter(s => s.isArchived && (!filter || s.title.toLowerCase().includes(filter.toLowerCase())));
@@ -34,23 +38,41 @@ export function Archive() {
     return sortBy === 'newest' ? timeB - timeA : timeA - timeB;
   });
 
-  const handleClearAll = () => {
-    if (confirm('Are you sure you want to delete sessions? This will wipe your conversation history and cannot be undone.')) {
-      const deleteArchived = confirm('Do you want to delete archived sessions as well? Click OK to delete BOTH active and archived sessions, or Cancel to delete ONLY active sessions.');
-      const newSess = clearAllSessions(deleteArchived);
-      void navigate(`/c/${newSess.id}`);
-      // Close settings by pressing Escape or navigating back
-      const preSettingsPath = sessionStorage.getItem('pre-settings-path') || '/';
-      void navigate(preSettingsPath);
-    }
+  const handleClearAll = async () => {
+    const ok = await confirmStyled({
+      title: 'Clear all sessions?',
+      message: 'This wipes your conversation history and cannot be undone.',
+      confirmLabel: 'Delete sessions',
+      variant: 'destructive',
+    });
+    if (!ok) return;
+    const deleteArchived = await confirmStyled({
+      title: 'Delete archived sessions too?',
+      message:
+        'Delete BOTH active and archived sessions, or only the active sessions?',
+      confirmLabel: 'Delete both',
+      cancelLabel: 'Active only',
+      variant: 'destructive',
+    });
+    const newSess = clearAllSessions(deleteArchived);
+    void navigate(`/c/${newSess.id}`);
+    // Close settings by pressing Escape or navigating back
+    const preSettingsPath = sessionStorage.getItem('pre-settings-path') || '/';
+    void navigate(preSettingsPath);
   };
 
   const handleRestore = (id: string) => {
     restoreSession(id);
   };
 
-  const handleDeletePermanently = (id: string) => {
-    if (confirm('Are you sure you want to permanently delete this session and its history? This action is irreversible.')) {
+  const handleDeletePermanently = async (id: string) => {
+    const ok = await confirmStyled({
+      title: 'Delete this session?',
+      message: 'This permanently deletes the session and its history. This action is irreversible.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (ok) {
       deleteSession(id);
     }
   };
@@ -152,6 +174,16 @@ export function Archive() {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

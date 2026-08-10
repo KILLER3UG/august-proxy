@@ -4,6 +4,8 @@
 import { useState, useCallback } from 'react';
 import { Plus, Pencil, Trash2, Copy, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import {
   listTemplates,
   createTemplate,
@@ -15,6 +17,8 @@ import {
 import { toast } from 'sonner';
 
 export function PromptTemplatesSection() {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const [templates, setTemplates] = useState<PromptTemplate[]>(() => listTemplates());
   const [editing, setEditing] = useState<PromptTemplate | null>(null);
   const [name, setName] = useState('');
@@ -53,8 +57,14 @@ export function PromptTemplatesSection() {
     setShowForm(true);
   }, []);
 
-  const handleDelete = useCallback((id: string) => {
-    if (!confirm('Delete this template?')) return;
+  const handleDelete = useCallback(async (id: string) => {
+    const ok = await confirmStyled({
+      title: 'Delete template?',
+      message: 'Delete this template?',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     deleteTemplate(id);
     refresh();
     toast.success('Template deleted');
@@ -188,6 +198,16 @@ export function PromptTemplatesSection() {
           New Template
         </button>
       )}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

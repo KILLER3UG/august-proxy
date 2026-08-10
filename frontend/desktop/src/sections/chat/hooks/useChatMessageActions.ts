@@ -2,6 +2,7 @@
 /* Revert / edit / regenerate / clarify for turns already on the thread.   */
 
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toast } from 'sonner';
 import type { ChatMessage } from '@/types/chat';
 import { persistMessages } from '../message-storage';
@@ -25,6 +26,8 @@ export function useChatMessageActions({
   streaming: boolean;
   generateAIResponse: (msgs: ChatMessage[]) => Promise<void>;
 }) {
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const [revertingIndex, setRevertingIndex] = useState<number | null>(null);
 
   /** Truncate the backend session in place at `userMsgIndex` (inclusive) so
@@ -91,7 +94,7 @@ export function useChatMessageActions({
   );
 
   const handleEdit = useCallback(
-    (index: number, newText: string) => {
+    async (index: number, newText: string) => {
       if (streaming) return;
       if (!newText.trim()) return;
       const msg = messages[index];
@@ -99,9 +102,11 @@ export function useChatMessageActions({
       const nextCount = messages.length - index - 1;
       if (
         nextCount > 0 &&
-        !confirm(
-          `Editing this message will remove ${nextCount} follow-up message${nextCount > 1 ? 's' : ''}. Continue?`,
-        )
+        !(await confirmStyled({
+          title: 'Edit this message?',
+          message: `Editing this message will remove ${nextCount} follow-up message${nextCount > 1 ? 's' : ''}. Continue?`,
+          confirmLabel: 'Edit',
+        }))
       )
         return;
       // Keep the edited message as the new tail of the thread — truncate the
@@ -188,5 +193,10 @@ export function useChatMessageActions({
     handleEdit,
     handleRegenerate,
     handleClarifyAnswer,
+    // Dialog state for the edit-message confirm — rendered by the .tsx
+    // consumer (JSX is not allowed in .ts files).
+    confirmState,
+    handleConfirm,
+    handleCancel,
   };
 }
