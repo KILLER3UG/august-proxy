@@ -641,7 +641,10 @@ class TestOpenaiWorkbenchThinkingToggle:
         monkeypatch.setattr(clients, 'getClient', lambda provider: _FakeClient())
         recorded: list[dict] = []
 
-        def fakeRecordUsage(sessionId, model, inputTokens=0, outputTokens=0, contextTokens=0):
+        def fakeRecordUsage(
+            sessionId, model, inputTokens=0, outputTokens=0, contextTokens=0,
+            cacheHitTokens=0, cacheMissTokens=0,
+        ):
             recorded.append(
                 {
                     'session_id': sessionId,

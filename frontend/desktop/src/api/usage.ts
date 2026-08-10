@@ -52,6 +52,11 @@ export interface SessionUsage {
   contextTokens: number;
   /** Alias kept for clarity in some call sites. */
   latestContextTokens?: number;
+  /** Universal prompt-cache split (Anthropic cache_read vs OpenAI-compatible
+   *  prompt_cache_hit) accumulated across the session. */
+  cacheHitTokens?: number;
+  cacheMissTokens?: number;
+  cacheHitRate?: number;
   events: {
     id: number;
     requestType: string;

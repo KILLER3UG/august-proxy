@@ -14,6 +14,7 @@ export function ContextRing({
   modelName,
   breakdown,
   serverTokens,
+  promptCache,
   size = 22,
   stroke = 3,
 }: {
@@ -25,6 +26,8 @@ export function ContextRing({
   breakdown?: ContextBreakdown;
   /** Optional actual token consumption reported by the backend for this session. */
   serverTokens?: { total: number; input: number; output: number } | null;
+  /** Universal prompt-cache split for this session (hit rate display). */
+  promptCache?: { hitTokens: number; missTokens: number; hitRate?: number } | null;
   size?: number;
   stroke?: number;
 }) {
@@ -33,6 +36,10 @@ export function ContextRing({
   const clamped = Math.max(0, Math.min(100, pct));
   const dash = (clamped / 100) * c;
   const tone = clamped > 90 ? '#ef4444' : clamped > 70 ? '#eab308' : '#22c55e';
+  const cacheTotal = (promptCache?.hitTokens ?? 0) + (promptCache?.missTokens ?? 0);
+  const cacheRate =
+    promptCache?.hitRate ??
+    (cacheTotal > 0 ? (promptCache?.hitTokens ?? 0) / cacheTotal : 0);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
@@ -184,6 +191,25 @@ export function ContextRing({
             <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-muted-foreground truncate">
               <span className="opacity-60">Model · </span>
               <span className="text-[#ddd]">{modelName}</span>
+            </div>
+          )}
+          {cacheTotal > 0 && (
+            <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-[#c0c0c0]">Prompt cache</span>
+                <span
+                  className="font-mono tabular-nums"
+                  style={{ color: cacheRate >= 0.6 ? '#4ade80' : cacheRate >= 0.3 ? '#eab308' : '#ef4444' }}
+                >
+                  {Math.round(cacheRate * 100)}% hit
+                </span>
+              </div>
+              <div className="flex justify-between mt-0.5">
+                <span className="opacity-60">Cached / total input</span>
+                <span className="font-mono tabular-nums text-[#ddd]">
+                  {formatTokens(promptCache?.hitTokens ?? 0)} / {formatTokens(cacheTotal)}
+                </span>
+              </div>
             </div>
           )}
           {serverTokens && (

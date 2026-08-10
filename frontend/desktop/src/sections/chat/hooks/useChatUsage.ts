@@ -10,6 +10,10 @@ export type SessionUsageState = {
   output: number;
   contextTokens: number;
   totalCost?: number;
+  /** Universal prompt-cache split for the context ring. */
+  cacheHitTokens?: number;
+  cacheMissTokens?: number;
+  cacheHitRate?: number;
 } | null;
 
 export function useChatUsage(
@@ -43,6 +47,9 @@ export function useChatUsage(
           output: data.totalOutputTokens,
           contextTokens: data.contextTokens ?? 0,
           totalCost: data.totalCost ?? 0,
+          cacheHitTokens: data.cacheHitTokens ?? 0,
+          cacheMissTokens: data.cacheMissTokens ?? 0,
+          cacheHitRate: data.cacheHitRate ?? 0,
         });
       })
       .catch(() => {

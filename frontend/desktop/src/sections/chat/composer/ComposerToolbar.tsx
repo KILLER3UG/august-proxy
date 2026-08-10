@@ -248,6 +248,15 @@ export function ComposerToolbar({
           size={20}
           breakdown={contextBreakdown}
           serverTokens={sessionUsage}
+          promptCache={
+            sessionUsage
+              ? {
+                  hitTokens: sessionUsage.cacheHitTokens ?? 0,
+                  missTokens: sessionUsage.cacheMissTokens ?? 0,
+                  hitRate: sessionUsage.cacheHitRate,
+                }
+              : null
+          }
         />
         <ContextUsedBadge sessionId={sessionId} />
         <button

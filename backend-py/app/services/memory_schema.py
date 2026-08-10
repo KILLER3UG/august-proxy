@@ -388,6 +388,8 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     # CREATE TABLE predates the column).
     ensure_column(conn, 'auto_memories', 'source_session_id', 'TEXT')
     ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
+    ensure_column(conn, 'usage_events', 'cache_hit_tokens', 'INTEGER DEFAULT 0')
+    ensure_column(conn, 'usage_events', 'cache_miss_tokens', 'INTEGER DEFAULT 0')
     # Full workbench session JSON + last-update time (primary session store).
     ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
     ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
@@ -583,6 +585,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         if row is not None:
             # Re-apply additive column migrations (cheap IF NOT EXISTS).
             ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
+            ensure_column(conn, 'usage_events', 'cache_hit_tokens', 'INTEGER DEFAULT 0')
+            ensure_column(conn, 'usage_events', 'cache_miss_tokens', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
             ensure_column(conn, 'auto_memories', 'pinned', 'INTEGER DEFAULT 0')

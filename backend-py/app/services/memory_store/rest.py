@@ -258,7 +258,13 @@ def resolve_sot_session_id(sessionId: str) -> str:
 
 
 def record_usage(
-    sessionId: str, model: str, inputTokens: int = 0, outputTokens: int = 0, contextTokens: int = 0
+    sessionId: str,
+    model: str,
+    inputTokens: int = 0,
+    outputTokens: int = 0,
+    contextTokens: int = 0,
+    cacheHitTokens: int = 0,
+    cacheMissTokens: int = 0,
 ) -> int:
     """Record a usage event against the session SoT id when known.
 
@@ -266,12 +272,17 @@ def record_usage(
     FINAL sub-call in the agentic turn — i.e. the true current context fill
     (system prompt + tools + messages, counted once). The cumulative
     ``inputTokens``/``outputTokens`` are still recorded for Usage-page totals.
+
+    ``cacheHitTokens``/``cacheMissTokens`` carry the universal prompt-cache
+    split (Anthropic cache_read/cache_creation vs OpenAI-compatible
+    prompt_cache_hit/miss) so the UI can show the cache hit rate.
     """
     sot_id = resolve_sot_session_id(sessionId)
     conn = _conn()
     cursor = conn.execute(
-        'INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, context_tokens) VALUES (?, ?, ?, ?, ?)',
-        (sot_id, model, inputTokens, outputTokens, contextTokens),
+        'INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, context_tokens, cache_hit_tokens, cache_miss_tokens) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (sot_id, model, inputTokens, outputTokens, contextTokens, cacheHitTokens, cacheMissTokens),
     )
     conn.commit()
     return as_int(cursor.lastrowid)
@@ -302,10 +313,14 @@ def get_usage(sessionId: str) -> dict[str, object]:
     sessionId = resolve_sot_session_id(sessionId)
     conn = _conn()
     row = conn.execute(
-        'SELECT SUM(input_tokens) as total_input, SUM(output_tokens) as total_output, COUNT(*) as request_count FROM usage_events WHERE session_id = ?',
+        'SELECT SUM(input_tokens) as total_input, SUM(output_tokens) as total_output, '
+        'SUM(cache_hit_tokens) as total_cache_hit, SUM(cache_miss_tokens) as total_cache_miss, '
+        'COUNT(*) as request_count FROM usage_events WHERE session_id = ?',
         (sessionId,),
     ).fetchone()
-    totals = dict(row) if row else {'total_input': 0, 'total_output': 0, 'request_count': 0}
+    totals = dict(row) if row else {
+        'total_input': 0, 'total_output': 0, 'total_cache_hit': 0, 'total_cache_miss': 0, 'request_count': 0
+    }
     latest = conn.execute(
         'SELECT context_tokens, input_tokens FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT 1',
         (sessionId,),
@@ -329,12 +344,18 @@ def get_usage(sessionId: str) -> dict[str, object]:
             (sessionId,),
         ).fetchall()
     ]
+    cache_hit = totals.get('total_cache_hit', 0) or 0
+    cache_miss = totals.get('total_cache_miss', 0) or 0
+    cache_total = cache_hit + cache_miss
     return {
         'sessionId': sessionId,
         'totalEvents': totals.get('request_count', 0) or 0,
         'totalInputTokens': totals.get('total_input', 0) or 0,
         'totalOutputTokens': totals.get('total_output', 0) or 0,
         'totalTokens': (totals.get('total_input', 0) or 0) + (totals.get('total_output', 0) or 0),
+        'cacheHitTokens': cache_hit,
+        'cacheMissTokens': cache_miss,
+        'cacheHitRate': round(cache_hit / cache_total, 3) if cache_total else 0.0,
         'totalCost': 0.0,
         'model': events[0]['model'] if events else None,
         'provider': None,

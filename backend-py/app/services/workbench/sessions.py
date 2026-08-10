@@ -82,6 +82,9 @@ class WorkbenchSession:
     metadata: dict[str, object] = field(default_factory=dict)
     totalInputTokens: int = 0
     totalOutputTokens: int = 0
+    # Universal prompt-cache split accumulated across turns (context ring).
+    cacheHitTokens: int = 0
+    cacheMissTokens: int = 0
     totalCost: float = 0.0
     queuedUserMessages: list[dict[str, object]] = field(default_factory=list)
     # Dynamically-set instance attrs (declared so mypy can track them)

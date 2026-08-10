@@ -484,6 +484,9 @@ async def resolveManagedAnthropicToolUses(
             reqBody['system'] = cast(JsonValue, currentSystem)
         if knownTools:
             reqBody['tools'] = cast(JsonValue, knownTools)
+        # Prompt-cache breakpoints apply here too (system/tools/last user
+        # message) — the round-2 body is built inline, not via the builder.
+        apply_prompt_caching(reqBody)
         if isAnthropicUpstream:
             reqBodyJson = cast(dict[str, object], as_dict(camelToSnake(reqBody), {}))
             resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, reqBodyJson)

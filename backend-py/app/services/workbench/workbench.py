@@ -2250,6 +2250,11 @@ async def _sendWorkbenchMessageStreamImpl(
     # Wall time spent inside model sub-calls only (tool execution excluded) —
     # the denominator for the per-turn tokens/sec shown in the chat chip.
     totalGenerationMs = 0.0
+    # Universal prompt-cache metrics (Anthropic cache_read/cache_creation vs
+    # OpenAI-compatible prompt_cache_hit/miss) — surfaced in the context
+    # ring so cache hit rate is visible per session.
+    totalCacheHitTokens = 0
+    totalCacheMissTokens = 0
     # D8: which model actually answered when a fallback/promotion switch
     # happened — surfaced in the done event as usedFallback.
     chainUsedAt: str | None = None
@@ -2369,6 +2374,8 @@ async def _sendWorkbenchMessageStreamImpl(
                 ),
             )
             if isinstance(_budget, dict):
+                _cHit = as_int(getattr(session, 'cacheHitTokens', 0), 0)
+                _cMiss = as_int(getattr(session, 'cacheMissTokens', 0), 0)
                 emit(
                     {
                         'type': 'contextPressure',
@@ -2377,6 +2384,11 @@ async def _sendWorkbenchMessageStreamImpl(
                         'totalTokens': _budget.get('total_tokens'),
                         'maxContext': _budget.get('max_context'),
                         'remainingTokens': _budget.get('remaining_tokens'),
+                        'promptCache': {
+                            'hitTokens': _cHit,
+                            'missTokens': _cMiss,
+                            'hitRate': round(_cHit / (_cHit + _cMiss), 3) if (_cHit + _cMiss) else 0.0,
+                        },
                     }
                 )
         except Exception:
@@ -2637,6 +2649,19 @@ async def _sendWorkbenchMessageStreamImpl(
             totalInputTokens += as_int(respUsage.get('input_tokens', 0))
             totalOutputTokens += as_int(respUsage.get('output_tokens', 0))
             finalContextTokens = as_int(respUsage.get('input_tokens', 0))
+            # Universal cache split: Anthropic reports
+            # cache_read/cache_creation_input_tokens (uncached input is the
+            # miss); OpenAI-compatible reports prompt_cache_hit/miss_tokens.
+            hitRaw = respUsage.get('cache_read_input_tokens')
+            if hitRaw is None:
+                hitRaw = respUsage.get('prompt_cache_hit_tokens')
+            missRaw = respUsage.get('prompt_cache_miss_tokens')
+            if missRaw is None:
+                missRaw = as_int(respUsage.get('input_tokens'), 0) + as_int(
+                    respUsage.get('cache_creation_input_tokens'), 0
+                )
+            totalCacheHitTokens += as_int(hitRaw, 0)
+            totalCacheMissTokens += as_int(missRaw, 0)
         if isAnthropic:
             assistantMsg = {'role': 'assistant', 'content': response.get('content', [])}
             contentBlocks = cast('list[dict[str, object]]', as_list(response.get('content', []), []))
@@ -3528,9 +3553,17 @@ async def _sendWorkbenchMessageStreamImpl(
                         inputTokens=totalInputTokens,
                         outputTokens=totalOutputTokens,
                         contextTokens=finalContextTokens,
+                        cacheHitTokens=totalCacheHitTokens,
+                        cacheMissTokens=totalCacheMissTokens,
                     )
                     session.totalInputTokens += totalInputTokens
                     session.totalOutputTokens += totalOutputTokens
+                    session.cacheHitTokens = as_int(
+                        getattr(session, 'cacheHitTokens', 0), 0
+                    ) + totalCacheHitTokens
+                    session.cacheMissTokens = as_int(
+                        getattr(session, 'cacheMissTokens', 0), 0
+                    ) + totalCacheMissTokens
                 except Exception:
                     logger.exception('workbench record_usage failed')
     finally:
@@ -3603,6 +3636,8 @@ async def _sendWorkbenchMessageStreamImpl(
                     'outputTokens': totalOutputTokens,
                     'contextTokens': finalContextTokens,
                     'durationMs': int(totalGenerationMs),
+                    'cacheHitTokens': totalCacheHitTokens,
+                    'cacheMissTokens': totalCacheMissTokens,
                 },
             }
             # D8: the message shows who actually answered when a
