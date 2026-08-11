@@ -9,7 +9,7 @@
  * Tab switches keep this page (and the left rail) mounted. Only the
  * active section component remounts so it can refetch live data. */
 
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
@@ -19,39 +19,6 @@ import {
   type SettingsSection,
 } from '@/settings/settings-registry';
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
-import { WorkspaceUsageSection } from '@/sections/workspace/WorkspaceUsageSection';
-import { WorkspaceMemorySection } from '@/sections/workspace/WorkspaceMemorySection';
-import { WorkspaceInspectorSection } from '@/sections/workspace/WorkspaceInspectorSection';
-import { WorkspaceModelsSection } from '@/sections/workspace/WorkspaceModelsSection';
-import { WorkspaceGeneralSection } from '@/sections/workspace/WorkspaceGeneralSection';
-import { ProfilePreferencesSection } from './ProfilePreferencesSection';
-import { SystemHealthSection } from './SystemHealthSection';
-import { IntegrationsSection } from './IntegrationsSection';
-import { ConversationsHistorySection } from './ConversationsHistorySection';
-import { AgentsAutomationSection } from './AgentsAutomationSection';
-import { ComputerAccessSettings } from './ComputerAccessSettings';
-import { ObservabilitySection } from './ObservabilitySection';
-import { BackendMonitorSection } from './BackendMonitorSection';
-import { FeatureFlowSection } from './FeatureFlowSection';
-import { SkillsSection } from './SkillsSection';
-import { ComputerUseSection } from './ComputerUseSection';
-import { ExternalAccessSection } from './ExternalAccessSection';
-import { UiDesignerSection } from './UiDesignerSection';
-import { ToolGrantsSection } from './ToolGrantsSection';
-import { KanbanSection } from './KanbanSection';
-import { PythonSandboxSection } from './PythonSandboxSection';
-import { AgentSandboxSection } from './AgentSandboxSection';
-import { AccountSection } from './AccountSection';
-import { UpdateSection } from './UpdateSection';
-import { RecalledMemorySection } from './RecalledMemorySection';
-import { AddedMemorySection } from './AddedMemorySection';
-import { ProjectMemoriesSection } from './ProjectMemoriesSection';
-import { RecurringTasksSection } from './RecurringTasksSection';
-import { PromptTemplatesSection } from './PromptTemplatesSection';
-import { ReliabilitySection } from './ReliabilitySection';
-import { AISetupWizardSection } from './AISetupWizardSection';
-import { PrivacySection } from './PrivacySection';
-import { HealthSimulatorSection } from './HealthSimulatorSection';
 import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 
 /** The default section when no :section param is present. The user
@@ -175,16 +142,76 @@ export function SettingsPage() {
           transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
           className="h-full min-h-0"
         >
-          <SectionComponent active={active} />
+          <React.Suspense fallback={<SettingsSectionLoader />}>
+            <SectionComponent active={active} />
+          </React.Suspense>
         </motion.div>
       </AnimatePresence>
     </WorkspaceShell>
   );
 }
 
+/** Minimal lazy-section fallback — keeps the rail interactive while the
+ *  section chunk loads. */
+function SettingsSectionLoader() {
+  return (
+    <div className="flex h-full min-h-0 items-center justify-center" data-testid="settings-section-loader">
+      <div className="size-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+    </div>
+  );
+}
+
 interface SectionProps {
   active: SettingsSection;
 }
+
+
+/** Phase 5: settings sections are lazy-loaded (Suspense below) so the
+ *  Settings shell does not pull ~30 section components into the cold path. */
+function lazySection(
+  load: () => Promise<unknown>,
+  name: string,
+): React.ComponentType<SectionProps> {
+  return React.lazy<React.ComponentType<SectionProps>>(async () => {
+    const m = (await load()) as Record<string, React.ComponentType<SectionProps>>;
+    const C = m[name];
+    return { default: C };
+  });
+}
+
+const ComputerAccessSettingsWrapper = lazySection(() => import('./ComputerAccessSettings'), 'ComputerAccessSettings');
+const ObservabilitySectionWrapper = lazySection(() => import('./ObservabilitySection'), 'ObservabilitySection');
+const BackendMonitorWrapper = lazySection(() => import('./BackendMonitorSection'), 'BackendMonitorSection');
+const FeatureFlowWrapper = lazySection(() => import('./FeatureFlowSection'), 'FeatureFlowSection');
+const ExternalAccessWrapper = lazySection(() => import('./ExternalAccessSection'), 'ExternalAccessSection');
+const AppUpdatesWrapper = lazySection(() => import('./UpdateSection'), 'UpdateSection');
+const UsageWrapper = lazySection(() => import('@/sections/workspace/WorkspaceUsageSection'), 'WorkspaceUsageSection');
+const MemoryWrapper = lazySection(() => import('@/sections/workspace/WorkspaceMemorySection'), 'WorkspaceMemorySection');
+const RecalledMemoryWrapper = lazySection(() => import('./RecalledMemorySection'), 'RecalledMemorySection');
+const AddedMemoryWrapper = lazySection(() => import('./AddedMemorySection'), 'AddedMemorySection');
+const ProjectMemoriesWrapper = lazySection(() => import('./ProjectMemoriesSection'), 'ProjectMemoriesSection');
+const RecurringTasksWrapper = lazySection(() => import('./RecurringTasksSection'), 'RecurringTasksSection');
+const InspectorWrapper = lazySection(() => import('@/sections/workspace/WorkspaceInspectorSection'), 'WorkspaceInspectorSection');
+const ModelsWrapper = lazySection(() => import('@/sections/workspace/WorkspaceModelsSection'), 'WorkspaceModelsSection');
+const AccountWrapper = lazySection(() => import('./AccountSection'), 'AccountSection');
+const GeneralWrapper = lazySection(() => import('@/sections/workspace/WorkspaceGeneralSection'), 'WorkspaceGeneralSection');
+const ProfilePreferencesWrapper = lazySection(() => import('./ProfilePreferencesSection'), 'ProfilePreferencesSection');
+const UiDesignerWrapper = lazySection(() => import('./UiDesignerSection'), 'UiDesignerSection');
+const SystemHealthWrapper = lazySection(() => import('./SystemHealthSection'), 'SystemHealthSection');
+const ToolsConnectionsWrapper = lazySection(() => import('./IntegrationsSection'), 'IntegrationsSection');
+const ConversationsHistoryWrapper = lazySection(() => import('./ConversationsHistorySection'), 'ConversationsHistorySection');
+const AgentsAutomationWrapper = lazySection(() => import('./AgentsAutomationSection'), 'AgentsAutomationSection');
+const SkillsWrapper = lazySection(() => import('./SkillsSection'), 'SkillsSection');
+const ComputerUseWrapper = lazySection(() => import('./ComputerUseSection'), 'ComputerUseSection');
+const ToolGrantsWrapper = lazySection(() => import('./ToolGrantsSection'), 'ToolGrantsSection');
+const KanbanWrapper = lazySection(() => import('./KanbanSection'), 'KanbanSection');
+const PythonSandboxWrapper = lazySection(() => import('./PythonSandboxSection'), 'PythonSandboxSection');
+const AgentSandboxWrapper = lazySection(() => import('./AgentSandboxSection'), 'AgentSandboxSection');
+const PromptTemplatesWrapper = lazySection(() => import('./PromptTemplatesSection'), 'PromptTemplatesSection');
+const ReliabilityWrapper = lazySection(() => import('./ReliabilitySection'), 'ReliabilitySection');
+const PrivacyWrapper = lazySection(() => import('./PrivacySection'), 'PrivacySection');
+const HealthSimulatorWrapper = lazySection(() => import('./HealthSimulatorSection'), 'HealthSimulatorSection');
+const AISetupWizardWrapper = lazySection(() => import('./AISetupWizardSection'), 'AISetupWizardSection');
 
 const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   usage: UsageWrapper,
@@ -226,40 +253,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'health-simulator': HealthSimulatorWrapper,
 };
 
-function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
-function ObservabilitySectionWrapper() { return <ObservabilitySection />; }
-function BackendMonitorWrapper() { return <BackendMonitorSection />; }
-function FeatureFlowWrapper() { return <FeatureFlowSection />; }
-function ExternalAccessWrapper() { return <ExternalAccessSection />; }
-function AppUpdatesWrapper() { return <UpdateSection />; }
 
-function UsageWrapper() { return <WorkspaceUsageSection />; }
-function MemoryWrapper() { return <WorkspaceMemorySection />; }
-function RecalledMemoryWrapper() { return <RecalledMemorySection />; }
-function AddedMemoryWrapper() { return <AddedMemorySection />; }
-function ProjectMemoriesWrapper() { return <ProjectMemoriesSection />; }
-function RecurringTasksWrapper() { return <RecurringTasksSection />; }
-function InspectorWrapper() { return <WorkspaceInspectorSection />; }
-function ModelsWrapper() { return <WorkspaceModelsSection />; }
-function AccountWrapper() { return <AccountSection />; }
-function GeneralWrapper() { return <WorkspaceGeneralSection />; }
-function ProfilePreferencesWrapper() { return <ProfilePreferencesSection />; }
-function UiDesignerWrapper() { return <UiDesignerSection />; }
-function SystemHealthWrapper() { return <SystemHealthSection />; }
-function ToolsConnectionsWrapper() { return <IntegrationsSection />; }
-function ConversationsHistoryWrapper() { return <ConversationsHistorySection />; }
-function AgentsAutomationWrapper() { return <AgentsAutomationSection />; }
-function SkillsWrapper() { return <SkillsSection />; }
-function ComputerUseWrapper() { return <ComputerUseSection />; }
-function ToolGrantsWrapper() { return <ToolGrantsSection />; }
-function KanbanWrapper() { return <KanbanSection />; }
-function PythonSandboxWrapper() { return <PythonSandboxSection />; }
-function AgentSandboxWrapper() { return <AgentSandboxSection />; }
-function PromptTemplatesWrapper() { return <PromptTemplatesSection />; }
-function ReliabilityWrapper() { return <ReliabilitySection />; }
-function AISetupWizardWrapper({ active }: SectionProps) { return <AISetupWizardSection active={active} />; }
-function PrivacyWrapper() { return <PrivacySection />; }
-function HealthSimulatorWrapper() { return <HealthSimulatorSection />; }
 
 /** Placeholder for sections not yet wired. With all 10 entries now
  *  mapped, this only renders for genuinely-unknown :section params. */
