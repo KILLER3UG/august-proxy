@@ -1,5 +1,40 @@
 # August Proxy — Changelog
 
+## 0.16.0 (2026-08-12)
+
+Full-repo 12-agent audit sweep closed out: 1 CRITICAL + ~18 HIGH + ~30 MED/LOW findings fixed across every layer. Full report: `docs/audit-2026-08/SWEEP-2026-08-11.md`.
+
+**Proxy adapters (CRITICAL)**
+- Non-streaming `/v1/messages` → OpenAI upstreams returned EMPTY responses (the translator read the choice dict instead of `choices[0].message`) — now reads the nested message and both camel/snake spellings, with regression tests.
+- Non-streaming responses re-snake-cased at the endpoint boundary (external clients were getting camelCase); responses-format models on `/v1/messages` fail loudly as intended; empty reasoning keys no longer leak upstream; images translate to valid data URIs both directions; `/v1/responses` `input` translates system→instructions / tool→function_call_output; Anthropic→OpenAI emits real tool_calls (never a bare `finish_reason: tool_calls`); prompt-cache breakpoints apply after tools attach; tool-loop round-2+ bodies keep sampling params and deep-None-strip; Anthropic client sends `x-api-key`; stream token accounting covers OpenAI-style usage keys.
+
+**Harness**
+- `get_session()` prefers the dispatch ContextVar — with 2+ open chats, `update_state`/verifier receipts/scratchpad/agent-mode no longer land on the wrong session (verifier gate verdicts, stall detection, routing evidence fixed).
+- Malformed tool args can never execute as `{}` (Anthropic stream path + text protocol closed); verifier gate: receipts survive mid-turn plan-mode rebuilds, withheld answers are recorded as losses not wins, force-release is per-turn, auto-run skips cancelled turns; Stop no longer persists dangling tool_calls; JSON-aware model-visible truncation; per-turn refusal counters; documented 25-round cap is real again.
+
+**Workbench services**
+- Session delete cancels ALL in-flight work (chat turns, orchestrator tasks, watchers, recurring subagents) and detaches env-watcher threads; debounce snapshot race closed + flush on shutdown; status survives restart; sub-agent cap-breaks report failed/partial; fallback config can't override model pins; evals use throwaway sessions; terminal commands run in the session's cwd and exited sessions reap; AppleScript injection closed.
+
+**Sandbox / tools**
+- Read-only sandbox blocks interpreters (`python -c` / `node -e` could mutate anything) and scans interpreter payloads + env-var tokens (`$HOME/x`, `%USERPROFILE%`) against the workspace containment rule; child processes no longer inherit credential env vars; code mode enforces sandboxMode; `edit_lines` preserves EOF; browser: SSRF gate (private/loopback/metadata blocked), tight allowlist matching, no `--no-sandbox`, sessions closed on delete; `desktop_screenshot` writes files instead of corrupting multi-MB base64; bridge tools (`tool_call` etc.) actually execute; current-session deletion blocked in every guard mode.
+
+**Memory**
+- `brain_query` FTS+filters fixed (was a bindings crash); near-duplicate writes carry the newest text; pinned memories survive cap eviction; durable-only recall falls through correctly; LIKE wildcards escaped; FTS hyphenated queries split; migration 007/failure tracking; unique keys under concurrency; graph eviction cascades.
+
+**MCP / connections / hooks / automations**
+- MCP stdio procs reaped, legacy-SSE transport made protocol-correct (persistent reader + id correlation), `Mcp-Session-Id` captured, sessions terminated on stop; Google OAuth tokens refresh (was silently breaking ~1h after connect) with degraded status; OAuth callback requires exact state; hooks fail CLOSED on PRE exceptions; blast-radius scans non-blocking; interval automations can't fire every tick; curator dry-run param honored; skill names validated against path traversal.
+
+**Security / surface**
+- `/v1/models` is gateway-key-gated like every other `/v1/*` endpoint; FastAPI `/docs` off by default; `/api/mcp-env` masks secrets; error responses stop leaking `str(exc)`; profile summary edits survive.
+
+**Frontend**
+- SSE seq pairing fixed (reconnect replays gone); failed tools render red; memory/subagent-retry events reach the UI; Zod schemas match real payloads; no ghost bubbles / duplicate sends; deleted sessions can't resurrect transcripts; verifier shield works on turn 1; terminal Run works; 752 vitest tests + tsc clean.
+
+**Desktop shell / release**
+- Port fallback + identity-checked health; async restart (no UI freeze); stale-runtime re-bootstrap; stamp only after healthy; scoped orphan sweep; installer port kills ownership-scoped; tag-push releases publish (updater sees them); docker mount + healthcheck fixed; dead launchers removed; Python ≥3.12 enforced on the system-python fallback. `cargo check` clean.
+
+**Validation:** backend ruff/mypy clean · 1495+ pytest (57.8% cov) · frontend 752 vitest + tsc clean · `cargo check` 0 errors · all 7 version sources synced.
+
 ## 0.15.0 (2026-08-11)
 
 Full-repo audit delivery: 6-agent scan closed out — subagents usable end-to-end, proxy adapters hardened, harness self-tuning loops closed, spend guardrails, and a big UX pass.
