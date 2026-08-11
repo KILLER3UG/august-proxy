@@ -2,7 +2,51 @@
 
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
+
+# Env vars the soft sandbox expands BEFORE the containment check. The shell
+# expands ANY variable, so only a whitelist is trusted — it covers every var
+# that commonly points outside a workspace ($HOME, %USERPROFILE%, %TEMP%…).
+# Unlisted vars stay literal: their tokens resolve under the workspace root
+# and pass, matching the (advisory) soft-sandbox contract.
+_SAFE_EXPAND_ENV = frozenset(
+    {
+        'HOME',
+        'USERPROFILE',
+        'HOMEDRIVE',
+        'HOMEPATH',
+        'TEMP',
+        'TMP',
+        'SYSTEMROOT',
+        'WINDIR',
+        'APPDATA',
+        'LOCALAPPDATA',
+        'PROGRAMFILES',
+        'PROGRAMFILES(X86)',
+        'PUBLIC',
+    }
+)
+_ENV_TOKEN_RE = re.compile(r'\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([^}]+)\}|%([^%]+)%')
+
+
+def _expand_safe_env(token: str) -> str:
+    """Expand ``$VAR`` / ``${VAR}`` / ``%VAR%`` for the safe whitelist only.
+
+    Unknown variables are substituted with the empty string — the shell would
+    expand them to the same empty value (POSIX) or leave them literal
+    (cmd.exe), and an empty result resolves to an absolute root that the
+    containment check rejects when it is outside the workspace.
+    """
+
+    def _sub(m: re.Match[str]) -> str:
+        name = m.group(1) or m.group(2) or m.group(3)
+        if name.upper() in _SAFE_EXPAND_ENV:
+            return os.environ.get(name, '')
+        return ''
+
+    return _ENV_TOKEN_RE.sub(_sub, token)
 
 
 def resolve_workspace_root(workspace: str | None) -> Path | None:
@@ -93,6 +137,10 @@ def path_looks_outside_workspace(token: str, workspace: str | None) -> bool:
     cleaned = token.strip().strip('"').strip("'")
     if not cleaned or cleaned.startswith('-'):
         return False
+    # Expand env vars FIRST — `$HOME/x` and `%USERPROFILE%\x` are literal
+    # tokens to the naive scan and previously resolved *under* the workspace
+    # root, then the shell expanded them to real outside paths (audit finding).
+    cleaned = _expand_safe_env(cleaned)
     # Home / absolute roots that are clearly outside
     if cleaned in ('~', '/', '\\') or cleaned.startswith('~/') or cleaned.startswith('~\\'):
         home = Path.home().resolve(strict=False)

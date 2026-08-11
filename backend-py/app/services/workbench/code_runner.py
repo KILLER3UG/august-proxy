@@ -31,18 +31,19 @@ _PREAMBLE = '''\
 import os as _os
 # Scrub secrets before the model's code runs: the child python can read
 # os.environ, so API keys / AUGUST_* config must not be visible to it.
+# Case-insensitive + credential-shaped names (mirrors async_subprocess).
+import re as _os_re
 for _k in list(_os.environ):
-    if (
-        _k.startswith('AUGUST_')
-        or _k.endswith('_API_KEY')
-        or _k.endswith('_API_TOKEN')
-        or _k.endswith('_SECRET')
-    ):
+    if _os_re.match(r'^(?:AUGUST_|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$', _k, _os_re.IGNORECASE):
         _os.environ.pop(_k, None)
 import subprocess
 from pathlib import Path
 
 _WORKSPACE = Path({workspace!r}) if {workspace!r} else None
+# Session sandbox mode: read-only sessions must not be able to mutate the
+# filesystem through the code runner (the outer python is also blocked by
+# soft_preflight; this is the in-process second gate).
+_SANDBOX_READ_ONLY = {sandbox_read_only!r}
 
 
 def _bind(path):
@@ -58,6 +59,21 @@ def _bind(path):
     return r
 
 
+def _bind_write(path):
+    if _SANDBOX_READ_ONLY:
+        raise PermissionError('read-only sandbox blocks file writes')
+    p = _bind(path)
+    if _WORKSPACE is None:
+        # No workspace: writes are gated to the system temp area, mirroring
+        # the file tool's bind_path rule.
+        import tempfile
+        try:
+            p.relative_to(Path(tempfile.gettempdir()).resolve())
+        except ValueError:
+            raise PermissionError('no workspace configured — writes are only allowed under the system temp directory')
+    return p
+
+
 def read_file(path):
     _reason = _hardline_check_path(path, for_write=False)
     if _reason:
@@ -66,16 +82,20 @@ def read_file(path):
 
 
 def write_file(path, content):
+    if _SANDBOX_READ_ONLY:
+        raise PermissionError('read-only sandbox blocks write_file')
     _reason = _hardline_check_path(path, for_write=True)
     if _reason:
         raise PermissionError(_reason)
-    p = _bind(path)
+    p = _bind_write(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(str(content), encoding='utf-8')
     return 'ok'
 
 
 def run_command(cmd, timeout=30):
+    if _SANDBOX_READ_ONLY:
+        raise PermissionError('read-only sandbox blocks run_command — use read_file/list_files instead')
     _reason = _hardline_check_command(str(cmd))
     if _reason:
         raise PermissionError(_reason)
@@ -204,9 +224,14 @@ except Exception:
 '''
 
 
-def build_runner_source(user_block: str, workspace_path: str) -> str:
+def build_runner_source(user_block: str, workspace_path: str, sandbox_mode: str = '') -> str:
     """Guard (rendered from the live hardline module) + preamble + user block
-    + the result-capture tail (honors the "assign to `result`" contract)."""
+    + the result-capture tail (honors the "assign to `result`" contract).
+
+    ``sandbox_mode`` (read-only / workspace-write / full) is rendered into the
+    preamble so the embedded tool API enforces the same mutation rules as the
+    typed tools — a read-only session cannot write through code mode.
+    """
     from app.services.sandbox import hardline as _hardline
 
     guard = (
@@ -220,10 +245,11 @@ def build_runner_source(user_block: str, workspace_path: str) -> str:
             repr({k: tuple(p.pattern for p in v) for k, v in _hardline._MUTATING_FLAG_PATTERNS.items()}),
         )
     )
+    sandbox_read_only = (sandbox_mode or '').strip().lower().replace('_', '-') == 'read-only'
     return (
         guard
         + '\n\n'
-        + _PREAMBLE.format(workspace=workspace_path or '')
+        + _PREAMBLE.format(workspace=workspace_path or '', sandbox_read_only=sandbox_read_only)
         + '\n\n'
         + user_block
         + _RESULT_CAPTURE_TAIL

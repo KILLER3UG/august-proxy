@@ -10,10 +10,22 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import subprocess
 import time
 from contextvars import ContextVar
 from typing import Any
+
+# Env vars that must never reach a child process: a model can run
+# `python -c "import os; print(os.environ)"` and dump API keys straight into
+# the tool result (audit finding). AUGUST_* is scrubbed wholesale (gateway
+# keys and other secrets live there); everything else matches on
+# credential-shaped suffixes/substrings, case-insensitively. `AUTH` requires
+# a trailing underscore/end so benign vars like GIT_AUTHOR_NAME survive.
+_CREDENTIAL_ENV_RE = re.compile(
+    r'^(?:AUGUST_|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$',
+    re.IGNORECASE,
+)
 
 
 class SubprocessAborted(Exception):
@@ -37,8 +49,15 @@ current_command_output: ContextVar[Any] = ContextVar('command_output', default=N
 
 
 def noninteractive_env(base: dict[str, str] | None = None) -> dict[str, str]:
-    """Env that discourages pagers/prompts but keeps download progress visible."""
+    """Env that discourages pagers/prompts but keeps download progress visible.
+
+    Credential-shaped variables (API keys, tokens, secrets, ``AUGUST_*``) are
+    scrubbed before the child starts — the model can read ``os.environ`` from
+    a ``python -c`` child and would otherwise dump them into tool results.
+    """
     env = dict(base if base is not None else os.environ)
+    for key in [k for k in env if _CREDENTIAL_ENV_RE.match(k)]:
+        env.pop(key, None)
     env.update(
         {
             'TERM': 'dumb',

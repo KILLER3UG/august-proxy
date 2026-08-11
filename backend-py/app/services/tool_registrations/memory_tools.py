@@ -266,6 +266,15 @@ def _purge_session_everywhere(sessionId: str) -> dict[str, object]:
     except Exception:
         # Fall through to brain cascade even if workbench module is unavailable.
         pass
+    # Free the headless browser for this session — every session that used a
+    # browser tool otherwise leaves a chromium process resident until app
+    # shutdown (audit finding).
+    try:
+        from app.services.browser.session_manager import closeSession
+
+        asyncio.run(closeSession(sessionId))
+    except Exception:
+        pass
     # Workbench delete already cascaded + notified when present. Second pass
     # cleans orphans only; suppress duplicate UI events.
     result = memory_store.delete_session_cascade(sessionId, notify=not wb_ok)

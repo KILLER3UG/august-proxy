@@ -26,6 +26,44 @@ _REDIRECT_RE = re.compile(
     r'(?:^|[\s;|&])(?:>>?|tee\s+)\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s;|&]+))'
 )
 
+# Interpreters can mutate anything regardless of the first word (`python -c
+# "open('x','w')..."`, `node -e`, `bash -c "rm -rf ..."`) — read-only mode
+# blocks them wholesale (audit finding). Our own Windows viewer rewrites
+# (powershell Get-Content / cmd dir /b) are exempt below — they are read-only
+# by construction and the model cannot inject commands through them.
+_INTERPRETER_PREFIXES: frozenset[str] = frozenset(
+    {
+        'python',
+        'python3',
+        'py',
+        'node',
+        'nodejs',
+        'bun',
+        'deno',
+        'bash',
+        'sh',
+        'zsh',
+        'pwsh',
+        'powershell',
+        'cmd',
+        'perl',
+        'ruby',
+        'php',
+        'lua',
+    }
+)
+_VIEWER_REWRITE_PREFIXES = (
+    'powershell -noprofile -noninteractive -command get-content',
+    'cmd /c dir /b',
+)
+
+# -c / -e / -Command / -EncodedCommand argument payloads hide path tokens
+# inside the payload string (`python -c "open(r'C:\\evil.txt','w')"`) — the
+# plain token scan cannot see them (audit finding).
+_INTERPRETER_FLAG_PAYLOAD_RE = re.compile(
+    r'(?:-c|-e|-command|-encodedcommand)\s+(["\'])(.*?)\1', re.IGNORECASE
+)
+
 
 def _shell_tokens_for_scan(command: str) -> list[str]:
     """Tokens for the outside-workspace scan.
@@ -106,8 +144,13 @@ def rewrite_command_for_platform(command: str) -> str:
         path = (m.group(1) or '.').strip().strip('"').strip("'") or '.'
         if path == '.':
             return 'cmd /c dir /b'
-        safe = path.replace('"', '')
-        return f'cmd /c dir /b "{safe}"'
+        # cmd.exe treats & | < > ^ as command separators even inside quotes
+        # (`ls a & whoami` would run `whoami"` half) — only rewrite plain
+        # paths; anything with metacharacters stays untouched and fails
+        # loudly in cmd (audit finding).
+        if re.search(r'[&|<>^"\']', path):
+            return command
+        return f'cmd /c dir /b "{path}"'
 
     return command
 
@@ -142,6 +185,12 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
     if policy.is_read_only:
         if first in READ_ONLY_BLOCKED_PREFIXES:
             return f'read-only sandbox blocks mutating command: {first}'
+        lowered = command.strip().lower()
+        if first in _INTERPRETER_PREFIXES and not lowered.startswith(_VIEWER_REWRITE_PREFIXES):
+            return (
+                f'read-only sandbox blocks interpreters ({first}) — they can mutate files '
+                'regardless of the command; use the file tools or Full access instead.'
+            )
         if re.search(r'(?:^|[\s;|&])(?:>>?|tee\b)', command):
             return 'read-only sandbox blocks shell redirects / tee'
     if not policy.network and first in NETWORK_COMMAND_PREFIXES:
@@ -156,6 +205,14 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
         for tok in _shell_tokens_for_scan(command):
             if path_looks_outside_workspace(tok, policy.workspace_root):
                 return f'path outside workspace blocked: {tok}'
+        # String literals inside interpreter payloads (`python -c "..."`,
+        # `node -e "..."`, `powershell -Command "..."`) can name paths the
+        # token scan never sees — scan them against the same containment rule.
+        for m in _INTERPRETER_FLAG_PAYLOAD_RE.finditer(command):
+            payload = m.group(2)
+            for lit in re.findall(r"['\"]([^'\"]+)['\"]", payload):
+                if path_looks_outside_workspace(lit, policy.workspace_root):
+                    return f'path inside interpreter payload blocked: {lit}'
     return None
 
 

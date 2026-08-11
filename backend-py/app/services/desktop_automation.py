@@ -13,17 +13,30 @@ from __future__ import annotations
 
 
 async def takeScreenshot() -> dict[str, object]:
-    """Capture the real desktop as a base64-encoded PNG."""
+    """Capture the real desktop as a PNG file, returning its path + size.
+
+    Writes to the data dir (mirroring ``browser_screenshot``) instead of
+    returning a multi-MB base64 blob — a base64 dict gets ``str()``-repr'd
+    and boundary-truncated in the tool loop, corrupting the payload the UI
+    and model see (audit finding).
+    """
     try:
-        import base64
-        import io
+        import time
 
         import pyautogui
 
+        from app.lib.paths import dataPath
+        from app.services.workbench.context import currentSessionId
+
         screenshot = pyautogui.screenshot()
-        buf = io.BytesIO()
-        screenshot.save(buf, format='PNG')
-        return {'screenshot': base64.b64encode(buf.getvalue()).decode(), 'format': 'png'}
+        sid = currentSessionId.get() or 'default'
+        folder = dataPath('desktop_screenshots', sid)
+        folder.mkdir(parents=True, exist_ok=True)
+        filename = f'{int(time.time() * 1000)}.png'
+        path = folder / filename
+        screenshot.save(str(path), format='PNG')
+        w, h = screenshot.size
+        return {'path': str(path), 'width': w, 'height': h, 'format': 'png'}
     except ImportError:
         return {'error': 'pyautogui not installed. Run `uv sync --extra desktop`.'}
 

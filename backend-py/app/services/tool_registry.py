@@ -11,7 +11,10 @@ from typing import Callable, Coroutine
 
 _registry: dict[str, dict[str, object]] = {}
 ToolHandler = Callable[..., Coroutine[object, object, str]]
-_RESERVEDNames: frozenset[str] = frozenset({'tool_search', 'tool_describe', 'tool_call'})
+# Bridge tool names (tool_search / tool_describe / tool_call) are REGISTERED
+# with real handlers in tool_bridges now — the set is empty so registration
+# works; the names are documented in tool_bridges for def assembly.
+_RESERVEDNames: frozenset[str] = frozenset()
 _daemonContext: contextvars.ContextVar[bool] = contextvars.ContextVar('daemon_context', default=False)
 # Monotonic generation for tool-definition caches (increments on register/clear).
 _generation: int = 0
@@ -70,8 +73,6 @@ def register(
     keywords: list[str] | None = None,
 ) -> None:
     """Register a tool.
-
-    Raises ValueError if the name is reserved (tool_search, tool_describe, tool_call).
 
     ``keywords`` is an optional list of search terms for BM25 retrieval (Phase 3).
     """

@@ -20,6 +20,7 @@ def register_all() -> None:
         system_tools,
         web_tools,
     )
+    from app.services.tools import tool_bridges
 
     file_tools.register()
     web_tools.register()
@@ -29,6 +30,9 @@ def register_all() -> None:
     agent_tools.register()
     skill_tools.register()
     bulk_tools.register()
+    # Bridge tools (tool_search / tool_describe / tool_call) execute real
+    # handlers — advertised when progressive disclosure activates.
+    tool_bridges.register()
     self_config_tools.register()
     provider_setup_tool.register()
     integration_tools.register()

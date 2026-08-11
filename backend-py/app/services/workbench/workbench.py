@@ -1859,7 +1859,15 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
         ws = as_str(getattr(session, 'workspacePath', '') or '')
         _run_dir, path = runner_path(ws, session.id, toolRound)
         with open(path, 'w', encoding='utf-8') as f:
-            f.write(build_runner_source(block, ws))
+            # The session's sandbox mode is rendered into the runner preamble
+            # (read-only denies write_file/run_command inside the child).
+            f.write(
+                build_runner_source(
+                    block,
+                    ws,
+                    sandbox_mode=as_str(getattr(session, 'sandboxMode', '') or ''),
+                )
+            )
         result = await _executeTool(
             'run_command',
             {'command': runner_command(path), 'timeout': _CODE_RUN_TIMEOUT_S},
@@ -4507,10 +4515,16 @@ async def _executeTool(
                     from pathlib import Path
 
                     try:
-                        p = Path(target)
+                        # Expand ~ and resolve symlinks before hashing — a raw
+                        # Path('~/x') is never a real file, so `~`-relative
+                        # targets silently skipped the stale-write guard
+                        # (audit finding), and unresolved symlinks read the
+                        # wrong bytes.
+                        p = Path(target).expanduser()
                         if not p.is_absolute():
                             ws = as_str(getattr(session, 'workspacePath', '') or '')
                             p = Path(ws) / p if ws else p
+                        p = p.resolve()
                         if p.is_file():
                             actual = hashlib.sha256(p.read_bytes()).hexdigest()
                             if actual != expected.lower():
@@ -4905,6 +4919,36 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
             return (
                 f"Tool '{toolName}' is blocked by read-only sandbox. "
                 'Switch sandbox mode to Workspace or Full access to make changes.'
+            )
+
+    # Session-deletion tools promise "confirm with the user before deleting"
+    # — deleting the session that is CURRENTLY executing would destroy the
+    # transcript the user is reading mid-turn. That is never approvable from
+    # inside the session itself, so it is blocked in EVERY guard mode
+    # (Full Access included; the sidebar delete button is the user's path —
+    # audit finding). Other sessions remain deletable.
+    if toolName in ('delete_session', 'delete_sessions', 'delete_folder'):
+        currentId = session.id
+        blockReason = None
+        if toolName == 'delete_session':
+            target = as_str(args.get('sessionId') or args.get('session_id'), '')
+            blockReason = currentId if (not target or target == currentId) else ''
+        elif toolName == 'delete_sessions':
+            ids = [
+                as_str(i, '')
+                for i in as_list(args.get('sessionIds') or args.get('session_ids'), [])
+                if isinstance(i, str)
+            ]
+            blockReason = currentId if currentId in ids else ''
+        elif toolName == 'delete_folder':
+            folderId = as_str(args.get('folderId') or args.get('folder_id'), '')
+            ownFolder = as_str(getattr(session, 'folderId', '') or '', '')
+            blockReason = currentId if (ownFolder and folderId == ownFolder) else ''
+        if blockReason:
+            return (
+                f"Tool '{toolName}' cannot delete the session that is currently running "
+                f'({blockReason}). Ask the user to delete this chat from the sidebar — '
+                'deleting other sessions is allowed.'
             )
 
     # Full Access: never queue Ask/Edit permission banners (including run_command).

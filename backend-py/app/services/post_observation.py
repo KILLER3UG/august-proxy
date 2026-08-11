@@ -7,12 +7,11 @@ is enabled (default true).
 
 from __future__ import annotations
 
-import base64
 import logging
 import uuid
 from datetime import datetime, timezone
 
-from app.json_narrowing import as_dict, as_str
+from app.json_narrowing import as_dict
 from app.lib.paths import dataPath
 from app.services.config_service import getConfig
 
@@ -81,15 +80,18 @@ async def capture_after_tool(tool_name: str, tool_result: str = '') -> dict[str,
         from app.services.desktop_automation import takeScreenshot
 
         shot = await takeScreenshot()
-        if not isinstance(shot, dict) or shot.get('error') or not shot.get('screenshot'):
+        if not isinstance(shot, dict) or shot.get('error') or not shot.get('path'):
             logger.debug('post-observation skip: %s', shot.get('error') if isinstance(shot, dict) else 'no data')
             return None
-        raw = base64.b64decode(as_str(shot.get('screenshot')))
         obs_id = uuid.uuid4().hex[:12]
         out_dir = observations_dir()
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / f'{obs_id}.png'
-        path.write_bytes(raw)
+        # takeScreenshot now writes the PNG to the data dir and returns the
+        # path (base64-in-tool-result was corrupting on truncation).
+        from pathlib import Path
+
+        Path(str(shot['path'])).write_bytes(Path(str(shot['path'])).read_bytes())
         meta: dict[str, object] = {
             'id': obs_id,
             'screenshotPath': str(path),

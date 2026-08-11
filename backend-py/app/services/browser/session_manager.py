@@ -74,8 +74,12 @@ async def getOrCreateSession(sessionId: str) -> BrowserSession:
         session.playwright = pw
         engine = 'chromium'
         launcher = getattr(pw, engine) or pw.chromium
+        # No --no-sandbox: this is a user-machine browser, not a container —
+        # the sandbox flag weakens the browser's own isolation for no benefit
+        # on Windows (audit finding).
         browser = await launcher.launch(
-            headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+            headless=True,
+            args=['--disable-dev-shm-usage', '--disable-gpu'],
         )
         session.browser = browser
         context = await browser.new_context(viewport=_VIEWPORT, user_agent=_USERAgent)

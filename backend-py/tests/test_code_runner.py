@@ -44,8 +44,9 @@ def test_build_runner_source_contains_workspace_bind_and_scrub():
     src = build_runner_source('print("hi")', r'C:\ws')
     assert '_bind' in src
     assert 'path outside workspace' in src
-    assert '_API_KEY' in src
-    assert "_k.startswith('AUGUST_')" in src
+    assert 'API[_-]?KEY' in src  # credential-scrub regex (case-insensitive)
+    assert 'AUGUST_' in src
+    assert '_SANDBOX_READ_ONLY' in src
     assert 'print("hi")' in src
 
 

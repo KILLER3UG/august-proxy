@@ -288,7 +288,14 @@ async def _editLines(
     try:
         # write_bytes (not write_text): text mode would translate \n → \r\n on
         # Windows, doubling the \r when the file already uses CRLF.
-        filePath.write_bytes((newline.join(lines) + newline).encode('utf-8'))
+        # Preserve the file's exact EOF state — a file WITHOUT a trailing
+        # newline must not silently gain one (the changed bytes would make a
+        # follow-up edit's hash check fail; audit finding).
+        hadTrailingNewline = bool(raw) and raw.endswith((b'\n', b'\r'))
+        joined = newline.join(lines)
+        if hadTrailingNewline:
+            joined += newline
+        filePath.write_bytes(joined.encode('utf-8'))
     except OSError as exc:
         return f'Error writing file: {exc}'
     return f'Applied {applied} edit{"" if applied == 1 else "s"} to {path}.'

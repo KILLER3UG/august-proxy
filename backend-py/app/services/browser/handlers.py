@@ -104,21 +104,40 @@ async def _elementsSnapshot(page: Page) -> str:
 
 
 def _checkUrlAllowlist(url: str) -> str | None:
-    """Return an error message if the URL is blocked by the allowlist, else None."""
-    allowlist = settings.config.get('browserAllowlist') or []
-    if not isinstance(allowlist, list) or not allowlist:
-        return None
+    """Return an error message if the URL is blocked, else None.
+
+    Three gates:
+    1. Allowlist match wins (an explicitly listed host may be visited even
+       when it is local — that is the point of listing it).
+    2. SSRF guard: loopback / private / link-local / metadata hosts are
+       ALWAYS blocked otherwise (same rule as web_fetch) — with no allowlist
+       the headless browser could otherwise reach August's own backend, dev
+       servers, or cloud metadata (audit finding).
+    3. When an allowlist IS configured, unlisted public hosts are blocked.
+    """
+    from app.services.tool_registrations.web_tools import _is_private_url
+
     try:
         host = (urlparse(url).hostname or '').lower()
     except Exception:
         return f'Invalid URL: {url}'
     if not host:
         return f'URL has no host: {url}'
-    for allowed in allowlist:
-        a = str(allowed).lower().lstrip('.')
-        if host == a or host.endswith('.' + a):
-            return None
-    return f"Domain '{host}' is not in the browser allowlist"
+    allowlist = settings.config.get('browserAllowlist') or []
+    if isinstance(allowlist, list) and allowlist:
+        for allowed in allowlist:
+            a = str(allowed).lower().strip().lstrip('.')
+            # A bare TLD entry ('com') would authorize every .com host —
+            # require a real domain (or an explicit localhost entry).
+            if a != 'localhost' and '.' not in a:
+                continue
+            if host == a or host.endswith('.' + a):
+                return None
+    if _is_private_url(url):
+        return 'Private/local network addresses are blocked (loopback, private ranges, metadata)'
+    if isinstance(allowlist, list) and allowlist:
+        return f"Domain '{host}' is not in the browser allowlist"
+    return None
 
 
 async def browserOpen(url: str, waitUntil: str = 'load') -> str:
