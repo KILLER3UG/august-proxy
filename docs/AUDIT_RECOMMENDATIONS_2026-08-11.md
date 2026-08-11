@@ -336,6 +336,12 @@ On the harnesses you named directly: **Hermes** (Nous) — the relevant pattern 
 - **A9:** `capability_fingerprint` filters traces by provider — two gateways serving the same model id are no longer merged.
 - **Prompt consolidation:** the `[Validation Error]` self-heal message is ONE canonical function (`validator.validationErrorText`) used by the workbench loop, the subagent loop, and both proxy adapters (four copies were drifting); the `<agents>` capabilities block now advertises only the consolidated `spawn_subagents` tool and explains `[SUBAGENT_COMPLETE]` receipts; the verifier-lesson heuristic uses stable rule text (per-turn blocker detail removed) so repeats merge instead of fragmenting into N near-duplicates.
 
+### Batch 8 (eighth pass)
+- **Code-mode `result` capture:** the code-mode prompt's "assign your final answer to a variable named `result`" contract is now HONORED — the runner surfaces the assigned value (`[result] …`) alongside stdout; regression tests cover both the captured and the no-`result` paths.
+- **Per-model pricing table:** new `cost_estimator` module (model-prefix $/1M table: Claude/GPT/o1/DeepSeek/Gemini/Llama/Qwen/Mistral/Grok + env overrides, cache-hit input at 10%) — used by BOTH the spend-ceiling gate and `get_usage.totalCost`, so the composer chip, the ceiling, and the Usage page finally agree (the chip previously showed $0.000 because cost was never computed).
+- **Spawn modal v2:** an "Advanced" section (shared context, restricted-tools denylist chips, `yieldSchema` JSON editor with invalid-JSON hint) — every backend knob the spawn tool supports is now reachable from the composer launcher.
+- **Verifier steer with inferred command:** when enforcement is on and the model never declares a verification command, the steer now suggests one inferred from the task type (`pytest -q` for tests/bugfix/refactor, `compileall` for docs) — suggested, never auto-run.
+
 ### P2 — Next iteration (model improvement loops; 1-2 weeks)
 16. Golden-eval expansion + eval→profile feedback P5 (§3) — open
 17. Routing exploration P6; verifier recovery steer A7/P8 — open

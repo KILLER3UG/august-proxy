@@ -134,3 +134,43 @@ def test_generated_guard_blocks_credential_read(guardNs: dict) -> None:
         finally:
             os.environ.clear()
             os.environ.update(saved)
+
+
+def test_code_mode_result_variable_capture():
+    """The code-mode contract 'assign your final answer to a variable named
+    result' is HONORED — the runner surfaces the assigned value even when the
+    block prints nothing (the prompt previously promised this and the runner
+    silently dropped it)."""
+    import contextlib
+    import io
+
+    source = code_runner.build_runner_source(user_block='result = 6 * 7', workspace_path='')
+    buf = io.StringIO()
+    ns: dict = {}
+    saved = dict(os.environ)
+    try:
+        with contextlib.redirect_stdout(buf):
+            exec(compile(source, '<code_runner_result>', 'exec'), ns)  # noqa: S102
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+    assert '[result] 42' in buf.getvalue()
+
+    # A block WITHOUT `result` must not break the run or fabricate output.
+    buf2 = io.StringIO()
+    saved2 = dict(os.environ)
+    try:
+        with contextlib.redirect_stdout(buf2):
+            exec(  # noqa: S102
+                compile(
+                    code_runner.build_runner_source(user_block='print("hi")', workspace_path=''),
+                    '<code_runner_noresult>',
+                    'exec',
+                ),
+                {},
+            )
+    finally:
+        os.environ.clear()
+        os.environ.update(saved2)
+    assert 'hi' in buf2.getvalue()
+    assert '[result]' not in buf2.getvalue()

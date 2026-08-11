@@ -182,8 +182,31 @@ def extract_fenced_python(text: str) -> str | None:
     return matches[-1].group(1).strip()
 
 
+# Result capture (code-mode contract): the prompt tells the model it may
+# "assign the final answer to a variable named result" — surface it here so
+# the promise is real (previously only stdout was returned, silently
+# dropping the assigned value). Printed after the block's own output.
+_RESULT_CAPTURE_TAIL = '''
+
+# August result capture: a `result` variable (per the code-mode contract) is
+# surfaced so the harness returns what the model assigned, not just stdout.
+try:
+    if 'result' in dir():
+        _captured = result
+        if isinstance(_captured, str):
+            print('')
+            print('[result]', _captured)
+        else:
+            print('')
+            print('[result]', repr(_captured))
+except Exception:
+    pass
+'''
+
+
 def build_runner_source(user_block: str, workspace_path: str) -> str:
-    """Guard (rendered from the live hardline module) + preamble + user block."""
+    """Guard (rendered from the live hardline module) + preamble + user block
+    + the result-capture tail (honors the "assign to `result`" contract)."""
     from app.services.sandbox import hardline as _hardline
 
     guard = (
@@ -197,7 +220,14 @@ def build_runner_source(user_block: str, workspace_path: str) -> str:
             repr({k: tuple(p.pattern for p in v) for k, v in _hardline._MUTATING_FLAG_PATTERNS.items()}),
         )
     )
-    return guard + '\n\n' + _PREAMBLE.format(workspace=workspace_path or '') + '\n\n' + user_block
+    return (
+        guard
+        + '\n\n'
+        + _PREAMBLE.format(workspace=workspace_path or '')
+        + '\n\n'
+        + user_block
+        + _RESULT_CAPTURE_TAIL
+    )
 
 
 def runner_path(workspace_path: str, session_id: str, tool_round: int) -> tuple[str, str]:

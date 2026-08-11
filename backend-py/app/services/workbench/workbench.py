@@ -442,7 +442,6 @@ _PLAN_FILE_WRITE_TOOLS = {
 
 def plan_file_path(workspacePath: str | None, sessionId: str) -> str | None:
     """Absolute path of the session's plan markdown file (None without a workspace)."""
-    import os
 
     workspace = as_str(workspacePath or '').strip()
     if not workspace:
@@ -458,7 +457,6 @@ def is_plan_file_write(
     This is the sole write allowed in plan mode. Fails closed: any tool we
     cannot prove targets ``<workspace>/.aug/plans/<sessionId>.md`` stays blocked.
     """
-    import os
 
     if (toolName or '').lower() not in _PLAN_FILE_WRITE_TOOLS:
         return False
@@ -995,25 +993,19 @@ def _is_failing_receipt(msg: dict[str, object]) -> bool:
 def _session_cost_usd(session: object) -> float:
     """Estimate a session's cumulative spend (USD) from its token totals.
 
-    No per-model pricing table exists; use env-tunable flat rates (default
-    mid-range $3/$15 per 1M input/output). Cache-hit input tokens are billed
-    at 10% of the input rate (the typical provider caching discount) when
-    cache splits are known.
+    Delegates to the shared cost_estimator (per-model pricing table + env
+    overrides, cache-aware) — the same source the usage endpoint uses, so
+    the composer chip, the spend ceiling, and the Usage page agree.
     """
-    try:
-        in_rate = float(os.environ.get('AUGUST_PRICE_IN_PER_M', '3.0'))
-        out_rate = float(os.environ.get('AUGUST_PRICE_OUT_PER_M', '15.0'))
-    except (TypeError, ValueError):
-        in_rate, out_rate = 3.0, 15.0
-    total_in = as_int(getattr(session, 'totalInputTokens', 0), 0)
-    total_out = as_int(getattr(session, 'totalOutputTokens', 0), 0)
-    cache_hit = as_int(getattr(session, 'cacheHitTokens', 0), 0)
-    cache_miss = as_int(getattr(session, 'cacheMissTokens', 0), 0)
-    if cache_hit + cache_miss > 0:
-        billed_in = cache_miss + cache_hit * 0.1
-    else:
-        billed_in = total_in
-    return (billed_in / 1e6 * in_rate) + (total_out / 1e6 * out_rate)
+    from app.services.cost_estimator import session_cost_usd
+
+    return session_cost_usd(
+        model_id=as_str(getattr(session, 'model', ''), ''),
+        total_in=as_int(getattr(session, 'totalInputTokens', 0), 0),
+        total_out=as_int(getattr(session, 'totalOutputTokens', 0), 0),
+        cache_hit=as_int(getattr(session, 'cacheHitTokens', 0), 0),
+        cache_miss=as_int(getattr(session, 'cacheMissTokens', 0), 0),
+    )
 
 
 def _apply_model_profile(model_id: str, surface: str) -> bool:
@@ -3912,10 +3904,25 @@ async def _sendWorkbenchMessageStreamImpl(
                                 }
                             )
                     else:
+                        # Suggest a verification command inferred from the
+                        # task type (never auto-run — the model decides what
+                        # actually validates its work).
+                        suggestedCmd = ''
+                        try:
+                            from app.services.routing_evidence import classify_task_type
+
+                            taskKind = classify_task_type(as_str(getattr(session, 'goal', '') or message, ''))
+                            if taskKind in ('tests', 'bugfix', 'refactor'):
+                                suggestedCmd = 'pytest -q'
+                            elif taskKind == 'docs':
+                                suggestedCmd = 'python -m compileall . -q'
+                        except Exception:
+                            logger.debug('verifier command inference failed', exc_info=True)
                         steer = (
                             '[VERIFIER STEER] The verifier gate requires a verification run before '
                             "the final answer is released. Declare and run a verification command "
-                            "(tests / lint / build) via run_command, confirm it passes, then call "
+                            f"(tests / lint / build{f' — suggested: {suggestedCmd}' if suggestedCmd else ''}) "
+                            "via run_command, confirm it passes, then call "
                             "update_state(phase='complete', verificationCommand='<your command>')."
                         )
                         enqueueUserMessage(sessionId, steer, kind='steer')
@@ -4917,7 +4924,6 @@ def _loadPlanPayload(
     which the plan drawer renders as-is. Returns None when nothing usable was
     found so the caller can tell the model to write the plan file first.
     """
-    import os
     from pathlib import Path
 
     workspace = as_str(getattr(session, 'workspacePath', None) or '').strip()

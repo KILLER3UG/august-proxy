@@ -5,7 +5,7 @@ import asyncio
 import json
 from typing import cast
 
-from app.json_narrowing import as_int
+from app.json_narrowing import as_int, as_str
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
 from app.services.memory_store.wire import _json, _row_as_wire
@@ -340,13 +340,33 @@ def get_usage(sessionId: str) -> dict[str, object]:
             'createdAt': e['created_at'],
         }
         for e in conn.execute(
-            'SELECT id, model, input_tokens, output_tokens, context_tokens, created_at FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC',
+            'SELECT id, model, input_tokens, output_tokens, context_tokens, cache_hit_tokens, cache_miss_tokens, created_at FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC',
             (sessionId,),
         ).fetchall()
     ]
     cache_hit = totals.get('total_cache_hit', 0) or 0
     cache_miss = totals.get('total_cache_miss', 0) or 0
     cache_total = cache_hit + cache_miss
+    # Cost: per-event sum using the shared pricing table (the composer chip,
+    # the spend ceiling, and this endpoint must agree). Never raises.
+    total_cost = 0.0
+    try:
+        from app.services.cost_estimator import session_cost_usd
+
+        for e in conn.execute(
+            'SELECT model, input_tokens, output_tokens, cache_hit_tokens, cache_miss_tokens FROM usage_events WHERE session_id = ?',
+            (sessionId,),
+        ).fetchall():
+            total_cost += session_cost_usd(
+                model_id=as_str(e['model'], ''),
+                total_in=as_int(e['input_tokens'], 0),
+                total_out=as_int(e['output_tokens'], 0),
+                cache_hit=as_int(e['cache_hit_tokens'], 0),
+                cache_miss=as_int(e['cache_miss_tokens'], 0),
+            )
+        total_cost = round(total_cost, 4)
+    except Exception:
+        total_cost = 0.0
     return {
         'sessionId': sessionId,
         'totalEvents': totals.get('request_count', 0) or 0,
@@ -356,7 +376,7 @@ def get_usage(sessionId: str) -> dict[str, object]:
         'cacheHitTokens': cache_hit,
         'cacheMissTokens': cache_miss,
         'cacheHitRate': round(cache_hit / cache_total, 3) if cache_total else 0.0,
-        'totalCost': 0.0,
+        'totalCost': total_cost,
         'model': events[0]['model'] if events else None,
         'provider': None,
         'contextTokens': latestCtx,

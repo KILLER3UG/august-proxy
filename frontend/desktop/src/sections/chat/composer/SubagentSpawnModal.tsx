@@ -6,7 +6,8 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Bot, Loader2, Play, X } from 'lucide-react';
+import { Bot, ChevronDown, Loader2, Play, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import * as subagents from '@/api/subagents';
 
 const AGENT_OPTIONS = [
@@ -31,7 +32,29 @@ export function SubagentSpawnModal({
   const [goals, setGoals] = useState('');
   const [agent, setAgent] = useState('general');
   const [effort, setEffort] = useState<Effort>('medium');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [context, setContext] = useState('');
+  const [restrictedTools, setRestrictedTools] = useState('');
+  const [yieldSchema, setYieldSchema] = useState('');
   const qc = useQueryClient();
+
+  // Per-launch advanced options apply to EVERY work item (the goals
+  // textarea is one prompt per line — per-item editors would need a
+  // structured form; the shared advanced block covers the common cases).
+  const parsedSchema = (() => {
+    const text = yieldSchema.trim();
+    if (!text) return undefined;
+    try {
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      return null; // invalid JSON — validation hint below
+    }
+  })();
+  const schemaInvalid = parsedSchema === null;
+  const toolsList = restrictedTools
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
 
   const launch = useMutation({
     mutationFn: () =>
@@ -41,7 +64,14 @@ export function SubagentSpawnModal({
             .split('\n')
             .map((g) => g.trim())
             .filter(Boolean)
-            .map((goal) => ({ goal, agentId: agent, effort })),
+            .map((goal) => ({
+              goal,
+              agentId: agent,
+              effort,
+              ...(context.trim() ? { context: context.trim() } : {}),
+              ...(toolsList.length > 0 ? { restrictedTools: toolsList } : {}),
+              ...(parsedSchema ? { yieldSchema: parsedSchema } : {}),
+            })),
           mode: 'auto',
         },
         sessionId,
@@ -149,6 +179,62 @@ export function SubagentSpawnModal({
               No active chat session — agents will not stream into a transcript.
             </p>
           )}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              data-testid="spawn-advanced-toggle"
+            >
+              <ChevronDown className={cn('size-3 transition-transform', showAdvanced && 'rotate-180')} />
+              Advanced — context · restricted tools · yield schema
+            </button>
+            {showAdvanced && (
+              <div className="mt-2 space-y-2.5 rounded-md border border-border/60 bg-background/50 p-2.5">
+                <div>
+                  <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-context">
+                    Shared context (appended to every goal)
+                  </label>
+                  <textarea
+                    id="spawn-context"
+                    value={context}
+                    onChange={(e) => setContext(e.target.value)}
+                    rows={2}
+                    placeholder={'Focus on the backend. Report file:line references.'}
+                    className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-primary/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-restrict">
+                    Restricted tools (denylist, comma-separated)
+                  </label>
+                  <input
+                    id="spawn-restrict"
+                    value={restrictedTools}
+                    onChange={(e) => setRestrictedTools(e.target.value)}
+                    placeholder={'web_search, browser, delete_file'}
+                    className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-primary/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-schema">
+                    yieldSchema (JSON — each subagent returns a validated object)
+                  </label>
+                  <textarea
+                    id="spawn-schema"
+                    value={yieldSchema}
+                    onChange={(e) => setYieldSchema(e.target.value)}
+                    rows={4}
+                    placeholder={'{\n  "type": "object",\n  "required": ["summary"],\n  "properties": { "summary": { "type": "string" } }\n}'}
+                    className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-[11px] outline-none focus:border-primary/50"
+                  />
+                  {schemaInvalid && (
+                    <p className="mt-1 text-[10px] text-danger">Invalid JSON — the schema will not be sent.</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-border/60 px-4 py-3">
           <button
