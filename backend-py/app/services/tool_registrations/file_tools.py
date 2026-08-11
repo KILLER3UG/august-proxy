@@ -141,9 +141,13 @@ async def _readFile(
         # Hash-anchored edits (surpass #5): every read reports the file's
         # sha256 so the model can echo it back as `fileHash` on the next
         # write/edit — a mismatch rejects the patch before it corrupts.
+        # Hash the RAW BYTES (not the text-decoded content): the executor
+        # verifies against Path.read_bytes(), and text decoding normalizes
+        # CRLF → LF on Windows — hashing the decoded text made every
+        # CRLF file hash-mismatch on its first edit (Phase 2 fix).
         import hashlib
 
-        digest = hashlib.sha256(content.encode('utf-8')).hexdigest()
+        digest = hashlib.sha256(filePath.read_bytes()).hexdigest()
         hashHeader = f'[sha256 {digest}]\n'
         # Line paging (agent-style): offset is 1-based start line when set.
         start = start_line if start_line is not None else offset

@@ -94,13 +94,39 @@ async def test_malformed_json_self_heal(monkeypatch, evalProbe):
 
 
 @pytest.mark.asyncio
-async def test_empty_response_classified_as_error(monkeypatch):
-    """An empty upstream stream must surface as an error, not fake success."""
+async def test_empty_response_is_retried_then_recovers(monkeypatch):
+    """An empty upstream stream is RETRYABLE (Phase 2): the loop backs off and
+    retries instead of hard-failing the whole turn — a swallowed upstream
+    failure (context overflow 400, gateway hiccup) often recovers on the
+    retry, which is the biggest weak-model win. Only a persistent empty
+    stream errors out."""
     events, _session = await run_turn(monkeypatch, script=[{'type': 'empty'}])
     err = find_event(events, 'error')
-    assert err is not None
-    assert 'empty response' in str(err.get('message', '')).lower()
-    _record('empty-response-error', events, extra=str(err.get('message', '')))
+    # The scripted client answers text on the retry (script exhausted) — the
+    # turn must COMPLETE, not error.
+    assert err is None, f'unexpected error event: {err}'
+    assert 'done' in event_types(events)
+    _record('empty-response-retried', events)
+
+    # A stream that stays empty across retries still surfaces an error
+    # (bounded by the retry policy, never an infinite loop).
+    from app.services.harness_eval import ScriptedClient
+
+    original = ScriptedClient.chat_completions_stream
+
+    async def always_empty(self, body):
+        self.call_count += 1
+        yield {'choices': [], 'usage': {'prompt_tokens': 5, 'completion_tokens': 0}}
+
+    ScriptedClient.chat_completions_stream = always_empty  # type: ignore[method-assign]
+    try:
+        events2, _s2 = await run_turn(monkeypatch, script=[{'type': 'empty'}])
+    finally:
+        ScriptedClient.chat_completions_stream = original  # type: ignore[method-assign]
+    err2 = find_event(events2, 'error')
+    assert err2 is not None
+    assert 'empty response' in str(err2.get('message', '')).lower()
+    _record('empty-response-persistent-error', events2, extra=str(err2.get('message', '')))
 
 
 @pytest.mark.asyncio

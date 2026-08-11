@@ -67,6 +67,9 @@ MAX_STALLED_ROUNDS = 8
 MIN_ROUNDS_BEFORE_STALL_CHECK = 12
 # Code-mode (fenced python) execution cap.
 _CODE_RUN_TIMEOUT_S = 60
+# Tool dispatch cap: a hung MCP server or registry handler must not hold a
+# turn (and a sub-agent semaphore slot) forever. Env-overridable.
+_TOOL_EXEC_TIMEOUT_S = max(30, int(os.environ.get('AUGUST_TOOL_TIMEOUT_S', '300')))
 # Clean rounds on the bare surface before the full tool set is restored
 # (reversible downgrade — A6).
 _DOWNGRADE_RECOVERY_ROUNDS = 3
@@ -168,6 +171,10 @@ _MODEL_RETRY_MARKERS = (
     'overloaded',
     'service unavailable',
     'bad gateway',
+    # An empty mid-turn response is usually a swallowed upstream failure
+    # (context overflow 400, gateway hiccup) — retrying costs one call and
+    # often recovers; hard-failing strands the whole turn (weak-model win).
+    'empty response',
 )
 
 
@@ -2040,6 +2047,10 @@ def _verifier_gated_emit(session: object, emit):
                         ),
                     }
                 )
+                # Consume the one-shot release: it applies to the NEXT turn
+                # after two ignored steers, then resets (a fresh user turn
+                # must not inherit a stale release).
+                setattr(session, '_verifier_force_release', False)
         emit(evt)
 
     return _wrapped
@@ -3561,9 +3572,22 @@ async def _sendWorkbenchMessageStreamImpl(
                     logger.debug('verifier receipt record failed', exc_info=True)
             MAX_SSE_CONTENT = 100 * 1024
             contentTruncated = len(result) > MAX_SSE_CONTENT
-            sseContent = result[:MAX_SSE_CONTENT]
             if contentTruncated:
+                # JSON-aware truncation: cut at a newline or a JSON boundary
+                # (last ',' or '}') so the model receives a parseable fragment
+                # instead of a token cut mid-string.
+                cut = result[:MAX_SSE_CONTENT]
+                boundary = max(cut.rfind('\n'), cut.rfind('\r'))
+                if boundary <= MAX_SSE_CONTENT // 2:
+                    for ch in (',', '}'):
+                        idx = cut.rfind(ch)
+                        if idx > MAX_SSE_CONTENT // 2:
+                            boundary = idx
+                            break
+                sseContent = cut[:boundary] if boundary > 0 else cut
                 sseContent += '\n\n[... Tool result truncated at 100 KB — full length: {} bytes]'.format(len(result))
+            else:
+                sseContent = result
             if emit:
                 providerSetup = None
                 integrationSetup = None
@@ -4359,7 +4383,14 @@ async def _executeTool(
         from app.services.tools.mcp_client import executeMcpToolCall, isMcpToolName
 
         if isMcpToolName(toolName):
-            return str(await executeMcpToolCall(toolName, args))
+            try:
+                return str(
+                    await asyncio.wait_for(
+                        executeMcpToolCall(toolName, args), timeout=_TOOL_EXEC_TIMEOUT_S
+                    )
+                )
+            except asyncio.TimeoutError:
+                return f'Error: MCP tool {toolName} timed out after {_TOOL_EXEC_TIMEOUT_S}s.'
 
         # Hash-anchored edits (surpass #5): mutating tools may carry the
         # sha256 of the file as read (the read tool reports it). A mismatch
@@ -4429,7 +4460,12 @@ async def _executeTool(
             logger.warning('PRE_TOOL_USE hook failed for %s — denying: %s', toolName, exc)
             return f'[BLOCKED by hook] Pre-tool hook failed to evaluate the call: {exc}'
 
-        result = await dispatchTool(toolName, args)
+        try:
+            result = await asyncio.wait_for(
+                dispatchTool(toolName, args), timeout=_TOOL_EXEC_TIMEOUT_S
+            )
+        except asyncio.TimeoutError:
+            return f'Error: tool {toolName} timed out after {_TOOL_EXEC_TIMEOUT_S}s.'
         result_str = str(result)
 
         # Lifecycle hooks: POST_TOOL_USE (can modify result)
