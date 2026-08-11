@@ -101,7 +101,7 @@ class TestNoPassthroughTools:
             assert expected in anthNames, f'workbench tool {expected} missing'
 
 
-@pytest.mark.parametrize('toolName', ['read_file', 'list_skills', 'desktop_screenshot', 'spawn_subagents'])
+@pytest.mark.parametrize('toolName', ['read_file', 'list_skills', 'desktop_screenshot', 'spawn_subagents', 'edit_lines'])
 def testToolSchemaSurvivesConversion(session, toolName):
     reg = next((r for r in tool_registry.listTools() if r['function']['name'] == toolName))
     anth = next((t for t in toolDefinitions(session) if t['name'] == toolName))
@@ -130,3 +130,48 @@ class TestPlanModeToolFiltering:
         oaiNames = {t['function']['name'] for t in openaiToolDefinitions(session)}
         assert 'enter_plan_mode' not in oaiNames
         assert 'submit_plan' in oaiNames
+
+
+@pytest.mark.asyncio
+async def test_edit_lines_anchored_and_hash_verified(tmp_path):
+    """edit_lines (R1): hash-verified, anchor-checked line replacement."""
+    import hashlib
+
+    from app.services.tool_registrations import file_tools as ft
+
+    p = tmp_path / 'sample.txt'
+    p.write_text('one\ntwo\nthree\n', encoding='utf-8')
+    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+
+    # Anchor mismatch → rejected, file untouched.
+    res = await ft._editLines(str(p), digest, [{'line': 2, 'old': 'TWO', 'new': 'deux'}])
+    assert 'anchor mismatch' in res
+    assert p.read_text(encoding='utf-8') == 'one\ntwo\nthree\n'
+
+    # Stale hash → rejected.
+    res = await ft._editLines(str(p), '0' * 64, [{'line': 2, 'old': 'two', 'new': 'deux'}])
+    assert 'hash mismatch' in res
+
+    # Missing hash → rejected with the re-read instruction.
+    res = await ft._editLines(str(p), '', [{'line': 2, 'old': 'two', 'new': 'deux'}])
+    assert 'fileHash' in res
+
+    # Correct hash + anchors → applied (bottom-up so line numbers hold).
+    res = await ft._editLines(
+        str(p),
+        digest,
+        [
+            {'line': 3, 'old': 'three', 'new': 'trois'},
+            {'line': 2, 'old': 'two', 'new': 'deux'},
+        ],
+    )
+    assert 'Applied 2 edits' in res
+    assert p.read_text(encoding='utf-8') == 'one\ndeux\ntrois\n'
+
+    # CRLF files keep their line endings.
+    p2 = tmp_path / 'crlf.txt'
+    p2.write_bytes(b'alpha\r\nbeta\r\n')
+    digest2 = hashlib.sha256(p2.read_bytes()).hexdigest()
+    res = await ft._editLines(str(p2), digest2, [{'line': 1, 'old': 'alpha', 'new': 'ALPHA'}])
+    assert 'Applied 1 edit' in res
+    assert p2.read_bytes() == b'ALPHA\r\nbeta\r\n'

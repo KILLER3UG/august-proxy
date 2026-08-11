@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
 from app.services.sandbox import (
     bind_path,
@@ -176,7 +177,10 @@ async def _readFile(
             header = f'[lines {start_i}-{min(end_i, len(lines))} of {len(lines)}]\n' if (
                 start_i > 1 or end_i < len(lines)
             ) else ''
-            return hashHeader + header + ''.join(sliced)
+            # Per-line anchors (R1): numbered lines let the model reference
+            # exact lines in edit_lines.changes[].line and verify its anchors.
+            numbered = '\n'.join(f'{start_i + i:5d}| {line}' for i, line in enumerate(sliced))
+            return hashHeader + header + numbered + ('\n' if numbered else '')
         return hashHeader + content
     except Exception as exc:
         return f'Error reading file: {exc}'
@@ -207,6 +211,87 @@ async def _writeFile(path: str, content: str, **_extra: object) -> str:
         return f'Successfully wrote {len(content)} bytes to {path}'
     except Exception as exc:
         return f'Error writing file: {exc}'
+
+
+async def _editLines(
+    path: str,
+    fileHash: str,
+    changes: list[dict[str, object]],
+    **_extra: object,
+) -> str:
+    """Precision line edits (R1): replace specific lines, verified by the
+    sha256 of the file as read AND per-line anchors.
+
+    ``changes`` = ``[{line: 1-based int, old: exact current line text,
+    new: replacement text}]``. The file is rejected (no write) when the hash
+    is missing/stale or any ``old`` anchor does not match the current line —
+    the model must re-read and retry. Line endings of the original file are
+    preserved.
+    """
+    session = _session()
+    mode = (getattr(session, 'sandboxMode', None) or 'workspace-write') if session else 'workspace-write'
+    if str(mode).lower() in ('read-only', 'readonly', 'read'):
+        return (
+            'Error: Sandbox is read-only. Switch to Workspace or Full access before writing files.'
+        )
+    filePath, err = bind_path(path, _workspace(), for_write=True)
+    if err or filePath is None:
+        return err or f'Error: Invalid path: {path}'
+    if not filePath.is_file():
+        return f'Error: File not found: {path}'
+    expectedHash = (fileHash or '').strip().lower()
+    if not expectedHash:
+        return (
+            'Error: edit_lines requires the fileHash from the last read_file result '
+            '(the "[sha256 …]" header). Re-read the file, then retry.'
+        )
+    try:
+        import hashlib
+
+        raw = filePath.read_bytes()
+    except OSError as exc:
+        return f'Error reading file: {exc}'
+    actualHash = hashlib.sha256(raw).hexdigest()
+    if actualHash != expectedHash:
+        return (
+            'Error: File changed since you read it (content hash mismatch). '
+            'Re-read the file with the read tool, then retry the edit.'
+        )
+    try:
+        text = raw.decode('utf-8', errors='replace')
+    except Exception as exc:
+        return f'Error decoding file: {exc}'
+    newline = '\r\n' if b'\r\n' in raw else '\n'
+    lines = text.splitlines()
+    if not changes:
+        return 'Error: changes must be a non-empty array of {line, old, new}.'
+    # Apply from the bottom up so earlier line numbers stay valid.
+    applied = 0
+    for change in sorted(changes, key=lambda c: as_int(c.get('line'), 0), reverse=True):
+        if not isinstance(change, dict):
+            return 'Error: each change must be an object {line, old, new}.'
+        lineNo = as_int(change.get('line'), 0)
+        oldText = as_str(change.get('old'), '')
+        newText = as_str(change.get('new'), '')
+        if lineNo < 1 or lineNo > len(lines):
+            return f"Error: line {lineNo} is out of range (file has {len(lines)} lines)."
+        idx = lineNo - 1
+        if oldText != lines[idx]:
+            return (
+                f"Error: anchor mismatch on line {lineNo}.\n"
+                f'Expected: {oldText!r}\n'
+                f'Actual:   {lines[idx]!r}\n'
+                'Re-read the file and retry with the current content.'
+            )
+        lines[idx] = newText
+        applied += 1
+    try:
+        # write_bytes (not write_text): text mode would translate \n → \r\n on
+        # Windows, doubling the \r when the file already uses CRLF.
+        filePath.write_bytes((newline.join(lines) + newline).encode('utf-8'))
+    except OSError as exc:
+        return f'Error writing file: {exc}'
+    return f'Applied {applied} edit{"" if applied == 1 else "s"} to {path}.'
 
 
 async def _listDirectory(path: str) -> str:
@@ -532,6 +617,39 @@ def register() -> None:
                 },
             },
             'required': ['path', 'content'],
+        },
+    )
+    tool_registry.register(
+        'edit_lines',
+        'Precision line edits: replace specific lines of a file, each verified by a per-line anchor '
+        '(the current line content) AND the fileHash from the last read_file result. '
+        'Prefer this over write_file for small surgical changes — a stale hash or a mismatched '
+        'anchor rejects the edit without writing, so concurrent changes can never corrupt the file. '
+        'Line numbers refer to the numbered read_file paged output (1-based).',
+        _editLines,
+        {
+            'type': 'object',
+            'properties': {
+                'path': {'type': 'string', 'description': 'Absolute path to the file to edit.'},
+                'fileHash': {
+                    'type': 'string',
+                    'description': 'REQUIRED: the sha256 from the last read_file result of this path ("[sha256 …]" header). Rejects the edit when the file changed since that read.',
+                },
+                'changes': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'line': {'type': 'integer', 'description': '1-based line number to replace.'},
+                            'old': {'type': 'string', 'description': 'EXACT current text of that line (anchor).'},
+                            'new': {'type': 'string', 'description': 'Replacement text for that line.'},
+                        },
+                        'required': ['line', 'old', 'new'],
+                    },
+                    'description': 'Line edits; applied bottom-up so earlier numbers stay valid.',
+                },
+            },
+            'required': ['path', 'fileHash', 'changes'],
         },
     )
     tool_registry.register(

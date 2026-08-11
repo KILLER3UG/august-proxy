@@ -2407,6 +2407,12 @@ async def _sendWorkbenchMessageStreamImpl(
                 '[TOOLCALL] tool_name|{"arg": "value"}\n'
                 'One tool call per line. The harness executes it and returns the result '
                 'as a tool message. Do not describe tool calls in prose.\n'
+                # Few-shot exemplars (R6): concrete correct lines for the two
+                # most common tools — a downgraded weak model often needs to
+                # SEE the shape, not just be told it.
+                'Examples:\n'
+                '[TOOLCALL] read_file|{"path": "src/main.py"}\n'
+                '[TOOLCALL] run_command|{"command": "pytest -q"}\n'
                 '</tool_protocol>'
             )
         if agentMode == 'code':
@@ -5316,6 +5322,7 @@ def listProxyCapabilities() -> dict[str, object]:
         {
             'write_file',
             'edit_file',
+            'edit_lines',
             'delete_file',
             'create_file',
             'run_command',

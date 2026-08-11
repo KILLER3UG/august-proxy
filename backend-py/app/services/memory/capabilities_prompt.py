@@ -105,6 +105,7 @@ _TOOL_WRITE: frozenset[str] = frozenset(
         'write_file',
         'write_files',
         'write_scratchpad',
+        'edit_lines',
     }
 )
 

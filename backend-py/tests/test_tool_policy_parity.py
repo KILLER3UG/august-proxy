@@ -36,6 +36,8 @@ _ORACLE_WRITE = frozenset({
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad',
     # Post-consolidation addition: model-driven memory write.
     'remember',
+    # Precision line-edit tool (R1).
+    'edit_lines',
 })
 _ORACLE_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',

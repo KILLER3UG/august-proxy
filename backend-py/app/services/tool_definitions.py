@@ -13,6 +13,7 @@ from app.services.tool_registrations.agent_tools import (  # noqa: F401
     _spawnDaemon,
 )
 from app.services.tool_registrations.file_tools import (  # noqa: F401
+    _editLines,
     _listDirectory,
     _readFile,
     _runCommand,

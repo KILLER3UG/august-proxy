@@ -43,6 +43,7 @@ def record_eval_run(
     rounds: int,
     duration_ms: int,
     notes: str = '',
+    tier: str = '',
 ) -> None:
     """Persist one eval run. Never raises (eval must not break the suite)."""
     try:
@@ -58,6 +59,7 @@ def record_eval_run(
                 'rounds': rounds,
                 'durationMs': int(duration_ms),
                 'notes': notes[:500],
+                'tier': tier[:20],
                 'at': time.time(),
             }
         )
@@ -400,6 +402,7 @@ EVAL_SCENARIOS: list[dict[str, Any]] = [
         'script': [{'type': 'text', 'text': 'hello world'}],
         'expect': ['done'],
         'mustNotHave': ['error'],
+        'tier': 'core',
     },
     {
         'taskId': 'tool-round-trip',
@@ -412,6 +415,7 @@ EVAL_SCENARIOS: list[dict[str, Any]] = [
     },
     {
         'taskId': 'malformed-json-self-heal',
+        'tier': 'self-heal',
         'script': [
             {'type': 'malformed_tool', 'name': 'eval_probe', 'raw': '{"arg": '},
             {'type': 'text', 'text': 'fixed it'},
@@ -422,18 +426,21 @@ EVAL_SCENARIOS: list[dict[str, Any]] = [
     },
     {
         'taskId': 'empty-response-error',
+        'tier': 'core',
         'script': [{'type': 'empty'}],
         'expect': ['error'],
         'mustHaveText': ['empty response'],
     },
     {
         'taskId': 'stall-detection',
+        'tier': 'guardrails',
         'script': [{'type': 'tool', 'name': 'eval_probe', 'arguments': {}} for _ in range(20)],
         'expect': ['warning'],
         'mustHaveText': ['No progress'],
     },
     {
         'taskId': 'verifier-gate-blocks',
+        'tier': 'verifier',
         'script': [
             {'type': 'tool', 'name': 'update_state', 'arguments': {'phase': 'complete'}},
             {'type': 'text', 'text': 'this answer must be withheld'},
@@ -443,6 +450,7 @@ EVAL_SCENARIOS: list[dict[str, Any]] = [
     },
     {
         'taskId': 'verifier-gate-passes',
+        'tier': 'verifier',
         'script': [
             {'type': 'tool', 'name': 'run_command', 'arguments': {'command': 'echo ok'}},
             {'type': 'tool', 'name': 'update_state', 'arguments': {'phase': 'complete'}},
@@ -454,6 +462,7 @@ EVAL_SCENARIOS: list[dict[str, Any]] = [
     },
     {
         'taskId': 'stream-rule-narration',
+        'tier': 'self-heal',
         'script': [
             {'type': 'text', 'text': "I'll use the read_file tool to check the file"},
         ],
@@ -462,6 +471,7 @@ EVAL_SCENARIOS: list[dict[str, Any]] = [
     },
     {
         'taskId': 'round-cap-runaway',
+        'tier': 'guardrails',
         'script': [{'type': 'tool', 'name': 'eval_probe', 'arguments': {}} for _ in range(30)],
         'expect': ['error'],
         # The loop stops via the round cap OR the stall hard-stop — either
@@ -540,6 +550,7 @@ async def run_all_scenarios() -> dict[str, Any]:
                 rounds=len(event_types(events)),
                 duration_ms=duration_ms,
                 notes=note,
+                tier=as_str(spec.get('tier'), ''),
             )
             results.append(
                 {

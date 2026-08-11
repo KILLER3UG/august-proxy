@@ -35,7 +35,7 @@ _PROMPT_WRITE = frozenset({
     'rename_sessions', 'setup_provider', 'connect_github', 'connect_google',
     'connect_slack', 'install_mcp_server', 'customize_ui', 'enter_plan_mode',
     'submit_plan', 'update_alias', 'update_heuristics', 'update_memory', 'update_state',
-    'write_blackboard', 'write_file', 'write_files', 'write_scratchpad',
+    'write_blackboard', 'write_file', 'write_files', 'write_scratchpad', 'edit_lines',
     'remember',
 })
 
@@ -73,6 +73,7 @@ _PLAN_BLOCKED_EXACT = frozenset({
     'write_file', 'edit_file', 'create_file', 'str_replace', 'str_replace_editor',
     'strreplaceeditttool', 'apply_patch', 'patch_file', 'delete_file',
     'remove_file', 'move_file', 'rename_file', 'mkdir', 'makedirs',
+    'edit_lines',
     'run_command', 'bash', 'bashtool', 'shell', 'exec', 'execute', 'terminal',
     'install', 'uninstall', 'pip_install', 'npm_install', 'pnpm_add',
     'browser_click', 'browser_type', 'browser_select', 'browser_evaluate',
