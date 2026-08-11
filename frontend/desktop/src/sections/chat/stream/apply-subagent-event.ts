@@ -11,6 +11,7 @@ import { appendBlockEvent } from './append-block-event';
 export type SubagentStreamEvent =
   | { type: 'subagentStart'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; goal?: string; depth?: number }
   | { type: 'subagentText'; jobId: string; content?: string }
+  | { type: 'subagentRetry'; jobId: string; attempt?: number; maxRetries?: number; message?: string }
   | { type: 'subagentToolCall'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
   | { type: 'subagentToolResult'; jobId: string; id: string; content?: unknown; isError?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
   | { type: 'subagentDone'; jobId: string; status?: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered'; message?: string; result?: string };
@@ -115,6 +116,14 @@ export function applySubagentEvent(
     if (!current) return {};
     if (event.type === 'subagentText') {
       const inner = appendBlockEvent(current.blocks, { type: 'text', content: event.content || '' });
+      blocks.set(jobId, { ...current, blocks: inner });
+      mutated = true;
+    } else if (event.type === 'subagentRetry') {
+      // Transient upstream error — the worker is backing off and will retry.
+      const inner = appendBlockEvent(current.blocks, {
+        type: 'text',
+        content: `↻ retrying (${event.attempt}/${event.maxRetries ?? '?'}) — ${event.message || 'transient upstream error'}`,
+      });
       blocks.set(jobId, { ...current, blocks: inner });
       mutated = true;
     } else if (event.type === 'subagentToolCall') {

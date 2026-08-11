@@ -133,7 +133,7 @@ export function SubagentRow({ agent, subagentBlock }: SubagentRowProps) {
               />
             ) : isRunning ? (
               <div className="text-[11px] text-muted-foreground/70 italic py-1">
-                Waiting for output\u2026
+                Waiting for output…
               </div>
             ) : null}
           </div>
@@ -145,7 +145,7 @@ export function SubagentRow({ agent, subagentBlock }: SubagentRowProps) {
         <div className="px-3 pb-2">
           <div className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
             <span className="size-1.5 rounded-full bg-warning animate-pulse" />
-            Running\u2026
+            Running…
           </div>
         </div>
       )}

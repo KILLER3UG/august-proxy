@@ -3,12 +3,13 @@
  * agents stream into THIS transcript (X-Session-Id binding) and render via
  * the inline SubagentLaunchList. */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Bot, ChevronDown, Loader2, Play, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as subagents from '@/api/subagents';
+import type { ModelItem } from '../model-display';
 
 const AGENT_OPTIONS = [
   { id: 'general', label: 'General', hint: 'General-purpose fallback' },
@@ -19,24 +20,45 @@ const AGENT_OPTIONS = [
 
 const EFFORT_OPTIONS = ['low', 'medium', 'high', 'max'] as const;
 type Effort = (typeof EFFORT_OPTIONS)[number];
+type SpawnMode = 'auto' | 'proposed';
 
 export function SubagentSpawnModal({
   sessionId,
   open,
   onClose,
+  models,
 }: {
   sessionId?: string;
   open: boolean;
   onClose: () => void;
+  /** Model fleet for the per-launch model override (empty = inherit). */
+  models?: ModelItem[];
 }) {
   const [goals, setGoals] = useState('');
   const [agent, setAgent] = useState('general');
   const [effort, setEffort] = useState<Effort>('medium');
+  const [mode, setMode] = useState<SpawnMode>('auto');
+  const [modelOverride, setModelOverride] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [context, setContext] = useState('');
   const [restrictedTools, setRestrictedTools] = useState('');
   const [yieldSchema, setYieldSchema] = useState('');
+  const goalsRef = useRef<HTMLTextAreaElement | null>(null);
   const qc = useQueryClient();
+
+  // Escape closes; the goals textarea takes focus on open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const t = window.setTimeout(() => goalsRef.current?.focus(), 0);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.clearTimeout(t);
+    };
+  }, [open, onClose]);
 
   // Per-launch advanced options apply to EVERY work item (the goals
   // textarea is one prompt per line — per-item editors would need a
@@ -68,11 +90,12 @@ export function SubagentSpawnModal({
               goal,
               agentId: agent,
               effort,
+              ...(modelOverride ? { model: modelOverride } : {}),
               ...(context.trim() ? { context: context.trim() } : {}),
               ...(toolsList.length > 0 ? { restrictedTools: toolsList } : {}),
               ...(parsedSchema ? { yieldSchema: parsedSchema } : {}),
             })),
-          mode: 'auto',
+          mode,
         },
         sessionId,
       ),
@@ -125,12 +148,36 @@ export function SubagentSpawnModal({
             </label>
             <textarea
               id="spawn-goals"
+              ref={goalsRef}
               value={goals}
               onChange={(e) => setGoals(e.target.value)}
               rows={4}
               placeholder={'Find all callers of executeSubAgent\nSummarize the retry policy'}
               className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-2 text-xs outline-none focus:border-primary/50"
             />
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] font-medium text-muted-foreground">Mode</span>
+            <label className="inline-flex items-center gap-1 text-[11px]">
+              <input
+                type="radio"
+                name="spawn-mode"
+                checked={mode === 'auto'}
+                onChange={() => setMode('auto')}
+                className="size-3"
+              />
+              Auto — launch immediately
+            </label>
+            <label className="inline-flex items-center gap-1 text-[11px]">
+              <input
+                type="radio"
+                name="spawn-mode"
+                checked={mode === 'proposed'}
+                onChange={() => setMode('proposed')}
+                className="size-3"
+              />
+              Proposed — approve the breakdown first
+            </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -171,6 +218,27 @@ export function SubagentSpawnModal({
               </select>
               <p className="mt-0.5 text-[10px] text-muted-foreground/70">
                 {effort === 'max' ? 'Deepest reasoning (slowest, most thorough)' : `${effort} thinking budget`}
+              </p>
+            </div>
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-model">
+                Model
+              </label>
+              <select
+                id="spawn-model"
+                value={modelOverride}
+                onChange={(e) => setModelOverride(e.target.value)}
+                className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+              >
+                <option value="">Inherit (agent alias / smol routing)</option>
+                {(models ?? []).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name || m.id}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-0.5 text-[10px] text-muted-foreground/70">
+                Override for every work item
               </p>
             </div>
           </div>

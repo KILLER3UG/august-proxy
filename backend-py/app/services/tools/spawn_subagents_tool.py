@@ -42,7 +42,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
-from app.json_narrowing import as_list
+from app.json_narrowing import as_list, as_str
 from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest
 
 logger = logging.getLogger(__name__)
@@ -198,7 +198,20 @@ def _load_proposal_from_db(proposal_id: str) -> dict[str, Any] | None:
                     session = None
             if session is None:
                 # Best-effort shell — spawning still works via session id.
-                session = types.SimpleNamespace(id=sid or 'default', model='', agentId='', provider='')
+                # Hydrate provider/model from config (agents-router pattern)
+                # so the respawn does not fail with "No provider available"
+                # when the original session is gone.
+                try:
+                    from app.services.config_service import getConfig
+
+                    _cfg = getConfig()
+                    _provider = as_str(_cfg.get('activeProvider')) or ''
+                    _model = as_str(_cfg.get('activeModel')) or ''
+                except Exception:
+                    _provider, _model = '', ''
+                session = types.SimpleNamespace(
+                    id=sid or 'default', model=_model, agentId='', provider=_provider, subagent_depth=0
+                )
             return {
                 'session': session,
                 'workItems': as_list(data.get('workItems'), []),

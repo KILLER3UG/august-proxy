@@ -437,6 +437,7 @@ export function ComposerToolbar({
         sessionId={workbenchSession?.id}
         open={spawnOpen}
         onClose={() => setSpawnOpen(false)}
+        models={visibleModels}
       />
     </div>
   );

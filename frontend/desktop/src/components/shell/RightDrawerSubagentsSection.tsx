@@ -1,6 +1,6 @@
 /* ── RightDrawerSubagentsSection — compact roster + live detail ─────── */
 
-import { CheckCircle2, CircleAlert, Loader2, Sparkles, X } from 'lucide-react';
+import { CheckCircle2, CircleAlert, Loader2, Sparkles, Square, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,9 @@ import {
 import { getAgentRoleLabel } from '@/lib/tool-labels';
 import { useSessionStreamStore } from '@/sections/chat/stream/session-stream-store';
 import { SubagentTimeline } from '@/components/chat/SubagentTimeline';
+import { useSubagentActions } from '@/hooks/useSubagentActions';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { closeRightDrawerSection } from './RightDrawerState';
 
 const ACTIVE_STATUSES = new Set(['pending', 'running']);
@@ -57,6 +60,9 @@ export function RightDrawerSubagentsSection({
 }) {
   const [openTaskIds, setOpenTaskIds] = useState<string[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const { stop, stopAll } = useSubagentActions();
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
   const subagentBlocks = useSessionStreamStore((state) => {
     const session = sessionId ? state.bySession[sessionId] : undefined;
     return session?.subagentBlocks;
@@ -125,6 +131,16 @@ export function RightDrawerSubagentsSection({
       });
       return next;
     });
+  };
+
+  const confirmStopAll = async () => {
+    const ok = await confirmStyled({
+      title: 'Stop all subagents?',
+      message: `Stop ${activeAgents.length} running sub-agent${activeAgents.length === 1 ? '' : 's'}? Work in progress is discarded.`,
+      confirmLabel: 'Stop all',
+      variant: 'destructive',
+    });
+    if (ok) stopAll.mutate(workbenchSessionId ?? sessionId ?? undefined);
   };
 
   // Keep the completed detail visible long enough for its final output to be
@@ -216,11 +232,26 @@ export function RightDrawerSubagentsSection({
     <div className="h-full min-h-0 overflow-y-auto drawer-section-text">
       <div className="flex items-center justify-between px-2 py-1.5">
         <span className="text-xs font-medium text-muted-foreground">Subagents</span>
-        {activeAgents.length > 0 && (
-          <span className="text-[11px] tabular-nums text-muted-foreground/55">
-            {activeAgents.length}
-          </span>
-        )}
+        <span className="inline-flex items-center gap-1.5">
+          {activeAgents.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => void confirmStopAll()}
+                disabled={stopAll.isPending}
+                className="inline-flex items-center gap-1 rounded border border-border/60 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-danger/50 hover:text-danger disabled:opacity-40"
+                title="Stop all running subagents"
+                data-testid="stop-all-subagents"
+              >
+                <Square className="size-2.5" />
+                Stop all
+              </button>
+              <span className="text-[11px] tabular-nums text-muted-foreground/55">
+                {activeAgents.length}
+              </span>
+            </>
+          )}
+        </span>
       </div>
 
       {agents.length === 0 ? (
@@ -230,22 +261,39 @@ export function RightDrawerSubagentsSection({
       ) : (
         <div className="border-t border-border/50 px-2 py-1">
           {agents.map((agent: SessionAgentRow, index) => (
-            <button
+            <div
               key={agent.taskId}
-              type="button"
-              onClick={() => selectAgent(agent.taskId)}
-              className="flex w-full min-w-0 items-center gap-2 border-b border-border/35 py-2 text-left last:border-b-0 hover:bg-white/[0.04]"
+              className="group flex w-full min-w-0 items-center gap-2 border-b border-border/35 py-2 text-left last:border-b-0 hover:bg-white/[0.04]"
               data-testid={`right-drawer-subagent-${agent.taskId}`}
-              title={agent.goal || agent.agentId}
             >
-              <AgentGlyph index={index} status={agent.status} />
-              <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">
-                {getAgentRoleLabel(agent.agentId) || agent.goal || 'Agent'}
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground/65">
-                {statusText(agent.status)}
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => selectAgent(agent.taskId)}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                title={agent.goal || agent.agentId}
+              >
+                <AgentGlyph index={index} status={agent.status} />
+                <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">
+                  {getAgentRoleLabel(agent.agentId) || agent.goal || 'Agent'}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground/65">
+                  {statusText(agent.status)}
+                </span>
+              </button>
+              {ACTIVE_STATUSES.has(agent.status) && (
+                <button
+                  type="button"
+                  onClick={() => stop.mutate(agent.taskId)}
+                  disabled={stop.isPending}
+                  className="shrink-0 rounded p-1 text-muted-foreground/55 opacity-0 transition group-hover:opacity-100 hover:bg-white/[0.08] hover:text-danger disabled:opacity-40"
+                  aria-label={`Stop ${getAgentRoleLabel(agent.agentId)}`}
+                  title="Stop this subagent"
+                  data-testid={`stop-subagent-${agent.taskId}`}
+                >
+                  <Square className="size-3" />
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -256,6 +304,16 @@ export function RightDrawerSubagentsSection({
           Unable to refresh subagents.
         </div>
       )}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

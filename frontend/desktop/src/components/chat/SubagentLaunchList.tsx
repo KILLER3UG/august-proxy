@@ -4,9 +4,11 @@
  */
 
 import { useState } from 'react';
+import { Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
+import { useSubagentActions } from '@/hooks/useSubagentActions';
 import {
   SUBAGENT_STATUS_LABEL,
   type SubagentPromptEntry,
@@ -35,6 +37,7 @@ export function SubagentLaunchList({
   className,
 }: SubagentLaunchListProps) {
   const [openJobId, setOpenJobId] = useState<string | null>(null);
+  const { stop } = useSubagentActions();
 
   if (agents.length === 0) return null;
 
@@ -103,6 +106,24 @@ export function SubagentLaunchList({
                     >
                       {statusLabel}
                     </span>
+                    {agent.status === 'running' && (
+                      <span className="col-start-3 row-start-1 row-span-2 ml-1 flex items-center">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            stop.mutate(agent.jobId);
+                          }}
+                          disabled={stop.isPending}
+                          className="rounded p-1 text-muted-foreground/50 opacity-0 transition group-hover:opacity-100 hover:bg-white/[0.08] hover:text-danger disabled:opacity-40"
+                          aria-label={`Stop ${title}`}
+                          title="Stop this subagent"
+                          data-testid={`stop-launch-${agent.jobId}`}
+                        >
+                          <Square className="size-2.5" />
+                        </button>
+                      </span>
+                    )}
                   </button>
                 </li>
               );

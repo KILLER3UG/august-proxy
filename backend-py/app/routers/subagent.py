@@ -159,6 +159,26 @@ async def listRuns(sessionId: Optional[str] = None, limit: int = 50):
     return {'runs': [_row_as_wire(r) for r in rows]}
 
 
+@router.post('/stop-all')
+async def stopAllSubagents(request: Request):
+    """Terminate every active sub-agent for a session (or all, when no
+    session is given). Returns how many were stopped."""
+    orch = _getOrchestrator(request)
+    body = await request.json() if request.headers.get('content-type') else {}
+    sessionId = as_str(body.get('sessionId') or request.headers.get('X-Session-Id', ''), '')
+    active = orch.listActive(sessionId=sessionId or None)
+    stopped = 0
+    for a in active:
+        tid = as_str(a.get('taskId'), '')
+        if tid and as_str(a.get('status'), '') in ('pending', 'running'):
+            try:
+                if await orch.terminate(tid):
+                    stopped += 1
+            except Exception:
+                logger.debug('stop-all terminate failed for %s', tid, exc_info=True)
+    return {'status': 'stopped', 'stopped': stopped, 'total': len(active)}
+
+
 @router.post('/{taskId}/terminate')
 async def terminateSubagent(taskId: str, request: Request):
     """Terminate a running sub-agent."""

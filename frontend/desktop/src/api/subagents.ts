@@ -64,6 +64,14 @@ export async function terminate(taskId: string): Promise<{ status: string }> {
   return api.post<{ status: string }>(`/api/subagents/${encodeURIComponent(taskId)}/terminate`);
 }
 
+/** Terminate every active sub-agent for a session. */
+export async function stopAll(sessionId?: string): Promise<{ status: string; stopped: number; total: number }> {
+  return api.post<{ status: string; stopped: number; total: number }>(
+    '/api/subagents/stop-all',
+    sessionId ? { sessionId } : undefined,
+  );
+}
+
 /** Re-run a finished/failed sub-agent with the same goal + agent role.
  * Returns the NEW task id; events stream into the original session. */
 export async function resume(taskId: string): Promise<SpawnResult> {

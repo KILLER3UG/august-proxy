@@ -34,8 +34,12 @@ SUBAGENT_MODEL_TIMEOUT_S = 240
 
 # Sub-agent recursion guard: BOTH spawn tool spellings must be excluded or a
 # sub-agent can recurse through the plural tool — the old singular-only
-# filter allowed unbounded recursion + semaphore-slot deadlock.
-SUBAGENT_BLOCKED_TOOLS = frozenset({'spawn_subagent', 'spawn_subagents'})
+# filter allowed unbounded recursion + semaphore-slot deadlock. Agent-
+# management tools (create_agent / set_agent_mode) are also blocked: a
+# sub-agent must not mutate the agent registry or switch its own mode.
+SUBAGENT_BLOCKED_TOOLS = frozenset(
+    {'spawn_subagent', 'spawn_subagents', 'create_agent', 'set_agent_mode'}
+)
 
 
 def _toolName(t: dict[str, object]) -> str:
@@ -404,6 +408,20 @@ async def executeSubAgent(
                 if retryAttempt >= retryPolicy['maxRetries']:
                     break
                 delayMs = _modelRetryDelayMs(retryAttempt + 1, response, retryPolicy)
+                if emit:
+                    emit(
+                        {
+                            'type': 'subagentRetry',
+                            'agentId': resolvedAgentId,
+                            'jobId': jobId,
+                            'attempt': retryAttempt + 1,
+                            'maxRetries': retryPolicy['maxRetries'],
+                            'message': (
+                                f'Transient upstream error ({as_str(response.get("error"), "retryable")[:120]}) '
+                                f'— retrying in {delayMs}ms'
+                            ),
+                        }
+                    )
                 await asyncio.sleep(delayMs / 1000)
             response = response or {'error': 'Sub-agent model call failed'}
             if as_str(response.get('error')):
