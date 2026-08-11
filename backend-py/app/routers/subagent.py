@@ -19,6 +19,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
+from app.json_narrowing import as_str
 from app.models.camel_base import CamelModel
 from app.services.subagent_orchestrator import SubagentOrchestrator
 from app.services.tools.spawn_subagents_tool import approveProposal, executeSpawnSubagents
@@ -166,6 +167,39 @@ async def terminateSubagent(taskId: str, request: Request):
     if not success:
         raise HTTPException(status_code=404, detail=f'Task {taskId} not found or already completed')
     return {'status': 'cancelled', 'taskId': taskId}
+
+
+@router.post('/{taskId}/resume')
+async def resumeSubagent(taskId: str, request: Request):
+    """Re-run a finished/failed sub-agent with the same goal + agent role.
+
+    Looks the run up in the persisted history and re-dispatches it through
+    the orchestrator bound to the ORIGINAL session (so events stream into
+    the same transcript). Returns the NEW task id — the old run's history
+    row is preserved.
+    """
+    from app.services.memory_store import _conn
+
+    conn = _conn()
+    row = conn.execute(
+        'SELECT task_id, session_id, agent_id, goal FROM subagent_runs WHERE task_id = ?',
+        (taskId,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f'Task {taskId} not found in run history')
+    orch = _getOrchestrator(request)
+    sessionId = as_str(row['session_id'] if isinstance(row, dict) or hasattr(row, 'keys') else row[1], '') or 'default'
+    goal = as_str(row['goal'] if isinstance(row, dict) or hasattr(row, 'keys') else row[3], '')
+    agentId = as_str(row['agent_id'] if isinstance(row, dict) or hasattr(row, 'keys') else row[2], '') or 'general'
+    if not goal:
+        raise HTTPException(status_code=400, detail=f'Task {taskId} has no goal to resume')
+    session = _getSession(request)
+    setattr(session, 'id', sessionId)
+    workItems = [{'goal': goal, 'agentId': agentId}]
+    result = await executeSpawnSubagents(
+        orch, session, workItems, mode='auto', emit=_makeEmit(sessionId), background=True
+    )
+    return {**result, 'resumedFrom': taskId}
 
 
 @router.post('/propose-breakdown')

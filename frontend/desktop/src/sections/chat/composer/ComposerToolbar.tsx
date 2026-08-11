@@ -25,6 +25,7 @@ import type { EffortLevel } from '../hooks/useChatSend';
 import { ComposerActionsMenu } from './ComposerActionsMenu';
 import { ModelEffortMenu } from './ModelEffortMenu';
 import { SubagentSpawnModal } from './SubagentSpawnModal';
+import { CostCeilingChip } from './CostCeilingChip';
 import type { AnchorPos } from './useComposerPopovers';
 import { cn } from '@/lib/utils';
 
@@ -222,14 +223,12 @@ export function ComposerToolbar({
           }}
           extras={
             <div className="flex items-center gap-2 px-1.5 flex-wrap pt-0.5">
-              {sessionUsage && (sessionUsage.totalCost ?? 0) > 0 && (
-                <span
-                  className="text-[10px] tabular-nums text-muted-foreground font-mono"
-                  title="Estimated session cost"
-                  data-testid="session-cost-chip"
-                >
-                  ${sessionUsage.totalCost!.toFixed(4)}
-                </span>
+              {sessionUsage && workbenchSession?.id && (
+                <CostCeilingChip
+                  sessionId={workbenchSession.id}
+                  cost={sessionUsage.totalCost ?? 0}
+                  initialCeiling={workbenchSession.costCeiling ?? 0}
+                />
               )}
               <ProjectRulesBadge workspacePath={workspacePath} />
             </div>

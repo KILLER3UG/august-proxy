@@ -15,7 +15,7 @@ from typing import Callable
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.json_narrowing import as_dict, as_int, as_list, as_str
+from app.json_narrowing import as_dict, as_float, as_int, as_list, as_str
 from app.services import event_log
 from app.services.workbench import workbench as wb
 
@@ -1868,6 +1868,37 @@ async def setVerifierEnforced(request: Request):
             sessionId=sessionId,
             verifierEnforced=session.verifierEnforced,
         )
+        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
+    except Exception:
+        pass
+    return session.toDict()
+
+
+@router.post('/cost-ceiling')
+async def setCostCeiling(request: Request):
+    """Set a per-session spend ceiling (USD). 0 clears it.
+
+    When the estimated cumulative session cost reaches the ceiling, new
+    turns are blocked with a clear error until the user raises it or starts
+    a new chat.
+    """
+    from datetime import datetime, timezone
+
+    from app.services.workbench.sessions import save_sessions
+
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    ceiling = max(0.0, as_float(body.get('costCeiling', 0.0), 0.0))
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    session.costCeiling = ceiling
+    session.updatedAt = datetime.now(timezone.utc).isoformat()
+    save_sessions()
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime('session.updated', sessionId=sessionId, costCeiling=session.costCeiling)
         emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
     except Exception:
         pass

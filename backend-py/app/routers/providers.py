@@ -644,6 +644,50 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
     raise HTTPException(status_code=404, detail='Provider not found')
 
 
+@router.get('/{providerId}/models/{modelId:path}/probe')
+async def probeModelCapabilities(providerId: str, modelId: str):
+    """Probe a model's real capabilities: connectivity, tool-call support,
+    and instruction-following (exact-reply). Returns a summary with a
+    suggested ``toolSurface`` so the user can one-click apply the detected
+    profile instead of guessing (weak models get a smaller surface)."""
+    store = config_service.getProvidersStore()
+    providers_list = as_list(store.get('providers', []))
+    if not isinstance(providers_list, list):
+        providers_list = []
+    for p in providers_list:
+        if not isinstance(p, dict):
+            continue
+        if as_str(p.get('id', '')) == providerId:
+            modelFound = any(
+                isinstance(m, dict) and as_str(m.get('id', '')) == modelId
+                for m in as_list(p.get('models', []), [])
+            )
+            if not modelFound:
+                raise HTTPException(status_code=404, detail='Model not found')
+            conn = await _probe_connectivity(p, modelId)
+            tools = await _probe_tool_support(p, modelId)
+            toolOk = as_bool(tools.get('success'), False)
+            # Suggested surface from evidence: no tool support → text protocol;
+            # tool support confirmed → full (the user decides).
+            suggestedSurface = 'full' if toolOk else 'text'
+            suggestions: dict[str, object] = {}
+            if not toolOk:
+                suggestions['toolSurface'] = suggestedSurface
+                suggestions['reason'] = (
+                    as_str(tools.get('detail'), 'tool calling not confirmed')
+                    or 'tool calling not confirmed'
+                )[:200]
+            return {
+                'model': modelId,
+                'providerId': providerId,
+                'connectivity': conn,
+                'toolSupport': tools,
+                'suggestedToolSurface': suggestedSurface,
+                'suggestions': suggestions,
+            }
+    raise HTTPException(status_code=404, detail='Provider not found')
+
+
 @router.delete('/{providerId}/models/{modelId:path}')
 async def deleteModel(providerId: str, modelId: str):
     store = config_service.getProvidersStore()

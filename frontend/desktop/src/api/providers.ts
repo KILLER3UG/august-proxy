@@ -102,6 +102,15 @@ export interface ConnectModelResult {
   httpStatus?: number;
 }
 
+export interface ProbeResult {
+  model: string;
+  providerId: string;
+  connectivity: { success: boolean; latencyMs: number; error?: string; content?: string | null };
+  toolSupport: { success: boolean; latencyMs: number; detail?: string };
+  suggestedToolSurface: 'full' | 'text';
+  suggestions: { toolSurface?: 'full' | 'text'; reason?: string };
+}
+
 function p(path: string) {
   return `/api/providers${path}`;
 }
@@ -133,6 +142,12 @@ export const providersApi = {
   connectModel: (id: string, modelId: string) =>
     api.post<ConnectModelResult>(
       p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}/test`),
+    ),
+  /** Probe a model's real capabilities: connectivity, tool-call support, and
+   *  instruction-following, with a suggested toolSurface to apply. */
+  probeModel: (id: string, modelId: string) =>
+    api.get<ProbeResult>(
+      p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}/probe`),
     ),
   /** Import a provider config from a JSON blob. */
   importConfig: (config: Record<string, unknown>) =>

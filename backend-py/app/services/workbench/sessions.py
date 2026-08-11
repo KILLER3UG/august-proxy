@@ -60,6 +60,10 @@ class WorkbenchSession:
     # update_state(phase='complete') passes the verifier gate (see the
     # _verifier_gated_emit wrapper in the workbench chat loop).
     verifierEnforced: bool = False
+    # Optional per-session spend ceiling (USD). 0 = off. When the estimated
+    # cumulative session cost reaches the ceiling, new turns are blocked with
+    # a clear error until the user raises it or starts a new chat.
+    costCeiling: float = 0.0
     # Agent mode: '' | 'chat' (text only, tools blocked) | 'agent' (native tool
     # calling) | 'code' (fenced python blocks via the code runner).
     agent_mode: str = ''
@@ -124,6 +128,7 @@ class WorkbenchSession:
             'sandboxMode': self.sandboxMode,
             'sandboxNetwork': self.sandboxNetwork,
             'verifierEnforced': self.verifierEnforced,
+            'costCeiling': self.costCeiling,
             'createdAt': self.createdAt,
             'updatedAt': self.updatedAt,
             'startedAt': self.startedAt,
@@ -164,6 +169,7 @@ class WorkbenchSession:
             sandboxMode=as_str(d.get('sandboxMode', 'workspace-write') or 'workspace-write'),
             sandboxNetwork=as_bool(d.get('sandboxNetwork', False)),
             verifierEnforced=as_bool(d.get('verifierEnforced', False)),
+            costCeiling=as_float(d.get('costCeiling', 0.0)),
             createdAt=as_str(d.get('createdAt', '')),
             updatedAt=as_str(d.get('updatedAt', '')),
             startedAt=as_str(d.get('startedAt', '')),

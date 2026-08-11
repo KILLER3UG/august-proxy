@@ -142,6 +142,16 @@ export class WorkbenchClient {
     );
   }
 
+  /** Set a per-session spend ceiling in USD (0 clears it). When the
+   *  estimated cumulative session cost reaches the ceiling, new turns are
+   *  blocked until the user raises it or starts a new chat. */
+  async setCostCeiling(sessionId: string, costCeiling: number): Promise<WorkbenchSession> {
+    return wbFetch<WorkbenchSession>(
+      '/api/workbench/cost-ceiling',
+      jsonInit('POST', { sessionId, costCeiling }),
+    );
+  }
+
   async renameSession(sessionId: string, title: string): Promise<WorkbenchSession> {
     return wbFetch<WorkbenchSession>(
       `/api/workbench/sessions/${encodeURIComponent(sessionId)}/title`,

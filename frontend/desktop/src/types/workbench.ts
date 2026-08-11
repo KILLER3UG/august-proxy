@@ -68,6 +68,9 @@ export interface WorkbenchSession {
    *  until the model passes update_state(phase='complete') (see the
    *  `verifierBlocked` SSE event). */
   verifierEnforced?: boolean;
+  /** Per-session spend ceiling in USD (0 = off). New turns are blocked once
+   *  the estimated cumulative cost reaches the ceiling. */
+  costCeiling?: number;
   workspacePath?: string;
   /** True only when `submit_plan` (the `planProposed` SSE event) ran this
    *  session. Drives the banner off the event instead of hydrated session

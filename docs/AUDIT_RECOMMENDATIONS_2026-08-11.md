@@ -318,6 +318,11 @@ On the harnesses you named directly: **Hermes** (Nous) — the relevant pattern 
 - **Frontend polish:** the inert File/View/Help chrome is now functional (New chat / Toggle sidebar / Shortcuts); ContextRing tooltip + tone scale use design tokens (was hardcoded hex — broken in light theme); verifier shield toggle always shows a "Verify" label (was an unlabeled icon).
 - **Evals drill-down:** eval run rows in the Reliability dashboard open a detail modal (model, rounds, duration, failure notes) — the per-scenario trace is inspectable.
 
+### Batch 5 (fifth pass, all green)
+- **Per-session spend ceiling:** `session.costCeiling` (USD, 0=off) enforced in the turn loop BEFORE any model call — a blocked turn emits a clear error until the user raises the ceiling or starts a new chat. Cost estimated from cumulative tokens with env-tunable rates (`AUGUST_PRICE_IN_PER_M`/`AUGUST_PRICE_OUT_PER_M`, cache-hit input billed at 10%). API `POST /api/workbench/cost-ceiling`; composer extras gained a `CostCeilingChip` (live `$cost / $ceiling`, amber ≥80%, click-to-set).
+- **Probe capabilities:** `GET /api/providers/{id}/models/{model}/probe` runs connectivity + tool-support + instruction-following probes and returns a suggested `toolSurface`; the ModelRow gained a probe button with an "Apply <surface> surface" one-click action — weak models get detected, not guessed.
+- **Subagent resume-by-task-id (OpenHands pattern):** `POST /api/subagents/{taskId}/resume` re-dispatches a finished/failed run with the same goal + agent, bound to the ORIGINAL session (events stream into the same transcript); RunsTab rows gained a ↻ Resume button.
+
 ### P2 — Next iteration (model improvement loops; 1-2 weeks)
 16. Golden-eval expansion + eval→profile feedback P5 (§3) — open
 17. Routing exploration P6; verifier recovery steer A7/P8 — open

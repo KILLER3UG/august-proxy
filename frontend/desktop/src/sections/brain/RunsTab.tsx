@@ -10,6 +10,8 @@ import {
   Play,
   Plus,
   Rocket,
+  RotateCcw,
+  Loader2,
   Square,
   Trash2,
   X,
@@ -168,6 +170,16 @@ export function RunsTab() {
     },
     onError: (e: Error) => toast.error(e.message || 'Terminate failed'),
   });
+  const resumeRun = useMutation({
+    mutationFn: (taskId: string) => subagents.resume(taskId),
+    onSuccess: (res) => {
+      toast.success(
+        `Re-launched — new task ${res.total ?? ''}${res.results?.[0]?.taskId ? ` (${res.results[0].taskId})` : ''} streaming into the original session`,
+      );
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Resume failed'),
+  });
 
   const decideProposal = useMutation({
     mutationFn: ({ proposalId, approved }: { proposalId: string; approved: boolean }) =>
@@ -307,7 +319,22 @@ export function RunsTab() {
                     >
                       <Square className="size-3.5" />
                     </button>
-                  ) : null}
+                  ) : (
+                    <button
+                      type="button"
+                      title="Re-run this sub-agent (same goal + agent, original session)"
+                      className="p-1 text-muted-foreground hover:text-primary disabled:opacity-40"
+                      data-testid={`resume-run-${r.taskId}`}
+                      disabled={resumeRun.isPending || !r.goal}
+                      onClick={() => resumeRun.mutate(r.taskId ?? '')}
+                    >
+                      {resumeRun.isPending ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="size-3.5" />
+                      )}
+                    </button>
+                  )}
                 </div>
                 {r.goal ? <p className="text-muted-foreground">{r.goal}</p> : null}
                 {r.resultSummary ? (

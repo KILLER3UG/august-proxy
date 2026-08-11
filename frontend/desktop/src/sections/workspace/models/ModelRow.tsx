@@ -13,6 +13,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  ScanSearch,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { providersApi, type ApiFormat, type Provider } from '@/api/providers';
@@ -68,6 +69,12 @@ export function ModelRow({
     error?: string;
     latencyMs: number;
     content?: string;
+  }>(null);
+  const [probeResult, setProbeResult] = useState<null | {
+    toolOk: boolean;
+    toolDetail: string;
+    latencyMs: number;
+    suggestedSurface: 'full' | 'text';
   }>(null);
 
   useEffect(() => {
@@ -134,6 +141,28 @@ export function ModelRow({
       toast.error(msg);
     },
   });
+
+  const probe = useMutation({
+    mutationFn: () => providersApi.probeModel(providerId, model.id),
+    onSuccess: (res) => {
+      const toolOk = Boolean(res.toolSupport?.success);
+      setProbeResult({
+        toolOk,
+        toolDetail: res.toolSupport?.detail || (toolOk ? 'Tool calling confirmed' : 'Tool calling not confirmed'),
+        latencyMs: res.connectivity?.latencyMs ?? res.toolSupport?.latencyMs ?? 0,
+        suggestedSurface: res.suggestedToolSurface ?? 'full',
+      });
+      toast.success(toolOk ? `${model.id}: tool calling works` : `${model.id}: tool calling NOT confirmed`);
+    },
+    onError: (e: unknown) => {
+      toast.error(e instanceof Error ? e.message : 'Probe failed');
+    },
+  });
+
+  const applyProbeSuggestion = () => {
+    if (!probeResult) return;
+    update.mutate({ toolSurface: probeResult.suggestedSurface });
+  };
 
   const saveContextWindow = () => {
     const trimmed = contextWindow.trim();
@@ -401,6 +430,19 @@ export function ModelRow({
           )}
         </button>
         <button
+          onClick={() => probe.mutate()}
+          disabled={probe.isPending}
+          aria-label="Probe model capabilities"
+          title="Probe capabilities: connectivity, tool-call support, and instruction-following — with a suggested tool surface"
+          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition disabled:opacity-50"
+        >
+          {probe.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <ScanSearch className="size-3.5" />
+          )}
+        </button>
+        <button
           onClick={() => setEditing(true)}
           aria-label="Edit model"
           title="Edit display name and metadata"
@@ -457,6 +499,40 @@ export function ModelRow({
               </span>
             </>
           )}
+        </div>
+      )}
+      {probeResult && (
+        <div
+          className={cn(
+            'flex items-start gap-1.5 text-[11px] mt-1.5 pl-0.5',
+            probeResult.toolOk ? 'text-success' : 'text-amber-500',
+          )}
+          data-testid="model-probe-result"
+        >
+          {probeResult.toolOk ? (
+            <CheckCircle2 className="size-3 mt-0.5 shrink-0" />
+          ) : (
+            <AlertCircle className="size-3 mt-0.5 shrink-0" />
+          )}
+          <span className="min-w-0">
+            <span className="font-medium">
+              {probeResult.toolOk ? 'Tools OK' : 'No tool support'}
+            </span>
+            <span className="text-muted-foreground">
+              {' '}
+              · {probeResult.latencyMs}ms · {probeResult.toolDetail}
+            </span>
+            {!probeResult.toolOk && (
+              <button
+                type="button"
+                onClick={applyProbeSuggestion}
+                className="ml-1.5 inline-flex items-center gap-1 rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary hover:bg-primary/25"
+                data-testid="apply-probe-suggestion"
+              >
+                Apply {probeResult.suggestedSurface} surface
+              </button>
+            )}
+          </span>
         </div>
       )}
       <ConfirmDialog

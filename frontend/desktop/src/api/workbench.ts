@@ -61,6 +61,15 @@ export async function setWorkbenchVerifier(
   return workbenchClient.setVerifier(sessionId, verifierEnforced);
 }
 
+/** Set a per-session spend ceiling in USD (0 clears it). New turns are
+ *  blocked once the estimated cumulative cost reaches the ceiling. */
+export async function setWorkbenchCostCeiling(
+  sessionId: string,
+  costCeiling: number,
+): Promise<WorkbenchSession> {
+  return workbenchClient.setCostCeiling(sessionId, costCeiling);
+}
+
 export async function confirmWorkbenchMutation(
   token: string,
   handlers: WorkbenchEventHandlers

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
 import re
 import time
@@ -988,6 +989,30 @@ def _is_failing_receipt(msg: dict[str, object]) -> bool:
 # it into an experiment: the profile is written to the provider store, the
 # before-rates are recorded, and once enough new traces accumulate the
 # experiment is evaluated — worse rates → revert, held/improved → confirm.
+
+
+def _session_cost_usd(session: object) -> float:
+    """Estimate a session's cumulative spend (USD) from its token totals.
+
+    No per-model pricing table exists; use env-tunable flat rates (default
+    mid-range $3/$15 per 1M input/output). Cache-hit input tokens are billed
+    at 10% of the input rate (the typical provider caching discount) when
+    cache splits are known.
+    """
+    try:
+        in_rate = float(os.environ.get('AUGUST_PRICE_IN_PER_M', '3.0'))
+        out_rate = float(os.environ.get('AUGUST_PRICE_OUT_PER_M', '15.0'))
+    except (TypeError, ValueError):
+        in_rate, out_rate = 3.0, 15.0
+    total_in = as_int(getattr(session, 'totalInputTokens', 0), 0)
+    total_out = as_int(getattr(session, 'totalOutputTokens', 0), 0)
+    cache_hit = as_int(getattr(session, 'cacheHitTokens', 0), 0)
+    cache_miss = as_int(getattr(session, 'cacheMissTokens', 0), 0)
+    if cache_hit + cache_miss > 0:
+        billed_in = cache_miss + cache_hit * 0.1
+    else:
+        billed_in = total_in
+    return (billed_in / 1e6 * in_rate) + (total_out / 1e6 * out_rate)
 
 
 def _apply_model_profile(model_id: str, surface: str) -> bool:
@@ -2611,6 +2636,30 @@ async def _sendWorkbenchMessageStreamImpl(
     # Trace-store bookkeeping: tool names dispatched this turn + self-heal
     # counters (recorded with the turn trace for replay/drift analysis).
     calledTools: set[str] = set()
+    # Spend ceiling gate: when a per-session ceiling is set and the estimated
+    # cumulative cost already meets it, block the turn BEFORE any model call
+    # (the user must raise the ceiling or start a new chat).
+    ceiling = as_float(getattr(session, 'costCeiling', 0.0), 0.0)
+    if ceiling > 0:
+        try:
+            estCost = _session_cost_usd(session)
+            if estCost >= ceiling:
+                msg = (
+                    f'Session cost ceiling reached (${estCost:.2f} ≥ ${ceiling:.2f}) — '
+                    'raise the ceiling or start a new chat to continue.'
+                )
+                logger.warning('workbench %s', msg)
+                if emit:
+                    emit({'type': 'error', 'message': msg})
+                turnError = turnError or msg
+                try:
+                    if hasattr(session, '_tool_tracker') and session._tool_tracker:
+                        session._tool_tracker.record_text_response()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            logger.debug('cost ceiling check failed', exc_info=True)
     while True:
         toolRound += 1
         if managedToolLoopCap > 0 and toolRound > managedToolLoopCap:

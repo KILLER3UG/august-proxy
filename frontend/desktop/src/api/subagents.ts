@@ -64,6 +64,12 @@ export async function terminate(taskId: string): Promise<{ status: string }> {
   return api.post<{ status: string }>(`/api/subagents/${encodeURIComponent(taskId)}/terminate`);
 }
 
+/** Re-run a finished/failed sub-agent with the same goal + agent role.
+ * Returns the NEW task id; events stream into the original session. */
+export async function resume(taskId: string): Promise<SpawnResult> {
+  return api.post<SpawnResult>(`/api/subagents/${encodeURIComponent(taskId)}/resume`);
+}
+
 /** Approve or reject a proposed sub-agent breakdown. */
 export async function proposeBreakdown(
   proposalId: string,
