@@ -1,5 +1,24 @@
 # August Proxy — Changelog
 
+## 0.15.0 (2026-08-11)
+
+Full-repo audit delivery: 6-agent scan closed out — subagents usable end-to-end, proxy adapters hardened, harness self-tuning loops closed, spend guardrails, and a big UX pass.
+
+**Subagents — usable end-to-end**
+- One spawn tool (`spawn_subagents`) for single/batch/blocking; recursion guard + real runtime depth cap; HTTP launches stream into chat (session-bound); `yieldSchema` failures report `failed`; stream-rule/stall/compaction parity with the parent loop; per-row Stop + Stop-all; resume-by-task-id; composer spawn modal with advanced options (context, restricted tools, yieldSchema, model override, proposed mode).
+- The inline Cursor-style launch list (dead code) is mounted in the transcript; the no-op approval stub is deleted.
+
+**Proxy adapters**
+- Schema-safe case converters (JSON Schema payloads no longer renamed); `tool_calls`/`toolCalls` dual-read (non-streaming managed tools restored); `message_stop` buffered between rounds; multi-round streaming loop; malformed tool JSON never executes as `{}` (all paths); `tool_result` role wrapping; timing-safe gateway auth; request-log secret sanitization; 400 for non-object bodies; `strict: null` omitted; usage keys normalized.
+
+**Harness self-tuning**
+- Routing wins exclude refusals/thinking-only/tool-error + verified tiebreak; epsilon-greedy exploration; two-way capability auto-detect with auto-apply/auto-revert experiments (`AUGUST_AUTO_PROFILE=1`); reversible in-turn downgrade; verifier reviewer sees receipts; bounded verifier retries with force-release; recovery steer with inferred commands; landmark-preserving compaction; `edit_lines` precision tool with line anchors; model-family `<IMPORTANT>` blocks; protocol few-shot exemplars; empty-response retry; tool-execution timeouts; code-mode `result` capture; per-model pricing (`cost_estimator`) powering the spend ceiling + usage cost.
+
+**UI/UX**
+- Compare action on messages (Arena lanes), History browse route, notes→memory promotion, capability probe with one-click apply, cost-ceiling chip, eval drill-down, wired File/View/Help chrome, themed context ring, lazy settings sections, sidebar aria-current, modal Escape coverage.
+
+**Validation:** backend ruff/mypy clean · 1440+ pytest · frontend tsc clean · 738 vitest.
+
 ## 0.14.0 (2026-08-10)
 
 Personal-assistant memory, harness model-agnosticism, and cache observability.
