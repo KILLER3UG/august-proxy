@@ -208,7 +208,17 @@ def test_stream_rule_matcher():
 
     assert _match_stream_rule('I will now read the file') is None
     assert _match_stream_rule("I'll use the read_file tool to check it") == 'narrated_tool_call'
-    assert _match_stream_rule('```json\n{"name": "read_file"}') == 'code_fence_tool_call'
+    # Shape-anchored (A8): a fenced JSON with only a name is a config payload,
+    # not a tool call — only name + arguments/input matches.
+    assert _match_stream_rule('```json\n{"name": "read_file"}') is None
+    assert (
+        _match_stream_rule('```json\n{"name": "read_file", "arguments": {"path": "x"}}')
+        == 'code_fence_tool_call'
+    )
+    assert (
+        _match_stream_rule('```json\n{"tool": "web_search", "input": {"query": "q"}}')
+        == 'code_fence_tool_call'
+    )
     assert _match_stream_rule('plain answer without tools') is None
 
 

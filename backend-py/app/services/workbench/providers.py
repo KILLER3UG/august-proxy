@@ -478,12 +478,14 @@ async def call_anthropic_workbench(
             if _cancel_event is not None and _cancel_event.is_set():
                 break
             agg.on_event(event)
-            # Stream rules: abort mid-stream when the model narrates a tool
-            # call instead of emitting one.
+            # Stream rules: detect narration, but do NOT abort mid-stream —
+            # the hit is cancelled if a real tool_use arrives later in this
+            # turn (a strong model narrates AND then emits the call); only a
+            # narration with no tool call triggers the reminder + retry.
             if tools and agg.accumulated_text and _stream_rule_hit is None:
                 _stream_rule_hit = _match_stream_rule(agg.accumulated_text)
-                if _stream_rule_hit:
-                    break
+            if _stream_rule_hit and agg.tool_uses:
+                _stream_rule_hit = None
             if agg.error:
                 errResp: dict[str, object] = {'error': agg.error}
                 if agg.error_status is not None:
@@ -493,7 +495,7 @@ async def call_anthropic_workbench(
                 return errResp
     except Exception as exc:
         return {'error': str(exc)}
-    if _stream_rule_hit:
+    if _stream_rule_hit and not agg.tool_uses:
         return {
             'stream_rule': _stream_rule_hit,
             'text': agg.accumulated_text,
@@ -508,14 +510,42 @@ async def call_anthropic_workbench(
 # instead of emitting it (a code-fenced JSON tool call, "I'll use the X tool"),
 # abort the generation and let the turn loop inject a reminder + retry from
 # the same point — far cheaper than letting a wasted round complete.
+#
+# Detection is DEFERRED to end-of-turn (not a mid-stream abort): a strong
+# model routinely writes "I'll use the web_search tool to…" and THEN emits
+# the real tool call in the same turn — aborting on the narration discarded
+# the genuine call (audit A8). The hit is cancelled the moment a real tool
+# call arrives, and only a narration with NO tool call triggers the retry.
 _STREAM_RULE_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
     (
         'code_fence_tool_call',
-        re.compile(r'```(?:json)?\s*\{\s*["\']?(?:name|tool|function)["\']?\s*:'),
+        # Shape-anchored: `name`/`tool`/`function` AND `arguments`/`input`
+        # must both be present — a fenced config payload {"name": …} without
+        # arguments must not abort the turn.
+        re.compile(
+            r'```(?:json)?\s*\{\s*["\']?(?:name|tool|function)["\']?\s*:\s*["\'][^"\']+["\']\s*,?\s*'
+            r'["\']?(?:arguments|input)["\']?\s*:'
+        ),
     ),
     (
         'narrated_tool_call',
-        re.compile(r"\bI['\u2019]?ll (?:now )?(?:use|call|invoke) (?:the )?[\w:]+ (?:tool|function)\b", re.IGNORECASE),
+        # English + common French/Spanish/German narrations. Non-English
+        # coverage is best-effort — the shape-anchored fence rule above is
+        # the primary detector; narration is the fallback.
+        re.compile(
+            r'\b(?:'
+            r"I['\u2019]?ll (?:now )?(?:use|call|invoke) (?:the )?[\w:]+ (?:tool|function)|"
+            r'I will (?:now )?(?:use|call|invoke) (?:the )?[\w:]+ (?:tool|function)|'
+            r'(?:let me|I am going to) (?:use|call) (?:the )?[\w:]+ (?:tool|function)|'
+            r'calling (?:the )?[\w:]+ (?:tool|function)(?: now)?|'
+            r"je vais utiliser l['\u2019]outil [\w:]+|"
+            r'j[\'\u2019]utilise l[\'\u2019]outil [\w:]+|'
+            r'voy a usar (?:la )?herramienta [\w:]+|'
+            r'usar(?:é|e) (?:la )?herramienta [\w:]+|'
+            r'ich (?:werde|nutze|verwende) (?:das )?(?:tool|werkzeug) [\w:]+'
+            r')\b',
+            re.IGNORECASE,
+        ),
     ),
 )
 
@@ -706,15 +736,18 @@ async def call_openai_workbench(
                     contentText += textDelta
                     if emit:
                         emit({'type': 'finalOutput', 'content': textDelta})
-                    # Stream rules: abort mid-stream when the model narrates a
-                    # tool call instead of emitting it (only when tools were
-                    # offered — otherwise it is just prose).
+                    # Stream rules: detect narration but do NOT abort here —
+                    # the hit is cancelled if a real tool_call arrives later in
+                    # this turn (strong models narrate AND then emit the call);
+                    # only a narration with no tool call triggers the retry.
                     if tools and _stream_rule_hit is None:
                         _stream_rule_hit = _match_stream_rule(contentText)
-                        if _stream_rule_hit:
-                            break
                 for rawTc in as_list(delta.get('tool_calls', []), []):
                     tc = as_dict(rawTc)
+                    if _stream_rule_hit is not None:
+                        # A genuine tool call followed the narration — the
+                        # narration was preamble, not a substitution.
+                        _stream_rule_hit = None
                     idx = as_int(tc.get('index', 0))
                     if idx not in toolCallsAccum:
                         fn = as_dict(tc.get('function', {}))
@@ -749,9 +782,10 @@ async def call_openai_workbench(
                 return {'error': str(exc)}
         if _retry_stream:
             continue
-        if _stream_rule_hit:
-            # Stream rule fired mid-generation — hand control back to the turn
-            # loop so it can inject the reminder and retry from this point.
+        if _stream_rule_hit and not toolCallsAccum:
+            # Stream rule fired (narration with no real tool call) — hand
+            # control back to the turn loop so it can inject the reminder
+            # and retry from this point.
             return {
                 'stream_rule': _stream_rule_hit,
                 'text': contentText,

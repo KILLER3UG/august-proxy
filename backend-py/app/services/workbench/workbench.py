@@ -931,6 +931,58 @@ def _shouldAutoCompact(attention_pressure: str, turns_since_compaction: int) -> 
     return attention_pressure in ('high', 'critical') and turns_since_compaction >= 2
 
 
+def _msgTextLower(msg: dict[str, object]) -> str:
+    """Lowercased text of a workbench message (string or text blocks)."""
+    content = msg.get('content', '')
+    if isinstance(content, str):
+        return content.lower()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for b in content:
+            if isinstance(b, dict) and b.get('type') in ('text', 'output_text'):
+                parts.append(str(b.get('text', '')))
+        return '\n'.join(parts).lower()
+    return ''
+
+
+def _is_update_state_transition(msg: dict[str, object]) -> bool:
+    """Landmark (P4): an update_state tool call or its 'State updated' receipt.
+
+    The phase/step the model last recorded is key state — a middle-summary
+    must not drop it.
+    """
+    role = msg.get('role', '')
+    if role == 'tool':
+        lower = _msgTextLower(msg)
+        return 'state updated' in lower and 'phase=' in lower
+    if role == 'assistant':
+        content = msg.get('content', '')
+        if isinstance(content, list):
+            for b in content:
+                if isinstance(b, dict) and b.get('type') == 'tool_use' and b.get('name') == 'update_state':
+                    return True
+        for tc in as_list(msg.get('tool_calls'), []):
+            if isinstance(tc, dict):
+                fn = as_dict(tc.get('function'), {})
+                if as_str(fn.get('name'), '') == 'update_state':
+                    return True
+    return False
+
+
+def _is_failing_receipt(msg: dict[str, object]) -> bool:
+    """Landmark (P4): a tool result showing a failing run (test/lint/build).
+
+    The latest failure output is exactly what the model needs to fix the
+    task — a 120-char summary line can drop the actual error string.
+    """
+    if msg.get('role') != 'tool':
+        return False
+    lower = _msgTextLower(msg)
+    if 'failed' in lower or 'error:' in lower:
+        return True
+    return bool(re.search(r'exit code:\s*[1-9]\d*', lower))
+
+
 def _shouldAutoRecall(
     cognitive_budget: dict[str, object] | None,
     min_headroom: int = 6000,
@@ -1074,6 +1126,15 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             seen.add(as_str(t['name']))
             tools.append(t)
         tools.extend(_mcpToolDefinitionsAnthropic(seen))
+        # Cache-stability + truncation priority (P7/L5): the bare-essential
+        # tools sort FIRST in a stable order, so (a) a self-heal downgrade to
+        # the bare surface yields a PREFIX of the full list — the Anthropic
+        # prompt-cache breakpoint on the tools array stays valid when a
+        # struggling model is downgraded — and (b) maxTools truncation cuts
+        # non-essential tools first instead of by registry position.
+        tools.sort(
+            key=lambda t: (0 if as_str(t.get('name'), '') in _BARE_TOOL_ALLOW else 1, as_str(t.get('name'), ''))
+        )
         return tools
 
     tools = tool_defs_cache.get_or_build('anthropic', _build_base)
@@ -1224,6 +1285,10 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
                 seen.add(name)
                 tools.append(t)
         tools.extend(_mcpToolDefinitionsOpenai(seen))
+        # Same bare-first stable ordering as the Anthropic builder (P7/L5).
+        tools.sort(
+            key=lambda t: (0 if _toolDefName(t) in _BARE_TOOL_ALLOW else 1, _toolDefName(t))
+        )
         return tools
 
     tools = tool_defs_cache.get_or_build('openai', _build_base)
@@ -2306,6 +2371,11 @@ async def _sendWorkbenchMessageStreamImpl(
                     head_count=4,
                     tail_count=6,
                     summarizer=summarizer,
+                    # Landmark pins (P4): the latest update_state transition
+                    # and failing verification receipts survive the middle
+                    # summary verbatim — a summary can drop the only mention
+                    # of a phase/step or an error string the model still needs.
+                    pin_predicates=[_is_update_state_transition, _is_failing_receipt],
                 )
                 compressedTokens = estimateTokens(compressed)
                 if compressedTokens < originalTokens:

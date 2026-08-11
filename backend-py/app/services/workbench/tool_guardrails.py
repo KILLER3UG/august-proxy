@@ -32,6 +32,8 @@ class ToolCallTracker:
 
     WARN_IDENTICAL = 3
     BLOCK_IDENTICAL = 6
+    WARN_ALTERNATING = 8
+    BLOCK_ALTERNATING = 10
     WARN_FAILURE = 4
     BLOCK_FAILURE = 8
 
@@ -61,12 +63,57 @@ class ToolCallTracker:
             )
         if identicalCount >= self.WARN_IDENTICAL:
             return ('warn', f"Warning: '{toolName}' called with identical arguments {identicalCount} times in a row.")
+        # Alternating ping-pong (OpenHands stuck-detector pattern): the
+        # identical-call detector only catches CONTIGUOUS repeats — a model
+        # oscillating read_file(a)/read_file(b)/read_file(a) never trips it.
+        altRun, toneA, toneB = self._alternating_run()
+        if altRun >= self.BLOCK_ALTERNATING:
+            return (
+                'block',
+                f"Blocked: alternating between the same two calls {altRun} times in a row "
+                f"({toneA} ↔ {toneB}). Try a different approach.",
+            )
+        if altRun >= self.WARN_ALTERNATING:
+            return (
+                'warn',
+                f"Warning: alternating between the same two calls {altRun} times in a row "
+                f"({toneA} ↔ {toneB}).",
+            )
         failCount = self._failureCount.get(toolName, 0)
         if failCount >= self.BLOCK_FAILURE:
             return ('block', f"Blocked: '{toolName}' has failed {failCount} times. Try a different approach.")
         if failCount >= self.WARN_FAILURE:
             return ('warn', f"Warning: '{toolName}' has failed {failCount} times.")
         return ('ok', '')
+
+    def _alternating_run(self) -> tuple[int, str, str]:
+        """Length of the trailing A,B,A,B… run, plus the two tone labels.
+
+        Returns ``(run, toneA, toneB)`` — ``run`` counts trailing calls that
+        strictly alternate between two distinct (tool, args-hash) tones;
+        ``(0, '', '')`` when no alternation is present.
+        """
+        seq = self._callSequence
+        if len(seq) < 4:
+            return (0, '', '')
+        toneA = f'{seq[-1][0]}'
+        toneB = ''
+        for name, __, _t in reversed(seq[:-1]):
+            if name != seq[-1][0]:
+                toneB = name
+                break
+        if not toneB:
+            return (0, '', '')
+        run = 0
+        for name, __, _t in reversed(seq):
+            if run % 2 == 0:
+                if name != toneA:
+                    break
+            else:
+                if name != toneB:
+                    break
+            run += 1
+        return (run, toneA, toneB)
 
     def record_failure(self, toolName: str) -> None:
         """Record a tool failure (call returned an error)."""

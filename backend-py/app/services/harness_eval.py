@@ -64,6 +64,42 @@ def record_eval_run(
         save_memory(EVAL_RESULTS_KEY, entries[-200:])
     except Exception:
         pass
+    # Eval → profile feedback (P5): an eval run against a REAL model feeds a
+    # session_trace row, so capability_fingerprint sees the failure and moves
+    # the model's profile suggestion — eval → profile → real turns → eval.
+    # Scripted evals test harness mechanics and must not pollute fingerprints.
+    if model and model != 'scripted':
+        _record_trace_for_eval(model, passed, rounds, duration_ms, notes)
+
+
+def _record_trace_for_eval(
+    model: str, passed: bool, rounds: int, duration_ms: int, notes: str
+) -> None:
+    """Insert one session_traces row sourced from an eval run (never raises)."""
+    try:
+        from app.services.trace_store import record_turn_trace
+
+        record_turn_trace(
+            session_id=f'eval:{model}',
+            turn_seq=0,
+            prompt_hash='eval',
+            prompt_preview=f'harness eval ({rounds} rounds)',
+            task_type='general',
+            model=model,
+            provider='eval',
+            outcome='ok' if passed else 'tool_error',
+            rounds=rounds,
+            tools_offered=0,
+            tool_calls=[],
+            self_heal_events={'eval_failed': (0 if passed else 1)},
+            evidence_state='',
+            input_tokens=0,
+            output_tokens=0,
+            duration_ms=duration_ms,
+            error='' if passed else (notes or 'harness eval failed')[:2000],
+        )
+    except Exception:
+        logger.debug('eval trace record failed (non-fatal)', exc_info=True)
 
 
 def list_eval_runs(limit: int = 50) -> list[dict[str, Any]]:
@@ -155,6 +191,84 @@ class ScriptedClient:
                 'usage': {'prompt_tokens': 10, 'completion_tokens': 5},
             }
 
+    async def messages_stream(self, body: dict[str, Any]):
+        """Anthropic-format scripted stream (covers the Anthropic workbench
+        caller + `_raw` malformed-input aggregation — the OpenAI-only
+        ScriptedClient previously left that path untested)."""
+        self.call_count += 1
+        if self.call_count > len(self.rounds):
+            yield {
+                '_event_type': 'content_block_start',
+                'index': 0,
+                'content_block': {'type': 'text', 'text': 'Script exhausted — finishing.'},
+            }
+            yield {'_event_type': 'content_block_stop', 'index': 0}
+            yield {
+                '_event_type': 'message_delta',
+                'delta': {'stop_reason': 'end_turn'},
+                'usage': {'input_tokens': 10, 'output_tokens': 4},
+            }
+            yield {'_event_type': 'message_stop'}
+            return
+        spec = self.rounds[self.call_count - 1]
+        stype = as_str(spec.get('type'))
+        if stype in ('tool', 'malformed_tool'):
+            raw = (
+                as_str(spec.get('raw'))
+                if stype == 'malformed_tool'
+                else json.dumps(spec.get('arguments') or {})
+            )
+            yield {
+                '_event_type': 'content_block_start',
+                'index': 0,
+                'content_block': {
+                    'type': 'tool_use',
+                    'id': f'toolu_{self.call_count}',
+                    'name': as_str(spec.get('name'), ''),
+                },
+            }
+            if raw:
+                # Fragment the JSON across input_json_delta events; a
+                # malformed raw stays invalid so the aggregator records
+                # `_raw` and the workbench self-heal fires.
+                mid = max(1, len(raw) // 2)
+                yield {
+                    '_event_type': 'content_block_delta',
+                    'index': 0,
+                    'delta': {'type': 'input_json_delta', 'partial_json': raw[:mid]},
+                }
+                yield {
+                    '_event_type': 'content_block_delta',
+                    'index': 0,
+                    'delta': {'type': 'input_json_delta', 'partial_json': raw[mid:]},
+                }
+            yield {'_event_type': 'content_block_stop', 'index': 0}
+            yield {
+                '_event_type': 'message_delta',
+                'delta': {'stop_reason': 'tool_use'},
+                'usage': {'input_tokens': 10, 'output_tokens': 4},
+            }
+            yield {'_event_type': 'message_stop'}
+        elif stype == 'empty':
+            yield {
+                '_event_type': 'message_delta',
+                'delta': {'stop_reason': 'max_tokens'},
+            }
+            yield {'_event_type': 'message_stop'}
+        else:
+            yield {
+                '_event_type': 'content_block_start',
+                'index': 0,
+                'content_block': {'type': 'text', 'text': as_str(spec.get('text'), 'ok.')},
+            }
+            yield {'_event_type': 'content_block_stop', 'index': 0}
+            yield {
+                '_event_type': 'message_delta',
+                'delta': {'stop_reason': 'end_turn'},
+                'usage': {'input_tokens': 10, 'output_tokens': 5},
+            }
+            yield {'_event_type': 'message_stop'}
+
 
 # ── Turn runner ───────────────────────────────────────────────────────────
 
@@ -189,6 +303,7 @@ async def run_turn(
     agent_mode: str = '',
     emit: Callable[[dict[str, Any]], None] | None = None,
     session_patch: Callable[[Any], None] | None = None,
+    wire_format: str = 'openai',
 ) -> tuple[list[dict[str, Any]], Any]:
     """Run one real workbench turn against a scripted model.
 
@@ -199,6 +314,8 @@ async def run_turn(
     runner / endpoint) — when None, a save/restore stand-in is used so the
     real loop is still driven, just without pytest. ``session_patch`` runs
     on the session before the turn starts (capability flags etc.).
+    ``wire_format``: 'openai' (chat_completions_stream) or 'anthropic'
+    (messages_stream) — both paths of the workbench caller are exercised.
     """
     import app.providers.clients as clients
 
@@ -221,10 +338,11 @@ async def run_turn(
     client = ScriptedClient(script)
     patcher = _DirectPatch() if monkeypatch is None else monkeypatch
     patcher.setattr(clients, 'getClient', lambda provider: client)
+    api_mode = 'anthropicMessages' if wire_format == 'anthropic' else 'openaiChat'
     providerConfig: dict[str, object] = {
         'name': provider_name,
         'apiKey': 'test-key',
-        'apiMode': 'openaiChat',
+        'apiMode': api_mode,
         'modelProfiles': {'eval-model': {'maxOutputTokens': 64000, 'contextWindow': 128000}},
     }
     patcher.setattr(wb, '_resolveChatLlm', lambda **kwargs: (providerConfig, 'eval-model'))

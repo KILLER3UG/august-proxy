@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Paperclip, Mic, AtSign, Plus } from 'lucide-react';
+import { Paperclip, Mic, AtSign, Plus, Bot } from 'lucide-react';
 import { ToolBtn } from '../ComposerControls';
 import type { AnchorPos } from './useComposerPopovers';
 
@@ -15,6 +15,7 @@ export function ComposerActionsMenu({
   onAttach,
   onMention,
   onVoice,
+  onSpawn,
   extras,
 }: {
   open: boolean;
@@ -24,6 +25,8 @@ export function ComposerActionsMenu({
   onAttach: () => void;
   onMention: () => void;
   onVoice: () => void;
+  /** Open the sub-agent spawn launcher (bound to the active session). */
+  onSpawn?: () => void;
   /** Make Changes / context / cost — rendered below primary actions. */
   extras?: ReactNode;
 }) {
@@ -73,6 +76,17 @@ export function ComposerActionsMenu({
               <span>Voice input</span>
               <Mic className="size-3.5 text-muted-foreground" />
             </button>
+            {onSpawn && (
+              <button
+                type="button"
+                onClick={onSpawn}
+                className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
+                data-testid="composer-spawn-subagents"
+              >
+                <span>Spawn sub-agents</span>
+                <Bot className="size-3.5 text-muted-foreground" />
+              </button>
+            )}
             {extras && (
               <>
                 <div className="my-1 h-px bg-border/50" />

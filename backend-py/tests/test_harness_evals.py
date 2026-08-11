@@ -260,3 +260,70 @@ async def test_text_tool_protocol_executes(monkeypatch, evalProbe):
     assert 'checking the probe' in hist_text
     assert 'done' in event_types(events)
     _record('text-tool-protocol', events)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_wire_format_malformed_self_heal(monkeypatch, evalProbe):
+    """Anthropic-format scripted client: malformed tool JSON must NOT execute
+    as {} — the input_json_delta `_raw` aggregation path surfaces the
+    self-heal (previously only the OpenAI `_invalid_json` path was covered)."""
+    events, _session = await run_turn(
+        monkeypatch,
+        script=[
+            {'type': 'malformed_tool', 'name': 'eval_probe', 'raw': '{"arg": '},
+            {'type': 'text', 'text': 'fixed it'},
+        ],
+        wire_format='anthropic',
+    )
+    toolResults = ''.join(str(e.get('content', '')) for e in events if e.get('type') == 'toolResult')
+    assert '[Validation Error]' in toolResults
+    assert 'probe-ok' not in toolResults  # never executed with empty args
+    _record('anthropic-malformed-json-self-heal', events)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_wire_format_tool_round_trip(monkeypatch, evalProbe):
+    """Anthropic-format scripted client: tool_use blocks execute and the loop
+    continues to a final answer (covers the messages_stream caller)."""
+    events, _session = await run_turn(
+        monkeypatch,
+        script=[
+            {'type': 'tool', 'name': 'eval_probe', 'arguments': {'arg': 7}},
+            {'type': 'text', 'text': 'done via anthropic'},
+        ],
+        wire_format='anthropic',
+    )
+    toolResults = ''.join(str(e.get('content', '')) for e in events if e.get('type') == 'toolResult')
+    assert 'probe-ok' in toolResults
+    assert 'done' in event_types(events)
+    _record('anthropic-tool-round-trip', events)
+
+
+@pytest.mark.asyncio
+async def test_downgrade_recovers_and_restores_surface(monkeypatch, evalProbe):
+    """A6 regression: repeated malformed calls downgrade the tool surface,
+    clean rounds restore it — the downgrade is reversible, not a ratchet."""
+    script = (
+        [{'type': 'malformed_tool', 'name': 'eval_probe', 'raw': '{"arg": '} for _ in range(3)]
+        + [{'type': 'tool', 'name': 'eval_probe', 'arguments': {}} for _ in range(4)]
+        + [{'type': 'text', 'text': 'recovered'}]
+    )
+    events, _session = await run_turn(monkeypatch, script=script)
+    warnings = ' '.join(str(e.get('message', '')) for e in events if e.get('type') == 'warning')
+    assert 'downgrading the tool surface' in warnings
+    assert 'Tool surface restored to full' in warnings
+    assert 'done' in event_types(events)
+    _record('downgrade-recovery-restore', events)
+
+
+@pytest.mark.asyncio
+async def test_late_stall_hard_stop(monkeypatch):
+    """A stall that ignores the reflection nudge is HARD-STOPPED, not just
+    nudged (the old eval only asserted the nudge; the script ended before
+    the +2 hard-stop could fire)."""
+    script = [{'type': 'tool', 'name': 'eval_probe', 'arguments': {}} for _ in range(24)]
+    events, _session = await run_turn(monkeypatch, script=script)
+    err = find_event(events, 'error')
+    assert err is not None
+    assert 'did not recover' in str(err.get('message', ''))
+    _record('stall-hard-stop', events, extra=str(err.get('message', '')))

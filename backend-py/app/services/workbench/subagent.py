@@ -325,6 +325,8 @@ async def executeSubAgent(
         from app.services.workbench.workbench import (
             MAX_STALLED_ROUNDS,
             MIN_ROUNDS_BEFORE_STALL_CHECK,
+            _is_failing_receipt,
+            _is_update_state_transition,
             _resolveModelContextWindow,
         )
 
@@ -347,7 +349,13 @@ async def executeSubAgent(
                 _contextWindow = _resolveModelContextWindow(resolvedModel, provider)
                 _threshold = max(4096, int(_contextWindow * 0.55))
                 if _estimateTokens(messages) > _threshold:
-                    messages = await compressMessages(messages, threshold=_threshold)
+                    messages = await compressMessages(
+                        messages,
+                        threshold=_threshold,
+                        # Landmark pins (P4): update_state transitions and
+                        # failing receipts survive the middle summary.
+                        pin_predicates=[_is_update_state_transition, _is_failing_receipt],
+                    )
             except Exception:
                 pass
             response: dict[str, object] | None = None

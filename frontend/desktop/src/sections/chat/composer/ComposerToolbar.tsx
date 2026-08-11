@@ -24,6 +24,7 @@ import type { SessionUsageState } from '../hooks/useChatUsage';
 import type { EffortLevel } from '../hooks/useChatSend';
 import { ComposerActionsMenu } from './ComposerActionsMenu';
 import { ModelEffortMenu } from './ModelEffortMenu';
+import { SubagentSpawnModal } from './SubagentSpawnModal';
 import type { AnchorPos } from './useComposerPopovers';
 import { cn } from '@/lib/utils';
 
@@ -119,6 +120,7 @@ export function ComposerToolbar({
   onVoice: () => void;
 }) {
   const [handoffPreparing, setHandoffPreparing] = useState(false);
+  const [spawnOpen, setSpawnOpen] = useState(false);
 
   const canSend =
     !!sessionId &&
@@ -214,6 +216,10 @@ export function ComposerToolbar({
           onAttach={onAttach}
           onMention={onMention}
           onVoice={onVoice}
+          onSpawn={() => {
+            onToggleActions();
+            setSpawnOpen(true);
+          }}
           extras={
             <div className="flex items-center gap-2 px-1.5 flex-wrap pt-0.5">
               {sessionUsage && (sessionUsage.totalCost ?? 0) > 0 && (
@@ -428,6 +434,11 @@ export function ComposerToolbar({
           </button>
         )}
       </div>
+      <SubagentSpawnModal
+        sessionId={workbenchSession?.id}
+        open={spawnOpen}
+        onClose={() => setSpawnOpen(false)}
+      />
     </div>
   );
 }

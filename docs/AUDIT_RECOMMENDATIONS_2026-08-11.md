@@ -303,6 +303,14 @@ On the harnesses you named directly: **Hermes** (Nous) — the relevant pattern 
 - **A7 verifier recovery steer:** when enforcement is on and the model ends without declaring a verification command, a steer enqueues instead of stranding the answer.
 - **Test infra:** fixed a pre-existing registry leak in `test_tool_policy_parity` (module fixture registered integration tools and never unregistered — flaked `test_workbench_tool_definitions` in cross-file batches).
 
+### P2 batch (third pass, all green)
+- **P9 stream-rule patterns:** fenced detection is now shape-anchored (`name` + `arguments`/`input` — a config payload `{"name": …}` no longer aborts); narration detection is **deferred to end-of-turn and cancelled when a real tool call arrives** (strong models narrate THEN emit — the old mid-stream abort discarded the genuine call); multilingual narration phrases (FR/ES/DE) added.
+- **Stuck-detector expansion (OpenHands):** `ToolCallTracker` now detects **alternating ping-pong cycles** (warn at 8 / block at 10 trailing alternations) — the identical-call detector only caught contiguous repeats (`read_file(a)/read_file(b)` loops slipped through).
+- **P7 + L5 in one change:** bare-essential tools now sort FIRST in both wire-format tool builders — a self-heal downgrade yields a *prefix* of the full list (Anthropic prompt-cache breakpoint stays valid), and `maxTools` truncation cuts non-essential tools first instead of by registry position.
+- **P4 landmark compaction:** `compressMessages` gained `pin_predicates` — `update_state` transitions and failing verification receipts survive the middle summary verbatim (capped at 4); wired in the parent loop and subagent loop.
+- **P5 eval expansion:** `ScriptedClient` gained an Anthropic `messages_stream` (covers the `_raw` malformed-input aggregation path — previously OpenAI-only); `run_turn` gained `wire_format='anthropic'`; 4 new golden scenarios (Anthropic malformed self-heal, Anthropic tool round-trip, **downgrade→restore reversibility**, **late-stall hard-stop**); `record_eval_run` now feeds real-model outcomes into `session_traces` so capability fingerprints react to eval failures — the eval→profile→turns→eval loop.
+- **Spawn panel UX (lean v1):** "Spawn sub-agents" entry in the composer `+` menu opens a modal (goal lines, agent role, effort) bound to the active session — launched agents stream into the current transcript.
+
 ### P2 — Next iteration (model improvement loops; 1-2 weeks)
 16. Golden-eval expansion + eval→profile feedback P5 (§3) — open
 17. Routing exploration P6; verifier recovery steer A7/P8 — open

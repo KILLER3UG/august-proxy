@@ -155,6 +155,8 @@ async def compressMessages(
     head_count: int = DEFAULT_HEAD_COUNT,
     tail_count: int = DEFAULT_TAIL_COUNT,
     summarizer: Callable | None = None,
+    pin_predicates: list[Callable[[dict[str, object]], bool]] | None = None,
+    max_pinned: int = 4,
 ) -> list[dict[str, object]]:
     """Compress messages to fit within a token threshold by summarizing the middle.
 
@@ -168,6 +170,13 @@ async def compressMessages(
         tail_count: Number of messages to preserve at the end.
         summarizer: Optional callable — sync or async — that returns a summary
             string; awaited transparently. ``localSummarize`` is the default.
+        pin_predicates: Optional predicates marking MIDDLE messages as
+            landmarks to keep verbatim (e.g. the latest update_state
+            transition, a failing verification receipt). A middle-summary
+            drops the only mention of a file path or error string — pinned
+            messages survive it, so key state is not lost. At most
+            ``max_pinned`` landmarks are retained (guards against
+            re-bloating the compressed window).
 
     Returns:
         Compressed message list (may be unchanged if already under threshold).
@@ -189,6 +198,25 @@ async def compressMessages(
     middle = nonSystem[head_count:-tail_count] if tail_count > 0 else nonSystem[head_count:]
     if not middle:
         return list(messages)
+    # Landmark pins: middle messages a predicate marks are kept VERBATIM
+    # (before the summary) instead of being folded into it.
+    pinned: list[dict[str, object]] = []
+    if pin_predicates:
+        for m in middle:
+            if len(pinned) >= max_pinned:
+                break
+            if any(p(m) for p in pin_predicates):
+                pinned.append(m)
+        if pinned:
+            pinnedIds = {id(m) for m in pinned}
+            middle = [m for m in middle if id(m) not in pinnedIds]
+    if not middle:
+        # The whole middle was pinned — no summary needed.
+        compressed = otherSystem + head + pinned + tail
+        compressedTokens = estimateTokens(compressed)
+        if compressedTokens >= currentTokens:
+            return list(messages)
+        return compressed
     if summarizer:
         summaryText = summarizer(middle)
         if inspect.isawaitable(summaryText):
@@ -198,7 +226,7 @@ async def compressMessages(
     if priorSummaryTexts:
         summaryText = 'Earlier summary:\n' + '\n---\n'.join(priorSummaryTexts) + '\n\nRecent summary:\n' + summaryText
     summaryMsg = buildSummaryMessage(middle, summaryText)
-    compressed = otherSystem + head + [summaryMsg] + tail
+    compressed = otherSystem + head + pinned + [summaryMsg] + tail
     compressedTokens = estimateTokens(compressed)
     if compressedTokens >= currentTokens:
         return list(messages)
