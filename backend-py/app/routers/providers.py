@@ -5,11 +5,15 @@ Uses camelCase throughout matching the frontend convention.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.models.config import ModelCreate, ModelUpdate, ProviderConfig, ProviderCreate, ProviderUpdate
 from app.services import config_service, model_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/api/providers')
 
@@ -889,10 +893,11 @@ async def _probe_tool_support(
                 messages, system, model, tools, 'low', provider=provider, emit=None, thinking_enabled=False
             )
     except Exception as exc:
+        logger.warning('tool probe failed: %s', exc)
         return {
             'success': False,
             'latencyMs': int((time.perf_counter() - t0) * 1000),
-            'detail': f'Tool probe failed: {str(exc) or "unknown error"}',
+            'detail': 'Tool probe failed — check the provider configuration.',
         }
 
     latency_ms = int((time.perf_counter() - t0) * 1000)

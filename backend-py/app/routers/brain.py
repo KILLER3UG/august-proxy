@@ -96,7 +96,11 @@ async def editProfile(body: dict):
     facts.sort(key=lambda f: float(as_str(f.get('updated_at'), '0') or 0), reverse=True)
     facts = facts[:_MAX_PROFILE_FACTS]
     profile['facts'] = facts
-    profile['summary'] = _build_summary(facts)
+    if not (body.get('summary') or '').strip():
+        # Only regenerate the fact-derived summary when the user did not
+        # supply a manual one this call — an edited summary must survive
+        # (previously it was unconditionally overwritten; audit finding).
+        profile['summary'] = _build_summary(facts)
     profile['updated_at'] = now
     save_memory(key, profile)
     return {'profile': profile, 'changed': True}

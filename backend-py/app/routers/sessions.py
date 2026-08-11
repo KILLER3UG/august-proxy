@@ -83,9 +83,24 @@ async def search_sessions(q: str, limit: int = 20):
 
 
 @router.get('')
-async def list_sessions():
-    """List all sessions."""
+async def list_sessions(
+    status: str = '',
+    agentType: str = '',
+    limit: int = 0,
+    order: str = 'desc',
+):
+    """List all sessions.
+
+    The legacy frontend client sends status/agentType/limit/order — they were
+    silently dropped before (audit finding). limit and order are applied;
+    status/agentType are accepted for compatibility (the sessions table has
+    no such columns today — the Observability UI uses /api/monitoring/*).
+    """
     sessions = memory_store.list_sessions()
+    if order and str(order).lower() in ('asc', 'ascending'):
+        sessions = list(reversed(sessions))
+    if limit and int(limit) > 0:
+        sessions = sessions[: int(limit)]
     return {'sessions': sessions}
 
 

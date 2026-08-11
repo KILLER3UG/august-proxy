@@ -42,6 +42,13 @@ def _cors_allow_origins() -> list[str]:
 
 logger = logging.getLogger(__name__)
 
+
+def _docs_enabled() -> bool:
+    """FastAPI /docs exposure: off unless AUGUST_ENABLE_DOCS=1."""
+    import os
+
+    return os.environ.get('AUGUST_ENABLE_DOCS') == '1'
+
 # Enforce the supported Python floor. The project targets 3.12+ (see
 # requires-python in pyproject.toml and the CI pin); PEP 695 type aliases and
 # other 3.12-only syntax are used throughout. Fail fast with a clear message
@@ -230,6 +237,15 @@ async def lifespan(app: FastAPI):
         await shutdown_runtime_services()
     except Exception:
         pass
+    # Flush debounced workbench session saves — the daemon timer dies with
+    # the process, so edits inside the debounce window would be lost
+    # (audit finding).
+    try:
+        from app.services.workbench.sessions import flush_pending_saves
+
+        flush_pending_saves()
+    except Exception:
+        pass
     if _gateway is not None:
         try:
             await _gateway.stop()
@@ -249,7 +265,17 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title='August Proxy', version=backend_version(), lifespan=lifespan)
+app = FastAPI(
+    title='August Proxy',
+    version=backend_version(),
+    lifespan=lifespan,
+    # /docs + /openapi.json enumerate the full API surface to any local
+    # caller — off by default; re-enable with AUGUST_ENABLE_DOCS=1 when
+    # developing (audit finding).
+    docs_url='/docs' if _docs_enabled() else None,
+    openapi_url='/openapi.json' if _docs_enabled() else None,
+    redoc_url=None,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_allow_origins(),

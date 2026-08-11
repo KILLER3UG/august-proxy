@@ -37,10 +37,12 @@ async def testModelsList(client):
 
 @pytest.mark.asyncio
 async def testV1Models(client):
+    # /v1/models is part of the gated external surface — closed by default
+    # (external access disabled → 403), like every other /v1/* endpoint.
+    # The old behavior served it unauthenticated because the models router
+    # shadowed the gated proxy route (audit finding).
     resp = await client.get('/v1/models')
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data['object'] == 'list'
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

@@ -10,11 +10,12 @@ stay snake_case while the JSON sent to the frontend remains camelCase
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import ConfigDict
 from pydantic.alias_generators import to_camel
 
 from app.json_narrowing import as_list
+from app.lib.gateway_auth import require_gateway_key
 from app.models.camel_base import CamelModel
 from app.services import model_service
 
@@ -75,8 +76,13 @@ async def listModels(
 
 
 @router.get('/v1/models')
-async def openaiModels():
-    """OpenAI-compatible model list (no pagination)."""
+async def openaiModels(_auth: bool = Depends(require_gateway_key)):
+    """OpenAI-compatible model list (no pagination).
+
+    Gated by the gateway key: this is the external /v1 surface, and the
+    unauthenticated twin in proxy.py was shadowed by this route — every
+    other /v1/* endpoint requires the Bearer key (audit finding).
+    """
     models = await model_service.aggregate()
     return {
         'object': 'list',

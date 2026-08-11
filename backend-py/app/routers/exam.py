@@ -8,12 +8,15 @@ client-supplied correct_index. Questions are served one at a time as banners.
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, HTTPException
 
 from app.json_narrowing import as_int, as_list, as_str
 from app.services import exam_service
 from app.services.memory_store import _conn
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/api/exam')
 
@@ -82,7 +85,8 @@ async def generateExam(body: dict[str, object]):
             topic=topic, count=count, difficulty=difficulty, context=context, model=model, provider=provider
         )
     except ValueError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.warning('exam generate failed: %s', exc)
+        raise HTTPException(status_code=500, detail='Exam generation failed — check the model/provider configuration.')
     conn = _db()
     source = 'files' if files else 'topic' if as_str(body.get('topic')) else 'model'
     cur = conn.execute(
@@ -141,7 +145,8 @@ async def addQuestion(examId: int, body: dict[str, object]):
             topic=topic, requestText=requestText, similarTo=similar, model=model, provider=provider
         )
     except ValueError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.warning('exam generate failed: %s', exc)
+        raise HTTPException(status_code=500, detail='Exam generation failed — check the model/provider configuration.')
     if afterPosition is not None:
         afterPos = as_int(afterPosition)
         conn.execute(
