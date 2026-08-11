@@ -40,6 +40,7 @@ per-subagent results incrementally rather than after a blocking join.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Callable
 
 from app.json_narrowing import as_list, as_str
@@ -121,6 +122,101 @@ TOOL_DEFINITION = {
     },
 }
 _pendingProposals: dict[str, dict[str, Any]] = {}
+# Background completion-watcher tasks per parent session (spawned in _doSpawn
+# when background=True). Session deletion cancels them via
+# cancel_session_watches so they cannot outlive their session.
+_session_watch_tasks: dict[str, set[Any]] = {}
+# Pending proposals expire after this long — a proposal the user never
+# approves must not hold a live session ref (and a DB row) forever.
+PROPOSAL_TTL_S = 600.0
+
+
+def cancel_session_watches(session_id: str) -> int:
+    """Cancel every background subagent completion watcher for a session.
+
+    Used by the session-delete path (sessions.cancel_session_work). Returns
+    the number of tasks cancelled.
+    """
+    if not session_id:
+        return 0
+    tasks = _session_watch_tasks.pop(session_id, set())
+    cancelled = 0
+    for t in tasks:
+        if not t.done():
+            t.cancel()
+            cancelled += 1
+    return cancelled
+
+
+def _expire_stale_proposals(now: float | None = None) -> int:
+    """Drop pending proposals older than PROPOSAL_TTL_S (memory + DB).
+
+    Entries are only removed by approveProposal today; without a TTL every
+    proposed spawn leaked one in-memory entry (holding a live session ref)
+    and one DB row forever. Returns the number expired.
+    """
+    now = time.time() if now is None else now
+    expired = 0
+    for pid in list(_pendingProposals.keys()):
+        entry = _pendingProposals.get(pid)
+        created = entry.get('createdAt') if entry else None
+        if isinstance(created, (int, float)) and now - float(created) > PROPOSAL_TTL_S:
+            _pendingProposals.pop(pid, None)
+            expired += 1
+    try:
+        import json as _json
+        from datetime import datetime, timezone
+
+        from app.services.memory_store import _conn
+
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT id, content FROM proposals WHERE status = 'pending'"
+        ).fetchall()
+        for r in rows:
+            try:
+                data = _json.loads(r['content'] or '{}')
+                created = data.get('createdAt')
+            except Exception:
+                continue
+            if isinstance(created, (int, float)) and now - float(created) > PROPOSAL_TTL_S:
+                conn.execute(
+                    'UPDATE proposals SET status = ?, decided_at = ? WHERE id = ?',
+                    ('expired', datetime.now(timezone.utc).isoformat(), r['id']),
+                )
+                expired += 1
+        conn.commit()
+    except Exception:
+        logger.debug('proposal expiry sweep failed (non-fatal)', exc_info=True)
+    return expired
+
+
+def expire_proposals_for_session(session_id: str) -> int:
+    """Expire pending proposals bound to a deleted session (memory + DB)."""
+    if not session_id:
+        return 0
+    expired = 0
+    for pid in list(_pendingProposals.keys()):
+        entry = _pendingProposals.get(pid)
+        if entry and _session_id(entry.get('session') or {}) == session_id:
+            _pendingProposals.pop(pid, None)
+            expired += 1
+    try:
+        from datetime import datetime, timezone
+
+        from app.services.memory_store import _conn
+
+        conn = _conn()
+        cur = conn.execute(
+            "UPDATE proposals SET status = 'expired', decided_at = ? "
+            'WHERE session_id = ? AND status = ?',
+            (datetime.now(timezone.utc).isoformat(), session_id, 'pending'),
+        )
+        conn.commit()
+        expired += int(cur.rowcount or 0)
+    except Exception:
+        logger.debug('proposal session expiry failed (non-fatal)', exc_info=True)
+    return expired
 
 
 # ── Proposal persistence (B5): survive backend restarts ────────────────
@@ -225,6 +321,7 @@ def _load_proposal_from_db(proposal_id: str) -> dict[str, Any] | None:
 
 def list_persisted_proposals() -> list[dict[str, Any]]:
     """Pending proposals from the durable store (for the Runs tab)."""
+    _expire_stale_proposals()
     try:
         import json as _json
 
@@ -362,6 +459,7 @@ async def executeSpawnSubagents(
     Returns:
         Result dict with ``status`` and either ``handles`` (background) or ``results``.
     """
+    _expire_stale_proposals()
     if mode == 'proposed':
         proposalId = f'proposal_{__import__("uuid").uuid4().hex[:8]}'
         createdAt = __import__('time').time()
@@ -398,6 +496,7 @@ async def approveProposal(orchestrator: SubagentOrchestrator, proposalId: str) -
     durable ``proposals`` table (B5) and the session re-fetched from the
     workbench store.
     """
+    _expire_stale_proposals()
     proposal = _pendingProposals.pop(proposalId, None)
     if not proposal:
         proposal = _load_proposal_from_db(proposalId)
@@ -499,12 +598,22 @@ async def _doSpawn(
                             }
                         )
                     _enqueue_completion(session, result)
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 logger.exception('background subagent watch failed')
 
         import asyncio
 
-        asyncio.create_task(_watch())
+        watch_task = asyncio.create_task(_watch())
+        # Track per parent session so the delete path can cancel the watcher
+        # (it would otherwise keep enqueuing completions into a dead session).
+        sid = _session_id(session)
+        if sid:
+            _session_watch_tasks.setdefault(sid, set()).add(watch_task)
+            watch_task.add_done_callback(
+                lambda t: _session_watch_tasks.get(sid, set()).discard(t)
+            )
         return {
             'status': 'started',
             'total': len(handles),

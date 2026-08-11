@@ -463,26 +463,80 @@ _save_pending = False
 _save_timer: threading.Timer | None = None
 _save_thread_lock = threading.Lock()
 _persist_io_lock = threading.Lock()
+# Optional external probe "is this session mid-turn?" — routers/workbench.py
+# registers it so the snapshot prune never evicts a session whose chat turn
+# is still writing to the in-memory object.
+_active_turn_check: Callable[[str], bool] | None = None
+# Sessions touched within this window of the snapshot time are never pruned
+# (conservative fallback when no active-turn probe is registered).
+_PRUNE_RECENT_SKIP_S = 60.0
+
+
+def set_active_turn_check(check: Callable[[str], bool] | None) -> None:
+    """Register (or clear) the in-flight-turn probe used by the snapshot prune.
+
+    routers/workbench.py owns the live-turn task map; it registers a probe so
+    the prune in ``_persist_sessions_snapshot`` never evicts a session whose
+    chat turn is still writing messages (audit finding — pruned sessions'
+    newest messages never persisted).
+    """
+    global _active_turn_check
+    _active_turn_check = check
+
+
+def _session_has_active_turn(session_id: str) -> bool:
+    check = _active_turn_check
+    if check is None:
+        return False
+    try:
+        return bool(check(session_id))
+    except Exception:
+        return False
 
 
 def _persist_sessions_snapshot() -> None:
-    """Take a snapshot under the lock, then write SQLite/JSON without holding
-    `_sessions_lock` across I/O so concurrent chat turns are not stalled.
+    """Take a snapshot and write SQLite/JSON under one persist lock.
+
+    The snapshot AND the write share ``_persist_io_lock`` so two overlapping
+    saves (a debounce fire racing an immediate save) can never interleave: the
+    last save to acquire the lock writes the newest snapshot, and a stale
+    snapshot can no longer overwrite newer data (audit finding). The
+    ``_sessions_lock`` is still only held for the in-memory copy so concurrent
+    chat turns are not stalled across I/O.
 
     The in-memory map is a recency window (200, matching ``_load_sessions``);
     SQLite stays the source of truth and ``list_workbench_sessions`` merges
     sessions beyond the window so they never silently disappear from the UI.
     """
-    with _sessions_lock:
-        sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:200]
-        keep_ids = {s.id for s in sorted_sessions}
-        for sid in list(_sessions.keys()):
-            if sid not in keep_ids:
-                del _sessions[sid]
-        snapshots = [s.toDict() for s in sorted_sessions]
-        export_json = is_session_json_export_enabled()
-
     with _persist_io_lock:
+        with _sessions_lock:
+            sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:200]
+            keep_ids = {s.id for s in sorted_sessions}
+            snapshot_time = datetime.now(timezone.utc)
+            for sid in list(_sessions.keys()):
+                if sid in keep_ids:
+                    continue
+                s = _sessions.get(sid)
+                if s is None:
+                    continue
+                # Never prune a session whose turn is still in flight — the
+                # turn loop holds a reference to an object that would be
+                # removed from the store, so its newest messages would never
+                # persist.
+                if _session_has_active_turn(sid):
+                    continue
+                # Conservative fallback: skip sessions touched near the
+                # snapshot time even without an active-turn probe.
+                try:
+                    updated = datetime.fromisoformat(as_str(s.updatedAt).replace('Z', '+00:00'))
+                    if (snapshot_time - updated).total_seconds() < _PRUNE_RECENT_SKIP_S:
+                        continue
+                except Exception:
+                    pass
+                del _sessions[sid]
+            snapshots = [s.toDict() for s in sorted_sessions]
+            export_json = is_session_json_export_enabled()
+
         try:
             from app.services import memory_store
             from app.services.memory_store import save_workbench_session_sot
@@ -502,7 +556,12 @@ def _persist_sessions_snapshot() -> None:
                 logger.exception('JSON session export failed (non-fatal; SQLite is primary)')
 
 def save_sessions_now() -> None:
-    """Persist immediately (create/delete/rename/shutdown/tests)."""
+    """Persist immediately (create/delete/rename/shutdown/tests).
+
+    Safe to call from any thread/context: it cancels any pending debounce
+    timer and writes the current snapshot under ``_persist_io_lock``, so a
+    racing debounce fire can never overwrite the newer data afterwards.
+    """
     global _save_pending, _save_timer
     with _save_thread_lock:
         _save_pending = False
@@ -514,6 +573,31 @@ def save_sessions_now() -> None:
         except Exception:
             pass
     _persist_sessions_snapshot()
+
+
+def flush_pending_saves() -> None:
+    """Flush any in-flight debounced save (lifespan teardown path).
+
+    Idempotent and thread-safe: cancels the pending debounce timer and
+    persists the latest snapshot when a debounced save was still queued.
+    Safe to call from anywhere (no-op when nothing is pending).
+    """
+    global _save_pending, _save_timer
+    with _save_thread_lock:
+        pending = _save_pending
+        timer = _save_timer
+        _save_timer = None
+        _save_pending = False
+    if timer is not None:
+        try:
+            timer.cancel()
+        except Exception:
+            pass
+    if pending:
+        try:
+            _persist_sessions_snapshot()
+        except Exception:
+            logger.exception('flush_pending_saves failed')
 
 
 def save_sessions(*, immediate: bool = False) -> None:
@@ -819,12 +903,60 @@ def list_workbench_sessions() -> list[dict[str, object]]:
     return [summarize_session(s) for s in sorted_sessions]
 
 
+def cancel_session_work(session_id: str) -> None:
+    """Cancel in-flight work bound to a session that is being deleted.
+
+    Covers the service-layer surfaces owned outside this module:
+      * ``SubagentOrchestrator`` worker tasks for the session
+      * background ``spawn_subagents`` completion ``_watch()`` tasks
+      * fire-and-forget recurring-task sub-agents (they bypass the orchestrator)
+      * pending spawn proposals bound to the session (memory + DB)
+
+    Live chat-turn tasks (``routers/workbench._activeStreams`` / ``_cancelled``)
+    are owned by the router and cancelled in its ``deleteSession`` handler.
+    Safe no-op when nothing is in flight; never raises.
+    """
+    if not session_id:
+        return
+    try:
+        from app.services.runtime_services import get_orchestrator
+
+        orch = get_orchestrator()
+        if orch is not None and hasattr(orch, 'terminateForSession'):
+            orch.terminateForSession(session_id)
+    except Exception:
+        logger.debug('orchestrator session cancel failed', exc_info=True)
+    try:
+        from app.services.tools.spawn_subagents_tool import cancel_session_watches
+
+        cancel_session_watches(session_id)
+    except Exception:
+        logger.debug('spawn-subagent watch cancel failed', exc_info=True)
+    try:
+        from app.services.workbench.subagent import cancel_subagent_tasks_for_session
+
+        cancel_subagent_tasks_for_session(session_id)
+    except Exception:
+        logger.debug('subagent task cancel failed', exc_info=True)
+    try:
+        from app.services.tools.spawn_subagents_tool import expire_proposals_for_session
+
+        expire_proposals_for_session(session_id)
+    except Exception:
+        logger.debug('proposal expiry failed', exc_info=True)
+
+
 def delete_workbench_session(session_id: str) -> bool:
     """Delete a session from memory, SQLite, and the JSON export file.
 
     Always attempts brain SQLite cascade (messages, timeline, …) even when the
     session is not currently loaded in memory — otherwise orphan child rows
     (and FK failures on partial deletes) linger after tool/UI cleanup.
+
+    In-flight work bound to the session is cancelled first (live turn tasks
+    are handled by the router; orchestrator workers, spawn watchers,
+    recurring-task sub-agents, and the environment watcher here) so nothing
+    keeps running — or writing — after the session is gone.
 
     Emits ``session_deleted`` *as soon as* the in-memory entry is gone so the
     frontend can animate the row out before the slower SQLite cascade finishes.
@@ -835,6 +967,18 @@ def delete_workbench_session(session_id: str) -> bool:
         _load_sessions()
     session = _sessions.get(session_id)
     found_in_memory = session is not None
+
+    # Cancel in-flight work + detach the session-scoped environment watcher
+    # (thread + FsEvent log leak otherwise — the watcher keeps recording
+    # events for a deleted session forever).
+    cancel_session_work(session_id)
+    try:
+        from app.services.cognitive_boot import detach_session_watcher
+
+        # Idempotent: no-op when the session never had a watcher attached.
+        detach_session_watcher(session_id)
+    except Exception:
+        logger.debug('session watcher detach failed', exc_info=True)
 
     # Drop from RAM + notify UI first (real-time), cascade SQLite after.
     if session_id in _sessions:
@@ -1208,12 +1352,10 @@ def summarize_session(session: WorkbenchSession) -> dict[str, object]:
 
 def get_workbench_session_status(session_id: str) -> dict[str, object] | None:
     """Return flat status for the UI's approval banner."""
-    session = _sessions.get(session_id)
-    if not session:
-        # Lazy-load from disk so status works after restart
-        if not _sessions:
-            _load_sessions()
-        session = _sessions.get(session_id)
+    # Mirrors get_workbench_session: memory first, then a SQLite blob reload —
+    # a memory-window-only lookup returned None after restart/prune, which
+    # made approval banners vanish for older chats.
+    session = get_workbench_session(session_id)
     if not session:
         return None
     has_pending = len(session.pendingMutations) > 0
@@ -1297,3 +1439,6 @@ compactWorkbenchSessionNow = compact_workbench_session_now
 summarizeSession = summarize_session
 getWorkbenchSessionStatus = get_workbench_session_status
 subscribeSessionStatus = subscribe_session_status
+cancelSessionWork = cancel_session_work
+flushPendingSaves = flush_pending_saves
+setActiveTurnCheck = set_active_turn_check

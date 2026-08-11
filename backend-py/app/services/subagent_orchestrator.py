@@ -165,6 +165,28 @@ class SubagentHandle:
         }
 
 
+class _OrchestratorSubscription(Subscription):
+    """Subscription whose ``unsubscribe`` removes the handler from the
+    orchestrator's own ``_eventHandlers`` list.
+
+    ``on()`` registers handlers locally (never on the AgentMessageBus), so the
+    generic bus-backed Subscription was a silent no-op — the handler list grew
+    unbounded for every caller that unsubscribed (audit finding). ``_topic`` /
+    ``_handler`` mirror the bus Subscription's shape for characterization.
+    """
+
+    def __init__(self, orchestrator: SubagentOrchestrator, event: str, handler: Handler) -> None:
+        self._orchestrator = orchestrator
+        self._topic = event
+        self._event = event
+        self._handler = handler
+
+    def unsubscribe(self) -> None:
+        handlers = self._orchestrator._eventHandlers.get(self._event)
+        if handlers and self._handler in handlers:
+            handlers.remove(self._handler)
+
+
 class SubagentOrchestrator:
     """Manages concurrent sub-agent execution with failure recovery."""
 
@@ -240,6 +262,30 @@ class SubagentOrchestrator:
         except asyncio.CancelledError:
             pass
         return True
+
+    def terminateForSession(self, sessionId: str) -> int:
+        """Cancel every in-flight sub-agent task for a session and drop it from
+        ``_tasks`` (session-delete path).
+
+        Sync on purpose — the delete path is synchronous; the cancelled tasks
+        settle in the event loop. Handles are marked ``cancelled`` so the Runs
+        tab reflects the abort. Returns the number of tasks cancelled.
+        """
+        cancelled = 0
+        for taskId in list(self._tasks.keys()):
+            handle = self._handles.get(taskId)
+            if handle is None or handle.sessionId != sessionId:
+                continue
+            task = self._tasks.pop(taskId, None)
+            if task is None:
+                continue
+            if not task.done():
+                task.cancel()
+                cancelled += 1
+            handle.status = 'cancelled'
+            handle.finishedAt = time.time()
+            _record_run(handle)
+        return cancelled
 
     def listActive(self, sessionId: str | None = None) -> list[dict[str, Any]]:
         """List recent sub-agents (active + recently finished), optionally filtered by session.
@@ -322,7 +368,7 @@ class SubagentOrchestrator:
         if event not in self._eventHandlers:
             self._eventHandlers[event] = []
         self._eventHandlers[event].append(handler)
-        return Subscription(self._bus, event, handler)
+        return _OrchestratorSubscription(self, event, handler)
 
     async def _fireEvent(self, event: str, data: dict[str, Any]) -> None:
         """Fire an event to all registered handlers."""

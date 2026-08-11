@@ -59,6 +59,9 @@ class CommandBody(CamelModel):
 
     command: str
     cwd: str = ''
+    # Optional workbench session — when set, the command runs in the session's
+    # workspace cwd instead of the backend's process cwd.
+    session_id: str | None = None
     approved: bool = False
     reason: str = ''
     timeout_ms: int = 30000

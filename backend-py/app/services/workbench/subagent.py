@@ -41,6 +41,49 @@ SUBAGENT_BLOCKED_TOOLS = frozenset(
     {'spawn_subagent', 'spawn_subagents', 'create_agent', 'set_agent_mode'}
 )
 
+# In-flight sub-agent tasks per session. Orchestrator workers are tracked by
+# task id on the orchestrator; recurring-task sub-agents (dispatched by the
+# workbench chat loop) bypass the orchestrator entirely, so executeSubAgent
+# registers the running task here and session deletion cancels them via
+# cancel_subagent_tasks_for_session.
+_subagent_session_tasks: dict[str, set[asyncio.Task]] = {}
+
+
+def cancel_subagent_tasks_for_session(session_id: str) -> int:
+    """Cancel every in-flight executeSubAgent task bound to a session.
+
+    Used by the session-delete path (sessions.cancel_session_work) so
+    fire-and-forget recurring-task sub-agents cannot outlive their session.
+    Returns the number of tasks cancelled.
+    """
+    if not session_id:
+        return 0
+    tasks = _subagent_session_tasks.pop(session_id, set())
+    cancelled = 0
+    for t in tasks:
+        if not t.done():
+            t.cancel()
+            cancelled += 1
+    return cancelled
+
+
+def _register_current_subagent(session_id: str) -> asyncio.Task | None:
+    task = asyncio.current_task()
+    if task is None or not session_id:
+        return None
+    _subagent_session_tasks.setdefault(session_id, set()).add(task)
+    return task
+
+
+def _unregister_current_subagent(session_id: str, task: asyncio.Task | None) -> None:
+    if task is None or not session_id:
+        return
+    tasks = _subagent_session_tasks.get(session_id)
+    if tasks:
+        tasks.discard(task)
+        if not tasks:
+            _subagent_session_tasks.pop(session_id, None)
+
 
 def _toolName(t: dict[str, object]) -> str:
     return as_str(t.get('name')) or as_str(as_dict(t.get('function')).get('name', ''))
@@ -203,11 +246,16 @@ async def executeSubAgent(
     if not provider:
         provider = resolve_for_model(model, providerName) if model else None
     fb = getFallback()
-    if (
+    fbEnabled = (
         as_bool(fb.get('enabled', False))
         and as_str(fb.get('mode')) != 'off'
         and (as_str(fb.get('provider')) or as_str(fb.get('model')))
-    ):
+    )
+    # subAgentFallback is a rescue net, not an override: apply it only when
+    # there is no explicit model pin (aliasHint empty) or the pinned provider
+    # could not be resolved. An explicit `model:` directive or the agent's own
+    # modelAlias must never be silently replaced by the fallback.
+    if fbEnabled and (not aliasHint or not provider):
         fbModel = as_str(fb.get('model')) or model
         fbProvider = resolve_for_model(fbModel, as_str(fb.get('provider')) or '')
         if fbProvider:
@@ -315,6 +363,7 @@ async def executeSubAgent(
     ]
     finalText = ''
     token = currentSessionId.set(getattr(session, 'id', 'default'))
+    _subagentTask = _register_current_subagent(getattr(session, 'id', '') or '')
     try:
         toolRound = 0
         # Sub-agents get the same retry discipline as the parent loop: a
@@ -338,10 +387,12 @@ async def executeSubAgent(
         stalledRounds = 0
         stallMessageSent = False
         lastExecSig: tuple[object, object] | None = None
+        capReached = False
         while True:
             toolRound += 1
             # 0 = unlimited (same default as main workbench loop)
             if managedToolLoopCap > 0 and toolRound > managedToolLoopCap:
+                capReached = True
                 break
             # Context compaction: long tool runs must not overflow the
             # window. Threshold scales with the RESOLVED sub-agent model
@@ -623,6 +674,32 @@ async def executeSubAgent(
                     )
                 toolResults.append({'tool_use_id': tId, 'role': 'tool', 'content': resultStr})
             messages.extend(toolResults)
+        if capReached:
+            # The sub-agent hit the managed tool-round cap — this is NOT a
+            # clean completion. Report failed (or partial when the run
+            # produced text) with an explicit note so the orchestrator's
+            # failure tally and _doSpawn's `succeeded` counter do not count
+            # a capped run as a win (mirrors the stall hard-stop path).
+            capErr = f'[loop cap reached] tool round limit {managedToolLoopCap} exceeded'
+            capStatus = 'partial' if finalText.strip() else 'failed'
+            if finalText.strip():
+                capResult = f'{capErr}\n{finalText}'
+            else:
+                capResult = f'({capErr}; no textual answer.)'
+            updateJob(jobId, {'status': capStatus, 'result': capResult[:2000], 'error': capErr})
+            if emit:
+                emit(
+                    {
+                        'type': 'subagentDone',
+                        'agentId': resolvedAgentId,
+                        'jobId': jobId,
+                        'status': capStatus,
+                        'error': capErr,
+                        'result': capResult[:4000],
+                        'isFallback': isFallback,
+                    }
+                )
+            return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': capStatus, 'error': capErr, 'result': capResult}
         # Schema-validated yields (Oh My Pi lesson): when a yield_schema was
         # requested, parse the final text as JSON and validate it before
         # returning — the parent reads a structured object, not prose. A
@@ -717,4 +794,5 @@ async def executeSubAgent(
             )
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': str(exc)}
     finally:
+        _unregister_current_subagent(getattr(session, 'id', '') or '', _subagentTask)
         currentSessionId.reset(token)

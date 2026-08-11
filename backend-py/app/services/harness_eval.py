@@ -30,6 +30,9 @@ EVAL_RESULTS_KEY = 'harness_eval:runs'
 EVAL_LAST_RUN_KEY = 'harness_eval:last_run'
 # Golden suite cadence for the background scheduler (6h; manual runs force).
 EVAL_SCHEDULE_INTERVAL_S = 6 * 3600
+# Serialize run_all_scenarios (scheduler + POST endpoint share the same
+# process-global registries/session store and must not interleave).
+_scenarios_lock = asyncio.Lock()
 
 
 # ── Result persistence (feeds /api/brain/harness/evals + trends) ─────────
@@ -306,6 +309,7 @@ async def run_turn(
     emit: Callable[[dict[str, Any]], None] | None = None,
     session_patch: Callable[[Any], None] | None = None,
     wire_format: str = 'openai',
+    throwaway: bool = False,
 ) -> tuple[list[dict[str, Any]], Any]:
     """Run one real workbench turn against a scripted model.
 
@@ -318,6 +322,9 @@ async def run_turn(
     on the session before the turn starts (capability flags etc.).
     ``wire_format``: 'openai' (chat_completions_stream) or 'anthropic'
     (messages_stream) — both paths of the workbench caller are exercised.
+    ``throwaway``: create the session purely in memory (no SQLite save, no
+    realtime events) so scheduled golden evals do not pollute the session
+    store every 6h — the caller is expected to delete it after the run.
     """
     import app.providers.clients as clients
 
@@ -325,11 +332,34 @@ async def run_turn(
     # tools actually dispatch — mirrors app startup.
     from app.services.tool_registrations import register_all
     from app.services.workbench import workbench as wb
-    from app.services.workbench.workbench import createWorkbenchSession, sendWorkbenchMessageStream
+    from app.services.workbench.workbench import sendWorkbenchMessageStream
 
     register_all()
 
-    session = createWorkbenchSession(provider=provider_name, guardMode='full')
+    if throwaway:
+        from app.services.workbench.sessions import (
+            WorkbenchSession,
+            _new_session_id,
+            _now,
+            _sessions,
+        )
+
+        session = WorkbenchSession(
+            id=_new_session_id('eval'),
+            title='Eval',
+            provider=provider_name,
+            guardMode='full',
+            createdAt=_now(),
+            updatedAt=_now(),
+            startedAt=_now(),
+        )
+        # In-memory only: scheduled evals must not write SQLite rows (or emit
+        # realtime session.created events) into the real session store.
+        _sessions[session.id] = session
+    else:
+        from app.services.workbench.workbench import createWorkbenchSession
+
+        session = createWorkbenchSession(provider=provider_name, guardMode='full')
     session.verifierEnforced = verifier_enforced
     if agent_mode:
         session.agent_mode = agent_mode
@@ -515,8 +545,14 @@ async def run_all_scenarios() -> dict[str, Any]:
 
     Used by the background scheduler and POST /api/brain/harness/evals/run.
     Registers the probe tool for the run (fixture equivalent) and restores
-    the registry afterwards.
+    the registry afterwards. Serialized by ``_scenarios_lock`` so the
+    scheduler and the endpoint cannot interleave registry/session mutation.
     """
+    async with _scenarios_lock:
+        return await _run_all_scenarios_locked()
+
+
+async def _run_all_scenarios_locked() -> dict[str, Any]:
     from app.services import tool_registry
 
     async def _probe(**kwargs: object) -> str:
@@ -532,17 +568,36 @@ async def run_all_scenarios() -> dict[str, Any]:
     try:
         for spec in EVAL_SCENARIOS:
             t0 = time.time()
+            session = None
             try:
-                events, _session = await run_turn(
+                events, session = await run_turn(
                     None,
                     script=spec['script'],
                     message=as_str(spec.get('message'), 'do the task'),
                     verifier_enforced=bool(spec.get('verifier_enforced')),
+                    throwaway=True,
                 )
                 passed, note = _scenario_passed(events, spec)
             except Exception as exc:  # scenario must never break the suite
                 events = []
                 passed, note = False, f'runner error: {exc}'
+            finally:
+                # Scheduled evals must not leave throwaway sessions behind —
+                # delete each scenario's session so the sidebar is not
+                # polluted every 6h (the turn loop may have saved it).
+                if session is not None:
+                    sid = ''
+                    try:
+                        sid = str(getattr(session, 'id', None) or '')
+                    except Exception:
+                        sid = ''
+                    if sid:
+                        try:
+                            from app.services.workbench.sessions import delete_workbench_session
+
+                            delete_workbench_session(sid)
+                        except Exception:
+                            pass
             duration_ms = int((time.time() - t0) * 1000)
             record_eval_run(
                 task_id=as_str(spec.get('taskId'), ''),

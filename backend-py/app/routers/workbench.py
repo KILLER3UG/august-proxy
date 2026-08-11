@@ -26,6 +26,22 @@ _cancelled: dict[str, asyncio.Event] = {}
 _activeStreams: dict[str, asyncio.Task] = {}
 
 
+def _session_turn_in_flight(session_id: str) -> bool:
+    """Probe for the session store's snapshot prune: is a chat turn live?"""
+    task = _activeStreams.get(session_id)
+    return task is not None and not task.done()
+
+
+# Register the probe so the debounced snapshot prune never evicts a session
+# whose chat turn is still writing to the in-memory object (sessions.py).
+try:
+    from app.services.workbench.sessions import set_active_turn_check
+
+    set_active_turn_check(_session_turn_in_flight)
+except Exception:
+    pass
+
+
 def _log_emit(sessionId: str) -> Callable[[dict[str, object]], None]:
     """Return an SSE emitter that appends events to the session event log."""
 
@@ -280,7 +296,23 @@ async def createSessionDirect(request: Request):
 
 @router.delete('/sessions/{sessionId}')
 async def deleteSession(sessionId: str):
-    """Delete a session."""
+    """Delete a session and cancel all in-flight work bound to it.
+
+    Cancels the live chat-turn task / cancel event / coalesced auto-turn wake
+    first (the identity-checked cleanup in ``safeStream`` makes the pops
+    safe), then delegates to ``deleteWorkbenchSession`` which cancels the
+    service-layer work (orchestrator workers, spawn watchers, recurring-task
+    sub-agents, pending proposals, environment watcher) before the cascade.
+    """
+    cancelEvent = _cancelled.pop(sessionId, None)
+    if cancelEvent is not None:
+        cancelEvent.set()
+    task = _activeStreams.pop(sessionId, None)
+    if task is not None and not task.done():
+        task.cancel()
+    wake = _autoTurnWakes.pop(sessionId, None)
+    if wake is not None and not wake.done():
+        wake.cancel()
     if not wb.deleteWorkbenchSession(sessionId):
         raise HTTPException(status_code=404, detail='Session not found')
     return {'status': 'ok'}

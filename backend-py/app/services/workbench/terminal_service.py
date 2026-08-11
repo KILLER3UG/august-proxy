@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Protocol, cast
@@ -19,6 +20,12 @@ from app.services.workbench.pty_io import PtyIO
 BUFFER_LIMIT = 256 * 1024
 COMMAND_OUTPUT_LIMIT = 1024 * 1024
 MAX_SESSIONS = 50
+# Auto-reap: exited/error sessions are dropped after this grace period so
+# they do not hold their PtyIO + up to 256KB buffer forever.
+_EXITED_REAP_GRACE_S = 60.0
+# Hard cap: beyond this many live sessions the oldest (exited first) are
+# evicted, so unbounded terminal usage cannot grow memory without limit.
+_MAX_SESSIONS_HARD = 100
 DANGEROUS_PATTERNS = [
     'rm -rf /',
     'rm -rf ~',
@@ -116,8 +123,15 @@ def openExternalTerminal(cwd: str = '', shell: str = '') -> dict[str, object]:
                 )
             return {'ok': True, 'via': 'console', 'cwd': workdir, 'shell': shell_cmd}
         if system == 'Darwin':
-            # Open Terminal.app in the workspace folder
-            script = f'tell application "Terminal" to do script "cd {workdir.replace(chr(34), chr(92)+chr(34))}"'
+            # Open Terminal.app in the workspace folder. `do script` runs a
+            # SHELL command, so the path must be shell-quoted — `quoted form
+            # of` produces a POSIX-safe single-quoted literal (a raw
+            # interpolation with only quote-escapes let `$(...)` / backticks
+            # in a workspace dir name execute).
+            script = (
+                'tell application "Terminal" to do script "cd " & quoted form of '
+                f'"{workdir.replace(chr(92), chr(92) + chr(92)).replace(chr(34), chr(92) + chr(34))}"'
+            )
             subprocess.Popen(['osascript', '-e', script])
             return {'ok': True, 'via': 'terminal-app', 'cwd': workdir}
         # Linux: try common terminal emulators
@@ -223,7 +237,71 @@ def _summarize(session: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _reap_candidates() -> list[str]:
+    """Ids of sessions past the exit grace period (exited/error)."""
+    now = time.monotonic()
+    stale: list[str] = []
+    for sid, s in list(_sessions.items()):
+        status = as_str(s.get('status'), '')
+        exited_at = s.get('exitedAt')
+        if status in ('exited', 'error') and isinstance(exited_at, float) and (now - exited_at) > _EXITED_REAP_GRACE_S:
+            stale.append(sid)
+    return stale
+
+
+def _maybe_reap_async() -> None:
+    """Fire-and-forget reap when an event loop is running (list path).
+
+    Sync callers (the list endpoint) cannot await, so the reap runs as a
+    background task; the next create/list also reaps, so nothing leaks.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    if loop.is_closed():
+        return
+
+    async def _reap() -> None:
+        try:
+            await reapTerminalSessions()
+        except Exception:
+            pass
+
+    loop.create_task(_reap())
+
+
+async def reapTerminalSessions() -> int:
+    """Auto-reap exited/error terminal sessions past the grace period and
+    enforce a hard cap (oldest evicted first). Returns the number reaped."""
+    reaped = 0
+    for sid in _reap_candidates():
+        try:
+            if await closeTerminalSession(sid):
+                reaped += 1
+        except Exception:
+            pass
+    # Hard cap: keep the newest sessions; evict exited ones before live ones.
+    if len(_sessions) > _MAX_SESSIONS_HARD:
+        excess = len(_sessions) - _MAX_SESSIONS_HARD
+        ordered = sorted(
+            _sessions.items(),
+            key=lambda kv: (
+                0 if as_str(kv[1].get('status'), '') in ('exited', 'error') else 1,
+                as_str(kv[1].get('updatedAt'), ''),
+            ),
+        )
+        for sid, _s in ordered[:excess]:
+            try:
+                if await closeTerminalSession(sid):
+                    reaped += 1
+            except Exception:
+                pass
+    return reaped
+
+
 def listTerminalSessions() -> list[dict[str, object]]:
+    _maybe_reap_async()
     return [_summarize(s) for s in _sessions.values()][:MAX_SESSIONS]
 
 
@@ -239,6 +317,7 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
     permission gate on every character.
     """
     params = params or {}
+    await reapTerminalSessions()
     sessionId = f'term_{uuid.uuid4().hex[:8]}'
     shell = as_str(params.get('command')) or _getShell()
     cwd = as_str(params.get('cwd')) or os.getcwd()
@@ -330,6 +409,7 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
                 'or install pywinpty: pip install pywinpty'
             )
             session['pty'] = False
+            session['exitedAt'] = time.monotonic()
             _sessions[sessionId] = session
     return {**_summarize(session), 'error': session.get('error')}
 
@@ -359,6 +439,8 @@ async def _pipeStdout(sessionId: str) -> None:
             s = _sessions[sessionId]
             if as_str(s.get('status')) == 'running':
                 s['status'] = 'exited'
+            # Stamp for the auto-reaper (grace period before eviction).
+            s['exitedAt'] = time.monotonic()
         # Signal all live subscribers that output has ended so their
         # _pump_output loops unblock and close the WebSocket.
         _broadcastExit(sessionId)
@@ -395,6 +477,8 @@ async def _pipePtyStdout(sessionId: str) -> None:
             s = _sessions[sessionId]
             if as_str(s.get('status')) == 'running':
                 s['status'] = 'exited'
+            # Stamp for the auto-reaper (grace period before eviction).
+            s['exitedAt'] = time.monotonic()
         # Signal all live subscribers that output has ended so their
         # _pump_output loops unblock and close the WebSocket.
         _broadcastExit(sessionId)
@@ -526,6 +610,20 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
     cwd = as_str(params.get('cwd')) or os.getcwd()
     approved = as_bool(params.get('approved', False))
     timeoutMs = as_int(params.get('timeoutMs'), 30000)
+    # When a workbench sessionId is supplied, bind the command to the
+    # session's workspace cwd — previously the sessionId was dropped by the
+    # request body, so commands silently ran in the backend's process cwd.
+    session_id = as_str(params.get('sessionId'), '') or ''
+    if session_id:
+        try:
+            from app.services.workbench.sessions import get_workbench_session
+
+            session = get_workbench_session(session_id)
+            ws = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
+            if ws and os.path.isdir(ws):
+                cwd = ws
+        except Exception:
+            pass
     if not approved:
         danger = _dangerousReason(command)
         if danger:
@@ -535,6 +633,7 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
                 'type': 'terminal_command',
                 'command': command,
                 'cwd': cwd,
+                'sessionId': session_id,
                 'reason': danger,
                 'createdAt': _now(),
             }
@@ -601,7 +700,12 @@ async def approveTerminalRequest(request_id: str, approve: bool = True) -> dict[
         return {'status': 'rejected', 'requestId': request_id}
     if as_str(request.get('type')) == 'terminal_command':
         return await submitTerminalCommand(
-            {'command': as_str(request.get('command'), ''), 'cwd': as_str(request.get('cwd'), ''), 'approved': True}
+            {
+                'command': as_str(request.get('command'), ''),
+                'cwd': as_str(request.get('cwd'), ''),
+                'sessionId': as_str(request.get('sessionId'), '') or '',
+                'approved': True,
+            }
         )
     if as_str(request.get('type')) == 'terminal_interactive_input':
         sessionId = as_str(request.get('terminalId'), '')

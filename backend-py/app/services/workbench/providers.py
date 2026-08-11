@@ -268,6 +268,23 @@ def resolve_model(provider: dict[str, object] | None, model_hint: str = '') -> s
     return ''
 
 
+def _provider_lists_model(provider: dict[str, object], model_hint: str) -> bool | None:
+    """Whether the provider's own model list contains ``model_hint``.
+
+    Returns True/False when the provider carries an authoritative ``models``
+    list; None when it has none (cannot verify — the hint is kept).
+    """
+    models = as_list(provider.get('models'), [])
+    if not models:
+        return None
+    target = (model_hint or '').strip().lower()
+    for m in models:
+        mid = as_str(m.get('id') if isinstance(m, dict) else m).lower()
+        if mid == target:
+            return True
+    return False
+
+
 def resolve_chat_llm(
     *,
     model: str = '',
@@ -311,9 +328,21 @@ def resolve_chat_llm(
         resolved_provider = resolve_workbench_provider('', model)
     if not resolved_provider:
         resolved_provider = resolve_workbench_provider(session_provider, model or session_model)
+    last_resort_fallback = False
     if not resolved_provider:
         resolved_provider = resolve_workbench_provider('', '')
+        last_resort_fallback = True
     resolved_model = resolve_model(resolved_provider, model or session_model or '')
+    # Last-resort fallback: the session's provider failed to resolve and we
+    # landed on an unrelated "first provider with a key". The old session
+    # model often 404s there (and the sidebar shows the wrong provider) —
+    # re-resolve the model against the winning provider when its model list
+    # proves the hint does not belong to it.
+    if last_resort_fallback and resolved_provider and resolved_model:
+        if _provider_lists_model(resolved_provider, resolved_model) is False:
+            provider_default = as_str(resolved_provider.get('defaultModel'))
+            if provider_default:
+                resolved_model = provider_default
     # Per-model format override (multi-format gateways like OpenCode Zen):
     # the model's own apiFormat wins over the provider-level format.
     if resolved_provider:
