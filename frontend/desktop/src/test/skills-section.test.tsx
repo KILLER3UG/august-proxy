@@ -223,23 +223,24 @@ describe('SkillsSection — unified skills + curator surface', () => {
     expect(run).toBeTruthy();
     expect(dry).toBeTruthy();
 
-    // Clicking Run triggers api.post('/api/curator/run?dry_run=false').
+    // Clicking Run triggers api.post('/api/curator/run?dryRun=false') — the
+    // backend reads the camelCase `dryRun` query param.
     fireEvent.click(run);
     await waitFor(() => {
       const call = apiMock.post.mock.calls.find(([path]) =>
         typeof path === 'string' && path.startsWith('/api/curator/run'),
       );
       expect(call, 'Run should POST to /api/curator/run').toBeDefined();
-      expect((call as [string])[0]).toContain('dry_run=false');
+      expect((call as [string])[0]).toContain('dryRun=false');
     });
 
-    // Clicking Dry run triggers ?dry_run=true.
+    // Clicking Dry run triggers ?dryRun=true.
     fireEvent.click(dry);
     await waitFor(() => {
       const calls = apiMock.post.mock.calls.filter(([path]) =>
         typeof path === 'string' && path.startsWith('/api/curator/run'),
       );
-      expect(calls.some(([p]) => (p as string).includes('dry_run=true'))).toBe(true);
+      expect(calls.some(([p]) => (p as string).includes('dryRun=true'))).toBe(true);
     });
   });
 

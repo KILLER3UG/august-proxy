@@ -817,10 +817,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [sessionId]);
 
   useEffect(() => {
-    persistMessages(sessionId, messages);
-  }, [messages, sessionId]);
-
-  useEffect(() => {
     persistComposerDraft(sessionId, input);
   }, [input, sessionId]);
 
@@ -1308,6 +1304,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       send={send}
       stop={stop}
       setMessages={setMessages}
+      ensureWorkbenchSession={ensureWorkbenchSession}
       queuedMessages={queuedMessages}
       workbenchSession={workbenchSession}
       setWorkbenchSession={setWorkbenchSession}

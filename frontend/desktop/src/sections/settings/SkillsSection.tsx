@@ -187,7 +187,7 @@ export function SkillsSection() {
     setReport(null);
     try {
       const data = await api.post<{ report: CuratorReport }>(
-        `/api/curator/run?dry_run=${dryRun}`,
+        `/api/curator/run?dryRun=${dryRun}`,
       );
       setReport(data.report);
       await fetchUsage();

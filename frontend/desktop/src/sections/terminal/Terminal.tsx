@@ -46,12 +46,37 @@ export function Terminal() {
   });
 
   const run = useMutation({
-    mutationFn: () => submitTerminalCommand(activeId || '', command) as Promise<{ status?: string }>,
-    onSuccess: (res: { status?: string }) => {
+    mutationFn: () =>
+      submitTerminalCommand(
+        activeId || '',
+        command,
+        // Pass the selected session's cwd so the command runs in the right
+        // workspace even before the backend session binding resolves.
+        active?.cwd,
+      ) as Promise<{ status?: string; output?: string; error?: string }>,
+    onSuccess: (res: { status?: string; output?: string; error?: string }) => {
       setCommand('');
       void qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
       if (res?.status === 'approval_required') {
         // Approval will surface in the approvals list.
+        return;
+      }
+      // Append the returned output into the local buffer so the pane shows
+      // the result immediately instead of sitting on "(empty buffer…)" until
+      // the next 2s refetch.
+      if (activeId && res) {
+        qc.setQueryData<{ buffer?: string }>(['terminal-buffer', activeId], (old) => {
+          const body =
+            res.status === 'error'
+              ? (res.error || res.output || '').trim()
+              : (res.output || '').trim();
+          if (!body) return old ?? { buffer: '' };
+          const prev = old?.buffer?.trimEnd() ?? '';
+          return {
+            ...(old ?? {}),
+            buffer: `${prev}${prev ? '\n' : ''}$ ${command}\n${body}`,
+          };
+        });
       }
     },
   });

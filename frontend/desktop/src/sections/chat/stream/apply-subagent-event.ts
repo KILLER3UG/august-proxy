@@ -192,6 +192,12 @@ export function makeSubagentEventHandlers(sessionId: string): {
     isError?: boolean;
     status?: 'done' | 'error' | 'running';
   }) => void;
+  onSubagentRetry: (data: {
+    jobId?: string;
+    attempt?: number;
+    maxRetries?: number;
+    message?: string;
+  }) => void;
 } {
   return {
     onSubagentStart: (data) => {
@@ -245,6 +251,16 @@ export function makeSubagentEventHandlers(sessionId: string): {
         content: data.content,
         isError: data.isError,
         status: data.status || (data.isError ? 'error' : 'done'),
+      });
+    },
+    onSubagentRetry: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagentRetry',
+        jobId: data.jobId,
+        attempt: data.attempt,
+        maxRetries: data.maxRetries,
+        message: data.message,
       });
     },
   };

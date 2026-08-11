@@ -29,8 +29,11 @@ const WorkbenchBaseSchema = z.object({
 
 export const WorkbenchStartedEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('started'),
-  sessionId: z.string(),
-  model: z.string(),
+  // The first `started` frame the backend logs is `{'sinceSeq': 0}` — the
+  // sessionId/model fields only appear on later turns. Both optional.
+  sessionId: z.string().optional(),
+  model: z.string().optional(),
+  sinceSeq: z.number().optional(),
 });
 
 export const WorkbenchThinkingEventSchema = WorkbenchBaseSchema.extend({
@@ -77,47 +80,44 @@ export const WorkbenchToolResultEventSchema = WorkbenchBaseSchema.extend({
   integrationSetup: z.unknown().optional(),
 });
 
-const WorkbenchSessionSchema = z.object({
-  id: z.string(),
-  title: z.string().optional(),
-  provider: z.string(),
-  agentId: z.string(),
-  agentRole: z.string(),
-  agentMode: z.string(),
-  approved: z.boolean(),
-  approvedAt: z.string().nullable(),
-  plan: z.unknown().nullable(),
-  goal: z.unknown().nullable(),
-  lastGoal: z.unknown().nullable(),
-  messageCount: z.number(),
-  mutationCount: z.number(),
-  lastMutationAt: z.string().nullable(),
-  updatedAt: z.string(),
-  todos: z.array(z.unknown()),
-  guardMode: z.enum(['plan', 'full', 'ask', 'edit']),
-  sandboxMode: z
-    .enum(['read-only', 'workspace-write', 'danger-full-access'])
-    .or(z.string())
-    .optional(),
-  sandboxNetwork: z.boolean().optional(),
-  workspacePath: z.string().optional(),
-});
-
+/** Session snapshots are FLAT (no `data:` wrapper) and may be partial —
+ *  the backend streams whatever fields changed, and the dispatcher narrows
+ *  via normalizeWorkbenchSession. All fields optional so a minimal
+ *  `{type: 'session', id}` frame still validates. */
 export const WorkbenchSessionEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('session'),
-  data: WorkbenchSessionSchema,
-});
-
-const WorkbenchBtwResultSchema = z.object({
-  answer: z.string(),
   id: z.string().optional(),
-  citations: z.array(z.string()).optional(),
-  confidence: z.number().optional(),
+  title: z.string().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  agentId: z.string().optional(),
+  agentRole: z.string().optional(),
+  agentMode: z.string().optional(),
+  approved: z.boolean().optional(),
+  approvedAt: z.string().nullable().optional(),
+  plan: z.unknown().nullable().optional(),
+  goal: z.unknown().nullable().optional(),
+  lastGoal: z.unknown().nullable().optional(),
+  messageCount: z.number().optional(),
+  mutationCount: z.number().optional(),
+  lastMutationAt: z.string().nullable().optional(),
+  updatedAt: z.string().optional(),
+  todos: z.array(z.unknown()).optional(),
+  guardMode: z.string().optional(),
+  sandboxMode: z.string().optional(),
+  sandboxNetwork: z.boolean().optional(),
+  workspacePath: z.string().optional(),
+  verifierEnforced: z.boolean().optional(),
+  costCeiling: z.number().optional(),
 });
 
+/** BTW results are flat too (no `data:` wrapper). */
 export const WorkbenchBtwEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('btw'),
-  data: WorkbenchBtwResultSchema,
+  id: z.string().optional(),
+  answer: z.string().optional(),
+  citations: z.array(z.string()).optional(),
+  confidence: z.number().optional(),
 });
 
 export const WorkbenchCompactionEventSchema = WorkbenchBaseSchema.extend({
@@ -172,7 +172,8 @@ export const WorkbenchClarifyProposedEventSchema = WorkbenchBaseSchema.extend({
     .optional(),
 });
 
-/** Event emitted for browser automation actions. */
+/** Event emitted for browser automation actions. `target` and `screenshot`
+ *  are OBJECTS parsed from the browser tool result (not strings). */
 export const WorkbenchBrowserActionEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('browserAction'),
   id: z.string().optional(),
@@ -180,8 +181,8 @@ export const WorkbenchBrowserActionEventSchema = WorkbenchBaseSchema.extend({
   input: UnknownDictSchema.optional(),
   url: z.string().optional(),
   title: z.string().optional(),
-  target: z.string().optional(),
-  screenshot: z.string().optional(),
+  target: z.unknown().optional(),
+  screenshot: z.unknown().optional(),
   typed: z.string().optional(),
   selected: z.string().optional(),
   scrolled: z.string().optional(),
@@ -251,12 +252,15 @@ export const WorkbenchSubagentProposedEventSchema = WorkbenchBaseSchema.extend({
   workBreakdown: z.array(z.object({ goal: z.string().optional(), agentId: z.string().optional() })).optional(),
 });
 
-/** Warning events (e.g. model fallback notices) */
+/** Warning events (e.g. model fallback notices) — the backend sends only
+ *  `message`; `kind` is optional for legacy payloads. */
 export const WorkbenchWarningEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('warning'),
-  kind: z.string(),
+  kind: z.string().optional(),
   agentId: z.string().optional(),
-  message: z.string(),
+  jobId: z.string().optional(),
+  toolUseId: z.string().optional(),
+  message: z.string().optional(),
 });
 
 /** User-message-injected event (from queued messages) */
@@ -321,6 +325,80 @@ export const WorkbenchRecurringTaskEventSchema = WorkbenchBaseSchema.extend({
   message: z.string().optional(),
 });
 
+/** Routing-evidence consult (D1): a better model exists for the task type,
+ *  or auto-routing replaced the turn's model. */
+export const WorkbenchRoutingSuggestionEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('routingSuggestion'),
+  applied: z.boolean().optional(),
+  taskType: z.string().optional(),
+  model: z.string().optional(),
+  provider: z.string().optional(),
+  winRate: z.number().optional(),
+  gap: z.number().optional(),
+  currentModel: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+/** Live context-meter event — emitted once per turn (low/medium pressure is
+ *  a gauge only; the UI warns on high/critical). */
+export const WorkbenchContextPressureEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('contextPressure'),
+  contextUsedPct: z.number().optional(),
+  attentionPressure: z.string().optional(),
+  totalTokens: z.number().optional(),
+  maxContext: z.number().optional(),
+  remainingTokens: z.number().optional(),
+  promptCache: z.unknown().optional(),
+});
+
+/** The model switched the session into plan mode itself (enter_plan_mode). */
+export const WorkbenchGuardModeChangedEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('guardModeChanged'),
+  guardMode: z.string().optional(),
+  agentId: z.string().optional(),
+});
+
+/** Harness changed long-term memory (remember / update / forget). */
+export const WorkbenchMemoryUpdatedEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('memoryUpdated'),
+  action: z.string().optional(),
+  summary: z.string().optional(),
+});
+
+/** Per-turn evidence-state snapshot for the verifier / routing-evidence
+ *  loop (backend: `{'state': 'unseen' | …}`). No UI consumer yet. */
+export const WorkbenchEvidenceStateEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('evidenceState'),
+  state: z.string().optional(),
+});
+
+/** Per-model capability profile suggestion (toolSurface, maxTools, …).
+ *  No UI consumer yet — acknowledged so the stream dispatcher doesn't warn. */
+export const WorkbenchModelProfileSuggestionEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('modelProfileSuggestion'),
+  model: z.string().optional(),
+  suggestedProfile: z.unknown().optional(),
+  message: z.string().optional(),
+});
+
+/** Transient upstream error inside a sub-agent — the worker backs off. */
+export const WorkbenchSubagentRetryEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('subagentRetry'),
+  agentId: z.string().optional(),
+  jobId: z.string().optional(),
+  attempt: z.number().optional(),
+  maxRetries: z.number().optional(),
+  message: z.string().optional(),
+});
+
+/** Warning scoped to a sub-agent run (e.g. narrated tool call). */
+export const WorkbenchSubagentWarningEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('subagentWarning'),
+  agentId: z.string().optional(),
+  jobId: z.string().optional(),
+  message: z.string().optional(),
+});
+
 export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchStartedEventSchema,
   WorkbenchThinkingEventSchema,
@@ -349,6 +427,14 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchRecalledMemoriesEventSchema,
   WorkbenchVerifierBlockedEventSchema,
   WorkbenchRecurringTaskEventSchema,
+  WorkbenchRoutingSuggestionEventSchema,
+  WorkbenchContextPressureEventSchema,
+  WorkbenchGuardModeChangedEventSchema,
+  WorkbenchMemoryUpdatedEventSchema,
+  WorkbenchEvidenceStateEventSchema,
+  WorkbenchModelProfileSuggestionEventSchema,
+  WorkbenchSubagentRetryEventSchema,
+  WorkbenchSubagentWarningEventSchema,
   WorkbenchUserMessageQueueEventSchema,
   WorkbenchLegacyFinalOutputEventSchema,
   WorkbenchMiscLifecycleEventSchema,

@@ -1,6 +1,9 @@
 import { create } from 'zustand';
-import { deleteWorkbenchSession } from '@/api/workbench';
+import { deleteWorkbenchSession, stopWorkbenchChat } from '@/api/workbench';
 import { deleteManageSession } from '@/api/api-client';
+import { clearActiveChatStream } from '@/store/chat-active-streams';
+import { chatRuntime } from '@/sections/chat/chat-runtime';
+import { activeStreamControllers } from '@/sections/chat/stream/active-stream-controllers';
 import {
   defaultSessionTitle,
   dedupeSessions,
@@ -298,6 +301,50 @@ async function purgeBackendSession(ids: string[]): Promise<void> {
 }
 
 /**
+ * Stop any in-flight generation for the given session ids BEFORE the rows
+ * are dropped: abort the per-turn controllers + chatRuntime turn, detach the
+ * durable SSE subscriber, and tell the backend to stop (free the in-flight
+ * slot so a deleted session stops burning tokens). Without this, stream
+ * handlers keep writing via getOrInitSessionStreamState +
+ * persistMessagesDebounced and the transcript resurrects after delete.
+ *
+ * `backendStopIds` are the workbench ids for the backend stop call (the
+ * backend `_activeStreams` map is keyed by workbench ids, which are NOT the
+ * same as the UI `sess_*` ids).
+ */
+function stopSessionStreams(ids: string[], backendStopIds: string[] = []): void {
+  for (const lid of ids) {
+    try {
+      const controller = activeStreamControllers.get(lid);
+      if (controller) {
+        controller.abort();
+        activeStreamControllers.delete(lid);
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      chatRuntime.abortSession(lid);
+    } catch {
+      /* ignore */
+    }
+  }
+  // Durable subscriber is keyed by the workbench id; dynamic import avoids a
+  // store → chat-section import cycle (same pattern as removeSessionLocally).
+  void import('../sections/chat/stream/session-subscriber')
+    .then((m) => {
+      for (const lid of ids) m.detachSessionSubscriber(lid);
+    })
+    .catch(() => {
+      /* ignore */
+    });
+  // Backend stop — best-effort. Fire-and-forget: never block the UI.
+  for (const wbId of backendStopIds) {
+    if (wbId) void stopWorkbenchChat(wbId).catch(() => { /* best-effort */ });
+  }
+}
+
+/**
  * Drop a session from the sidebar immediately (no network).
  * Used by optimistic UI deletes and real-time ``session_deleted`` SSE events
  * from the model’s delete_session tool.
@@ -360,6 +407,12 @@ export function deleteSession(id: string) {
   const localIds = [id, sess?.id, sess?.workbenchSessionId].filter(
     (x): x is string => typeof x === 'string' && x.length > 0,
   );
+  // Stop the in-flight turn BEFORE the row is dropped (stopSessionStreams
+  // aborts the client stream; the backend stop frees the generation slot).
+  stopSessionStreams(
+    localIds,
+    sess?.workbenchSessionId ? [sess.workbenchSessionId] : [],
+  );
   removeSessionLocally(id);
   // Fire-and-forget — never await on the UI path
   void purgeBackendSession(localIds);
@@ -391,6 +444,11 @@ export function deleteUncategorizedSessions(options?: {
     toDelete.flatMap((session) => [session.id, session.workbenchSessionId].filter(
       (id): id is string => typeof id === 'string' && id.length > 0,
     )),
+  );
+  // Stop in-flight streams for every session being wiped (see deleteSession).
+  stopSessionStreams(
+    [...removeIds],
+    toDelete.flatMap((s) => (s.workbenchSessionId ? [s.workbenchSessionId] : [])),
   );
   for (const id of removeIds) tombstoneSessionId(id);
 
@@ -452,6 +510,14 @@ export function moveSessionToFolder(id: string, folderId: string | null) {
 export function clearAllSessions(includeArchived: boolean = true) {
   const sessions = useSessionsStore.getState().sessions;
   const toDelete = sessions.filter((s) => includeArchived || !s.isArchived);
+
+  // Stop in-flight streams for every session being wiped (see deleteSession).
+  stopSessionStreams(
+    toDelete.flatMap((s) =>
+      [s.id, s.workbenchSessionId].filter((x): x is string => !!x),
+    ),
+    toDelete.flatMap((s) => (s.workbenchSessionId ? [s.workbenchSessionId] : [])),
+  );
 
   // Clear all localStorage chat histories
   toDelete.forEach((s) => {

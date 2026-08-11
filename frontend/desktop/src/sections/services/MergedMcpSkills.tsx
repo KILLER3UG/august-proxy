@@ -180,7 +180,11 @@ export function MergedMcpSkills() {
       const env = Object.entries(linesToObject(envText)).map(
         ([key, value]) => ({ key, value }),
       );
-      await api.post("/api/mcp-env", { env });
+      // merge: true — the editor is pre-filled with MASKED values for
+      // sensitive keys; a non-merge POST would overwrite the real secrets
+      // with their own masked previews. The backend keeps the stored value
+      // when a masked preview round-trips (see set_mcp_env).
+      await api.post("/api/mcp-env", { env, merge: true });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["mcp-global-env"] });

@@ -105,7 +105,9 @@ export interface WorkbenchAgentRegistry {
   generatedAt: string;
   activeAgentId: string;
   agents: WorkbenchAgent[];
-  inheritance: {
+  /** Optional — the backend does not currently return an inheritance rule;
+   *  UI renders the clause only when present. */
+  inheritance?: {
     rule: string;
     parentAgentId: string;
   };
@@ -176,7 +178,7 @@ export interface WorkbenchEventHandlers {
   onThinking?: (data: { content: string }) => void;
   onText?: (data: { content: string }) => void;
   onToolUse?: (data: { id: string; name: string; input: Record<string, unknown> }) => void;
-  onToolResult?: (data: { id: string; content: unknown; isError?: boolean; providerSetup?: unknown; integrationSetup?: unknown }) => void;
+  onToolResult?: (data: { id: string; content: unknown; isError?: boolean; status?: string; providerSetup?: unknown; integrationSetup?: unknown }) => void;
   onToolProgress?: (data: {
     id: string;
     name: string;
@@ -291,6 +293,14 @@ export interface WorkbenchEventHandlers {
     content: unknown;
     isError?: boolean;
     status?: 'done' | 'error';
+  }) => void;
+  /** Transient upstream error inside a sub-agent — the worker backs off and
+   *  retries. Rendered as a notice inside the nested sub-agent block. */
+  onSubagentRetry?: (data: {
+    jobId?: string;
+    attempt?: number;
+    maxRetries?: number;
+    message?: string;
   }) => void;
   /** Generic warnings (e.g. model fallback when a sub-agent alias couldn't
    *  be resolved). Unknown fields are surfaced via `extras` so callers

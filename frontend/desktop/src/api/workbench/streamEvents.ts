@@ -66,15 +66,31 @@ export function dispatchWorkbenchEvent(
       });
       break;
     }
-    case 'toolResult':
+    case 'toolResult': {
+      const content = p?.content;
+      const status = typeof p?.status === 'string' ? p.status : undefined;
+      const resultText =
+        typeof content === 'string'
+          ? content
+          : content != null
+            ? JSON.stringify(content)
+            : '';
+      // The backend never sends `isError` — the authoritative signal is the
+      // `status` field ('done' today; failures begin with `Error:` text).
+      const isError =
+        p?.isError === true ||
+        (status !== undefined && status !== 'done') ||
+        /^Error:/i.test(resultText);
       handlers.onToolResult?.({
         id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
-        content: p?.content,
-        isError: p?.isError as boolean | undefined,
+        content,
+        isError,
+        status,
         providerSetup: p?.providerSetup,
         integrationSetup: p?.integrationSetup,
       });
       break;
+    }
     case 'tool_progress': {
       const phase = (typeof p?.phase === 'string' ? p.phase : JSON.stringify(p?.phase ?? 'done')) as 'reading' | 'read' | 'running' | 'done' | 'error';
       handlers.onToolProgress?.({
@@ -207,6 +223,47 @@ export function dispatchWorkbenchEvent(
         content: typeof p?.content === 'string' ? p.content : JSON.stringify(p?.content ?? ''),
       });
       break;
+    case 'subagentRetry':
+      // Transient upstream error inside a sub-agent — the worker backs off
+      // and retries. Rendered as a notice inside the nested sub-agent block
+      // (applySubagentEvent).
+      handlers.onSubagentRetry?.({
+        jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
+        attempt: typeof p?.attempt === 'number' ? p.attempt : Number(p?.attempt) || undefined,
+        maxRetries: typeof p?.maxRetries === 'number' ? p.maxRetries : Number(p?.maxRetries) || undefined,
+        message: p?.message as string | undefined,
+      });
+      break;
+    case 'subagentWarning':
+      // Warning scoped to a sub-agent run (e.g. fallback alias resolution).
+      // No dedicated nested container — surface via onWarning so the parent
+      // turn shows a system notice.
+      handlers.onWarning?.({
+        kind: p?.kind as string | undefined,
+        message: p?.message as string | undefined,
+        jobId: p?.jobId as string | undefined,
+        toolUseId: p?.toolUseId as string | undefined,
+        ...p,
+      });
+      break;
+    case 'memoryUpdated':
+      // Harness changed long-term memory (remember / update / forget) — the
+      // chat renders an inline "August remembered…" notice.
+      handlers.onMemoryUpdated?.({
+        action: typeof p?.action === 'string' ? p.action : undefined,
+        summary: typeof p?.summary === 'string' ? p.summary : undefined,
+      });
+      break;
+    case 'evidenceState':
+      // TODO: backend emits evidence-state snapshots for the verifier /
+      // routing evidence UI. No consumer exists yet (ChatThread has no
+      // evidence panel) — acknowledged, not dropped with a schema warning.
+      break;
+    case 'modelProfileSuggestion':
+      // TODO: backend emits per-model capability suggestions (toolSurface,
+      // maxTools, …). No consumer exists yet — acknowledged, not dropped
+      // with a schema warning.
+      break;
     case 'subagentToolCall':
       handlers.onSubagentToolCall?.({
         jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
@@ -217,16 +274,32 @@ export function dispatchWorkbenchEvent(
         status: p?.status as 'running' | 'done' | 'error' | undefined,
       });
       break;
-    case 'subagentToolResult':
+    case 'subagentToolResult': {
+      const content = p?.content;
+      const backendStatus = typeof p?.status === 'string' ? p.status : undefined;
+      const resultText =
+        typeof content === 'string'
+          ? content
+          : content != null
+            ? JSON.stringify(content)
+            : '';
+      // Backend statuses pass through; anything other than 'done' is an
+      // error (the backend never sends `isError` — failures begin with
+      // `Error:` text).
+      const failed =
+        (backendStatus !== undefined && backendStatus !== 'done') ||
+        p?.isError === true ||
+        /^Error:/i.test(resultText);
       handlers.onSubagentToolResult?.({
         jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
         agentId: typeof p?.agentId === 'string' ? p.agentId : JSON.stringify(p?.agentId ?? ''),
         id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
-        content: p?.content,
-        isError: p?.isError as boolean | undefined,
-        status: p?.isError ? 'error' : 'done',
+        content,
+        isError: failed,
+        status: failed ? 'error' : 'done',
       });
       break;
+    }
     case 'aborted':
       handlers.onDone?.();
       break;

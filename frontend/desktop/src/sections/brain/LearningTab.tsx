@@ -116,18 +116,34 @@ export function LearningTab() {
   });
 
   const approveSkill = useMutation({
-    mutationFn: (name: string) => api.post(`/api/brain/skills/${encodeURIComponent(name)}/approve`, {}),
-    onSuccess: () => {
-      toast.success('Skill approved');
+    mutationFn: (name: string) =>
+      api.post<{ approved?: boolean }>(`/api/brain/skills/${encodeURIComponent(name)}/approve`, {}),
+    onSuccess: (res) => {
+      if (res?.approved === false) {
+        // The backend declined (e.g. no pending staging file) — do not claim success.
+        toast.message('Skill not approved', {
+          description: 'No pending skill was found to approve.',
+        });
+      } else {
+        toast.success('Skill approved');
+      }
       invalidate();
     },
     onError: (e: Error) => toast.error(e.message || 'Approve failed'),
   });
 
   const rejectSkill = useMutation({
-    mutationFn: (name: string) => api.post(`/api/brain/skills/${encodeURIComponent(name)}/reject`, {}),
-    onSuccess: () => {
-      toast.success('Skill rejected');
+    mutationFn: (name: string) =>
+      api.post<{ rejected?: boolean }>(`/api/brain/skills/${encodeURIComponent(name)}/reject`, {}),
+    onSuccess: (res) => {
+      if (res?.rejected === false) {
+        // The backend declined (e.g. no pending staging file) — do not claim success.
+        toast.message('Skill not rejected', {
+          description: 'No pending skill was found to reject.',
+        });
+      } else {
+        toast.success('Skill rejected');
+      }
       invalidate();
     },
     onError: (e: Error) => toast.error(e.message || 'Reject failed'),

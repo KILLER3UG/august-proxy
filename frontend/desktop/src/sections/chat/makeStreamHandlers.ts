@@ -387,7 +387,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
-    onToolResult: ({ id, content, isError, providerSetup, integrationSetup }) => {
+    onToolResult: ({ id, content, isError, status, providerSetup, integrationSetup }) => {
       let parsedResult: Record<string, unknown> | null;
       try {
         parsedResult = typeof content === 'string' ? JSON.parse(content) as Record<string, unknown> : content as Record<string, unknown>;
@@ -406,6 +406,15 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       }
 
       const resultText = typeof content === 'string' ? content : content != null ? JSON.stringify(content) : '';
+
+      // The backend never sends `isError` — the dispatcher derives it from
+      // the `status` field (authoritative; failures also begin with `Error:`),
+      // but re-derive here so direct onToolResult callers (e.g. mutation
+      // confirmations) can never render a failure as success.
+      const toolFailed =
+        isError === true ||
+        (status !== undefined && status !== 'done') ||
+        /^Error:/i.test(resultText);
 
       // Extract search hits from structured web_search JSON result
       let searchHits: Array<{ title: string; url: string; snippet?: string }> | undefined;
@@ -473,10 +482,10 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
           detail: parsedResult.detail as string | undefined,
           confirmationToken: parsedResult.confirmationToken as string | undefined,
         } : undefined,
-        status: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
+        status: toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
         result: resultText,
         summary: summaryText,
-        error: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText : '',
+        error: toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText : '',
         duration: t.startedAt ? Date.now() - t.startedAt : undefined,
         searchHits: searchHits ?? t.searchHits,
         providerSetup: providerSetupResult ?? t.providerSetup,
@@ -485,9 +494,9 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, {
         type: 'toolResult',
         id,
-        status: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
+        status: toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
         summary: summaryText,
-        error: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText.slice(0, 240) : '',
+        error: toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText.slice(0, 240) : '',
         duration: toolResults.find(t => t.id === id)?.duration,
         searchHits,
         providerSetup: providerSetupResult,

@@ -54,6 +54,9 @@ export interface ChatThreadComposerProps {
   stop: () => void;
   /** Optional: lets the composer toolbar append a synthetic handoff-notice card. */
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
+  /** Creates the backend workbench session on demand (used by the verifier
+   *  toggle on fresh chats where no session exists before the first send). */
+  ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   queuedMessages: QueuedUserMessage[];
   workbenchSession: WorkbenchSession | null;
   setWorkbenchSession: (
@@ -124,6 +127,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     send,
     stop,
     setMessages,
+    ensureWorkbenchSession,
     queuedMessages,
     workbenchSession,
     setWorkbenchSession,
@@ -380,6 +384,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           send={send}
           stop={stop}
           setMessages={setMessages}
+          ensureWorkbenchSession={ensureWorkbenchSession}
           workbenchSession={workbenchSession}
           setWorkbenchSession={setWorkbenchSession}
           workbenchMode={workbenchMode}

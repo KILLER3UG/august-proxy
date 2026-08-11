@@ -465,8 +465,14 @@ export function YouTab() {
                 disabled={saveProfile.isPending}
                 data-testid="you-profile-save-summary"
                 onClick={() => {
-                  saveProfile.mutate({ summary: summaryDraft });
-                  setEditingSummary(false);
+                  saveProfile.mutate(
+                    { summary: summaryDraft },
+                    {
+                      // Close the editor only on success — a failed save must
+                      // not discard the typed draft.
+                      onSuccess: () => setEditingSummary(false),
+                    },
+                  );
                 }}
               >
                 <Check className="size-3 inline mr-1" />
@@ -595,8 +601,14 @@ export function YouTab() {
                       onChange={(e) => setRuleDraft(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && ruleDraft.trim()) {
-                          patchHeuristic.mutate({ id: h.id, body: { rule: ruleDraft.trim() } });
-                          setEditingRule(null);
+                          patchHeuristic.mutate(
+                            { id: h.id, body: { rule: ruleDraft.trim() } },
+                            {
+                              // Close the editor only on success — a failed
+                              // save must not discard the typed draft.
+                              onSuccess: () => setEditingRule(null),
+                            },
+                          );
                         }
                         if (e.key === 'Escape') setEditingRule(null);
                       }}

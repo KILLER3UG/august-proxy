@@ -129,9 +129,46 @@ async function readSseStream(
 ): Promise<boolean> {
   const decoder = new TextDecoder();
   let buffer = '';
-  let currentEvent = '';
   let receivedTerminalEvent = false;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Frame buffer: the backend emits `event:` / `data:` / `id:` per frame
+  // with the id AFTER the data (`id:` comes last), so a frame must be
+  // collected whole (up to the blank line) before dispatch. Dispatching on
+  // the `data:` line alone pairs the CURRENT event with the PREVIOUS
+  // frame's seq — and the terminal `done` frame's seq is never persisted,
+  // so reconnects replay tail events and the session-subscriber gating
+  // (`seq > entry.lastSeq`) becomes unreliable.
+  let frameEvent = '';
+  let frameData: string[] = [];
+  let frameId: string | null = null;
+  let frameOpen = false;
+
+  /** Dispatch one complete SSE frame: event type, then the JSON payload,
+   *  then `onSeq` with the frame's OWN id (after dispatch so handlers
+   *  know the event type — durable subscribers advance lastSeq only for
+   *  events they render; turn-content events stay replayable). */
+  const dispatchFrame = () => {
+    const dataStr = frameData.join('\n').trim();
+    if (!dataStr) return;
+    try {
+      throwIfAborted(signal);
+      const payload = JSON.parse(dataStr) as Record<string, unknown>;
+      // Track terminal events — if the stream closes without one,
+      // the response is likely incomplete (SSE connection dropped).
+      if (frameEvent === 'done' || frameEvent === 'error' || frameEvent === 'aborted') {
+        receivedTerminalEvent = true;
+      }
+      dispatchWorkbenchEvent(frameEvent, payload, handlers);
+      if (frameId !== null) {
+        const n = Number(frameId);
+        if (Number.isFinite(n)) handlers.onSeq?.(n, frameEvent);
+      }
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e;
+      // Ignore non-JSON data lines
+    }
+  };
 
   function resetIdleTimer(): void {
     if (idleTimer !== null) clearTimeout(idleTimer);
@@ -155,50 +192,39 @@ async function readSseStream(
 
     let lineStart = 0;
     let newlineIdx: number;
-    let pendingSeq: number | null = null;
     while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
       const line = buffer.slice(lineStart, newlineIdx).trim();
       lineStart = newlineIdx + 1;
       if (!line) {
-        currentEvent = '';
+        // Blank line = end of frame — flush what was buffered.
+        if (frameOpen) {
+          dispatchFrame();
+          frameEvent = '';
+          frameData = [];
+          frameId = null;
+          frameOpen = false;
+        }
         continue;
       }
       if (line.startsWith(':')) continue; // SSE comment
 
       if (line.startsWith('event:')) {
-        currentEvent = line.slice(6).trim();
+        frameEvent = line.slice(6).trim();
+        frameOpen = true;
       } else if (line.startsWith('id:')) {
-        const idStr = line.slice(3).trim();
-        const n = Number(idStr);
-        if (Number.isFinite(n)) pendingSeq = n;
+        frameId = line.slice(3).trim();
+        frameOpen = true;
       } else if (line.startsWith('data:')) {
-        const dataStr = line.slice(5).trim();
-        if (!dataStr) continue;
-        try {
-          throwIfAborted(signal);
-          const payload = JSON.parse(dataStr) as Record<string, unknown>;
-          // Track terminal events — if the stream closes without one,
-          // the response is likely incomplete (SSE connection dropped).
-          if (currentEvent === 'done' || currentEvent === 'error' || currentEvent === 'aborted') {
-            receivedTerminalEvent = true;
-          }
-          dispatchWorkbenchEvent(currentEvent, payload, handlers);
-          // onSeq AFTER dispatch so handlers know the event type (the
-          // durable subscriber advances lastSeq only for events it renders;
-          // turn-content events must stay replayable for the per-turn
-          // consumer that renders them).
-          if (pendingSeq !== null) {
-            handlers.onSeq?.(pendingSeq, currentEvent);
-            pendingSeq = null;
-          }
-        } catch (e: unknown) {
-          if (e instanceof DOMException && e.name === 'AbortError') throw e;
-          // Ignore non-JSON data lines
-        }
+        frameData.push(line.slice(5).trim());
+        frameOpen = true;
       }
     }
     buffer = buffer.slice(lineStart);
   }
+
+  // Flush a final frame whose trailing blank line never arrived (stream
+  // closed mid-frame). Only dispatched when it actually carries data.
+  if (frameOpen) dispatchFrame();
 
   if (idleTimer !== null) {
     clearTimeout(idleTimer);
@@ -225,13 +251,16 @@ export async function streamWorkbenchReconnect(
 ): Promise<void> {
   let currentSeq = sinceSeq;
 
-  // Wrap onSeq to capture the latest sequence number as events flow
+  // Wrap onSeq to capture the latest sequence number as events flow.
+  // Forward `eventType` unchanged — the durable subscriber gates lastSeq
+  // advancement on the event type, and dropping it made every event
+  // advance the cursor (defeating the rendered-events gating).
   const originalOnSeq = handlers.onSeq;
   const wrappedHandlers = {
     ...handlers,
-    onSeq: (seq: number) => {
+    onSeq: (seq: number, eventType?: string) => {
       currentSeq = seq;
-      originalOnSeq?.(seq);
+      originalOnSeq?.(seq, eventType);
     }
   };
 

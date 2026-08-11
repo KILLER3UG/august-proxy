@@ -55,10 +55,12 @@ export function Archive() {
       variant: 'destructive',
     });
     const newSess = clearAllSessions(deleteArchived);
+    // Navigate ONCE to the fresh session — the previous double navigate
+    // (first to /c/:id, then back to pre-settings) discarded the first call
+    // and bounced the user out of the chat they just cleared. The
+    // pre-settings path would point at a now-deleted chat, so the fresh
+    // session is the only valid destination.
     void navigate(`/c/${newSess.id}`);
-    // Close settings by pressing Escape or navigating back
-    const preSettingsPath = sessionStorage.getItem('pre-settings-path') || '/';
-    void navigate(preSettingsPath);
   };
 
   const handleRestore = (id: string) => {

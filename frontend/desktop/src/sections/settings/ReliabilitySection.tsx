@@ -4,7 +4,7 @@
  * /api/brain/harness/evals (loop-level golden tasks). Empty states teach
  * the data source instead of showing dead charts. */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HeartPulse, TrendingUp, FlaskConical, Timer, Trophy, AlertTriangle, Play, Route, ArrowRight, X } from 'lucide-react';
 import { api } from '@/api/client';
@@ -122,18 +122,35 @@ export function ReliabilitySection() {
     staleTime: 15_000,
   });
 
+  // Eval poll timer — tracked so an unmount (tab switch) clears it instead of
+  // calling setState on a dead component.
+  const evalPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (evalPollTimerRef.current !== null) clearTimeout(evalPollTimerRef.current);
+    };
+  }, []);
+
   const runEvals = useMutation({
     mutationFn: async () => {
       setEvalsRunning(true);
-      try {
-        return await api.post<{ started: boolean; note?: string }>('/api/brain/harness/evals/run');
-      } finally {
-        // The suite runs in the background — poll for fresh results.
-        setTimeout(() => {
-          void qc.invalidateQueries({ queryKey: ['harness-evals'] });
-          setEvalsRunning(false);
-        }, 8_000);
+      return await api.post<{ started: boolean; note?: string }>('/api/brain/harness/evals/run');
+    },
+    onSuccess: () => {
+      // The suite runs in the background — poll for fresh results.
+      evalPollTimerRef.current = setTimeout(() => {
+        evalPollTimerRef.current = null;
+        void qc.invalidateQueries({ queryKey: ['harness-evals'] });
+        setEvalsRunning(false);
+      }, 8_000);
+    },
+    onError: () => {
+      // No background poll to wait for — stop the "Running…" state at once.
+      if (evalPollTimerRef.current !== null) {
+        clearTimeout(evalPollTimerRef.current);
+        evalPollTimerRef.current = null;
       }
+      setEvalsRunning(false);
     },
   });
 

@@ -13,6 +13,11 @@ vi.mock('@/sections/chat/ChatMarkdown', () => ({
   Markdown: ({ content }: { content: string }) => <div data-testid="md">{content}</div>,
 }));
 
+vi.mock('@/api/subagents', () => ({
+  terminate: vi.fn().mockResolvedValue({ status: 'stopped' }),
+  stopAll: vi.fn().mockResolvedValue({ stopped: 0 }),
+}));
+
 vi.mock('@/components/chat/ToolCallItem', () => ({
   ToolCallItem: ({ tool }: { tool: { name: string } }) => (
     <div data-testid="tool-row">{tool.name}</div>
@@ -87,5 +92,27 @@ describe('SubagentLaunchList', () => {
     // Title appears in the card header (and may also appear in the prompt box).
     expect(screen.getAllByText('Find empty folder switch bug').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByTestId('subagent-detail-modal')).not.toBeInTheDocument();
+  });
+
+  it('renders the stop control for running agents WITHOUT nesting it in the row button (no invalid HTML)', () => {
+    // Regression: the row used to be a <button> containing the stop <button>,
+    // which React flagged ("<button> cannot contain a nested <button>").
+    const agents = [
+      makeAgent({ jobId: 'j1', task: 'Find scroll-down button bug', status: 'running' }),
+    ];
+    render(wrap(<SubagentLaunchList agents={agents} />));
+
+    const stop = screen.getByTestId('stop-launch-j1');
+    expect(stop).toBeInTheDocument();
+    // The row is a div[role=button] — a nested <button> inside it is valid.
+    const row = screen.getByTestId('subagent-launch-row-j1');
+    expect(row.tagName).toBe('DIV');
+    expect(row).toHaveAttribute('role', 'button');
+    // Clicking stop must NOT open the expanded card (stopPropagation).
+    fireEvent.click(stop);
+    expect(screen.queryByTestId('subagent-expanded-card')).not.toBeInTheDocument();
+    // Clicking the row still opens the card.
+    fireEvent.click(row);
+    expect(screen.getByTestId('subagent-expanded-card')).toBeInTheDocument();
   });
 });

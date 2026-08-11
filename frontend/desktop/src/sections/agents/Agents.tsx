@@ -25,7 +25,13 @@ export function Agents() {
         subtitle={
           isLoading
             ? 'Loading agent registry…'
-            : `${agents.length} agent${agents.length === 1 ? '' : 's'} registered · inheritance: ${registry?.inheritance?.rule || 'default'}`
+            : `${agents.length} agent${agents.length === 1 ? '' : 's'} registered${
+                // The backend never returns `inheritance` — only show the
+                // clause when it is actually present.
+                registry?.inheritance?.rule
+                  ? ` · inheritance: ${registry.inheritance.rule}`
+                  : ''
+              }`
         }
       />
 

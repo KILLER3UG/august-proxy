@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import type { ChatMessage } from '@/types/chat';
 import type { WorkbenchSession } from '@/types/workbench';
-import { useSessionsStore } from '@/store/sessions';
+import { useSessionsStore, isSessionIdTombstoned } from '@/store/sessions';
 import {
   loadMessagesForSession as loadMessagesFromStorage,
   persistMessages as persistMessagesToStorage,
@@ -130,6 +130,8 @@ export function loadMessagesForSession(sessionId: string | null): ChatMessage[] 
 }
 
 export function persistMessages(sessionId: string, messages: ChatMessage[]): void {
+  // A deleted session's handlers must never write a resurrected transcript.
+  if (isSessionIdTombstoned(sessionId)) return;
   persistMessagesToStorage(sessionId, messages);
 }
 
@@ -140,6 +142,8 @@ const _persistPending = new Map<string, ChatMessage[]>();
 const _PERSIST_DEBOUNCE_MS = 1000;
 
 export function persistMessagesDebounced(sessionId: string, messages: ChatMessage[]): void {
+  // A deleted session's handlers must never write a resurrected transcript.
+  if (isSessionIdTombstoned(sessionId)) return;
   _persistPending.set(sessionId, messages);
   if (_persistTimers.has(sessionId)) return; // already scheduled
   _persistTimers.set(
@@ -157,6 +161,13 @@ export function persistMessagesDebounced(sessionId: string, messages: ChatMessag
 
 /** Immediately flush any pending debounced persist (call on stream end). */
 export function flushPersistMessages(sessionId: string): void {
+  if (isSessionIdTombstoned(sessionId)) {
+    // Session was deleted mid-turn — drop the pending write instead of
+    // resurrecting the transcript.
+    _persistTimers.delete(sessionId);
+    _persistPending.delete(sessionId);
+    return;
+  }
   const timer = _persistTimers.get(sessionId);
   if (timer) {
     clearTimeout(timer);
@@ -182,6 +193,12 @@ function emptyStreamState(workbenchSession: WorkbenchSession | null = null): Ses
 
 export function getOrInitSessionStreamState(sessionId: string | null): SessionStreamState {
   if (!sessionId) {
+    return emptyStreamState();
+  }
+  // A deleted session (tombstoned) must not be resurrected in memory — the
+  // aborting turn's handlers would otherwise re-create state and keep
+  // writing. Return a throwaway empty state without touching the store.
+  if (isSessionIdTombstoned(sessionId)) {
     return emptyStreamState();
   }
 
@@ -240,6 +257,8 @@ export function updateSessionStreamState(
   sessionId: string,
   updater: (prev: SessionStreamState) => Partial<SessionStreamState>
 ) {
+  // A deleted session's handlers must never write (transcript resurrection).
+  if (isSessionIdTombstoned(sessionId)) return;
   const current = getOrInitSessionStreamState(sessionId);
   const next = { ...current, ...updater(current) };
   useSessionStreamStore.setState({

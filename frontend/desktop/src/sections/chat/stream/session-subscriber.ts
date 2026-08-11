@@ -102,6 +102,7 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
     'subagentText',
     'subagentToolCall',
     'subagentToolResult',
+    'subagentRetry',
     'browserAction',
     'userMessageQueued',
     'userMessageDequeued',

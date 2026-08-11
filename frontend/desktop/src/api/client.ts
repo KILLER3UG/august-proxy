@@ -105,7 +105,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const data = (await res.json()) as {
         error?: string | { code?: string; message?: string };
-        detail?: string;
+        detail?: string | { code?: string; message?: string };
       };
       const err = data?.error;
       if (typeof err === 'string') {
@@ -118,6 +118,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       } else if (typeof data?.detail === 'string') {
         // FastAPI HTTPException(detail=...) shape.
         message = data.detail;
+      } else if (data?.detail && typeof data.detail === 'object') {
+        // FastAPI can also return { detail: { code, message } } — parsing
+        // only the string form left code='unknown' and dropped the message,
+        // which made e.g. the External Access toggle silently no-op.
+        code = data.detail.code ?? code;
+        message = data.detail.message ?? message;
       }
     } catch {
       /* keep defaults */

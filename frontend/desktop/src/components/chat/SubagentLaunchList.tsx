@@ -68,12 +68,25 @@ export function SubagentLaunchList({
               const statusLabel = SUBAGENT_STATUS_LABEL[agent.status];
               return (
                 <li key={agent.jobId}>
-                  <button
-                    type="button"
+                  {/* The row is a div with role=button (NOT a <button>): it
+                      contains the stop control, and nested interactive
+                      elements are invalid HTML (React warns "<button> cannot
+                      contain a nested <button>"). Keyboard support mirrors a
+                      native button. */}
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setOpenJobId(agent.jobId)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setOpenJobId(agent.jobId);
+                      }
+                    }}
                     className={cn(
-                      'group grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 rounded-md px-0.5 py-0.5 text-left',
+                      'group grid w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 rounded-md px-0.5 py-0.5 text-left',
                       'hover:bg-white/[0.03] transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
                     )}
                     data-subagent-id={agent.jobId}
                     data-subagent-status={agent.status}
@@ -124,7 +137,7 @@ export function SubagentLaunchList({
                         </button>
                       </span>
                     )}
-                  </button>
+                  </div>
                 </li>
               );
             })}

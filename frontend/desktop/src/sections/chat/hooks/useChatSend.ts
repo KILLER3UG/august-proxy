@@ -125,13 +125,27 @@ export function useChatSend(opts: UseChatSendOptions) {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
+  // (b) Double-Enter latch: the second send in the same frame sees a stale
+  // `input`/`streaming` closure and would append a duplicate user bubble
+  // (then the backend queues a duplicate turn). The latch is held from
+  // send() entry until the turn is registered (or the send bails), and
+  // released in the turn's terminal handlers / early returns so mid-run
+  // steering keeps working.
+  const sendingRef = useRef(false);
+  const releaseSendLatch = () => {
+    sendingRef.current = false;
+  };
+
   const generateAIResponse = useCallback(
     async (
       chatHistory: ChatMessage[],
       opts?: { autoRouteModel?: { id: string; provider: string } | null },
     ) => {
       const turnSessionId = sessionId;
-      if (!turnSessionId) return;
+      if (!turnSessionId) {
+        releaseSendLatch();
+        return;
+      }
       if (!chatRuntime.canStartTurn(turnSessionId)) {
         // Stale runtime turn with no live controller — clear and proceed.
         if (!activeStreamControllers.has(turnSessionId)) {
@@ -157,6 +171,7 @@ export function useChatSend(opts: UseChatSendOptions) {
               toast.error('Could not start a new response — one is already running');
             }
           }
+          releaseSendLatch();
           return;
         }
       }
@@ -173,6 +188,7 @@ export function useChatSend(opts: UseChatSendOptions) {
       ).trim();
       if (!latestText) {
         toast.error('Nothing to send');
+        releaseSendLatch();
         return;
       }
 
@@ -197,10 +213,12 @@ export function useChatSend(opts: UseChatSendOptions) {
       }
       if (!useModel?.id) {
         toast.error('Select a model first (e.g. a free OpenCode model)');
+        releaseSendLatch();
         return;
       }
       if (!useModel.provider) {
         toast.error('Selected model has no provider — pick it again from the model list');
+        releaseSendLatch();
         return;
       }
 
@@ -212,7 +230,7 @@ export function useChatSend(opts: UseChatSendOptions) {
         if (gitContext) requestText = `${latestText}\n\n${gitContext}`;
       }
 
-      const result = await startChatStream(turnSessionId, {
+      const streamPromise = startChatStream(turnSessionId, {
         message: applyWorkbenchGuardMode(workbenchMode, requestText),
         chatHistory,
         workbenchMode,
@@ -229,6 +247,12 @@ export function useChatSend(opts: UseChatSendOptions) {
         guardMode: workbenchMode,
         ensureWorkbenchSession,
       });
+      // startChatStream registers the AbortController + runtime turn
+      // synchronously before its first await — the send is no longer
+      // "in flight", so release the latch: re-entrant sends now take the
+      // mid-run steer path instead of being swallowed.
+      releaseSendLatch();
+      const result = await streamPromise;
       if (result === 'error') {
         // Actionable error: retry the same message or jump to provider
         // settings — never leave the user with a dead-end "Chat failed".
@@ -310,12 +334,35 @@ export function useChatSend(opts: UseChatSendOptions) {
 
   const send = useCallback(
     async (textOverride?: string) => {
+      // (b) Double-Enter in the same frame: the second call sees a stale
+      // `input`/`streaming` closure and would append a duplicate bubble.
+      // Ignore re-entry while a send is in flight (released when the turn
+      // registers or the send bails — see releaseSendLatch).
+      if (sendingRef.current) return;
+      sendingRef.current = true;
+
       if (!sessionId) {
         toast.error('No active session');
+        releaseSendLatch();
         return;
       }
       if (loadedSessionId !== sessionId) {
         toast.error('Session is still loading — try again in a moment');
+        releaseSendLatch();
+        return;
+      }
+
+      // (a) Model guard BEFORE mutating state: appending the user bubble and
+      // persisting it first meant a send with no selected model left a ghost
+      // persisted bubble when generateAIResponse bailed with this toast.
+      if (!modelForRequest?.id) {
+        toast.error('Select a model first (e.g. a free OpenCode model)');
+        releaseSendLatch();
+        return;
+      }
+      if (!modelForRequest?.provider) {
+        toast.error('Selected model has no provider — pick it again from the model list');
+        releaseSendLatch();
         return;
       }
 
@@ -323,6 +370,7 @@ export function useChatSend(opts: UseChatSendOptions) {
         toast.message('Still attaching files…', {
           description: 'Wait for uploads to finish before sending.',
         });
+        releaseSendLatch();
         return;
       }
 
@@ -330,7 +378,10 @@ export function useChatSend(opts: UseChatSendOptions) {
       // Keep bubble content as the typed text only; compose attachment dump
       // later when calling the model (see generateAIResponse).
       const typed = (textOverride ?? input).trim();
-      if (!typed && readyAttachments.length === 0) return;
+      if (!typed && readyAttachments.length === 0) {
+        releaseSendLatch();
+        return;
+      }
       const text = typed;
 
       // Local slash command dispatch — handle purely client-side commands
@@ -370,10 +421,12 @@ export function useChatSend(opts: UseChatSendOptions) {
             // contract is that they do so for client-only commands.
             // For commands that should fall through to the backend (e.g.
             // /btw with an arg), the handler should NOT clear the composer.
+            releaseSendLatch();
             return;
           } catch (err) {
             console.error('[slash] handler threw synchronously', err);
             toast.error('Command failed');
+            releaseSendLatch();
             return;
           }
         }
@@ -415,6 +468,7 @@ export function useChatSend(opts: UseChatSendOptions) {
           console.error('[send] steer failed', err);
           toast.error('Could not add direction');
         }
+        releaseSendLatch();
         return;
       }
 
@@ -464,6 +518,7 @@ export function useChatSend(opts: UseChatSendOptions) {
         clearComposerDraft(sessionId);
         setShowToolsDropdown(false);
         setShowCommandsDropdown(false);
+        releaseSendLatch();
         return;
       }
 
@@ -561,7 +616,14 @@ export function useChatSend(opts: UseChatSendOptions) {
       // messages state from this argument, so passing only `[userMsg]` would
       // overwrite the existing list with just two entries and wipe the prior
       // conversation from view and from localStorage.
-      await generateAIResponse(nextMessages, { autoRouteModel });
+      try {
+        await generateAIResponse(nextMessages, { autoRouteModel });
+      } catch {
+        // generateAIResponse releases the latch itself once the turn is
+        // registered; this catch only guards pre-registration throws so a
+        // bail can never wedge the double-Enter latch.
+        releaseSendLatch();
+      }
     },
     [
       sessionId,

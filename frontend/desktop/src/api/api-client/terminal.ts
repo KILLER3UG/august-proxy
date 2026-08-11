@@ -62,8 +62,19 @@ export function openExternalTerminal(cwd?: string): Promise<{ ok: boolean; via?:
   return api.post('/api/terminal/open-external', { cwd: cwd || '' });
 }
 
-export function submitTerminalCommand(sessionId: string, command: string): Promise<unknown> {
-  return api.post('/api/terminal/command', { sessionId, command });
+export function submitTerminalCommand(
+  sessionId: string,
+  command: string,
+  cwd?: string,
+): Promise<unknown> {
+  // The backend CommandBody accepts sessionId (runs with the session's
+  // workspace cwd) plus an explicit cwd fallback. Returns
+  // {status: 'completed' | 'error' | 'approval_required', output, ...}.
+  return api.post('/api/terminal/command', {
+    sessionId,
+    command,
+    cwd: cwd || undefined,
+  });
 }
 
 export function resizeTerminalSession(sessionId: string, cols: number, rows: number): Promise<unknown> {

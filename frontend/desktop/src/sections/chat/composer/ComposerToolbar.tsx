@@ -39,6 +39,7 @@ export function ComposerToolbar({
   send,
   stop,
   setMessages,
+  ensureWorkbenchSession,
   workbenchSession,
   setWorkbenchSession,
   workbenchMode,
@@ -82,6 +83,10 @@ export function ComposerToolbar({
   stop: () => void;
   /** Optional: lets the toolbar append a synthetic handoff-notice card. */
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
+  /** Creates the backend workbench session on demand — used by the verifier
+   *  toggle, which must work on a fresh chat BEFORE the first send creates
+   *  the session (otherwise opt-in verification can never cover turn 1). */
+  ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   workbenchSession: WorkbenchSession | null;
   setWorkbenchSession: (
     session:
@@ -185,10 +190,27 @@ export function ComposerToolbar({
 
   const verifierEnforced = !!workbenchSession?.verifierEnforced;
   const handleVerifierToggle = () => {
-    if (!workbenchSession?.id) return;
+    // No workbench session exists before the first send on a fresh chat —
+    // create one on demand so opt-in verification can cover turn 1. The
+    // session-ensure helper is the same one startChatStream uses.
+    if (!workbenchSession?.id) {
+      void ensureWorkbenchSession()
+        .then((session) => {
+          if (!session?.id) return;
+          applyVerifierToggle(session.id);
+        })
+        .catch((error) => {
+          console.warn('[ChatThread] Failed to create workbench session for verifier toggle:', error);
+        });
+      return;
+    }
+    applyVerifierToggle(workbenchSession.id);
+  };
+
+  const applyVerifierToggle = (sessionId: string) => {
     const next = !verifierEnforced;
     setWorkbenchSession((prev) => (prev ? { ...prev, verifierEnforced: next } : prev));
-    void setWorkbenchVerifier(workbenchSession.id, next)
+    void setWorkbenchVerifier(sessionId, next)
       .then((updated) => {
         if (updated) setWorkbenchSession(updated);
         if (next) {
@@ -267,7 +289,7 @@ export function ComposerToolbar({
         <button
           type="button"
           onClick={handleVerifierToggle}
-          disabled={!workbenchSession?.id}
+          disabled={!sessionId}
           aria-pressed={verifierEnforced}
           aria-label="Enforce verification before final answer"
           title={

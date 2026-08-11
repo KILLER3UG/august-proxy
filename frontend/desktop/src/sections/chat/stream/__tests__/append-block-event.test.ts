@@ -73,3 +73,42 @@ describe('coalesceAdjacentThinking', () => {
     expect(merged[2].content).toBe('c');
   });
 });
+
+describe('appendBlockEvent toolResult statuses', () => {
+  it('marks the tool card error when the result status is error', () => {
+    let blocks = appendBlockEvent([], {
+      type: 'toolCall',
+      id: 't1',
+      name: 'run_command',
+      context: '{}',
+      status: 'running',
+    });
+    blocks = appendBlockEvent(blocks, {
+      type: 'toolResult',
+      id: 't1',
+      status: 'error',
+      summary: 'failed',
+      error: 'Error: boom',
+    });
+    expect(blocks[0].tool?.status).toBe('error');
+    expect(blocks[0].tool?.error).toContain('boom');
+  });
+
+  it('keeps done status on a successful toolResult', () => {
+    let blocks = appendBlockEvent([], {
+      type: 'toolCall',
+      id: 't2',
+      name: 'grep',
+      context: '{}',
+      status: 'running',
+    });
+    blocks = appendBlockEvent(blocks, {
+      type: 'toolResult',
+      id: 't2',
+      status: 'done',
+      summary: 'matched',
+    });
+    expect(blocks[0].tool?.status).toBe('done');
+    expect(blocks[0].tool?.error).toBe('');
+  });
+});

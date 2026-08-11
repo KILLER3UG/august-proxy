@@ -81,16 +81,32 @@ export async function confirmWorkbenchMutation(
   });
 
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    handlers.onError?.({ message: (data.message as string) || `confirmWorkbenchMutation failed: ${res.status}` });
+    // FastAPI errors land in `detail`, not `message`.
+    const data = (await res.json().catch(() => ({}))) as {
+      detail?: string | { message?: string };
+    };
+    const detail = data?.detail;
+    const detailMsg =
+      typeof detail === 'string'
+        ? detail
+        : typeof detail === 'object' && detail !== null
+          ? detail.message
+          : undefined;
+    handlers.onError?.({ message: detailMsg || `confirmWorkbenchMutation failed: ${res.status}` });
     return;
   }
 
   const data = (await res.json()) as Record<string, unknown>;
+  // The backend responds { executed, executeError, toolResult, status } —
+  // `executed === false` or a truthy `executeError` means the mutation did
+  // NOT run (the old `blocked`/`error` flags are never sent).
+  const executed = data.executed !== false;
+  const executeError = data.executeError as unknown;
   handlers.onToolResult?.({
     id: token,
     content: JSON.stringify({ type: 'mutation_confirmation_result', result: data }, null, 2),
-    isError: !!(data.blocked as boolean) || !!(data.error as boolean),
+    isError: !executed || (executeError != null && String(executeError) !== ''),
+    status: !executed || (executeError != null && String(executeError) !== '') ? 'error' : 'done',
   });
   handlers.onDone?.();
 }
