@@ -110,6 +110,11 @@ def _normalize_job_dict(d: dict[str, object]) -> dict[str, object]:
         d['runs'] = []
     if 'triggerToken' not in d or not as_str(d.get('triggerToken')):
         d['triggerToken'] = _new_trigger_token()
+    if 'nextRunAt' not in d or not as_str(d.get('nextRunAt')):
+        # Import/normalize time: interval jobs without a stored nextRunAt
+        # must get one NOW — otherwise is_due would consider them due on the
+        # very next tick (spurious runs before the first computation).
+        d['nextRunAt'] = compute_next_run_at(as_str(d.get('schedule')), as_str(d.get('timezone')))
     if 'enabled' not in d:
         d['enabled'] = True
     return d

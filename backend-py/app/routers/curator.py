@@ -55,8 +55,17 @@ async def restoreSkill(name: str, request: Request):
 
 
 @router.post('/run')
-async def runCuration(request: Request, dryRun: bool = False):
-    """Run a curation pass now (all transitions, or dry-run)."""
+async def runCuration(request: Request, dryRun: bool | None = None):
+    """Run a curation pass now (all transitions, or dry-run).
+
+    Accepts both ``?dryRun=true`` (camelCase) and ``?dry_run=true`` (snake,
+    sent by the frontend) — a mis-bound query param must never turn a dry-run
+    into a REAL curation pass.
+    """
+    dry_run = dryRun
+    if dry_run is None:
+        raw = (request.query_params.get('dry_run') or '').strip().lower()
+        dry_run = raw in ('1', 'true', 'yes', 'on')
     c = _curator(request)
-    report = c.run_curation(dryRun=dryRun)
+    report = c.run_curation(dryRun=bool(dry_run))
     return {'report': report}

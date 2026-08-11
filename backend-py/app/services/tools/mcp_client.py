@@ -17,9 +17,10 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urljoin
 
 from app.json_narrowing import as_dict, as_list, as_str
@@ -32,8 +33,17 @@ MCP_CONFIG_FILE = 'mcp-servers.json'
 MCP_TIMEOUT_MS = 30000
 _PROTOCOL_VERSION = '2024-11-05'
 
-# Remote SSE/HTTP session state: serverId → {endpoint, session_id, initialized}
+# Remote SSE/HTTP session state: serverId → {endpoint, session_id, initialized,
+# transport, created}
 _remote_sessions: dict[str, dict[str, object]] = {}
+# Persistent SSE GET-stream readers: serverId → {client, pending, endpoint, task, …}
+_sse_streams: dict[str, dict[str, object]] = {}
+# Serializes remote-session creation per server so concurrent callers never
+# both POST initialize and race each other.
+_session_locks: dict[str, asyncio.Lock] = {}
+_SESSION_TTL_S = 30 * 60
+# Guards the background refresh scheduled by getMcpToolDefinitionsSync.
+_refresh_task: asyncio.Task | None = None
 
 
 def _mcpConfigPath() -> Path:
@@ -73,6 +83,8 @@ def _saveConfig() -> None:
             'transport': as_str(srv.get('transport'), 'stdio'),
             'url': as_str(srv.get('url'), ''),
         }
+        if srv.get('headers'):
+            row['headers'] = dict(as_dict(srv.get('headers'), {}))
         if srv.get('catalogId'):
             row['catalogId'] = srv.get('catalogId')
         servers_out[sid] = row
@@ -96,8 +108,13 @@ def registerServer(
     url: str = '',
     server_id: str | None = None,
     persist: bool = True,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, object]:
-    """Register an MCP server and optionally persist to disk."""
+    """Register an MCP server and optionally persist to disk.
+
+    ``headers`` is an optional per-server header map (e.g. Authorization)
+    sent on remote (SSE/HTTP) GET and POST calls.
+    """
     serverId = server_id or f'mcp_{uuid.uuid4().hex[:8]}'
     server: dict[str, object] = {
         'id': serverId,
@@ -110,6 +127,8 @@ def registerServer(
         'transport': transport or 'stdio',
         'url': url or '',
     }
+    if headers:
+        server['headers'] = dict(headers)
     _servers[serverId] = server
     if persist:
         try:
@@ -303,27 +322,30 @@ async def _stdio_rpc(
 
 
 async def _mcp_initialize(proc: asyncio.subprocess.Process) -> bool:
-    """Send MCP initialize + notifications/initialized handshake over stdio."""
+    """Send MCP initialize + notifications/initialized handshake over stdio.
+
+    Returns False when the server answers with a JSON-RPC error (some servers
+    still serve tools without a strict handshake). Transport-level failures
+    (timeout / closed pipe / decode) RAISE so the caller can reap the child
+    instead of leaving a dead handle registered in ``_processes``.
+    """
     if not proc.stdin or not proc.stdout:
+        raise ConnectionError('MCP process has no stdio pipes')
+    resp = await _stdio_rpc(
+        proc,
+        'initialize',
+        {
+            'protocolVersion': _PROTOCOL_VERSION,
+            'capabilities': {},
+            'clientInfo': {'name': 'august-proxy', 'version': '1.0.0'},
+        },
+        msg_id=0,
+        timeout=20.0,
+    )
+    if not resp or 'error' in resp:
         return False
-    try:
-        resp = await _stdio_rpc(
-            proc,
-            'initialize',
-            {
-                'protocolVersion': _PROTOCOL_VERSION,
-                'capabilities': {},
-                'clientInfo': {'name': 'august-proxy', 'version': '1.0.0'},
-            },
-            msg_id=0,
-            timeout=20.0,
-        )
-        if not resp or 'error' in resp:
-            return False
-        await _stdio_rpc(proc, 'notifications/initialized', notification=True)
-        return True
-    except (asyncio.TimeoutError, ConnectionError, OSError, json.JSONDecodeError):
-        return False
+    await _stdio_rpc(proc, 'notifications/initialized', notification=True)
+    return True
 
 
 async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | None:
@@ -365,7 +387,22 @@ async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | Non
         )
         _processes[serverId] = proc
         _start_stderr_drain(serverId, proc)
-        ok = await _mcp_initialize(proc)
+        try:
+            ok = await _mcp_initialize(proc)
+        except (asyncio.TimeoutError, ConnectionError, OSError, json.JSONDecodeError) as exc:
+            # Init handshake failed hard (timeout / unresponsive child). Do
+            # NOT leave the child registered: a stale handle would be returned
+            # forever ('process closed' until a manual stop). Close and reap.
+            _processes.pop(serverId, None)
+            from app.lib.async_subprocess import close_process
+
+            try:
+                await close_process(proc)
+            except Exception:
+                pass
+            server['status'] = 'error'
+            server['error'] = f'initialize failed: {exc}'
+            return None
         if not ok:
             # Some servers still work without strict handshake; mark running anyway.
             server['handshake'] = 'skipped_or_failed'
@@ -379,12 +416,26 @@ async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | Non
         return None
 
 
+async def _reapProcess(serverId: str) -> None:
+    """Drop a possibly-dead stdio child from the process table and close it
+    best-effort, so ``_startServerProcess`` never returns a stale handle."""
+    proc = _processes.pop(serverId, None)
+    if proc is None:
+        return
+    from app.lib.async_subprocess import close_process
+
+    try:
+        await close_process(proc)
+    except Exception:
+        pass
+
+
 async def _stopServerProcess(serverId: str) -> None:
     """Stop an MCP server subprocess and clear remote session state."""
     from app.lib.async_subprocess import close_process
 
     proc = _processes.pop(serverId, None)
-    _remote_sessions.pop(serverId, None)
+    _toolsCache.pop(serverId, None)
     drain = _stderr_tasks.pop(serverId, None)
     if drain and not drain.done():
         drain.cancel()
@@ -394,8 +445,53 @@ async def _stopServerProcess(serverId: str) -> None:
             pass
     if proc:
         await close_process(proc)
+    await _close_remote_stream(serverId)
     if serverId in _servers:
         _servers[serverId]['status'] = 'stopped'
+
+
+async def _close_remote_stream(serverId: str) -> None:
+    """Tear down the persistent SSE reader (if any) and best-effort terminate
+    a streamable-HTTP server-side session.
+
+    The streamable-HTTP spec allows the client to simply close the session,
+    but servers that support DELETE on the session endpoint (base URL) get one
+    best-effort attempt. Failures are logged, never raised.
+    """
+    st = _sse_streams.pop(serverId, None)
+    if isinstance(st, dict):
+        task = st.get('task')
+        if isinstance(task, asyncio.Task) and not task.done():
+            task.cancel()
+        client = st.get('client')
+        if task is not None:
+            try:
+                await asyncio.gather(cast(asyncio.Task, task), return_exceptions=True)
+            except Exception:
+                pass
+        if client is not None:
+            try:
+                await cast(Any, client).aclose()
+            except Exception:
+                pass
+    session = _remote_sessions.pop(serverId, None)
+    if not isinstance(session, dict):
+        return
+    if as_str(session.get('transport')) != 'http':
+        return
+    sid = session.get('session_id')
+    post_url = as_str(session.get('endpoint'))
+    if not sid or not post_url:
+        return
+    try:
+        import httpx
+
+        headers: dict[str, str] = {'Mcp-Session-Id': str(sid)}
+        headers.update(_server_headers(serverId))
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+            await client.delete(post_url, headers=headers)
+    except Exception as exc:
+        logger.debug('MCP session termination best-effort failed for %s: %s', serverId, exc)
 
 
 async def stopServer(serverId: str) -> bool:
@@ -454,33 +550,216 @@ def _json_from_sse_body(text: str, prefer_id: object | None = None) -> dict[str,
     return candidates[-1]
 
 
-async def _read_sse_until_endpoint(client: Any, url: str, timeout: float = 15.0) -> tuple[str, str]:
-    """Open GET SSE stream; return (messages_endpoint_url, raw_prefix_body).
+def _server_headers(serverId: str) -> dict[str, str]:
+    """Optional per-server headers (e.g. Authorization) for remote transports."""
+    server = _servers.get(serverId)
+    if not isinstance(server, dict):
+        return {}
+    raw = server.get('headers')
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): str(v) for k, v in raw.items() if str(k).strip()}
 
-    MCP HTTP+SSE: server sends ``event: endpoint`` with the POST URI for messages.
+
+def _absolutize_endpoint(endpoint: str, base_url: str) -> str:
+    """Resolve an SSE ``event: endpoint`` URI against the stream URL."""
+    if endpoint.startswith('/'):
+        return urljoin(base_url if base_url.endswith('/') else base_url + '/', endpoint.lstrip('/'))
+    if endpoint.startswith('http'):
+        return endpoint
+    return urljoin(base_url.rstrip('/') + '/', endpoint)
+
+
+async def _sse_reader(serverId: str, st: dict[str, object]) -> None:
+    """Consume a persistent SSE GET stream and dispatch JSON-RPC responses.
+
+    Per the MCP HTTP+SSE spec, responses to POSTs on the messages endpoint
+    arrive on this GET stream, so the reader must stay open for the life of
+    the session and correlate responses by JSON-RPC ``id`` to pending futures.
     """
-    async with client.stream(
-        'GET',
-        url,
-        headers={'Accept': 'text/event-stream', 'Cache-Control': 'no-cache'},
-        timeout=timeout,
-    ) as resp:
-        resp.raise_for_status()
-        buffer = ''
-        async for chunk in resp.aiter_text():
-            buffer += chunk
-            for event_name, data in _iter_sse_events(buffer):
-                if event_name == 'endpoint' and data:
-                    endpoint = data.strip()
-                    if endpoint.startswith('/'):
-                        endpoint = urljoin(url if url.endswith('/') else url + '/', endpoint.lstrip('/'))
-                    elif not endpoint.startswith('http'):
-                        endpoint = urljoin(url.rstrip('/') + '/', endpoint)
-                    return endpoint, buffer
-            # Cap wait: if we already have a full event block and no endpoint, break
-            if '\n\n' in buffer and len(buffer) > 65536:
-                break
-    raise RuntimeError('SSE stream did not yield an endpoint event')
+    client = cast(Any, st.get('client'))
+    stream_url = as_str(st.get('streamUrl'))
+    pending = cast(dict[object, asyncio.Future], st.get('pending'))
+    headers = {'Accept': 'text/event-stream', 'Cache-Control': 'no-cache'}
+    headers.update(_server_headers(serverId))
+    buffer = ''
+    try:
+        async with client.stream('GET', stream_url, headers=headers) as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_text():
+                buffer += chunk
+                while True:
+                    idx = buffer.find('\n\n')
+                    if idx < 0:
+                        break
+                    block, buffer = buffer[:idx], buffer[idx + 2 :]
+                    event_name, data = _parse_sse_block(block.strip())
+                    if event_name == 'endpoint' and data and not st.get('endpoint'):
+                        st['endpoint'] = _absolutize_endpoint(data.strip(), stream_url)
+                        ev = st.get('endpoint_event')
+                        if isinstance(ev, asyncio.Event):
+                            ev.set()
+                    if not data or event_name == 'ping':
+                        continue
+                    try:
+                        parsed = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(parsed, dict):
+                        continue
+                    rid = parsed.get('id')
+                    if rid in pending:
+                        fut = pending[rid]
+                        if not fut.done():
+                            fut.set_result(parsed)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        st['stream_error'] = str(exc)
+        for fut in list(pending.values()):
+            if not fut.done():
+                fut.set_exception(ConnectionError(f'SSE stream closed: {exc}'))
+
+
+async def _open_sse_stream(serverId: str, base_url: str) -> tuple[str, dict[str, object]]:
+    """Open a persistent SSE GET stream and wait for the endpoint event.
+
+    Returns (messages_post_url, stream_state). The reader task keeps the
+    stream open so JSON-RPC responses can be dispatched to pending requests.
+    """
+    import httpx
+
+    # Replace any stale stream for this server (dead readers must not linger).
+    old = _sse_streams.get(serverId)
+    if isinstance(old, dict):
+        old_task = old.get('task')
+        if isinstance(old_task, asyncio.Task) and not old_task.done():
+            old_task.cancel()
+        old_client = old.get('client')
+        if old_task is not None:
+            try:
+                await asyncio.gather(cast(asyncio.Task, old_task), return_exceptions=True)
+            except Exception:
+                pass
+        if old_client is not None:
+            try:
+                await cast(Any, old_client).aclose()
+            except Exception:
+                pass
+
+    client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+    st: dict[str, object] = {
+        'client': client,
+        'pending': {},
+        'streamUrl': base_url,
+        'endpoint': '',
+        'endpoint_event': asyncio.Event(),
+        'task': None,
+        'stream_error': None,
+    }
+    task = asyncio.create_task(_sse_reader(serverId, st))
+    st['task'] = task
+    _sse_streams[serverId] = st
+    try:
+        await asyncio.wait_for(cast(asyncio.Event, st['endpoint_event']).wait(), timeout=15.0)
+        endpoint = as_str(st.get('endpoint'))
+        if not endpoint:
+            raise RuntimeError('SSE stream ended before an endpoint event')
+        return endpoint, st
+    except Exception:
+        _sse_streams.pop(serverId, None)
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await client.aclose()
+        raise
+
+
+async def _sse_post(
+    serverId: str,
+    request: dict[str, object],
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: float = 30.0,
+) -> Any:
+    """POST a JSON-RPC message on the SSE messages endpoint (no response wait)."""
+    st = _sse_streams.get(serverId)
+    if not isinstance(st, dict):
+        raise RuntimeError(f'SSE stream not open for {serverId}')
+    client = cast(Any, st.get('client'))
+    post_url = as_str(st.get('endpoint'))
+    if not post_url:
+        raise RuntimeError(f'SSE endpoint not resolved for {serverId}')
+    post_headers: dict[str, str] = {
+        'Accept': 'application/json, text/event-stream',
+        'Content-Type': 'application/json',
+    }
+    if headers:
+        post_headers.update(headers)
+    post_headers.update(_server_headers(serverId))
+    return await client.post(post_url, json=request, headers=post_headers, timeout=timeout)
+
+
+async def _sse_rpc(
+    serverId: str,
+    request: dict[str, object],
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: float = MCP_TIMEOUT_MS / 1000,
+) -> dict[str, object]:
+    """POST a JSON-RPC request and await the response.
+
+    Per the MCP SSE spec the messages POST returns 202 empty and the actual
+    JSON-RPC response arrives on the persistent GET stream, correlated by id.
+    Some servers answer inline — both paths are handled.
+    """
+    st = _sse_streams.get(serverId)
+    if not isinstance(st, dict):
+        raise RuntimeError(f'SSE stream not open for {serverId}')
+    pending = cast(dict[object, asyncio.Future], st.get('pending'))
+    fut: asyncio.Future = asyncio.get_event_loop().create_future()
+    pending[request['id']] = fut
+    try:
+        resp = await _sse_post(serverId, request, headers=headers, timeout=timeout)
+        body = resp.text or ''
+        if body.strip():
+            inline: dict[str, object] | None = None
+            try:
+                parsed_inline = json.loads(body)
+                if isinstance(parsed_inline, dict):
+                    inline = parsed_inline
+            except json.JSONDecodeError:
+                inline = _json_from_sse_body(body, prefer_id=request.get('id'))
+            if inline is not None:
+                if not fut.done():
+                    fut.set_result(inline)
+        return await asyncio.wait_for(fut, timeout=timeout)
+    finally:
+        if not fut.done():
+            fut.cancel()
+        pending.pop(request['id'], None)
+
+
+async def _parse_http_response(resp: Any, *, prefer_id: object | None = None) -> dict[str, object]:
+    """Extract a JSON-RPC object from an httpx response (JSON or SSE body)."""
+    ctype = (resp.headers.get('content-type') or '').lower()
+    body = resp.text or ''
+    if 'text/event-stream' in ctype or body.lstrip().startswith('event:') or '\ndata:' in body:
+        parsed = _json_from_sse_body(body, prefer_id=prefer_id)
+        if parsed is None:
+            raise RuntimeError('SSE response contained no JSON-RPC object')
+        return parsed
+    try:
+        data = resp.json()
+    except json.JSONDecodeError as exc:
+        # Some servers still return SSE without the right content-type
+        parsed = _json_from_sse_body(body, prefer_id=prefer_id)
+        if parsed is not None:
+            return parsed
+        raise RuntimeError(f'Invalid JSON-RPC response: {exc}') from exc
+    if not isinstance(data, dict):
+        raise RuntimeError('JSON-RPC response is not an object')
+    return data
 
 
 async def _http_jsonrpc(
@@ -500,33 +779,32 @@ async def _http_jsonrpc(
         hdrs.update(headers)
     resp = await client.post(post_url, json=request, headers=hdrs, timeout=timeout)
     resp.raise_for_status()
-    ctype = (resp.headers.get('content-type') or '').lower()
-    body = resp.text or ''
-    if 'text/event-stream' in ctype or body.lstrip().startswith('event:') or '\ndata:' in body:
-        parsed = _json_from_sse_body(body, prefer_id=request.get('id'))
-        if parsed is None:
-            raise RuntimeError('SSE response contained no JSON-RPC object')
-        return parsed
-    try:
-        data = resp.json()
-    except json.JSONDecodeError as exc:
-        # Some servers still return SSE without the right content-type
-        parsed = _json_from_sse_body(body, prefer_id=request.get('id'))
-        if parsed is not None:
-            return parsed
-        raise RuntimeError(f'Invalid JSON-RPC response: {exc}') from exc
-    if not isinstance(data, dict):
-        raise RuntimeError('JSON-RPC response is not an object')
-    return data
+    return await _parse_http_response(resp, prefer_id=request.get('id'))
 
 
 async def _ensure_remote_session(serverId: str) -> dict[str, object]:
-    """Initialize remote SSE/HTTP session; return session dict with post endpoint."""
+    """Initialize remote SSE/HTTP session; return session dict with post endpoint.
+
+    Session creation is serialized per server (concurrent callers would
+    otherwise both POST initialize and race each other), cached with a TTL,
+    and revalidated lazily.
+    """
+    lock = _session_locks.setdefault(serverId, asyncio.Lock())
+    async with lock:
+        return await _ensure_remote_session_locked(serverId)
+
+
+async def _ensure_remote_session_locked(serverId: str) -> dict[str, object]:
     import httpx
 
     existing = _remote_sessions.get(serverId)
     if isinstance(existing, dict) and existing.get('endpoint') and existing.get('initialized'):
-        return existing
+        created_raw = existing.get('created')
+        created = float(created_raw) if isinstance(created_raw, (int, float)) else 0.0
+        if time.monotonic() - created < _SESSION_TTL_S:
+            return existing
+        # Expired cache — reinitialize below.
+        _remote_sessions.pop(serverId, None)
 
     server = _servers.get(serverId)
     if not server:
@@ -541,62 +819,94 @@ async def _ensure_remote_session(serverId: str) -> dict[str, object]:
         'session_id': None,
         'initialized': False,
         'transport': transport,
+        'created': time.monotonic(),
     }
 
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        post_url = base_url
-        if transport == 'sse':
-            try:
-                post_url, _ = await _read_sse_until_endpoint(client, base_url)
-                session['endpoint'] = post_url
-            except Exception as exc:
-                # Fall back: treat base URL as streamable HTTP POST endpoint
-                logger.info('SSE endpoint handshake failed for %s (%s); using base URL', serverId, exc)
-                post_url = base_url
-                session['endpoint'] = post_url
-                session['transport'] = 'http'
-
-        init_req: dict[str, object] = {
-            'jsonrpc': '2.0',
-            'id': 0,
-            'method': 'initialize',
-            'params': {
-                'protocolVersion': _PROTOCOL_VERSION,
-                'capabilities': {},
-                'clientInfo': {'name': 'august-proxy', 'version': '1.0.0'},
-            },
-        }
+    sse_stream: dict[str, object] | None = None
+    if transport == 'sse':
         try:
-            init_resp = await _http_jsonrpc(client, post_url, init_req)
-            if 'error' in init_resp:
-                err = init_resp.get('error')
-                msg = as_dict(err, {}).get('message') if isinstance(err, dict) else err
-                raise RuntimeError(f'initialize failed: {msg}')
-            # Session id header (streamable HTTP)
-            # httpx response is inside _http_jsonrpc — capture via second call path if needed
+            post_url, sse_stream = await _open_sse_stream(serverId, base_url)
+            session['endpoint'] = post_url
         except Exception as exc:
-            # Some servers accept tools/list without initialize
-            logger.info('MCP remote initialize soft-fail for %s: %s', serverId, exc)
-            session['handshake'] = 'skipped_or_failed'
+            # Fall back: treat base URL as streamable HTTP POST endpoint
+            logger.info('SSE endpoint handshake failed for %s (%s); using base URL', serverId, exc)
+            post_url = base_url
+            session['endpoint'] = post_url
+            session['transport'] = 'http'
+            transport = 'http'
+
+    init_req: dict[str, object] = {
+        'jsonrpc': '2.0',
+        'id': str(uuid.uuid4()),
+        'method': 'initialize',
+        'params': {
+            'protocolVersion': _PROTOCOL_VERSION,
+            'capabilities': {},
+            'clientInfo': {'name': 'august-proxy', 'version': '1.0.0'},
+        },
+    }
+    session_id: str | None = None
+    try:
+        if sse_stream is not None:
+            init_resp = await _sse_rpc(serverId, init_req, timeout=30.0)
         else:
-            session['handshake'] = 'ok'
-            # notifications/initialized (no id)
-            try:
-                await client.post(
-                    post_url,
-                    json={'jsonrpc': '2.0', 'method': 'notifications/initialized'},
-                    headers={'Accept': 'application/json, text/event-stream', 'Content-Type': 'application/json'},
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                hdrs = {
+                    'Accept': 'application/json, text/event-stream',
+                    'Content-Type': 'application/json',
+                }
+                hdrs.update(_server_headers(serverId))
+                resp = await client.post(post_url, json=init_req, headers=hdrs, timeout=30.0)
+                resp.raise_for_status()
+                init_resp = await _parse_http_response(resp, prefer_id=init_req.get('id'))
+                # Streamable HTTP: the server may issue a session id header
+                # that must be echoed on every subsequent request.
+                sid_hdr = resp.headers.get('Mcp-Session-Id') or resp.headers.get('mcp-session-id')
+                if sid_hdr:
+                    session_id = str(sid_hdr)
+        if 'error' in init_resp:
+            err = init_resp.get('error')
+            msg = as_dict(err, {}).get('message') if isinstance(err, dict) else err
+            raise RuntimeError(f'initialize failed: {msg}')
+    except Exception as exc:
+        # Some servers accept tools/list without initialize
+        logger.info('MCP remote initialize soft-fail for %s: %s', serverId, exc)
+        session['handshake'] = 'skipped_or_failed'
+    else:
+        session['handshake'] = 'ok'
+        session['session_id'] = session_id
+        # notifications/initialized (no id)
+        try:
+            if sse_stream is not None:
+                await _sse_post(
+                    serverId,
+                    {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
                     timeout=10.0,
                 )
-            except Exception:
-                pass
+            else:
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    hdrs = {
+                        'Accept': 'application/json, text/event-stream',
+                        'Content-Type': 'application/json',
+                    }
+                    hdrs.update(_server_headers(serverId))
+                    if session_id:
+                        hdrs['Mcp-Session-Id'] = session_id
+                    await client.post(
+                        post_url,
+                        json={'jsonrpc': '2.0', 'method': 'notifications/initialized'},
+                        headers=hdrs,
+                        timeout=10.0,
+                    )
+        except Exception:
+            pass
 
-        session['initialized'] = True
-        session['endpoint'] = post_url
-        _remote_sessions[serverId] = session
-        server['status'] = 'running'
-        server['handshake'] = session.get('handshake', 'ok')
-        return session
+    session['initialized'] = True
+    session['endpoint'] = post_url
+    _remote_sessions[serverId] = session
+    server['status'] = 'running'
+    server['handshake'] = session.get('handshake', 'ok')
+    return session
 
 
 async def _remote_rpc(serverId: str, method: str, params: dict[str, object] | None = None) -> dict[str, object]:
@@ -604,6 +914,7 @@ async def _remote_rpc(serverId: str, method: str, params: dict[str, object] | No
     import httpx
 
     session = await _ensure_remote_session(serverId)
+    transport = as_str(session.get('transport'))
     post_url = as_str(session.get('endpoint'), '')
     req_id = str(uuid.uuid4())
     request: dict[str, object] = {
@@ -616,10 +927,22 @@ async def _remote_rpc(serverId: str, method: str, params: dict[str, object] | No
     sid = session.get('session_id')
     if sid:
         headers['Mcp-Session-Id'] = str(sid)
-
-    async with httpx.AsyncClient(timeout=MCP_TIMEOUT_MS / 1000, follow_redirects=True) as client:
-        data = await _http_jsonrpc(client, post_url, request, headers=headers or None)
-        return data
+    try:
+        if transport == 'sse':
+            return await _sse_rpc(serverId, request, headers=headers or None)
+        async with httpx.AsyncClient(timeout=MCP_TIMEOUT_MS / 1000, follow_redirects=True) as client:
+            hdrs = {
+                'Accept': 'application/json, text/event-stream',
+                'Content-Type': 'application/json',
+            }
+            hdrs.update(_server_headers(serverId))
+            if headers:
+                hdrs.update(headers)
+            return await _http_jsonrpc(client, post_url, request, headers=hdrs)
+    except Exception:
+        # Session may have gone stale — drop it so the next call re-initializes.
+        _remote_sessions.pop(serverId, None)
+        raise
 
 
 async def discoverTools(serverId: str) -> list[dict[str, object]]:
@@ -663,6 +986,9 @@ async def discoverTools(serverId: str) -> list[dict[str, object]]:
         server['toolCount'] = len(typed)
         return typed  # type: ignore[return-value]
     except (asyncio.TimeoutError, json.JSONDecodeError, ConnectionError, OSError) as exc:
+        # The child may be dead or wedged — never keep a stale handle in
+        # _processes (a later call would reuse it and fail forever).
+        await _reapProcess(serverId)
         server['error'] = str(exc)
         return []
 
@@ -736,10 +1062,13 @@ async def executeTool(serverId: str, toolName: str, args: dict[str, object]) -> 
         res_body = result.get('result')
         return json.dumps(res_body) if res_body is not None else ''
     except asyncio.TimeoutError:
+        await _reapProcess(serverId)
         return f"Error: MCP tool '{toolName}' timed out"
     except json.JSONDecodeError:
+        await _reapProcess(serverId)
         return 'Error: Invalid JSON response from MCP server'
     except Exception as exc:
+        await _reapProcess(serverId)
         return f'Error: {exc}'
 
 
@@ -748,25 +1077,32 @@ def getAllMcpTools() -> list[dict[str, object]]:
     allTools = []
     for sid, tools in _toolsCache.items():
         for tool in tools:
-            tool['_mcp_server_id'] = sid
-            allTools.append(tool)
+            # Copy — callers (/servers/tools, registry builders) must never
+            # mutate the cached tool dicts.
+            allTools.append({**tool, '_mcp_server_id': sid})
     return allTools
 
 
 def getMcpToolDefinitions() -> list[dict[str, object]]:
     """Get MCP tools in a format compatible with the tool registry."""
     tools = getAllMcpTools()
-    return [
-        {
-            'type': 'function',
-            'function': {
-                'name': f'mcp__{t.get("_mcp_server_id", "unknown")}__{t["name"]}',
-                'description': t.get('description', ''),
-                'parameters': t.get('inputSchema', {'type': 'object', 'properties': {}}),
-            },
-        }
-        for t in tools
-    ]
+    out: list[dict[str, object]] = []
+    for t in tools:
+        name = t.get('name')
+        if not name:
+            # One malformed tool must not blank the whole MCP tool surface.
+            continue
+        out.append(
+            {
+                'type': 'function',
+                'function': {
+                    'name': f'mcp__{t.get("_mcp_server_id", "unknown")}__{name}',
+                    'description': t.get('description', ''),
+                    'parameters': t.get('inputSchema', {'type': 'object', 'properties': {}}),
+                },
+            }
+        )
+    return out
 
 
 def getMcpToolDefinitionsSync() -> list[dict[str, object]]:
@@ -774,14 +1110,16 @@ def getMcpToolDefinitionsSync() -> list[dict[str, object]]:
 
     Triggers a background ``refresh_mcp_tools()`` when the cache is empty
     but servers are registered, so newly-added servers surface without a
-    restart.
+    restart. Repeated calls while a refresh is in flight are deduped.
     """
+    global _refresh_task
     if not _toolsCache and _servers:
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(refreshMcpTools())
-        except RuntimeError:
-            pass
+        if _refresh_task is None or _refresh_task.done():
+            try:
+                loop = asyncio.get_running_loop()
+                _refresh_task = loop.create_task(refreshMcpTools())
+            except RuntimeError:
+                pass
     return getMcpToolDefinitions()
 
 
@@ -829,6 +1167,8 @@ async def load_and_start_from_config() -> dict[str, object]:
         args = [as_str(a) for a in as_list(entry.get('args'))]
         env_raw = entry.get('env') if isinstance(entry.get('env'), dict) else {}
         env = {str(k): str(v) for k, v in env_raw.items()} if isinstance(env_raw, dict) else {}
+        headers_raw = entry.get('headers') if isinstance(entry.get('headers'), dict) else {}
+        headers = {str(k): str(v) for k, v in headers_raw.items()} if isinstance(headers_raw, dict) else {}
         if sid in _servers:
             continue
         if not command and transport == 'stdio':
@@ -843,6 +1183,7 @@ async def load_and_start_from_config() -> dict[str, object]:
             url=url,
             server_id=str(sid),
             persist=False,
+            headers=headers or None,
         )
         if entry.get('catalogId'):
             reg['catalogId'] = entry.get('catalogId')
@@ -858,9 +1199,18 @@ async def load_and_start_from_config() -> dict[str, object]:
 
 
 async def stop_all_servers() -> None:
-    """Stop every running MCP subprocess (shutdown path)."""
+    """Stop every running MCP subprocess (shutdown path).
+
+    Also awaits outstanding unregister-triggered cleanup tasks so a server
+    deleted just before exit cannot leave a child process running.
+    """
     for sid in list(_processes.keys()):
         await _stopServerProcess(sid)
+    for sid in list(_sse_streams.keys()):
+        await _close_remote_stream(sid)
+    if _mcpCleanupTasks:
+        await asyncio.gather(*_mcpCleanupTasks, return_exceptions=True)
+        _mcpCleanupTasks.clear()
 
 
 def isMcpToolName(name: str) -> bool:
@@ -919,7 +1269,7 @@ async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
                 email = ''
             # If Integrations already has tokens, bridge them for workspace-mcp
             # and skip a redundant (often broken) browser redirect.
-            synced = sc.sync_google_tokens_to_workspace_mcp(email or None)
+            synced = await sc.sync_google_tokens_to_workspace_mcp(email or None)
             if synced:
                 return (
                     f'Google is already connected in August Settings as {synced}. '
@@ -934,7 +1284,7 @@ async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
             result = await sc.google_auth_url(email, facet=facet or 'gmail')
             auth_url = str(result.get('authUrl') or '')
             if result.get('connected'):
-                sc.sync_google_tokens_to_workspace_mcp(email or None)
+                await sc.sync_google_tokens_to_workspace_mcp(email or None)
                 return str(
                     result.get('message')
                     or 'Google is already authenticated. Retry the Google tool.'

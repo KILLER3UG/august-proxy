@@ -152,6 +152,29 @@ async def test_schedule_next_run_and_pause_skips_due(auto_iso):
 
 
 @pytest.mark.asyncio
+async def test_interval_job_without_next_run_at_not_due(auto_iso):
+    """An interval job with no computed nextRunAt must NOT fire on every tick
+    (spurious runs + races with the mark-running mutator)."""
+    from app.services import automations_store as store
+
+    job = await store.upsert_job_async(
+        {'name': 'no-nra', 'jobType': 'noop', 'schedule': 'every 30m', 'prompt': 'x'}
+    )
+    jid = str(job['id'])
+    # normalize must have computed a nextRunAt at upsert time
+    assert store.get_job(jid).get('nextRunAt')
+    assert jid not in store.due_job_ids()
+
+    # Even a legacy job stored WITHOUT nextRunAt must not be considered due:
+    # is_due derives the next run instead of returning True unconditionally.
+    def strip_next_run(s):
+        s[jid].pop('nextRunAt', None)
+
+    await store._mutate(strip_next_run)
+    assert jid not in store.due_job_ids()
+
+
+@pytest.mark.asyncio
 async def test_tick_fires_due_noop_once(auto_iso):
     from app.services import automations_store as store
 

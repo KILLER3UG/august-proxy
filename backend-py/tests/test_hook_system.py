@@ -134,7 +134,8 @@ class TestHookRegistry:
         assert results[0].action == 'allow'  # Fail-open
 
     @pytest.mark.asyncio
-    async def test_exception_fail_open(self, _clean_registry):
+    async def test_exception_fail_closed_pre(self, _clean_registry):
+        """A broken PRE hook must NOT silently allow the call (fail-closed)."""
         reg = _clean_registry
 
         async def bad_handler(ctx):
@@ -143,7 +144,51 @@ class TestHookRegistry:
         reg.register('bad', HookEvent.PRE_TOOL_USE, bad_handler, priority=10)
         ctx = HookContext(event=HookEvent.PRE_TOOL_USE, session_id='s1', tool_name='x')
         results = await reg.emit(HookEvent.PRE_TOOL_USE, ctx)
+        assert results[0].action == 'deny'
+        assert 'bad' in (results[0].message or '')
+
+    @pytest.mark.asyncio
+    async def test_exception_fail_open_post(self, _clean_registry):
+        """POST_TOOL_USE exceptions are non-fatal (the tool already ran)."""
+        reg = _clean_registry
+
+        async def bad_handler(ctx):
+            raise ValueError('oops')
+
+        reg.register('bad_post', HookEvent.POST_TOOL_USE, bad_handler, priority=10)
+        ctx = HookContext(event=HookEvent.POST_TOOL_USE, session_id='s1', tool_name='x')
+        results = await reg.emit(HookEvent.POST_TOOL_USE, ctx)
         assert results[0].action == 'allow'
+
+    @pytest.mark.asyncio
+    async def test_duplicate_register_skipped(self, _clean_registry):
+        """Registering the same hook name twice must not stack handlers."""
+        reg = _clean_registry
+        calls = []
+
+        async def handler(ctx):
+            calls.append(ctx.tool_name)
+            return HookResult()
+
+        reg.register('dup', HookEvent.PRE_TOOL_USE, handler)
+        reg.register('dup', HookEvent.PRE_TOOL_USE, handler)
+        ctx = HookContext(event=HookEvent.PRE_TOOL_USE, session_id='s1', tool_name='x')
+        await reg.emit(HookEvent.PRE_TOOL_USE, ctx)
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_reserved_noop_events(self, _clean_registry):
+        """SESSION_START / PRE_MODEL_CALL / STOP have no emission call sites —
+        dispatch is a documented no-op, not an error."""
+        reg = _clean_registry
+
+        async def handler(ctx):
+            return HookResult(action='deny')
+
+        reg.register('reserved', HookEvent.STOP, handler)
+        ctx = HookContext(event=HookEvent.STOP, session_id='s1', tool_name='x')
+        results = await reg.emit(HookEvent.STOP, ctx)
+        assert results == []
 
     @pytest.mark.asyncio
     async def test_circuit_breaker(self, _clean_registry):

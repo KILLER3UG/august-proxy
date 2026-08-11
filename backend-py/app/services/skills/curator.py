@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -145,12 +146,40 @@ class SkillCurator:
         rec = self._usage.get(name)
         if not rec:
             return False
+        if not self._is_agent_skill(name):
+            # Provenance gate: builtin skills can never be unpinned through
+            # the curator (they were never agent-pinned in the first place).
+            return False
         rec.pinned = False
         self._save()
         return True
 
+    @staticmethod
+    def _is_safe_skill_name(name: str) -> bool:
+        """Reject names that could escape the agent skills root (path traversal).
+
+        Frontmatter ``name`` is unvalidated user input; ``archive``/``restore``
+        build filesystem paths from it, so ``..``, separators and absolute
+        paths must be refused before any move.
+        """
+        if not isinstance(name, str) or not name.strip():
+            return False
+        if name != name.strip():
+            return False
+        if name in ('.', '..'):
+            return False
+        if name.startswith('.'):
+            return False
+        if '/' in name or '\\' in name:
+            return False
+        if os.path.isabs(name) or Path(name).is_absolute():
+            return False
+        return True
+
     def archive(self, name: str) -> bool:
         """Move to the archive dir (never deletes).  Only agent-authored."""
+        if not self._is_safe_skill_name(name):
+            return False
         if not self._is_agent_skill(name):
             return False
         rec = self._ensure(name)
@@ -172,6 +201,10 @@ class SkillCurator:
 
     def restore(self, name: str) -> bool:
         """Restore an archived skill back to the agent root."""
+        if not self._is_safe_skill_name(name):
+            return False
+        if not self._is_agent_skill(name, archived=True):
+            return False
         agentSkillsBase = skill_service._agentSkillsDir()
         archiveDir = agentSkillsBase / '.archive' / name
         if not archiveDir.exists():
@@ -186,8 +219,16 @@ class SkillCurator:
         self._save()
         return True
 
-    def _is_agent_skill(self, name: str) -> bool:
+    def _is_agent_skill(self, name: str, *, archived: bool = False) -> bool:
         sk = skill_service.get(name)
+        if not sk and archived:
+            # An archived skill is outside the discoverable roots — read its
+            # SKILL.md directly so provenance survives the archive move.
+            md = skill_service._agentSkillsDir() / '.archive' / name / 'SKILL.md'
+            try:
+                sk = skill_service._parseSkill(md)
+            except Exception:
+                sk = None
         if not sk:
             return False
         return as_str(sk.get('created_by'), '') in _EVOLVINGCreatedTags
@@ -224,6 +265,13 @@ class SkillCurator:
                     self.archive(name)
                 archived = as_list(report['archived'], [])
                 archived.append(name)
+            elif rec.state == 'stale' and daysIdle < _STALEAfterDays:
+                # Used again after going stale: revive so the 60-day sweep
+                # doesn't archive a skill that is actively being used.
+                if not dryRun:
+                    rec.state = 'active'
+                    self._save()
+                report['active'] = as_int(report['active'], 0) + 1
             else:
                 report['active'] = as_int(report['active'], 0) + 1
         return report

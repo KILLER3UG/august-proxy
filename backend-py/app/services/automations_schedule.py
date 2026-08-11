@@ -7,9 +7,12 @@ Supports:
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+logger = logging.getLogger(__name__)
 
 _EVERY_RE = re.compile(
     r'^\s*every\s+(\d+)\s*([mhd]|min|mins|minute|minutes|hr|hrs|hour|hours|d|day|days)\s*$',
@@ -74,6 +77,11 @@ def resolve_tz(name: str | None) -> tzinfo:
             except Exception:
                 pass
         # Etc/GMT±N (POSIX sign inverted) — avoid if tzdata missing
+        logger.warning(
+            'stored timezone %r is unresolvable — falling back to host-local wall time; '
+            'jobs will fire on host-local time until the automation timezone is fixed',
+            raw,
+        )
     # Host local fixed offset always works
     local = datetime.now().astimezone().tzinfo
     return local or timezone.utc
@@ -196,11 +204,15 @@ def compute_next_run_at(
     except ValueError:
         return None
     window_minutes = 60 * 24 * 366 if dom_restricted else 60 * 24 * 8
-    cursor = (base + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    # Scan absolute (UTC) instants and match against the local wall-clock
+    # fields at each instant. Pure absolute arithmetic never invents a
+    # nonexistent local time (e.g. 02:30 on a spring-forward day) and stays
+    # correct across DST transitions.
+    cursor = (base.astimezone(timezone.utc) + timedelta(minutes=1)).replace(second=0, microsecond=0)
     minutes, hours, days, months, weekdays = fields
     for _ in range(window_minutes):
-        if _matches_cron_fields(minutes, hours, days, months, weekdays, cursor):
-            return cursor.astimezone(timezone.utc).isoformat()
+        if _matches_cron_fields(minutes, hours, days, months, weekdays, cursor.astimezone(tz)):
+            return cursor.isoformat()
         cursor += timedelta(minutes=1)
     return None
 
@@ -229,7 +241,20 @@ def is_due(
     if parsed['kind'] == 'empty':
         return False
     if parsed['kind'] == 'interval':
-        return True
+        # No stored nextRunAt (legacy job / normalize hasn't run yet): derive
+        # it instead of returning True — an interval job with no computed
+        # first run must not fire on every 60s tick (spurious runs + races
+        # with the mark-running mutator).
+        computed = compute_next_run_at(schedule, timezone_name, after=now_utc)
+        if computed is None:
+            return False
+        try:
+            due = datetime.fromisoformat(str(computed).replace('Z', '+00:00'))
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=timezone.utc)
+            return due <= now_utc
+        except ValueError:
+            return False
     tz = resolve_tz(timezone_name)
     local = now_utc.astimezone(tz)
     try:

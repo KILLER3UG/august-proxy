@@ -5,19 +5,24 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import secrets
 import time
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.json_narrowing import as_dict, as_str
 from app.services.config_service import getConfig, saveConfig
 
+logger = logging.getLogger(__name__)
+
 # Pending native OAuth states: state -> {created, email, redirect_uri}
 _oauth_pending: dict[str, dict[str, Any]] = {}
 _OAUTH_STATE_TTL_S = 15 * 60
+# Refresh the Google access token when it is within this many seconds of expiry.
+_TOKEN_REFRESH_MARGIN_S = 300
 
 # Per-facet OAuth scopes. Identity scopes are always included so we can
 # resolve the Google account; API scopes are limited to the facet the user
@@ -176,7 +181,10 @@ def _google_card(raw: dict[str, Any] | None) -> dict[str, Any]:
     granted = _google_granted_scopes(raw)
     connected = bool(connected_facets)
     missing = not has_oauth and not connected
+    degraded = bool((raw or {}).get('degraded'))
     status = 'connected' if connected else ('needs_config' if missing else 'disconnected')
+    if degraded and connected:
+        status = 'degraded'
     facets = {
         name: {'connected': name in connected_facets}
         for name in GOOGLE_FACET_API_SCOPES
@@ -189,6 +197,9 @@ def _google_card(raw: dict[str, Any] | None) -> dict[str, Any]:
         'scopes': meta['scopes'],
         'status': status,
         'connected': connected,
+        'degraded': degraded,
+        'degradedReason': as_str((raw or {}).get('degradedReason')) or None,
+        'expiresAt': (raw or {}).get('expiresAt'),
         'connectedFacets': connected_facets,
         'facets': facets,
         'grantedScopes': granted,
@@ -449,6 +460,130 @@ def _google_client_secret() -> str:
     ).strip()
 
 
+def _google_access_expiry(raw: dict[str, Any] | None) -> float | None:
+    """Epoch seconds when the stored Google access token expires, if known."""
+    if not raw:
+        return None
+    expires_at = raw.get('expiresAt') or raw.get('expires_at')
+    if expires_at:
+        try:
+            dt = datetime.fromisoformat(str(expires_at).replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            pass
+    expires_in = raw.get('expiresIn') or raw.get('expires_in')
+    updated = raw.get('updatedAt')
+    if expires_in and updated:
+        try:
+            dt = datetime.fromisoformat(str(updated).replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp() + float(expires_in)
+        except ValueError:
+            pass
+    return None
+
+
+def _mark_google_degraded(reason: str) -> None:
+    """Persist a degraded flag so the card stops claiming a working connection.
+
+    Called when the refresh token is revoked (invalid_grant) or refresh fails
+    — repeated failures must surface once, not retry forever.
+    """
+    try:
+        sc = _sc()
+        raw = as_dict(sc.get('google')) if sc.get('google') else {}
+        if not raw:
+            return
+        sc['google'] = {**raw, 'degraded': True, 'degradedReason': reason, 'updatedAt': _now()}
+        _save_sc(sc)
+    except Exception as exc:
+        logger.warning('google degraded marker failed: %s', exc)
+
+
+async def _refresh_google_access_token(raw: dict[str, Any], *, force: bool = False) -> tuple[str, str]:
+    """Refresh the Google access token when it is near expiry.
+
+    Returns ``(access_token, status)`` where status is one of:
+      'ok'        — token fresh (or refreshed)
+      'no_refresh'— no refresh token / client id; caller keeps what it has
+      'revoked'   — refresh failed (invalid_grant) and the connection is
+                    marked degraded; do not retry until the user reconnects
+    """
+    import httpx
+
+    refresh_token = as_str(raw.get('refreshToken'))
+    access = as_str(raw.get('accessToken'))
+    if not refresh_token:
+        return access, 'no_refresh'
+    # Already-known-revoked: don't hammer Google on every access.
+    if as_str(raw.get('degradedReason')) and 'revoked' in as_str(raw.get('degradedReason')):
+        return access, 'revoked'
+    expiry = _google_access_expiry(raw)
+    if not force and expiry is not None and expiry - time.time() > _TOKEN_REFRESH_MARGIN_S:
+        return access, 'ok'  # still fresh
+    client_id = _google_client_id()
+    if not client_id:
+        return access, 'no_refresh'
+    body: dict[str, str] = {
+        'grant_type': 'refresh_token',
+        'client_id': client_id,
+        'refresh_token': refresh_token,
+    }
+    client_secret = _google_client_secret()
+    if client_secret:
+        body['client_secret'] = client_secret
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                'https://oauth2.googleapis.com/token',
+                data=body,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            )
+            if resp.status_code >= 400:
+                err_text = resp.text[:300]
+                if 'invalid_grant' in err_text or resp.status_code == 400:
+                    _mark_google_degraded(
+                        'Google refresh token was revoked (invalid_grant) — reconnect Google in Settings → Integrations.'
+                    )
+                else:
+                    _mark_google_degraded(f'Google token refresh failed: HTTP {resp.status_code}')
+                return as_str(raw.get('accessToken')), 'revoked'
+            tokens = resp.json()
+            new_access = as_str(tokens.get('access_token'))
+            if not new_access:
+                return access, 'no_refresh'
+            now_iso = _now()
+            updated: dict[str, Any] = {
+                'accessToken': new_access,
+                'tokenType': as_str(tokens.get('token_type')) or as_str(raw.get('tokenType')) or 'Bearer',
+                'updatedAt': now_iso,
+                'status': 'connected',
+                'degraded': False,
+                'degradedReason': None,
+            }
+            if tokens.get('expires_in'):
+                updated['expiresIn'] = tokens.get('expires_in')
+                updated['expiresAt'] = (
+                    datetime.now(timezone.utc) + timedelta(seconds=int(tokens['expires_in']))
+                ).isoformat()
+            if tokens.get('scope'):
+                updated['scope'] = as_str(tokens.get('scope'))
+            # Refresh tokens may rotate — keep the newest.
+            if tokens.get('refresh_token'):
+                updated['refreshToken'] = as_str(tokens.get('refresh_token'))
+            sc = _sc()
+            stored = as_dict(sc.get('google')) if sc.get('google') else {}
+            sc['google'] = {**stored, **updated}
+            _save_sc(sc)
+            return new_access, 'ok'
+    except Exception as exc:
+        logger.warning('google token refresh network failure: %s', exc)
+        return access, 'no_refresh'
+
+
 def _pkce_pair() -> tuple[str, str]:
     """Return (code_verifier, code_challenge) for OAuth PKCE S256."""
     # 64 url-safe bytes → ~86 chars (within 43–128)
@@ -597,6 +732,12 @@ async def google_auth_url(email: str = '', facet: str = 'gmail') -> dict[str, An
             sid = as_str(srv.get('id'))
             if not sid:
                 continue
+            transport = as_str(srv.get('transport'), 'stdio')
+            # Never spawn stdio subprocesses just to build an auth URL —
+            # workspace-mcp is stdio and is discovered at startup / on Start,
+            # so consult the cached tool list instead of spawning here.
+            if transport in ('stdio', ''):
+                continue
             try:
                 await mcp_client.discoverTools(sid)
             except Exception:
@@ -687,9 +828,8 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
 
     _purge_stale_oauth_states()
     pending = _oauth_pending.pop(state, None) if state else None
-    # Allow missing state in dev if only one pending (desktop loopback quirks)
-    if pending is None and len(_oauth_pending) == 1:
-        _, pending = _oauth_pending.popitem()
+    # No len()==1 fallback here: an attacker-crafted callback with a missing
+    # or mismatched state must never destroy the victim's in-flight OAuth.
 
     client_id = _google_client_id()
     client_secret = _google_client_secret()
@@ -806,10 +946,17 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
         'picture': picture or existing.get('picture'),
         'googleSub': google_sub or existing.get('googleSub') or existing.get('sub'),
         'status': 'connected',
+        'degraded': False,
+        'degradedReason': None,
         'accessToken': access_token or existing.get('accessToken'),
         'refreshToken': refresh_token or existing.get('refreshToken'),
         'tokenType': as_str(tokens.get('token_type')) or 'Bearer',
         'expiresIn': tokens.get('expires_in'),
+        'expiresAt': (
+            (datetime.now(timezone.utc) + timedelta(seconds=int(tokens['expires_in']))).isoformat()
+            if tokens.get('expires_in')
+            else existing.get('expiresAt')
+        ),
         'scope': ' '.join(merged_scopes) if merged_scopes else scope_str,
         'connectedFacets': sorted(connected_facets),
         'updatedAt': _now(),
@@ -832,6 +979,11 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
             client_id=client_id,
             client_secret=client_secret,
             scopes=as_str(tokens.get('scope')),
+            expiry=(
+                (datetime.now(timezone.utc) + timedelta(seconds=int(tokens['expires_in']))).isoformat()
+                if tokens.get('expires_in')
+                else None
+            ),
         )
     except Exception:
         pass
@@ -870,8 +1022,9 @@ def _workspace_mcp_credentials_dir() -> str:
     return os.path.join(os.getcwd(), '.credentials')
 
 
-def sync_google_tokens_to_workspace_mcp(preferred_email: str | None = None) -> str:
-    """If August already has Google tokens, write them for workspace-mcp.
+async def sync_google_tokens_to_workspace_mcp(preferred_email: str | None = None) -> str:
+    """If August already has Google tokens, refresh if stale and write them
+    for workspace-mcp.
 
     Returns the email that was synced, or '' if nothing to sync.
     """
@@ -886,6 +1039,20 @@ def sync_google_tokens_to_workspace_mcp(preferred_email: str | None = None) -> s
     refresh = as_str(raw.get('refreshToken'))
     if not email or not (access or refresh):
         return ''
+    # Refresh on access when near expiry — otherwise workspace-mcp silently
+    # 401s ~1h after connect while the UI still claims 'connected'.
+    if refresh:
+        access, status = await _refresh_google_access_token(raw)
+        if status == 'ok' and access:
+            sc2 = _sc()
+            stored2 = as_dict(sc2.get('google')) if sc2.get('google') else {}
+            raw = {**raw, 'accessToken': access}
+            if stored2.get('expiresAt'):
+                raw['expiresAt'] = stored2.get('expiresAt')
+    expiry_iso = None
+    exp = _google_access_expiry(raw)
+    if exp:
+        expiry_iso = datetime.fromtimestamp(exp, tz=timezone.utc).isoformat()
     ok = _write_workspace_mcp_credentials(
         email=email,
         access_token=access,
@@ -893,6 +1060,7 @@ def sync_google_tokens_to_workspace_mcp(preferred_email: str | None = None) -> s
         client_id=_google_client_id(),
         client_secret=_google_client_secret(),
         scopes=as_str(raw.get('scope')),
+        expiry=expiry_iso,
     )
     if not ok:
         return ''
@@ -912,6 +1080,7 @@ def _write_workspace_mcp_credentials(
     client_id: str,
     client_secret: str,
     scopes: str = '',
+    expiry: str | None = None,
 ) -> bool:
     """Persist Google tokens in the format workspace-mcp LocalDirectoryCredentialStore reads."""
     if not email or not (access_token or refresh_token):
@@ -929,7 +1098,7 @@ def _write_workspace_mcp_credentials(
         'client_id': client_id or None,
         'client_secret': client_secret or None,
         'scopes': scope_list,
-        'expiry': None,
+        'expiry': expiry,
     }
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
@@ -1033,6 +1202,8 @@ def _is_sensitive(key: str) -> bool:
 
 
 def get_mcp_env() -> dict[str, Any]:
+    from app.lib.secrets import mask
+
     cfg = getConfig()
     raw = as_dict(cfg.get('mcpGlobalEnv')) if cfg.get('mcpGlobalEnv') is not None else {}
     env_list: list[dict[str, Any]] = []
@@ -1043,7 +1214,7 @@ def get_mcp_env() -> dict[str, Any]:
         env_list.append(
             {
                 'key': k,
-                'value': (_mask(v) if sensitive and v else v),
+                'value': (mask(v) if sensitive and v else v),
                 'set': bool(v),
                 'sensitive': sensitive,
                 'masked': sensitive and bool(v),
@@ -1052,12 +1223,25 @@ def get_mcp_env() -> dict[str, Any]:
     return {'env': env_list}
 
 
+def _value_is_masked_preview(incoming: str, stored: str) -> bool:
+    """True when the UI sent back the masked preview of the stored value."""
+    from app.lib.secrets import mask
+
+    preview = mask(stored)
+    return bool(preview) and incoming == preview
+
+
 def set_mcp_env(
     env: list[dict[str, Any]] | dict[str, str],
     *,
     merge: bool = False,
 ) -> dict[str, Any]:
-    """Save MCP global env. When merge=True, update keys without wiping the rest."""
+    """Save MCP global env. When merge=True, update keys without wiping the rest.
+
+    Sensitive keys are masked in GET responses; if the UI round-trips those
+    masked previews back here, the stored full value is kept instead of
+    overwriting the secret with its own preview.
+    """
     cfg = getConfig()
     existing = as_dict(cfg.get('mcpGlobalEnv')) if cfg.get('mcpGlobalEnv') is not None else {}
     base: dict[str, str] = {str(k): str(v) for k, v in existing.items()} if merge else {}
@@ -1070,6 +1254,10 @@ def set_mcp_env(
             if merge and not val:
                 base.pop(key, None)
             else:
+                if _is_sensitive(key):
+                    stored = existing.get(key)
+                    if stored and _value_is_masked_preview(val, str(stored)):
+                        val = str(stored)  # keep the stored full secret
                 base[key] = val
     else:
         for item in env:
@@ -1082,6 +1270,10 @@ def set_mcp_env(
             if merge and not val:
                 base.pop(k, None)
             else:
+                if _is_sensitive(k):
+                    stored = existing.get(k)
+                    if stored and _value_is_masked_preview(val, str(stored)):
+                        val = str(stored)  # keep the stored full secret
                 base[k] = val
     cfg['mcpGlobalEnv'] = base
     saveConfig(cfg)

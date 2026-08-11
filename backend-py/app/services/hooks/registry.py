@@ -6,6 +6,9 @@ events in priority order, short-circuiting on the first 'deny'.
 
 Execution rules:
 - Async handlers with a 5s timeout (fail-open on timeout).
+- PRE_TOOL_USE handler exceptions fail CLOSED (returned as a deny so a broken
+  security guard never silently allows a credential write); POST_TOOL_USE
+  exceptions are logged only (the tool already ran).
 - Circuit breaker: 3 consecutive timeouts disables a hook for 60s.
 - First 'deny' short-circuits (no further hooks run for that event).
 - 'modify' results chain (each hook sees previous modifications).
@@ -27,6 +30,12 @@ logger = logging.getLogger(__name__)
 _HOOK_TIMEOUT_S = 5.0
 _BREAKER_THRESHOLD = 3
 _BREAKER_COOLDOWN_S = 60.0
+
+# Events with no emission call site anywhere in the app (workbench emits only
+# PRE_TOOL_USE / POST_TOOL_USE). Dispatch of these is a debug-logged no-op.
+_RESERVED_NOOP_EVENTS = frozenset(
+    {HookEvent.SESSION_START, HookEvent.PRE_MODEL_CALL, HookEvent.STOP}
+)
 
 
 @dataclass
@@ -85,7 +94,15 @@ class HookRegistry:
         matcher: str = '*',
         priority: int = 100,
     ) -> None:
-        """Register a hook. Lower priority runs first."""
+        """Register a hook. Lower priority runs first.
+
+        Duplicate names are skipped (and logged) so re-registration never
+        stacks two handlers under one name — unregister removes by name, and
+        stacked duplicates would otherwise all vanish together.
+        """
+        if any(h.name == name for h in self._hooks):
+            logger.warning('Hook %s already registered — skipping duplicate', name)
+            return
         entry = _HookEntry(
             name=name,
             event=event,
@@ -108,6 +125,12 @@ class HookRegistry:
 
         Short-circuits on first 'deny'. Applies 'modify' chaining.
         """
+        if event in _RESERVED_NOOP_EVENTS:
+            # Reserved events: no emission call sites exist yet (the workbench
+            # owns the lifecycle), so dispatch is a documented no-op. Hook
+            # registrations for these events stay inert until call sites land.
+            logger.debug('Hook event %s has no emission call site — no-op', event.value)
+            return []
         results: list[HookResult] = []
         tool = ctx.tool_name or ''
 
@@ -164,7 +187,19 @@ class HookRegistry:
             entry.record_duration(elapsed_ms)
             entry.consecutive_timeouts = 0
             logger.error('Hook %s raised: %s', entry.name, exc)
-            return HookResult(action='allow')  # Fail-open
+            if entry.event == HookEvent.PRE_TOOL_USE:
+                # Fail-CLOSED for PRE events: pre-tool hooks are security
+                # guards (secret_guard, sensitive_code), so a broken handler
+                # must not silently allow a credential write. Surface the
+                # failure as a deny the workbench wrapper maps to a block.
+                entry.deny_count += 1
+                return HookResult(
+                    action='deny',
+                    message=f'Hook {entry.name} failed to evaluate the call: {exc}',
+                )
+            # POST hooks observe an already-executed tool — a failure here
+            # cannot roll the call back, so log and continue (fail-open).
+            return HookResult(action='allow')
 
     def stats(self) -> dict[str, Any]:
         """Return per-hook stats for the /api/hooks/stats endpoint."""

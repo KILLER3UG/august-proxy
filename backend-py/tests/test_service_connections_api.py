@@ -130,6 +130,185 @@ async def test_mcp_env_merge_keeps_existing_keys(client):
 
 
 @pytest.mark.asyncio
+async def test_mcp_env_masked_preview_does_not_overwrite_secret(client):
+    """GET masks secret-shaped values; a UI round-trip of the masked preview
+    must never overwrite the stored full secret with its own preview."""
+    await client.post(
+        '/api/mcp-env',
+        json={'env': {'GOOGLE_OAUTH_CLIENT_SECRET': 'real-secret-value-123'}},
+    )
+    r = await client.get('/api/mcp-env')
+    env = {e['key']: e for e in r.json()['env']}
+    entry = env['GOOGLE_OAUTH_CLIENT_SECRET']
+    assert entry['masked'] is True
+    preview = entry['value']
+    assert 'real-secret-value-123' not in preview
+
+    # Round-trip the masked preview back (merge path)
+    r2 = await client.post(
+        '/api/mcp-env',
+        json={'env': [{'key': 'GOOGLE_OAUTH_CLIENT_SECRET', 'value': preview}], 'merge': True},
+    )
+    assert r2.status_code == 200
+    r3 = await client.get('/api/mcp-env')
+    env3 = {e['key']: e for e in r3.json()['env']}
+    # Stored full value survived — the preview masks to the same string.
+    assert env3['GOOGLE_OAUTH_CLIENT_SECRET']['value'] == preview
+    assert env3['GOOGLE_OAUTH_CLIENT_SECRET']['masked'] is True
+
+
+@pytest.mark.asyncio
+async def test_google_callback_mismatched_state_preserves_pending(client, monkeypatch):
+    """A callback with an unknown state must not consume the victim's pending OAuth."""
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'test-client.apps.googleusercontent.com')
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_SECRET', 'test-secret')
+    await client.post('/api/service-connections/google/auth', json={'email': ''})
+    from app.services import service_connections as sc
+
+    victim_state = next(iter(sc._oauth_pending))
+    r = await client.get(
+        '/api/service-connections/google/callback',
+        params={'code': 'attacker-code', 'state': 'attacker-state'},
+    )
+    assert r.status_code == 400
+    assert victim_state in sc._oauth_pending  # untouched
+    assert len(sc._oauth_pending) == 1
+
+
+@pytest.mark.asyncio
+async def test_google_sync_refreshes_expired_token(client, monkeypatch, tmp_path):
+    """Expired access tokens are refreshed before bridging to workspace-mcp,
+    and the credential file carries a real expiry (not hardcoded None)."""
+    import json
+
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'test-client.apps.googleusercontent.com')
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_SECRET', 'test-secret')
+    monkeypatch.setenv('WORKSPACE_MCP_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+    from app.services import service_connections as sc
+
+    sc._save_sc(
+        {
+            'google': {
+                'email': 'u@gmail.com',
+                'accessToken': 'ya29.old',
+                'refreshToken': '1//refresh',
+                'expiresAt': '2020-01-01T00:00:00+00:00',
+                'scope': 'email profile',
+                'connectedFacets': ['gmail'],
+                'status': 'connected',
+            }
+        }
+    )
+
+    class FakeResponse:
+        status_code = 200
+        text = ''
+
+        def __init__(self, status_code: int, payload: dict):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def post(self, url, data=None, headers=None):
+            assert 'oauth2.googleapis.com/token' in url
+            assert data['grant_type'] == 'refresh_token'
+            assert data['refresh_token'] == '1//refresh'
+            assert data['client_secret'] == 'test-secret'
+            return FakeResponse(
+                200,
+                {
+                    'access_token': 'ya29.fresh',
+                    'token_type': 'Bearer',
+                    'expires_in': 3600,
+                    'scope': 'email profile',
+                },
+            )
+
+    monkeypatch.setattr('app.services.service_connections.httpx.AsyncClient', FakeClient)
+    email = await sc.sync_google_tokens_to_workspace_mcp()
+    assert email == 'u@gmail.com'
+    raw = (sc._sc().get('google') or {})
+    assert raw.get('accessToken') == 'ya29.fresh'
+    assert raw.get('expiresAt')
+    creds_file = tmp_path / 'creds' / 'u@gmail.com.json'
+    assert creds_file.exists()
+    payload = json.loads(creds_file.read_text('utf-8'))
+    assert payload['expiry'] is not None
+    assert payload['token'] == 'ya29.fresh'
+
+
+@pytest.mark.asyncio
+async def test_google_refresh_revoked_marks_degraded(client, monkeypatch):
+    """invalid_grant on refresh marks the connection degraded — no infinite retry."""
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'test-client.apps.googleusercontent.com')
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_SECRET', 'test-secret')
+    from app.services import service_connections as sc
+
+    sc._save_sc(
+        {
+            'google': {
+                'email': 'u@gmail.com',
+                'accessToken': 'ya29.stale',
+                'refreshToken': '1//revoked',
+                'expiresAt': '2020-01-01T00:00:00+00:00',
+                'scope': 'email',
+                'connectedFacets': ['gmail'],
+                'status': 'connected',
+            }
+        }
+    )
+
+    class FakeResponse:
+        def __init__(self, status_code: int, payload: dict | str):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = payload if isinstance(payload, str) else str(payload)
+
+        def json(self):
+            assert isinstance(self._payload, dict)
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def post(self, url, data=None, headers=None):
+            return FakeResponse(400, '{"error":"invalid_grant"}')
+
+    monkeypatch.setattr('app.services.service_connections.httpx.AsyncClient', FakeClient)
+    raw = dict(sc._sc().get('google') or {})
+    access, status = await sc._refresh_google_access_token(raw)
+    assert status == 'revoked'
+    assert access == 'ya29.stale'
+    stored = sc._sc().get('google') or {}
+    assert stored.get('degraded') is True
+    assert 'revoked' in (stored.get('degradedReason') or '')
+
+    # Second attempt is short-circuited (known revoked) — no further HTTP.
+    sc._sc()['google']['accessToken'] = 'ya29.stale'
+    access2, status2 = await sc._refresh_google_access_token(stored)
+    assert status2 == 'revoked'
+
+
+@pytest.mark.asyncio
 async def test_google_auth_requires_config(client):
     r = await client.post('/api/service-connections/google/auth', json={'email': ''})
     assert r.status_code == 200

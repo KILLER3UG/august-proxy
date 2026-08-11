@@ -108,6 +108,44 @@ class TestCurator:
         assert rec is not None
         assert rec.state == 'stale'
 
+    def testStaleRevivesToActiveOnRecentUse(self, curator, isolatedSkills, seededSkills):
+        """A stale skill that is used again must revive — never linger stale
+        and get archived by the next 60-day sweep despite recent use."""
+        curator.run_curation()
+        assert curator.get_record('old-skill').state == 'stale'
+        curator.bump_use('old-skill')  # recent activity
+        report = curator.run_curation()
+        assert 'old-skill' not in report['archived']
+        assert curator.get_record('old-skill').state == 'active'
+
+    def testArchiveRejectsPathTraversalNames(self, curator, isolatedSkills):
+        """Crafted frontmatter names must never escape the agent skills root."""
+        for bad in ('../escape', '..\\escape', 'a/b', 'a\\b', '.hidden', '..', '', 'C:\\abs', '/abs'):
+            assert curator.archive(bad) is False, bad
+
+    def testRestoreRefusesNonAgentSkill(self, curator, isolatedSkills):
+        import shutil
+
+        skill_service.createSkill('bundled-r', 'Desc.', 'body.', createdBy='')
+        agentRoot = skill_service._agentSkillsDir()
+        # Simulate the archived state: move the dir like archive() does.
+        (agentRoot / '.archive').mkdir(parents=True, exist_ok=True)
+        shutil.move(str(agentRoot / 'bundled-r'), str(agentRoot / '.archive' / 'bundled-r'))
+        rec = curator._ensure('bundled-r')
+        rec.state = 'archived'
+        curator._save()
+        assert curator.restore('bundled-r') is False
+        assert not (agentRoot / 'bundled-r').exists()
+        assert (agentRoot / '.archive' / 'bundled-r').exists()
+
+    def testUnpinRefusesNonAgentSkill(self, curator, isolatedSkills):
+        skill_service.createSkill('b-unpin', 'Desc.', 'body.', createdBy='')
+        rec = curator._ensure('b-unpin')
+        rec.pinned = True
+        curator._save()
+        assert curator.unpin('b-unpin') is False
+        assert rec.pinned is True
+
     def testRunCurationDryRun(self, curator, seededSkills):
         report = curator.run_curation(dryRun=True)
         assert 'old-skill' in report['staled']
@@ -170,3 +208,13 @@ def testRunCurationViaApi(curator, seededSkills):
     assert r.status_code == 200
     report = r.json()['report']
     assert 'old-skill' in report['staled']
+
+
+def testRunCurationDryRunSnakeParamViaApi(curator, seededSkills):
+    """Frontend sends ?dry_run= (snake) — must stay a dry-run, never a real pass."""
+    client = TestClient(_app(curator))
+    r = client.post('/api/curator/run?dry_run=true')
+    assert r.status_code == 200
+    report = r.json()['report']
+    assert 'old-skill' in report['staled']
+    assert curator.get_record('old-skill').state != 'stale'  # not executed for real
