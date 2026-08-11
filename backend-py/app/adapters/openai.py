@@ -21,7 +21,7 @@ import time
 import uuid
 from typing import AsyncIterator, Callable, cast
 
-from app.adapters.case_converters import camelToSnake, snakeToCamel
+from app.adapters.case_converters import camelToSnake, snakeToCamel, strip_none_deep
 from app.adapters.openai_sse import (
     send_simulated_openai_stream,
     write_openai_sse_data,
@@ -250,6 +250,7 @@ async def resolveManagedOpenaiToolCalls(
     onToolEvent: Callable[[dict[str, object]], None] | None = None,
     parentSignal: object = None,
     client: object = None,
+    sampling: dict[str, object] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object] | None]:
     """Run the multi-round tool resolution loop.
 
@@ -259,6 +260,9 @@ async def resolveManagedOpenaiToolCalls(
     3. If only managed tools, execute them locally and append results
     4. If client tools are present, return the response for passthrough
     5. Repeat until no managed tools remain or max rounds reached
+
+    ``sampling`` carries the client's original sampling params so round-2+
+    bodies don't silently drop them.
     """
     currentMessages = cast('list[dict[str, object]]', list(messages))
     finalUsage: dict[str, object] | None = None
@@ -272,6 +276,9 @@ async def resolveManagedOpenaiToolCalls(
             dict[str, object],
             camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}),
         )
+        if sampling:
+            reqBody.update({k: v for k, v in sampling.items() if v is not None})
+        reqBody = cast(dict[str, object], strip_none_deep(cast(JsonValue, reqBody)))
         resp = await cast('BaseProviderClient', client).requestJson('POST', upstreamUrl, upstreamHeaders, reqBody)
         if resp.is_error:
             raise UpstreamError(resp)
@@ -320,7 +327,7 @@ async def streamOpenaiSseToClient(
     yields only SSE data strings.
     """
     body['stream'] = True
-    bodyJson = cast(dict[str, object], as_dict(camelToSnake(body), {}))
+    bodyJson = cast('dict[str, object]', strip_none_deep(cast(JsonValue, camelToSnake(body))))
     client = await _getClient()
     async for rawEvent in client.streamSse(upstreamUrl, upstreamHeaders, bodyJson):
         event = cast('dict[str, object]', rawEvent)
@@ -404,11 +411,20 @@ async def streamUpstreamAndResolveToolsOpenai(
             break
         acc = OpenaiStreamAccumulator()
         if toolRound == 1:
-            streamBody = cast('dict[str, object]', camelToSnake({**raw_body, 'stream': True}))
+            streamBody = cast('dict[str, object]', strip_none_deep(cast(JsonValue, camelToSnake({**raw_body, 'stream': True}))))
         else:
+            # Spread the round-1 body so sampling params (temperature, top_p,
+            # stop, …) survive into round 2+ instead of being silently dropped.
             streamBody = cast(
                 'dict[str, object]',
-                camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True}),
+                strip_none_deep(
+                    cast(
+                        JsonValue,
+                        camelToSnake(
+                            {**raw_body, 'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True}
+                        ),
+                    )
+                ),
             )
         async for chunk in client.streamSse(upstreamUrl, upstreamHeaders, streamBody):
             if chunk.get('type') == 'error':
@@ -526,15 +542,63 @@ async def handleChatCompletions(
         upstream_body['stream'] = bool(clientWantsStream)
         msgs = as_list(upstream_body.get('messages'), [])
         if msgs:
-            upstream_body['input'] = [
-                {
-                    'role': as_str(m.get('role'), 'user'),
-                    'content': as_str(m.get('content'), ''),
-                }
-                for m in msgs
-                if isinstance(m, dict)
-            ]
+            # Responses API `input` items: plain {role, content} messages,
+            # function_call / function_call_output items for tool history.
+            # System messages belong in `instructions` (not `input`), tool
+            # messages must become function_call_output (a role: 'tool' item
+            # is invalid in the Responses API), and assistant content: null
+            # (the norm when tool_calls are present) must not be forwarded.
+            input_items: list[dict[str, object]] = []
+            instructions: list[str] = []
+            for m in msgs:
+                if not isinstance(m, dict):
+                    continue
+                role = as_str(m.get('role'), 'user')
+                content = m.get('content')
+                if role == 'system':
+                    instructions.append(_openaiContentToText(content))
+                    continue
+                if role == 'tool':
+                    input_items.append(
+                        {
+                            'type': 'function_call_output',
+                            'call_id': as_str(m.get('tool_call_id'), ''),
+                            'output': _openaiContentToText(content),
+                        }
+                    )
+                    continue
+                if role == 'assistant':
+                    tool_calls = as_list(m.get('tool_calls'), [])
+                    text = _openaiContentToText(content)
+                    if text:
+                        input_items.append({'role': 'assistant', 'content': text})
+                    for tc in tool_calls:
+                        tcd = as_dict(tc, {})
+                        fn = as_dict(tcd.get('function'), {})
+                        args_raw = as_str(fn.get('arguments'), '')
+                        args: object = {}
+                        if args_raw:
+                            try:
+                                parsed = json.loads(args_raw)
+                                if isinstance(parsed, dict):
+                                    args = parsed
+                            except (TypeError, ValueError):
+                                args = {}
+                        input_items.append(
+                            {
+                                'type': 'function_call',
+                                'call_id': as_str(tcd.get('id'), ''),
+                                'name': as_str(fn.get('name'), ''),
+                                'arguments': args,
+                            }
+                        )
+                    continue
+                input_items.append({'role': role, 'content': _openaiContentToText(content)})
+            if instructions:
+                upstream_body['instructions'] = '\n\n'.join(instructions)
+            upstream_body['input'] = input_items
             upstream_body.pop('messages', None)
+        upstream_body = cast('dict[str, object]', strip_none_deep(cast(JsonValue, upstream_body)))
         responsesUrl = upstreamUrl.replace('/chat/completions', '/responses')
         if clientWantsStream:
             # Upstream-native Responses SSE pass-through: the gateway's events
@@ -546,10 +610,12 @@ async def handleChatCompletions(
         resp = await client.requestJson('POST', responsesUrl, headers, upstream_body)
         if resp.is_error:
             return (normalize_upstream_error(resp), None)
+        # Non-streaming responses: external clients speak the snake_case wire
+        # format — never leak the internal camelCase translation.
         return (
             cast(
                 'dict[str, object]',
-                snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)},
+                camelToSnake(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)},
             ),
             None,
         )
@@ -565,9 +631,22 @@ async def handleChatCompletions(
         raw_body['stream'] = False
         if hasManagedTools:
             messages = cast('list[dict[str, object]]', as_list(raw_body.get('messages'), []))
+            sampling = {
+                k: raw_body.get(k)
+                for k in ('temperature', 'top_p', 'top_k', 'stop', 'presence_penalty', 'frequency_penalty')
+                if raw_body.get(k) is not None
+            }
             try:
                 updatedMessages, usage = await resolveManagedOpenaiToolCalls(
-                    messages, model, upstreamUrl, headers, knownTools, managedLocalToolNames, clientToolNames, client=client
+                    messages,
+                    model,
+                    upstreamUrl,
+                    headers,
+                    knownTools,
+                    managedLocalToolNames,
+                    clientToolNames,
+                    client=client,
+                    sampling=sampling,
                 )
             except UpstreamError as exc:
                 # Never answer 200 with the user's own text when the upstream
@@ -584,15 +663,18 @@ async def handleChatCompletions(
                 usage=usage or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0},
             )
             for tc in lastToolCalls:
-                if isinstance(tc, dict):
-                    fn = tc.get('function', {}) or {}
-                    response_acc.tool_calls.append(
-                        ToolCallDelta(
-                            id=tc.get('id', ''),
-                            function_name=fn.get('name', '') if isinstance(fn, dict) else '',
-                            function_arguments=fn.get('arguments', '') if isinstance(fn, dict) else '',
-                        )
+                if not isinstance(tc, dict):
+                    continue
+                fnRaw = tc.get('function')
+                if not isinstance(fnRaw, dict):
+                    continue
+                response_acc.tool_calls.append(
+                    ToolCallDelta(
+                        id=as_str(tc.get('id'), ''),
+                        function_name=as_str(fnRaw.get('name'), ''),
+                        function_arguments=as_str(fnRaw.get('arguments'), ''),
                     )
+                )
             response = response_acc.build_response()
             return (response, None)
         else:
@@ -601,10 +683,12 @@ async def handleChatCompletions(
             )
             if resp.is_error:
                 return (normalize_upstream_error(resp), None)
+            # Non-streaming passthrough: external clients speak the snake_case
+            # wire format — never leak the internal camelCase translation.
             return (
                 cast(
                     'dict[str, object]',
-                    snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)},
+                    camelToSnake(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)},
                 ),
                 None,
             )
@@ -778,6 +862,10 @@ async def _streamAnthropicAsOpenai(
     created = int(time.time())
     chunk_id = f'chatcmpl-{uuid.uuid4().hex[:12]}'
     done = False
+    # Accumulate tool_use blocks (name/id from content_block_start, arguments
+    # from input_json_delta) so the finish chunk can carry complete tool_calls
+    # — OpenAI clients branch on finish_reason: tool_calls and wait for them.
+    tool_calls_acc: dict[int, dict[str, str]] = {}
     try:
         async for event in client.messages_stream(body, apiKey):
             etype = as_str(event.get('type'), '')
@@ -791,8 +879,18 @@ async def _streamAnthropicAsOpenai(
                         'choices': [{'index': 0, 'delta': {'role': 'assistant'}, 'finish_reason': None}],
                     }
                 )
+            elif etype == 'content_block_start':
+                block = as_dict(event.get('content_block'), {})
+                if as_str(block.get('type'), '') == 'tool_use':
+                    idx = as_int(event.get('index'), len(tool_calls_acc))
+                    tool_calls_acc[idx] = {
+                        'id': as_str(block.get('id'), ''),
+                        'name': as_str(block.get('name'), ''),
+                        'arguments': '',
+                    }
             elif etype == 'content_block_delta':
                 delta = as_dict(event.get('delta'), {})
+                dtype = as_str(delta.get('type'), '')
                 text = as_str(delta.get('text'), '')
                 if text:
                     yield write_openai_sse_data(
@@ -804,17 +902,36 @@ async def _streamAnthropicAsOpenai(
                             'choices': [{'index': 0, 'delta': {'content': text}, 'finish_reason': None}],
                         }
                     )
+                elif dtype == 'input_json_delta':
+                    idx = as_int(event.get('index'), -1)
+                    if idx in tool_calls_acc:
+                        tool_calls_acc[idx]['arguments'] += as_str(delta.get('partial_json'), '')
             elif etype == 'message_delta':
                 delta = as_dict(event.get('delta'), {})
                 finish = _anthropicStopToOpenaiFinish(as_str(delta.get('stop_reason'), ''))
+                # Don't advertise tool_calls without the calls — fall back to
+                # 'stop' so clients don't wait forever for a tool round.
+                if finish == 'tool_calls' and not tool_calls_acc:
+                    finish = 'stop'
                 if finish:
+                    delta_payload: dict[str, object] = {}
+                    if finish == 'tool_calls':
+                        delta_payload['tool_calls'] = [
+                            {
+                                'index': idx,
+                                'id': acc_tc['id'],
+                                'type': 'function',
+                                'function': {'name': acc_tc['name'], 'arguments': acc_tc['arguments']},
+                            }
+                            for idx, acc_tc in sorted(tool_calls_acc.items())
+                        ]
                     yield write_openai_sse_data(
                         {
                             'id': chunk_id,
                             'object': 'chat.completion.chunk',
                             'created': created,
                             'model': model,
-                            'choices': [{'index': 0, 'delta': {}, 'finish_reason': finish}],
+                            'choices': [{'index': 0, 'delta': delta_payload, 'finish_reason': finish}],
                         }
                     )
                 if event.get('usage') is not None:
@@ -834,10 +951,33 @@ def _anthropicJsonToOpenaiResponse(resp_body: object, model: str) -> dict[str, o
     """Translate a non-streaming Anthropic Messages response to OpenAI shape."""
     body = as_dict(resp_body, {})
     text_parts: list[str] = []
+    tool_calls: list[dict[str, object]] = []
     for b in as_list(body.get('content'), []):
-        if isinstance(b, dict) and as_str(b.get('type'), '') == 'text':
+        if not isinstance(b, dict):
+            continue
+        btype = as_str(b.get('type'), '')
+        if btype == 'text':
             text_parts.append(as_str(b.get('text'), ''))
+        elif btype == 'tool_use':
+            tool_calls.append(
+                {
+                    'id': as_str(b.get('id'), ''),
+                    'type': 'function',
+                    'function': {
+                        'name': as_str(b.get('name'), ''),
+                        'arguments': json.dumps(as_dict(b.get('input'), {})),
+                    },
+                }
+            )
     finish = _anthropicStopToOpenaiFinish(as_str(body.get('stop_reason'), '')) or 'stop'
+    # Never advertise `finish_reason: tool_calls` without tool_calls in the
+    # message — clients branch on it and wait forever for calls that never
+    # come (they were previously dropped on this translation path).
+    if finish == 'tool_calls' and not tool_calls:
+        finish = 'stop'
+    message: dict[str, object] = {'role': 'assistant', 'content': ''.join(text_parts)}
+    if tool_calls:
+        message['tool_calls'] = tool_calls
     return {
         'id': as_str(body.get('id'), f'chatcmpl-{uuid.uuid4().hex[:12]}'),
         'object': 'chat.completion',
@@ -846,7 +986,7 @@ def _anthropicJsonToOpenaiResponse(resp_body: object, model: str) -> dict[str, o
         'choices': [
             {
                 'index': 0,
-                'message': {'role': 'assistant', 'content': ''.join(text_parts)},
+                'message': message,
                 'finish_reason': finish,
             }
         ],

@@ -322,8 +322,12 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
                     if '"usage"' in lower or '"message_delta"' in lower:
                         import re
 
-                        mIn = re.search('"input_tokens"[:\\s]+(\\d+)', lower)
-                        mOut = re.search('"output_tokens"[:\\s]+(\\d+)', lower)
+                        # Anthropic upstreams report input_tokens/output_tokens;
+                        # OpenAI-compatible upstreams report prompt_tokens/
+                        # completion_tokens — capture both so chat-completions
+                        # streams get token accounting too.
+                        mIn = re.search(r'"(?:input_tokens|prompt_tokens)"[:\\s]+(\\d+)', lower)
+                        mOut = re.search(r'"(?:output_tokens|completion_tokens)"[:\\s]+(\\d+)', lower)
                         if mIn:
                             inT = max(inT, int(mIn.group(1)))
                         if mOut:

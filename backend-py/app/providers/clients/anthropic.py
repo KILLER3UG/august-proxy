@@ -25,11 +25,14 @@ class AnthropicClient(BaseProviderClient):
     def buildAuthHeaders(self, apiKey: str | None) -> dict[str, str]:
         """Build headers for the Anthropic API.
 
-        Includes the required ``anthropic-version`` header and optional
-        ``anthropic-beta`` headers from provider config.
+        Includes the required ``anthropic-version`` header, ``x-api-key`` (the
+        real Anthropic API's preferred auth header — Bearer has been
+        deprecated there), and optional ``anthropic-beta`` headers.
         """
         headers = super().buildAuthHeaders(apiKey)
         headers.setdefault('anthropic-version', '2023-06-01')
+        if apiKey:
+            headers.setdefault('x-api-key', apiKey)
         beta = as_str(self.config.get('anthropic_beta'))
         if beta:
             headers['anthropic-beta'] = beta

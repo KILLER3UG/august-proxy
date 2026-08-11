@@ -46,7 +46,7 @@ from app.adapters.anthropic_system import (
 from app.adapters.base import (
     extractRequestHeaders as _extractRequestHeaders,
 )
-from app.adapters.case_converters import camelToSnake, snakeToCamel
+from app.adapters.case_converters import camelToSnake, snakeToCamel, strip_none_deep
 from app.adapters.proxy_tools import (
     anthropic_to_openai_tool_definition,
     dedupe_and_canonicalize_anthropic_tools,
@@ -202,8 +202,19 @@ def translateMessages(
                     if blockType == 'text':
                         parts.append({'type': 'text', 'text': as_str(block.get('text'), '')})
                     elif blockType in ('image_url', 'image'):
-                        source = as_dict(block.get('source'), {})
-                        parts.append({'type': 'image_url', 'image_url': {'url': as_str(source.get('data'), '')}})
+                        if blockType == 'image_url' and block.get('url'):
+                            parts.append({'type': 'image_url', 'image_url': {'url': as_str(block.get('url'), '')}})
+                        else:
+                            # Anthropic image block → OpenAI data URI. The raw
+                            # base64 without the `data:<media_type>;base64,`
+                            # prefix is not a valid image_url (gateways 400).
+                            source = as_dict(block.get('source'), {})
+                            data = as_str(source.get('data'), '')
+                            if data:
+                                media_type = as_str(source.get('media_type'), 'image/png')
+                                parts.append(
+                                    {'type': 'image_url', 'image_url': {'url': f'data:{media_type};base64,{data}'}}
+                                )
                     elif blockType == 'tool_result':
                         # Tool results become OpenAI tool-role messages. Without
                         # this the upstream model never sees tool output and
@@ -225,8 +236,8 @@ def translateMessages(
             elif isinstance(content, list):
                 textParts: list[str] = []
                 toolCalls: list[dict[str, object]] = []
-                reasoning = as_str(asstMsg.get('reasoning'), '')
-                reasoningContent = as_str(asstMsg.get('reasoning_content'), '')
+                reasoning = ''
+                reasoningContent = ''
                 for block in content:
                     if not isinstance(block, dict):
                         continue
@@ -247,8 +258,12 @@ def translateMessages(
                     elif blockType == 'thinking':
                         reasoning += as_str(block.get('text'), '')
                         reasoningContent += as_str(block.get('text'), '')
-                asstMsg['reasoning'] = reasoning
-                asstMsg['reasoning_content'] = reasoningContent
+                # Only emit reasoning keys when a thinking block actually
+                # exists — empty-string keys survive exclude_none and are
+                # rejected by strict gateways (OpenCode Console Zod).
+                if reasoning:
+                    asstMsg['reasoning'] = reasoning
+                    asstMsg['reasoning_content'] = reasoningContent
                 asstMsg['content'] = ''.join(textParts) if textParts else ''
                 if toolCalls:
                     asstMsg['tool_calls'] = cast(JsonValue, toolCalls)
@@ -426,7 +441,7 @@ def buildAnthropicUpstreamRequest(
             anthropicBody['thinking'] = thinking
         if system:
             anthropicBody['system'] = cast(JsonValue, system)
-        return apply_prompt_caching(anthropicBody)
+        return anthropicBody
     anthropicBody = {'model': model, 'messages': cast(JsonValue, as_list(body.get('messages'), []))}
     if 'max_tokens' in body or 'max_output_tokens' in body:
         anthropicBody['max_tokens'] = body.get('max_tokens') or body.get('max_output_tokens', 4096)
@@ -439,7 +454,7 @@ def buildAnthropicUpstreamRequest(
         anthropicBody['thinking'] = body['thinking']
     if system:
         anthropicBody['system'] = cast(JsonValue, system)
-    return apply_prompt_caching(anthropicBody)
+    return anthropicBody
 
 
 
@@ -457,10 +472,13 @@ async def resolveManagedAnthropicToolUses(
     onToolEvent: Callable[[dict[str, object]], None] | None = None,
     parentSignal: object = None,
     client: BaseProviderClient | None = None,
+    sampling: dict[str, object] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object] | None]:
     """Run the multi-round tool resolution loop for Anthropic-format requests.
 
     Similar to the OpenAI version but works with Anthropic's content block format.
+    ``sampling`` carries the client's original sampling params (temperature,
+    top_p, …) so round-2+ bodies don't silently drop them.
     """
     currentMessages = list(messages)
     currentSystem = list(system) if system else []
@@ -479,6 +497,8 @@ async def resolveManagedAnthropicToolUses(
             'max_tokens': 8192,
             'stream': False,
         }
+        if sampling:
+            reqBody.update({k: v for k, v in sampling.items() if v is not None})
         if currentSystem:
             reqBody['system'] = cast(JsonValue, currentSystem)
         if knownTools:
@@ -487,13 +507,20 @@ async def resolveManagedAnthropicToolUses(
         # message) — the round-2 body is built inline, not via the builder.
         apply_prompt_caching(reqBody)
         if isAnthropicUpstream:
-            reqBodyJson = cast(dict[str, object], as_dict(camelToSnake(reqBody), {}))
+            reqBodyJson = cast(
+                dict[str, object], as_dict(camelToSnake(strip_none_deep(cast(JsonValue, reqBody))), {})
+            )
             resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, reqBodyJson)
         else:
-            openaiBody = buildOpenaiRequest({'messages': cast(JsonValue, currentMessages)}, model, currentSystem)
+            openaiBodyDict: dict[str, object] = {'messages': cast(JsonValue, currentMessages)}
+            if sampling:
+                openaiBodyDict.update(sampling)
+            openaiBody = buildOpenaiRequest(openaiBodyDict, model, currentSystem)
             if knownTools:
                 openaiBody['tools'] = [anthropic_to_openai_tool_definition(t) for t in knownTools]
-            openaiBodyJson = cast(dict[str, object], as_dict(camelToSnake(openaiBody), {}))
+            openaiBodyJson = cast(
+                dict[str, object], as_dict(camelToSnake(strip_none_deep(cast(JsonValue, openaiBody))), {})
+            )
             resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, openaiBodyJson)
         if resp.status != 200:
             # Never fabricate a 200 with the client's own messages. Return a
@@ -651,7 +678,12 @@ async def handleMessages(
     headers = client.buildAuthHeaders(apiKey)
     from app.providers.api_format import provider_endpoint_url
 
-    fmt = as_str(getattr(client, 'apiFormat', None) or provider.get('apiMode') or provider.get('apiFormat'))
+    # Per-model format overrides land on provider['apiMode'] (via
+    # apply_model_format_override above) and the client class is derived from
+    # it — so prefer the provider fields. client.apiFormat is a class-level
+    # default that is ALWAYS truthy ('openaiChat' even for responses-mode
+    # providers), so checking it first made this guard unreachable.
+    fmt = as_str(provider.get('apiMode') or provider.get('apiFormat') or getattr(client, 'apiFormat', None))
     if fmt == 'openaiResponses':
         # The messages adapter speaks only chat-completions / native Messages
         # wire formats; a responses-format gateway would receive a chat body
@@ -755,8 +787,12 @@ async def _handleMessagesNonStreaming(
         reqBody = buildAnthropicUpstreamRequest(body, model, systemBlocks)
         if knownTools:
             reqBody['tools'] = cast(JsonValue, knownTools)
+        # Caching breakpoints must be applied AFTER tools are attached — the
+        # builder cannot see them, and the "last tool definition" breakpoint
+        # is the most valuable one for multi-round loops.
+        apply_prompt_caching(reqBody)
         reqBody['stream'] = False
-        reqBodyJson = cast(dict[str, object], as_dict(camelToSnake(reqBody), {}))
+        reqBodyJson = cast(dict[str, object], as_dict(camelToSnake(strip_none_deep(cast(JsonValue, reqBody))), {}))
         resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, reqBodyJson)
         if resp.is_error:
             # Never answer 200 with a raw upstream error envelope — normalize
@@ -766,6 +802,11 @@ async def _handleMessagesNonStreaming(
         content = as_list(responseBody.get('content'), [])
         toolUses = [b for b in content if isinstance(b, dict) and as_str(b.get('type'), '') == 'tool_use']
         if toolUses:
+            sampling = {
+                k: body.get(k)
+                for k in ('temperature', 'top_p', 'top_k', 'stop_sequences')
+                if body.get(k) is not None
+            }
             updatedMessages, usage = await resolveManagedAnthropicToolUses(
                 messages,
                 systemBlocks,
@@ -777,6 +818,7 @@ async def _handleMessagesNonStreaming(
                 managedLocalToolNames,
                 clientToolNames,
                 client=client,
+                sampling=sampling,
             )
             if usage and 'error' in usage:
                 # A tool-loop round failed upstream — surface the real error
@@ -801,7 +843,9 @@ async def _handleMessagesNonStreaming(
                 },
                 None,
             )
-        return (responseBody, None)
+        # Non-streaming passthrough: external clients speak the snake_case
+        # wire format — never leak the internal camelCase translation.
+        return (as_dict(camelToSnake(responseBody), {}), None)
     else:
         openaiBody = buildOpenaiRequest(body, model, systemBlocks)
         if knownTools:
@@ -833,6 +877,8 @@ async def _streamAnthropicNative(
     reqBody = buildAnthropicUpstreamRequest(body, model, systemBlocks)
     if knownTools:
         reqBody['tools'] = cast(JsonValue, knownTools)
+    # Cache breakpoints after tools are attached (see _handleMessagesNonStreaming).
+    apply_prompt_caching(reqBody)
     reqBody['stream'] = True
     toolRound = 0
     currentMessages: list[dict[str, object]] = cast('list[dict[str, object]]', as_list(body.get('messages'), []))
@@ -848,7 +894,9 @@ async def _streamAnthropicNative(
         pendingStop: dict[str, object] | None = None
         roundBody = dict(reqBody)
         roundBody['messages'] = cast(JsonValue, currentMessages)
-        roundBodyJson = cast(dict[str, object], as_dict(camelToSnake(roundBody), {}))
+        roundBodyJson = cast(
+            dict[str, object], as_dict(camelToSnake(strip_none_deep(cast(JsonValue, roundBody))), {})
+        )
         async for rawEvent in client.streamSse(upstreamUrl, upstreamHeaders, roundBodyJson):
             event = cast('dict[str, object]', rawEvent)
             if as_str(event.get('type'), '') == 'error':
@@ -940,7 +988,9 @@ async def _streamOpenaiAsAnthropic(
         st = OpenaiToAnthropicStreamState()
         roundBody = dict(openaiBody)
         roundBody['messages'] = cast(JsonValue, currentMessages)
-        roundBodyJson = cast(dict[str, object], as_dict(camelToSnake(roundBody), {}))
+        roundBodyJson = cast(
+            dict[str, object], as_dict(camelToSnake(strip_none_deep(cast(JsonValue, roundBody))), {})
+        )
         async for rawChunk in client.streamSse(upstreamUrl, upstreamHeaders, roundBodyJson):
             chunk = cast('dict[str, object]', rawChunk)
             if as_str(chunk.get('type'), '') == 'error':
@@ -950,7 +1000,10 @@ async def _streamOpenaiAsAnthropic(
                 return
             events = st.convert_chunk(chunk)
             for eventStr in events:
-                if 'message_stop' in eventStr:
+                # Match the SSE event line, not a substring of the payload —
+                # model text can legitimately contain the literal
+                # "message_stop" and was being withheld as a false positive.
+                if eventStr.startswith('event: message_stop'):
                     pendingStop = eventStr
                     continue
                 yield eventStr
@@ -1010,7 +1063,10 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, object], model
         resp = AnthropicResponse(id=f'msg_{uuid.uuid4().hex[:16]}', model=model)
         return resp.model_dump()  # type: ignore[return-value]
     choiceDict = as_dict(choices[0], {})
-    message = choiceDict
+    # OpenAI nests the message under choices[0].message — reading the choice
+    # dict itself misses content/tool_calls entirely (this returned EMPTY
+    # responses on the non-streaming /v1/messages → OpenAI-upstream path).
+    message = as_dict(choiceDict.get('message'), {})
     contentList: list[dict[str, object]] = []
     text = as_str(message.get('content'), '')
     if text:
@@ -1018,7 +1074,13 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, object], model
     reasoning = as_str(message.get('reasoning'), '') or as_str(message.get('reasoning_content'), '')
     if reasoning:
         contentList.append({'type': 'thinking', 'text': reasoning})
-    for tc in as_list(message.get('tool_calls'), []):
+    # snakeToCamel at the call site renamed tool_calls → toolCalls and
+    # finish_reason → finishReason; read both spellings defensively so this
+    # works on raw (snake) upstream bodies too.
+    rawCalls = message.get('toolCalls')
+    if rawCalls is None:
+        rawCalls = message.get('tool_calls')
+    for tc in as_list(rawCalls, []):
         if not isinstance(tc, dict):
             continue
         tcFn = as_dict(tc.get('function'), {})
@@ -1036,7 +1098,10 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, object], model
                 'input': toolInput,
             }
         )
-    finishReason = as_str(choiceDict.get('finish_reason'), 'stop')
+    finishReasonRaw = choiceDict.get('finishReason')
+    if finishReasonRaw is None:
+        finishReasonRaw = choiceDict.get('finish_reason')
+    finishReason = as_str(finishReasonRaw, 'stop')
     stopReasonMap = {
         'stop': 'end_turn',
         'tool_calls': 'tool_use',
@@ -1050,7 +1115,8 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, object], model
         content=contentList,
         stop_reason=stopReasonMap.get(finishReason, 'end_turn'),
         usage=AnthropicUsage(
-            input_tokens=as_int(usage.get('prompt_tokens'), 0), output_tokens=as_int(usage.get('completion_tokens'), 0)
+            input_tokens=as_int(usage.get('promptTokens') or usage.get('prompt_tokens'), 0),
+            output_tokens=as_int(usage.get('completionTokens') or usage.get('completion_tokens'), 0),
         ),
     )
     return resp.model_dump()  # type: ignore[return-value]

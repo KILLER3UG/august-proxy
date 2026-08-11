@@ -38,19 +38,42 @@ def _camelToSnakeKey(key: str) -> str:
 # (`additionalProperties` → `additional_properties` etc.).
 _SCHEMA_PAYLOAD_KEYS = frozenset({'parameters', 'input_schema'})
 
+# Anthropic tool_use / tool_result blocks carry model- or client-generated
+# argument objects under `input`. Those keys are the tool's OWN argument names
+# (camelCase by convention) — renaming them to snake_case makes the round-2
+# upstream body contradict the tool definitions sent verbatim, and corrupts
+# any consumer that reads those args.
+_TOOL_BLOCK_TYPES = frozenset({'tool_use', 'tool_result'})
+
 
 def _convert(obj: JsonValue, key_fn: Callable[[str], str]) -> JsonValue:
-    """Recursively convert dict keys, leaving schema payloads untouched."""
+    """Recursively convert dict keys, leaving schema/tool-arg payloads untouched."""
     if isinstance(obj, dict):
         out: dict[str, object] = {}
         for k, v in obj.items():
-            if k in _SCHEMA_PAYLOAD_KEYS:
+            if k in _SCHEMA_PAYLOAD_KEYS or (k == 'input' and obj.get('type') in _TOOL_BLOCK_TYPES):
                 out[key_fn(k)] = v
             else:
                 out[key_fn(k)] = _convert(cast(JsonValue, v), key_fn)
         return out
     if isinstance(obj, list):
         return [_convert(item, key_fn) for item in obj]
+    return obj
+
+
+def strip_none_deep(obj: JsonValue) -> JsonValue:
+    """Recursively drop ``None`` values so strict upstream validators never see them.
+
+    ``exclude_none`` at dump time only cleans the top level; nested ``None``
+    (e.g. ``content: null`` on a message, a null tool argument) still reaches
+    upstream and 400s strict gateways (the 0.12.21 session_id incident class).
+    ``None`` is never meaningful in these wire formats — safe to drop at any
+    depth, and idempotent.
+    """
+    if isinstance(obj, dict):
+        return {k: strip_none_deep(cast(JsonValue, v)) for k, v in obj.items() if v is not None}
+    if isinstance(obj, list):
+        return [strip_none_deep(item) for item in obj]
     return obj
 
 
