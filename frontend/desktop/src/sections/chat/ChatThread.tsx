@@ -29,6 +29,7 @@ import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
 import { AnimatePresence } from 'framer-motion';
 import { SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
 import { ModelVisibilityModal } from '@/components/overlays/ModelVisibilityModal';
+import { ArenaLaunchModal } from './composer/ArenaLaunchModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { useSessionStatus } from '@/hooks/useSessionStatus';
 import { CollaborationInsights } from '@/components/chat/CollaborationInsights';
@@ -312,6 +313,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     workspacePath: string;
   } | null>(null);
   const [modelPickerActive, setModelPickerActive] = useState(false);
+  /** Prompt for the Compare modal (re-run on 2–3 models side by side). */
+  const [comparePrompt, setComparePrompt] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
@@ -1173,6 +1176,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     [streaming, sessionId, setSelectedModel, userSelectedRef],
   );
 
+  /** Compare: open the Arena launcher pre-filled with the user prompt that
+   *  produced this assistant message — pick 2–3 models, run side by side. */
+  const handleCompare = useCallback(
+    (index: number) => {
+      if (streaming) return;
+      for (let i = index - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m?.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
+          setComparePrompt(m.content);
+          return;
+        }
+      }
+      toast.info('No user prompt found before this message');
+    },
+    [streaming, messages],
+  );
+
   /** Arena ("ask in parallel"): fork the session per target model and send   *  the same prompt to each with a per-turn model override. The split-pane
    *  overlay (ArenaView) streams all lanes side by side; picking a winner
    *  navigates to that lane's session — which holds the full conversation
@@ -1520,6 +1540,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onClarifyAnswer={handleClarifyAnswer}
                 models={visibleModels}
                 onReanswerWithModel={(model, index) => handleReanswerWithModel(index, model)}
+                onCompare={handleCompare}
                 footerSlot={inputSlot}
               />
             )}
@@ -1550,6 +1571,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           onConfirm={handleConfirm}
           onCancel={handleCancel}
         />
+        {comparePrompt !== null && (
+          <ArenaLaunchModal
+            models={visibleModels}
+            initialPrompt={comparePrompt}
+            onClose={() => setComparePrompt(null)}
+            onLaunch={(targets, prompt) => {
+              setComparePrompt(null);
+              void launchArena(targets, prompt);
+            }}
+          />
+        )}
       </div>
     </div>
   );

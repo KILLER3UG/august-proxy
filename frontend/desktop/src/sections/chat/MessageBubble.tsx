@@ -37,6 +37,7 @@ export function MessageBubble({
   subagentBlocks,
   models,
   onReanswerWithModel,
+  onCompare,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -54,6 +55,8 @@ export function MessageBubble({
   /** Visible model catalog for "answer this with another model" (A4). */
   models?: ModelItem[];
   onReanswerWithModel?: (model: ModelItem) => void;
+  /** "Compare" — re-run this prompt on 2–3 models side by side. */
+  onCompare?: () => void;
   /** Sub-agent prompt disclosures keyed by the parent toolUse id. Only
    *  present for blocks whose tool name is august__spawn_subagent or
    *  august__run_team (and the team-run agents they spawn). The bubble
@@ -330,6 +333,7 @@ export function MessageBubble({
               : undefined
           }
           reanswerOpen={reanswerOpen}
+          onCompare={onCompare}
         />
       )}
       {!isUser && reanswerOpen && models && onReanswerWithModel ? (

@@ -1,4 +1,4 @@
-import { Check, RefreshCw, Play, Pause, Bug, GitBranch, ArrowLeftRight } from 'lucide-react';
+import { Check, RefreshCw, Play, Pause, Bug, GitBranch, ArrowLeftRight, GitCompare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /** Speak / copy / re-answer / regenerate / fork / raw-debug controls under an assistant message. */
@@ -17,6 +17,7 @@ export function AssistantMessageActions({
   onFork,
   onReanswer,
   reanswerOpen,
+  onCompare,
 }: {
   showActions: boolean;
   copied: boolean;
@@ -33,6 +34,8 @@ export function AssistantMessageActions({
   /** "Answer this with another model" — toggles the model list in the bubble. */
   onReanswer?: () => void;
   reanswerOpen?: boolean;
+  /** "Compare" — re-run the prompt on 2–3 models side by side (Arena lanes). */
+  onCompare?: () => void;
 }) {
   return (
     <div className={cn(
@@ -83,6 +86,17 @@ export function AssistantMessageActions({
           data-testid="reanswer-open"
         >
           <ArrowLeftRight className="size-3" />
+        </button>
+      )}
+      {onCompare && (
+        <button
+          onClick={onCompare}
+          disabled={streaming}
+          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+          title="Compare models — re-run this prompt on 2–3 models side by side"
+          data-testid="compare-open"
+        >
+          <GitCompare className="size-3" />
         </button>
       )}
       <button

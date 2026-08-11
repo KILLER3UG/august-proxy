@@ -323,6 +323,11 @@ On the harnesses you named directly: **Hermes** (Nous) — the relevant pattern 
 - **Probe capabilities:** `GET /api/providers/{id}/models/{model}/probe` runs connectivity + tool-support + instruction-following probes and returns a suggested `toolSurface`; the ModelRow gained a probe button with an "Apply <surface> surface" one-click action — weak models get detected, not guessed.
 - **Subagent resume-by-task-id (OpenHands pattern):** `POST /api/subagents/{taskId}/resume` re-dispatches a finished/failed run with the same goal + agent, bound to the ORIGINAL session (events stream into the same transcript); RunsTab rows gained a ↻ Resume button.
 
+### Batch 6 (sixth pass, all green — remaining nice-to-haves)
+- **Compare action on assistant messages:** a ⤺ Compare button on every assistant message opens the Arena launcher pre-filled with the user prompt that produced it — pick 2–3 models and run them side by side (full reuse of the existing Arena split-pane machinery, no new renderer).
+- **History browse route (`/history`):** a searchable, day-grouped conversation list (title / last message / model), click-to-open, per-row delete, New chat entry — sidebar nav item included.
+- **Notes → memory promotion:** the right-drawer notepad gained a "Promote to memory" action that saves the note under a searchable `note:` KV key — `memory_search` finds it in any future session.
+
 ### P2 — Next iteration (model improvement loops; 1-2 weeks)
 16. Golden-eval expansion + eval→profile feedback P5 (§3) — open
 17. Routing exploration P6; verifier recovery steer A7/P8 — open

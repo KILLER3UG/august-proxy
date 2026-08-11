@@ -37,6 +37,7 @@ export function AssistantMessageContent({
   onFork,
   onReanswer,
   reanswerOpen,
+  onCompare,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -60,6 +61,8 @@ export function AssistantMessageContent({
   /** "Answer this with another model" — toggles the model list in the bubble. */
   onReanswer?: () => void;
   reanswerOpen?: boolean;
+  /** "Compare" — re-run this prompt on 2–3 models side by side. */
+  onCompare?: () => void;
 }) {
   // Live generation-rate estimate while the last message streams: output
   // tokens ≈ chars/4 over elapsed time (same heuristic ChatThread blends).
@@ -176,6 +179,7 @@ export function AssistantMessageContent({
         onFork={onFork}
         onReanswer={onReanswer}
         reanswerOpen={reanswerOpen}
+        onCompare={onCompare}
       />
     </>
   );

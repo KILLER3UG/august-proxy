@@ -42,6 +42,9 @@ const RunsPage = lazy(() =>
 const BoardPage = lazy(() =>
   import('@/sections/board/BoardPage').then((m) => ({ default: m.BoardPage })),
 );
+const HistoryPage = lazy(() =>
+  import('@/sections/history/HistoryPage').then((m) => ({ default: m.HistoryPage })),
+);
 const DesignRoute = lazy(() =>
   import('@/pages/DesignRoute').then((m) => ({ default: m.DesignRoute })),
 );
@@ -137,6 +140,13 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
         return React.createElement(LiveSurface, { onSwitchToChat: () => navigate('/') });
       }),
     ),
+    nav: true,
+  },
+  {
+    path: '/history',
+    label: 'History',
+    Icon: History,
+    element: React.createElement(LazySection, { name: 'History' }, React.createElement(HistoryPage)),
     nav: true,
   },
   { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings/traffic-activity', replace: true }), nav: false },

@@ -43,6 +43,7 @@ export function ChatThreadMessagePane({
   footerSlot,
   models,
   onReanswerWithModel,
+  onCompare,
   onBeforeJump,
   virtRef,
 }: {
@@ -72,6 +73,8 @@ export function ChatThreadMessagePane({
   /** Visible model catalog for "answer this with another model" (A4). */
   models?: ModelItem[];
   onReanswerWithModel?: (model: ModelItem, index: number) => void;
+  /** "Compare" — re-run the message's prompt on 2–3 models side by side. */
+  onCompare?: (index: number) => void;
   /** Fired before an in-thread search jump (unpins stick-to-bottom). */
   onBeforeJump?: () => void;
   /** Virtualizer handle for jumping to virtualized rows. */
@@ -197,6 +200,7 @@ export function ChatThreadMessagePane({
                       ? (model) => onReanswerWithModel(model, realIndex)
                       : undefined
                   }
+                  onCompare={onCompare ? () => onCompare(realIndex) : undefined}
                 />
               </motion.div>
             );
