@@ -48,10 +48,13 @@ async def _readJsonBody(request: Request, endpoint: str) -> dict[str, object] | 
 
     ``request.json()`` raises ``json.JSONDecodeError`` on malformed input; without
     handling, FastAPI surfaces that as a 500 and never records the request. We catch
-    it so callers get a well-formed error and observability still fires.
+    it so callers get a well-formed error and observability still fires. A body
+    that parses but is NOT a JSON object (array / string / number) is also
+    rejected with a 400 — downstream code assumes a dict and would otherwise
+    crash with a 500.
     """
     try:
-        return await request.json()
+        parsed = await request.json()
     except Exception as exc:  # malformed JSON / empty body
         trafficLogger.emitLogEvent(
             {
@@ -64,6 +67,19 @@ async def _readJsonBody(request: Request, endpoint: str) -> dict[str, object] | 
             status_code=400,
             content={'error': {'code': 'invalid_json', 'message': 'Request body must be valid JSON'}},
         )
+    if not isinstance(parsed, dict):
+        trafficLogger.emitLogEvent(
+            {
+                'category': 'proxy_error',
+                'level': 'warn',
+                'message': f'[{endpoint}] request JSON must be an object',
+            }
+        )
+        return JSONResponse(
+            status_code=400,
+            content={'error': {'code': 'invalid_json', 'message': 'Request body must be a JSON object'}},
+        )
+    return parsed
 
 
 def _emit(category: str, level: str, message: str, metadata: object = None) -> None:

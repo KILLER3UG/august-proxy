@@ -300,10 +300,34 @@ class RequestTracker:
         except Exception:
             pass
 
+    # Keys whose values are dropped entirely during sanitization. Recursive
+    # key-set check (any casing / nesting) — a nested `api_key`, `API_KEY`,
+    # `authorization` header or `token` must never reach the persisted log.
+    _SANITIZE_DROP_KEYS = frozenset(
+        {
+            'apikey',
+            'api_key',
+            'api-key',
+            'authorization',
+            'x-api-key',
+            'token',
+            'access_token',
+            'refresh_token',
+            'secret',
+            'password',
+            'private_key',
+        }
+    )
+
     def _sanitize(self, data: object) -> object:
-        """Redact API keys from stored data."""
+        """Redact API keys / secrets from stored data (recursive key-set)."""
         if isinstance(data, dict):
-            return {k: self._sanitize(v) for k, v in data.items() if k != 'apiKey'}
+            out: dict[str, object] = {}
+            for k, v in data.items():
+                if str(k).lower().replace(' ', '_') in self._SANITIZE_DROP_KEYS:
+                    continue
+                out[str(k)] = self._sanitize(v)
+            return out
         if isinstance(data, list):
             return [self._sanitize(v) for v in data]
         return data

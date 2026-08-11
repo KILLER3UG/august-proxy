@@ -21,6 +21,7 @@ env var. Same-origin SPA traffic is unaffected because it doesn't hit
 
 from __future__ import annotations
 
+import hmac
 import logging
 
 from fastapi import Header, HTTPException
@@ -123,7 +124,7 @@ async def require_gateway_key(authorization: str | None = Header(default=None)) 
             detail={'code': 'auth_invalid_format', 'message': 'Authorization header must be: Bearer <key>'},
             headers={'WWW-Authenticate': 'Bearer'},
         )
-    if token != key:
+    if not hmac.compare_digest(token, key):
         _emit_security('auth_invalid_key', 'Invalid API key.')
         raise HTTPException(
             status_code=401,

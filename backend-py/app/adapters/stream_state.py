@@ -48,7 +48,10 @@ class ToolCallDelta:
         fn = delta.get('function', {})
         if isinstance(fn, dict):
             if fn.get('name'):
-                self.function_name += fn['name']
+                # Set-once: the name arrives in the FIRST fragment; some
+                # providers re-send it with every chunk, and appending would
+                # duplicate it (broken tool names downstream).
+                self.function_name = fn['name']
             if fn.get('arguments'):
                 self.function_arguments += fn['arguments']
 
