@@ -50,7 +50,8 @@ jobs:
         run: npm run download:node-binaries
 
       - name: Prepare portable Python + backend resources
-        run: npm run prepare:desktop-backend
+        # --release: write the real runtime stamp (default is dev-placeholder)
+        run: node scripts/prepare-desktop-backend.mjs --release
 
       - name: Set release version
         shell: pwsh
@@ -63,8 +64,10 @@ jobs:
           "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Releasing version $version"
 
-      - name: Build and publish release assets (draft)
-        run: node scripts/release-desktop.mjs --version=${{ env.RELEASE_VERSION }} --tauri --publish --draft
+      - name: Build and publish release assets
+        # Tag pushes publish immediately (in-app updater must see them); only
+        # workflow_dispatch keeps the draft flow (published by the job below).
+        run: node scripts/release-desktop.mjs --version=${{ env.RELEASE_VERSION }} --tauri --publish ${{ github.event_name == 'workflow_dispatch' && '--draft' || '' }}
 
   publish:
     name: Publish release (flip draft → live)

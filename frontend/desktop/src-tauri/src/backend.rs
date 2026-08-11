@@ -1,24 +1,37 @@
 // backend.rs — Rust-side backend supervisor
 //
 // Owns the August Proxy backend process. On Tauri startup we:
-//   1) Poll http://127.0.0.1:8085/health
-//   2) If down, locate Python (preferred) or Node (fallback)
-//   3) Spawn the backend with an app-data data directory
+//   1) Poll http://127.0.0.1:8085/api/health — identity-checked: a 2xx alone
+//      is not enough, the body must carry August's status/python fields
+//   2) If down (or the runtime stamp differs from the bundled stamp), locate
+//      Python (preferred) or Node (fallback)
+//   3) Spawn the backend on 8085, falling back through 8086..8095 when the
+//      port is taken or the backend never comes up healthy
 //   4) Kill the process on app drop
 
 use std::env;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 const DEFAULT_PROXY_PORT: u16 = 8085;
+
+/// Last port of the spawn fallback range (8085..=8095 inclusive). Tried in
+/// order when `AUGUST_PROXY_PORT` is not set: if the backend cannot bind (the
+/// port is held by a foreign process) or never answers identity-checked
+/// health, the next port is tried.
+const PROXY_PORT_RANGE_END: u16 = DEFAULT_PROXY_PORT + 10;
+
+/// The port the proxy is actually healthy on. Only consulted when
+/// `AUGUST_PROXY_PORT` is unset; updated when a fallback port wins.
+static ACTIVE_PROXY_PORT: AtomicU16 = AtomicU16::new(DEFAULT_PROXY_PORT);
 
 /// When true, the watchdog must not respawn the backend (update/install in progress).
 static UPDATE_HOLDOFF: AtomicBool = AtomicBool::new(false);
@@ -65,15 +78,30 @@ fn setSetupPhase(app: &AppHandle, phase: &str, detail: Option<String>) {
     );
 }
 
-fn proxyPort() -> u16 {
+/// `AUGUST_PROXY_PORT` env override — when set it is the ONLY port tried
+/// (no fallback range) and every surface reports it.
+fn envPortOverride() -> Option<u16> {
     std::env::var("AUGUST_PROXY_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(DEFAULT_PROXY_PORT)
 }
 
-fn proxyUrl() -> String {
-    format!("http://127.0.0.1:{}/api/health", proxyPort())
+/// The port the webview should talk to: the env override when set, otherwise
+/// the active port selected during the spawn fallback sweep. This is the
+/// single source of truth surfaced to the UI (`proxy_status`) and used by the
+/// orphan sweep.
+fn proxyPort() -> u16 {
+    envPortOverride().unwrap_or_else(|| ACTIVE_PROXY_PORT.load(Ordering::SeqCst))
+}
+
+/// Ports probed in order when spawning the backend. The env override disables
+/// the fallback range entirely.
+fn portCandidates() -> Vec<u16> {
+    if let Some(p) = envPortOverride() {
+        vec![p]
+    } else {
+        (DEFAULT_PROXY_PORT..=PROXY_PORT_RANGE_END).collect()
+    }
 }
 
 // ── Python backend resolution (preferred) ───────────────────────────
@@ -149,6 +177,25 @@ fn bundledStamp(app: &AppHandle) -> Option<String> {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && s != "dev-placeholder")
+}
+
+/// True when the AppData runtime stamp matches the bundled stamp AND the
+/// runtime main.py + venv exist (i.e. the bootstrap "up-to-date" check would
+/// pass). Used to detect a stale-but-healthy backend at startup (must be
+/// re-bootstrapped) and a stamped-but-broken runtime (must be reinstalled).
+fn runtimeStampMatches(app: &AppHandle) -> bool {
+    let Some(bundled) = bundledStamp(app) else {
+        return true; // dev checkout — nothing to compare
+    };
+    let current = std::fs::read_to_string(runtimeStampPath(app))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    current == bundled
+        && runtimeBackendMain(app).is_file()
+        && resolveVenvPython(&runtimeBackendMain(app))
+            .map(|p| p.is_file())
+            .unwrap_or(false)
 }
 
 fn bundledPython(app: &AppHandle) -> Option<PathBuf> {
@@ -347,9 +394,26 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
         &bootstrap_log,
     )?;
 
-    let _ = std::fs::write(&stamp_path, format!("{stamp}\n"));
-    log::info!("[backend] AppData runtime ready");
+    // NOTE: the runtime stamp is deliberately NOT written here. It is written
+    // only after the first successful identity-checked health probe (see
+    // markProxyPort), so a broken wheel set cannot stamp success forever.
+    log::info!("[backend] AppData runtime installed (stamp deferred until healthy)");
     Ok(())
+}
+
+/// Probe a Python interpreter for the >= 3.12 floor that every other launcher
+/// enforces (bundled python and project venvs are known-good; system Python is
+/// not — an old interpreter can silently break the backend at runtime).
+fn pythonVersionOk(path: &Path) -> bool {
+    match Command::new(path)
+        .args(["-c", "import sys; print(sys.version_info >= (3, 12))"])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).trim() == "True"
+        }
+        _ => false,
+    }
 }
 
 fn resolvePython(app: &AppHandle) -> Option<PathBuf> {
@@ -370,18 +434,28 @@ fn resolvePython(app: &AppHandle) -> Option<PathBuf> {
     if let Some(bundled) = bundledPython(app) {
         return Some(bundled);
     }
-    // 4. System Python — never the Microsoft Store alias stub.
+    // 4. System Python — never the Microsoft Store alias stub, and never an
+    //    interpreter below 3.12 (reject with a log so the failure is visible).
     let mut candidates: Vec<Option<PathBuf>> = Vec::new();
     if cfg!(windows) {
         candidates.push(which::which("py").ok());
     }
     candidates.push(which::which("python3").ok());
     candidates.push(which::which("python").ok());
-    candidates
-        .into_iter()
-        .flatten()
-        .filter(|p| !isStoreStub(p))
-        .find(|path| path.exists())
+    for path in candidates.into_iter().flatten().filter(|p| !isStoreStub(p)) {
+        if !path.exists() {
+            continue;
+        }
+        if !pythonVersionOk(&path) {
+            log::warn!(
+                "[backend] system python {} is older than 3.12 — skipping",
+                path.display()
+            );
+            continue;
+        }
+        return Some(path);
+    }
+    None
 }
 
 fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
@@ -567,28 +641,37 @@ fn killAugustPythonOrphans(app: &AppHandle) {
     let _ = app;
     let port = proxyPort();
     // Prefer -File over -Command so quoting/`\\?\` paths stay reliable.
+    //
+    // The port-listener kill is scoped to owners whose path/command line also
+    // match the August markers — an unrelated service (e.g. a dev server)
+    // holding a probed port must never be killed by our teardown.
     let script = format!(
         r#"
 $ErrorActionPreference = 'SilentlyContinue'
+function Test-AugustBackend($p) {{
+  return ($p.Name -match '^(python|pythonw|node)(\.exe)?$' -and (
+    ($p.ExecutablePath -and (
+      $p.ExecutablePath -match '[\\/]August([\\/]|$)' -or
+      $p.ExecutablePath -match 'com\.august\.proxy' -or
+      $p.ExecutablePath -match 'backend-runtime'
+    )) -or
+    ($p.CommandLine -and (
+      $p.CommandLine -match '[\\/]August([\\/]|$)' -or
+      $p.CommandLine -match 'com\.august\.proxy' -or
+      $p.CommandLine -match 'uvicorn.*app\.main' -or
+      $p.CommandLine -match 'AUGUST_PROXY'
+    ))
+  ))
+}}
 function Stop-AugustBackends {{
-  Get-CimInstance Win32_Process | Where-Object {{
-    $_.Name -match '^(python|pythonw|node)(\.exe)?$' -and (
-      ($_.ExecutablePath -and (
-        $_.ExecutablePath -match '[\\/]August([\\/]|$)' -or
-        $_.ExecutablePath -match 'com\.august\.proxy' -or
-        $_.ExecutablePath -match 'backend-runtime'
-      )) -or
-      ($_.CommandLine -and (
-        $_.CommandLine -match '[\\/]August([\\/]|$)' -or
-        $_.CommandLine -match 'com\.august\.proxy' -or
-        $_.CommandLine -match 'uvicorn.*app\.main' -or
-        $_.CommandLine -match 'AUGUST_PROXY'
-      ))
-    )
-  }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}
-  foreach ($port in {port}, 8787) {{
+  Get-CimInstance Win32_Process | Where-Object {{ Test-AugustBackend $_ }} |
+    ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}
+  foreach ($port in {port}, 8085, 8787) {{
     Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
-      ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force }}
+      ForEach-Object {{
+        $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.OwningProcess)"
+        if ($owner -and (Test-AugustBackend $owner)) {{ Stop-Process -Id $owner.ProcessId -Force }}
+      }}
   }}
 }}
 Stop-AugustBackends
@@ -682,6 +765,16 @@ fn killStoredChild(app: &AppHandle) {
 }
 
 fn storeChild(app: &AppHandle, child: Child) {
+    // Quit/update holdoff can race an in-flight respawn from watchBackend: the
+    // child is spawned after stopBackend's kill + sweep already ran, so it
+    // would orphan a fresh backend. Never let a child survive a teardown —
+    // kill it immediately instead of storing it.
+    if UPDATE_HOLDOFF.load(Ordering::SeqCst) {
+        let mut c = child;
+        log::warn!("[backend] update holdoff active — killing freshly spawned backend");
+        killChild(&mut c);
+        return;
+    }
     if let Some(state) = app.try_state::<BackendProcess>() {
         if let Ok(mut guard) = state.0.lock() {
             // Replace any prior handle — caller should have killed it first.
@@ -716,26 +809,84 @@ fn devNullPath() -> PathBuf {
     }
 }
 
-fn isProxyUp() -> bool {
-    reqwest::blocking::Client::new()
-        .get(proxyUrl())
+/// Identity-checked health probe for a specific port. A plain 2xx is NOT
+/// enough — a foreign service answering on a probed port must not count as
+/// "up". The backend's `/api/health` (backend-py/app/main.py) returns
+/// `{'status': 'ok', 'version': …, 'python': True, 'port': …, 'uptime': …}`;
+/// we require the stable `status == "ok"` and `python == true` fields as the
+/// August marker.
+fn healthOkOnPort(port: u16) -> bool {
+    let url = format!("http://127.0.0.1:{}/api/health", port);
+    let resp = match reqwest::blocking::Client::new()
+        .get(&url)
         .timeout(Duration::from_millis(400))
         .send()
-        .map(|r| r.status().is_success())
-        .unwrap_or(false)
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return false,
+    };
+    let body: serde_json::Value = match resp.json() {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    body.get("status").and_then(|s| s.as_str()) == Some("ok")
+        && body.get("python").and_then(|p| p.as_bool()) == Some(true)
 }
 
-/// Poll health until success or timeout (used after spawn, not only "already up").
-fn waitUntilProxyUp(timeout: Duration) -> bool {
+fn isProxyUp() -> bool {
+    healthOkOnPort(proxyPort())
+}
+
+/// True while the child we just spawned is still running (has not exited).
+/// Lets the port-fallback loop bail out immediately on a bind failure instead
+/// of burning the full per-port timeout.
+fn storedChildAlive(app: &AppHandle) -> bool {
+    let Some(state) = app.try_state::<BackendProcess>() else {
+        return true;
+    };
+    let alive = match state.0.lock() {
+        Ok(mut guard) => match guard.as_mut() {
+            Some(c) => !matches!(c.try_wait(), Ok(Some(_))),
+            None => false,
+        },
+        Err(_) => true,
+    };
+    alive
+}
+
+/// Poll identity-checked health on `port` until success or timeout. Bails
+/// early when the spawned child exits (e.g. the port was already taken by a
+/// foreign process), so the fallback range does not stall per candidate.
+fn waitForProxy(app: &AppHandle, port: u16, timeout: Duration) -> bool {
     let deadline = std::time::Instant::now() + timeout;
     let step = Duration::from_millis(250);
     while std::time::Instant::now() < deadline {
-        if isProxyUp() {
+        if healthOkOnPort(port) {
             return true;
+        }
+        if !storedChildAlive(app) {
+            return false;
         }
         std::thread::sleep(step);
     }
-    isProxyUp()
+    healthOkOnPort(port)
+}
+
+/// Record the port the proxy is healthy on (so port reporting and the orphan
+/// sweep follow the active port) and, for packaged installs, write the runtime
+/// stamp — only here, after the first successful identity-checked health
+/// probe, never after pip-install alone.
+fn markProxyPort(port: u16, app: &AppHandle) {
+    ACTIVE_PROXY_PORT.store(port, Ordering::SeqCst);
+    if let Some(stamp) = bundledStamp(app) {
+        let stamp_path = runtimeStampPath(app);
+        if let Some(parent) = stamp_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&stamp_path, format!("{stamp}\n"));
+        log::info!("[backend] runtime stamp written after healthy health check");
+    }
+    setSetupPhase(app, "ready", Some("Backend ready".into()));
 }
 
 /// Try to bring up the backend. Tries Python first, falls back to Node.js.
@@ -754,10 +905,22 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
         return false;
     }
 
+    // Even when the proxy already answers, compare the bundled stamp against
+    // the AppData runtime stamp: a stale backend from an older install keeps
+    // serving old code after an update unless we tear it down and re-bootstrap
+    // here, regardless of health.
     if isProxyUp() {
-        log::info!("[backend] proxy already up on :{}", proxyPort());
-        setSetupPhase(app, "ready", Some("Backend ready".into()));
-        return true;
+        let stale = bundledStamp(app).is_some() && !runtimeStampMatches(app);
+        if !stale {
+            log::info!("[backend] proxy already up on :{}", proxyPort());
+            setSetupPhase(app, "ready", Some("Backend ready".into()));
+            return true;
+        }
+        log::warn!(
+            "[backend] proxy up on :{} but runtime stamp differs from bundled — re-bootstrapping",
+            proxyPort()
+        );
+        killStoredChild(app);
     }
 
     // Stale child still running but not answering health — replace it.
@@ -766,104 +929,132 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
     setSetupPhase(app, "starting", Some("Looking for backend…".into()));
 
     // Installed builds: materialize AppData runtime from bundled python + wheels.
-    if let Err(e) = bootstrapBundledBackend(app) {
-        let msg = format!("[backend] bundled runtime bootstrap failed: {e}");
-        log::error!("{msg}");
-        setLastError(app, msg.clone());
-        setSetupPhase(app, "error", Some(msg));
-        // Packaged installs must not silently fall through — the UI gate
-        // needs a hard error so the user can Retry.
-        if bundledStamp(app).is_some() {
-            return false;
-        }
-        // Dev checkout without a stamp: keep trying system/repo Python.
-    }
-
-    // Try Python backend first
-    if let Some(python) = resolvePython(app) {
-        if let Some(pyEntry) = resolvePythonBackend(app) {
-            setSetupPhase(
-                app,
-                "starting",
-                Some("Starting backend…".into()),
-            );
-            let Some(backendPyRoot) = projectRootFor(&pyEntry) else {
-                log::error!("[backend] could not resolve project root for {}", pyEntry.display());
+    // The runtime stamp is written only AFTER the first successful health
+    // check (markProxyPort), never on pip-install success alone — a broken
+    // wheel set must not stamp success forever. If a previously-stamped
+    // runtime never comes up healthy, we wipe it and reinstall once below.
+    let mut force_reinstall = false;
+    loop {
+        if let Err(e) = bootstrapBundledBackend(app) {
+            let msg = format!("[backend] bundled runtime bootstrap failed: {e}");
+            log::error!("{msg}");
+            setLastError(app, msg.clone());
+            setSetupPhase(app, "error", Some(msg));
+            // Packaged installs must not silently fall through — the UI gate
+            // needs a hard error so the user can Retry.
+            if bundledStamp(app).is_some() {
                 return false;
-            };
-            let repoRoot = backendPyRoot
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| backendPyRoot.clone());
+            }
+            // Dev checkout without a stamp: keep trying system/repo Python.
+        }
 
-            let dataDir = appDataDir(app);
-            log::info!(
-                "[backend] spawning python backend (uvicorn) at {} (data={})",
-                pyEntry.display(),
-                dataDir.display()
-            );
-
-            let logDir = dataDir.join("logs");
-            let _ = std::fs::create_dir_all(&logDir);
-            let logPath = logDir.join("backend.log");
-            let logFile = File::create(&logPath).unwrap_or_else(|e| {
-                log::warn!("[backend] could not create {}: {e}", logPath.display());
-                File::create(devNullPath()).expect("failed to open null")
-            });
-
-            let mut cmd = Command::new(&python);
-            cmd.arg("-m")
-                .arg("uvicorn")
-                .arg("app.main:app")
-                .arg("--port")
-                .arg(proxyPort().to_string())
-                .arg("--host")
-                .arg("127.0.0.1")
-                .current_dir(&backendPyRoot)
-                .env("AUGUST_PROXY_PORT", proxyPort().to_string())
-                .env("AUGUST_PROXY_ROOT", &repoRoot)
-                .env("AUGUST_DATA_DIR", dataDir)
-                .env("AUGUST_PROXY_DESKTOP", "1")
-                .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
-                .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
-                    File::create(devNullPath()).expect("failed to open null")
-                })))
-                .stderr(Stdio::from(logFile));
-            applyNoWindow(&mut cmd);
-
-            match cmd.spawn() {
-                Ok(c) => {
-                    storeChild(app, c);
-                    log::info!("[backend] python proxy spawned — waiting for /api/health");
-                    // Do not return success on spawn alone: cold start can take seconds
-                    // (import + schema). Poll health so the webview does not thrash.
-                    if waitUntilProxyUp(Duration::from_secs(45)) {
-                        log::info!("[backend] python proxy healthy on :{}", proxyPort());
-                        setSetupPhase(app, "ready", Some("Backend ready".into()));
-                        return true;
-                    }
+        // Try Python backend first (port fallback range).
+        if let Some(python) = resolvePython(app) {
+            if let Some(pyEntry) = resolvePythonBackend(app) {
+                let Some(backendPyRoot) = projectRootFor(&pyEntry) else {
                     log::error!(
-                        "[backend] python proxy spawned but /api/health not ready within timeout"
+                        "[backend] could not resolve project root for {}",
+                        pyEntry.display()
                     );
-                    setLastError(
-                        app,
-                        format!(
-                            "[backend] python proxy not healthy on :{} after spawn — see {}",
-                            proxyPort(),
-                            logPath.display()
-                        ),
+                    return false;
+                };
+                let repoRoot = backendPyRoot
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| backendPyRoot.clone());
+
+                let dataDir = appDataDir(app);
+                let logDir = dataDir.join("logs");
+                let _ = std::fs::create_dir_all(&logDir);
+                let logPath = logDir.join("backend.log");
+
+                for port in portCandidates() {
+                    if updateHoldoffActive() {
+                        return false;
+                    }
+                    log::info!(
+                        "[backend] spawning python backend (uvicorn) at {} (data={})",
+                        pyEntry.display(),
+                        dataDir.display()
                     );
-                    // Kill the hung/unhealthy python child before Node fallback.
-                    killStoredChild(app);
-                    // Fall through to Node fallback only if Python never answered.
+
+                    let logFile = File::create(&logPath).unwrap_or_else(|e| {
+                        log::warn!("[backend] could not create {}: {e}", logPath.display());
+                        File::create(devNullPath()).expect("failed to open null")
+                    });
+
+                    let mut cmd = Command::new(&python);
+                    cmd.arg("-m")
+                        .arg("uvicorn")
+                        .arg("app.main:app")
+                        .arg("--port")
+                        .arg(port.to_string())
+                        .arg("--host")
+                        .arg("127.0.0.1")
+                        .current_dir(&backendPyRoot)
+                        .env("AUGUST_PROXY_PORT", port.to_string())
+                        .env("AUGUST_PROXY_ROOT", &repoRoot)
+                        .env("AUGUST_DATA_DIR", &dataDir)
+                        .env("AUGUST_PROXY_DESKTOP", "1")
+                        .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+                        .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
+                            File::create(devNullPath()).expect("failed to open null")
+                        })))
+                        .stderr(Stdio::from(logFile));
+                    applyNoWindow(&mut cmd);
+
+                    match cmd.spawn() {
+                        Ok(c) => {
+                            storeChild(app, c);
+                            log::info!(
+                                "[backend] python proxy spawned on :{port} — waiting for /api/health"
+                            );
+                            // Do not return success on spawn alone: cold start can take
+                            // seconds (import + schema). Poll identity-checked health so
+                            // the webview does not thrash.
+                            if waitForProxy(app, port, Duration::from_secs(45)) {
+                                log::info!("[backend] python proxy healthy on :{port}");
+                                markProxyPort(port, app);
+                                return true;
+                            }
+                            log::error!(
+                                "[backend] python proxy spawned but /api/health not ready on :{port}"
+                            );
+                            setLastError(
+                                app,
+                                format!(
+                                    "[backend] python proxy not healthy on :{port} after spawn — see {}",
+                                    logPath.display()
+                                ),
+                            );
+                            // Kill the hung/unhealthy python child before the next port.
+                            killStoredChild(app);
+                        }
+                        Err(e) => {
+                            let msg = format!("[backend] python spawn failed on :{port}: {e}");
+                            log::error!("{msg}");
+                            setLastError(app, msg);
+                        }
+                    }
                 }
-                Err(e) => {
-                    let msg = format!("[backend] python spawn failed: {e} — falling back to Node.js");
-                    log::error!("{msg}");
-                    setLastError(app, msg);
+
+                // Self-heal: a runtime that was previously stamped healthy
+                // (matching the bundled stamp) but never comes up must be
+                // wiped and reinstalled — a corrupted AppData runtime would
+                // otherwise loop on 45s health timeouts forever.
+                if !force_reinstall && bundledStamp(app).is_some() && runtimeStampMatches(app) {
+                    log::warn!(
+                        "[backend] runtime stamped healthy but proxy never up — wiping AppData runtime for clean reinstall"
+                    );
+                    force_reinstall = true;
+                    let runtime = runtimeRoot(app);
+                    let _ = std::fs::remove_dir_all(runtime.join("backend-py"));
+                    let _ = std::fs::remove_file(runtimeStampPath(app));
+                    continue;
                 }
             }
         }
+        break;
     }
 
     // Fallback: Node.js backend
@@ -889,61 +1080,71 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
     };
 
     let dataDir = appDataDir(app);
-    log::info!(
-        "[backend] spawning {} {} (data={})",
-        node.display(),
-        entry.display(),
-        dataDir.display()
-    );
-
     let logDir = dataDir.join("logs");
     let _ = std::fs::create_dir_all(&logDir);
     let logPath = logDir.join("backend.log");
-    let logFile = File::create(&logPath).unwrap_or_else(|e| {
-        log::warn!("[backend] could not create {}: {e}", logPath.display());
-        File::create(devNullPath()).expect("failed to open null")
-    });
 
-    let mut cmd = Command::new(&node);
-    cmd.arg(&entry)
-        .current_dir(&projectRoot)
-        .env("AUGUST_PROXY_PORT", proxyPort().to_string())
-        .env("AUGUST_PROXY_ROOT", projectRoot)
-        .env("AUGUST_DATA_DIR", dataDir)
-        .env("AUGUST_PROXY_DESKTOP", "1")
-        .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
+    for port in portCandidates() {
+        if updateHoldoffActive() {
+            return false;
+        }
+        log::info!(
+            "[backend] spawning {} {} (data={})",
+            node.display(),
+            entry.display(),
+            dataDir.display()
+        );
+
+        let logFile = File::create(&logPath).unwrap_or_else(|e| {
+            log::warn!("[backend] could not create {}: {e}", logPath.display());
             File::create(devNullPath()).expect("failed to open null")
-        })))
-        .stderr(Stdio::from(logFile));
-    applyNoWindow(&mut cmd);
+        });
 
-    match cmd.spawn() {
-        Ok(c) => {
-            storeChild(app, c);
-            log::info!("[backend] node proxy spawned (fallback) — waiting for /api/health");
-            if waitUntilProxyUp(Duration::from_secs(20)) {
-                log::info!("[backend] node proxy healthy on :{}", proxyPort());
-                setSetupPhase(app, "ready", Some("Backend ready".into()));
-                true
-            } else {
-                log::error!("[backend] node proxy spawned but /api/health not ready");
-                let msg = format!(
-                    "[backend] node proxy not healthy on :{} after spawn",
-                    proxyPort()
+        let mut cmd = Command::new(&node);
+        cmd.arg(&entry)
+            .current_dir(&projectRoot)
+            .env("AUGUST_PROXY_PORT", port.to_string())
+            .env("AUGUST_PROXY_ROOT", &projectRoot)
+            .env("AUGUST_DATA_DIR", &dataDir)
+            .env("AUGUST_PROXY_DESKTOP", "1")
+            .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
+                File::create(devNullPath()).expect("failed to open null")
+            })))
+            .stderr(Stdio::from(logFile));
+        applyNoWindow(&mut cmd);
+
+        match cmd.spawn() {
+            Ok(c) => {
+                storeChild(app, c);
+                log::info!(
+                    "[backend] node proxy spawned on :{port} (fallback) — waiting for /api/health"
                 );
+                if waitForProxy(app, port, Duration::from_secs(20)) {
+                    log::info!("[backend] node proxy healthy on :{port}");
+                    markProxyPort(port, app);
+                    return true;
+                }
+                log::error!("[backend] node proxy spawned but /api/health not ready on :{port}");
+                let msg = format!("[backend] node proxy not healthy on :{port} after spawn");
                 setLastError(app, msg.clone());
-                setSetupPhase(app, "error", Some(msg));
-                false
+                killStoredChild(app);
+            }
+            Err(e) => {
+                let msg = format!("[backend] node spawn failed on :{port}: {e}");
+                log::error!("{msg}");
+                setLastError(app, msg.clone());
             }
         }
-        Err(e) => {
-            let msg = format!("[backend] node spawn failed: {e}");
-            log::error!("{msg}");
-            setLastError(app, msg.clone());
-            setSetupPhase(app, "error", Some(msg));
-            false
-        }
     }
+
+    let msg = format!(
+        "[backend] proxy could not be started on any port in {}..={}",
+        DEFAULT_PROXY_PORT, PROXY_PORT_RANGE_END
+    );
+    log::error!("{msg}");
+    setLastError(app, msg.clone());
+    setSetupPhase(app, "error", Some(msg));
+    false
 }
 
 /// Background supervisor: if /api/health goes down (or the child exits),
@@ -1024,17 +1225,22 @@ pub async fn proxy_status() -> String {
 }
 
 #[tauri::command]
-pub fn restart_proxy(app: AppHandle, state: State<'_, BackendProcess>) -> String {
-    if let Ok(mut guard) = state.0.lock() {
-        if let Some(mut c) = guard.take() {
-            killChild(&mut c);
+pub async fn restart_proxy(app: AppHandle) -> String {
+    let app2 = app.clone();
+    // The kill + ensureRunning path can take up to ~65s (killChild wait +
+    // 45s health poll) — never block the Tauri main thread on it.
+    match tokio::task::spawn_blocking(move || {
+        killStoredChild(&app2);
+        if ensureRunning(&app2) {
+            "restarted".into()
+        } else {
+            "restart_failed".into()
         }
-    }
-
-    if ensureRunning(&app) {
-        "restarted".into()
-    } else {
-        "restart_failed".into()
+    })
+    .await
+    {
+        Ok(s) => s,
+        Err(e) => format!("restart_failed: {e}"),
     }
 }
 

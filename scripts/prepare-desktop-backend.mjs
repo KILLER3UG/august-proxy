@@ -5,7 +5,8 @@
 // working backend (no repo checkout required).
 //
 // Usage:
-//   node scripts/prepare-desktop-backend.mjs
+//   node scripts/prepare-desktop-backend.mjs              # dev: writes a "dev-placeholder" stamp
+//   node scripts/prepare-desktop-backend.mjs --release    # release: writes the real sha256 stamp
 //   node scripts/prepare-desktop-backend.mjs --skip-download   # reuse existing python/
 
 import { createWriteStream } from 'node:fs';
@@ -22,6 +23,11 @@ const pythonDir = join(resourcesDir, 'python');
 const backendOut = join(resourcesDir, 'backend-py');
 const wheelsOut = join(resourcesDir, 'wheels');
 const skipDownload = process.argv.includes('--skip-download');
+// Release mode (real sha256 stamp) is opt-in via --release. A local dev
+// prepare MUST write the "dev-placeholder" stamp instead: backend.rs treats
+// that value as "no bundled stamp", so a dev checkout is never flipped into
+// packaged mode (which would pin the AppData runtime to a stale snapshot).
+const release = process.argv.includes('--release');
 
 // On Windows, GNU tar (MSYS /usr/bin/tar) mishandles drive-letter paths like
 // `C:\…`: it reads `C:` as a remote rsh host and fails with
@@ -240,16 +246,25 @@ async function writeManifest(pythonExe) {
     wheelsPath: 'wheels',
   };
   await writeFile(join(resourcesDir, 'backend-runtime.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-  // Touch a tiny marker the Rust side can hash for rebuild detection
-  const hash = createHash('sha256');
-  hash.update(PYTHON_VERSION);
-  hash.update(PYTHON_BUILD);
-  hash.update(await hashStagedBackendSources());
-  try {
-    const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
-    hash.update(String(pkg.version || ''));
-  } catch { /* ignore */ }
-  await writeFile(join(resourcesDir, 'backend-runtime.stamp'), `${hash.digest('hex')}\n`);
+  if (release) {
+    // Real runtime stamp the Rust side can hash for rebuild detection.
+    const hash = createHash('sha256');
+    hash.update(PYTHON_VERSION);
+    hash.update(PYTHON_BUILD);
+    hash.update(await hashStagedBackendSources());
+    try {
+      const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
+      hash.update(String(pkg.version || ''));
+    } catch { /* ignore */ }
+    await writeFile(join(resourcesDir, 'backend-runtime.stamp'), `${hash.digest('hex')}\n`);
+    console.log('[prepare-backend] release mode — real runtime stamp written');
+  } else {
+    // Dev mode: keep the dev checkout out of "packaged" mode. backend.rs
+    // bundledStamp() filters "dev-placeholder" out, so the desktop app keeps
+    // using repo sources instead of the staged AppData runtime.
+    await writeFile(join(resourcesDir, 'backend-runtime.stamp'), 'dev-placeholder\n');
+    console.log('[prepare-backend] dev mode — wrote dev-placeholder stamp');
+  }
   console.log(`[prepare-backend] manifest written (python=${pythonExe})`);
 }
 

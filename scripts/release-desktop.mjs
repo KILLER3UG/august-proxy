@@ -377,7 +377,10 @@ async function buildTauriApp() {
         }
     }
     run('npm', ['run', 'download:node-binaries']);
-    run('npm', ['run', 'prepare:desktop-backend']);
+    // --release: the installer bundle needs the REAL runtime stamp. Without it
+    // the prepare script writes "dev-placeholder" (dev mode) and packaged
+    // installs would not pin the AppData runtime to this build.
+    run('node', ['scripts/prepare-desktop-backend.mjs', '--release']);
     run('npm', ['run', 'tauri', '-w', 'frontend/desktop', 'build']);
     await prepareTauriUpdaterManifest(version);
 }

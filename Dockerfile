@@ -3,7 +3,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install Node.js 22 (for MCP server processes), system deps, and uv
+# Install Node.js 18 (Debian bookworm apt default — python:3.12-slim ships
+# Node 18.19 + npm 9; the comment previously claimed Node 22, which bookworm
+# does not provide), system deps, and uv
 RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
