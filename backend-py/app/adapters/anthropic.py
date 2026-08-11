@@ -73,6 +73,7 @@ from app.providers import resolver as providerResolver
 from app.providers.clients import getClient
 from app.providers.clients.base import BaseProviderClient
 from app.providers.model_resolver import resolve
+from app.services.workbench.validator import validationErrorText
 from app.type_aliases import JsonValue
 
 # Back-compat aliases (previous camelCase names on this module).
@@ -503,7 +504,15 @@ async def resolveManagedAnthropicToolUses(
         if rawBody.get('usage'):
             # Read from the raw body BEFORE snakeToCamel so usage keys stay
             # snake_case (input_tokens/output_tokens) for downstream readers.
-            finalUsage = as_dict(rawBody.get('usage'), {})
+            rawUsage = as_dict(rawBody.get('usage'), {})
+            finalUsage = dict(rawUsage)
+            if not isAnthropicUpstream:
+                # OpenAI upstream reports prompt_tokens/completion_tokens —
+                # normalize to the Anthropic keys the caller reads (L3).
+                if 'input_tokens' not in finalUsage and 'prompt_tokens' in finalUsage:
+                    finalUsage['input_tokens'] = finalUsage.get('prompt_tokens', 0)
+                if 'output_tokens' not in finalUsage and 'completion_tokens' in finalUsage:
+                    finalUsage['output_tokens'] = finalUsage.get('completion_tokens', 0)
         responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.body_json)), {})
         if isAnthropicUpstream:
             content = as_list(responseBody.get('content'), [])
@@ -582,12 +591,7 @@ async def resolveManagedAnthropicToolUses(
                     _toolResultBlockMessage(
                         ToolResultBlock(
                             tool_use_id=toolUseId,
-                            content=(
-                                f"[Validation Error] Tool '{toolName}' received malformed JSON arguments:\n"
-                                f'{invalidRaw[:500]}\n\n'
-                                '[Proxy Self-Heal]: Fix the tool arguments (valid JSON matching the '
-                                'tool schema) and retry. Do NOT stop.'
-                            ),
+                            content=validationErrorText(toolName, invalidRaw[:500], malformed=True),
                             is_error=True,
                         )
                     )
@@ -980,12 +984,7 @@ async def _streamOpenaiAsAnthropic(
                 # validation-error result so the model can self-heal.
                 tr = ToolResultBlock(
                     tool_use_id=tuId,
-                    content=(
-                        f"[Validation Error] Tool '{tuName}' received malformed JSON arguments:\n"
-                        f'{invalidRaw[:500]}\n\n'
-                        '[Proxy Self-Heal]: Fix the tool arguments (valid JSON matching the '
-                        'tool schema) and retry. Do NOT stop.'
-                    ),
+                    content=validationErrorText(tuName, invalidRaw[:500], malformed=True),
                     is_error=True,
                 )
                 currentMessages.append(_toolResultBlockMessage(tr))

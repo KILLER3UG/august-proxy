@@ -328,6 +328,14 @@ On the harnesses you named directly: **Hermes** (Nous) — the relevant pattern 
 - **History browse route (`/history`):** a searchable, day-grouped conversation list (title / last message / model), click-to-open, per-row delete, New chat entry — sidebar nav item included.
 - **Notes → memory promotion:** the right-drawer notepad gained a "Promote to memory" action that saves the note under a searchable `note:` KV key — `memory_search` finds it in any future session.
 
+### Batch 7 (seventh pass — remaining small correctness + prompt consolidation)
+- **M4:** the OpenAI→Anthropic upstream error path now preserves the upstream error body (`normalize_upstream_error`) instead of a bare status code.
+- **L2:** `anthropic_to_openai_tool_definition` omits `strict` unless a real value exists — no more `"strict": null` for strict gateways.
+- **L3:** OpenAI-upstream usage keys (`prompt_tokens`/`completion_tokens`) normalized to Anthropic keys in `resolveManagedAnthropicToolUses`.
+- **M8:** `OpenaiToAnthropicStreamState` normalizes a `None` tool-call index to 0 (parity with `OpenaiStreamAccumulator`) — providers that omit `index` no longer fragment one tool call across deltas.
+- **A9:** `capability_fingerprint` filters traces by provider — two gateways serving the same model id are no longer merged.
+- **Prompt consolidation:** the `[Validation Error]` self-heal message is ONE canonical function (`validator.validationErrorText`) used by the workbench loop, the subagent loop, and both proxy adapters (four copies were drifting); the `<agents>` capabilities block now advertises only the consolidated `spawn_subagents` tool and explains `[SUBAGENT_COMPLETE]` receipts; the verifier-lesson heuristic uses stable rule text (per-turn blocker detail removed) so repeats merge instead of fragmenting into N near-duplicates.
+
 ### P2 — Next iteration (model improvement loops; 1-2 weeks)
 16. Golden-eval expansion + eval→profile feedback P5 (§3) — open
 17. Routing exploration P6; verifier recovery steer A7/P8 — open

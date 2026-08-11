@@ -207,15 +207,17 @@ def openai_to_anthropic_tool_definition(tool: dict[str, object]) -> dict[str, ob
 
 def anthropic_to_openai_tool_definition(tool: dict[str, object]) -> dict[str, object]:
     """Convert an Anthropic-format tool definition to OpenAI format."""
-    return {
-        'type': 'function',
-        'function': {
-            'name': tool.get('name', ''),
-            'description': tool.get('description', ''),
-            'parameters': sanitize_tool_schema(tool.get('input_schema', {})),
-            'strict': tool.get('strict'),
-        },
+    fn: dict[str, object] = {
+        'name': tool.get('name', ''),
+        'description': tool.get('description', ''),
+        'parameters': sanitize_tool_schema(tool.get('input_schema', {})),
     }
+    # Only include `strict` when a real value exists — serializing
+    # `"strict": null` can be rejected or misread by strict gateways.
+    strict = tool.get('strict')
+    if strict is not None:
+        fn['strict'] = strict
+    return {'type': 'function', 'function': fn}
 
 
 def get_canonical_cowork_anthropic_tools() -> list[dict[str, object]]:

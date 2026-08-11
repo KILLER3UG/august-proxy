@@ -106,6 +106,7 @@ async def executeSubAgent(
     from app.providers.route_resolver import resolve_for_model
     from app.services.fallback_service import getFallback
     from app.services.tool_registry import dispatch as dispatchTool
+    from app.services.workbench.validator import validationErrorText
     from app.services.workbench.workbench import (
         WorkbenchSession,
         _callAnthropicWorkbench,
@@ -566,12 +567,7 @@ async def executeSubAgent(
                     invalidRaw = as_str(tInput.get('_invalid_json') or tInput.get('_raw'), '')
                     if invalidRaw:
                         subInvalidCount += 1
-                        result = (
-                            f"[Validation Error] Tool '{tName}' received malformed JSON arguments:\n"
-                            f'{invalidRaw[:500]}\n\n'
-                            '[Proxy Self-Heal]: Fix the tool arguments (valid JSON matching the '
-                            'tool schema) and retry. Do NOT stop.'
-                        )
+                        result = validationErrorText(tName, invalidRaw[:500], malformed=True)
                         status = 'error'
                         if subInvalidCount >= 3 and not subInvalidNudged:
                             subInvalidNudged = True

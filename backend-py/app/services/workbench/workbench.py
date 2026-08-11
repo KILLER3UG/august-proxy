@@ -46,6 +46,7 @@ from app.services.workbench.sessions import (
     getWorkbenchSession,
     saveSessions,
 )
+from app.services.workbench.validator import validationErrorText
 from app.type_aliases import JsonValue
 
 logger = logging.getLogger('workbench')
@@ -2019,13 +2020,14 @@ def _verifier_gated_emit(session: object, emit):
                     try:
                         from app.services.heuristics_service import addHeuristic
 
-                        blockers = as_list(stateDict.get('blockers'), [])[:2]
-                        detail = '; '.join(as_str(b, '') for b in blockers)[:160]
+                        # Stable rule text (no per-turn blocker detail): the
+                        # heuristic store merges repeats by similarity, and a
+                        # rule that changes every turn would fragment into N
+                        # near-duplicates crowding the Tier-2 budget.
                         rule = (
                             'Verifier gate: final answer is withheld until '
                             "update_state(phase='complete') runs after a passing "
                             'verification command.'
-                            + (f' Blockers seen: {detail}.' if detail else '')
                         )
                         addHeuristic(
                             rule,
@@ -3110,11 +3112,7 @@ async def _sendWorkbenchMessageStreamImpl(
                             ),
                         }
                     )
-                msg = (
-                    f"[Validation Error] Tool '{toolName}' received malformed JSON arguments:\n"
-                    f'{invalidRaw[:500]}\n\n'
-                    '[Proxy Self-Heal]: Fix the tool arguments (valid JSON matching the tool schema) and retry. Do NOT stop.'
-                )
+                msg = validationErrorText(toolName, invalidRaw[:500], malformed=True)
                 if emit:
                     emit(
                         {
@@ -4056,7 +4054,10 @@ async def _sendWorkbenchMessageStreamImpl(
 
                 modelIdForProfile = as_str(resolvedModel, '')
                 if modelIdForProfile:
-                    fp = capability_fingerprint(modelIdForProfile)
+                    profileProvider = as_str(
+                        (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
+                    )
+                    fp = capability_fingerprint(modelIdForProfile, profileProvider)
                     # Auto-profile experiments (A5, opt-in): evaluate any
                     # active experiment against the fresh fingerprint BEFORE
                     # the suggestion logic runs — revert when rates regressed,

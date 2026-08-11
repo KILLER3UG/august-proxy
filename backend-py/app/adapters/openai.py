@@ -877,7 +877,9 @@ async def _handleOpenaiBodyToAnthropicUpstream(
         return (_streamAnthropicAsOpenai(client, model, body, apiKey), write_openai_sse_headers())
     resp = await client.messages(body, apiKey)
     if resp.is_error:
-        return ({'error': f'Upstream error (status {resp.status})'}, None)
+        # Preserve the upstream error body (status + message) like every
+        # other error path — a bare status code hides the real failure.
+        return (normalize_upstream_error(resp), None)
     return (_anthropicJsonToOpenaiResponse(resp.body, model), None)
 
 

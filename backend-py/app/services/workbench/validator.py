@@ -115,12 +115,34 @@ def validateToolArguments(
     return {'valid': True}
 
 
+def validationErrorText(tool_name: str, error_msg: str, *, malformed: bool = False) -> str:
+    """ONE canonical [Validation Error] self-heal message for every call site.
+
+    The workbench loop, the subagent loop, and the proxy adapters each used
+    to carry their own copy (already drifting) — weak models must see a
+    single consistent recovery instruction. ``malformed`` selects the
+    malformed-JSON phrasing (raw args instead of a schema error).
+    """
+    if malformed:
+        return (
+            f"[Validation Error] Tool '{tool_name}' received malformed JSON arguments:\n"
+            f'{error_msg}\n\n'
+            '[Proxy Self-Heal]: Fix the tool arguments (valid JSON matching the '
+            "tool schema) and retry. Do NOT stop."
+        )
+    return (
+        f"[Validation Error] Tool '{tool_name}' rejected before execution:\n"
+        f'{error_msg}\n\n'
+        '[Proxy Self-Heal]: Fix the tool arguments and retry. Do NOT stop.'
+    )
+
+
 def buildValidationErrorToolMessage(tool_call_id: str, tool_name: str, error_msg: str) -> dict[str, object]:
     """Build a tool result message for a validation error."""
     return {
         'tool_call_id': tool_call_id,
         'role': 'tool',
-        'content': f"[Validation Error] Tool '{tool_name}' rejected before execution:\n{error_msg}\n\n[Proxy Self-Heal]: Fix the tool arguments and retry. Do NOT stop.",
+        'content': validationErrorText(tool_name, error_msg),
     }
 
 

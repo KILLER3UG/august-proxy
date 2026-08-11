@@ -164,11 +164,20 @@ def capability_fingerprint(model: str, provider: str = '', min_turns: int = 10) 
     """
     try:
         conn = _conn()
-        rows = conn.execute(
-            'SELECT self_heal_events, tool_calls, outcome FROM session_traces '
-            'WHERE model = ? ORDER BY id DESC LIMIT 200',
-            (as_str(model, '')[:120],),
-        ).fetchall()
+        # Provider filter (A9): two providers serving the same model id with
+        # different behavior (strict vs permissive gateway) must not be merged.
+        if provider:
+            rows = conn.execute(
+                'SELECT self_heal_events, tool_calls, outcome FROM session_traces '
+                'WHERE model = ? AND provider = ? ORDER BY id DESC LIMIT 200',
+                (as_str(model, '')[:120], as_str(provider, '')[:120]),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                'SELECT self_heal_events, tool_calls, outcome FROM session_traces '
+                'WHERE model = ? ORDER BY id DESC LIMIT 200',
+                (as_str(model, '')[:120],),
+            ).fetchall()
     except Exception as exc:
         logger.debug('fingerprint failed: %s', exc)
         return {'model': model, 'error': 'no traces'}

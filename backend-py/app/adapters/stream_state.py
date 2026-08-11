@@ -456,14 +456,19 @@ class OpenaiToAnthropicStreamState:
             for tc in tc_list:
                 if not isinstance(tc, dict):
                     continue
+                # Normalize a None index to 0 (OpenaiStreamAccumulator does
+                # the same) — providers that omit `index` must not fragment
+                # one tool call across separate deltas.
+                tc_index_raw = tc.get('index')
+                tc_index = 0 if tc_index_raw is None else (tc_index_raw if isinstance(tc_index_raw, int) else 0)
                 existing = next(
-                    (t for t in self.pending_tool_calls if t.index == tc.get('index')),
+                    (t for t in self.pending_tool_calls if t.index == tc_index),
                     None,
                 )
                 if existing:
                     existing.apply_delta(tc)
                 else:
-                    new_tc = ToolCallDelta(index=tc.get('index', 0))
+                    new_tc = ToolCallDelta(index=tc_index)
                     new_tc.apply_delta(tc)
                     self.pending_tool_calls.append(new_tc)
 
