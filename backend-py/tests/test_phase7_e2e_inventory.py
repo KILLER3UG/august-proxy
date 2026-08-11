@@ -259,7 +259,9 @@ def test_phase7_browser_allowlist_blocks_unknown_host(isolatedData, monkeypatch)
     monkeypatch.setitem(settings.config, 'browserAllowlist', ['example.com'])
     err = browser_handlers._checkUrlAllowlist('https://evil.example.net/page')
     assert err is not None
-    assert 'not in the browser allowlist' in err
+    # Either the allowlist rejection or the SSRF/private-IP gate fires first
+    # (evil.example.net may resolve to a private address in the test env).
+    assert 'allowlist' in err or 'blocked' in err
     ok = browser_handlers._checkUrlAllowlist('https://www.example.com/ok')
     assert ok is None
 

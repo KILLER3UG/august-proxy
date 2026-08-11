@@ -90,6 +90,10 @@ def test_builder_applies_caching(monkeypatch):
         'claude-x',
         system=[{'type': 'text', 'text': 'sys'}],
     )
+    # The builder no longer caches inline: breakpoints must be applied AFTER
+    # tools are attached (the audit fix), so callers apply_prompt_caching the
+    # finished body. The breakpoint logic itself is unchanged.
+    body = mod.apply_prompt_caching(body)
     assert body['system'][-1].get('cache_control') == {'type': 'ephemeral'}
     assert body['messages'][-1]['content'][0].get('cache_control') == {'type': 'ephemeral'}
 

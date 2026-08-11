@@ -146,10 +146,25 @@ def test_compaction_summary_message_is_user_role():
 
 
 def test_models_endpoint_served_shape(isolatedData):
-    """The SERVED /v1/models (models.py, mounted first) returns the
-    OpenAI-compatible list shape and includes configured provider models."""
+    """The SERVED /v1/models returns the OpenAI-compatible list shape.
+
+    /v1/models is part of the gated external surface (audit finding: it used
+    to shadow the auth-gated proxy route), so the shape is asserted with a
+    valid gateway key.
+    """
+    import json as _json
+    from pathlib import Path
+
+    from app.config import settings
+
+    Path(isolatedData, 'config.json').write_text(
+        _json.dumps({'gateway': {'externalAccess': {'enabled': True}}}),
+        encoding='utf-8',
+    )
+    settings.reload()
+    settings.gatewayApiKey = 'top-secret'
     client = TestClient(app)
-    r = client.get('/v1/models')
+    r = client.get('/v1/models', headers={'Authorization': 'Bearer top-secret'})
     assert r.status_code == 200
     body = r.json()
     assert body.get('object') == 'list'

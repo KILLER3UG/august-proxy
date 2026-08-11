@@ -34,10 +34,10 @@ async def testModelsList():
 
 
 async def testV1Models():
+    # /v1/models is part of the gated external surface — closed by default
+    # (external access disabled → 403), like every other /v1/* endpoint
+    # (audit finding: the route previously served unauthenticated).
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.get('/v1/models')
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data['object'] == 'list'
-        assert len(data['data']) > 0
+        assert resp.status_code == 403
