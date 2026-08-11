@@ -190,41 +190,82 @@ def record_auto_route_decision(
     win_rate: float,
     gap: float,
 ) -> None:
-    """Log one auto-route decision (fire-and-forget, never raises)."""
-    try:
-        from app.services.memory_store import get_memory, save_memory
+    """Log one auto-route decision (fire-and-forget, never raises).
 
-        entries = get_memory(ROUTING_DECISIONS_KEY)
-        entries = entries if isinstance(entries, list) else []
-        entries.append(
-            {
-                'at': time.time(),
-                'taskType': as_str(task_type, 'general')[:40],
-                'fromModel': as_str(from_model, '')[:120],
-                'fromProvider': as_str(from_provider, '')[:120],
-                'toModel': as_str(to_model, '')[:120],
-                'toProvider': as_str(to_provider, '')[:120],
-                'winRate': round(max(0.0, min(1.0, as_float(win_rate, 0.0))), 2),
-                'gap': round(max(0.0, as_float(gap, 0.0)), 2),
-            }
+    Stored in SQLite (not a memory read-modify-write) so two concurrent
+    turns auto-routing in the same window cannot lose decisions — the old
+    get_memory → append → save_memory path raced (A12).
+    """
+    try:
+        conn = _conn()
+        conn.execute(
+            'CREATE TABLE IF NOT EXISTS routing_decisions ('
+            ' id INTEGER PRIMARY KEY AUTOINCREMENT,'
+            ' at REAL NOT NULL,'
+            ' task_type TEXT NOT NULL,'
+            ' from_model TEXT NOT NULL,'
+            ' from_provider TEXT NOT NULL,'
+            ' to_model TEXT NOT NULL,'
+            ' to_provider TEXT NOT NULL,'
+            ' win_rate REAL NOT NULL,'
+            ' gap REAL NOT NULL)'
         )
-        save_memory(ROUTING_DECISIONS_KEY, entries[-100:])
+        conn.execute(
+            'INSERT INTO routing_decisions '
+            '(at, task_type, from_model, from_provider, to_model, to_provider, win_rate, gap) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (
+                time.time(),
+                as_str(task_type, 'general')[:40],
+                as_str(from_model, '')[:120],
+                as_str(from_provider, '')[:120],
+                as_str(to_model, '')[:120],
+                as_str(to_provider, '')[:120],
+                round(max(0.0, min(1.0, as_float(win_rate, 0.0))), 2),
+                round(max(0.0, as_float(gap, 0.0)), 2),
+            ),
+        )
+        conn.commit()
     except Exception as exc:
         logger.debug('auto-route decision log failed (non-fatal): %s', exc)
 
 
 def list_auto_route_decisions(limit: int = 20) -> list[dict]:
-    """Recent auto-route decisions, newest first."""
+    """Recent auto-route decisions, newest first (from the SQLite log)."""
     try:
-        from app.services.memory_store import get_memory
-
-        entries = get_memory(ROUTING_DECISIONS_KEY)
-        if not isinstance(entries, list):
-            return []
+        conn = _conn()
+        conn.execute(
+            'CREATE TABLE IF NOT EXISTS routing_decisions ('
+            ' id INTEGER PRIMARY KEY AUTOINCREMENT,'
+            ' at REAL NOT NULL,'
+            ' task_type TEXT NOT NULL,'
+            ' from_model TEXT NOT NULL,'
+            ' from_provider TEXT NOT NULL,'
+            ' to_model TEXT NOT NULL,'
+            ' to_provider TEXT NOT NULL,'
+            ' win_rate REAL NOT NULL,'
+            ' gap REAL NOT NULL)'
+        )
+        rows = conn.execute(
+            'SELECT at, task_type, from_model, from_provider, to_model, to_provider, win_rate, gap '
+            'FROM routing_decisions ORDER BY id DESC LIMIT ?',
+            (max(1, min(limit, 100)),),
+        ).fetchall()
         out: list[dict] = []
-        for e in entries[-max(1, min(limit, 100)):]:
-            out.append(e if isinstance(e, dict) else {})
-        return out[::-1]
+        for r in rows:
+            out.append(
+                {
+                    'at': as_float(r['at'], 0),
+                    'taskType': as_str(r['task_type'], '')[:40],
+                    'fromModel': as_str(r['from_model'], '')[:120],
+                    'fromProvider': as_str(r['from_provider'], '')[:120],
+                    'toModel': as_str(r['to_model'], '')[:120],
+                    'toProvider': as_str(r['to_provider'], '')[:120],
+                    'winRate': round(max(0.0, min(1.0, as_float(r['win_rate'], 0.0))), 2),
+                    'gap': round(max(0.0, as_float(r['gap'], 0.0)), 2),
+                }
+            )
+        return out
     except Exception:
         return []
 

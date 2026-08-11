@@ -285,9 +285,9 @@ export function ComposerToolbar({
           )}
         >
           <ShieldCheck className="size-3.5" />
-          {verifierEnforced && (
-            <span className="text-[9px] font-bold uppercase tracking-wide">On</span>
-          )}
+          <span className={cn('text-[9px] font-bold uppercase tracking-wide', verifierEnforced ? '' : 'opacity-60')}>
+            {verifierEnforced ? 'Verify · On' : 'Verify'}
+          </span>
         </button>
         <ModelEffortMenu
           models={models}

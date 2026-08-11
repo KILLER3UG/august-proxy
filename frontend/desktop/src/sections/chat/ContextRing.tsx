@@ -35,7 +35,7 @@ export function ContextRing({
   const c = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(100, pct));
   const dash = (clamped / 100) * c;
-  const tone = clamped > 90 ? '#ef4444' : clamped > 70 ? '#eab308' : '#22c55e';
+  const tone = clamped > 90 ? 'var(--dt-danger)' : clamped > 70 ? 'var(--dt-warning)' : 'var(--dt-success)';
   const cacheTotal = (promptCache?.hitTokens ?? 0) + (promptCache?.missTokens ?? 0);
   const cacheRate =
     promptCache?.hitRate ??
@@ -151,21 +151,22 @@ export function ContextRing({
           style={{
             top: tooltipPos.top,
             left: tooltipPos.left,
-            backgroundColor: '#1c1c1c',
-            border: '0.5px solid rgba(255,255,255,0.12)',
+            backgroundColor: 'var(--dt-popover)',
+            border: '0.5px solid var(--dt-border)',
+            color: 'var(--dt-popover-foreground)',
           }}
           data-composer-popover=""
         >
           <div className="flex items-center justify-between text-[12.5px] mb-1.5">
-            <span className="font-medium text-[#e0e0e0]">Session Context</span>
+            <span className="font-medium" style={{ color: 'var(--dt-popover-foreground)' }}>Session Context</span>
             <span className="font-mono tabular-nums text-muted-foreground text-[11.5px]">
               {formatTokens(estTokens)} / {formatTokens(maxContext)} tokens used ({clamped}%)
             </span>
           </div>
-          <div className="h-1 rounded-full overflow-hidden mb-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="h-1 rounded-full overflow-hidden mb-2.5" style={{ backgroundColor: 'var(--dt-muted)' }}>
             <div
               className="h-full rounded-full transition-all duration-300"
-              style={{ width: `${clamped}%`, backgroundColor: '#3b7eff' }}
+              style={{ width: `${clamped}%`, backgroundColor: 'var(--dt-primary)' }}
             />
           </div>
           {rows && (
@@ -175,11 +176,11 @@ export function ContextRing({
                   <span
                     className="w-1.5 h-1.5 rounded-full shrink-0"
                     style={{
-                      backgroundColor: r.opacity === 0 ? '#444' : '#3b7eff',
+                      backgroundColor: r.opacity === 0 ? 'var(--dt-muted-foreground)' : 'var(--dt-primary)',
                       opacity: r.opacity === 0 ? 1 : r.opacity,
                     }}
                   />
-                  <span className="text-[#c0c0c0]">{r.label}</span>
+                  <span style={{ color: 'var(--dt-muted-foreground)' }}>{r.label}</span>
                   <span className="ml-auto font-mono tabular-nums text-muted-foreground text-[11px]">
                     {r.pct.toFixed(1)}%
                   </span>
@@ -188,44 +189,44 @@ export function ContextRing({
             </div>
           )}
           {modelName && (
-            <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-muted-foreground truncate">
+            <div className="mt-2 pt-2 border-t text-[11px] text-muted-foreground truncate" style={{ borderColor: 'var(--dt-border)' }}>
               <span className="opacity-60">Model · </span>
-              <span className="text-[#ddd]">{modelName}</span>
+              <span style={{ color: 'var(--dt-popover-foreground)' }}>{modelName}</span>
             </div>
           )}
           {promptCache && (
-            <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-muted-foreground">
+            <div className="mt-2 pt-2 border-t text-[11px] text-muted-foreground" style={{ borderColor: 'var(--dt-border)' }}>
               <div className="flex items-center justify-between">
-                <span className="font-medium text-[#c0c0c0]">Prompt cache</span>
+                <span className="font-medium" style={{ color: 'var(--dt-muted-foreground)' }}>Prompt cache</span>
                 <span
                   className="font-mono tabular-nums"
-                  style={{ color: cacheRate >= 0.6 ? '#4ade80' : cacheRate >= 0.3 ? '#eab308' : '#ef4444' }}
+                  style={{ color: cacheRate >= 0.6 ? 'var(--dt-success)' : cacheRate >= 0.3 ? 'var(--dt-warning)' : 'var(--dt-danger)' }}
                 >
                   {Math.round(cacheRate * 100)}% hit
                 </span>
               </div>
               <div className="flex justify-between mt-0.5">
                 <span className="opacity-60">Cached / total input</span>
-                <span className="font-mono tabular-nums text-[#ddd]">
+                <span className="font-mono tabular-nums" style={{ color: 'var(--dt-popover-foreground)' }}>
                   {formatTokens(promptCache?.hitTokens ?? 0)} / {formatTokens(cacheTotal)}
                 </span>
               </div>
             </div>
           )}
           {serverTokens && (
-            <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-muted-foreground">
-              <div className="font-medium text-[#c0c0c0] mb-1">Server‑reported usage</div>
+            <div className="mt-2 pt-2 border-t text-[11px] text-muted-foreground" style={{ borderColor: 'var(--dt-border)' }}>
+              <div className="font-medium" style={{ color: 'var(--dt-muted-foreground)' }}>Server‑reported usage</div>
               <div className="flex justify-between">
                 <span className="opacity-60">Total</span>
-                <span className="font-mono tabular-nums text-[#ddd]">{formatTokens(serverTokens.total)}</span>
+                <span className="font-mono tabular-nums" style={{ color: 'var(--dt-popover-foreground)' }}>{formatTokens(serverTokens.total)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="opacity-60">Input</span>
-                <span className="font-mono tabular-nums text-[#ddd]">{formatTokens(serverTokens.input)}</span>
+                <span className="font-mono tabular-nums" style={{ color: 'var(--dt-popover-foreground)' }}>{formatTokens(serverTokens.input)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="opacity-60">Output</span>
-                <span className="font-mono tabular-nums text-[#ddd]">{formatTokens(serverTokens.output)}</span>
+                <span className="font-mono tabular-nums" style={{ color: 'var(--dt-popover-foreground)' }}>{formatTokens(serverTokens.output)}</span>
               </div>
             </div>
           )}

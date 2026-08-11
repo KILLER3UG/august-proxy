@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
+import { openShortcutsModal } from "@/store/shortcuts-modal";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
@@ -475,11 +476,31 @@ export function ChatLayout() {
         className="august-app-chrome flex h-9 shrink-0 items-center justify-between select-none"
         data-tauri-drag-region
       >
-        <div className="flex items-center gap-4 px-3">
-          <span>File</span>
-          <span>Edit</span>
-          <span>View</span>
-          <span>Help</span>
+        <div className="flex items-center gap-1 px-3">
+          <button
+            type="button"
+            onClick={() => void handleNewSession()}
+            className="rounded px-2 py-0.5 text-[12px] text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
+            title="New chat"
+          >
+            File
+          </button>
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            className="rounded px-2 py-0.5 text-[12px] text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
+            title="Toggle sidebar"
+          >
+            View
+          </button>
+          <button
+            type="button"
+            onClick={() => openShortcutsModal()}
+            className="rounded px-2 py-0.5 text-[12px] text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
+            title="Keyboard shortcuts"
+          >
+            Help
+          </button>
         </div>
         <span className="pr-4 text-[10px] tracking-[0.08em] text-muted-foreground/45">AUGUST DESKTOP</span>
       </div>

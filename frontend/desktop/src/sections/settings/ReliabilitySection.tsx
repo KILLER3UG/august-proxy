@@ -6,7 +6,7 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { HeartPulse, TrendingUp, FlaskConical, Timer, Trophy, AlertTriangle, Play, Route, ArrowRight } from 'lucide-react';
+import { HeartPulse, TrendingUp, FlaskConical, Timer, Trophy, AlertTriangle, Play, Route, ArrowRight, X } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { toast } from 'sonner';
@@ -110,6 +110,7 @@ function StatCard({ label, value, hint, icon: Icon }: {
 export function ReliabilitySection() {
   const qc = useQueryClient();
   const [evalsRunning, setEvalsRunning] = useState(false);
+  const [selectedEval, setSelectedEval] = useState<EvalRun | null>(null);
   const { data: trends, isFetching: trendsFetching } = useQuery<TrendsData>({
     queryKey: ['harness-trends', 30],
     queryFn: async () => api.get<TrendsData>('/api/brain/harness/trends?days=30'),
@@ -528,14 +529,22 @@ export function ReliabilitySection() {
             <ul className="mt-3 space-y-1.5">
             {evals.runs.slice(0, 10).map((r, i) => (
               <li key={`${r.at}-${i}`} className="flex items-center gap-2 text-xs py-1 border-t border-white/[0.04] first:border-t-0">
-                <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
-                  r.passed ? 'bg-emerald-500/15 text-emerald-500' : 'bg-rose-500/15 text-rose-500'
-                }`}>
-                  {r.passed ? <Trophy className="size-2.5" /> : <AlertTriangle className="size-2.5" />}
-                  {r.passed ? 'PASS' : 'FAIL'}
-                </span>
-                <span className="font-mono text-foreground/90 truncate">{r.taskId}</span>
-                <span className="text-muted-foreground/70">{r.model}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEval(r)}
+                  className="inline-flex items-center gap-2 min-w-0 flex-1 text-left group"
+                  title="Inspect this run"
+                  data-testid={`eval-run-row-${r.taskId}`}
+                >
+                  <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
+                    r.passed ? 'bg-emerald-500/15 text-emerald-500' : 'bg-rose-500/15 text-rose-500'
+                  }`}>
+                    {r.passed ? <Trophy className="size-2.5" /> : <AlertTriangle className="size-2.5" />}
+                    {r.passed ? 'PASS' : 'FAIL'}
+                  </span>
+                  <span className="font-mono text-foreground/90 truncate group-hover:text-foreground">{r.taskId}</span>
+                  <span className="text-muted-foreground/70">{r.model}</span>
+                </button>
                 <span className="ml-auto text-muted-foreground/70 shrink-0">
                   {r.rounds != null ? `${r.rounds} rounds · ` : ''}{fmtDurationMs(r.durationMs)}
                 </span>
@@ -546,6 +555,49 @@ export function ReliabilitySection() {
           </>
         )}
       </div>
+      {selectedEval && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setSelectedEval(null)}
+          data-testid="eval-run-detail"
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-card shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
+              <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
+                selectedEval.passed ? 'bg-emerald-500/15 text-emerald-500' : 'bg-rose-500/15 text-rose-500'
+              }`}>
+                {selectedEval.passed ? 'PASS' : 'FAIL'}
+              </span>
+              <h3 className="font-mono text-sm text-foreground truncate">{selectedEval.taskId}</h3>
+              <button
+                type="button"
+                aria-label="Close"
+                className="ml-auto p-1 rounded-md text-muted-foreground hover:text-foreground"
+                onClick={() => setSelectedEval(null)}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="space-y-2 px-4 py-3 text-xs">
+              <div className="grid grid-cols-2 gap-2 text-muted-foreground">
+                <div>Model <span className="block font-mono text-foreground">{selectedEval.model || '—'}</span></div>
+                <div>Rounds <span className="block font-mono text-foreground">{selectedEval.rounds ?? '—'}</span></div>
+                <div>Duration <span className="block font-mono text-foreground">{fmtDurationMs(selectedEval.durationMs)}</span></div>
+                <div>When <span className="block font-mono text-foreground">{fmtTime(selectedEval.at)}</span></div>
+              </div>
+              <div>
+                <div className="mb-1 text-muted-foreground">Detail</div>
+                <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/60 p-2.5 font-mono text-[11px] text-foreground/90 max-h-56 overflow-y-auto">
+                  {selectedEval.notes || '(no detail recorded — run the suite to populate)'}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

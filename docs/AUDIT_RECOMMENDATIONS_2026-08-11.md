@@ -311,6 +311,13 @@ On the harnesses you named directly: **Hermes** (Nous) — the relevant pattern 
 - **P5 eval expansion:** `ScriptedClient` gained an Anthropic `messages_stream` (covers the `_raw` malformed-input aggregation path — previously OpenAI-only); `run_turn` gained `wire_format='anthropic'`; 4 new golden scenarios (Anthropic malformed self-heal, Anthropic tool round-trip, **downgrade→restore reversibility**, **late-stall hard-stop**); `record_eval_run` now feeds real-model outcomes into `session_traces` so capability fingerprints react to eval failures — the eval→profile→turns→eval loop.
 - **Spawn panel UX (lean v1):** "Spawn sub-agents" entry in the composer `+` menu opens a modal (goal lines, agent role, effort) bound to the active session — launched agents stream into the current transcript.
 
+### Batch 4 (fourth pass, all green)
+- **A5 auto-apply + auto-revert (capstone):** with `AUGUST_AUTO_PROFILE=1`, capability-profile suggestions are written into the provider store automatically and opened as an experiment (before-rates recorded); once the model accumulates 8+ new traces, the fingerprint is re-evaluated — regressed rates → revert to the previous surface, held/improved → confirmed. The harness now tunes each model's tool surface *and undoes changes that backfire*.
+- **L4 bounded verifier retries:** the auto-run is no longer one-shot — a second ignored steer force-releases the withheld answer next turn with a warning (no more permanently stranded answers).
+- **A12 race-free decision log:** auto-route decisions moved from a memory read-modify-write (racing under concurrency) to a SQLite `routing_decisions` table.
+- **Frontend polish:** the inert File/View/Help chrome is now functional (New chat / Toggle sidebar / Shortcuts); ContextRing tooltip + tone scale use design tokens (was hardcoded hex — broken in light theme); verifier shield toggle always shows a "Verify" label (was an unlabeled icon).
+- **Evals drill-down:** eval run rows in the Reliability dashboard open a detail modal (model, rounds, duration, failure notes) — the per-scenario trace is inspectable.
+
 ### P2 — Next iteration (model improvement loops; 1-2 weeks)
 16. Golden-eval expansion + eval→profile feedback P5 (§3) — open
 17. Routing exploration P6; verifier recovery steer A7/P8 — open

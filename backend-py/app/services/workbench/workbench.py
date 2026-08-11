@@ -983,6 +983,108 @@ def _is_failing_receipt(msg: dict[str, object]) -> bool:
     return bool(re.search(r'exit code:\s*[1-9]\d*', lower))
 
 
+# ── Auto-applied capability profiles (A5, opt-in AUGUST_AUTO_PROFILE=1) ──
+# The suggestion loop is two-way (downgrades + upgrades); auto-apply closes
+# it into an experiment: the profile is written to the provider store, the
+# before-rates are recorded, and once enough new traces accumulate the
+# experiment is evaluated — worse rates → revert, held/improved → confirm.
+
+
+def _apply_model_profile(model_id: str, surface: str) -> bool:
+    """Write a model's toolSurface into the provider store. Returns True on success."""
+    try:
+        from app.services import config_service
+
+        store = config_service.getProvidersStore()
+        for prov in as_list(store.get('providers'), []):
+            if not isinstance(prov, dict):
+                continue
+            for m in as_list(prov.get('models'), []):
+                if isinstance(m, dict) and as_str(m.get('id'), '') == model_id:
+                    m['toolSurface'] = surface
+                    config_service.saveProvidersStore(store)
+                    return True
+    except Exception:
+        logger.debug('auto-profile apply failed', exc_info=True)
+    return False
+
+
+def _clear_model_profile(model_id: str) -> bool:
+    """Remove a model's toolSurface override (revert to provider default)."""
+    try:
+        from app.services import config_service
+
+        store = config_service.getProvidersStore()
+        for prov in as_list(store.get('providers'), []):
+            if not isinstance(prov, dict):
+                continue
+            for m in as_list(prov.get('models'), []):
+                if isinstance(m, dict) and as_str(m.get('id'), '') == model_id:
+                    m.pop('toolSurface', None)
+                    config_service.saveProvidersStore(store)
+                    return True
+    except Exception:
+        logger.debug('auto-profile clear failed', exc_info=True)
+    return False
+
+
+def _auto_profile_tick(model_id: str, fp: dict[str, object]) -> None:
+    """Evaluate an active profile experiment against the fresh fingerprint.
+
+    Runs every turn while an experiment exists. Once the model accumulated
+    ``minTurns`` new traces since the apply, compare failure rates: if any
+    regressed by more than the tolerance, revert to the previous surface;
+    otherwise mark the experiment confirmed. Never raises.
+    """
+    import os as _os
+
+    if _os.environ.get('AUGUST_AUTO_PROFILE') != '1':
+        return
+    try:
+        from app.services.memory_store import get_memory, save_memory
+
+        key = f'profile-experiment:{model_id}'
+        exp = get_memory(key)
+        expDict = exp if isinstance(exp, dict) else {}
+        if not expDict:
+            return
+        minTurns = max(3, as_int(expDict.get('minTurns'), 8))
+        total = as_int(fp.get('total'), 0)
+        if total < as_int(expDict.get('beforeTotal'), 0) + minTurns:
+            return
+        beforeRaw = expDict.get('beforeRates')
+        beforeDict: dict[str, object] = beforeRaw if isinstance(beforeRaw, dict) else {}
+        beforeRates = (
+            as_float(beforeDict.get('invalid_json'), 0.0),
+            as_float(beforeDict.get('refusal'), 0.0),
+            as_float(beforeDict.get('stall'), 0.0),
+        )
+        nowRates = (
+            as_float(fp.get('invalid_json_rate'), 0.0),
+            as_float(fp.get('refusal_rate'), 0.0),
+            as_float(fp.get('stall_rate'), 0.0),
+        )
+        regressed = any(a > b + 0.08 for a, b in zip(nowRates, beforeRates))
+        prevSurface = as_str(expDict.get('prevSurface'), '')
+        if regressed:
+            reverted = (
+                _apply_model_profile(model_id, prevSurface) if prevSurface else _clear_model_profile(model_id)
+            )
+            logger.warning(
+                'auto-profile: %s regressed after %s — %s to %s',
+                model_id,
+                minTurns,
+                'reverted' if reverted else 'revert FAILED',
+                prevSurface or '(provider default)',
+            )
+            save_memory(key, {**expDict, 'status': 'reverted', 'checkedAt': _now()})
+        else:
+            logger.info('auto-profile: %s confirmed after %s turns (rates held/improved)', model_id, minTurns)
+            save_memory(key, {**expDict, 'status': 'confirmed', 'checkedAt': _now()})
+    except Exception:
+        logger.debug('auto-profile tick failed', exc_info=True)
+
+
 def _shouldAutoRecall(
     cognitive_budget: dict[str, object] | None,
     min_headroom: int = 6000,
@@ -1855,9 +1957,10 @@ def _verifier_gated_emit(session: object, emit):
     def _wrapped(evt: dict[str, object]) -> None:
         etype = as_str(evt.get('type'), '')
         if etype in ('finalOutput', 'final_output'):
+            forceRelease = bool(getattr(session, '_verifier_force_release', False))
             state = getattr(session, '_execution_state', None)
             phase = as_str(as_dict(state, {}).get('phase'), '') if state else ''
-            if phase != 'complete':
+            if phase != 'complete' and not forceRelease:
                 if not _fired['flag']:
                     _fired['flag'] = True
                     stateDict = as_dict(state, {}) if state else {}
@@ -1908,6 +2011,16 @@ def _verifier_gated_emit(session: object, emit):
                     except Exception:
                         logger.debug('verifier lesson record failed', exc_info=True)
                 return
+            if forceRelease:
+                emit(
+                    {
+                        'type': 'warning',
+                        'message': (
+                            'Verifier gate auto-released: the model ignored the verification '
+                            'steer twice — showing the answer without a passing verification run.'
+                        ),
+                    }
+                )
         emit(evt)
 
     return _wrapped
@@ -3685,16 +3798,17 @@ async def _sendWorkbenchMessageStreamImpl(
         # (audit finding).
         try:
             _guard_mode = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+            _verifier_runs = as_int(getattr(session, '_verifier_auto_run_count', 0), 0)
             if (
                 _guard_mode == 'full'
                 and getattr(session, 'verifierEnforced', False)
-                and not getattr(session, '_verifier_auto_ran', False)
+                and _verifier_runs < 2
             ):
                 vstate = getattr(session, '_execution_state', None) or {}
                 vphase = as_str(vstate.get('phase'), '') if isinstance(vstate, dict) else ''
                 vcmd = as_str(vstate.get('verification_command'), '') if isinstance(vstate, dict) else ''
                 if vphase != 'complete' and vcmd:
-                    setattr(session, '_verifier_auto_ran', True)
+                    setattr(session, '_verifier_auto_run_count', _verifier_runs + 1)
                     vresult = await _executeTool('run_command', {'command': vcmd}, session)
                     vout = as_str(vresult, '')[-3000:]
                     receipts = getattr(session, '_verification_receipts', None)
@@ -3734,15 +3848,30 @@ async def _sendWorkbenchMessageStreamImpl(
                     # A7: the model ended with a withheld answer and never
                     # declared a verification command — steer it to declare +
                     # run one, instead of stranding the answer under the amber
-                    # banner with no automatic recovery path.
-                    setattr(session, '_verifier_auto_ran', True)
-                    steer = (
-                        '[VERIFIER STEER] The verifier gate requires a verification run before '
-                        "the final answer is released. Declare and run a verification command "
-                        "(tests / lint / build) via run_command, confirm it passes, then call "
-                        "update_state(phase='complete', verificationCommand='<your command>')."
-                    )
-                    enqueueUserMessage(sessionId, steer, kind='steer')
+                    # banner with no automatic recovery path. A second ignored
+                    # steer force-releases the answer next turn (L4, bounded).
+                    setattr(session, '_verifier_auto_run_count', _verifier_runs + 1)
+                    if _verifier_runs >= 1:
+                        setattr(session, '_verifier_force_release', True)
+                        if emit:
+                            emit(
+                                {
+                                    'type': 'warning',
+                                    'message': (
+                                        'Verifier gate: the model ignored the verification steer '
+                                        'twice — the next answer will be released without a '
+                                        'passing verification run.'
+                                    ),
+                                }
+                            )
+                    else:
+                        steer = (
+                            '[VERIFIER STEER] The verifier gate requires a verification run before '
+                            "the final answer is released. Declare and run a verification command "
+                            "(tests / lint / build) via run_command, confirm it passes, then call "
+                            "update_state(phase='complete', verificationCommand='<your command>')."
+                        )
+                        enqueueUserMessage(sessionId, steer, kind='steer')
         except Exception:
             logger.debug('verifier auto-run failed', exc_info=True)
         if emit:
@@ -3879,6 +4008,11 @@ async def _sendWorkbenchMessageStreamImpl(
                 modelIdForProfile = as_str(resolvedModel, '')
                 if modelIdForProfile:
                     fp = capability_fingerprint(modelIdForProfile)
+                    # Auto-profile experiments (A5, opt-in): evaluate any
+                    # active experiment against the fresh fingerprint BEFORE
+                    # the suggestion logic runs — revert when rates regressed,
+                    # confirm when they held or improved.
+                    _auto_profile_tick(modelIdForProfile, fp)
                     suggestedRaw = fp.get('suggestedProfile')
                     suggested = (
                         suggestedRaw if isinstance(suggestedRaw, dict) else None
@@ -3910,6 +4044,35 @@ async def _sendWorkbenchMessageStreamImpl(
                                         ),
                                     }
                                 )
+                            # Auto-apply (opt-in): write the profile into the
+                            # provider store and open an experiment that
+                            # reverts the change if failure rates regress.
+                            import os as _profile_os
+
+                            if _profile_os.environ.get('AUGUST_AUTO_PROFILE') == '1':
+                                appliedSurface = as_str(suggested.get('toolSurface'), '')
+                                if appliedSurface and _apply_model_profile(modelIdForProfile, appliedSurface):
+                                    save_memory(
+                                        f'profile-experiment:{modelIdForProfile}',
+                                        {
+                                            'appliedAt': _now(),
+                                            'prevSurface': as_str(prevDict.get('toolSurface'), ''),
+                                            'appliedSurface': appliedSurface,
+                                            'beforeTotal': as_int(fp.get('total'), 0),
+                                            'beforeRates': {
+                                                'invalid_json': as_float(fp.get('invalid_json_rate'), 0.0),
+                                                'refusal': as_float(fp.get('refusal_rate'), 0.0),
+                                                'stall': as_float(fp.get('stall_rate'), 0.0),
+                                            },
+                                            'minTurns': 8,
+                                        },
+                                    )
+                                    logger.warning(
+                                        'auto-profile: applied %s surface %s for %s',
+                                        appliedSurface,
+                                        modelIdForProfile,
+                                        suggested.get('reason', ''),
+                                    )
             except Exception:
                 logger.debug('capability suggestion failed', exc_info=True)
             # Self-improvement: failed turns become provider-reliability lessons
