@@ -140,7 +140,9 @@ async def _writeScratchpad(text: str) -> str:
         }
         if prevState.get('verification_command'):
             state['verification_command'] = prevState['verification_command']
-        await updateSessionState(session, executionState=state)
+        ok = await updateSessionState(session, executionState=state)
+        if not ok:
+            return 'Error: scratchpad update timed out under concurrent writes — retry the call.'
         setattr(session, '_working_memory', text)
         return 'Scratchpad updated.'
     except Exception as exc:
@@ -474,7 +476,9 @@ async def _updateState(
         }
         if verificationCommand:
             state['verification_command'] = verificationCommand
-        await updateSessionState(session, executionState=state)
+        ok = await updateSessionState(session, executionState=state)
+        if not ok:
+            return 'Error: state update timed out under concurrent writes — retry the call.'
         return f'State updated: phase={state["phase"]}, step={state["step"]}, completed={len(completedList)}, blockers={len(blockersList)}'
     except Exception as exc:
         return f'Error updating state: {exc}'

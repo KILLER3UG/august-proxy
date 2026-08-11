@@ -108,7 +108,16 @@ class AnthropicWorkbenchStreamAggregator:
                 raw = ''.join(self.current_tool_input_parts)
                 if raw:
                     try:
-                        self.current_tool_block['input'] = json.loads(raw)
+                        parsed = json.loads(raw)
+                        if isinstance(parsed, dict):
+                            self.current_tool_block['input'] = parsed
+                        else:
+                            # Valid JSON that is NOT an object ([]/42/"text")
+                            # must never execute as {} — the OpenAI path rejects
+                            # these and this path must too (audit finding:
+                            # non-object args were flattened to {} and tools
+                            # ran with empty arguments).
+                            self.current_tool_block['input'] = {'_raw': raw}
                     except json.JSONDecodeError:
                         from app.services.workbench.json_salvage import salvage_json_object
 

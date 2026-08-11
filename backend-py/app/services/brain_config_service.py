@@ -68,7 +68,9 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'),
     ('reviewLearnedGuidelines', 'review_learned_guidelines', True, 'bool'),
     ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'),
-    ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 100), 'num'),
+    # The documented default is 25 tool rounds (MAX_MANAGED_TOOL_ROUNDS);
+    # the stale 100 seed made that constant dead on every fresh install.
+    ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 25), 'num'),
     # Evidence-driven auto-routing (surpass #1 closed loop): opt-in per
     # config, with threshold knobs the Reliability dashboard exposes.
     ('autoRoute', 'auto_route', False, 'bool'),

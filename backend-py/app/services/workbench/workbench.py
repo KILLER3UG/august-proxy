@@ -236,7 +236,13 @@ def _parseTextToolCalls(text: str) -> list[tuple[str, dict[str, object]]]:
         from app.services.workbench.json_salvage import salvage_json_object
 
         saved = salvage_json_object(raw) if raw else {}
-        calls.append((name, saved if saved is not None else {}))
+        if saved is not None:
+            calls.append((name, saved))
+        else:
+            # Unsalvageable garbage must never execute as {} — mark it so the
+            # loop's validation path surfaces an error (mirrors the native
+            # tool-call _raw handling; audit finding).
+            calls.append((name, {'_raw': raw}))
     return calls
 
 
@@ -293,12 +299,16 @@ def _turnOutcomeGrade(
     thinking_only: bool,
     tool_errors: int,
     evidence_state: str,
+    verifier_withheld: bool = False,
 ) -> str:
     """Graded turn outcome for routing evidence (task success, not just
     error-absence). Order matters: an error dominates; a refusal is not a
-    win even though the loop survived; verified mutation beats a bare ok."""
+    win even though the loop survived; a verifier-withheld answer is not a
+    win (the model failed the gate); verified mutation beats a bare ok."""
     if turn_error:
         return 'error'
+    if verifier_withheld:
+        return 'verifier_blocked'
     if refusals > 0:
         return 'refusal'
     if thinking_only:
@@ -376,11 +386,16 @@ def _managedToolLoopCap() -> int:
     try:
         from app.services.brain_config_service import getRuntimeConfig
 
-        value = as_int(getRuntimeConfig().get('maxWorkbenchToolLoops'), 0)
-        if value >= 0:
-            return value
+        cfg = getRuntimeConfig()
+        if 'maxWorkbenchToolLoops' in cfg and cfg.get('maxWorkbenchToolLoops') is not None:
+            value = as_int(cfg.get('maxWorkbenchToolLoops'), 0)
+            if value >= 0:
+                return value
     except Exception:
         logger.debug('maxWorkbenchToolLoops read failed; using default', exc_info=True)
+    # Absent key → the documented default (25). The old shape
+    # (``as_int(..., 0)`` + ``>= 0``) made the hardcoded constant dead — the
+    # seeded config always carried 100, so "defaults to 25" was never true.
     return MAX_MANAGED_TOOL_ROUNDS
 
 
@@ -607,8 +622,6 @@ def buildSystemPrompt(
         logger.debug('recent sessions preload failed', exc_info=True)
     session._last_recalled_memories = None
     session._last_context_snapshot = None
-    # Fresh verifier gate receipts for this turn (see system_tools._updateState).
-    session._verification_receipts = None
     # Auto-memories are on-demand by default; the budget-gated auto-recall
     # below injects a small recall when there is headroom. The model pulls
     # deeper past-session context via memory_search / fact_search /
@@ -1982,12 +1995,17 @@ def _verifier_gated_emit(session: object, emit):
     def _wrapped(evt: dict[str, object]) -> None:
         etype = as_str(evt.get('type'), '')
         if etype in ('finalOutput', 'final_output'):
-            forceRelease = bool(getattr(session, '_verifier_force_release', False))
+            forceRelease = bool(getattr(session, '_verifier_force_release_this_turn', False))
             state = getattr(session, '_execution_state', None)
             phase = as_str(as_dict(state, {}).get('phase'), '') if state else ''
             if phase != 'complete' and not forceRelease:
                 if not _fired['flag']:
                     _fired['flag'] = True
+                    # Live flags for the turn: the refusal re-prompt guard
+                    # reads _verifier_blocked; routing evidence reads
+                    # _verifier_blocked_this_turn (withheld ≠ win).
+                    setattr(session, '_verifier_blocked', True)
+                    setattr(session, '_verifier_blocked_this_turn', True)
                     stateDict = as_dict(state, {}) if state else {}
                     # Evidence for the UI banner: what the model claimed, what
                     # it said blocks completion, and whether any verification
@@ -2307,6 +2325,21 @@ async def _sendWorkbenchMessageStreamImpl(
                     logger.debug('recurring-task subagent dispatch failed', exc_info=True)
     except Exception:
         logger.debug('recurring tasks check failed', exc_info=True)
+    # Turn-scoped verifier/self-heal state (audit sweep): everything below is
+    # reset here — at the TRUE turn start — instead of inside
+    # buildSystemPrompt, so a mid-turn prompt rebuild (enter_plan_mode) can't
+    # wipe verifier receipts, and stale flags/counters can't leak across turns.
+    setattr(session, '_verifier_blocked', False)
+    setattr(session, '_verifier_blocked_this_turn', False)
+    setattr(session, '_refusal_count', 0)
+    setattr(session, '_verification_receipts', None)
+    # The force-release flag is set by the PREVIOUS turn's finally (A7, after
+    # two ignored verifier steers) — snapshot it for THIS turn only, then clear
+    # the raw flag so a later unrelated turn can never inherit a stale release.
+    setattr(
+        session, '_verifier_force_release_this_turn', bool(getattr(session, '_verifier_force_release', False))
+    )
+    setattr(session, '_verifier_force_release', False)
     # Opt-in verifier enforcement: while session.verifierEnforced is set,
     # finalOutput text is withheld until update_state(phase='complete') passes
     # the verifier gate. Casual chat (flag off) is unaffected.
@@ -2668,6 +2701,17 @@ async def _sendWorkbenchMessageStreamImpl(
                         session._tool_tracker.record_text_response()
                 except Exception:
                     pass
+                # Terminal-event protocol: the finally below emits the done
+                # event, but the post-loop persist block is skipped on this
+                # early return — reset the streaming status so the sidebar
+                # doesn't show a permanently "generating" chat (audit finding).
+                session.status = 'idle'
+                session.updatedAt = _now()
+                try:
+                    saveSessions()
+                except Exception:
+                    logger.exception('workbench save_sessions failed after ceiling block')
+                _emitSessionStatus(sessionId)
                 return
         except Exception:
             logger.debug('cost ceiling check failed', exc_info=True)
@@ -2696,6 +2740,11 @@ async def _sendWorkbenchMessageStreamImpl(
                 if sig != lastExecSig:
                     lastExecSig = sig
                     stalledRounds = 0
+                    # A phase/step advance resets the warning too — a SECOND
+                    # distinct stall streak deserves its own nudge (audit
+                    # finding: stallMessageSent was never reset, so the first
+                    # nudge suppressed all later warnings until hard-stop).
+                    stallMessageSent = False
                 else:
                     stalledRounds += 1
                     if stalledRounds >= MAX_STALLED_ROUNDS and not stallMessageSent:
@@ -2704,7 +2753,7 @@ async def _sendWorkbenchMessageStreamImpl(
                             {
                                 'role': 'user',
                                 'content': (
-                                    f'[Proxy Self-Heal] {toolRound} tool rounds have elapsed without '
+                                    f'[Proxy Self-Heal] {stalledRounds} tool rounds have elapsed without '
                                     'advancing your execution phase/step. Reflect on what is blocking '
                                     'you, record where you are with update_state(phase=..., step=...), '
                                     'then either take a different approach or finish with a final answer.'
@@ -3288,6 +3337,10 @@ async def _sendWorkbenchMessageStreamImpl(
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': f'[Blocked] {blockedReason}'})
                 continue
             pending_regular.append((toolName, toolInput, toolUseId))
+        # A user Stop mid-round leaves the round's tool calls without results —
+        # the assistant message must not be persisted with dangling calls
+        # (strict gateways reject tool_use/tool_calls that lack results).
+        cancelledMidRound = _isCancelled()
         # Regular tools: chat_stages runs them in parallel when all are read-only.
         from app.services.workbench.chat_stages import run_regular_tools_stage
 
@@ -3632,7 +3685,9 @@ async def _sendWorkbenchMessageStreamImpl(
                         'contentTruncated': contentTruncated,
                         'contentFullLength': len(result),
                         'summary': str(result)[:2000],
-                        'status': 'done',
+                        # Authoritative status: failures begin with "Error:" —
+                        # the UI maps this to the red/error tool card.
+                        'status': 'error' if str(result).startswith('Error:') else 'done',
                         'providerSetup': providerSetup,
                         'integrationSetup': integrationSetup,
                     }
@@ -3664,8 +3719,20 @@ async def _sendWorkbenchMessageStreamImpl(
             historyContent = result
             resultCap = _toolResultCap(session)
             if len(historyContent) > resultCap:
+                # JSON-aware cut (same boundary logic as the SSE copy above):
+                # a mid-token cut would hand the model a broken JSON payload
+                # on the next round (audit finding).
+                cut = historyContent[:resultCap]
+                boundary = max(cut.rfind('\n'), cut.rfind('\r'))
+                if boundary <= resultCap // 2:
+                    for ch in (',', '}'):
+                        idx = cut.rfind(ch)
+                        if idx > resultCap // 2:
+                            boundary = idx
+                            break
+                trimmed = cut[:boundary] if boundary > 0 else cut
                 historyContent = (
-                    historyContent[:resultCap]
+                    trimmed
                     + f'\n\n[... Tool result truncated at {resultCap // 1024} KB '
                     f'— full length: {len(result)} bytes]'
                 )
@@ -3765,6 +3832,18 @@ async def _sendWorkbenchMessageStreamImpl(
             except Exception:
                 pass
             break
+        if cancelledMidRound:
+            # Never persist an assistant message whose tool calls lack results
+            # — the next turn would replay dangling calls (Anthropic rejects
+            # tool_use without tool_result; OpenAI gateways mangle them).
+            contentVal = assistantMsg.get('content')
+            if isinstance(contentVal, list):
+                assistantMsg['content'] = [
+                    b
+                    for b in contentVal
+                    if not (isinstance(b, dict) and b.get('type') == 'tool_use')
+                ]
+            assistantMsg.pop('tool_calls', None)
         currentMessages.append(assistantMsg)
         currentMessages.extend(toolResults)
         if planSubmittedThisRound:
@@ -3872,6 +3951,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 _guard_mode == 'full'
                 and getattr(session, 'verifierEnforced', False)
                 and _verifier_runs < 2
+                and not _isCancelled()
             ):
                 vstate = getattr(session, '_execution_state', None) or {}
                 vphase = as_str(vstate.get('phase'), '') if isinstance(vstate, dict) else ''
@@ -4017,12 +4097,14 @@ async def _sendWorkbenchMessageStreamImpl(
                             emit({'type': 'evidenceState', 'state': evidence_state})
                     except Exception:
                         pass
+                verifierWithheld = bool(getattr(session, '_verifier_blocked_this_turn', False))
                 outcome = _turnOutcomeGrade(
                     turn_error=turnError,
                     refusals=as_int(getattr(session, '_refusal_count', 0), 0),
                     thinking_only=turnEndedThinkingOnly,
                     tool_errors=toolErrorsThisTurn,
                     evidence_state=evidence_state,
+                    verifier_withheld=verifierWithheld,
                 )
                 task_type = classify_task_type(_lastUserMessageText(session))
                 record_turn(
@@ -4032,7 +4114,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     provider=as_str(
                         (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
                     ),
-                    ok=turnError is None,
+                    ok=turnError is None and not verifierWithheld,
                     outcome=outcome,
                     input_tokens=totalInputTokens,
                     output_tokens=totalOutputTokens,
@@ -4467,11 +4549,16 @@ async def _executeTool(
             return f'[BLOCKED by hook] Pre-tool hook failed to evaluate the call: {exc}'
 
         try:
-            result = await asyncio.wait_for(
-                dispatchTool(toolName, args), timeout=_TOOL_EXEC_TIMEOUT_S
-            )
+            # The command runner's own max timeout equals _TOOL_EXEC_TIMEOUT_S
+            # (300s) — give run_command-style tools grace past the harness cap
+            # so a legitimately long command isn't cancelled mid-write at the
+            # exact moment its own timeout expires (audit finding).
+            toolTimeout = _TOOL_EXEC_TIMEOUT_S
+            if toolName in ('run_command', 'bash', 'safe_python', 'terminal_command'):
+                toolTimeout = _TOOL_EXEC_TIMEOUT_S + 30
+            result = await asyncio.wait_for(dispatchTool(toolName, args), timeout=toolTimeout)
         except asyncio.TimeoutError:
-            return f'Error: tool {toolName} timed out after {_TOOL_EXEC_TIMEOUT_S}s.'
+            return f'Error: tool {toolName} timed out after {toolTimeout}s.'
         result_str = str(result)
 
         # Lifecycle hooks: POST_TOOL_USE (can modify result)
@@ -5421,13 +5508,21 @@ def get_session() -> WorkbenchSession | None:
     """Get the active workbench session from the current context.
 
     Used by the update_state tool to read/write execution state.
-    In a production setting this would use a contextvar; for now it
-    returns the most recently TOUCHED session (max ``updatedAt``) as a
-    best-effort approach — insertion order (``list(...)[-1]``) picked the
-    most recently *created* session, so with two sessions open a model's
-    execution state / verifier receipts / scratchpad landed on the wrong
-    one (audit finding).
+    Prefers the ``currentSessionId`` ContextVar (set by ``_executeTool`` for
+    the whole dispatch) so execution state / verifier receipts / scratchpad
+    land on the session whose turn is actually executing — with ≥2 open
+    chats, the max-``updatedAt`` heuristic resolved to the WRONG session
+    (verifier gate verdict stuck 'none', false stall hard-stops, the wrong
+    chat's agent mode rewired). Falls back to the most recently touched
+    session only for callers outside a tool dispatch.
     """
+    from app.services.workbench.context import currentSessionId
+
+    sid = currentSessionId.get()
+    if sid:
+        s = _sessions.get(sid)
+        if s is not None:
+            return s
     if not _sessions:
         return None
     try:
@@ -5436,13 +5531,15 @@ def get_session() -> WorkbenchSession | None:
         return None
 
 
-async def updateSessionState(session: WorkbenchSession, executionState: dict) -> None:
+async def updateSessionState(session: WorkbenchSession, executionState: dict) -> bool:
     """Update execution state on a session with an asyncio.Lock.
 
     Phase 5: ``asyncio.Lock`` per session around state mutations —
     parallel ``update_state`` and ``write_scratchpad`` calls are serialized
     per session, preventing dropped state updates. Lock timeout of 5 seconds
-    prevents deadlock.
+    prevents deadlock. Returns False when the lock was not acquired so the
+    tool can surface a real error instead of reporting success for a write
+    that was dropped (audit finding).
     """
     import asyncio
 
@@ -5454,9 +5551,10 @@ async def updateSessionState(session: WorkbenchSession, executionState: dict) ->
             session._execution_state = executionState
             if hasattr(session, 'save') and callable(session.save):
                 session.save()
+            return True
         finally:
             session._state_lock.release()
     except asyncio.TimeoutError:
-        pass
+        return False
     except RuntimeError:
-        pass
+        return False

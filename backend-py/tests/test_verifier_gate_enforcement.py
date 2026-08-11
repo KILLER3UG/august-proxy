@@ -73,6 +73,7 @@ def patchedSession(monkeypatch):
     async def _fakeUpdate(session, executionState=None, **_kw):
         holder['state'] = executionState
         session._execution_state = executionState
+        return True  # updateSessionState now reports success/failure
 
     monkeypatch.setattr(wb, 'get_session', lambda: holder.get('session'))
     monkeypatch.setattr(wb, 'updateSessionState', _fakeUpdate)

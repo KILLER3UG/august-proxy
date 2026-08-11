@@ -150,7 +150,9 @@ async def _updateState(
         }
         if verificationCommand:
             state['verification_command'] = verificationCommand
-        await updateSessionState(session, executionState=state)
+        ok = await updateSessionState(session, executionState=state)
+        if not ok:
+            return 'Error: state update timed out under concurrent writes — retry the call.'
         return f'State updated: phase={state["phase"]}, step={state["step"]}, completed={len(completedList)}, blockers={len(blockersList)}'
     except Exception as exc:
         return f'Error updating state: {exc}'
