@@ -363,6 +363,143 @@ class TestAnthropicAdapter:
         assert result['estimated'] is True
 
 
+class TestManagedOpenaiToolCallCasing:
+    """Regression: the non-streaming /v1/chat/completions managed loop reads
+    `tool_calls` AFTER snakeToCamel renamed it to `toolCalls` — managed tool
+    calls were silently dropped and the client got an empty response."""
+
+    @staticmethod
+    def _round1ToolCallResponse() -> dict[str, object]:
+        return {
+            'id': 'chatcmpl-1',
+            'model': 'x',
+            'choices': [
+                {
+                    'message': {
+                        'role': 'assistant',
+                        'content': '',
+                        'tool_calls': [
+                            {
+                                'id': 'call_1',
+                                'type': 'function',
+                                'function': {'name': 'bash', 'arguments': '{"command": "echo hi"}'},
+                            }
+                        ],
+                    },
+                    'finish_reason': 'tool_calls',
+                }
+            ],
+            'usage': {'prompt_tokens': 5, 'completion_tokens': 3, 'total_tokens': 8},
+        }
+
+    @staticmethod
+    def _round2TextResponse() -> dict[str, object]:
+        return {
+            'id': 'chatcmpl-2',
+            'model': 'x',
+            'choices': [{'message': {'role': 'assistant', 'content': 'done'}, 'finish_reason': 'stop'}],
+            'usage': {'prompt_tokens': 7, 'completion_tokens': 2, 'total_tokens': 9},
+        }
+
+    @pytest.mark.asyncio
+    async def testManagedToolCallsAreDetectedAndExecuted(self, monkeypatch):
+        from app.adapters import openai as mod
+        from app.adapters import proxy_tools
+
+        async def fake_execute(toolName, args, workspace_path=None, onProgress=None, parentSignal=None):
+            return {'stdout': f'output of {args.get("command", "")}', 'stderr': '', 'exit_code': 0}
+
+        monkeypatch.setattr(proxy_tools, 'execute_managed_proxy_tool', fake_execute)
+
+        captured: list[dict[str, object]] = []
+
+        class FakeClient:
+            async def requestJson(self, method, url, headers, body=None):
+                captured.append(body or {})
+                from app.providers.clients.base import ProviderResponse
+
+                if len(captured) == 1:
+                    return ProviderResponse(status=200, body=TestManagedOpenaiToolCallCasing._round1ToolCallResponse())
+                return ProviderResponse(status=200, body=TestManagedOpenaiToolCallCasing._round2TextResponse())
+
+        messages, usage = await mod.resolveManagedOpenaiToolCalls(
+            messages=[{'role': 'user', 'content': 'run ls'}],
+            model='x',
+            upstreamUrl='https://example.test/v1/chat/completions',
+            upstreamHeaders={},
+            knownTools=[],
+            managedLocalToolNames={'bash'},
+            clientToolNames=set(),
+            client=FakeClient(),
+        )
+        # Round 1 (tool call) + round 2 (final text) — the loop must NOT exit
+        # on round 1 just because the response was camelized.
+        assert len(captured) == 2
+        # The round-2 upstream body must carry the executed tool result.
+        round2Messages = captured[1].get('messages', [])
+        assert isinstance(round2Messages, list) and round2Messages
+        toolResults = [m for m in round2Messages if m.get('role') == 'tool']
+        assert toolResults, 'no tool result in round-2 messages'
+        assert 'output of echo hi' in toolResults[0]['content']
+        # The final messages end with the round-2 assistant answer.
+        assert messages[-1].get('content') == 'done'
+        # Usage must survive from the raw (pre-camelize) body — the last
+        # round's usage wins (existing behavior).
+        assert usage is not None and usage.get('prompt_tokens') == 7
+
+    @pytest.mark.asyncio
+    async def testClientToolCallsArePreservedForPassthrough(self, monkeypatch):
+        from app.adapters import openai as mod
+
+        captured: list[dict[str, object]] = []
+
+        class FakeClient:
+            async def requestJson(self, method, url, headers, body=None):
+                captured.append(body or {})
+                from app.providers.clients.base import ProviderResponse
+
+                return ProviderResponse(
+                    status=200,
+                    body={
+                        'id': 'chatcmpl-3',
+                        'model': 'x',
+                        'choices': [
+                            {
+                                'message': {
+                                    'role': 'assistant',
+                                    'content': '',
+                                    'tool_calls': [
+                                        {
+                                            'id': 'call_2',
+                                            'type': 'function',
+                                            'function': {'name': 'my_client_tool', 'arguments': '{}'},
+                                        }
+                                    ],
+                                },
+                                'finish_reason': 'tool_calls',
+                            }
+                        ],
+                    },
+                )
+
+        messages, _ = await mod.resolveManagedOpenaiToolCalls(
+            messages=[{'role': 'user', 'content': 'call your tool'}],
+            model='x',
+            upstreamUrl='https://example.test/v1/chat/completions',
+            upstreamHeaders={},
+            knownTools=[],
+            managedLocalToolNames={'bash'},
+            clientToolNames={'my_client_tool'},
+            client=FakeClient(),
+        )
+        # The client-owned tool call must be returned to the caller for
+        # passthrough — reading the camelized `toolCalls` key is required.
+        last = messages[-1]
+        toolCalls = last.get('toolCalls') or last.get('tool_calls')
+        assert toolCalls, 'client tool calls lost after camelization'
+        assert toolCalls[0]['function']['name'] == 'my_client_tool'
+
+
 class TestManagedToolRound2Body:
     """Round-2 tool_result messages must be role:'user'-wrapped per the
     Messages API — a bare tool_result block appended to messages 400s

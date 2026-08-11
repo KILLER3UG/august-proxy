@@ -32,6 +32,11 @@ from app.services.workbench.context import currentSessionId
 # worker fails per the retry policy.
 SUBAGENT_MODEL_TIMEOUT_S = 240
 
+# Sub-agent recursion guard: BOTH spawn tool spellings must be excluded or a
+# sub-agent can recurse through the plural tool — the old singular-only
+# filter allowed unbounded recursion + semaphore-slot deadlock.
+SUBAGENT_BLOCKED_TOOLS = frozenset({'spawn_subagent', 'spawn_subagents'})
+
 
 def _toolName(t: dict[str, object]) -> str:
     return as_str(t.get('name')) or as_str(as_dict(t.get('function')).get('name', ''))
@@ -82,6 +87,7 @@ async def executeSubAgent(
     yield_schema: dict[str, object] | None = None,
     effort: str = 'medium',
     model_override: str = '',
+    depth: int = 0,
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``.
 
@@ -93,7 +99,8 @@ async def executeSubAgent(
     agent return a single JSON object; the result is validated and returned
     as parsed JSON when it matches. ``effort`` maps to the reasoning/thinking
     budget (default 'medium'); ``model_override`` pins the model instead of
-    the agent alias / smol role routing.
+    the agent alias / smol role routing. ``depth`` is the runtime recursion
+    depth (spawner threads it; root spawns are 0).
     """
     from app.providers.model_resolver import resolve_or_fallback
     from app.providers.route_resolver import resolve_for_model
@@ -119,14 +126,25 @@ async def executeSubAgent(
     parentAlias = getattr(session, 'model', '') or ''
     agent = _agentOrGeneral(agentId, parentAlias)
     resolvedAgentId = as_str(agent.get('id')) or agentId
-    depth = as_int(agent.get('depth', 0))
-    if depth >= _MAXAgentDepth:
-        blocked_msg = f'Sub-agent depth cap reached ({depth} >= {_MAXAgentDepth}).'
+    definedDepth = as_int(agent.get('depth', 0), 0)
+    # Runtime recursion depth (threaded from the spawner) is authoritative;
+    # the agent-definition depth remains a floor for backward compatibility.
+    runtimeDepth = max(depth, definedDepth)
+    if runtimeDepth >= _MAXAgentDepth:
+        blocked_msg = f'Sub-agent depth cap reached ({runtimeDepth} >= {_MAXAgentDepth}).'
         if emit:
             emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg})
         if job_id:
             updateJob(job_id, {'status': 'failed', 'error': blocked_msg})
         return {'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg}
+
+    # Carry the runtime depth on the session so any nested spawn (even one
+    # that slips past the tool filter) inherits depth+1 instead of resetting
+    # to 0 and re-entering the recursion.
+    try:
+        setattr(session, 'subagent_depth', runtimeDepth)
+    except Exception:
+        pass
 
     # Publish the launch before any workspace setup.  Git can take noticeable
     # time on large repositories; without this event the UI has no indication
@@ -236,7 +254,9 @@ async def executeSubAgent(
         fullTools = [t for t in fullTools if _toolName(t) not in restricted_names]
         fullOpenaiTools = [t for t in fullOpenaiTools if _toolName(t) not in restricted_names]
     allowedNames = {
-        _toolName(t) for t in fullTools if _toolAllowed(agent, _toolName(t)) and _toolName(t) != 'spawn_subagent'
+        _toolName(t)
+        for t in fullTools
+        if _toolAllowed(agent, _toolName(t)) and _toolName(t) not in SUBAGENT_BLOCKED_TOOLS
     }
     tools = [t for t in fullTools if _toolName(t) in allowedNames]
     openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
@@ -300,18 +320,34 @@ async def executeSubAgent(
         # invalid tool arguments must never execute as a phantom arg.
         subInvalidCount = 0
         subInvalidNudged = False
+        # Stall detection (parent-loop parity): a sub-agent that never
+        # advances phase/step gets one reflection nudge, then hard-stops.
+        from app.services.workbench.workbench import (
+            MAX_STALLED_ROUNDS,
+            MIN_ROUNDS_BEFORE_STALL_CHECK,
+            _resolveModelContextWindow,
+        )
+
+        stalledRounds = 0
+        stallMessageSent = False
+        lastExecSig: tuple[object, object] | None = None
         while True:
             toolRound += 1
             # 0 = unlimited (same default as main workbench loop)
             if managedToolLoopCap > 0 and toolRound > managedToolLoopCap:
                 break
-            # Context compaction: long tool runs must not overflow the window.
+            # Context compaction: long tool runs must not overflow the
+            # window. Threshold scales with the RESOLVED sub-agent model
+            # (subagents default to cheap 32k/64k models — the old hardcoded
+            # 110k threshold overflowed those windows before compaction ran).
             try:
                 from app.providers.clients.base import estimateTokens as _estimateTokens
                 from app.services.memory.context_compressor import compressMessages
 
-                if _estimateTokens(messages) > 110_000:
-                    messages = await compressMessages(messages, threshold=90_000)
+                _contextWindow = _resolveModelContextWindow(resolvedModel, provider)
+                _threshold = max(4096, int(_contextWindow * 0.55))
+                if _estimateTokens(messages) > _threshold:
+                    messages = await compressMessages(messages, threshold=_threshold)
             except Exception:
                 pass
             response: dict[str, object] | None = None
@@ -383,6 +419,35 @@ async def executeSubAgent(
                     )
                 updateJob(jobId, {'status': 'failed', 'error': err})
                 return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
+            if response.get('stream_rule'):
+                # Stream rule fired mid-generation (the model narrated a tool
+                # call instead of emitting one) — inject the same reminder
+                # the parent loop uses and retry this round. Previously the
+                # sub-agent loop ignored stream_rule and `break` on the empty
+                # tool_uses, silently ending the sub-agent with partial text.
+                messages.append(
+                    {
+                        'role': 'user',
+                        'content': (
+                            '[Proxy Self-Heal] Stop narrating tool calls in prose. When you need a '
+                            'tool, emit it as an actual tool call; do not describe it in text. '
+                            'Continue with the task.'
+                        ),
+                    }
+                )
+                if emit:
+                    emit(
+                        {
+                            'type': 'subagentWarning',
+                            'agentId': resolvedAgentId,
+                            'jobId': jobId,
+                            'message': (
+                                'Sub-agent narrated a tool call instead of emitting it — '
+                                'nudging it to call tools directly.'
+                            ),
+                        }
+                    )
+                continue
             assistantMsg: dict[str, object]
             if isAnthropic:
                 contentBlocks = [as_dict(b) for b in as_list(response.get('content'), [])]
@@ -411,13 +476,67 @@ async def executeSubAgent(
                 finalText += textContent
             if not toolUses:
                 break
+            # Stall detection (parent-loop parity): a sub-agent that never
+            # advances its execution phase/step is spinning — nudge once,
+            # hard-stop shortly after if it ignores the nudge.
+            if toolRound >= MIN_ROUNDS_BEFORE_STALL_CHECK:
+                try:
+                    est = as_dict(getattr(session, '_execution_state', None), {})
+                    sig = (as_str(est.get('phase'), ''), as_int(est.get('step'), 0))
+                except Exception:
+                    sig = None
+                if sig is not None:
+                    if sig != lastExecSig:
+                        lastExecSig = sig
+                        stalledRounds = 0
+                    else:
+                        stalledRounds += 1
+                        if stalledRounds >= MAX_STALLED_ROUNDS and not stallMessageSent:
+                            stallMessageSent = True
+                            messages.append(
+                                {
+                                    'role': 'user',
+                                    'content': (
+                                        f'[Proxy Self-Heal] {toolRound} tool rounds have elapsed without '
+                                        'advancing your execution phase/step. Reflect on what is blocking '
+                                        'you, record where you are with update_state(phase=..., step=...), '
+                                        'then either take a different approach or finish with a final answer.'
+                                    ),
+                                }
+                            )
+                            if emit:
+                                emit(
+                                    {
+                                        'type': 'subagentWarning',
+                                        'agentId': resolvedAgentId,
+                                        'jobId': jobId,
+                                        'message': (
+                                            'Sub-agent made no progress across many tool rounds — '
+                                            'nudged it to reflect.'
+                                        ),
+                                    }
+                                )
+                        elif stallMessageSent and stalledRounds >= MAX_STALLED_ROUNDS + 2:
+                            err = 'Sub-agent stopped: it did not recover after the stall warning.'
+                            if emit:
+                                emit(
+                                    {
+                                        'type': 'subagentDone',
+                                        'agentId': resolvedAgentId,
+                                        'jobId': jobId,
+                                        'status': 'error',
+                                        'error': err,
+                                    }
+                                )
+                            updateJob(jobId, {'status': 'failed', 'error': err})
+                            return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
             messages.append(assistantMsg)
             toolResults: list[dict[str, object]] = []
             for tu in toolUses:
                 tName = as_str(tu.get('name'), '')
                 tInput = as_dict(tu.get('input'), {})
                 tId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
-                if not _toolAllowed(agent, tName) or tName == 'spawn_subagent':
+                if not _toolAllowed(agent, tName) or tName in SUBAGENT_BLOCKED_TOOLS:
                     result = f"[Blocked] Sub-agent not permitted to use '{tName}'."
                     status = 'blocked'
                 else:
@@ -484,13 +603,23 @@ async def executeSubAgent(
             messages.extend(toolResults)
         # Schema-validated yields (Oh My Pi lesson): when a yield_schema was
         # requested, parse the final text as JSON and validate it before
-        # returning — the parent reads a structured object, not prose.
+        # returning — the parent reads a structured object, not prose. A
+        # failed yield must report status='failed' (not 'completed') so the
+        # orchestrator tallies it as a loss and the parent can retry.
         resultText = finalText
+        yieldFailed = False
         if yield_schema and finalText.strip():
             try:
                 import json as _json
 
-                parsed = _json.loads(finalText.strip().strip('`'))
+                from app.services.workbench.json_salvage import salvage_json_object
+
+                parsed = salvage_json_object(finalText)
+                if not isinstance(parsed, dict):
+                    try:
+                        parsed = _json.loads(finalText.strip().strip('`'))
+                    except (_json.JSONDecodeError, TypeError, ValueError):
+                        parsed = None
                 if isinstance(parsed, dict):
                     from app.services.workbench.validator import validateToolArguments
 
@@ -506,13 +635,16 @@ async def executeSubAgent(
                     if as_bool(check.get('valid'), False):
                         resultText = _json.dumps(parsed, ensure_ascii=False)
                     else:
+                        yieldFailed = True
                         resultText = (
                             f'[yield validation failed: {as_str(check.get("error"), "schema mismatch")}]\n'
                             f'Raw answer:\n{finalText[:4000]}'
                         )
                 else:
+                    yieldFailed = True
                     resultText = f'[yield validation failed: expected a JSON object]\nRaw answer:\n{finalText[:4000]}'
             except Exception:
+                yieldFailed = True
                 resultText = f'[yield validation failed: answer was not valid JSON]\nRaw answer:\n{finalText[:4000]}'
         elif not resultText.strip():
             # A tool-only sub-agent that finishes cleanly returns no text.
@@ -520,6 +652,22 @@ async def executeSubAgent(
             # failure (B27), so synthesize an honest summary instead of
             # letting a clean run tally as failed.
             resultText = f'(Sub-agent completed after {toolRound} tool round(s) with no textual answer.)'
+        if yieldFailed:
+            yieldErr = 'yield schema validation failed'
+            updateJob(jobId, {'status': 'failed', 'error': yieldErr, 'result': resultText[:2000]})
+            if emit:
+                emit(
+                    {
+                        'type': 'subagentDone',
+                        'agentId': resolvedAgentId,
+                        'jobId': jobId,
+                        'status': 'failed',
+                        'error': yieldErr,
+                        'result': resultText[:4000],
+                        'isFallback': isFallback,
+                    }
+                )
+            return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'failed', 'error': yieldErr, 'result': resultText}
         updateJob(jobId, {'status': 'completed', 'result': resultText[:2000]})
         if emit:
             emit(

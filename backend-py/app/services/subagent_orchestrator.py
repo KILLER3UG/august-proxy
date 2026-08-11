@@ -40,7 +40,7 @@ import time
 import uuid
 from typing import Any, Callable
 
-from app.json_narrowing import as_str
+from app.json_narrowing import as_int, as_str
 from app.services.agent_message_bus import AgentMessageBus, Handler, Subscription
 
 logger = logging.getLogger(__name__)
@@ -193,6 +193,9 @@ class SubagentOrchestrator:
             yieldSchema = item.get('yieldSchema')
             effort = as_str(item.get('effort'), 'medium') or 'medium'
             model = as_str(item.get('model'), '')
+            # Runtime recursion depth: children of a sub-agent run at
+            # parent_depth + 1; root spawns default to 0.
+            depth = as_int(getattr(request.session, 'subagent_depth', 0), 0) + 1
             taskId = f'task_{uuid.uuid4().hex[:12]}'
             sid = ''
             if hasattr(request.session, 'id'):
@@ -214,6 +217,7 @@ class SubagentOrchestrator:
                     yieldSchema=yieldSchema,
                     effort=effort,
                     model=model,
+                    depth=depth,
                 )
             )
             self._tasks[taskId] = task
@@ -342,6 +346,7 @@ class SubagentOrchestrator:
         yieldSchema: dict[str, Any] | None = None,
         effort: str = 'medium',
         model: str = '',
+        depth: int = 0,
     ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         try:
@@ -372,6 +377,7 @@ class SubagentOrchestrator:
                     model=model,
                     taskId=handle.taskId,
                     emit=request.emit,
+                    depth=depth,
                 )
                 handle.result = result
                 handle.finishedAt = time.time()

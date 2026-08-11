@@ -32,7 +32,6 @@ from app.adapters.anthropic_system import (
     AUGUST_REMINDER,
     CLAUDE_PUBLIC_MODEL_ALIAS,
     KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES,
-    RULE_REMINDER_MESSAGE,
     append_text_to_system_blocks,
     build_anthropic_system_blocks,
     build_openai_system_prompt,
@@ -85,7 +84,6 @@ sendSimulatedAnthropicStream = send_simulated_anthropic_stream
 CLAUDE_PUBLIC_MODEL_ALIAS = CLAUDE_PUBLIC_MODEL_ALIAS
 KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES
 AUGUST_REMINDER = AUGUST_REMINDER
-RULE_REMINDER_MESSAGE = RULE_REMINDER_MESSAGE
 
 isClaudeFamilyModel = is_claude_family_model
 resolveClaudePublicModelAlias = resolve_claude_public_model_alias
@@ -542,7 +540,9 @@ async def resolveManagedAnthropicToolUses(
                 try:
                     toolInput = json.loads(as_str(tcFn.get('arguments'), '{}'))
                 except (json.JSONDecodeError, TypeError):
-                    toolInput = {}
+                    # Never execute a malformed blob as `{}` — keep the raw
+                    # text so the caller surfaces a validation error.
+                    toolInput = {'_raw': as_str(tcFn.get('arguments'), '')}
                 block: dict[str, object] = {
                     'type': 'tool_use',
                     'id': as_str(tc.get('id'), ''),
@@ -573,6 +573,26 @@ async def resolveManagedAnthropicToolUses(
             toolName = as_str(tu.get('name'), '')
             toolInput = as_dict(tu.get('input'), {})
             toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
+            invalidRaw = as_str(toolInput.get('_invalid_json') or toolInput.get('_raw'), '')
+            if invalidRaw:
+                # Malformed tool JSON must never execute (not even with a
+                # phantom `_raw` arg) — surface a validation-error result so
+                # the model can self-heal.
+                toolResults.append(
+                    _toolResultBlockMessage(
+                        ToolResultBlock(
+                            tool_use_id=toolUseId,
+                            content=(
+                                f"[Validation Error] Tool '{toolName}' received malformed JSON arguments:\n"
+                                f'{invalidRaw[:500]}\n\n'
+                                '[Proxy Self-Heal]: Fix the tool arguments (valid JSON matching the '
+                                'tool schema) and retry. Do NOT stop.'
+                            ),
+                            is_error=True,
+                        )
+                    )
+                )
+                continue
             try:
                 result = await execute_managed_proxy_tool(toolName, toolInput, workspacePath, parentSignal=parentSignal)
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=format_managed_tool_result(toolName, result))
@@ -817,12 +837,11 @@ async def _streamAnthropicNative(
         if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound >= MAX_MANAGED_TOOL_ROUNDS:
             break
         st = AnthropicNativeStreamState()
-        # Whether THIS round's upstream stream ended with its own
-        # message_stop — the synthetic stop below is only emitted when the
-        # round ended without one (else clients see message_stop twice,
-        # audit finding — the OpenAI→Anthropic converter already tracks
-        # sawTerminalStop for the same reason).
-        sawTerminalStop = False
+        # Buffer the round's terminal message_stop — Anthropic SDK clients
+        # finalize on it, so it must not be emitted between managed-tool
+        # rounds (round-2 events would be dropped). Flushed when the loop
+        # actually ends; a later round's stop replaces this one.
+        pendingStop: dict[str, object] | None = None
         roundBody = dict(reqBody)
         roundBody['messages'] = cast(JsonValue, currentMessages)
         roundBodyJson = cast(dict[str, object], as_dict(camelToSnake(roundBody), {}))
@@ -833,8 +852,12 @@ async def _streamAnthropicNative(
                     'error', {'error': {'message': as_str(event.get('body'), as_str(event.get('error'), ''))}}
                 )
                 return
-            yield write_anthropic_sse_data_only(event)
             eventTypePayload = as_str(event.get('type'), '')
+            if eventTypePayload == 'message_stop':
+                pendingStop = event
+                st.process_message_stop(event)
+                continue
+            yield write_anthropic_sse_data_only(event)
             if eventTypePayload == 'message_start':
                 st.process_message_start(event)
             elif eventTypePayload == 'content_block_start':
@@ -845,9 +868,6 @@ async def _streamAnthropicNative(
                 st.process_content_block_stop(event)
             elif eventTypePayload == 'message_delta':
                 st.process_message_delta(event)
-            elif eventTypePayload == 'message_stop':
-                sawTerminalStop = True
-                st.process_message_stop(event)
             elif eventTypePayload == 'ping':
                 st.process_ping(event)
         toolUses = st.get_tool_uses()
@@ -878,10 +898,11 @@ async def _streamAnthropicNative(
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
                 currentMessages.append(_toolResultBlockMessage(tr))
         continue
-    # Only synthesize the terminal stop when the last round's upstream
-    # stream did not already end with message_stop (audit finding: clients
-    # saw it twice on the native path).
-    if not sawTerminalStop:
+    # Flush the final round's buffered message_stop, or synthesize one when
+    # the last upstream stream ended without it (never emit it twice).
+    if pendingStop is not None:
+        yield write_anthropic_sse_data_only(pendingStop)
+    else:
         yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
 
 
@@ -903,10 +924,11 @@ async def _streamOpenaiAsAnthropic(
     openaiBody['stream'] = True
     toolRound = 0
     currentMessages: list[dict[str, object]] = cast('list[dict[str, object]]', as_list(body.get('messages'), []))
-    # The converter emits message_stop when a round's finish_reason arrives —
-    # only synthesize one at the end when the final round did NOT already
-    # terminate cleanly (prevents a duplicate message_stop on the wire).
-    sawTerminalStop = False
+    # The converter emits message_stop when a round's finish_reason arrives.
+    # Buffer it (like the native path) so it is never emitted BETWEEN managed
+    # tool rounds — clients finalize on message_stop and would drop round-2
+    # events. Flushed once the loop actually ends.
+    pendingStop: str | None = None
     # 0 = unlimited managed tool rounds
     while True:
         if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound >= MAX_MANAGED_TOOL_ROUNDS:
@@ -923,9 +945,10 @@ async def _streamOpenaiAsAnthropic(
                 )
                 return
             events = st.convert_chunk(chunk)
-            if any('message_stop' in e for e in events):
-                sawTerminalStop = True
             for eventStr in events:
+                if 'message_stop' in eventStr:
+                    pendingStop = eventStr
+                    continue
                 yield eventStr
         # Stream ended — resolve tool calls now. Executing tools mid-stream and
         # `continue`ing the inner loop never re-called upstream, so managed-tool
@@ -951,15 +974,33 @@ async def _streamOpenaiAsAnthropic(
             tuName = as_str(tu.get('name'), '')
             tuInput = as_dict(tu.get('input'), {})
             tuId = as_str(tu.get('id'), '')
+            invalidRaw = as_str(tuInput.get('_invalid_json') or tuInput.get('_raw'), '')
+            if invalidRaw:
+                # Malformed tool JSON must never execute — surface a
+                # validation-error result so the model can self-heal.
+                tr = ToolResultBlock(
+                    tool_use_id=tuId,
+                    content=(
+                        f"[Validation Error] Tool '{tuName}' received malformed JSON arguments:\n"
+                        f'{invalidRaw[:500]}\n\n'
+                        '[Proxy Self-Heal]: Fix the tool arguments (valid JSON matching the '
+                        'tool schema) and retry. Do NOT stop.'
+                    ),
+                    is_error=True,
+                )
+                currentMessages.append(_toolResultBlockMessage(tr))
+                continue
             try:
                 result = await execute_managed_proxy_tool(tuName, tuInput)
                 tr = ToolResultBlock(tool_use_id=tuId, content=format_managed_tool_result(tuName, result))
-                currentMessages.append(tr.model_dump())  # type: ignore[misc]
+                currentMessages.append(_toolResultBlockMessage(tr))
             except Exception as exc:
                 tr = ToolResultBlock(tool_use_id=tuId, content=f'Error: {exc}', is_error=True)
-                currentMessages.append(tr.model_dump())  # type: ignore[misc]
+                currentMessages.append(_toolResultBlockMessage(tr))
         continue
-    if not sawTerminalStop:
+    if pendingStop is not None:
+        yield pendingStop
+    else:
         yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
 
 
@@ -985,7 +1026,9 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, object], model
         try:
             toolInput = json.loads(as_str(tcFn.get('arguments'), '{}'))
         except (json.JSONDecodeError, TypeError):
-            toolInput = {}
+            # Never execute a malformed blob as `{}` — keep the raw text so
+            # the caller surfaces a validation error.
+            toolInput = {'_raw': as_str(tcFn.get('arguments'), '')}
         contentList.append(
             {
                 'type': 'tool_use',

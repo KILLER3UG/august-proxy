@@ -1,6 +1,6 @@
 /* Runs tab — sub-agent run history, live progress, terminate, proposals.
  * Visibility-first: no launcher yet — runs originate from chat tool use. */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -18,6 +18,7 @@ import { Card } from '@/components/ui/card';
 import { PageLoader } from '@/components/PageLoader';
 import { api } from '@/api/client';
 import * as subagents from '@/api/subagents';
+import { useSessionsStore } from '@/store/sessions';
 
 interface RunRecord {
   id: number;
@@ -113,16 +114,29 @@ export function RunsTab() {
   const [launchGoals, setLaunchGoals] = useState('');
   const [launchAgent, setLaunchAgent] = useState('general');
   const [launchMode, setLaunchMode] = useState<'auto' | 'proposed'>('auto');
+  // Bind the launch to the most recent chat session with a workbench id so
+  // events stream into that transcript + the right-drawer roster (without a
+  // session the agents attach to 'default' and are invisible in chat).
+  const sessions = useSessionsStore((s) => s.sessions);
+  const launchSessionId = useMemo(() => {
+    const candidates = sessions
+      .filter((s) => !s.isArchived && s.workbenchSessionId)
+      .sort((a, b) => String(b.startedAt ?? '').localeCompare(String(a.startedAt ?? '')));
+    return candidates[0]?.workbenchSessionId;
+  }, [sessions]);
   const launchAgents = useMutation({
     mutationFn: () =>
-      subagents.spawn({
-        workItems: launchGoals
-          .split('\n')
-          .map((g) => g.trim())
-          .filter(Boolean)
-          .map((goal) => ({ goal, agentId: launchAgent })),
-        mode: launchMode,
-      }),
+      subagents.spawn(
+        {
+          workItems: launchGoals
+            .split('\n')
+            .map((g) => g.trim())
+            .filter(Boolean)
+            .map((goal) => ({ goal, agentId: launchAgent })),
+          mode: launchMode,
+        },
+        launchSessionId,
+      ),
     onSuccess: (res) => {
       toast.success(
         res.status === 'awaiting_approval' ? 'Proposal created — approve it in chat' : 'Agents launched',

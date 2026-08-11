@@ -30,6 +30,14 @@ export interface ProviderModel {
   supportsReasoningEffort?: boolean | null;
   /** Cap the mapped reasoning_effort (e.g. 'medium' means max→medium). */
   maxReasoningEffort?: string | null;
+  /** Capability profile (honored by BOTH wire-format tool-definition paths):
+   *  full (all tools) / reduced (drop heavy tools) / bare (read/write/
+   *  run_command/state only). Empty = inherit provider default. */
+  toolSurface?: 'full' | 'reduced' | 'bare' | '';
+  /** Max tools offered per turn (0 = unlimited). */
+  maxTools?: number;
+  /** Cap on tool-result chars echoed back to the model (0 = 64 KB default). */
+  maxToolResultChars?: number;
   createdAt?: string;
   updatedAt?: string;
 }

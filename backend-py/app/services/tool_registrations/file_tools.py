@@ -178,8 +178,13 @@ async def _readFile(
         return f'Error reading file: {exc}'
 
 
-async def _writeFile(path: str, content: str) -> str:
-    """Write content to a file (workspace-bound)."""
+async def _writeFile(path: str, content: str, **_extra: object) -> str:
+    """Write content to a file (workspace-bound).
+
+    ``fileHash`` (the sha256 echoed by a prior ``read_file``) is accepted and
+    ignored here — the hash-anchored edit gate in the executor already
+    rejects stale patches before dispatch.
+    """
     session = _session()
     mode = (getattr(session, 'sandboxMode', None) or 'workspace-write') if session else 'workspace-write'
     if str(mode).lower() in ('read-only', 'readonly', 'read'):
@@ -477,7 +482,10 @@ def register() -> None:
         'read_file',
         'Read a file from the filesystem. Path must be absolute (or relative to workspace). '
         'Optional offset/limit (1-based start line + line count) page large files. '
-        'Prefer this over shell head/cat/tail. Max ~10 MB. Sandboxed to the session workspace when set.',
+        'Prefer this over shell head/cat/tail. Max ~10 MB. Sandboxed to the session workspace when set. '
+        'The result is prefixed with the file\'s sha256 ("[sha256 …]") — echo it back as the '
+        'fileHash argument of a later write_file so the harness rejects edits to files that '
+        'changed since you read them.',
         _readFile,
         {
             'type': 'object',
@@ -505,13 +513,19 @@ def register() -> None:
     )
     tool_registry.register(
         'write_file',
-        'Write content to a file, overwriting any existing content. Creates parent directories if needed. Sandboxed to the session workspace.',
+        'Write content to a file, overwriting any existing content. Creates parent directories if needed. Sandboxed to the session workspace. '
+        'If you recently read this file, pass the sha256 from the read result as fileHash — '
+        'the write is rejected (without executing) when the file changed since that read.',
         _writeFile,
         {
             'type': 'object',
             'properties': {
                 'path': {'type': 'string', 'description': 'Absolute path to the file to write.'},
                 'content': {'type': 'string', 'description': 'The content to write.'},
+                'fileHash': {
+                    'type': 'string',
+                    'description': 'Optional sha256 from the last read_file result of this path. Rejects the write if the file changed since that read (content hash mismatch).',
+                },
             },
             'required': ['path', 'content'],
         },

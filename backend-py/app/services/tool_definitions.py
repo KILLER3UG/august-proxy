@@ -11,7 +11,6 @@ from __future__ import annotations
 from app.services.tool_html import html_to_markdown, unescape_html  # noqa: F401
 from app.services.tool_registrations.agent_tools import (  # noqa: F401
     _spawnDaemon,
-    _spawnSubagent,
 )
 from app.services.tool_registrations.file_tools import (  # noqa: F401
     _listDirectory,

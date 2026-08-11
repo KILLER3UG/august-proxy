@@ -11,7 +11,7 @@ import re
 
 ERROR_PATTERNS = [
     'error:',
-    'exit code',
+    r'exit code:\s*[1-9]\d*',
     'command not found',
     'not recognized as',
     'cannot find path',

@@ -188,9 +188,12 @@ def _verificationVerdict(receipts: list[object], expected_command: str = '') -> 
                 continue
             matched_declared = True
         name = as_str(as_dict(receipt).get('name'), 'command') if isinstance(receipt, dict) else 'command'
-        m = _EXIT_CODE_RE.search(text)
-        if m:
-            code = int(m.group(1))
+        codes = _EXIT_CODE_RE.findall(text)
+        if codes:
+            # The sandbox appends "Exit code: N" as the LAST line; take the
+            # final occurrence so a command's own stdout text ("exit code: 1")
+            # cannot flip the verdict.
+            code = int(codes[-1])
             if code == 0:
                 return ('pass', f'{name} exited 0')
             return ('fail', f'{name} exited {code}')
@@ -225,13 +228,34 @@ def _messageText(msg: dict[str, object], cap: int = 4000) -> str:
     return ''
 
 
+def _parseReviewVerdict(text: str) -> str:
+    """Extract PASS/FAIL from a reviewer reply.
+
+    Requires the FIRST token to be PASS or FAIL (case-insensitive) — the old
+    ``startswith('FAIL')`` accepted "It does not FAIL." as a pass and only
+    caught "FAILing test in test_foo" by luck.
+    """
+    stripped = (text or '').strip()
+    if not stripped:
+        return 'unclear'
+    first = stripped.split(None, 1)[0]
+    upper = first.upper()
+    if upper.startswith('PASS'):
+        return 'pass'
+    if upper.startswith('FAIL'):
+        return 'fail'
+    return 'unclear'
+
+
 async def _reviewerCritique(session: object) -> tuple[bool, str]:
     """One-shot independent reviewer critique of the final answer.
 
     Opt-in (``AUGUST_VERIFIER_REVIEWER=1``): after the deterministic gate
     passes, a cheap review model may veto the completion if the answer does
-    not satisfy the goal. Any failure to run falls back to allowing — the
-    deterministic gate already passed. Memoized per turn so repeated
+    not satisfy the goal. The reviewer judges against REAL evidence — the
+    verification command receipts recorded this turn — not just the answer
+    text. Any failure to run falls back to allowing — the deterministic gate
+    already passed. Memoized per turn so repeated
     ``update_state(phase='complete')`` calls do not re-pay the call.
     """
     try:
@@ -265,31 +289,80 @@ async def _reviewerCritique(session: object) -> tuple[bool, str]:
         if not answer:
             setattr(session, '_reviewer_checked', True)
             return (True, '')
-        reviewText = (
-            await reviewer(
-                [
-                    {
-                        'role': 'system',
-                        'content': (
-                            'You are a strict correctness reviewer for an AI coding agent. '
-                            'The agent must satisfy the user goal and its verification '
-                            '(tests/lint/build) must genuinely pass. Reply with exactly '
-                            'PASS or FAIL, then one short line explaining why.'
-                        ),
-                    },
-                    {
-                        'role': 'user',
-                        'content': (
-                            f'GOAL:\n{goal}\n\nFINAL ANSWER:\n{answer}\n\n'
-                            'Does this answer satisfy the goal? Reply PASS or FAIL.'
-                        ),
-                    },
-                ]
-            )
-            or ''
-        ).strip()[:300]
+        # Evidence: the verification command receipts recorded this turn
+        # (name/command/content tail). Without them the reviewer could only
+        # judge the answer's prose — a plausible-sounding answer whose tests
+        # actually failed would pass.
+        receipts = as_list(getattr(session, '_verification_receipts', None), [])
+        receiptLines: list[str] = []
+        for r in receipts[-4:]:
+            if not isinstance(r, dict):
+                continue
+            cmd = as_str(r.get('command'), '')
+            content = as_str(r.get('content'), '')[:1200]
+            if cmd:
+                receiptLines.append(f'$ {cmd}\n{content}')
+            elif content:
+                receiptLines.append(content)
+        receiptText = ''
+        if receiptLines:
+            receiptText = '\n\nVERIFICATION COMMAND OUTPUT:\n' + '\n---\n'.join(receiptLines)
+            receiptText = receiptText[:5000]
+
+        systemPrompt = (
+            'You are a strict correctness reviewer for an AI coding agent. '
+            'The agent must satisfy the user goal and its verification '
+            '(tests/lint/build) must genuinely pass. '
+            'FAIL if: the answer does not address the goal, claims success while the '
+            'verification output shows failures, or leaves a stated blocker unresolved. '
+            'Reply with exactly PASS or FAIL as the first word, then one short line explaining why.'
+        )
+
+        async def _ask() -> str:
+            return (
+                await reviewer(
+                    [
+                        {'role': 'system', 'content': systemPrompt},
+                        {
+                            'role': 'user',
+                            'content': (
+                                f'GOAL:\n{goal}\n\nFINAL ANSWER:\n{answer}\n{receiptText}\n\n'
+                                'Does this answer satisfy the goal, with the verification passing? '
+                                'Reply with exactly PASS or FAIL as the first word, then one short line.'
+                            ),
+                        },
+                    ]
+                )
+                or ''
+            ).strip()[:300]
+
+        reviewText = await _ask()
+        verdict = _parseReviewVerdict(reviewText)
+        if verdict == 'unclear':
+            # The model ignored the exact-format instruction — re-prompt once
+            # with a stricter demand before falling back to allow.
+            retry = (
+                await reviewer(
+                    [
+                        {'role': 'system', 'content': systemPrompt},
+                        {
+                            'role': 'user',
+                            'content': (
+                                f'GOAL:\n{goal}\n\nFINAL ANSWER:\n{answer}\n{receiptText}\n\n'
+                                'Your previous reply did not start with PASS or FAIL. '
+                                'Reply with exactly one word — PASS or FAIL — then one short line.'
+                            ),
+                        },
+                    ]
+                )
+                or ''
+            ).strip()[:300]
+            retryVerdict = _parseReviewVerdict(retry)
+            if retryVerdict != 'unclear':
+                reviewText = retry
+                verdict = retryVerdict
         setattr(session, '_reviewer_checked', True)
-        if reviewText.upper().startswith('FAIL'):
+        if verdict == 'fail':
             return (False, reviewText)
         return (True, reviewText)
     except Exception:

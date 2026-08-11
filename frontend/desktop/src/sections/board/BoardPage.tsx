@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { Bot, Kanban, Loader2, Rocket, Square, X } from 'lucide-react';
 import { KanbanSection } from '@/sections/settings/KanbanSection';
 import { useKanbanStore, type KanbanCard } from '@/store/kanban-board';
+import { useSessionsStore } from '@/store/sessions';
 import { api } from '@/api/client';
 import { spawn, terminate } from '@/api/subagents';
 
@@ -95,10 +96,20 @@ export function BoardPage() {
     if (items.length === 0) return;
     setLaunching(true);
     try {
-      const res = await spawn({
-        workItems: items.map((goal) => ({ goal, agentId })),
-        mode: 'auto',
-      });
+      // Bind to the most recent chat session (see RunsTab) so launched
+      // agents stream into that transcript instead of 'default'.
+      const sessions = useSessionsStore.getState().sessions;
+      const sessionId = sessions
+        .filter((s) => !s.isArchived && s.workbenchSessionId)
+        .sort((a, b) => String(b.startedAt ?? '').localeCompare(String(a.startedAt ?? '')))[0]
+        ?.workbenchSessionId;
+      const res = await spawn(
+        {
+          workItems: items.map((goal) => ({ goal, agentId })),
+          mode: 'auto',
+        },
+        sessionId,
+      );
       // One board card per launched agent (even proposed breakdowns get a
       // card — the run-sync moves it once execution starts).
       const store = useKanbanStore.getState();

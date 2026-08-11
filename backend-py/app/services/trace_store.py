@@ -232,5 +232,34 @@ def capability_fingerprint(model: str, provider: str = '', min_turns: int = 10) 
             f'over {total} turns: invalid-json {json_rate:.0%}, refusals {refusal_rate:.0%}, '
             f'stalls {stall_rate:.0%}, tool-use {tool_rate:.0%}'
         )
+    else:
+        # Upgrade direction (A5): the capability loop must not be a one-way
+        # ratchet. When a previously-downgraded model now behaves cleanly,
+        # suggest restoring a fuller tool surface so it can grow back into
+        # the tools it needs.
+        try:
+            from app.services.memory_store import get_memory
+
+            prev = get_memory(f'profile-suggested:{as_str(model, "")}')
+        except Exception:
+            prev = None
+        if isinstance(prev, dict):
+            currentSurface = as_str(prev.get('toolSurface'), '')
+            clean = json_rate < 0.15 and refusal_rate < 0.15 and stall_rate < 0.2
+            if clean:
+                upgrade: str | None = None
+                if currentSurface == 'bare':
+                    upgrade = 'reduced'
+                elif currentSurface == 'reduced':
+                    upgrade = 'full'
+                elif currentSurface == 'text':
+                    upgrade = 'full'
+                if upgrade:
+                    suggested['toolSurface'] = upgrade
+                    suggested['reason'] = (
+                        f'over {total} turns: invalid-json {json_rate:.0%}, refusals '
+                        f'{refusal_rate:.0%}, stalls {stall_rate:.0%} — model recovered, '
+                        f'upgrade from {currentSurface} to {upgrade}'
+                    )
     fp['suggestedProfile'] = suggested or None
     return fp

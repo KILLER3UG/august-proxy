@@ -2,7 +2,6 @@
 /* Renders a single chat message: text, thinking, tool calls, and badges. */
 
 import { useState, useMemo } from 'react';
-import { toast } from 'sonner';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import type { ChatMessage } from '@/types/chat';
 import type { ModelItem } from './model-display';
@@ -15,7 +14,6 @@ import { CommandHelpCard } from './CommandHelpCard';
 import { ToolCallCard } from './message/ToolCallCard';
 import { HandoffNoticeCard } from './message/HandoffNoticeCard';
 import { CompactionNoticeCard } from './message/CompactionNoticeCard';
-import { SubagentApprovalInline } from './message/SubagentApprovalInline';
 import { UserMessageBubble } from './message/UserMessageBubble';
 import { AssistantMessageContent } from './message/AssistantMessageContent';
 import { ChatAttachmentService } from './services/ChatAttachmentService';
@@ -202,17 +200,11 @@ export function MessageBubble({
     );
   }
 
-  if (message.kind === 'subagent-approval') {
-    return (
-      <div className="flex justify-start">
-        <SubagentApprovalInline
-          breakdown={message.breakdown ?? []}
-          onApprove={() => toast.success('Subagent plan approved')}
-          onCancel={() => toast.info('Subagent plan cancelled')}
-        />
-      </div>
-    );
-  }
+  // NOTE: kind === 'subagent-approval' messages are not produced anywhere —
+  // the live approval surface is SubagentProposalBar (subagentProposed SSE →
+  // $subagentProposals store). The old SubagentApprovalInline no-op stub
+  // (toast-only Approve/Cancel buttons) was deleted; if this kind ever
+  // renders again, route it through proposeBreakdown like the ProposalBar.
 
   const handleCopy = async () => {
     const textToCopy = message.content;

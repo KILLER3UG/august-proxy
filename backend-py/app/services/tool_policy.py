@@ -49,7 +49,7 @@ _PROMPT_SHELL = frozenset({'run_command'})
 
 _PROMPT_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
-    'spawn_subagent', 'spawn_subagents', 'update_agent', 'set_agent_mode',
+    'spawn_subagents', 'update_agent', 'set_agent_mode',
 })
 
 _PROMPT_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills', 'skill_manage'})

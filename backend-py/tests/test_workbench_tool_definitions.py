@@ -101,7 +101,7 @@ class TestNoPassthroughTools:
             assert expected in anthNames, f'workbench tool {expected} missing'
 
 
-@pytest.mark.parametrize('toolName', ['read_file', 'list_skills', 'desktop_screenshot', 'spawn_subagent'])
+@pytest.mark.parametrize('toolName', ['read_file', 'list_skills', 'desktop_screenshot', 'spawn_subagents'])
 def testToolSchemaSurvivesConversion(session, toolName):
     reg = next((r for r in tool_registry.listTools() if r['function']['name'] == toolName))
     anth = next((t for t in toolDefinitions(session) if t['name'] == toolName))

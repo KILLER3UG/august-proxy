@@ -135,7 +135,10 @@ def test_should_inject_august_reminder():
     assert should_inject_august_reminder(None) is True
     assert should_inject_august_reminder('') is True
     assert should_inject_august_reminder('plain system') is True
-    assert should_inject_august_reminder('August is great') is False
+    # Keyed on the BRAND, not the bare word — an unrelated "August" mention
+    # (project name, date) must not suppress the routing reminder.
+    assert should_inject_august_reminder('August is great') is True
+    assert should_inject_august_reminder('You are using August Proxy') is False
 
 
 def test_should_inject_reminder_message_detects_existing():
@@ -184,10 +187,17 @@ def test_build_anthropic_system_blocks_injects_reminder():
 
 
 def test_build_anthropic_system_blocks_skips_when_already_present():
+    # Only an explicit BRAND mention suppresses the reminder — a bare
+    # "August" (project name, date) does not mean the model knows the proxy.
     existing = 'You work in August already.'
     blocks = build_anthropic_system_blocks(existing)
-    assert len(blocks) == 1
+    assert len(blocks) == 2
     assert blocks[0]['text'] == existing
+    assert AUGUST_REMINDER == blocks[1]['text']
+    branded = 'You are using August Proxy as your gateway.'
+    blocks = build_anthropic_system_blocks(branded)
+    assert len(blocks) == 1
+    assert blocks[0]['text'] == branded
 
 
 def test_build_openai_system_prompt():

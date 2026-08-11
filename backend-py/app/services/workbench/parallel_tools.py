@@ -34,7 +34,6 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         'load_skills',
         'get_workbench_activity',
         'list_proxy_capabilities',
-        'spawn_subagent',
         'spawn_subagents',
     }
 )

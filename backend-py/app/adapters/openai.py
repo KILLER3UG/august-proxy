@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 import uuid
 from typing import AsyncIterator, Callable, cast
@@ -177,7 +178,7 @@ def isOpenaiToolResultError(toolMessage: ChatMessage | dict[str, object]) -> boo
         lower = content.lower()
         return (
             'error:' in lower
-            or 'exit code' in lower
+            or bool(re.search(r'exit code:\s*[1-9]\d*', lower))
             or 'command not found' in lower
             or ('no such file' in lower)
             or ('permission denied' in lower)
@@ -285,7 +286,13 @@ async def resolveManagedOpenaiToolCalls(
             break
         choice = as_dict(choices[0], {})
         message = as_dict(choice.get('message'), {})
-        toolCalls = cast('list[dict[str, object]]', as_list(message.get('tool_calls'), []))
+        # snakeToCamel above renamed `tool_calls` → `toolCalls`; read the
+        # camelCase key (snake fallback for safety) or managed tool calls are
+        # silently dropped and the client receives an empty response.
+        toolCalls = cast(
+            'list[dict[str, object]]',
+            as_list(message.get('toolCalls') or message.get('tool_calls'), []),
+        )
         if not toolCalls:
             currentMessages.append(message)
             break
@@ -389,83 +396,60 @@ async def streamUpstreamAndResolveToolsOpenai(
     toolRound = 0
     raw_body = dump_openai_upstream_body(body)
     currentMessages = cast('list[dict[str, object]]', as_list(raw_body.get('messages'), []))
-    streamBody = cast('dict[str, object]', camelToSnake({**raw_body, 'stream': True}))
     client = await _getClient()
-    async for chunk in client.streamSse(upstreamUrl, upstreamHeaders, streamBody):
-        if chunk.get('type') == 'error':
-            yield write_openai_sse_error(as_str(chunk.get('body'), as_str(chunk.get('error'), '')))
-            yield write_openai_sse_done()
-            return
-        acc.accumulate(chunk)
-        yield write_openai_sse_data(chunk)
-        choices = as_list(chunk.get('choices'), [])
-        if (
-            choices
-            and isinstance(choices[0], dict)
-            and as_dict(choices[0], {}).get('finish_reason') in ('tool_calls', 'stop')
-        ):
-            if acc.tool_calls:
-                toolRound += 1
-                # 0 = unlimited managed tool rounds
-                if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
-                    break
-                toolCallDicts = [tc.to_openai_dict() for tc in acc.tool_calls]
-                assistantMsg: dict[str, object] = {'role': 'assistant', 'content': acc.content}
-                from app.adapters.reasoning_policy import attach_openai_reasoning
+    while True:
+        toolRound += 1
+        # 0 = unlimited managed tool rounds
+        if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
+            break
+        acc = OpenaiStreamAccumulator()
+        if toolRound == 1:
+            streamBody = cast('dict[str, object]', camelToSnake({**raw_body, 'stream': True}))
+        else:
+            streamBody = cast(
+                'dict[str, object]',
+                camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True}),
+            )
+        async for chunk in client.streamSse(upstreamUrl, upstreamHeaders, streamBody):
+            if chunk.get('type') == 'error':
+                yield write_openai_sse_error(as_str(chunk.get('body'), as_str(chunk.get('error'), '')))
+                yield write_openai_sse_done()
+                return
+            acc.accumulate(chunk)
+            yield write_openai_sse_data(chunk)
+            choices = as_list(chunk.get('choices'), [])
+            if (
+                choices
+                and isinstance(choices[0], dict)
+                and as_dict(choices[0], {}).get('finish_reason') in ('tool_calls', 'stop')
+            ):
+                break
+        if not acc.tool_calls:
+            # Final round: no more tool calls — the client already received
+            # the streamed chunks and finish_reason.
+            break
+        toolCallDicts = [tc.to_openai_dict() for tc in acc.tool_calls]
+        assistantMsg: dict[str, object] = {'role': 'assistant', 'content': acc.content}
+        from app.adapters.reasoning_policy import attach_openai_reasoning
 
-                attach_openai_reasoning(assistantMsg, acc.reasoning)
-                if toolCallDicts:
-                    assistantMsg['tool_calls'] = toolCallDicts
-                currentMessages.append(assistantMsg)
-                classification = classifyOpenaiToolCalls(toolCallDicts, managedLocalToolNames, clientToolNames)
-                under_cap = MAX_MANAGED_TOOL_ROUNDS <= 0 or toolRound < MAX_MANAGED_TOOL_ROUNDS
-                # Mixed rounds (managed + client-owned tool calls) must NOT
-                # continue the managed loop: the round-1 tool_calls were
-                # already forwarded to the client (finish_reason: tool_calls)
-                # for IT to execute, and continuing would silently drop them
-                # (audit finding — the non-streaming loop already breaks via
-                # has_client_or_unknown).
-                if (
-                    classification['has_managed']
-                    and not classification.get('has_client_or_unknown')
-                    and (classification['can_execute_managed'] or under_cap)
-                ):
-                    toolResults = await execute_managed_openai_tool_calls(
-                        classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent
-                    )
-                    currentMessages.extend(toolResults)
-                    acc = OpenaiStreamAccumulator()
-                    nextBody = cast(
-                        'dict[str, object]',
-                        camelToSnake(
-                            {'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True}
-                        ),
-                    )
-                    client = await _getClient()
-                    async for nextChunk in client.streamSse(upstreamUrl, upstreamHeaders, nextBody):
-                        if nextChunk.get('type') == 'error':
-                            yield write_openai_sse_error(as_str(nextChunk.get('body'), ''))
-                            yield write_openai_sse_done()
-                            return
-                        acc.accumulate(nextChunk)
-                        yield write_openai_sse_data(nextChunk)
-                        nchoices = as_list(nextChunk.get('choices'), [])
-                        if nchoices and isinstance(nchoices[0], dict) and as_dict(nchoices[0], {}).get('finish_reason'):
-                            break
-                    nextToolDicts = [tc.to_openai_dict() for tc in acc.tool_calls] if acc.tool_calls else []
-                    nextAssistant: dict[str, object] = {
-                        'role': 'assistant',
-                        'content': acc.content,
-                        **({'tool_calls': nextToolDicts} if nextToolDicts else {}),
-                    }
-                    from app.adapters.reasoning_policy import attach_openai_reasoning
-
-                    attach_openai_reasoning(nextAssistant, acc.reasoning)
-                    currentMessages.append(nextAssistant)
-                    if acc.usage:
-                        yield write_openai_sse_data({'choices': [], 'usage': acc.usage})
-            yield write_openai_sse_done()
-            return
+        attach_openai_reasoning(assistantMsg, acc.reasoning)
+        if toolCallDicts:
+            assistantMsg['tool_calls'] = toolCallDicts
+        currentMessages.append(assistantMsg)
+        classification = classifyOpenaiToolCalls(toolCallDicts, managedLocalToolNames, clientToolNames)
+        # Mixed rounds (managed + client-owned tool calls) must NOT continue
+        # the managed loop: the round's tool_calls were already forwarded to
+        # the client (finish_reason: tool_calls) for IT to execute, and
+        # continuing would silently drop them (audit finding — the
+        # non-streaming loop already breaks via has_client_or_unknown).
+        if not (classification['has_managed'] and not classification.get('has_client_or_unknown')):
+            break
+        toolResults = await execute_managed_openai_tool_calls(
+            classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent
+        )
+        currentMessages.extend(toolResults)
+        if acc.usage:
+            yield write_openai_sse_data({'choices': [], 'usage': acc.usage})
     yield write_openai_sse_done()
 
 
@@ -590,15 +574,16 @@ async def handleChatCompletions(
                 # call failed — surface the real error to the client.
                 return (normalize_upstream_error(exc.resp), None)
             lastMsg = updatedMessages[-1] if updatedMessages else {}
+            lastToolCalls = as_list(lastMsg.get('toolCalls') or lastMsg.get('tool_calls'), [])
             response_acc = OpenaiStreamAccumulator(
                 id=f'chatcmpl-{uuid.uuid4().hex[:12]}',
                 model=model,
                 created=int(time.time()),
                 content=str(lastMsg.get('content', '')),
-                finish_reason='stop' if not lastMsg.get('tool_calls') else 'tool_calls',
+                finish_reason='stop' if not lastToolCalls else 'tool_calls',
                 usage=usage or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0},
             )
-            for tc in as_list(lastMsg.get('tool_calls'), []):
+            for tc in lastToolCalls:
                 if isinstance(tc, dict):
                     fn = tc.get('function', {}) or {}
                     response_acc.tool_calls.append(

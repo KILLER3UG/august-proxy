@@ -156,83 +156,6 @@ async def _updateState(
         return f'Error updating state: {exc}'
 
 
-async def _spawnSubagent(
-    goal: str,
-    agentId: str = '',
-    context: str = '',
-    toolsets: list[str] | None = None,
-    background: bool = False,
-    effort: str = 'medium',
-) -> str:
-    """Dispatch a sub-agent for a focused task.
-
-    Prefer calling this several times in one turn (or use spawn_subagents) to
-    parallelize investigation. With ``background=true``, returns as soon as the
-    worker is dispatched; completion is delivered individually when it settles.
-    ``effort``: low | medium | high | max — reasoning effort for the sub-agent.
-    """
-    from app.services import event_log
-    from app.services.runtime_services import get_orchestrator
-    from app.services.tools.spawn_subagents_tool import executeSpawnSubagents
-    from app.services.workbench import workbench as wb
-    from app.services.workbench.context import currentSessionId
-
-    sessionId = currentSessionId.get()
-    session = wb.getWorkbenchSession(sessionId)
-    if not session:
-        return 'Error: no active workbench session for sub-agent dispatch.'
-
-    def _emit(ev: dict) -> None:
-        try:
-            event_log.event_log.append(sessionId, as_str(ev.get('type'), 'subagent_event'), ev)
-        except Exception:
-            pass
-
-    orch = get_orchestrator()
-    work_item: dict[str, object] = {
-        'goal': goal,
-        'agentId': agentId or 'general',
-        'context': context or '',
-        'effort': effort if effort in ('low', 'medium', 'high', 'max') else 'medium',
-    }
-    if toolsets:
-        # Restrict to named toolsets is not a denylist; pass through as context hint.
-        work_item['context'] = (as_str(work_item.get('context')) + f'\ntoolsets={toolsets}').strip()
-
-    result = await executeSpawnSubagents(
-        orch,
-        session,
-        [work_item],
-        mode='auto',
-        emit=_emit,
-        background=bool(background),
-    )
-    status = as_str(result.get('status'), 'completed')
-    if status == 'started':
-        handles = result.get('handles') or []
-        handle = handles[0] if handles else {}
-        tid = as_str(handle.get('taskId')) if isinstance(handle, dict) else ''
-        aid = as_str(handle.get('agentId'), agentId or 'general') if isinstance(handle, dict) else (agentId or 'general')
-        return (
-            f"Sub-agent '{aid}' started (taskId={tid or 'unknown'}). "
-            'You will receive its completion individually when it finishes — '
-            'do not poll; you may launch more subagents or continue other work.'
-        )
-    if status == 'awaiting_approval':
-        return as_str(result.get('message'), 'Awaiting user approval to spawn subagent.')
-    results = result.get('results') or []
-    one = results[0] if results else result
-    if isinstance(one, dict):
-        text = as_str(one.get('result')) or as_str(one.get('error')) or ''
-        if isinstance(one.get('result'), dict):
-            inner = one['result']
-            text = as_str(inner.get('result')) or as_str(inner.get('output')) or as_str(inner.get('error')) or text
-        aid = as_str(one.get('agentId'), agentId or 'general')
-        st = as_str(one.get('status'), status)
-        return f"Sub-agent '{aid}' {st}.\n\n{text}"
-    return f"Sub-agent '{agentId or 'general'}' {status}.\n\n{result}"
-
-
 async def _spawnSubagents(
     workItems: list | None = None,
     mode: str = 'auto',
@@ -355,52 +278,15 @@ def register() -> None:
         },
     )
     tool_registry.register(
-        'spawn_subagent',
-        (
-            'Dispatch a sub-agent for a focused task. Safe to call multiple times in one turn '
-            'to investigate in parallel (e.g. project structure, recent changes, backend, frontend). '
-            'Set background=true to return immediately and receive that subagent\'s completion '
-            'individually when it finishes; otherwise blocks until this one completes.'
-        ),
-        _spawnSubagent,
-        {
-            'type': 'object',
-            'properties': {
-                'goal': {'type': 'string', 'description': 'The task goal for the sub-agent.'},
-                'agentId': {
-                    'type': 'string',
-                    'description': "Agent id (e.g. 'explore', 'general', or from create_agent). Default general.",
-                },
-                'context': {'type': 'string', 'description': 'Background context for the sub-agent.'},
-                'toolsets': {
-                    'type': 'array',
-                    'items': {'type': 'string'},
-                    'description': 'Tool sets to grant the sub-agent (optional).',
-                },
-                'background': {
-                    'type': 'boolean',
-                    'default': False,
-                    'description': (
-                        'If true, return as soon as the worker is dispatched; completion is '
-                        'delivered to you when it settles. Prefer true when launching several in parallel.'
-                    ),
-                },
-                'effort': {
-                    'type': 'string',
-                    'enum': ['low', 'medium', 'high', 'max'],
-                    'default': 'medium',
-                    'description': 'Reasoning effort for the sub-agent. Default medium.',
-                },
-            },
-            'required': ['goal'],
-        },
-    )
-    tool_registry.register(
         'spawn_subagents',
         (
-            'Spawn multiple sub-agents in parallel for independent work items. '
-            'One call launches the whole batch. Defaults to background=true so each '
-            'completion is delivered individually as it finishes.'
+            'Spawn one or more sub-agents in parallel for independent work items — '
+            'ONE tool for both single and batch dispatch: pass a single work item to '
+            'spawn one sub-agent. Defaults to background=true so each completion is '
+            'delivered individually as it finishes; set background=false to block until '
+            'all complete. Each work item may carry effort (low/medium/high/max), a '
+            'model override, and an optional yieldSchema (the sub-agent returns a JSON '
+            'object matching it).'
         ),
         _spawnSubagents,
         {
@@ -415,6 +301,20 @@ def register() -> None:
                             'agentId': {'type': 'string', 'default': 'general'},
                             'context': {'type': 'string'},
                             'restrictedTools': {'type': 'array', 'items': {'type': 'string'}},
+                            'effort': {
+                                'type': 'string',
+                                'enum': ['low', 'medium', 'high', 'max'],
+                                'default': 'medium',
+                                'description': 'Reasoning effort for this sub-agent.',
+                            },
+                            'model': {
+                                'type': 'string',
+                                'description': 'Model override (default: agent alias / smol role routing).',
+                            },
+                            'yieldSchema': {
+                                'type': 'object',
+                                'description': 'Optional JSON Schema — the sub-agent returns a single JSON object matching it, validated before delivery.',
+                            },
                         },
                         'required': ['goal'],
                     },
@@ -429,7 +329,7 @@ def register() -> None:
                 'background': {
                     'type': 'boolean',
                     'default': True,
-                    'description': 'Return after dispatch; deliver each completion individually (default true).',
+                    'description': 'Return after dispatch; deliver each completion individually (default true). Set false to block until all work items finish.',
                 },
             },
             'required': ['workItems'],

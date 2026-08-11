@@ -36,6 +36,7 @@ class WorkItem(CamelModel):
     context: str = ''
     model: str = ''
     effort: str = 'medium'
+    yield_schema: dict | None = None
 
 
 class SpawnRequest(CamelModel):
@@ -61,15 +62,39 @@ def _getOrchestrator(request: Request) -> SubagentOrchestrator:
 
 
 def _getSession(request: Request) -> object:
-    """Get a minimal session-like object from request state."""
+    """Get a minimal session-like object from request state.
+
+    ``agent_id`` (snake) is set alongside ``agentId`` — ``executeSubAgent``
+    reads ``session.agent_id`` for parent-permission derivation, and the old
+    camel-only shell silently disabled ``deriveChildPermissions`` for
+    user-launched agents.
+    """
     import types
 
     return types.SimpleNamespace(
         id=request.headers.get('X-Session-Id', 'default'),
         model=request.headers.get('X-Model', ''),
         agentId=request.headers.get('X-Agent-Id', ''),
+        agent_id=request.headers.get('X-Agent-Id', ''),
         provider=request.headers.get('X-Provider', ''),
+        subagent_depth=0,
     )
+
+
+def _makeEmit(sessionId: str):
+    """SSE emitter wired to the session's event log — the same path the
+    model-initiated spawn tool uses, so user-launched subagents stream into
+    the active chat (subagentStart/Text/ToolCall/ToolResult/Done) instead of
+    running invisibly."""
+    from app.services import event_log
+
+    def _emit(ev: dict) -> None:
+        try:
+            event_log.event_log.append(sessionId, str(ev.get('type') or 'subagent_event'), ev)
+        except Exception:
+            pass
+
+    return _emit
 
 
 @router.post('/spawn')
@@ -77,6 +102,7 @@ async def spawnSubagents(body: SpawnRequest, request: Request):
     """Spawn one or more sub-agents for parallel execution."""
     orch = _getOrchestrator(request)
     session = _getSession(request)
+    sessionId = str(getattr(session, 'id', '') or '')
     # Service layer expects camelCase keys on work-item dicts.
     workItems = [
         {
@@ -86,11 +112,12 @@ async def spawnSubagents(body: SpawnRequest, request: Request):
             'context': w.context,
             'model': w.model,
             'effort': w.effort if w.effort in ('low', 'medium', 'high', 'max') else 'medium',
+            'yieldSchema': w.yield_schema,
         }
         for w in body.work_items
     ]
     result = await executeSpawnSubagents(
-        orch, session, workItems, mode=body.mode, background=body.background
+        orch, session, workItems, mode=body.mode, emit=_makeEmit(sessionId), background=body.background
     )
     return result
 

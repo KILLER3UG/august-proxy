@@ -68,7 +68,10 @@ class ToolCallDelta:
         try:
             tool_input = json.loads(self.function_arguments) if self.function_arguments else {}
         except (json.JSONDecodeError, TypeError):
-            tool_input = {}
+            # Never execute a malformed blob as `{}` (native-path parity):
+            # keep the raw text under `_raw` so callers surface a
+            # [Validation Error] result instead of a phantom arg.
+            tool_input = {'_raw': self.function_arguments}
         return {
             'type': 'tool_use',
             'id': self.id or f'toolu_{uuid.uuid4().hex[:16]}',

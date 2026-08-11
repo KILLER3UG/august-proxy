@@ -214,7 +214,7 @@ class TestPlanModeGuard:
             'rename_session',
         ):
             assert isPlanModeBlocked(name) is False, name
-        for name in ('mcp__github__search', 'spawn_subagent', 'analyze_code', 'fetch_logs', 'get_status'):
+        for name in ('mcp__github__search', 'spawn_subagents', 'analyze_code', 'fetch_logs', 'get_status'):
             assert isPlanModeBlocked(name) is False, name
 
     def testDestructiveToolsBlockedInPlanMode(self):

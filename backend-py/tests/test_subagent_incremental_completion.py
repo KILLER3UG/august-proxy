@@ -29,7 +29,8 @@ def _isolate(tmp_path, monkeypatch):
 
 
 def test_spawn_tools_are_parallel_safe():
-    assert is_parallel_safe('spawn_subagent')
+    # spawn_subagent (singular) was consolidated into spawn_subagents — one
+    # spawn tool surface. The plural must be parallel-safe.
     assert is_parallel_safe('spawn_subagents')
 
 

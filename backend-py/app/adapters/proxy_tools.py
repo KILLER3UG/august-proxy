@@ -337,7 +337,7 @@ def format_managed_tool_result(toolName: str, result: object) -> str:
             parts.append(result['stdout'])
         if result.get('stderr'):
             parts.append(f'STDERR:\n{result["stderr"]}')
-        if result.get('exit_code'):
+        if result.get('exit_code') is not None:
             parts.append(f'Exit code: {result["exit_code"]}')
         return '\n'.join(parts) or '(no output)'
     if isinstance(result, str):

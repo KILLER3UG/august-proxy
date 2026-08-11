@@ -10,6 +10,7 @@ export interface WorkItem {
   context?: string;
   model?: string;
   effort?: 'low' | 'medium' | 'high' | 'max';
+  yieldSchema?: Record<string, unknown>;
 }
 
 export interface SpawnRequest {
@@ -46,9 +47,16 @@ export async function listActive(sessionId?: string): Promise<SubagentInfo[]> {
   return res.agents;
 }
 
-/** Spawn one or more sub-agents. */
-export async function spawn(request: SpawnRequest): Promise<SpawnResult> {
-  return api.post<SpawnResult>('/api/subagents/spawn', request);
+/** Spawn one or more sub-agents. Pass `sessionId` to bind the launch to a
+ * workbench session so its events stream into that chat's transcript and
+ * the right-drawer roster (without it, agents attach to `'default'` and
+ * never render anywhere but the Runs history). */
+export async function spawn(request: SpawnRequest, sessionId?: string): Promise<SpawnResult> {
+  return api.post<SpawnResult>(
+    '/api/subagents/spawn',
+    request,
+    sessionId ? { 'X-Session-Id': sessionId } : undefined,
+  );
 }
 
 /** Terminate a running sub-agent by task ID. */

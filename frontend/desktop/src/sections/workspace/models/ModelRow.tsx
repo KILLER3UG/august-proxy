@@ -53,17 +53,15 @@ export function ModelRow({
   const [reasoning, setReasoning] = useState(!!model.reasoning);
   const [format, setFormat] = useState<ApiFormat | ''>(model.apiFormat ?? '');
   const [toolSurface, setToolSurface] = useState<'full' | 'reduced' | 'bare' | ''>(
-    (model as { toolSurface?: string }).toolSurface as 'full' | 'reduced' | 'bare' | '' ?? '',
+    model.toolSurface ?? '',
   );
   const [reasoningEffortSupport, setReasoningEffortSupport] = useState<'' | 'yes' | 'no'>(
     model.supportsReasoningEffort === true ? 'yes' : model.supportsReasoningEffort === false ? 'no' : '',
   );
   const [maxReasoningEffort, setMaxReasoningEffort] = useState<string>(model.maxReasoningEffort ?? '');
-  const [maxTools, setMaxTools] = useState<string>(
-    ((model as { maxTools?: number }).maxTools ?? 0).toString(),
-  );
+  const [maxTools, setMaxTools] = useState<string>((model.maxTools ?? 0).toString());
   const [maxToolResultChars, setMaxToolResultChars] = useState<string>(
-    ((model as { maxToolResultChars?: number }).maxToolResultChars ?? 0).toString(),
+    (model.maxToolResultChars ?? 0).toString(),
   );
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
@@ -81,11 +79,9 @@ export function ModelRow({
       model.supportsReasoningEffort === true ? 'yes' : model.supportsReasoningEffort === false ? 'no' : '',
     );
     setMaxReasoningEffort(model.maxReasoningEffort ?? '');
-    setMaxTools(((model as { maxTools?: number }).maxTools ?? 0).toString());
-    setMaxToolResultChars(
-      ((model as { maxToolResultChars?: number }).maxToolResultChars ?? 0).toString(),
-    );
-  }, [model.id, model.name, model.contextWindow, model.reasoning, model.apiFormat, model.supportsReasoningEffort, model.maxReasoningEffort]);
+    setMaxTools((model.maxTools ?? 0).toString());
+    setMaxToolResultChars((model.maxToolResultChars ?? 0).toString());
+  }, [model.id, model.name, model.contextWindow, model.reasoning, model.apiFormat, model.supportsReasoningEffort, model.maxReasoningEffort, model.toolSurface, model.maxTools, model.maxToolResultChars]);
 
   const update = useMutation({
     mutationFn: (body: {

@@ -15,6 +15,7 @@ import { RailDoneRow } from '@/components/chat/RailDoneRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { RecalledMemoryStep } from '@/components/chat/RecalledMemoryStep';
 import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
+import { SubagentLaunchList } from '@/components/chat/SubagentLaunchList';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
@@ -131,7 +132,8 @@ export function AssistantBlockTimeline({
   showPendingThinking: boolean;
   toolProgress?: ToolProgressMap;
   subagentPrompts?: Map<string, SubagentPromptEntry>;
-  /** Retained for stream-store compatibility; the roster lives in the drawer. */
+  /** Keyed by sub-agent jobId; rendered inline via SubagentLaunchList
+   *  (and in the persistent right-drawer roster). */
   subagentBlocks?: Map<string, SubagentBlockState>;
   /** Parent session model id — shown as muted tag on subagent launch rows. */
   modelId?: string | null;
@@ -145,7 +147,6 @@ export function AssistantBlockTimeline({
   // Kept in the public props for message-pane compatibility; subagent
   // progress no longer renders an inline model label.
   void modelId;
-  void subagentBlocks;
 
   const { processBlocks, finalBlocks, hasFinalOutput } =
     splitProcessAndFinal(displayBlocks);
@@ -393,9 +394,11 @@ export function AssistantBlockTimeline({
         const isCommand = block.type === 'command';
         const isSubagentCall = !isCommand && isSubagentToolName(tool.name);
 
-        // Consume consecutive subagent launch blocks; live progress is shown
-        // in the persistent right drawer.
+        // Consume consecutive subagent launch blocks; render a Cursor-style
+        // checked list inline (SubagentLaunchList). Live progress also
+        // shows in the persistent right drawer.
         if (isSubagentCall) {
+          const launchToolIds: string[] = [];
           while (
             ti < blocks.length &&
             (blocks[ti].type === 'toolCall' || blocks[ti].type === 'command') &&
@@ -403,9 +406,29 @@ export function AssistantBlockTimeline({
             blocks[ti].type !== 'command' &&
             isSubagentToolName(blocks[ti].tool!.name)
           ) {
+            const tid = blocks[ti].tool!.id || '';
+            if (tid) launchToolIds.push(tid);
             ti++;
           }
-          // Subagent progress is rendered in the persistent right drawer.
+          // subagentBlocks is keyed by jobId; each state carries the parent
+          // tool-use id that matches the transcript tool block.
+          const launchAgents: SubagentBlockState[] = subagentBlocks
+            ? Array.from(subagentBlocks.values()).filter(
+                (s) => !!s.parentToolId && launchToolIds.includes(s.parentToolId),
+              )
+            : [];
+          if (launchAgents.length > 0) {
+            tagged.push({
+              kind: 'block',
+              node: (
+                <SubagentLaunchList
+                  agents={launchAgents}
+                  subBlocks={subagentBlocks}
+                  subPrompts={subagentPrompts}
+                />
+              ),
+            });
+          }
           continue;
         }
 

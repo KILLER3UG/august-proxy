@@ -65,6 +65,9 @@ MAX_STALLED_ROUNDS = 8
 MIN_ROUNDS_BEFORE_STALL_CHECK = 12
 # Code-mode (fenced python) execution cap.
 _CODE_RUN_TIMEOUT_S = 60
+# Clean rounds on the bare surface before the full tool set is restored
+# (reversible downgrade — A6).
+_DOWNGRADE_RECOVERY_ROUNDS = 3
 # Legacy fallback only — auto-compact keys off the model's real contextWindow.
 WORKBENCH_TOKEN_BUDGET = 2000000
 # Auto-compact when estimated history reaches this fraction of the model window.
@@ -1971,13 +1974,20 @@ async def _sendWorkbenchMessageStreamImpl(
                     None,
                 )
                 currentWinRate = as_float(currentRow.get('winRate'), 0.0) if currentRow else None
+                # Exploration (P6, epsilon-greedy): a configured model with too
+                # few samples for this task type must sometimes run anyway so it
+                # can accumulate evidence — otherwise an auto-routed incumbent
+                # starves the alternative forever and a better configured model
+                # can never overtake it.
+                currentTotal = as_int(currentRow.get('total'), 0) if currentRow else 0
+                exploreNow = currentTotal < max(3, minSamples * 2) and random.random() < 0.5
                 gap = topWinRate - (currentWinRate if currentWinRate is not None else 0.0)
                 qualifies = (
                     different
                     and topWinRate >= minWinRate
                     and (currentWinRate is None or gap >= minGap)
                 )
-                if qualifies and emit:
+                if qualifies and not exploreNow and emit:
                     if autoRoute:
                         from app.providers.resolver import apply_model_format_override
                         from app.services.workbench.providers import resolve_model, resolve_workbench_provider
@@ -2400,6 +2410,11 @@ async def _sendWorkbenchMessageStreamImpl(
     # Turn-scoped malformed-tool counter: accumulates ACROSS rounds (a reset
     # per round meant repeated malformed calls never triggered the downgrade).
     parseFailures = 0
+    # Reversible surface downgrade (A6): the bare-surface fallback restores
+    # itself after a few clean rounds — one burst of malformed calls must not
+    # cripple the rest of the turn (web_search/browser may still be needed).
+    surfaceDowngraded = False
+    cleanRoundsSinceDowngrade = 0
     # Set when the turn ends on an error path — the done-event block below
     # still runs (to flush usage/evidence), and routing evidence must record
     # ok=False for error turns, not a hardcoded win.
@@ -3442,24 +3457,48 @@ async def _sendWorkbenchMessageStreamImpl(
         # malformed counter (it accumulates only across consecutive bad rounds).
         if invalidThisRound == 0:
             parseFailures = 0
+            if surfaceDowngraded:
+                cleanRoundsSinceDowngrade += 1
+                # Restore the full surface after a few clean rounds on the
+                # bare set (reversible downgrade — A6).
+                if cleanRoundsSinceDowngrade >= _DOWNGRADE_RECOVERY_ROUNDS:
+                    tools = toolDefinitions(session)
+                    openaiTools = openaiToolDefinitions(session)
+                    surfaceDowngraded = False
+                    cleanRoundsSinceDowngrade = 0
+                    if emit:
+                        emit(
+                            {
+                                'type': 'warning',
+                                'message': (
+                                    'Tool surface restored to full — the model recovered from '
+                                    'malformed tool calls.'
+                                ),
+                            }
+                        )
+        else:
+            cleanRoundsSinceDowngrade = 0
         # Graceful degradation (mini-swe-agent / smolagents lesson): after
         # repeated malformed tool calls this round, downgrade the NEXT round
         # to the bare tool surface — fewer tools means less JSON to improvise.
         if parseFailures >= 3:
-            tools = [t for t in toolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW]
-            openaiTools = [
-                t for t in openaiToolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW
-            ]
-            if emit:
-                emit(
-                    {
-                        'type': 'warning',
-                        'message': (
-                            'Repeated malformed tool calls — downgrading the tool surface to the '
-                            'essential set (read/write/run_command/state) for the next round.'
-                        ),
-                    }
-                )
+            if not surfaceDowngraded:
+                tools = [t for t in toolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW]
+                openaiTools = [
+                    t for t in openaiToolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW
+                ]
+                surfaceDowngraded = True
+                cleanRoundsSinceDowngrade = 0
+                if emit:
+                    emit(
+                        {
+                            'type': 'warning',
+                            'message': (
+                                'Repeated malformed tool calls — downgrading the tool surface to the '
+                                'essential set (read/write/run_command/state) for the next round.'
+                            ),
+                        }
+                    )
         if not toolResults:
             try:
                 if hasattr(session, '_tool_tracker') and session._tool_tracker:
@@ -3620,6 +3659,19 @@ async def _sendWorkbenchMessageStreamImpl(
                             'Fix the failures, re-run the command, and only then call '
                             "update_state(phase='complete')."
                         )
+                    enqueueUserMessage(sessionId, steer, kind='steer')
+                elif vphase != 'complete' and not vcmd:
+                    # A7: the model ended with a withheld answer and never
+                    # declared a verification command — steer it to declare +
+                    # run one, instead of stranding the answer under the amber
+                    # banner with no automatic recovery path.
+                    setattr(session, '_verifier_auto_ran', True)
+                    steer = (
+                        '[VERIFIER STEER] The verifier gate requires a verification run before '
+                        "the final answer is released. Declare and run a verification command "
+                        "(tests / lint / build) via run_command, confirm it passes, then call "
+                        "update_state(phase='complete', verificationCommand='<your command>')."
+                    )
                     enqueueUserMessage(sessionId, steer, kind='steer')
         except Exception:
             logger.debug('verifier auto-run failed', exc_info=True)
@@ -3782,9 +3834,9 @@ async def _sendWorkbenchMessageStreamImpl(
                                         'model': modelIdForProfile,
                                         'suggestedProfile': suggested,
                                         'message': (
-                                            f'Model {modelIdForProfile} is struggling with the current '
-                                            f'tool surface — consider {suggested.get("toolSurface")} '
-                                            f'tools ({suggested.get("reason", "")}).'
+                                            f'Model {modelIdForProfile}: consider changing the tool '
+                                            f'surface to {suggested.get("toolSurface")} '
+                                            f'({suggested.get("reason", "")}).'
                                         ),
                                     }
                                 )
@@ -4023,22 +4075,13 @@ async def _executeTool(
         # sha256 of the file as read (the read tool reports it). A mismatch
         # means the file changed and the patch would corrupt it — reject and
         # tell the model to re-read instead of applying stale edits.
+        # Whole-token matching: substring matching flagged read-style tools
+        # (`read_creations` matched 'create', `find_and_replace` matched
+        # 'replace') as mutating.
         name_l = (toolName or '').lower()
-        if any(
-            m in name_l
-            for m in (
-                'write',
-                'edit',
-                'patch',
-                'str_replace',
-                'replace',
-                'create',
-                'delete',
-                'remove',
-                'move',
-                'rename',
-                'append',
-            )
+        if re.search(
+            r'\b(?:write|edit|patch|str_replace|replace|create|delete|remove|move|rename|append)\b',
+            name_l,
         ):
             expected = as_str(args.get('fileHash') or args.get('file_hash') or '', '')
             if expected:
@@ -4087,8 +4130,14 @@ async def _executeTool(
                     return f'[BLOCKED by hook] {r.message or "Tool call denied by policy."}'
                 if r.action == 'modify' and r.modified_args is not None:
                     args = r.modified_args
-        except Exception:
-            pass  # Hooks must never break tool execution
+        except Exception as exc:
+            # A PRE hook that raised cannot vet the call — the registered
+            # pre-tool hooks are security guards (secret_guard, sensitive_code),
+            # so failing CLOSED is the safe default: a broken hook must not
+            # silently allow a credential write. The message names the hook
+            # failure so the user can fix the hook config.
+            logger.warning('PRE_TOOL_USE hook failed for %s — denying: %s', toolName, exc)
+            return f'[BLOCKED by hook] Pre-tool hook failed to evaluate the call: {exc}'
 
         result = await dispatchTool(toolName, args)
         result_str = str(result)
@@ -4111,8 +4160,11 @@ async def _executeTool(
             for r in post_results:
                 if r.action == 'modify' and r.modified_result is not None:
                     result_str = r.modified_result
-        except Exception:
-            pass  # Hooks must never break tool execution
+        except Exception as exc:
+            # POST hooks observe/modify an already-executed tool — a failure
+            # here cannot roll the tool back, so log and continue (unlike the
+            # PRE hook, which fails closed above).
+            logger.warning('POST_TOOL_USE hook failed for %s: %s', toolName, exc)
 
         try:
             from app.services.post_observation import capture_after_tool
@@ -4960,7 +5012,7 @@ def listProxyCapabilities() -> dict[str, object]:
             'reject_plan',
             # load_skill is read-only knowledge load — not mutating
             'skill_manage',
-            'spawn_subagent',
+            'spawn_subagents',
             'spawn_daemon',
             'kill_daemon',
             'write_blackboard',
@@ -5000,7 +5052,7 @@ def listProxyCapabilities() -> dict[str, object]:
             group = 'skill'
         elif name in ('web_fetch', 'web_search'):
             group = 'web'
-        elif name in ('spawn_subagent', 'create_agent', 'list_agents'):
+        elif name in ('spawn_subagents', 'create_agent', 'list_agents'):
             group = 'agent'
         elif name in ('spawn_daemon', 'list_daemons', 'kill_daemon'):
             group = 'daemon'

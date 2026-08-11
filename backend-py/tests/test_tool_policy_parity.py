@@ -47,7 +47,7 @@ _ORACLE_DESTRUCTIVE = frozenset({
 _ORACLE_SHELL = frozenset({'run_command'})
 _ORACLE_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
-    'spawn_subagent', 'spawn_subagents', 'update_agent', 'set_agent_mode',
+    'spawn_subagents', 'update_agent', 'set_agent_mode',
 })
 _ORACLE_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills', 'skill_manage'})
 _ORACLE_BRIDGE = frozenset({'tool_call', 'tool_describe', 'tool_search'})
@@ -153,8 +153,17 @@ def _all_registered_names() -> list[str]:
 
 @pytest.fixture(scope='module', autouse=True)
 def _register_all():
-    from app.services import integration_tools
+    from app.services import integration_tools, tool_registry
+
+    # Snapshot + restore: the registered integration tools leak into the
+    # global registry and break later test modules (e.g. the workbench tool
+    # definitions suite) that assert on the exact tool surface.
+    before = {t['name'] for t in tool_registry.listRaw()}
     integration_tools.register()
+    yield
+    for entry in tool_registry.listRaw():
+        if entry['name'] not in before:
+            tool_registry.unregister(entry['name'])
 
 
 class TestPromptBucketParity:

@@ -36,6 +36,7 @@ async def runSubagent(
     parentToolRegistry: Callable | None = None,
     parentOpenaiTools: Callable | None = None,
     emit: Callable[[dict[str, Any]], None] | None = None,
+    depth: int = 0,
 ) -> dict[str, Any]:
     """Run a sub-agent and publish lifecycle events to the bus.
 
@@ -105,6 +106,7 @@ async def runSubagent(
             yield_schema=yieldSchema,
             effort=effort or 'medium',
             model_override=model or '',
+            depth=depth,
         )
         status = as_str(subResult.get('status'), 'completed')
         if status != 'completed':

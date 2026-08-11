@@ -21,20 +21,10 @@ KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = {
     'claude-sonnet-4-6',
 }
 AUGUST_REMINDER = (
-    'This proxy environment is August Proxy — a multi-model AI gateway. '
-    'You have access to the August tool suite for file operations, web access, bash commands, and memory.'
+    'You are being routed through August Proxy, a multi-model AI gateway. '
+    'Use only the tools provided in this request; do not assume any other '
+    'tool suite is available.'
 )
-RULE_REMINDER_MESSAGE: dict[str, object] = {
-    'type': 'text',
-    'text': (
-        '## Operational Rules\n\n'
-        '1. When browsing the web, prioritize fetching text content directly.\n'
-        '2. When executing commands, prefer safe, non-destructive operations.\n'
-        '3. Always verify file paths before writing.\n'
-        '4. Respect user privacy and data boundaries.\n'
-        '5. If a tool fails, retry with corrected parameters before reporting failure.'
-    ),
-}
 
 
 def is_claude_family_model(model: str | None) -> bool:
@@ -115,10 +105,15 @@ def should_inject_reminder_message(
 
 
 def should_inject_august_reminder(system_text: str | None) -> bool:
-    """Check if the August reminder should be added to system text."""
+    """Check if the August reminder should be added to system text.
+
+    Keyed on the BRAND ('August Proxy'), not the bare word 'August' — a
+    client prompt mentioning "August" for unrelated reasons (a project name,
+    a date) must not suppress the routing reminder.
+    """
     if not system_text:
         return True
-    return 'August' not in system_text
+    return 'August Proxy' not in system_text
 
 
 def normalize_system_blocks(system: JsonValue) -> list[dict[str, object]]:

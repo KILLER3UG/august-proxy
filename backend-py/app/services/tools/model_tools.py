@@ -33,7 +33,6 @@ AUGUST_CORE_TOOLS: frozenset[str] = frozenset(
         'load_skill',
         'list_skills',
         'skill_manage',
-        'spawn_subagent',
         'spawn_subagents',
         'diagnose_proxy',
         'describe_environment',

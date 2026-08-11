@@ -522,7 +522,9 @@ def _translateToResponsesFormat(chatCompletion: dict) -> dict:
         outputItems.append(
             {'id': f'item_{uuid.uuid4().hex[:8]}', 'type': 'reasoning', 'status': 'completed', 'content': reasoning}
         )
-    for tc_raw in as_list(message.get('tool_calls'), []):
+    # The chat-completions body was snakeToCamel'd by the adapter, so tool
+    # calls arrive under the `toolCalls` key (snake fallback for safety).
+    for tc_raw in as_list(message.get('toolCalls') or message.get('tool_calls'), []):
         tc = as_dict(tc_raw)
         func = as_dict(tc.get('function'), {})
         outputItems.append(

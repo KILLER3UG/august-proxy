@@ -129,10 +129,20 @@ def get_suggestions(task_type: str, min_samples: int = 1, limit: int = 5) -> lis
 
     Returns ``[{model, provider, wins, total, winRate, avgTokens,
     avgDurationMs}]`` sorted by win-rate desc, avg tokens asc.
+
+    A win requires ``ok=1`` AND an outcome that is not ``refusal`` /
+    ``thinking_only`` / ``tool_error`` — a turn that refused tools or burned
+    its output budget on thinking is NOT a win (same grading as
+    ``drift_report``). Verified turns break ties so routing prefers models
+    that actually verify their work.
     """
     try:
         rows = _conn().execute(
-            'SELECT model, provider, SUM(ok) AS wins, COUNT(*) AS total, '
+            'SELECT model, provider, '
+            'SUM(CASE WHEN ok = 1 AND outcome NOT IN (\'refusal\', \'thinking_only\', \'tool_error\') '
+            '        THEN 1 ELSE 0 END) AS wins, '
+            'SUM(CASE WHEN outcome = \'verified\' THEN 1 ELSE 0 END) AS verified_wins, '
+            'COUNT(*) AS total, '
             'AVG(input_tokens + output_tokens) AS avg_tokens, '
             'AVG(duration_ms) AS avg_duration '
             'FROM routing_evidence WHERE task_type = ? '
@@ -147,6 +157,7 @@ def get_suggestions(task_type: str, min_samples: int = 1, limit: int = 5) -> lis
         if total <= 0:
             continue
         wins = as_int(r['wins'], 0)
+        verified = as_int(r['verified_wins'], 0)
         out.append(
             {
                 'model': as_str(r['model'], ''),
@@ -154,6 +165,7 @@ def get_suggestions(task_type: str, min_samples: int = 1, limit: int = 5) -> lis
                 'wins': wins,
                 'total': total,
                 'winRate': round(wins / total, 2),
+                'verifiedRate': round(verified / total, 2),
                 'avgTokens': int(round(as_int(r['avg_tokens'], 0))),
                 'avgDurationMs': int(round(as_int(r['avg_duration'], 0))),
             }
@@ -161,6 +173,7 @@ def get_suggestions(task_type: str, min_samples: int = 1, limit: int = 5) -> lis
     out.sort(
         key=lambda s: (
             -as_float(s.get('winRate'), 0.0),
+            -as_float(s.get('verifiedRate'), 0.0),
             as_int(s.get('avgTokens'), 0),
         )
     )
@@ -218,11 +231,18 @@ def list_auto_route_decisions(limit: int = 20) -> list[dict]:
 
 def best_by_task(days: int = 30, min_samples: int = 3) -> list[dict]:
     """Best model per task type (win-rate desc, tokens asc) — the
-    Reliability dashboard's routing table."""
+    Reliability dashboard's routing table.
+
+    Uses the same outcome-filtered win definition as ``get_suggestions``
+    (refusal / thinking-only / tool-error turns are not wins).
+    """
     try:
         conn = _conn()
         rows = conn.execute(
-            "SELECT task_type, model, provider, SUM(ok) AS wins, COUNT(*) AS total, "
+            "SELECT task_type, model, provider, "
+            "SUM(CASE WHEN ok = 1 AND outcome NOT IN ('refusal', 'thinking_only', 'tool_error') "
+            "        THEN 1 ELSE 0 END) AS wins, "
+            "COUNT(*) AS total, "
             "AVG(input_tokens + output_tokens) AS avg_tokens, AVG(duration_ms) AS avg_duration "
             "FROM routing_evidence WHERE task_type != 'general' "
             "AND created_at > datetime('now', ?) "

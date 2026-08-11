@@ -130,7 +130,6 @@ _TOOL_AGENT: frozenset[str] = frozenset(
         'list_agents',
         'list_daemons',
         'spawn_daemon',
-        'spawn_subagent',
         'spawn_subagents',
         'update_agent',
     }
