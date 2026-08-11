@@ -264,13 +264,13 @@ export function RightDrawerSubagentsSection({
             <div
               key={agent.taskId}
               className="group flex w-full min-w-0 items-center gap-2 border-b border-border/35 py-2 text-left last:border-b-0 hover:bg-white/[0.04]"
-              data-testid={`right-drawer-subagent-${agent.taskId}`}
             >
               <button
                 type="button"
                 onClick={() => selectAgent(agent.taskId)}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 title={agent.goal || agent.agentId}
+                data-testid={`right-drawer-subagent-${agent.taskId}`}
               >
                 <AgentGlyph index={index} status={agent.status} />
                 <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">

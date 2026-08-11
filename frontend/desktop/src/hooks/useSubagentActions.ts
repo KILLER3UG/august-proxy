@@ -1,18 +1,19 @@
 /* ── useSubagentActions ─ stop / stop-all for sub-agent surfaces ──────── */
 /* Shared mutations: per-row Stop (terminate one task) and "Stop all"
  * (terminate every active agent for a session). Both invalidate the runs
- * queries so the rosters and the Runs tab stay in sync. */
+ * queries so the rosters and the Runs tab stay in sync. Uses the app's
+ * exported queryClient (not useQueryClient) so components render in tests
+ * and previews without a QueryClientProvider. */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import * as subagents from '@/api/subagents';
+import { queryClient } from '@/query-client';
 
 export function useSubagentActions() {
-  const qc = useQueryClient();
-
   const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['subagent-runs'] });
-    void qc.invalidateQueries({ queryKey: ['subagent-active'] });
+    void queryClient.invalidateQueries({ queryKey: ['subagent-runs'] });
+    void queryClient.invalidateQueries({ queryKey: ['subagent-active'] });
   };
 
   const stop = useMutation({

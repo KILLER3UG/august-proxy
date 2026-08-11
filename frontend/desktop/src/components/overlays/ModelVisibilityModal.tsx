@@ -45,6 +45,16 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
   const [search, setSearch] = useState('');
   const [internalLoading, setInternalLoading] = useState(false);
 
+  // Escape closes (Phase 4 — modal keyboard coverage).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   useEffect(() => {
     if (open && models.length === 0) {
       setInternalLoading(true);

@@ -18,6 +18,8 @@ export interface SessionListNavProps {
   onNew: () => void;
   onNavigate: (path: string) => void;
   onToggleCollapsed: () => void;
+  /** Current location pathname — the matching nav row gets aria-current. */
+  activePath?: string;
 }
 
 const rowBase =
@@ -27,6 +29,8 @@ const quietRow = cn(
   rowBase,
   "py-1 text-[12.5px] text-sidebar-foreground/50 hover:bg-white/[0.04] hover:text-sidebar-foreground/80",
 );
+
+const activeRow = cn(quietRow, "bg-white/[0.06] text-sidebar-foreground/90");
 
 const primaryRow = cn(
   rowBase,
@@ -80,7 +84,9 @@ export function SessionListNav({
   onNew,
   onNavigate,
   onToggleCollapsed,
+  activePath = '',
 }: SessionListNavProps) {
+  const isActive = (path: string) => activePath.startsWith(path);
   return (
     <div className="august-sidebar-nav pt-1.5 pb-1 px-2 flex flex-col gap-0.5">
       <div className="august-sidebar-brand flex items-center justify-between px-0.5 pb-2">
@@ -116,7 +122,8 @@ export function SessionListNav({
       <motion.button
         type="button"
         onClick={() => onNavigate("/brain")}
-        className={quietRow}
+        className={isActive("/brain") ? activeRow : quietRow}
+        aria-current={isActive("/brain") ? "page" : undefined}
         initial="rest"
         whileHover="hover"
         whileTap="tap"
@@ -132,7 +139,8 @@ export function SessionListNav({
       <motion.button
         type="button"
         onClick={() => onNavigate("/automations")}
-        className={quietRow}
+        className={isActive("/automations") ? activeRow : quietRow}
+        aria-current={isActive("/automations") ? "page" : undefined}
         initial="rest"
         whileHover="hover"
         whileTap="tap"
@@ -148,7 +156,8 @@ export function SessionListNav({
       <motion.button
         type="button"
         onClick={() => onNavigate("/skills")}
-        className={quietRow}
+        className={isActive("/skills") ? activeRow : quietRow}
+        aria-current={isActive("/skills") ? "page" : undefined}
         initial="rest"
         whileHover="hover"
         whileTap="tap"
@@ -164,7 +173,8 @@ export function SessionListNav({
       <motion.button
         type="button"
         onClick={() => onNavigate("/runs")}
-        className={quietRow}
+        className={isActive("/runs") ? activeRow : quietRow}
+        aria-current={isActive("/runs") ? "page" : undefined}
         initial="rest"
         whileHover="hover"
         whileTap="tap"
@@ -180,7 +190,8 @@ export function SessionListNav({
       <motion.button
         type="button"
         onClick={() => onNavigate("/board")}
-        className={quietRow}
+        className={isActive("/board") ? activeRow : quietRow}
+        aria-current={isActive("/board") ? "page" : undefined}
         initial="rest"
         whileHover="hover"
         whileTap="tap"
@@ -191,6 +202,23 @@ export function SessionListNav({
           <Kanban className="size-3.5" />
         </motion.span>
         <span>Board</span>
+      </motion.button>
+
+      <motion.button
+        type="button"
+        onClick={() => onNavigate("/history")}
+        className={isActive("/history") ? activeRow : quietRow}
+        aria-current={isActive("/history") ? "page" : undefined}
+        initial="rest"
+        whileHover="hover"
+        whileTap="tap"
+        variants={rowMotion}
+        data-testid="sidebar-nav-history"
+      >
+        <motion.span className="inline-flex shrink-0 opacity-60" variants={historyIconMotion}>
+          <History className="size-3.5" />
+        </motion.span>
+        <span>History</span>
       </motion.button>
 
     </div>

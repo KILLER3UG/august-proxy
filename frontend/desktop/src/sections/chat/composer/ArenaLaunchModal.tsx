@@ -55,6 +55,15 @@ export function ArenaLaunchModal({
     Array<{ model: string; wins: number; total: number; winRate: number; avgTokens: number }>
   >([]);
 
+  // Escape closes (Phase 4 — modal keyboard coverage).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   useEffect(() => {
     if (!prompt.trim()) {
       setSuggestions([]);

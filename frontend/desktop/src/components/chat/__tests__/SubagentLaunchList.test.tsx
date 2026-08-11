@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/query-client';
 import { SubagentLaunchList } from '../SubagentLaunchList';
 import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
+
+function wrap(ui: React.ReactElement) {
+  return <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>;
+}
 
 vi.mock('@/sections/chat/ChatMarkdown', () => ({
   Markdown: ({ content }: { content: string }) => <div data-testid="md">{content}</div>,
@@ -48,7 +54,9 @@ describe('SubagentLaunchList', () => {
       makeAgent({ jobId: 'j2', task: 'Find empty folder switch bug', status: 'running' }),
     ];
     render(
-      <SubagentLaunchList agents={agents} modelLabel={currentModelLabel} />,
+      wrap(
+        <SubagentLaunchList agents={agents} modelLabel={currentModelLabel} />,
+      ),
     );
 
     expect(screen.getByText('Checked to-do list')).toBeInTheDocument();
@@ -72,7 +80,7 @@ describe('SubagentLaunchList', () => {
         ],
       }),
     ];
-    render(<SubagentLaunchList agents={agents} modelLabel={currentModelLabel} />);
+    render(wrap(<SubagentLaunchList agents={agents} modelLabel={currentModelLabel} />));
 
     fireEvent.click(screen.getByTestId('subagent-launch-row-j1'));
     expect(screen.getByTestId('subagent-expanded-card')).toBeInTheDocument();

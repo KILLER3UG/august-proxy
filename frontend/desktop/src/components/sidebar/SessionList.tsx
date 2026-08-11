@@ -442,6 +442,7 @@ export function SessionList({
           onNew={onNew}
           onNavigate={onNavigate}
           onToggleCollapsed={onToggleCollapsed}
+          activePath={typeof window !== 'undefined' ? window.location.pathname : ''}
         />
 
         {/* Session search — filters titles across Pinned / folders / Other chats */}
