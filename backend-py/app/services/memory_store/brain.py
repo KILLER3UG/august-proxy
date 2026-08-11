@@ -378,7 +378,7 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
                     sql = (
                         f'SELECT {qualifiedCols} FROM {fts} AS fts '
                         f'JOIN {info["table"]} AS t ON fts.rowid = t.rowid '
-                        f'WHERE {fts} MATCH ? ORDER BY rank'
+                        f'WHERE {fts} MATCH ?'
                     )
                     params = [ftsQ]
                 else:
@@ -403,12 +403,18 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
                     whereClauses.append(f'{snake_key} = ?')
                     params.append(val)
         if whereClauses:
-            if 'WHERE' not in sql and 'MATCH' not in sql:
+            if 'MATCH' in sql:
+                # FTS branch: filters append with AND before ORDER BY — the
+                # old code dropped them (with their params) here, so every
+                # tagged FTS query crashed with a bindings mismatch (audit
+                # finding).
+                sql += ' AND ' + ' AND '.join(whereClauses) + ' ORDER BY rank'
+            elif 'WHERE' in sql:
+                sql += ' AND ' + ' AND '.join(whereClauses)
+            else:
                 sql += ' WHERE ' + ' AND '.join(whereClauses)
-            elif 'MATCH' in sql and 'WHERE' in sql:
-                pass
-            elif 'MATCH' not in sql:
-                sql += ' WHERE ' + ' AND '.join(whereClauses)
+        elif 'MATCH' in sql:
+            sql += ' ORDER BY rank'
         sql += f' LIMIT {min(limit, 100)}'
         rows = conn.execute(sql, params).fetchall()
         results = [_row_as_wire(r) for r in rows]

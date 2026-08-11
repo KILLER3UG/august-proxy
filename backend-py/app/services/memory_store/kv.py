@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from typing import cast
 
@@ -66,8 +67,14 @@ def list_memory(pattern: str = '%') -> list[MemoryEntryDict]:
 
 
 def _fts_match_query(query: str) -> str:
-    """Build a safe FTS5 MATCH expression from free text (prefix OR tokens)."""
-    tokens = [w for w in query.strip().split() if w]
+    """Build a safe FTS5 MATCH expression from free text (prefix OR tokens).
+
+    Tokens are split on whitespace AND non-alphanumeric boundaries: the
+    default unicode61 tokenizer indexes ``my note`` as two tokens, so a
+    merged query token like ``my-note`` matched NEITHER and silently fell
+    back to LIKE (audit finding).
+    """
+    tokens = [t for t in re.split(r'[^\w]+', query or '') if t]
     if not tokens:
         return ''
     # Quote tokens so punctuation does not break MATCH parsing.
@@ -107,9 +114,11 @@ def search_memory(query: str, *, limit: int = 20, value_max_chars: int | None = 
             results.append(cast(MemoryEntryDict, {'key': r['key'], 'value': val}))
         return results
     except sqlite3.OperationalError:
-        likeQuery = f'%{query.strip()}%'
+        # Escape LIKE wildcards so `100%` / `my_note` don't over-match.
+        escaped = query.strip().replace('%', r'\%').replace('_', r'\_')
+        likeQuery = f'%{escaped}%'
         rows = conn.execute(
-            'SELECT key, value FROM memory_store WHERE key LIKE ? OR value LIKE ? LIMIT ?',
+            "SELECT key, value FROM memory_store WHERE key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\' LIMIT ?",
             (likeQuery, likeQuery, lim),
         ).fetchall()
         results = []

@@ -36,15 +36,17 @@ def get_fact(factKey: str) -> FactDict | None:
 def search_facts(query: str, category: str = '') -> list[FactDict]:
     """Search facts by key or value."""
     conn = _conn()
-    like = f'%{query}%'
+    # Escape LIKE wildcards so `100%` / `my_note` don't over-match.
+    escaped = (query or '').replace('%', r'\%').replace('_', r'\_')
+    like = f'%{escaped}%'
     if category:
         rows = conn.execute(
-            'SELECT * FROM facts WHERE (fact_key LIKE ? OR fact_value LIKE ?) AND category = ? ORDER BY updated_at DESC LIMIT 20',
+            "SELECT * FROM facts WHERE (fact_key LIKE ? ESCAPE '\\' OR fact_value LIKE ? ESCAPE '\\') AND category = ? ORDER BY updated_at DESC LIMIT 20",
             (like, like, category),
         ).fetchall()
     else:
         rows = conn.execute(
-            'SELECT * FROM facts WHERE fact_key LIKE ? OR fact_value LIKE ? ORDER BY updated_at DESC LIMIT 20',
+            "SELECT * FROM facts WHERE fact_key LIKE ? ESCAPE '\\' OR fact_value LIKE ? ESCAPE '\\' ORDER BY updated_at DESC LIMIT 20",
             (like, like),
         ).fetchall()
     return [cast(FactDict, _row_as_wire(r)) for r in rows]

@@ -1,4 +1,9 @@
 -- 007_auto_memory_provenance.sql
 -- Which conversation produced each auto-memory (provenance loop for the
 -- "what August learned here" surface, mirroring learned_heuristics).
-ALTER TABLE auto_memories ADD COLUMN source_session_id TEXT;
+--
+-- The column itself is ensured by memory_schema.create_extended_tables()
+-- (ensure_column) on every boot — the old unconditional ALTER failed with
+-- "duplicate column name" on any DB that already had the column, and the
+-- runner re-warned + re-ran it on every boot (audit finding). This file now
+-- records the migration version only; schema code owns the DDL.

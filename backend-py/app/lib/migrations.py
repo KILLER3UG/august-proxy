@@ -35,11 +35,29 @@ def _ensure_migration_table(conn: sqlite3.Connection) -> None:
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
+    # Failed migrations are recorded so a permanently-broken DDL (e.g. an
+    # ALTER whose column is already ensured by schema code) is NOT re-run and
+    # re-warned on every boot (audit finding). A migration that failed once
+    # with a partial executescript is never blindly re-executed.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS schema_migration_failures (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            error TEXT,
+            failed_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
 
 
 def _applied_versions(conn: sqlite3.Connection) -> set[int]:
     """Return the set of already-applied migration versions."""
     rows = conn.execute('SELECT version FROM schema_migrations').fetchall()
+    return {row[0] for row in rows}
+
+
+def _failed_versions(conn: sqlite3.Connection) -> set[int]:
+    """Return the set of migration versions that previously failed."""
+    rows = conn.execute('SELECT version FROM schema_migration_failures').fetchall()
     return {row[0] for row in rows}
 
 
@@ -68,11 +86,12 @@ def run_migrations(conn: sqlite3.Connection) -> int:
     """
     _ensure_migration_table(conn)
     applied = _applied_versions(conn)
+    failed = _failed_versions(conn)
     migrations = _discover_migrations()
     newly_applied = 0
 
     for version, name, path in migrations:
-        if version in applied:
+        if version in applied or version in failed:
             continue
         sql = path.read_text(encoding='utf-8')
         try:
@@ -86,8 +105,17 @@ def run_migrations(conn: sqlite3.Connection) -> int:
             logger.info('Applied migration %03d: %s', version, name)
         except Exception as exc:
             logger.warning('Migration %03d (%s) failed: %s', version, name, exc)
+            # Record the failure so this migration is not re-run on every
+            # boot (a partial executescript must not be re-executed blindly).
+            try:
+                conn.execute(
+                    'INSERT OR REPLACE INTO schema_migration_failures (version, name, error) VALUES (?, ?, ?)',
+                    (version, name, str(exc)[:500]),
+                )
+                conn.commit()
+            except Exception:
+                pass
             # Do not re-raise — allow app to start with partial schema.
-            # The migration will be retried on next boot.
             # CONTINUE to later migrations: a failing ALTER (e.g. duplicate
             # column on a DB that already has it) must not block the rest of
             # the chain (007–012) forever (audit finding).

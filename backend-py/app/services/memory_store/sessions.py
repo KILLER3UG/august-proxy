@@ -352,6 +352,15 @@ def delete_session_cascade(
                 children['auto_memories'] = int(cur.rowcount)
         except sqlite3.OperationalError:
             pass
+        # Other auto-memories (e.g. `remembered_*`) keep source_session_id
+        # pointing at the deleted session — null it so folder-scoped listings
+        # (LEFT JOIN sessions) don't silently drop them (audit finding).
+        try:
+            conn.execute(
+                'UPDATE auto_memories SET source_session_id = NULL WHERE source_session_id = ?', (sid,)
+            )
+        except sqlite3.OperationalError:
+            pass
         # Pending skill drafts attributed to this session.
         try:
             cur = conn.execute(

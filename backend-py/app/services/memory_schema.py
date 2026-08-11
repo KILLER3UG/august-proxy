@@ -387,6 +387,21 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     # the project-memories view — ensure it exists on fresh installs (the
     # CREATE TABLE predates the column).
     ensure_column(conn, 'auto_memories', 'source_session_id', 'TEXT')
+    # auto_memories.key must be UNIQUE: saveAutoMemory's check-then-insert was
+    # non-transactional, so concurrent writers inserted twin rows under one
+    # key (audit finding). Dedup any historical twins (keep the OLDEST row)
+    # before the unique index lands.
+    try:
+        conn.execute(
+            """
+            DELETE FROM auto_memories WHERE id NOT IN (
+                SELECT MIN(id) FROM auto_memories GROUP BY key
+            )
+            """
+        )
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_auto_memories_key ON auto_memories(key)')
+    except sqlite3.OperationalError:
+        pass
     ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
     ensure_column(conn, 'usage_events', 'cache_hit_tokens', 'INTEGER DEFAULT 0')
     ensure_column(conn, 'usage_events', 'cache_miss_tokens', 'INTEGER DEFAULT 0')

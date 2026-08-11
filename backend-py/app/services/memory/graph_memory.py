@@ -319,9 +319,19 @@ def addEntity(name: str, entityType: str = 'general', metadata: dict[str, object
         # Cap entities
         count = conn.execute('SELECT COUNT(*) AS c FROM graph_entities').fetchone()['c']
         if int(count) >= _MAXEntities:
-            conn.execute(
-                'DELETE FROM graph_entities WHERE name_key IN (SELECT name_key FROM graph_entities ORDER BY updated_at ASC LIMIT 1)'
-            )
+            victim = conn.execute(
+                'SELECT name_key FROM graph_entities ORDER BY updated_at ASC LIMIT 1'
+            ).fetchone()
+            if victim:
+                vk = victim['name_key']
+                # Cascade: evicting the entity alone left dangling relations/
+                # observations that rendered as dead nodes with raw key names
+                # (audit finding).
+                conn.execute(
+                    'DELETE FROM graph_relations WHERE source_key = ? OR target_key = ?', (vk, vk)
+                )
+                conn.execute('DELETE FROM graph_observations WHERE entity_key = ?', (vk,))
+                conn.execute('DELETE FROM graph_entities WHERE name_key = ?', (vk,))
         ent: dict[str, object] = {
             'name': name,
             'type': entityType or 'general',
@@ -511,15 +521,30 @@ def explore(entityName: str, depth: int = 1) -> dict[str, object]:
     entity = getEntity(entityName)
     if not entity:
         return {'entity': None, 'relations': [], 'related': []}
+    maxDepth = max(0, min(3, int(depth) if str(depth).isdigit() else 1))
     relations = getRelations(entityName)
     key = _safeKey(entityName)
-    related_names: set[str] = set()
+    visited: set[str] = {key}
+    frontier: set[str] = set()
     for r in relations:
-        if _safeKey(as_str(r.get('source'), '')) != key:
-            related_names.add(as_str(r.get('source')))
-        if _safeKey(as_str(r.get('target'), '')) != key:
-            related_names.add(as_str(r.get('target')))
-    related = [e for n in related_names if (e := getEntity(n))]
+        for k in (_safeKey(as_str(r.get('source'), '')), _safeKey(as_str(r.get('target'), ''))):
+            if k and k != key:
+                frontier.add(k)
+    # BFS out to `depth` hops — the depth parameter was previously ignored
+    # (audit finding), so related always stopped at direct neighbors.
+    for _ in range(1, maxDepth):
+        if not frontier:
+            break
+        visited |= frontier
+        next_frontier: set[str] = set()
+        for n in frontier:
+            for r in getRelations(n):
+                for k in (_safeKey(as_str(r.get('source'), '')), _safeKey(as_str(r.get('target'), ''))):
+                    if k and k not in visited:
+                        next_frontier.add(k)
+        frontier = next_frontier
+    visited.discard(key)
+    related = [e for n in sorted(visited) if (e := getEntity(n))]
     return {'entity': entity, 'relations': relations, 'related': related}
 
 

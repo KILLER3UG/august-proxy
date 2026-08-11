@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import sqlite3
 from datetime import datetime, timezone
 
 from app.json_narrowing import as_dict, as_int, as_str
 from app.services.memory_store import get_memory, save_memory
+
+logger = logging.getLogger(__name__)
 
 _MAXMemories = 100
 _AREAS_CATEGORIES = frozenset({'correction', 'learning', 'preference', 'user'})
@@ -104,10 +107,13 @@ def _find_near_dup(conn, content: object, exclude_key: str = '') -> sqlite3.Row 
     """Return the best-matching existing row when ``content`` near-duplicates it.
 
     Update-over-duplicate: refreshing the existing memory (recency + importance)
-    is preferred over inserting a twin.
+    is preferred over inserting a twin. Scans the FULL table — a top-N recency
+    window meant a memory that fell out of the window got a twin instead of a
+    refresh, and dedup degraded exactly as the store filled (audit finding;
+    the store is capped at ~100 rows, so a full scan is cheap).
     """
     rows = conn.execute(
-        f'SELECT {_ROW_COLS} FROM auto_memories ORDER BY updated_at DESC LIMIT 50'
+        f'SELECT {_ROW_COLS} FROM auto_memories ORDER BY updated_at DESC'
     ).fetchall()
     best, best_score = None, 0.0
     for r in rows:
@@ -143,7 +149,12 @@ def _evict_rows(conn, count: int, protect_user: bool) -> list[int]:
     """
     if count <= 0:
         return []
-    where = "WHERE COALESCE(source, '') != 'user' AND COALESCE(pinned, 0) = 0" if protect_user else ''
+    # Pinned memories are protected in BOTH passes — the second (non-user-
+    # protected) pass previously used an empty WHERE and could silently
+    # delete user-added and explicitly pinned memories (audit finding).
+    pinned_clause = 'COALESCE(pinned, 0) = 0'
+    user_clause = "COALESCE(source, '') != 'user'"
+    where = f'WHERE {pinned_clause} AND {user_clause}' if protect_user else f'WHERE {pinned_clause}'
     conn.execute('BEGIN IMMEDIATE')
     try:
         rows = conn.execute(f'SELECT id, importance, updated_at FROM auto_memories {where}').fetchall()
@@ -246,36 +257,63 @@ def saveAutoMemory(
                 return
         except Exception:
             pass
-    existing = conn.execute('SELECT id, source FROM auto_memories WHERE key = ?', (key,)).fetchone()
-    if existing:
-        keep_src = 'user' if _is_user_source(existing['source']) and src != 'user' else src
-        # OR-semantics on pinned: a write never unpins an explicitly pinned memory.
-        conn.execute(
-            'UPDATE auto_memories SET content = ?, importance = ?, category = ?, '
-            'source = ?, pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ?, '
-            'source_session_id = COALESCE(?, source_session_id) WHERE id = ?',
-            (contentJson, importance, category, keep_src, pin, now, session_id or None, existing['id']),
-        )
-    else:
-        dup = _find_near_dup(conn, content, exclude_key=key)
-        if dup is not None:
+    # BEGIN IMMEDIATE: the check-then-write below must be atomic — two
+    # concurrent writers saving the same key both saw "no existing row" and
+    # inserted twins (audit finding; the unique index is the backstop).
+    conn.execute('BEGIN IMMEDIATE')
+    try:
+        existing = conn.execute('SELECT id, source FROM auto_memories WHERE key = ?', (key,)).fetchone()
+        if existing:
+            keep_src = 'user' if _is_user_source(existing['source']) and src != 'user' else src
+            # OR-semantics on pinned: a write never unpins an explicitly pinned memory.
             conn.execute(
-                'UPDATE auto_memories SET importance = MIN(1.0, importance + ?), '
-                'pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ? WHERE id = ?',
-                (_NEAR_DUP_IMPORTANCE_STEP, pin, now, dup['id']),
+                'UPDATE auto_memories SET content = ?, importance = ?, category = ?, '
+                'source = ?, pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ?, '
+                'source_session_id = COALESCE(?, source_session_id) WHERE id = ?',
+                (contentJson, importance, category, keep_src, pin, now, session_id or None, existing['id']),
             )
-            conn.commit()
-            _emit_memory_saved(key, category, importance, src, preview=contentJson[:160])
-            return
-        conn.execute(
-            'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at, source_session_id) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (key, contentJson, category, importance, src, pin, now, now, session_id or None),
-        )
-    # Commit before cap enforcement: _enforce_cap opens its own
-    # BEGIN IMMEDIATE transactions (eviction + episode merge) and must not
-    # find an uncommitted INSERT on this connection.
-    conn.commit()
+        else:
+            dup = _find_near_dup(conn, content, exclude_key=key)
+            if dup is not None:
+                # Update-over-duplicate carries the NEWEST text — previously
+                # only recency/importance were bumped, so an amended or
+                # contradicted fact kept the OLD (now wrong) content with
+                # boosted importance (audit finding).
+                conn.execute(
+                    'UPDATE auto_memories SET content = ?, category = ?, '
+                    'importance = MIN(1.0, importance + ?), '
+                    'pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ?, '
+                    'source_session_id = COALESCE(?, source_session_id) WHERE id = ?',
+                    (contentJson, category, _NEAR_DUP_IMPORTANCE_STEP, pin, now, session_id or None, dup['id']),
+                )
+                conn.commit()
+                _emit_memory_saved(key, category, importance, src, preview=contentJson[:160])
+                return
+            try:
+                conn.execute(
+                    'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at, source_session_id) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (key, contentJson, category, importance, src, pin, now, now, session_id or None),
+                )
+            except sqlite3.IntegrityError:
+                # A concurrent writer inserted the same key between our SELECT
+                # and INSERT (unique index) — update that row instead.
+                conn.execute(
+                    'UPDATE auto_memories SET content = ?, importance = ?, category = ?, '
+                    'source = ?, pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ?, '
+                    'source_session_id = COALESCE(?, source_session_id) WHERE key = ?',
+                    (contentJson, importance, category, src, pin, now, session_id or None, key),
+                )
+        # Commit before cap enforcement: _enforce_cap opens its own
+        # BEGIN IMMEDIATE transactions (eviction + episode merge) and must not
+        # find an uncommitted INSERT on this connection.
+        conn.commit()
+    except Exception:
+        try:
+            conn.execute('ROLLBACK')
+        except sqlite3.OperationalError:
+            pass
+        raise
     _enforce_cap(conn)
     _emit_memory_saved(key, category, importance, src, preview=contentJson[:160])
     try:
@@ -538,65 +576,78 @@ def getRelevantMemories(
                     decay = _decay_factor(r['updated_at'])
                     scored.append((norm * 0.6 + decay * 0.4, r))
                 scored.sort(key=lambda x: x[0], reverse=True)
-                result = []
                 candidates = (
                     [item for item in scored if _is_durable_recall_memory(item[1])]
                     if durable_only
                     else scored
                 )
-                for _, r in candidates[:lim]:
-                    item = _row_as_wire(r)
-                    item.pop('rank', None)
-                    try:
-                        item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                    result.append(enrich_memory_for_model(item))
-                # Hybrid recall: merge top semantic (vector) hits that FTS
-                # missed — different wording should still recall the memory.
-                try:
-                    from app.services.memory.vector_db import search as _vectorSearch
-
-                    vec_hits = _vectorSearch(query, namespace='auto_memory', top_k=max(lim * 2, 8))
-                    seen_ids = {as_int(r.get('id'), 0) for r in result}
-                    added = 0
-                    for hit in vec_hits:
-                        if added >= max(1, lim // 2):
-                            break
-                        meta = as_dict(hit.get('metadata'), {})
-                        key = as_str(meta.get('key'), '')
-                        if not key:
-                            continue
-                        row = conn.execute(
-                            'SELECT id FROM auto_memories WHERE key = ?', (key,)
-                        ).fetchone()
-                        if row is None or as_int(row['id'], 0) in seen_ids:
-                            continue
-                        mrow = conn.execute(
-                            f'SELECT {cols} FROM auto_memories WHERE id = ?', (as_int(row['id'], 0),)
-                        ).fetchone()
-                        if mrow is None:
-                            continue
-                        item = _row_as_wire(mrow)
+                if candidates:
+                    result = []
+                    for _, r in candidates[:lim]:
+                        item = _row_as_wire(r)
+                        item.pop('rank', None)
                         try:
                             item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
                         except (json.JSONDecodeError, TypeError):
                             pass
                         result.append(enrich_memory_for_model(item))
-                        seen_ids.add(as_int(row['id'], 0))
-                        added += 1
-                except Exception:
-                    pass
-                return result
-    except Exception:
-        pass
+                    # Hybrid recall: merge top semantic (vector) hits that FTS
+                    # missed — different wording should still recall the memory.
+                    try:
+                        from app.services.memory.vector_db import search as _vectorSearch
 
-    like = f'%{(query or "").strip()}%'
+                        vec_hits = _vectorSearch(query, namespace='auto_memory', top_k=max(lim * 2, 8))
+                        seen_ids = {as_int(r.get('id'), 0) for r in result}
+                        added = 0
+                        for hit in vec_hits:
+                            if added >= max(1, lim // 2):
+                                break
+                            meta = as_dict(hit.get('metadata'), {})
+                            key = as_str(meta.get('key'), '')
+                            if not key:
+                                continue
+                            row = conn.execute(
+                                'SELECT id FROM auto_memories WHERE key = ?', (key,)
+                            ).fetchone()
+                            if row is None or as_int(row['id'], 0) in seen_ids:
+                                continue
+                            mrow = conn.execute(
+                                f'SELECT {cols} FROM auto_memories WHERE id = ?', (as_int(row['id'], 0),)
+                            ).fetchone()
+                            if mrow is None:
+                                continue
+                            # durable-only recall must not let conversation
+                            # summaries/telemetry back in via the vector path
+                            # (audit finding).
+                            if durable_only and not _is_durable_recall_memory(mrow):
+                                continue
+                            item = _row_as_wire(mrow)
+                            try:
+                                item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                            result.append(enrich_memory_for_model(item))
+                            seen_ids.add(as_int(row['id'], 0))
+                            added += 1
+                    except Exception:
+                        logger.debug('hybrid vector recall failed', exc_info=True)
+                    return result
+                # durable_only filtered EVERY FTS hit out — fall through to the
+                # LIKE fallback below (different text fields may match durable
+                # rows the FTS filter missed; returning [] here skipped it —
+                # audit finding).
+    except Exception:
+        logger.debug('FTS recall failed, falling back to LIKE', exc_info=True)
+
+    # Escape LIKE wildcards in the query so `100%` or `my_note` don't
+    # over-match (audit finding).
+    escaped = (query or '').strip().replace('%', r'\%').replace('_', r'\_')
+    like = f'%{escaped}%'
     if like == '%%':
         return []
     allRows = conn.execute(
         'SELECT id, key, content, category, importance, source, pinned, created_at, updated_at '
-        'FROM auto_memories WHERE key LIKE ? OR content LIKE ? '
+        'FROM auto_memories WHERE key LIKE ? ESCAPE \'\\\' OR content LIKE ? ESCAPE \'\\\' '
         'ORDER BY importance DESC LIMIT ?',
         (like, like, max(lim * 4, 20)),
     ).fetchall()
