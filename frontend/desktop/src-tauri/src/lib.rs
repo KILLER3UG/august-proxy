@@ -35,6 +35,14 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Single-instance guard: a second launch must not attach to the
+            // first instance's backend (quitting either would kill the shared
+            // process mid-request). The guard logs and exits; the first
+            // instance keeps running untouched.
+            if !backend::acquireInstanceLock(app.handle()) {
+                app.handle().exit(0);
+                return Ok(());
+            }
             // Always register supervisor state so restart_proxy can run even
             // when the first spawn attempt fails (missing venv, etc.).
             app.manage(backend::BackendProcess(

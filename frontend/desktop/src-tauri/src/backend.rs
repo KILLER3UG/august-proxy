@@ -172,6 +172,68 @@ fn runtimeStampPath(app: &AppHandle) -> PathBuf {
     runtimeRoot(app).join("runtime.stamp")
 }
 
+// ── Single-instance guard ──────────────────────────────────────────────────
+// A lock file in the AppData tree holds the PID of the owning instance.
+// Without one, two instances (double-click, relaunch before exit) attach to
+// the same backend by design, and quitting either one kills the shared
+// backend mid-request (audit finding). Implemented with a plain lock file +
+// PID liveness probe — no external crate (offline build).
+const INSTANCE_LOCK_NAME: &str = "august.instance.lock";
+
+fn instanceLockPath(app: &AppHandle) -> PathBuf {
+    runtimeRoot(app).join(INSTANCE_LOCK_NAME)
+}
+
+#[cfg(windows)]
+fn processAlive(pid: u32) -> bool {
+    use std::process::Command;
+    let filter = format!("PID eq {}", pid);
+    match Command::new("tasklist").args(["/FI", &filter, "/NH"]).output() {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).contains(&pid.to_string()),
+        Err(_) => false,
+    }
+}
+
+#[cfg(not(windows))]
+fn processAlive(pid: u32) -> bool {
+    use std::process::Command;
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Try to acquire the single-instance lock. Returns true when THIS process
+/// owns it (lock free, stale from a crashed instance, or just created).
+pub fn acquireInstanceLock(app: &AppHandle) -> bool {
+    let path = instanceLockPath(app);
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        if let Ok(pid) = existing.trim().parse::<u32>() {
+            if pid != std::process::id() && processAlive(pid) {
+                log::warn!(
+                    "[backend] single-instance guard: another August instance is running (pid {}) — exiting",
+                    pid
+                );
+                return false;
+            }
+        }
+    }
+    let _ = std::fs::write(&path, std::process::id().to_string());
+    true
+}
+
+/// Remove the lock — only when this process owns it (a crashed instance's
+/// stale lock is reclaimed by the next launch via the liveness check).
+fn releaseInstanceLock(app: &AppHandle) {
+    let path = instanceLockPath(app);
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        if existing.trim() == std::process::id().to_string() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 fn bundledStamp(app: &AppHandle) -> Option<String> {
     resolveResource(app, "backend-runtime.stamp")
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -609,6 +671,7 @@ pub fn stopBackendForUpdate(app: &AppHandle) {
 /// Full backend teardown for app Quit — same kill path as update holdoff.
 pub fn stopBackendOnQuit(app: &AppHandle) {
     stopBackend(app, "quit");
+    releaseInstanceLock(app);
 }
 
 fn stopBackend(app: &AppHandle, reason: &str) {
