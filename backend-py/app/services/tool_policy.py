@@ -24,6 +24,7 @@ _PROMPT_READ = frozenset({
     'desktop_mouse_position', 'desktop_screen_size', 'desktop_screenshot',
     'diagnose_proxy', 'fact_search', 'get_fallback', 'list_aliases',
     'list_directory', 'list_integrations', 'list_mcp_servers', 'memory_search',
+    'pptx_list_elements',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
     'web_fetch_many', 'web_search',
 })
@@ -36,6 +37,7 @@ _PROMPT_WRITE = frozenset({
     'connect_slack', 'install_mcp_server', 'customize_ui', 'enter_plan_mode',
     'submit_plan', 'update_alias', 'update_heuristics', 'update_memory', 'update_state',
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad', 'edit_lines',
+    'pptx_comment',
     'remember',
 })
 

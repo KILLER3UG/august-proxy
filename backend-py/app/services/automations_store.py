@@ -12,12 +12,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Final
 
 from app.atomic_write import write_json_atomic
-from app.json_narrowing import as_bool, as_dict, as_float, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_float, as_int, as_list, as_str
 from app.lib.paths import dataPath
 from app.services.automations_schedule import (
     compute_next_run_at,
@@ -87,7 +88,21 @@ def _load() -> dict[str, dict[str, object]]:
                     d = _normalize_job_dict(d)
                     _jobs[jid] = d
         except Exception:
+            # Automatic recovery from a corrupted index: preserve the file so
+            # nothing is silently lost, then start with an empty store (audit
+            # fix). Previously the corrupt file stayed and every load retried
+            # the failing parse with the automations invisible.
             _jobs = {}
+            try:
+                backup = path.with_name(f'{path.name}.corrupt-{int(time.time())}')
+                path.rename(backup)
+                logger.warning(
+                    'automations: %s was corrupt — backed up to %s and starting with an empty store',
+                    path.name,
+                    backup.name,
+                )
+            except OSError:
+                logger.exception('automations: failed to back up corrupt store %s', path)
     return _jobs
 
 
@@ -153,6 +168,23 @@ def get_job(job_id: str) -> dict[str, object] | None:
     return dict(job) if job else None
 
 
+def _validate_job_payload(job: dict[str, object]) -> None:
+    """Reject partial/invalid creations — a job that can never run is a trap.
+
+    A workbench job without a prompt (or a shell job without a command) used
+    to be created as a silent no-op — a confusing half-state (audit fix:
+    partial creation states behave reliably).
+    """
+    job_type = _normalize_job_type(job.get('jobType') or job.get('type'))
+    prompt = as_str(job.get('prompt') or job.get('task') or job.get('command'))
+    if job_type == 'workbench' and not prompt:
+        raise ValueError('Workbench automations require a prompt (what the agent should do).')
+    if job_type == 'shell' and not (as_str(job.get('command') or job.get('task') or job.get('prompt'))):
+        raise ValueError('Shell automations require a command to run.')
+    if job_type == 'http' and not as_str(job.get('url')):
+        raise ValueError('HTTP automations require a url.')
+
+
 def _merge_upsert(store: dict[str, dict[str, object]], job: dict[str, object]) -> dict[str, object]:
     jid = as_str(job.get('id')) or f'auto_{uuid.uuid4().hex[:10]}'
     existing = store.get(jid) or {}
@@ -196,6 +228,9 @@ def _merge_upsert(store: dict[str, dict[str, object]], job: dict[str, object]) -
         merged['triggerToken'] = as_str(job.get('triggerToken')) or _new_trigger_token()
     merged.pop('job_type', None)
     merged.pop('type', None)
+    # A merged job that can never run (typed job missing its payload) must
+    # fail loudly instead of landing as a silent no-op.
+    _validate_job_payload(merged)
     store[jid] = _normalize_job_dict(merged)
     return dict(store[jid])
 
@@ -243,6 +278,47 @@ async def pause_job(job_id: str, paused: bool = True) -> dict[str, object] | Non
 
 async def resume_job(job_id: str) -> dict[str, object] | None:
     return await pause_job(job_id, paused=False)
+
+
+async def cancel_job_async(job_id: str) -> dict[str, object] | None:
+    """Cancel a running automation (audit fix: cancellation behaves reliably).
+
+    Cancels the background workbench task (``automation_{job_id}``) and marks
+    the job idle with a ``cancelled`` run record. A cancelled task's
+    ``asyncio.CancelledError`` is a BaseException, so the stream consumer's
+    ``except Exception`` does not overwrite the cancelled status.
+    """
+    for t in asyncio.all_tasks():
+        if t.get_name() == f'automation_{job_id}':
+            t.cancel()
+            break
+
+    def mut(store: dict[str, dict[str, object]]) -> dict[str, object] | None:
+        job = store.get(job_id)
+        if not job:
+            return None
+        was_running = as_str(job.get('status')) == 'running'
+        job['status'] = 'idle'
+        job['runningStartedAt'] = None
+        job['updatedAt'] = _now()
+        if was_running:
+            now = _now()
+            append_run_record(
+                job,
+                run_id=f'run_{uuid.uuid4().hex[:10]}',
+                status='cancelled',
+                trigger='manual',
+                started_at=now,
+                finished_at=now,
+                output_snippet='cancelled by user',
+            )
+        return dict(job)
+
+    return await _mutate(mut)  # type: ignore[return-value]
+
+
+def cancel_job(job_id: str) -> dict[str, object] | None:
+    return _run_coro_sync(cancel_job_async(job_id))  # type: ignore[return-value]
 
 
 async def rotate_trigger_token(job_id: str) -> dict[str, object] | None:
@@ -502,6 +578,9 @@ async def _run_workbench_stream(job_id: str, job_snapshot: dict[str, object], *,
             goal=prompt[:500],
             workspacePath=as_str(job_snapshot.get('workspacePath') or job_snapshot.get('cwd')),
             sandboxMode=as_str(job_snapshot.get('sandboxMode')),
+            # Unattended run: skip background review / auto-memory / diff
+            # learning for leaner execution (audit feature).
+            headless=True,
         )
         session_id = sess.id
         # Title for UI
@@ -637,6 +716,19 @@ async def _finish_run(
             job['nextRunAt'] = compute_next_run_at(
                 as_str(job.get('schedule')), as_str(job.get('timezone'))
             )
+        # Run limit reached: auto-disable so the job stops firing, and
+        # surface the state to the UI (audit fix: limits behave reliably).
+        max_runs = as_int(job.get('maxRuns'), 0)
+        if max_runs > 0:
+            completed = [
+                r
+                for r in as_list(job.get('runs'))
+                if isinstance(r, dict) and as_str(r.get('status')) not in ('running', 'cancelled')
+            ]
+            if len(completed) >= max_runs:
+                job['enabled'] = False
+                job['limitReached'] = True
+                job['nextRunAt'] = None
 
     await _mutate(mut)
 
@@ -657,6 +749,18 @@ async def run_job_async(
             return {'status': 'approval_required', 'id': job_id}
         if as_str(job.get('status')) == 'running':
             return {'status': 'ok', 'id': job_id, 'job': dict(job), 'skipped': 'already_running'}
+        # Optional run limit: once `maxRuns` terminal runs have happened the
+        # job is exhausted — don't start another (audit fix: limits behave
+        # reliably).
+        max_runs = as_int(job.get('maxRuns'), 0)
+        if max_runs > 0:
+            completed = [
+                r
+                for r in as_list(job.get('runs'))
+                if isinstance(r, dict) and as_str(r.get('status')) not in ('running', 'cancelled')
+            ]
+            if len(completed) >= max_runs:
+                return {'status': 'limit_reached', 'id': job_id, 'job': dict(job)}
         job_type = _normalize_job_type(job.get('jobType'))
         job['jobType'] = job_type
         snap = dict(job)

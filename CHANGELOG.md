@@ -1,5 +1,24 @@
 # August Proxy — Changelog
 
+## 0.16.1 (2026-08-12)
+
+Release-notes feature pack — new features + reliability fixes across the harness, automations, sessions, and documents.
+
+**New features**
+- **PowerPoint element commenting** — two new workspace-bound tools: `pptx_list_elements` (slides + element ids/names/types/text/positions with stable `cNvPr` ids) and `pptx_comment` (adds an OOXML comment anchored at the selected element's position, author "August"). Hand-rolled `zipfile`+`lxml` — no python-pptx dependency; all five OOXML parts (comment list, author list, content types, presentation + slide rels, `cmAuthorLstIdLst`) are wired and verified by tests.
+- **Headless sessions skip memory extraction** — automation-triggered workbench jobs run leaner: background review, auto-memory sync and diff learning are skipped (sidebar titles still generate); the flag persists across restarts.
+- **GitHub MCP plugin sources** — `install_mcp_server` and `/api/august/tools/manage` accept `owner/repo` (or a github.com URL, optional `#ref`): git clone when git exists, otherwise the codeload tarball is downloaded and extracted over HTTP — public plugin sources install correctly even without Git. Entry-point detection (`dist/index.js` → `index.js` → …) registers the server as `node <entry>` with a best-effort `npm install`.
+
+**Bug fixes**
+- **Compacted usage details restore after restart** — per-turn usage is now attached to the persisted assistant message (the SSE `done` event is volatile, so usage chips vanished on a fresh load) and compaction aggregates the removed region's usage into the summary message.
+- **Corrupted task index auto-recovery** — a corrupt `scheduled-jobs.json` / `automations.json` is backed up to `*.corrupt-<ts>` and the app starts with a clean index instead of silently losing the jobs or re-failing every boot.
+- **Remote sessions resend missed updates after reconnecting** — the per-session SSE event log is now durable (JSONL under `data/event_log/`): after a backend restart, `sinceSeq` replays rehydrate from the file tail with seq continuity, so disconnected sessions catch up instead of losing updates.
+- **Automation cancellation, limits, partial creation** — new `POST /api/automations/{id}/cancel` cancels the background workbench task and records a `cancelled` run; optional `maxRuns` auto-disables a job once the limit is reached (`limitReached` surfaced, further runs refused up-front); typed jobs missing their payload (workbench without a prompt, shell without a command, http without a url) now fail loudly with a 400 instead of landing as silent no-ops.
+- **Provider quota errors stop retrying** — 402 and quota-marked failures (`insufficient_quota`, "payment required", "exceeded your current") are no longer treated as transient, so retries stop burning budget on billing failures (the generic "billing/credits" hint in August's own empty-response error stays retryable).
+- **AI responses consistent across retries** — streamed text is buffered per attempt and flushed only when the attempt succeeds; a failed attempt no longer leaves partial `finalOutput`/`thinking` in the UI before the retry re-streams (no more duplicate/garbled answers).
+
+**Validation:** 16 new tests (OOXML round-trip, tarball install, JSONL replay + torn-line tolerance, quota classification, headless round-trip, corrupt-index recovery, maxRuns/cancel/validation) · full backend suite green.
+
 ## 0.16.0 (2026-08-12)
 
 Full-repo 12-agent audit sweep closed out: 1 CRITICAL + ~18 HIGH + ~30 MED/LOW findings fixed across every layer. Full report: `docs/audit-2026-08/SWEEP-2026-08-11.md`.

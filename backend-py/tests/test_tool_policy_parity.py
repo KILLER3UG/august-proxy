@@ -23,6 +23,7 @@ _ORACLE_READ = frozenset({
     'desktop_mouse_position', 'desktop_screen_size', 'desktop_screenshot',
     'diagnose_proxy', 'fact_search', 'get_fallback', 'list_aliases',
     'list_directory', 'list_integrations', 'list_mcp_servers', 'memory_search',
+    'pptx_list_elements',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
     'web_fetch_many', 'web_search',
 })
@@ -38,6 +39,8 @@ _ORACLE_WRITE = frozenset({
     'remember',
     # Precision line-edit tool (R1).
     'edit_lines',
+    # PPTX commenting (mutating).
+    'pptx_comment',
 })
 _ORACLE_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',

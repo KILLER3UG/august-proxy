@@ -64,6 +64,7 @@ _TOOL_READ: frozenset[str] = frozenset(
         'list_integrations',
         'list_mcp_servers',
         'memory_search',
+        'pptx_list_elements',
         'read_blackboard',
         'read_file',
         'read_files',
@@ -106,6 +107,7 @@ _TOOL_WRITE: frozenset[str] = frozenset(
         'write_files',
         'write_scratchpad',
         'edit_lines',
+        'pptx_comment',
     }
 )
 

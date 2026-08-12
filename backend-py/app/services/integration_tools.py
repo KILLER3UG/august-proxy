@@ -210,19 +210,34 @@ async def installMcpServer(
     transport: str = 'stdio',
     catalog_id: str = '',
     start: bool = True,
+    source: str = '',
 ) -> str:
     """Register (and optionally start) an MCP server from chat.
 
     Examples:
       - command='npx', args=['-y','@modelcontextprotocol/server-filesystem','/tmp']
       - url='http://localhost:3000/mcp', transport='http'
+      - source='owner/repo' (or a github.com URL) — installs a public GitHub
+        plugin: git clone when git exists, otherwise the HTTP tarball, then
+        registers it as `node <entry>` (audit feature: installs even without
+        Git).
     Rare secrets may be passed in env (prefer asking the user to add them in the
     chat UI inline field).
     """
     if not name:
         return _err('name is required.')
+    if source:
+        from app.services import plugin_installer
+
+        installed = await plugin_installer.install_from_github(name, source)
+        if not installed.get('ok'):
+            return _err(as_str(installed.get('error'), 'Plugin install failed.'))
+        command = as_str(installed.get('command'), 'node')
+        args = [as_str(a, '') for a in as_list(installed.get('args'), []) if as_str(a, '')]
+        transport = 'stdio'
+        url = ''
     if not command and not url:
-        return _err("A 'command' (stdio) or 'url' (http/sse) is required.")
+        return _err("A 'command' (stdio), 'url' (http/sse), or 'source' (GitHub) is required.")
     from app.services.tools import mcp_client
 
     try:
@@ -422,6 +437,13 @@ def register() -> None:
                     'type': 'string',
                     'description': 'stdio | http | sse.',
                     'default': 'stdio',
+                },
+                'source': {
+                    'type': 'string',
+                    'description': 'GitHub plugin source (owner/repo or github.com URL, optional #ref). '
+                    'Installs via git clone when git exists, otherwise downloads the tarball — '
+                    'no git binary needed. Registers as `node <entry>`.',
+                    'default': '',
                 },
                 'catalog_id': {'type': 'string', 'description': 'Optional integration-catalog id for UI grouping.', 'default': ''},
                 'start': {'type': 'boolean', 'description': 'Start and discover tools after registering (default true).', 'default': True},

@@ -16,6 +16,7 @@ def register_all() -> None:
         desktop_tools,
         file_tools,
         memory_tools,
+        office_tools,
         skill_tools,
         system_tools,
         web_tools,
@@ -25,6 +26,7 @@ def register_all() -> None:
     file_tools.register()
     web_tools.register()
     desktop_tools.register()
+    office_tools.register()
     memory_tools.register()
     system_tools.register()
     agent_tools.register()

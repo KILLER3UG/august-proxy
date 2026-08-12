@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,8 @@ from app.services.automations_schedule import matches_cron as _matchesCron  # no
 
 _JOBSFile = dataPath('scheduled-jobs.json')
 
+logger = logging.getLogger(__name__)
+
 
 def _jobsPath() -> Path:
     return _JOBSFile
@@ -38,6 +41,20 @@ _tasks: dict[str, asyncio.Task] = {}
 _running = False
 
 
+def _backup_corrupt(path: Path) -> None:
+    """Preserve a corrupt jobs file instead of silently losing it."""
+    try:
+        backup = path.with_name(f'{path.name}.corrupt-{int(time.time())}')
+        path.rename(backup)
+        logger.warning(
+            'scheduler: %s was corrupt — backed up to %s and starting with an empty job index',
+            path.name,
+            backup.name,
+        )
+    except OSError:
+        logger.exception('scheduler: failed to back up corrupt jobs file %s', path)
+
+
 def _loadJobs() -> None:
     p = _jobsPath()
     if not p.exists():
@@ -49,7 +66,11 @@ def _loadJobs() -> None:
                 if j.get('id'):
                     _jobs[j['id']] = j
     except (json.JSONDecodeError, OSError):
-        pass
+        # Automatic recovery: a corrupt task index must not crash startup NOR
+        # silently wipe the jobs — preserve the file and start clean (audit
+        # fix). Previously the corrupt file stayed in place and the jobs were
+        # invisible (the failed read repeated every boot).
+        _backup_corrupt(p)
 
 
 def _saveJobs() -> None:

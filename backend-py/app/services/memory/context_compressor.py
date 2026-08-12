@@ -11,7 +11,7 @@ import inspect
 import os
 from typing import Callable
 
-from app.json_narrowing import as_list, as_str
+from app.json_narrowing import as_int, as_list, as_str
 from app.providers.clients.base import estimateTokens
 
 DEFAULT_HEAD_COUNT = 4
@@ -226,6 +226,26 @@ async def compressMessages(
     if priorSummaryTexts:
         summaryText = 'Earlier summary:\n' + '\n---\n'.join(priorSummaryTexts) + '\n\nRecent summary:\n' + summaryText
     summaryMsg = buildSummaryMessage(middle, summaryText)
+    # Aggregate the compacted region's usage into the summary message so the
+    # conversation's usage details survive compaction AND restart: the SSE
+    # events are volatile, but the persisted summary carries the totals
+    # (audit fix).
+    try:
+        aggIn = 0
+        aggOut = 0
+        for m in middle:
+            u = m.get('usage')
+            if isinstance(u, dict):
+                aggIn += as_int(u.get('inputTokens') or u.get('input_tokens'), 0)
+                aggOut += as_int(u.get('outputTokens') or u.get('output_tokens'), 0)
+        if aggIn > 0 or aggOut > 0:
+            summaryMsg['usage'] = {
+                'inputTokens': aggIn,
+                'outputTokens': aggOut,
+                'compacted': True,
+            }
+    except Exception:
+        pass
     compressed = otherSystem + head + pinned + [summaryMsg] + tail
     compressedTokens = estimateTokens(compressed)
     if compressedTokens >= currentTokens:

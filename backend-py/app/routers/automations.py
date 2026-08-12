@@ -54,6 +54,7 @@ class UpsertBody(CamelModel):
     url: str = ''
     method: str = 'GET'
     body: str = ''
+    max_runs: int = 0
 
 
 class PatchBody(CamelModel):
@@ -67,6 +68,7 @@ class PatchBody(CamelModel):
     model: str | None = None
     model_provider: str | None = None
     agent_id: str | None = None
+    max_runs: int | None = None
 
 
 def _wire(job: dict[str, object], *, include_token: bool = False) -> dict[str, object]:
@@ -97,6 +99,8 @@ def _wire(job: dict[str, object], *, include_token: bool = False) -> dict[str, o
         'status': job.get('status'),
         'lastRunAt': job.get('lastRunAt'),
         'nextRunAt': job.get('nextRunAt'),
+        'maxRuns': job.get('maxRuns') or 0,
+        'limitReached': job.get('limitReached', False),
         'lastOutput': job.get('lastOutput'),
         'sessionId': job.get('sessionId'),
         'runs': job.get('runs') or [],
@@ -143,6 +147,7 @@ async def upsert_automation(body: UpsertBody):
         'url': body.url,
         'method': body.method,
         'body': body.body,
+        'maxRuns': body.max_runs or 0,
     }
     try:
         job = await store.upsert_job_async(payload)
@@ -176,6 +181,8 @@ async def patch_automation(job_id: str, body: PatchBody):
         updates['modelProvider'] = body.model_provider
     if body.agent_id is not None:
         updates['agentId'] = body.agent_id
+    if body.max_runs is not None:
+        updates['maxRuns'] = body.max_runs
     if body.paused is not None and len(updates) == 2:
         job = await store.pause_job(job_id, paused=body.paused)
         if not job:
@@ -246,6 +253,15 @@ async def rotate_token(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail='Automation not found')
     return _wire(job, include_token=True)
+
+
+@router.post('/{job_id}/cancel')
+async def cancel_automation(job_id: str):
+    """Cancel a running automation (background workbench task + status)."""
+    job = await store.cancel_job_async(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail='Automation not found')
+    return _wire(job)
 
 
 @router.delete('/{job_id}')

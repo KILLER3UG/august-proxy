@@ -384,7 +384,7 @@ async def manage_memory(body: ActionBody):
 
 @router.post('/tools/manage')
 async def manage_tools(body: ActionBody):
-    from app.json_narrowing import as_dict, as_list
+    from app.json_narrowing import as_dict, as_list, as_str
     from app.services.tools import mcp_client
 
     action = (body.action or '').lower()
@@ -392,10 +392,25 @@ async def manage_tools(body: ActionBody):
         return {'ok': True, 'tools': mcp_client.listRegisteredServers()}
     if action == 'upsert' and body.name:
         cfg = body.config or {}
+        source = str(cfg.get('source') or '')
+        args: list[str] | None = None
+        if source:
+            # GitHub plugin source: git clone when git exists, else the HTTP
+            # tarball — installs without a git binary (audit feature).
+            from app.services import plugin_installer
+
+            installed = await plugin_installer.install_from_github(body.name, source)
+            if not installed.get('ok'):
+                return {'ok': False, 'error': as_str(installed.get('error'), 'Plugin install failed.')}
+            command = as_str(installed.get('command'), 'node')
+            args = [as_str(a, '') for a in as_list(installed.get('args'), []) if as_str(a, '')]
+        else:
+            command = str(cfg.get('command') or 'true')
+            args = [str(a) for a in as_list(cfg.get('args'), [])] if isinstance(cfg.get('args'), list) else None
         server = mcp_client.registerServer(
             body.name,
-            str(cfg.get('command') or 'true'),
-            args=[str(a) for a in as_list(cfg.get('args'), [])] if isinstance(cfg.get('args'), list) else None,
+            command,
+            args=args,
             env={str(k): str(v) for k, v in as_dict(cfg.get('env'), {}).items()} if isinstance(cfg.get('env'), dict) else None,
         )
         return {'ok': True, 'tool': server}

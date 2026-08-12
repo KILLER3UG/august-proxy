@@ -67,6 +67,10 @@ class WorkbenchSession:
     # Agent mode: '' | 'chat' (text only, tools blocked) | 'agent' (native tool
     # calling) | 'code' (fenced python blocks via the code runner).
     agent_mode: str = ''
+    # Unattended runs (automation-triggered workbench jobs) skip the memory-
+    # extraction side effects (background review, auto-memory sync, diff
+    # learning) for leaner headless execution.
+    headless: bool = False
     createdAt: str = ''
     updatedAt: str = ''
     startedAt: str = ''
@@ -150,6 +154,7 @@ class WorkbenchSession:
             # session-level behavior switch; a restart must not silently
             # re-enable tools in a chat-mode session).
             'agentMode': self.agent_mode,
+            'headless': self.headless,
             'turnCount': self.turnCount,
             'totalInputTokens': self.totalInputTokens,
             'totalOutputTokens': self.totalOutputTokens,
@@ -189,6 +194,7 @@ class WorkbenchSession:
             status=as_str(d.get('status', 'idle')),
             metadata=as_dict(d.get('metadata', {})),
             agent_mode=as_str(d.get('agentMode', '')),
+            headless=as_bool(d.get('headless', False)),
             turnCount=as_int(d.get('turnCount', 0)),
             totalInputTokens=as_int(d.get('totalInputTokens', 0)),
             totalOutputTokens=as_int(d.get('totalOutputTokens', 0)),
@@ -783,11 +789,16 @@ def create_workbench_session(
     sandboxMode: str = '',
     sandboxNetwork: bool | None = None,
     verifierEnforced: bool | None = None,
+    headless: bool = False,
 ) -> WorkbenchSession:
     """Create a new workbench session.
 
     Parameter names keep camelCase for call-site compatibility
     (``createWorkbenchSession(provider=..., agentId=..., guardMode=...)``).
+
+    ``headless`` marks unattended runs (automation-triggered workbench jobs):
+    the turn skips memory-extraction side effects (background review,
+    auto-memory sync, diff learning).
     """
     # Lazy import avoids circular dependency (workbench imports sessions).
     from app.services.workbench.workbench import normalizeGuardMode
@@ -811,6 +822,7 @@ def create_workbench_session(
         createdAt=now,
         updatedAt=now,
         startedAt=now,
+        headless=bool(headless),
     )
     if goal:
         session.goal = goal

@@ -160,6 +160,19 @@ def normalizeGuardMode(mode: str) -> str:
 # ── Model-call retry policy (rate limits & transient upstream failures) ──
 
 _MODEL_RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
+# Quota/billing failures are NOT transient — retrying only repeats the failed
+# attempt and burns budget (audit fix). OpenAI uses 402; gateways commonly
+# report 429 with a quota marker.
+_QUOTA_STATUSES = {402}
+# NOTE: deliberately no bare 'billing' marker — August's own generic hint
+# ("Check API key, billing/credits...") appears in empty-response errors that
+# MUST stay retryable.
+_QUOTA_MARKERS = (
+    'quota',
+    'insufficient_quota',
+    'payment required',
+    'exceeded your current',
+)
 _MODEL_RETRY_MARKERS = (
     'rate limit',
     'rate_limit',
@@ -179,13 +192,21 @@ _MODEL_RETRY_MARKERS = (
 
 
 def _isRetryableModelError(response: dict[str, object]) -> bool:
-    """True when a failed model sub-call is worth retrying (429/5xx/network)."""
+    """True when a failed model sub-call is worth retrying (429/5xx/network).
+
+    Quota/billing failures are never retried: 402, or any message carrying a
+    quota marker, even on a 429 status.
+    """
     if not response.get('error'):
         return False
     status = response.get('errorStatus')
+    if isinstance(status, int) and status in _QUOTA_STATUSES:
+        return False
+    msg = as_str(response.get('error')).lower()
+    if any((m in msg for m in _QUOTA_MARKERS)):
+        return False
     if isinstance(status, int) and status in _MODEL_RETRY_STATUSES:
         return True
-    msg = as_str(response.get('error')).lower()
     return any((marker in msg for marker in _MODEL_RETRY_MARKERS))
 
 
@@ -2837,6 +2858,18 @@ async def _sendWorkbenchMessageStreamImpl(
                     )
             for retryAttempt in range(retryPolicy['maxRetries'] + 1):
                 _llmT0 = time.monotonic()
+                # Buffer streamed text per attempt: a failed attempt must not
+                # leave partial finalOutput/thinking in the UI before the
+                # retry re-streams (duplicate/garbled answers — audit fix).
+                # Non-text events (toolResult, warnings) pass through live.
+                attemptBuffer: list[dict[str, object]] = []
+
+                def _attemptEmit(evt: dict[str, object]) -> None:
+                    if as_str(evt.get('type'), '') in ('finalOutput', 'final_output', 'thinking'):
+                        attemptBuffer.append(evt)
+                    elif emit is not None:
+                        emit(evt)
+
                 with _trace.span('llm_wait', round=toolRound, attempt=retryAttempt):
                     if isAnthropic:
                         response = await _callAnthropicWorkbench(
@@ -2846,7 +2879,7 @@ async def _sendWorkbenchMessageStreamImpl(
                             tools,
                             effectiveEffort,
                             provider=resolvedProvider,
-                            emit=emit,
+                            emit=_attemptEmit,
                             thinking_enabled=thinking_enabled,
                         )
                     elif isOpenai:
@@ -2857,7 +2890,7 @@ async def _sendWorkbenchMessageStreamImpl(
                             openaiTools,
                             effectiveEffort,
                             provider=resolvedProvider,
-                            emit=emit,
+                            emit=_attemptEmit,
                             thinking_enabled=thinking_enabled,
                         )
                     else:
@@ -2867,6 +2900,10 @@ async def _sendWorkbenchMessageStreamImpl(
                 # instead of killing the turn — up to maxRetries, then surface the
                 # error as before.
                 if not _isRetryableModelError(response):
+                    if not response.get('error') and emit is not None:
+                        # Attempt succeeded — flush its buffered stream text.
+                        for evt in attemptBuffer:
+                            emit(evt)
                     break
                 if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():
                     break
@@ -3861,6 +3898,24 @@ async def _sendWorkbenchMessageStreamImpl(
     try:
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
         session.messages = list(currentMessages)
+        # Persist per-turn usage on the last assistant message: the SSE done
+        # event is volatile, so without this the usage chip vanished after a
+        # restart (fresh load from the session blob) — audit fix.
+        try:
+            if totalInputTokens > 0 or totalOutputTokens > 0:
+                for m in reversed(session.messages):
+                    if isinstance(m, dict) and m.get('role') == 'assistant':
+                        m['usage'] = {
+                            'inputTokens': totalInputTokens,
+                            'outputTokens': totalOutputTokens,
+                            'contextTokens': finalContextTokens,
+                            'durationMs': int(totalGenerationMs),
+                            'cacheHitTokens': totalCacheHitTokens,
+                            'cacheMissTokens': totalCacheMissTokens,
+                        }
+                        break
+        except Exception:
+            logger.debug('per-turn usage attach failed', exc_info=True)
         # Keep awaiting_approval if ask-mode left a pending mutation (ApprovalBanner).
         if session.pendingMutations:
             session.status = 'awaiting_approval'
@@ -4265,6 +4320,26 @@ async def _sendWorkbenchMessageStreamImpl(
                     session_id=sessionId,
                 )
             emit(doneEvent)
+    # LLM sidebar title after the first exchange (placeholder titles only).
+    # Runs even for headless sessions — automation runs still deserve a
+    # readable sidebar title.
+    try:
+        from app.services.workbench.title_generator import schedule_auto_title_after_turn
+
+        schedule_auto_title_after_turn(
+            sessionId,
+            list(currentMessages),
+            provider=resolvedProvider,
+            model=resolvedModel or '',
+        )
+    except Exception:
+        logger.debug('schedule auto-title failed for %s', sessionId, exc_info=True)
+    # Headless (unattended) sessions skip the memory-extraction side effects —
+    # background review, auto-memory sync, and diff learning are all LLM work
+    # that exists to build the user model; automation-triggered runs get
+    # leaner without them (audit feature).
+    if getattr(session, 'headless', False):
+        return
     review_model = _backgroundTaskModel('reviewModel', resolvedModel)
     auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
     try:
@@ -4323,18 +4398,6 @@ async def _sendWorkbenchMessageStreamImpl(
         )
     except Exception:
         pass
-    # LLM sidebar title after the first exchange (placeholder titles only).
-    try:
-        from app.services.workbench.title_generator import schedule_auto_title_after_turn
-
-        schedule_auto_title_after_turn(
-            sessionId,
-            list(currentMessages),
-            provider=resolvedProvider,
-            model=resolvedModel or '',
-        )
-    except Exception:
-        logger.debug('schedule auto-title failed for %s', sessionId, exc_info=True)
 
 
 def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]], model: str = '') -> None:
