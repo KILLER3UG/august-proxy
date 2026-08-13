@@ -8,6 +8,7 @@ track harness health over time.
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 import pytest
@@ -353,3 +354,70 @@ async def test_late_stall_hard_stop(monkeypatch):
     assert err is not None
     assert 'did not recover' in str(err.get('message', ''))
     _record('stall-hard-stop', events, extra=str(err.get('message', '')))
+
+
+@pytest.fixture
+def slowProbe():
+    """A registered probe tool that takes long enough for progress beats."""
+
+    async def _slow(**kwargs):
+        await asyncio.sleep(0.35)
+        return 'slow-ok'
+
+    tool_registry.register(
+        'eval_slow',
+        'Slow eval probe tool.',
+        _slow,
+        {'type': 'object', 'properties': {}},
+    )
+    yield 'eval_slow'
+    tool_registry.unregister('eval_slow')
+
+
+@pytest.mark.asyncio
+async def test_generic_tool_heartbeat(monkeypatch, slowProbe):
+    """A slow generic tool emits a start beat plus periodic 'Still working'
+    beats (progress liveness, not just a final result)."""
+    from app.services.workbench import workbench as wb
+
+    monkeypatch.setattr(wb, '_TOOL_HEARTBEAT_INTERVAL_S', 0.05)
+    events, _session = await run_turn(
+        monkeypatch,
+        script=[
+            {'type': 'tool', 'name': 'eval_slow', 'arguments': {}},
+            {'type': 'text', 'text': 'done slow'},
+        ],
+    )
+    messages = [
+        str(e.get('message', '')) for e in events if e.get('type') == 'tool_progress'
+    ]
+    assert any('Running eval_slow' in m for m in messages), messages
+    assert any('Still working on eval_slow' in m for m in messages), messages
+    _record('generic-tool-heartbeat', events)
+
+
+@pytest.mark.asyncio
+async def test_run_command_idle_warning(monkeypatch):
+    """run_command that produces no output warns about the closed stdin after
+    the idle window (the 'may be waiting for interactive input' beat)."""
+    from app.services.workbench import workbench as wb
+
+    monkeypatch.setattr(wb, '_COMMAND_IDLE_BEAT_INTERVAL_S', 0.05)
+    monkeypatch.setattr(wb, '_COMMAND_IDLE_BEAT_MIN_GAP_S', 0.03)
+    events, _session = await run_turn(
+        monkeypatch,
+        script=[
+            {
+                'type': 'tool',
+                'name': 'run_command',
+                'arguments': {'command': 'python -c "import time; time.sleep(0.6)"'},
+            },
+            {'type': 'text', 'text': 'done'},
+        ],
+    )
+    messages = [
+        str(e.get('message', '')) for e in events if e.get('type') == 'tool_progress'
+    ]
+    assert any('interactive input' in m for m in messages), messages
+    assert any('Still working' in m for m in messages), messages
+    _record('run-command-idle-warning', events)

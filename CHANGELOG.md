@@ -1,5 +1,31 @@
 # August Proxy — Changelog
 
+## 0.16.2 (2026-08-13)
+
+Smoothness pass — cheap live markdown, terminal reconnect resume, line-buffered commands, and regression coverage for the cancel/progress paths.
+
+**Live markdown is now incremental (A.1)**
+- While streaming, `ChatMarkdown` splits the growing document at blank-line boundaries (fence-aware), renders every completed block **once** into a cache, and re-parses only the still-growing tail block each flush. Each block is its own keyed element with a cached `dangerouslySetInnerHTML` object, so React skips untouched blocks entirely — the whole-tree re-parse + DOM replace on every ~32ms flush is gone.
+- The settle pass still produces the exact full-markdown parse (with highlight.js colors), so final output is byte-identical to before.
+- **Measured:** growing 17KB stream, 120 flushes — 1373ms (full parse + whole-tree replace) → 249ms (block-cached incremental), **5.5× faster** (`ChatMarkdown.perf.test.tsx`).
+
+**Terminal reconnect no longer duplicates history**
+- Every WS reconnect previously replayed the full session buffer, duplicating the whole transcript under the grey "connection lost" line. The backend now tracks a monotonic `streamLen` and replays only the client's unseen suffix based on the `?offset=` the client sends (code-point counts match Python `len()` even for non-BMP chars; truncation-safe).
+
+**run_command streams C program output (C.2)**
+- `prefix_line_buffering()` wraps simple external commands with `stdbuf -oL -eL` on Unix when available — pip/npm/C progress lines now stream live instead of block-buffering until the command exits. Conservatively skipped for Windows, shell builtins, assignment prefixes, and the bwrap/seatbelt paths.
+
+**New regression coverage** (all previously untested paths)
+- `test_outer_task_cancel_kills_child` — chat Stop's cancel kills the child process, not just the asyncio task.
+- `test_generic_tool_heartbeat` + `test_run_command_idle_warning` — eval-loop tests for the "Running…/Still working…" beats and the closed-stdin warning (heartbeat intervals extracted to constants so tests shrink the windows).
+- `test_ddgs_subprocess_killed_on_timeout` — the isolated DDGS search subprocess is hard-killed on timeout.
+- `test_resume_*` ×5 + `test_append_output_tracks_stream_len_*` — offset-based terminal reconnect math.
+- `test_prefix_line_buffering_*` ×3 — stdbuf wrap/guard decisions.
+- `session-stream-store.test.ts` ×3 — persist debounce coalescing + flush-on-end.
+- `ChatMarkdown` +2 — append-only block rendering and fence-safe splitting.
+
+Status ledger: `docs/SMOOTHNESS_PLAN_STATUS.md`.
+
 ## 0.16.1 (2026-08-12)
 
 Release-notes feature pack — new features + reliability fixes across the harness, automations, sessions, and documents.

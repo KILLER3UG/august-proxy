@@ -191,6 +191,41 @@ print(process_data([{"valid": True, "value": 10}]))
     expect(finalContainer.querySelectorAll('th').length).toBe(2);
   });
 
+  it('appends completed blocks without rewriting earlier blocks as the stream grows (live=true)', () => {
+    const { container, rerender } = render(
+      <Markdown content={'Alpha\n\nBeta'} live={true} />,
+    );
+
+    const paras = container.querySelectorAll('p');
+    expect(paras.length).toBe(2);
+    expect(paras[0].textContent).toBe('Alpha');
+    expect(paras[1].textContent).toBe('Beta');
+    const firstBlockHtml = (paras[0] as HTMLElement).innerHTML;
+    const secondBlockHtml = (paras[1] as HTMLElement).innerHTML;
+
+    // A new paragraph completes; Alpha/Beta blocks must not re-render differently.
+    rerender(<Markdown content={'Alpha\n\nBeta\n\nGamma'} live={true} />);
+
+    const paras2 = container.querySelectorAll('p');
+    expect(paras2.length).toBe(3);
+    expect(paras2[2].textContent).toBe('Gamma');
+    expect((paras2[0] as HTMLElement).innerHTML).toBe(firstBlockHtml);
+    expect((paras2[1] as HTMLElement).innerHTML).toBe(secondBlockHtml);
+  });
+
+  it('keeps a fenced code block intact across blank-line block splits (live=true)', () => {
+    // A blank line INSIDE the fence is code, not a block boundary — the two
+    // code lines must stay in a single <pre>.
+    const content = 'Intro\n\n```js\nconst a = 1;\n\nconst b = 2;\n```';
+
+    const { container } = render(<Markdown content={content} live={true} />);
+
+    expect(container.querySelectorAll('pre').length).toBe(1);
+    expect(container.querySelector('code')?.textContent).toContain('const a = 1;');
+    expect(container.querySelector('code')?.textContent).toContain('const b = 2;');
+    expect(container.querySelector('p')?.textContent).toBe('Intro');
+  });
+
   it('profiles memoized KaTeX rendering cost per flush across repeated stream updates', () => {
     const mathContent = `
 Inline math 1: $E = mc^2$

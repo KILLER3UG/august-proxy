@@ -12,6 +12,7 @@ from app.lib.async_subprocess import (
     communicate_or_kill,
     current_command_output,
     current_subprocess_cancel,
+    prefix_line_buffering,
 )
 
 
@@ -97,3 +98,75 @@ async def test_communicate_or_kill_on_cancel() -> None:
     finally:
         current_subprocess_cancel.reset(token)
         fire.cancel()
+
+
+@pytest.mark.asyncio
+async def test_outer_task_cancel_kills_child() -> None:
+    """Cancelling the *outer* task (chat Stop) must kill the child process,
+    not just abandon it — otherwise the orphan keeps running until its own
+    sleep ends (orphan race regression guard)."""
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        '-c',
+        'import time; time.sleep(30)',
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        stdin=asyncio.subprocess.DEVNULL,
+    )
+    task = asyncio.create_task(communicate_or_kill(proc, timeout=30))
+    await asyncio.sleep(0.1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    # close_process ran during cancellation handling — the child is gone.
+    assert proc.returncode is not None
+
+
+def _with_platform(monkeypatch: pytest.MonkeyPatch, name: str, stdbuf: str | None) -> None:
+    """Point the module's ``os`` binding at a platform shim.
+
+    Patching the real ``os.name`` would break pytest internals (pathlib
+    refuses to instantiate PosixPath on Windows), so the module's os reference
+    is swapped instead — only ``prefix_line_buffering`` reads it here.
+    """
+    import types
+
+    from app.lib import async_subprocess as asp
+
+    monkeypatch.setattr(asp, 'os', types.SimpleNamespace(name=name))
+    monkeypatch.setattr('shutil.which', lambda _n: stdbuf)
+
+
+def test_prefix_line_buffering_applies_to_simple_external_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _with_platform(monkeypatch, 'posix', '/usr/bin/stdbuf')
+    assert prefix_line_buffering('npm install --omit=dev') == 'stdbuf -oL -eL npm install --omit=dev'
+    assert prefix_line_buffering('make -j4') == 'stdbuf -oL -eL make -j4'
+    # Compound lines still work — stdbuf wraps the first external command.
+    assert prefix_line_buffering('make && make install').startswith('stdbuf -oL -eL make')
+
+
+def test_prefix_line_buffering_skips_builtins_and_assignments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _with_platform(monkeypatch, 'posix', '/usr/bin/stdbuf')
+    # Shell builtins have no external binary for stdbuf to exec.
+    assert prefix_line_buffering('cd frontend && npm run build') == 'cd frontend && npm run build'
+    assert prefix_line_buffering('export FOO=1') == 'export FOO=1'
+    assert prefix_line_buffering('for f in *; do echo "$f"; done') == 'for f in *; do echo "$f"; done'
+    # Assignment prefixes and quoted program names would break the wrap.
+    assert prefix_line_buffering('FOO=1 make') == 'FOO=1 make'
+    assert prefix_line_buffering('"my tool" --version') == '"my tool" --version'
+
+
+def test_prefix_line_buffering_unavailable_platforms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Windows: no coreutils semantics — never wrapped.
+    _with_platform(monkeypatch, 'nt', '/usr/bin/stdbuf')
+    assert prefix_line_buffering('npm install') == 'npm install'
+    # macOS / minimal hosts without stdbuf: unchanged.
+    _with_platform(monkeypatch, 'posix', None)
+    assert prefix_line_buffering('npm install') == 'npm install'
+    assert prefix_line_buffering('') == ''
