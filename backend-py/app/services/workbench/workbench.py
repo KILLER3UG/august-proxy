@@ -2880,6 +2880,21 @@ async def _sendWorkbenchMessageStreamImpl(
                         emit(evt)
 
                 with _trace.span('llm_wait', round=toolRound, attempt=retryAttempt):
+                    try:
+                        from app.services.hooks.lifecycle import emit_lifecycle
+                        from app.services.hooks.types import HookEvent as _HookEvent
+
+                        _pre = await emit_lifecycle(
+                            _HookEvent.PRE_MODEL_CALL,
+                            sessionId,
+                            extra={'round': toolRound, 'attempt': retryAttempt},
+                        )
+                        _deny = next((r for r in _pre if r.action == 'deny'), None)
+                        if _deny is not None:
+                            response = {'error': _deny.message or 'PRE_MODEL_CALL denied'}
+                            break
+                    except Exception:
+                        logger.debug('PRE_MODEL_CALL hook failed (non-fatal)', exc_info=True)
                     if isAnthropic:
                         response = await _callAnthropicWorkbench(
                             currentMessages,
@@ -3904,6 +3919,17 @@ async def _sendWorkbenchMessageStreamImpl(
             break
         if clarifySubmittedThisRound:
             break
+    try:
+        from app.services.hooks.lifecycle import emit_lifecycle
+        from app.services.hooks.types import HookEvent as _StopEvent
+
+        await emit_lifecycle(
+            _StopEvent.STOP,
+            sessionId,
+            extra={'rounds': toolRound, 'error': turnError or ''},
+        )
+    except Exception:
+        logger.debug('STOP hook failed (non-fatal)', exc_info=True)
     try:
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
         session.messages = list(currentMessages)
@@ -5550,6 +5576,8 @@ def listProxyCapabilities() -> dict[str, object]:
             'spawn_subagents',
             'spawn_daemon',
             'kill_daemon',
+            'interrupt_subagent',
+            'send_subagent_message',
             'write_blackboard',
             'clear_blackboard',
         }
@@ -5587,7 +5615,7 @@ def listProxyCapabilities() -> dict[str, object]:
             group = 'skill'
         elif name in ('web_fetch', 'web_search'):
             group = 'web'
-        elif name in ('spawn_subagents', 'create_agent', 'list_agents'):
+        elif name in ('spawn_subagents', 'create_agent', 'list_agents', 'list_workstreams', 'send_subagent_message', 'interrupt_subagent'):
             group = 'agent'
         elif name in ('spawn_daemon', 'list_daemons', 'kill_daemon'):
             group = 'daemon'

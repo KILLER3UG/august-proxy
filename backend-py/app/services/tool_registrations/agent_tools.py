@@ -197,6 +197,63 @@ async def _spawnSubagents(
     return json.dumps(result, default=str)
 
 
+async def _listWorkstreams() -> str:
+    import json
+
+    from app.services.workbench.context import currentSessionId
+    from app.services.workstreams import list_workstreams
+
+    sid = currentSessionId.get()
+    if not sid:
+        return 'Error: no active session.'
+    return json.dumps(list_workstreams(sid), default=str)
+
+
+async def _sendSubagentMessage(taskId: str = '', workstream: str = '', message: str = '') -> str:
+    """Steer a running worker, or enqueue a continuation on a named workstream."""
+    from app.services.runtime_services import get_orchestrator
+    from app.services.workbench.context import currentSessionId
+
+    text = (message or '').strip()
+    if not text:
+        return 'Error: message is required.'
+    orch = get_orchestrator()
+    tid = (taskId or '').strip()
+    if tid and orch.enqueueMailbox(tid, text):
+        return f'Steering queued for {tid}. It is injected on the worker\'s next round (does not interrupt the current model call).'
+    if workstream:
+        from app.services.tools.spawn_subagents_tool import executeSpawnSubagents
+        from app.services.workbench import workbench as wb
+        from app.services.workstreams import format_episode_context
+
+        sid = currentSessionId.get()
+        session = wb.getWorkbenchSession(sid)
+        if not session:
+            return 'Error: no active workbench session.'
+        prior = format_episode_context(sid, workstream)
+        result = await executeSpawnSubagents(
+            orch,
+            session,
+            [{'goal': text, 'workstream': workstream, 'context': prior, 'agentId': 'general'}],
+            mode='auto',
+            background=True,
+        )
+        import json
+
+        return json.dumps(result, default=str)
+    return 'Error: unknown taskId and no workstream to continue.'
+
+
+async def _interruptSubagent(taskId: str = '') -> str:
+    from app.services.runtime_services import get_orchestrator
+
+    tid = (taskId or '').strip()
+    if not tid:
+        return 'Error: taskId is required.'
+    ok = await get_orchestrator().terminate(tid)
+    return f'Interrupted {tid}.' if ok else f'Task {tid} not found or already finished.'
+
+
 def register() -> None:
     """Register daemon, blackboard, and subagent tools."""
     tool_registry.register(
@@ -317,6 +374,13 @@ def register() -> None:
                                 'type': 'object',
                                 'description': 'Optional JSON Schema — the sub-agent returns a single JSON object matching it, validated before delivery.',
                             },
+                            'name': {'type': 'string', 'description': 'Workstream/DAG node name.'},
+                            'workstream': {'type': 'string', 'description': 'Persistent thread; resumes from prior episodes.'},
+                            'dependsOn': {'type': 'array', 'items': {'type': 'string'}},
+                            'sourceWorkstreams': {'type': 'array', 'items': {'type': 'string'}},
+                            'acceptanceCriteria': {'type': 'string'},
+                            'stopCondition': {'type': 'string'},
+                            'maxIterations': {'type': 'integer'},
                         },
                         'required': ['goal'],
                     },
@@ -335,5 +399,35 @@ def register() -> None:
                 },
             },
             'required': ['workItems'],
+        },
+    )
+    tool_registry.register(
+        'list_workstreams',
+        'List named workstreams (persistent threads) and their latest episodes for this session.',
+        _listWorkstreams,
+        {'type': 'object', 'properties': {}, 'required': []},
+    )
+    tool_registry.register(
+        'send_subagent_message',
+        'Steer a running sub-agent (queued for its next round) or continue a named workstream with a new worker that sees prior episodes.',
+        _sendSubagentMessage,
+        {
+            'type': 'object',
+            'properties': {
+                'taskId': {'type': 'string', 'description': 'Running sub-agent task id.'},
+                'workstream': {'type': 'string', 'description': 'Named thread to continue if taskId is not running.'},
+                'message': {'type': 'string', 'description': 'Steering instruction or next action.'},
+            },
+            'required': ['message'],
+        },
+    )
+    tool_registry.register(
+        'interrupt_subagent',
+        'Cancel a running sub-agent by taskId. Does not roll back filesystem changes already made.',
+        _interruptSubagent,
+        {
+            'type': 'object',
+            'properties': {'taskId': {'type': 'string'}},
+            'required': ['taskId'],
         },
     )

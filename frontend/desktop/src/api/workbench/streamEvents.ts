@@ -180,6 +180,7 @@ export function dispatchWorkbenchEvent(
         scope: p?.scope as string | undefined,
         depth: Number.isFinite(Number(p?.depth)) ? Number(p.depth) : undefined,
         task: p?.task as string | undefined,
+        workstream: typeof p?.workstream === 'string' ? p.workstream : undefined,
       });
       break;
     case 'subagentDone':
@@ -199,6 +200,7 @@ export function dispatchWorkbenchEvent(
         // `message` (orchestrator path) — surface whichever is present.
         message: (p?.message as string | undefined) ?? (p?.error as string | undefined),
         result: p?.result as string | undefined,
+        workstream: typeof p?.workstream === 'string' ? p.workstream : undefined,
       });
       break;
     case 'subagentProposed':

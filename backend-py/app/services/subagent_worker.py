@@ -37,6 +37,13 @@ async def runSubagent(
     parentOpenaiTools: Callable | None = None,
     emit: Callable[[dict[str, Any]], None] | None = None,
     depth: int = 0,
+    acceptance_criteria: str = '',
+    stop_condition: str = '',
+    max_iterations: int = 0,
+    workstream: str = '',
+    prior_episodes: str = '',
+    woven_sources: str = '',
+    episode_required: bool = False,
 ) -> dict[str, Any]:
     """Run a sub-agent and publish lifecycle events to the bus.
 
@@ -96,6 +103,10 @@ async def runSubagent(
         # — never monkeypatch the module-level toolDefinitions, which races
         # across concurrent workers.
         restrictedNames = set(restrictedTools) if restrictedTools else None
+        try:
+            setattr(session, '_current_subagent_task_id', taskId)
+        except Exception:
+            pass
         subResult = await executeSubAgent(
             session,
             agentId,
@@ -107,6 +118,13 @@ async def runSubagent(
             effort=effort or 'medium',
             model_override=model or '',
             depth=depth,
+            acceptance_criteria=acceptance_criteria,
+            stop_condition=stop_condition,
+            max_iterations=max_iterations,
+            workstream=workstream,
+            prior_episodes=prior_episodes,
+            woven_sources=woven_sources,
+            episode_required=episode_required,
         )
         status = as_str(subResult.get('status'), 'completed')
         if status != 'completed':

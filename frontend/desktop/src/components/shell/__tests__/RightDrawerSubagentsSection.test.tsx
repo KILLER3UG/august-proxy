@@ -8,6 +8,15 @@ vi.mock('@/api/workbench', () => ({
   listWorkbenchSessionAgents: vi.fn(),
 }));
 
+vi.mock('@/api/subagents', () => ({
+  listWorkstreams: vi.fn().mockResolvedValue([]),
+  listWorkstreamEpisodes: vi.fn().mockResolvedValue([]),
+  terminate: vi.fn(),
+  stopAll: vi.fn(),
+  steer: vi.fn(),
+  continueWorkstream: vi.fn(),
+}));
+
 vi.mock('@/components/chat/SubagentTimeline', () => ({
   SubagentTimeline: () => <div data-testid="subagent-timeline">Live subagent timeline</div>,
 }));

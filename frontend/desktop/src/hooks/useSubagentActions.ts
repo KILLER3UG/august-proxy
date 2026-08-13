@@ -14,6 +14,8 @@ export function useSubagentActions() {
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['subagent-runs'] });
     void queryClient.invalidateQueries({ queryKey: ['subagent-active'] });
+    void queryClient.invalidateQueries({ queryKey: ['workstreams'] });
+    void queryClient.invalidateQueries({ queryKey: ['session-agents'] });
   };
 
   const stop = useMutation({
@@ -38,5 +40,32 @@ export function useSubagentActions() {
     onError: (e: Error) => toast.error(e.message || 'Stop-all failed'),
   });
 
-  return { stop, stopAll };
+  const steer = useMutation({
+    mutationFn: ({ taskId, message }: { taskId: string; message: string }) =>
+      subagents.steer(taskId, message),
+    onSuccess: () => {
+      toast.success('Steering queued for the worker’s next round');
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Steer failed'),
+  });
+
+  const continueStream = useMutation({
+    mutationFn: ({
+      sessionId,
+      name,
+      message,
+    }: {
+      sessionId: string;
+      name: string;
+      message: string;
+    }) => subagents.continueWorkstream(sessionId, name, message),
+    onSuccess: () => {
+      toast.success('Continuing workstream');
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Continue failed'),
+  });
+
+  return { stop, stopAll, steer, continueStream };
 }

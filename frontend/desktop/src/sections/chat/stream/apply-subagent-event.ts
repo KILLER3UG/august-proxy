@@ -9,12 +9,12 @@ import { updateSessionStreamState } from './session-stream-store';
 import { appendBlockEvent } from './append-block-event';
 
 export type SubagentStreamEvent =
-  | { type: 'subagentStart'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; goal?: string; depth?: number }
+  | { type: 'subagentStart'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; goal?: string; depth?: number; workstream?: string }
   | { type: 'subagentText'; jobId: string; content?: string }
   | { type: 'subagentRetry'; jobId: string; attempt?: number; maxRetries?: number; message?: string }
   | { type: 'subagentToolCall'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
   | { type: 'subagentToolResult'; jobId: string; id: string; content?: unknown; isError?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
-  | { type: 'subagentDone'; jobId: string; status?: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered'; message?: string; result?: string };
+  | { type: 'subagentDone'; jobId: string; status?: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered' | 'skipped'; message?: string; result?: string; workstream?: string };
 
 /**
  * Returns `true` when the event mutated state so callers can decide
@@ -44,6 +44,7 @@ export function applySubagentEvent(
         scope: event.scope,
         task,
         depth: event.depth,
+        workstream: event.workstream,
         status: 'running',
         startedAt: Date.now(),
         blocks: [],
@@ -64,7 +65,7 @@ export function applySubagentEvent(
       // hiding failures).
       const status = event.status === 'failed' || event.status === 'error' || event.status === 'blocked'
         ? 'failed'
-        : event.status === 'cancelled' ? 'cancelled'
+        : event.status === 'cancelled' || event.status === 'skipped' ? 'cancelled'
         : event.status === 'partial' ? 'partial'
         : event.status === 'recovered' ? 'completed'
         : 'completed';
@@ -167,16 +168,18 @@ export function makeSubagentEventHandlers(sessionId: string): {
     agentId: string;
     parentToolUseId?: string;
     scope?: string;
-    task?: string;
-    goal?: string;
-    depth?: number;
-  }) => void;
-  onSubagentDone: (data: {
-    jobId?: string;
-    status?: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered';
-    message?: string;
-    result?: string;
-  }) => void;
+        task?: string;
+        goal?: string;
+        depth?: number;
+        workstream?: string;
+      }) => void;
+      onSubagentDone: (data: {
+        jobId?: string;
+        status?: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered' | 'skipped';
+        message?: string;
+        result?: string;
+        workstream?: string;
+      }) => void;
   onSubagentText: (data: { jobId?: string; content?: string }) => void;
   onSubagentToolCall: (data: {
     jobId?: string;
@@ -211,6 +214,7 @@ export function makeSubagentEventHandlers(sessionId: string): {
         task: data.task,
         goal: data.goal,
         depth: data.depth,
+        workstream: data.workstream,
       });
     },
     onSubagentDone: (data) => {
@@ -221,6 +225,7 @@ export function makeSubagentEventHandlers(sessionId: string): {
         status: data.status,
         message: data.message,
         result: data.result,
+        workstream: data.workstream,
       });
     },
     onSubagentText: (data) => {

@@ -61,6 +61,7 @@ export type SessionAgentRow = {
   status: string;
   elapsed?: number;
   error?: string;
+  workstream?: string;
 };
 
 export type WorkbenchCheckpoint = {

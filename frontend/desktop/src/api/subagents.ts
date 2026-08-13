@@ -11,6 +11,13 @@ export interface WorkItem {
   model?: string;
   effort?: 'low' | 'medium' | 'high' | 'max';
   yieldSchema?: Record<string, unknown>;
+  name?: string;
+  workstream?: string;
+  dependsOn?: string[];
+  sourceWorkstreams?: string[];
+  acceptanceCriteria?: string;
+  stopCondition?: string;
+  maxIterations?: number;
 }
 
 export interface SpawnRequest {
@@ -28,6 +35,7 @@ export interface SubagentInfo {
   startedAt: number;
   finishedAt?: number;
   elapsed: number;
+  workstream?: string;
 }
 
 export interface SpawnResult {
@@ -87,4 +95,56 @@ export async function proposeBreakdown(
     proposalId,
     approved,
   });
+}
+
+export interface WorkstreamEpisode {
+  seq: number;
+  taskId?: string;
+  status?: string;
+  summary?: string;
+  artifacts?: string[];
+  next?: string;
+  createdAt?: string;
+}
+
+export interface WorkstreamRow {
+  name: string;
+  updatedAt?: string;
+  latest?: WorkstreamEpisode | null;
+}
+
+export async function listWorkstreams(sessionId: string): Promise<WorkstreamRow[]> {
+  const res = await api.get<{ workstreams: WorkstreamRow[] }>(
+    `/api/subagents/workstreams?sessionId=${encodeURIComponent(sessionId)}`,
+  );
+  return res.workstreams ?? [];
+}
+
+export async function listWorkstreamEpisodes(
+  sessionId: string,
+  name: string,
+): Promise<WorkstreamEpisode[]> {
+  const res = await api.get<{ episodes: WorkstreamEpisode[] }>(
+    `/api/subagents/workstreams/${encodeURIComponent(name)}/episodes?sessionId=${encodeURIComponent(sessionId)}`,
+  );
+  return res.episodes ?? [];
+}
+
+/** Queue a follow-up for a running worker's next round. */
+export async function steer(taskId: string, message: string): Promise<{ status: string; taskId: string }> {
+  return api.post(`/api/subagents/${encodeURIComponent(taskId)}/steer`, { message });
+}
+
+/** Spawn a fresh worker on a named workstream (prior episodes injected). */
+export async function continueWorkstream(
+  sessionId: string,
+  name: string,
+  message: string,
+  agentId = 'general',
+): Promise<SpawnResult> {
+  return api.post(
+    `/api/subagents/workstreams/${encodeURIComponent(name)}/continue`,
+    { message, agentId },
+    { 'X-Session-Id': sessionId },
+  );
 }

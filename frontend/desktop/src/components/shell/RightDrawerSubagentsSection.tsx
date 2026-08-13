@@ -14,7 +14,7 @@ import { SubagentTimeline } from '@/components/chat/SubagentTimeline';
 import { useSubagentActions } from '@/hooks/useSubagentActions';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
-import { closeRightDrawerSection } from './RightDrawerState';
+import { WorkstreamsPanel } from '@/components/chat/WorkstreamsPanel';
 
 const ACTIVE_STATUSES = new Set(['pending', 'running']);
 
@@ -60,7 +60,7 @@ export function RightDrawerSubagentsSection({
 }) {
   const [openTaskIds, setOpenTaskIds] = useState<string[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const { stop, stopAll } = useSubagentActions();
+  const { stop, stopAll, steer } = useSubagentActions();
   const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
     useConfirmDialog();
   const subagentBlocks = useSessionStreamStore((state) => {
@@ -223,6 +223,38 @@ export function RightDrawerSubagentsSection({
               Waiting for subagent output…
             </div>
           )}
+          {(selectedBlock?.workstream || selectedApiAgent?.workstream) ? (
+            <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+              workstream {(selectedBlock?.workstream || selectedApiAgent?.workstream)}
+            </p>
+          ) : null}
+          {ACTIVE_STATUSES.has(selectedAgent.status) ? (
+            <form
+              className="mt-3 flex gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                const message = String(fd.get('steer') || '').trim();
+                if (!message) return;
+                steer.mutate({ taskId: selectedTaskId, message });
+                e.currentTarget.reset();
+              }}
+            >
+              <input
+                name="steer"
+                className="min-w-0 flex-1 rounded border border-border/60 bg-background px-2 py-1 text-xs"
+                placeholder="Steer this worker (next round)…"
+                aria-label="Steer subagent"
+              />
+              <button
+                type="submit"
+                disabled={steer.isPending}
+                className="rounded border border-border/60 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                Send
+              </button>
+            </form>
+          ) : null}
         </div>
       </div>
     );
@@ -276,6 +308,11 @@ export function RightDrawerSubagentsSection({
                 <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">
                   {getAgentRoleLabel(agent.agentId) || agent.goal || 'Agent'}
                 </span>
+                {agent.workstream ? (
+                  <span className="max-w-[5rem] shrink-0 truncate font-mono text-[10px] text-muted-foreground/70">
+                    {agent.workstream}
+                  </span>
+                ) : null}
                 <span className="shrink-0 text-xs text-muted-foreground/65">
                   {statusText(agent.status)}
                 </span>
@@ -297,6 +334,8 @@ export function RightDrawerSubagentsSection({
           ))}
         </div>
       )}
+
+      <WorkstreamsPanel sessionId={workbenchSessionId} compact />
 
       {query.isError && (
         <div className="flex items-center gap-1.5 px-2 py-2 text-xs text-destructive/75">

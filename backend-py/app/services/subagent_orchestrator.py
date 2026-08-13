@@ -142,6 +142,7 @@ class SubagentHandle:
         self.error: str = ''
         self.startedAt: float = time.time()
         self.finishedAt: float | None = None
+        self.workstream: str = ''
         self._future: asyncio.Future | None = None
 
     @property
@@ -162,6 +163,7 @@ class SubagentHandle:
             'startedAt': self.startedAt,
             'finishedAt': self.finishedAt,
             'elapsed': self.elapsed,
+            'workstream': self.workstream,
         }
 
 
@@ -196,6 +198,7 @@ class SubagentOrchestrator:
         self._handles: dict[str, SubagentHandle] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._eventHandlers: dict[str, list[Handler]] = {}
+        self._mailboxes: dict[str, list[str]] = {}
         self._closed = False
 
     async def spawn(self, request: SubagentSpawnRequest) -> list[SubagentHandle]:
@@ -225,6 +228,7 @@ class SubagentOrchestrator:
             elif isinstance(request.session, dict):
                 sid = str(request.session.get('id', ''))
             handle = SubagentHandle(taskId, agentId, goal, sessionId=sid)
+            handle.workstream = as_str(item.get('workstream') or item.get('name'), '')
             self._handles[taskId] = handle
             _record_run(handle)
             handles.append(handle)
@@ -240,6 +244,13 @@ class SubagentOrchestrator:
                     effort=effort,
                     model=model,
                     depth=depth,
+                    acceptance_criteria=as_str(item.get('acceptance_criteria') or item.get('acceptanceCriteria'), ''),
+                    stop_condition=as_str(item.get('stop_condition') or item.get('stopCondition'), ''),
+                    max_iterations=as_int(item.get('max_iterations') or item.get('maxIterations'), 0),
+                    workstream=handle.workstream,
+                    prior_episodes=as_str(item.get('prior_episodes') or item.get('priorEpisodes'), ''),
+                    woven_sources=as_str(item.get('woven_sources') or item.get('wovenSources'), ''),
+                    episode_required=bool(item.get('episode_required') or item.get('episodeRequired') or handle.workstream),
                 )
             )
             self._tasks[taskId] = task
@@ -381,6 +392,23 @@ class SubagentOrchestrator:
             except Exception:
                 logger.exception('Subagent event handler failed for %s', event)
 
+    def enqueueMailbox(self, taskId: str, message: str) -> bool:
+        """Queue a steering message for a running worker. Returns False if unknown."""
+        if taskId not in self._handles:
+            return False
+        handle = self._handles[taskId]
+        if handle.status not in ('pending', 'running'):
+            return False
+        text = (message or '').strip()
+        if not text:
+            return False
+        self._mailboxes.setdefault(taskId, []).append(text)
+        return True
+
+    def drainMailbox(self, taskId: str) -> list[str]:
+        msgs = self._mailboxes.pop(taskId, [])
+        return list(msgs)
+
     async def _runWithSlot(
         self,
         handle: SubagentHandle,
@@ -393,6 +421,13 @@ class SubagentOrchestrator:
         effort: str = 'medium',
         model: str = '',
         depth: int = 0,
+        acceptance_criteria: str = '',
+        stop_condition: str = '',
+        max_iterations: int = 0,
+        workstream: str = '',
+        prior_episodes: str = '',
+        woven_sources: str = '',
+        episode_required: bool = False,
     ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         try:
@@ -424,6 +459,13 @@ class SubagentOrchestrator:
                     taskId=handle.taskId,
                     emit=request.emit,
                     depth=depth,
+                    acceptance_criteria=acceptance_criteria,
+                    stop_condition=stop_condition,
+                    max_iterations=max_iterations,
+                    workstream=workstream,
+                    prior_episodes=prior_episodes,
+                    woven_sources=woven_sources,
+                    episode_required=episode_required,
                 )
                 handle.result = result
                 handle.finishedAt = time.time()

@@ -100,6 +100,11 @@ export function SubagentExpandedCard({
           <h3 className="min-w-0 text-[14px] font-semibold tracking-tight text-foreground leading-snug">
             {title}
           </h3>
+          {state.workstream ? (
+            <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
+              {state.workstream}
+            </span>
+          ) : null}
           <div className="flex shrink-0 items-center gap-0.5">
             <button
               type="button"

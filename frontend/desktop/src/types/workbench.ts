@@ -252,6 +252,7 @@ export interface WorkbenchEventHandlers {
     scope?: string;
     depth?: number;
     task?: string;
+    workstream?: string;
   }) => void;
   /** Emitted when a sub-agent finishes. `status` is `completed` / `failed`
    *  / `cancelled` (the last mirrors the parent turn's aborted state). */
@@ -261,6 +262,7 @@ export interface WorkbenchEventHandlers {
     status: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered';
     message?: string;
     result?: string;
+    workstream?: string;
   }) => void;
   /** User-approval proposal from the model (spawn_subagents mode='proposed'). */
   onSubagentProposed?: (data: {

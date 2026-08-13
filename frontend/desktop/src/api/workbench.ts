@@ -357,6 +357,7 @@ export interface SessionAgentRow {
   status: string;
   elapsed?: number;
   error?: string;
+  workstream?: string;
 }
 
 export async function listWorkbenchSessionAgents(sessionId: string): Promise<{

@@ -177,9 +177,8 @@ class TestHookRegistry:
         assert len(calls) == 1
 
     @pytest.mark.asyncio
-    async def test_reserved_noop_events(self, _clean_registry):
-        """SESSION_START / PRE_MODEL_CALL / STOP have no emission call sites —
-        dispatch is a documented no-op, not an error."""
+    async def test_lifecycle_events_dispatch(self, _clean_registry):
+        """SESSION_START / PRE_MODEL_CALL / STOP dispatch to registered handlers."""
         reg = _clean_registry
 
         async def handler(ctx):
@@ -188,7 +187,8 @@ class TestHookRegistry:
         reg.register('reserved', HookEvent.STOP, handler)
         ctx = HookContext(event=HookEvent.STOP, session_id='s1', tool_name='x')
         results = await reg.emit(HookEvent.STOP, ctx)
-        assert results == []
+        assert len(results) == 1
+        assert results[0].action == 'deny'
 
     @pytest.mark.asyncio
     async def test_circuit_breaker(self, _clean_registry):

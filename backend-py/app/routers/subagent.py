@@ -38,6 +38,13 @@ class WorkItem(CamelModel):
     model: str = ''
     effort: str = 'medium'
     yield_schema: dict | None = None
+    name: str = ''
+    workstream: str = ''
+    depends_on: list[str] | None = None
+    source_workstreams: list[str] | None = None
+    acceptance_criteria: str = ''
+    stop_condition: str = ''
+    max_iterations: int = 0
 
 
 class SpawnRequest(CamelModel):
@@ -114,6 +121,13 @@ async def spawnSubagents(body: SpawnRequest, request: Request):
             'model': w.model,
             'effort': w.effort if w.effort in ('low', 'medium', 'high', 'max') else 'medium',
             'yieldSchema': w.yield_schema,
+            'name': w.name,
+            'workstream': w.workstream or w.name,
+            'dependsOn': w.depends_on,
+            'sourceWorkstreams': w.source_workstreams,
+            'acceptanceCriteria': w.acceptance_criteria,
+            'stopCondition': w.stop_condition,
+            'maxIterations': w.max_iterations,
         }
         for w in body.work_items
     ]
@@ -270,3 +284,66 @@ async def listProposals():
         if p['proposalId'] not in seen:
             out.append(p)
     return {'proposals': out}
+
+
+class SteerRequest(CamelModel):
+    message: str
+
+
+class ContinueWorkstreamRequest(CamelModel):
+    message: str
+    agent_id: str = 'general'
+
+
+@router.get('/workstreams')
+async def listWorkstreamsApi(request: Request, sessionId: Optional[str] = None):
+    """Named threads + latest episode for a session (Nac-style dashboard)."""
+    from app.services.workstreams import list_workstreams
+
+    sid = sessionId or request.headers.get('X-Session-Id', '') or ''
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    return {'workstreams': list_workstreams(sid)}
+
+
+@router.get('/workstreams/{name}/episodes')
+async def listWorkstreamEpisodes(name: str, request: Request, sessionId: Optional[str] = None):
+    from app.services.workstreams import list_episodes
+
+    sid = sessionId or request.headers.get('X-Session-Id', '') or ''
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    return {'name': name, 'episodes': list_episodes(sid, name)}
+
+
+@router.post('/{taskId}/steer')
+async def steerSubagent(taskId: str, body: SteerRequest, request: Request):
+    """Queue a steering message for the worker's next round (does not interrupt)."""
+    orch = _getOrchestrator(request)
+    if not orch.enqueueMailbox(taskId, body.message):
+        raise HTTPException(
+            status_code=404,
+            detail=f'Task {taskId} is not running — continue a workstream instead.',
+        )
+    return {'status': 'queued', 'taskId': taskId}
+
+
+@router.post('/workstreams/{name}/continue')
+async def continueWorkstream(name: str, body: ContinueWorkstreamRequest, request: Request):
+    """Spawn a fresh worker on a named thread with prior episodes."""
+    orch = _getOrchestrator(request)
+    session = _getSession(request)
+    sessionId = str(getattr(session, 'id', '') or request.headers.get('X-Session-Id', '') or '')
+    setattr(session, 'id', sessionId)
+    workItems = [
+        {
+            'goal': body.message,
+            'agentId': body.agent_id or 'general',
+            'workstream': name,
+            'name': name,
+        }
+    ]
+    result = await executeSpawnSubagents(
+        orch, session, workItems, mode='auto', emit=_makeEmit(sessionId), background=True
+    )
+    return {**result, 'workstream': name}

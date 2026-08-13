@@ -21,6 +21,7 @@ import { PageLoader } from '@/components/PageLoader';
 import { api } from '@/api/client';
 import * as subagents from '@/api/subagents';
 import { useSessionsStore } from '@/store/sessions';
+import { WorkstreamsPanel } from '@/components/chat/WorkstreamsPanel';
 
 interface RunRecord {
   id: number;
@@ -271,6 +272,12 @@ export function RunsTab() {
               </li>
             ))}
           </ul>
+        </Card>
+      ) : null}
+
+      {launchSessionId ? (
+        <Card className="p-4 md:col-span-2">
+          <WorkstreamsPanel sessionId={launchSessionId} />
         </Card>
       ) : null}
 

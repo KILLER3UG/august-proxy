@@ -259,6 +259,7 @@ export interface SubagentBlockState {
    *  the parent message's blocks. */
   blocks: MessageBlock[];
   error?: string;
+  workstream?: string;
 }
 
 /** Tool progress entry used by the streaming layer. Kept loose (`status`

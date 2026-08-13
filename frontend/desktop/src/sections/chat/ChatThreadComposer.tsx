@@ -31,7 +31,9 @@ import { ComposerMentionsDropdown } from './composer/ComposerMentionsDropdown';
 import { ComposerCommandsDropdown } from './composer/ComposerCommandsDropdown';
 import { ComposerToolbar } from './composer/ComposerToolbar';
 import { ComposerVoiceListening } from './composer/ComposerVoiceListening';
+import { toast } from 'sonner';
 import { useFocusedSubagent } from '@/components/chat/focused-subagent';
+import { steer as steerSubagent } from '@/api/subagents';
 
 export type { ComposerDropdownApi };
 
@@ -166,6 +168,23 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const focusedSubagent = useFocusedSubagent();
+  const sendOrSteer = useCallback(
+    async (textOverride?: string) => {
+      const text = (textOverride ?? input).trim();
+      if (focusedSubagent && text) {
+        try {
+          await steerSubagent(focusedSubagent.jobId, text);
+          toast.success(`Queued for ${focusedSubagent.title} (next round)`);
+          setInput('');
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : 'Steer failed');
+        }
+        return;
+      }
+      return send(textOverride);
+    },
+    [focusedSubagent, input, send, setInput],
+  );
   // Live markdown preview is opt-in — Ctrl/Cmd+Shift+P toggles it.
   const [showPreview, setShowPreview] = useState(false);
   useEffect(() => {
@@ -185,7 +204,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     setInput,
     taRef,
     dropdownApiRef,
-    send,
+    send: sendOrSteer,
     stop,
     streaming,
     sessionId,
@@ -381,7 +400,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           attachmentsCount={readyAttachmentsCount ?? attachments.length}
           attachmentsReading={attachmentsReading}
           streaming={streaming}
-          send={send}
+          send={sendOrSteer}
           stop={stop}
           setMessages={setMessages}
           ensureWorkbenchSession={ensureWorkbenchSession}

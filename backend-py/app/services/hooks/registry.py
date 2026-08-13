@@ -31,11 +31,7 @@ _HOOK_TIMEOUT_S = 5.0
 _BREAKER_THRESHOLD = 3
 _BREAKER_COOLDOWN_S = 60.0
 
-# Events with no emission call site anywhere in the app (workbench emits only
-# PRE_TOOL_USE / POST_TOOL_USE). Dispatch of these is a debug-logged no-op.
-_RESERVED_NOOP_EVENTS = frozenset(
-    {HookEvent.SESSION_START, HookEvent.PRE_MODEL_CALL, HookEvent.STOP}
-)
+# All HookEvent values have workbench/session emission call sites.
 
 
 @dataclass
@@ -125,12 +121,6 @@ class HookRegistry:
 
         Short-circuits on first 'deny'. Applies 'modify' chaining.
         """
-        if event in _RESERVED_NOOP_EVENTS:
-            # Reserved events: no emission call sites exist yet (the workbench
-            # owns the lifecycle), so dispatch is a documented no-op. Hook
-            # registrations for these events stay inert until call sites land.
-            logger.debug('Hook event %s has no emission call site — no-op', event.value)
-            return []
         results: list[HookResult] = []
         tool = ctx.tool_name or ''
 
@@ -187,7 +177,7 @@ class HookRegistry:
             entry.record_duration(elapsed_ms)
             entry.consecutive_timeouts = 0
             logger.error('Hook %s raised: %s', entry.name, exc)
-            if entry.event == HookEvent.PRE_TOOL_USE:
+            if entry.event in (HookEvent.PRE_TOOL_USE, HookEvent.PRE_MODEL_CALL):
                 # Fail-CLOSED for PRE events: pre-tool hooks are security
                 # guards (secret_guard, sensitive_code), so a broken handler
                 # must not silently allow a credential write. Surface the

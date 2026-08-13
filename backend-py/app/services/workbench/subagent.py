@@ -12,6 +12,7 @@ emitted to the parent session's SSE stream as ``subagent_*`` events.
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from typing import Callable, cast
 
@@ -27,6 +28,8 @@ from app.services.tools.agent_registry import (
 )
 from app.services.workbench.context import currentSessionId
 
+logger = logging.getLogger(__name__)
+
 # A provider call that never returns must not hang the worker (and with it
 # a semaphore slot) forever. Timeouts surface as retryable 503s, then the
 # worker fails per the retry policy.
@@ -38,7 +41,8 @@ SUBAGENT_MODEL_TIMEOUT_S = 240
 # management tools (create_agent / set_agent_mode) are also blocked: a
 # sub-agent must not mutate the agent registry or switch its own mode.
 SUBAGENT_BLOCKED_TOOLS = frozenset(
-    {'spawn_subagent', 'spawn_subagents', 'create_agent', 'set_agent_mode'}
+    {'spawn_subagent', 'spawn_subagents', 'create_agent', 'set_agent_mode',
+     'interrupt_subagent', 'send_subagent_message'}
 )
 
 # In-flight sub-agent tasks per session. Orchestrator workers are tracked by
@@ -135,6 +139,13 @@ async def executeSubAgent(
     effort: str = 'medium',
     model_override: str = '',
     depth: int = 0,
+    acceptance_criteria: str = '',
+    stop_condition: str = '',
+    max_iterations: int = 0,
+    workstream: str = '',
+    prior_episodes: str = '',
+    woven_sources: str = '',
+    episode_required: bool = False,
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``.
 
@@ -147,7 +158,10 @@ async def executeSubAgent(
     as parsed JSON when it matches. ``effort`` maps to the reasoning/thinking
     budget (default 'medium'); ``model_override`` pins the model instead of
     the agent alias / smol role routing. ``depth`` is the runtime recursion
-    depth (spawner threads it; root spawns are 0).
+    depth (spawner threads it; root spawns are 0). Goal-contract fields
+    (acceptance_criteria, stop_condition, max_iterations) and workstream
+    episode context are optional; when ``episode_required`` the final answer
+    must match the default episode JSON schema.
     """
     from app.providers.model_resolver import resolve_or_fallback
     from app.providers.route_resolver import resolve_for_model
@@ -210,6 +224,27 @@ async def executeSubAgent(
         job = createJob(resolvedAgentId, goal, context)
         jobId = as_str(job['id'])
         updateJob(jobId, {'status': 'running'})
+
+    def _commit_episode(status: str, text: str, task_key: str = '') -> None:
+        if not workstream:
+            return
+        try:
+            from app.services.workstreams import append_episode, parse_episode_payload
+
+            sid = str(getattr(session, 'id', '') or '')
+            parsed = parse_episode_payload(text, status_fallback=status)
+            append_episode(
+                sid,
+                workstream,
+                task_id=task_key or jobId,
+                status=parsed['status'] if parsed['status'] in ('completed', 'blocked', 'partial') else status,
+                summary=parsed['summary'],
+                artifacts=parsed['artifacts'],
+                next_action=parsed['next'],
+                raw_json=parsed['raw_json'],
+            )
+        except Exception:
+            logger.debug('workstream episode persist failed', exc_info=True)
 
     # NOTE: automatic git-worktree isolation is intentionally NOT performed
     # here. Tool dispatch resolves paths against the parent session's
@@ -325,12 +360,21 @@ async def executeSubAgent(
         )
     except Exception:
         caps = ''
+    from app.services.workstreams import DEFAULT_EPISODE_SCHEMA, episode_prompt, goal_contract_prompt
+
+    contract = goal_contract_prompt(acceptance_criteria, stop_condition, max_iterations)
+    require_episode = bool(episode_required or workstream)
+    if require_episode and not yield_schema:
+        yield_schema = DEFAULT_EPISODE_SCHEMA
     systemText = (
         f'{agentCtx}\n\n'
         'You are a focused sub-agent. Complete the assigned goal using the available tools, '
-        'then return a concise final answer. Do not spawn further sub-agents.\n\n'
+        'then return a concise episode handoff. Do not spawn further sub-agents.\n\n'
         f'{caps}'
     )
+    if contract:
+        systemText += f'\n\n{contract}'
+    systemText += f'\n\n{episode_prompt(require_episode)}'
     isAnthropic = _isAnthropicProvider(provider)
     isOpenai = _isOpenaiProvider(provider)
 
@@ -358,9 +402,14 @@ async def executeSubAgent(
             'The parent agent reads your result programmatically, so every field the '
             'schema requires must be present and correctly typed.'
         )
-    messages: list[dict[str, object]] = [
-        {'role': 'user', 'content': f'Goal: {goalText}\n\nContext: {context}' if context else f'Goal: {goalText}'}
-    ]
+    user_parts = [f'Goal: {goalText}']
+    if prior_episodes:
+        user_parts.append(prior_episodes)
+    if woven_sources:
+        user_parts.append(woven_sources)
+    if context:
+        user_parts.append(f'Context: {context}')
+    messages: list[dict[str, object]] = [{'role': 'user', 'content': '\n\n'.join(user_parts)}]
     finalText = ''
     token = currentSessionId.set(getattr(session, 'id', 'default'))
     _subagentTask = _register_current_subagent(getattr(session, 'id', '') or '')
@@ -370,6 +419,12 @@ async def executeSubAgent(
         # transient 429/5xx must not kill the agent outright.
         retryPolicy = _modelRetryPolicy()
         managedToolLoopCap = _managedToolLoopCap()
+        if max_iterations > 0:
+            managedToolLoopCap = (
+                max_iterations
+                if managedToolLoopCap <= 0
+                else min(managedToolLoopCap, max_iterations)
+            )
         # Same malformed-JSON discipline as the parent loop: consecutive
         # invalid tool arguments must never execute as a phantom arg.
         subInvalidCount = 0
@@ -390,6 +445,18 @@ async def executeSubAgent(
         capReached = False
         while True:
             toolRound += 1
+            try:
+                from app.services.runtime_services import get_orchestrator
+
+                orch = get_orchestrator()
+                tid = as_str(getattr(session, '_current_subagent_task_id', ''), '')
+                inbox = orch.drainMailbox(tid) if tid else []
+                for note in inbox:
+                    messages.append(
+                        {'role': 'user', 'content': f'[STEER / parent message]\n{note}'}
+                    )
+            except Exception:
+                pass
             # 0 = unlimited (same default as main workbench loop)
             if managedToolLoopCap > 0 and toolRound > managedToolLoopCap:
                 capReached = True
@@ -699,6 +766,7 @@ async def executeSubAgent(
                         'isFallback': isFallback,
                     }
                 )
+            _commit_episode(capStatus, capResult)
             return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': capStatus, 'error': capErr, 'result': capResult}
         # Schema-validated yields (Oh My Pi lesson): when a yield_schema was
         # requested, parse the final text as JSON and validate it before
@@ -766,6 +834,7 @@ async def executeSubAgent(
                         'isFallback': isFallback,
                     }
                 )
+            _commit_episode('blocked', resultText)
             return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'failed', 'error': yieldErr, 'result': resultText}
         updateJob(jobId, {'status': 'completed', 'result': resultText[:2000]})
         if emit:
@@ -779,6 +848,7 @@ async def executeSubAgent(
                     'isFallback': isFallback,
                 }
             )
+        _commit_episode('completed', resultText)
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'completed', 'result': resultText}
     except Exception as exc:
         updateJob(jobId, {'status': 'failed', 'error': str(exc)})

@@ -846,6 +846,12 @@ def create_workbench_session(
         session.title = str(task)[:120]
     _emit_session_status(session_id)
     notify_session_created(session)
+    try:
+        from app.services.hooks.lifecycle import fire_session_start
+
+        fire_session_start(session_id)
+    except Exception:
+        pass
     return session
 
 

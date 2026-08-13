@@ -97,6 +97,36 @@ TOOL_DEFINITION = {
                             ),
                         },
                         'context': {'type': 'string', 'description': 'Additional context for the sub-agent.'},
+                        'name': {
+                            'type': 'string',
+                            'description': 'Workstream name for this item (DAG target). Created if new.',
+                        },
+                        'workstream': {
+                            'type': 'string',
+                            'description': 'Named persistent thread. Resume injects prior episodes.',
+                        },
+                        'dependsOn': {
+                            'type': 'array',
+                            'items': {'type': 'string'},
+                            'description': 'Same-batch workstream names that must finish first.',
+                        },
+                        'sourceWorkstreams': {
+                            'type': 'array',
+                            'items': {'type': 'string'},
+                            'description': 'Threads whose latest episode is woven into this worker.',
+                        },
+                        'acceptanceCriteria': {
+                            'type': 'string',
+                            'description': 'What done means. Injected as a GOAL CONTRACT.',
+                        },
+                        'stopCondition': {
+                            'type': 'string',
+                            'description': 'When to give up and report blocked.',
+                        },
+                        'maxIterations': {
+                            'type': 'integer',
+                            'description': 'Hard cap on tool rounds for this worker.',
+                        },
                     },
                     'required': ['goal'],
                 },
@@ -536,35 +566,75 @@ async def _doSpawn(
     emit: Any | None = None,
     background: bool = True,
 ) -> dict[str, Any]:
-    """Spawn sub-agents; optionally wait or return after dispatch."""
-    request = SubagentSpawnRequest(
-        session=session,
-        workItems=[
-            {
-                'goal': item.get('goal', ''),
-                'agentId': item.get('agentId', 'general'),
-                'restrictedTools': item.get('restrictedTools'),
-                'yieldSchema': item.get('yieldSchema'),
-                'effort': item.get('effort', 'medium'),
-                'model': item.get('model', ''),
-                'context': item.get('context', ''),
-            }
-            for item in workItems
-        ],
-        mode='auto',
-        emit=emit,
+    """Spawn sub-agents; optionally wait or return after dispatch.
+
+    Work items may form a DAG via ``dependsOn`` / same-batch ``sourceWorkstreams``.
+    Independent items in a wave run in parallel; the next wave waits.
+    """
+    from app.services.workstreams import (
+        WorkstreamError,
+        format_episode_context,
+        item_name,
+        plan_waves,
+        weave_sources,
     )
-    handles = await orchestrator.spawn(request)
-    dispatch = [
-        {
-            'taskId': h.taskId,
-            'agentId': h.agentId,
-            'goal': h.goal,
-            'status': h.status,
-        }
-        for h in handles
-    ]
-    if emit:
+
+    sid = _session_id(session)
+    try:
+        waves = plan_waves(workItems)
+    except WorkstreamError as exc:
+        return {'status': 'error', 'error': str(exc)}
+
+    def _enrich(item: dict[str, Any], index_hint: int = 0) -> dict[str, Any]:
+        enriched = dict(item)
+        ws = as_str(item.get('workstream') or item.get('name'), '')
+        if ws and sid:
+            prior = format_episode_context(sid, ws)
+            if prior:
+                enriched['prior_episodes'] = prior
+            enriched['workstream'] = ws
+            enriched['episode_required'] = True
+        sources = [as_str(s, '') for s in (item.get('sourceWorkstreams') or []) if s]
+        if sources and sid:
+            woven = weave_sources(sid, sources)
+            if woven:
+                enriched['woven_sources'] = woven
+        if not as_str(enriched.get('name'), '') and ws:
+            enriched['name'] = ws
+        return enriched
+
+    async def _spawn_wave(items: list[dict[str, Any]]) -> list:
+        request = SubagentSpawnRequest(
+            session=session,
+            workItems=[
+                {
+                    'goal': item.get('goal', ''),
+                    'agentId': item.get('agentId', 'general'),
+                    'restrictedTools': item.get('restrictedTools'),
+                    'yieldSchema': item.get('yieldSchema'),
+                    'effort': item.get('effort', 'medium'),
+                    'model': item.get('model', ''),
+                    'context': item.get('context', ''),
+                    'acceptance_criteria': item.get('acceptance_criteria') or item.get('acceptanceCriteria') or '',
+                    'stop_condition': item.get('stop_condition') or item.get('stopCondition') or '',
+                    'max_iterations': item.get('max_iterations') or item.get('maxIterations') or 0,
+                    'workstream': item.get('workstream') or item.get('name') or '',
+                    'name': item.get('name') or item.get('workstream') or '',
+                    'prior_episodes': item.get('prior_episodes') or '',
+                    'woven_sources': item.get('woven_sources') or '',
+                    'episode_required': bool(item.get('episode_required') or item.get('workstream') or item.get('name')),
+                    'skills': item.get('skills') or [],
+                }
+                for item in items
+            ],
+            mode='auto',
+            emit=emit,
+        )
+        return await orchestrator.spawn(request)
+
+    def _emit_starts(handles: list) -> None:
+        if not emit:
+            return
         try:
             from app.services.workbench.context import currentToolUseId
 
@@ -578,37 +648,91 @@ async def _doSpawn(
                     'jobId': h.taskId,
                     'agentId': h.agentId,
                     'task': h.goal,
+                    'workstream': getattr(h, 'workstream', '') or None,
                     'parentToolUseId': parentToolUseId or None,
                 }
             )
 
-    if background:
-        # Watch completions without blocking the parent tool result.
-        async def _watch() -> None:
-            try:
-                async for result in orchestrator.waitForEach(handles):
+    failed_names: set[str] = set()
+
+    async def _run_all_waves() -> list[dict[str, Any]]:
+        all_results: list[dict[str, Any]] = []
+        for wave in waves:
+            runnable: list[dict[str, Any]] = []
+            for item in wave:
+                try:
+                    nm = item_name(item, 0)
+                except WorkstreamError:
+                    nm = ''
+                deps = [str(d) for d in (item.get('dependsOn') or [])]
+                sources = [str(s) for s in (item.get('sourceWorkstreams') or [])]
+                if any(d in failed_names for d in deps + sources):
+                    skipped = {
+                        'taskId': '',
+                        'agentId': item.get('agentId', 'general'),
+                        'goal': item.get('goal', ''),
+                        'status': 'skipped',
+                        'error': 'Skipped because a same-batch source/dependency failed.',
+                    }
+                    all_results.append(skipped)
+                    if nm:
+                        failed_names.add(nm)
                     if emit:
                         emit(
                             {
                                 'type': 'subagentDone',
-                                'jobId': result.get('taskId'),
-                                'status': result.get('status'),
-                                'result': _doneResultText(result),
-                                'message': result.get('error') or '',
+                                'jobId': '',
+                                'status': 'skipped',
+                                'result': '',
+                                'message': skipped['error'],
                             }
                         )
+                    continue
+                runnable.append(_enrich(item))
+            if not runnable:
+                continue
+            handles = await _spawn_wave(runnable)
+            _emit_starts(handles)
+            async for result in orchestrator.waitForEach(handles):
+                all_results.append(result)
+                st = str(result.get('status') or '')
+                ws = ''
+                hid = result.get('taskId')
+                h = orchestrator.getHandle(str(hid)) if hid else None
+                if h is not None:
+                    ws = h.workstream
+                if not ws:
+                    ws = as_str(result.get('workstream'), '')
+                if st in ('failed', 'error', 'cancelled') and ws:
+                    failed_names.add(ws)
+                if emit:
+                    emit(
+                        {
+                            'type': 'subagentDone',
+                            'jobId': result.get('taskId'),
+                            'status': result.get('status'),
+                            'result': _doneResultText(result),
+                            'message': result.get('error') or '',
+                            'workstream': ws or None,
+                        }
+                    )
+                if background:
                     _enqueue_completion(session, result)
+            # Re-enrich later waves with newly committed episodes
+        return all_results
+
+    if background:
+        import asyncio
+
+        async def _watch() -> None:
+            try:
+                await _run_all_waves()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception('background subagent watch failed')
 
-        import asyncio
-
         watch_task = asyncio.create_task(_watch())
-        # Track per parent session so the delete path can cancel the watcher
-        # (it would otherwise keep enqueuing completions into a dead session).
-        sid = _session_id(session)
         if sid:
             _session_watch_tasks.setdefault(sid, set()).add(watch_task)
             watch_task.add_done_callback(
@@ -616,40 +740,25 @@ async def _doSpawn(
             )
         return {
             'status': 'started',
-            'total': len(handles),
+            'total': len(workItems),
             'background': True,
-            'handles': dispatch,
+            'waves': len(waves),
+            'handles': [{'goal': it.get('goal', ''), 'name': as_str(it.get('name') or it.get('workstream'), '')} for it in workItems],
             'message': (
-                f'Dispatched {len(handles)} subagent(s). Each completion will be delivered '
-                'to you individually as it finishes — do not poll; continue other work or wait.'
+                f'Dispatched {len(workItems)} subagent(s) in {len(waves)} wave(s). '
+                'Each completion is an episode handoff — do not expect tool traces.'
             ),
         }
 
-    # Blocking: still emit incrementally as each settles, then return join.
-    # No _enqueue_completion here — the joined results are already the tool
-    # result; enqueuing them too would inject a duplicate [SUBAGENT_COMPLETE]
-    # block into the next round.
-    results: list[dict[str, Any]] = []
-    async for result in orchestrator.waitForEach(handles):
-        results.append(result)
-        if emit:
-            emit(
-                {
-                    'type': 'subagentDone',
-                    'jobId': result.get('taskId'),
-                    'status': result.get('status'),
-                    'result': _doneResultText(result),
-                    'message': result.get('error') or '',
-                }
-            )
-
-    succeeded = sum((1 for r in results if r['status'] == 'completed'))
-    failed = sum((1 for r in results if r['status'] in ('failed', 'error')))
+    results = await _run_all_waves()
+    succeeded = sum((1 for r in results if r.get('status') == 'completed'))
+    failed = sum((1 for r in results if r.get('status') in ('failed', 'error', 'skipped')))
     return {
         'status': 'completed' if failed == 0 else 'partial' if succeeded > 0 else 'failed',
         'total': len(results),
         'succeeded': succeeded,
         'failed': failed,
         'background': False,
+        'waves': len(waves),
         'results': results,
     }
