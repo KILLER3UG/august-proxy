@@ -94,6 +94,48 @@ def agent_subprocess_kwargs(*, cwd: str | None = None) -> dict[str, Any]:
     return kwargs
 
 
+# Shell builtins / control keywords with no external binary that stdbuf could
+# exec — wrapping these with `stdbuf -oL -eL` would fail the command.
+_SHELL_BUILTIN_WORDS = {
+    'cd', 'export', 'source', 'alias', 'unset', 'set', 'read', 'shift',
+    'trap', 'ulimit', 'umask', 'wait', 'jobs', 'fg', 'bg', 'history',
+    'pushd', 'popd', 'dirs', 'declare', 'local', 'eval', 'exec', 'return',
+    'times', 'for', 'while', 'until', 'if', 'case', 'function', 'select',
+    'let', 'break', 'continue', 'exit', 'logout',
+}
+
+
+def prefix_line_buffering(command: str) -> str:
+    """Wrap a simple external command with ``stdbuf -oL -eL`` when available.
+
+    Python children are already unbuffered (``PYTHONUNBUFFERED=1``), but
+    pip/npm/C programs block-buffer their stdout when it is a pipe, so their
+    progress lines only arrive at the end ("hang-then-dump") instead of
+    streaming through ``communicate_or_kill``'s live-output callback.
+    ``stdbuf`` (GNU coreutils, LD_PRELOAD-based) forces line buffering.
+
+    Only applied to a simple external command whose first token is a real
+    program: wrapping shell builtins (``cd``, ``export``…) or assignment
+    prefixes (``VAR=x cmd``) would break the command. Skipped on Windows
+    (no coreutils semantics) and when stdbuf is not on PATH (macOS by
+    default). Not applied to the bwrap/seatbelt sandbox paths either — the
+    stdbuf binary is not guaranteed inside the sandbox.
+    """
+    if os.name == 'nt':
+        return command
+    import shutil
+
+    if shutil.which('stdbuf') is None:
+        return command
+    stripped = (command or '').strip()
+    if not stripped or stripped[0] in ('"', "'"):
+        return command
+    first = stripped.partition(' ')[0]
+    if not first or '=' in first or first in _SHELL_BUILTIN_WORDS:
+        return command
+    return 'stdbuf -oL -eL ' + command
+
+
 async def close_process(
     proc: asyncio.subprocess.Process | None,
     *,

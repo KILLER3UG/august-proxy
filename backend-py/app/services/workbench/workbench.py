@@ -173,6 +173,15 @@ _QUOTA_MARKERS = (
     'payment required',
     'exceeded your current',
 )
+
+# ── Tool progress beats (generic tools + run_command idle warning) ──
+# Extracted to constants so eval tests can shrink the windows instead of
+# waiting real seconds.
+
+_TOOL_HEARTBEAT_INTERVAL_S = 8.0
+_COMMAND_IDLE_BEAT_INTERVAL_S = 8.0
+_COMMAND_IDLE_BEAT_MIN_GAP_S = 7.0
+
 _MODEL_RETRY_MARKERS = (
     'rate limit',
     'rate_limit',
@@ -3558,12 +3567,12 @@ async def _sendWorkbenchMessageStreamImpl(
                                     beat_count = 0
                                     while not stop.is_set():
                                         try:
-                                            await asyncio.wait_for(stop.wait(), timeout=8.0)
+                                            await asyncio.wait_for(stop.wait(), timeout=_COMMAND_IDLE_BEAT_INTERVAL_S)
                                             break
                                         except asyncio.TimeoutError:
                                             if not emit or stop.is_set():
                                                 continue
-                                            if time.monotonic() - last_emit < 7.0:
+                                            if time.monotonic() - last_emit < _COMMAND_IDLE_BEAT_MIN_GAP_S:
                                                 continue
                                             beat_count += 1
                                             # First beat: warn about possible interactive prompt.
@@ -3613,7 +3622,7 @@ async def _sendWorkbenchMessageStreamImpl(
                             async def _tool_heartbeat() -> None:
                                 while not _tool_stop.is_set():
                                     try:
-                                        await asyncio.wait_for(_tool_stop.wait(), timeout=8.0)
+                                        await asyncio.wait_for(_tool_stop.wait(), timeout=_TOOL_HEARTBEAT_INTERVAL_S)
                                         break
                                     except asyncio.TimeoutError:
                                         if not emit or _tool_stop.is_set():

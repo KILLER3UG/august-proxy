@@ -280,6 +280,84 @@ function stabilizeLiveTables(src: string): string {
   return src;
 }
 
+/**
+ * A.1 cheap live markdown. While streaming, the full convertLatexToUnicode +
+ * marked.parse + whole-tree innerHTML replace ran on every ~32ms flush, which
+ * is the main text-stutter cost on long answers. Instead, live rendering
+ * splits the content at blank-line boundaries (never inside a fenced code
+ * block), renders every *complete* block exactly once into a module-level
+ * cache, and re-parses only the still-growing tail block each flush. Each
+ * block is its own React element keyed by position, so settled blocks are
+ * never rewritten — React skips identical __html strings — and only the tail
+ * div's innerHTML changes per flush.
+ *
+ * The settle path (live=false) is untouched: one full parse, byte-identical
+ * to the pre-A.1 output, so final rendering (and highlight.js colors) is
+ * exactly what the whole-content parse produces.
+ */
+
+/**
+ * Cached rendered blocks. The cache stores the ready-to-pass
+ * ``dangerouslySetInnerHTML`` PROP OBJECT, not just the html string — React
+ * bails out of rewriting a block's innerHTML only when it sees the SAME
+ * object reference across renders. A fresh ``{__html}`` per render makes
+ * React re-parse the block's HTML on every flush (measured ~14x slower in
+ * jsdom), which defeats the whole point of the incremental renderer.
+ */
+const LIVE_BLOCK_HTML_CACHE = new Map<string, { __html: string }>();
+const MAX_LIVE_BLOCK_CACHE = 300;
+
+function renderLiveBlock(block: string): { __html: string } {
+  const cached = LIVE_BLOCK_HTML_CACHE.get(block);
+  if (cached !== undefined) return cached;
+  liveMarkdownParse = true;
+  let html: string;
+  try {
+    html = marked.parse(convertLatexToUnicode(block), { async: false });
+  } finally {
+    liveMarkdownParse = false;
+  }
+  const prop = { __html: html };
+  if (LIVE_BLOCK_HTML_CACHE.size >= MAX_LIVE_BLOCK_CACHE) {
+    const oldest = LIVE_BLOCK_HTML_CACHE.keys().next().value;
+    if (oldest !== undefined) LIVE_BLOCK_HTML_CACHE.delete(oldest);
+  }
+  LIVE_BLOCK_HTML_CACHE.set(block, prop);
+  return prop;
+}
+
+/**
+ * Split markdown into blocks at blank-line boundaries, keeping fenced code
+ * blocks intact (a blank line inside a fence is code, not a separator).
+ * `complete` are newline-terminated blocks; `tail` is the still-growing final
+ * block (empty when src ends with a newline).
+ */
+function splitLiveBlocks(src: string): { complete: string[]; tail: string } {
+  const lines = src.split('\n');
+  const complete: string[] = [];
+  let current: string[] = [];
+  let inFence = false;
+  let fenceMarker = '';
+  for (const line of lines) {
+    if (!inFence) {
+      const fenceMatch = /^\s*(```|~~~)/.exec(line);
+      if (fenceMatch) {
+        inFence = true;
+        fenceMarker = fenceMatch[1];
+      } else if (/^\s*$/.test(line) && current.length > 0) {
+        complete.push(current.join('\n'));
+        current = [];
+        continue;
+      }
+    } else {
+      const closeRe = fenceMarker === '```' ? /^\s*`{3,}/ : /^\s*~{3,}/;
+      if (closeRe.test(line)) inFence = false;
+    }
+    current.push(line);
+  }
+  return { complete, tail: current.join('\n') };
+}
+
 export function Markdown({
   content,
   variant = 'default',
@@ -295,15 +373,24 @@ export function Markdown({
 
   const html = useMemo(() => {
     if (!content) return '';
+    if (live) {
+      // A.1: incremental live render. Complete blocks are cached; only the
+      // still-growing tail block re-parses each flush (see renderLiveBlock).
+      // The settle pass (live=false) below produces the exact full parse.
+      const stabilized = stabilizeLiveTables(content);
+      const { complete, tail } = splitLiveBlocks(stabilized);
+      const parts: { __html: string }[] = complete.map(renderLiveBlock);
+      if (tail) parts.push(renderLiveBlock(tail));
+      return parts;
+    }
     // During a live stream, hold back an incomplete trailing table row so the
     // table never paints half-formed rows with cut borders.
-    const stabilized = live ? stabilizeLiveTables(content) : content;
-    const processed = convertLatexToUnicode(stabilized);
-    liveMarkdownParse = live;
+    const processed = convertLatexToUnicode(content);
     const res = marked.parse(processed, { async: false });
-    liveMarkdownParse = false;
     return res;
   }, [content, live]);
+
+  const liveBlocks = live && typeof html !== 'string' ? (html as { __html: string }[]) : null;
 
   // Copy button handler
   useEffect(() => {
@@ -336,8 +423,15 @@ export function Markdown({
           ? 'markdown-content markdown-content--assistant'
           : 'markdown-content'
       }
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+      {...(liveBlocks ? {} : { dangerouslySetInnerHTML: { __html: html as string } })}
+    >
+      {liveBlocks &&
+        liveBlocks.map((blockProp, i) =>
+          blockProp.__html ? (
+            <div key={i} dangerouslySetInnerHTML={blockProp} />
+          ) : null,
+        )}
+    </div>
   );
 }
 

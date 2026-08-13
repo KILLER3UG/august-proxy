@@ -340,6 +340,10 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
         'createdAt': _now(),
         'updatedAt': _now(),
         'buffer': '',
+        # Total code points ever appended to the buffer (never shrinks even
+        # when the buffer truncates) — lets reconnecting WS clients resume
+        # from their last-seen offset instead of re-receiving the whole buffer.
+        'streamLen': 0,
         'approvedInteractive': approved,
         'cols': as_int(params.get('cols'), 80),
         'rows': as_int(params.get('rows'), 24),
@@ -395,6 +399,7 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
                 f'For full TTY: pip install pywinpty — or click Open external terminal.\r\n\r\n'
             )
             session['buffer'] = notice
+            session['streamLen'] = len(notice)
             _sessions[sessionId] = session
             _wsQueues[sessionId] = set()
             task = asyncio.create_task(_pipeStdout(sessionId))
@@ -414,6 +419,18 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
     return {**_summarize(session), 'error': session.get('error')}
 
 
+def _append_output(session: dict[str, object], text: str) -> None:
+    """Append a decoded chunk to the session buffer.
+
+    The buffer truncates at BUFFER_LIMIT; ``streamLen`` counts every code
+    point ever appended so reconnecting WS clients can resume by offset even
+    after truncation (see handleTerminalConnection).
+    """
+    session['buffer'] = (as_str(session.get('buffer'), '') + text)[-BUFFER_LIMIT:]
+    session['streamLen'] = as_int(session.get('streamLen'), 0) + len(text)
+    session['updatedAt'] = _now()
+
+
 async def _pipeStdout(sessionId: str) -> None:
     """Read process stdout into the session buffer and broadcast to WS."""
     session = _sessions.get(sessionId)
@@ -429,8 +446,7 @@ async def _pipeStdout(sessionId: str) -> None:
             if not chunk:
                 break
             text = chunk.decode('utf-8', errors='replace')
-            session['buffer'] = (as_str(session.get('buffer'), '') + text)[-BUFFER_LIMIT:]
-            session['updatedAt'] = _now()
+            _append_output(session, text)
             _broadcastTerminal(sessionId, text)
     except (OSError, ValueError):
         pass
@@ -467,8 +483,7 @@ async def _pipePtyStdout(sessionId: str) -> None:
                 await asyncio.sleep(0.05)
                 continue
             text = chunk.decode('utf-8', errors='replace')
-            session['buffer'] = (as_str(session.get('buffer'), '') + text)[-BUFFER_LIMIT:]
-            session['updatedAt'] = _now()
+            _append_output(session, text)
             _broadcastTerminal(sessionId, text)
     except Exception:
         pass
@@ -757,11 +772,23 @@ async def closeAllTerminalSessions() -> None:
             pass
 
 
-async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
+async def handleTerminalConnection(
+    websocket: object, terminalId: str, offset: int = 0
+) -> None:
     """Handle a WebSocket connection for live terminal I/O.
 
     ``websocket`` must have ``send_text``, ``receive_text``, ``close`` methods
     (compatible with Starlette / FastAPI WebSocket).
+
+    ``offset`` is the code-point position the client has already received
+    (its count of the session's broadcast stream). Reconnects pass their
+    last-seen offset so only *unseen* output is replayed — previously the
+    whole buffer was resent on every connect, duplicating history in the
+    terminal (and leaving the grey "connection lost" line buried mid-stream).
+    The buffer truncates at BUFFER_LIMIT while ``streamLen`` never shrinks,
+    so ``buffer[max(0, offset - (streamLen - len(buffer))):]`` is the exact
+    unseen suffix: a client that missed truncated output falls back to the
+    full buffer; a client ahead of the buffer receives nothing.
     """
     session = _sessions.get(terminalId)
     ws = cast(_WebSocketLike, websocket)
@@ -799,8 +826,11 @@ async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
     pump = asyncio.create_task(_pump_output())
     try:
         buffer = as_str(session.get('buffer'), '')
-        if buffer:
-            await ws.send_text(buffer)
+        stream_len = as_int(session.get('streamLen'), 0)
+        truncated = stream_len - len(buffer)
+        unseen = buffer[max(0, offset - truncated):]
+        if unseen:
+            await ws.send_text(unseen)
         while True:
             data = await ws.receive_text()
             result = await writeTerminalInput(

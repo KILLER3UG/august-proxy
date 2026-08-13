@@ -152,11 +152,20 @@ async def deleteSession(sessionId: str):
 
 
 @router.websocket('/connect')
-async def terminalWebsocket(websocket: WebSocket, id: str = Query(...)):
-    """WebSocket connection for live terminal I/O."""
+async def terminalWebsocket(
+    websocket: WebSocket,
+    id: str = Query(...),
+    offset: int = Query(0, ge=0),
+):
+    """WebSocket connection for live terminal I/O.
+
+    ``offset`` (code points the client already received from this session's
+    broadcast stream) lets a reconnecting client resume without re-receiving
+    the whole buffer — first connects send 0 and get the full buffer.
+    """
     await websocket.accept()
     try:
-        await terminal_service.handleTerminalConnection(websocket, id)
+        await terminal_service.handleTerminalConnection(websocket, id, offset=offset)
     except WebSocketDisconnect:
         pass
     except Exception:

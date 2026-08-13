@@ -171,6 +171,12 @@ export function RightDrawerTerminalSection() {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     let disposed = false;
     reconnectAttemptRef.current = 0;
+    // Code points of this session's broadcast stream already painted into
+    // xterm. Sent as ?offset= on every (re)connect so the backend replays only
+    // unseen output — without it, reconnects re-send the whole buffer and the
+    // terminal duplicates history. Counts code points ([...s].length) to match
+    // the backend's len(str); UTF-16 units would drift on non-BMP characters.
+    let seenCodePoints = 0;
 
     const connectSocket = async () => {
       if (disposed) return;
@@ -178,11 +184,12 @@ export function RightDrawerTerminalSection() {
       const apiBase = await whenReady();
       if (disposed) return;
       let wsUrl: string;
+      const wsPath = `/api/terminal/connect?id=${encodeURIComponent(activeId)}&offset=${seenCodePoints}`;
       if (apiBase) {
         const host = apiBase.replace(/^https?:\/\//, '');
-        wsUrl = `ws://${host}/api/terminal/connect?id=${encodeURIComponent(activeId)}`;
+        wsUrl = `ws://${host}${wsPath}`;
       } else {
-        wsUrl = `${protocol}://${window.location.host}/api/terminal/connect?id=${encodeURIComponent(activeId)}`;
+        wsUrl = `${protocol}://${window.location.host}${wsPath}`;
       }
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
@@ -196,11 +203,18 @@ export function RightDrawerTerminalSection() {
       });
       socket.addEventListener('message', (event) => {
         if (typeof event.data === 'string') {
+          seenCodePoints += [...event.data].length;
           terminal.write(event.data);
         } else if (event.data instanceof ArrayBuffer) {
+          const text = new TextDecoder().decode(event.data);
+          seenCodePoints += [...text].length;
           terminal.write(new Uint8Array(event.data));
         } else if (event.data instanceof Blob) {
-          void event.data.arrayBuffer().then((buffer) => terminal.write(new Uint8Array(buffer)));
+          void event.data.arrayBuffer().then((buffer) => {
+            const text = new TextDecoder().decode(buffer);
+            seenCodePoints += [...text].length;
+            terminal.write(new Uint8Array(buffer));
+          });
         }
       });
       socket.addEventListener('close', (event: CloseEvent) => {

@@ -230,10 +230,11 @@ async def _spawn(
             SubprocessAborted,
             agent_subprocess_kwargs,
             communicate_or_kill,
+            prefix_line_buffering,
         )
 
         proc = await asyncio.create_subprocess_shell(
-            command,
+            prefix_line_buffering(command),
             **agent_subprocess_kwargs(cwd=cwd),
         )
         stdout_b, stderr_b = await communicate_or_kill(proc, timeout=timeout)
