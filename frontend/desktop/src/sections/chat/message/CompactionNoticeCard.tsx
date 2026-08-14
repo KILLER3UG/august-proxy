@@ -78,7 +78,7 @@ export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
           {info.contextWindow
             ? ` to stay within ${formatContextWindow(info.contextWindow)} context`
             : ''}
-          .
+          . The full transcript is archived — chat shows a compact projection only.
         </motion.div>
       )}
     </motion.div>

@@ -381,6 +381,11 @@ def register() -> None:
                             'acceptanceCriteria': {'type': 'string'},
                             'stopCondition': {'type': 'string'},
                             'maxIterations': {'type': 'integer'},
+                            'skills': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Skill names to preload into the worker (full SKILL.md).',
+                            },
                         },
                         'required': ['goal'],
                     },

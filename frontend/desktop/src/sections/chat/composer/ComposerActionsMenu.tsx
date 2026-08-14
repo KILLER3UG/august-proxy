@@ -83,7 +83,7 @@ export function ComposerActionsMenu({
                 className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
                 data-testid="composer-spawn-subagents"
               >
-                <span>Spawn sub-agents</span>
+                <span>Dispatch workstreams</span>
                 <Bot className="size-3.5 text-muted-foreground" />
               </button>
             )}

@@ -7,12 +7,8 @@ from pathlib import Path
 
 from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
-from app.services.sandbox import (
-    bind_path,
-    policy_from_session,
-    run_sandboxed,
-    unsandboxed_grant_key,
-)
+from app.services.execution_world import bind_path, run_sandboxed
+from app.services.sandbox import policy_from_session, unsandboxed_grant_key
 
 _MAXFileSize = 10 * 1024 * 1024
 _MAXSearchResults = 100

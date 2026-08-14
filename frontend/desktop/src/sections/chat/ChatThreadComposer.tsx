@@ -33,7 +33,10 @@ import { ComposerToolbar } from './composer/ComposerToolbar';
 import { ComposerVoiceListening } from './composer/ComposerVoiceListening';
 import { toast } from 'sonner';
 import { useFocusedSubagent } from '@/components/chat/focused-subagent';
-import { steer as steerSubagent } from '@/api/subagents';
+import { setContinueWorkstream, useContinueWorkstream } from '@/components/chat/composer-intent';
+import { HarnessJobStrip } from '@/components/chat/HarnessJobStrip';
+import { normalizeHarnessMode } from '@/components/chat/HarnessModeChip';
+import { continueWorkstream, steer as steerSubagent } from '@/api/subagents';
 
 export type { ComposerDropdownApi };
 
@@ -168,6 +171,10 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const focusedSubagent = useFocusedSubagent();
+  const continueName = useContinueWorkstream();
+  const harnessMode = normalizeHarnessMode(workbenchSession?.agentMode);
+  const sendKind =
+    focusedSubagent ? 'steer' : continueName ? 'continue' : harnessMode === 'orchestrator' ? 'dispatch' : 'send';
   const sendOrSteer = useCallback(
     async (textOverride?: string) => {
       const text = (textOverride ?? input).trim();
@@ -181,9 +188,20 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         }
         return;
       }
+      if (continueName && text && workbenchSession?.id) {
+        try {
+          await continueWorkstream(workbenchSession.id, continueName, text);
+          toast.success(`Continuing ${continueName}`);
+          setInput('');
+          setContinueWorkstream(null);
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : 'Continue failed');
+        }
+        return;
+      }
       return send(textOverride);
     },
-    [focusedSubagent, input, send, setInput],
+    [focusedSubagent, continueName, input, send, setInput, workbenchSession?.id],
   );
   // Live markdown preview is opt-in — Ctrl/Cmd+Shift+P toggles it.
   const [showPreview, setShowPreview] = useState(false);
@@ -301,6 +319,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         </div>
       ) : null}
 
+      <HarnessJobStrip sessionId={workbenchSession?.id || activeWorkbenchSessionId || sessionId} />
+
       {queuedMessages.length > 0 && sessionId && (
         <QueuePills
           sessionId={sessionId}
@@ -370,8 +390,12 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                 streaming
                   ? 'Add a direction while August works…'
                   : focusedSubagent
-                    ? 'Send follow-up with subagent'
-                    : 'Write a message...'
+                    ? `Steer ${focusedSubagent.title} (next round)`
+                    : continueName
+                      ? `Continue workstream ${continueName}…`
+                      : harnessMode === 'orchestrator'
+                        ? 'Plan the next wave — or open Dispatch from +'
+                        : 'Write a message...'
               }
               rows={1}
               className="w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm outline-none placeholder:text-muted-foreground/70"
@@ -402,6 +426,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           streaming={streaming}
           send={sendOrSteer}
           stop={stop}
+          sendKind={streaming ? 'steer' : sendKind}
           setMessages={setMessages}
           ensureWorkbenchSession={ensureWorkbenchSession}
           workbenchSession={workbenchSession}

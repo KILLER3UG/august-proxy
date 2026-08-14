@@ -145,7 +145,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'System Status',
     description: 'Gateway status, uptime, RAM, endpoint URLs, and connect-an-app URLs.',
     icon: Activity,
-    category: 'activity',
+    category: 'general',
     tier: 'basic',
     // Note: 'gateway' is owned by api-access (the action surface for
     // opening/closing it). 'connect' is owned by api-access.

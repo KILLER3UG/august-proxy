@@ -1497,7 +1497,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           )}
           <AnimatePresence initial={false}>
             {messages.length === 0 ? (
-              <ChatEmptyState workspacePath={activeSession?.workspacePath}>
+              <ChatEmptyState
+                workspacePath={activeSession?.workspacePath}
+                agentMode={workbenchSession?.agentMode}
+              >
                 {planPending
                   ? planBanner
                   : approvalPending

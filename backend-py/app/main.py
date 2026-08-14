@@ -320,6 +320,7 @@ from app.routers import exam as examRoutes  # noqa: E402
 from app.routers import gateway as gatewayRoutes  # noqa: E402
 from app.routers import git as gitRoutes  # noqa: E402
 from app.routers import harness as harnessRoutes  # noqa: E402
+from app.routers import harness_mcp as harnessMcpRoutes  # noqa: E402
 from app.routers import hooks as hooksRoutes  # noqa: E402
 from app.routers import live as liveRoutes  # noqa: E402
 from app.routers import manage as manageRoutes  # noqa: E402
@@ -383,6 +384,7 @@ app.include_router(examRoutes.router)
 app.include_router(liveRoutes.router)
 app.include_router(calendarRoutes.router)
 app.include_router(subagentRoutes.router)
+app.include_router(harnessMcpRoutes.router)
 app.include_router(recurringTasksRoutes.router)
 app.include_router(daemonsRoutes.router)
 app.include_router(serviceConnectionsRoutes.router)

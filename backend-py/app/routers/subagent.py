@@ -45,6 +45,7 @@ class WorkItem(CamelModel):
     acceptance_criteria: str = ''
     stop_condition: str = ''
     max_iterations: int = 0
+    skills: list[str] | None = None
 
 
 class SpawnRequest(CamelModel):
@@ -128,6 +129,7 @@ async def spawnSubagents(body: SpawnRequest, request: Request):
             'acceptanceCriteria': w.acceptance_criteria,
             'stopCondition': w.stop_condition,
             'maxIterations': w.max_iterations,
+            'skills': w.skills or [],
         }
         for w in body.work_items
     ]
@@ -171,6 +173,23 @@ async def listRuns(sessionId: Optional[str] = None, limit: int = 50):
             (limit,),
         ).fetchall()
     return {'runs': [_row_as_wire(r) for r in rows]}
+
+
+@router.get('/jobs')
+async def listHarnessJobs(request: Request, sessionId: Optional[str] = None):
+    from app.services.harness_jobs import list_jobs
+
+    sid = sessionId or request.headers.get('X-Session-Id', '') or ''
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    return {'jobs': list_jobs(sid)}
+
+
+@router.post('/jobs/{jobId}/cancel')
+async def cancelHarnessJob(jobId: str):
+    from app.services.harness_jobs import cancel_job
+
+    return await cancel_job(jobId)
 
 
 @router.post('/stop-all')

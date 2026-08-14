@@ -64,7 +64,7 @@ describe('SubagentLaunchList', () => {
       ),
     );
 
-    expect(screen.getByText('Checked to-do list')).toBeInTheDocument();
+    expect(screen.getByText('Workers')).toBeInTheDocument();
     expect(screen.getByText('Find scroll-down button bug')).toBeInTheDocument();
     expect(screen.getByText('Find empty folder switch bug')).toBeInTheDocument();
     expect(screen.getAllByText(currentModelLabel)).toHaveLength(2);

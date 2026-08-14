@@ -300,12 +300,39 @@ def get_canonical_managed_anthropic_openai_web_tools() -> list[dict[str, object]
 
 def get_proxy_openai_tool_definitions() -> list[dict[str, object]]:
     """Return all proxy tool definitions in OpenAI format."""
-    return [
+    tools = [
         *_stub_tool_definitions(),
         *_stub_tool_definitions(),
         *_stub_tool_definitions(),
         *get_canonical_managed_openai_web_tools(),
     ]
+    try:
+        from app.services.harness_mode import proxy_orchestrator_enabled
+
+        if proxy_orchestrator_enabled():
+            tools.append(
+                {
+                    'type': 'function',
+                    'function': {
+                        'name': 'spawn_subagents',
+                        'description': (
+                            'Dispatch named workstream workers (DAG via dependsOn). '
+                            'Enabled because AUGUST_PROXY_ORCHESTRATOR is set.'
+                        ),
+                        'parameters': {
+                            'type': 'object',
+                            'properties': {
+                                'workItems': {'type': 'array', 'items': {'type': 'object'}},
+                                'background': {'type': 'boolean', 'default': True},
+                            },
+                            'required': ['workItems'],
+                        },
+                    },
+                }
+            )
+    except Exception:
+        pass
+    return tools
 
 
 def get_proxy_openai_tool_definitions_for_anthropic() -> list[dict[str, object]]:

@@ -1169,6 +1169,12 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
             'message': 'Not enough messages to compress yet.',
         }
     # threshold=0 forces compression whenever head+tail leave a middle section
+    try:
+        from app.services.transcript_archive import archive_messages
+
+        archive_messages(session_id, original, reason='compact')
+    except Exception:
+        pass
     compressed = await compressMessages(original, threshold=0, head_count=4, tail_count=6)
     compressed_tokens = estimateTokens(compressed)
     compressed_count = max(0, len(original) - len(compressed))

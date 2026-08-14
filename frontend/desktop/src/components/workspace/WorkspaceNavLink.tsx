@@ -43,10 +43,10 @@ export function WorkspaceNavLink({
       whileTap="tap"
       variants={rowMotion}
       className={cn(
-        'w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors text-left',
+        'flex w-full items-center gap-2.5 border-l-2 py-1.5 pr-4 text-left text-sm transition-colors',
         active
-          ? 'bg-white/[0.06] text-foreground font-medium'
-          : 'text-muted-foreground hover:bg-white/[0.03] hover:text-foreground',
+          ? 'border-primary bg-white/[0.06] pl-[14px] font-medium text-foreground'
+          : 'border-transparent pl-[14px] text-muted-foreground hover:bg-white/[0.03] hover:text-foreground',
       )}
     >
       <motion.span

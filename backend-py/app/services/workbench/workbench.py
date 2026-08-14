@@ -1340,7 +1340,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         # Already in plan mode — the mode-switch tool has done its job.
         blocked_in_plan = {'enter_plan_mode', 'request_plan_mode'}
         tools = [t for t in tools if as_str(t.get('name')) not in blocked_in_plan]
-    return _applyModelCapabilityProfile(session, tools)
+    return _finalize_session_tools(session, tools)
 
 
 # Per-model capability profiles (harness adaptation): a weak model gets a
@@ -1394,6 +1394,17 @@ def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
     except Exception:
         pass
     return {}
+
+
+def _finalize_session_tools(
+    session: WorkbenchSession, tools: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    tools = _applyModelCapabilityProfile(session, tools)
+    from app.services.harness_mode import filter_planner_tools, is_orchestrator_mode
+
+    if is_orchestrator_mode(session):
+        return filter_planner_tools(tools)
+    return tools
 
 
 def _applyModelCapabilityProfile(
@@ -1479,7 +1490,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             return as_str(fn.get('name') or t.get('name'))
 
         tools = [t for t in tools if _tool_name_plan(t) not in blocked_in_plan]
-    return _applyModelCapabilityProfile(session, tools)
+    return _finalize_session_tools(session, tools)
 
 
 def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
@@ -2505,6 +2516,15 @@ async def _sendWorkbenchMessageStreamImpl(
                 'You are in CHAT MODE: answer in text only. Tool calls are blocked.\n'
                 '</agent_mode>'
             )
+        elif agentMode in ('orchestrator', 'planner'):
+            text = (
+                f'{text}\n\n<agent_mode>\n'
+                'You are in ORCHESTRATOR MODE: decide and dispatch. Do not edit files or '
+                'run shell commands. Spawn named workstreams via spawn_subagents; workers '
+                'act. Use list_workstreams / send_subagent_message / interrupt_subagent to '
+                'steer. Switch set_agent_mode(mode="agent") to act in this session.\n'
+                '</agent_mode>'
+            )
         return text
 
     with _trace.span('prompt_build'):
@@ -2576,6 +2596,12 @@ async def _sendWorkbenchMessageStreamImpl(
             threshold = max(4096, int(contextWindow * 0.55))
             currentMessages = list(session.messages)
             if _shouldAutoCompact(attentionPressure, turnsSinceCompaction):
+                try:
+                    from app.services.transcript_archive import archive_messages
+
+                    archive_messages(sessionId, currentMessages, reason='auto-compact')
+                except Exception:
+                    logger.debug('transcript archive failed', exc_info=True)
                 summarizer = None
                 try:
                     from app.services.cognitive_config import get_features
@@ -3206,6 +3232,26 @@ async def _sendWorkbenchMessageStreamImpl(
             # Chat mode: tool calls are blocked — the model answers in text only.
             if getattr(session, 'agent_mode', '') == 'chat':
                 msg = '[Blocked] Chat mode: tool calls are disabled. Answer in text only.'
+                if emit:
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': msg,
+                            'status': 'done',
+                        }
+                    )
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
+                continue
+            from app.services.harness_mode import (
+                PLANNER_ALLOWED_TOOLS,
+                is_orchestrator_mode,
+                planner_block_message,
+            )
+
+            if is_orchestrator_mode(session) and toolName and toolName not in PLANNER_ALLOWED_TOOLS:
+                msg = planner_block_message(toolName)
                 if emit:
                     emit(
                         {

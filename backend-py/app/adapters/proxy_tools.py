@@ -104,6 +104,7 @@ MANAGED_WEB_TOOL_NAMES: set[str] = {
     'mcp__workspace__web_fetch',
 }
 MANAGED_BASH_TOOL_NAMES: set[str] = {'bash', 'mcp__workspace__bash'}
+HARNESS_PROXY_TOOL_NAMES: set[str] = {'spawn_subagents'}
 
 
 def is_managed_web_tool_name(name: str) -> bool:
@@ -198,7 +199,16 @@ def _is_tool_parallel_safe(toolName: str, args: dict[str, object] | None = None)
 
 def is_proxy_managed_local_tool_name(name: str) -> bool:
     """Check if a tool name is proxy-managed."""
-    return is_managed_web_tool_name(name) or is_managed_bash_tool_name(name)
+    if is_managed_web_tool_name(name) or is_managed_bash_tool_name(name):
+        return True
+    try:
+        from app.services.harness_mode import proxy_orchestrator_enabled
+
+        if proxy_orchestrator_enabled() and name in HARNESS_PROXY_TOOL_NAMES:
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _registry_name_for_proxy(toolName: str) -> str:

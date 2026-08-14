@@ -251,6 +251,8 @@ class SubagentOrchestrator:
                     prior_episodes=as_str(item.get('prior_episodes') or item.get('priorEpisodes'), ''),
                     woven_sources=as_str(item.get('woven_sources') or item.get('wovenSources'), ''),
                     episode_required=bool(item.get('episode_required') or item.get('episodeRequired') or handle.workstream),
+                    skills=item.get('skills') or [],
+                    harness_job_id=as_str(item.get('harness_job_id') or item.get('harnessJobId'), ''),
                 )
             )
             self._tasks[taskId] = task
@@ -428,6 +430,8 @@ class SubagentOrchestrator:
         prior_episodes: str = '',
         woven_sources: str = '',
         episode_required: bool = False,
+        skills: object = None,
+        harness_job_id: str = '',
     ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         try:
@@ -466,6 +470,8 @@ class SubagentOrchestrator:
                     prior_episodes=prior_episodes,
                     woven_sources=woven_sources,
                     episode_required=episode_required,
+                    skills=skills,
+                    harness_job_id=harness_job_id,
                 )
                 handle.result = result
                 handle.finishedAt = time.time()

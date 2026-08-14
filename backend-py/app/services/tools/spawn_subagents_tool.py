@@ -585,6 +585,15 @@ async def _doSpawn(
     except WorkstreamError as exc:
         return {'status': 'error', 'error': str(exc)}
 
+    job_id = ''
+    if sid:
+        try:
+            from app.services.harness_jobs import create_job
+
+            job_id = create_job(sid, waves=waves, work_items=workItems)
+        except Exception:
+            logger.debug('harness job create failed', exc_info=True)
+
     def _enrich(item: dict[str, Any], index_hint: int = 0) -> dict[str, Any]:
         enriched = dict(item)
         ws = as_str(item.get('workstream') or item.get('name'), '')
@@ -624,6 +633,7 @@ async def _doSpawn(
                     'woven_sources': item.get('woven_sources') or '',
                     'episode_required': bool(item.get('episode_required') or item.get('workstream') or item.get('name')),
                     'skills': item.get('skills') or [],
+                    'harness_job_id': job_id,
                 }
                 for item in items
             ],
@@ -692,6 +702,14 @@ async def _doSpawn(
             if not runnable:
                 continue
             handles = await _spawn_wave(runnable)
+            if job_id:
+                try:
+                    from app.services.harness_jobs import attach_task
+
+                    for h in handles:
+                        attach_task(job_id, h.taskId)
+                except Exception:
+                    logger.debug('attach_task failed', exc_info=True)
             _emit_starts(handles)
             async for result in orchestrator.waitForEach(handles):
                 all_results.append(result)
@@ -727,10 +745,22 @@ async def _doSpawn(
         async def _watch() -> None:
             try:
                 await _run_all_waves()
+                if job_id:
+                    from app.services.harness_jobs import finish_job
+
+                    finish_job(job_id, 'completed')
             except asyncio.CancelledError:
+                if job_id:
+                    from app.services.harness_jobs import finish_job
+
+                    finish_job(job_id, 'cancelled')
                 raise
             except Exception:
                 logger.exception('background subagent watch failed')
+                if job_id:
+                    from app.services.harness_jobs import finish_job
+
+                    finish_job(job_id, 'failed', error='watch failed')
 
         watch_task = asyncio.create_task(_watch())
         if sid:
@@ -740,9 +770,11 @@ async def _doSpawn(
             )
         return {
             'status': 'started',
+            'jobId': job_id or None,
             'total': len(workItems),
             'background': True,
             'waves': len(waves),
+            'waveNames': [[as_str(it.get('name') or it.get('workstream'), '') for it in w] for w in waves],
             'handles': [{'goal': it.get('goal', ''), 'name': as_str(it.get('name') or it.get('workstream'), '')} for it in workItems],
             'message': (
                 f'Dispatched {len(workItems)} subagent(s) in {len(waves)} wave(s). '
@@ -753,8 +785,17 @@ async def _doSpawn(
     results = await _run_all_waves()
     succeeded = sum((1 for r in results if r.get('status') == 'completed'))
     failed = sum((1 for r in results if r.get('status') in ('failed', 'error', 'skipped')))
+    status = 'completed' if failed == 0 else 'partial' if succeeded > 0 else 'failed'
+    if job_id:
+        try:
+            from app.services.harness_jobs import finish_job
+
+            finish_job(job_id, status)
+        except Exception:
+            pass
     return {
-        'status': 'completed' if failed == 0 else 'partial' if succeeded > 0 else 'failed',
+        'status': status,
+        'jobId': job_id or None,
         'total': len(results),
         'succeeded': succeeded,
         'failed': failed,

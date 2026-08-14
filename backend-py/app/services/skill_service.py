@@ -210,6 +210,28 @@ def get(name: str) -> Optional[dict[str, object]]:
     return None
 
 
+def load_bodies(names: list[str], *, max_chars: int = 24000) -> str:
+    """Concatenate SKILL.md bodies for worker preload (progressive disclosure skip)."""
+    parts: list[str] = []
+    used = 0
+    for raw in names:
+        name = str(raw or '').strip()
+        if not name:
+            continue
+        skill = get(name)
+        if not skill:
+            parts.append(f'## skill:{name}\n(not found)')
+            continue
+        body = str(skill.get('instructions') or skill.get('body') or skill.get('content') or '')
+        chunk = f'## skill:{name}\n{body}'.strip()
+        if used + len(chunk) > max_chars:
+            parts.append(f'## skill:{name}\n(truncated — remaining budget {max(0, max_chars - used)})')
+            break
+        parts.append(chunk)
+        used += len(chunk)
+    return '\n\n'.join(parts)
+
+
 def catalogue() -> list[dict[str, object]]:
     """Compact metadata for every discoverable skill — the skill catalogue.
 

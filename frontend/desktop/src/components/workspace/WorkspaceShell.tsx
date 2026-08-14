@@ -7,13 +7,13 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import {
   ArrowLeft,
-  Activity,
-  Boxes,
+  BrainCircuit,
   ChevronDown,
   ChevronRight,
   Globe,
   LineChart,
   ShieldCheck,
+  SlidersHorizontal,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
@@ -39,8 +39,8 @@ export interface WorkspaceSectionMeta {
 
 /** Map of category id → lucide icon for the rail group header. */
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  general: Activity,
-  intelligence: Boxes,
+  general: SlidersHorizontal,
+  intelligence: BrainCircuit,
   tools: Wrench,
   activity: LineChart,
   security: ShieldCheck,
@@ -129,7 +129,7 @@ export function WorkspaceShell({
   return (
     <div className={cn('flex h-full min-h-0', className)}>
       {/* Left rail */}
-      <aside className="w-64 shrink-0 border-r border-white/[0.06] bg-[#0f0f12] flex flex-col">
+      <aside className="flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
         <button
           onClick={() => {
             // Return to the exact chat the user came from (saved when
@@ -138,7 +138,7 @@ export function WorkspaceShell({
             void navigate(back && back !== location.pathname ? back : '/');
             sessionStorage.removeItem('pre-settings-path');
           }}
-          className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition text-left"
+          className="flex items-center gap-2 px-4 py-3 text-left text-sm text-sidebar-foreground/60 transition hover:text-sidebar-foreground"
         >
           <ArrowLeft className="size-4" />
           Back to workspace
@@ -163,7 +163,7 @@ export function WorkspaceShell({
               const categoryLabel = items[0]?.categoryLabel ?? category;
               return (
                 <div key={category || 'default'} className="mb-1">
-                  <div className="flex items-center gap-1.5 px-4 pt-2 pb-1 text-[10px] uppercase tracking-widest text-muted-foreground/50 font-semibold">
+                  <div className="flex items-center gap-1.5 px-4 pb-1 pt-3 text-[11px] font-medium tracking-wide text-sidebar-foreground/45">
                     <Icon className="size-3" aria-hidden="true" />
                     <span>{categoryLabel}</span>
                   </div>
@@ -197,7 +197,7 @@ export function WorkspaceShell({
 
         {/* Bottom: Show advanced toggle. Quiet and always visible so
          * power users can reveal advanced sections without using search. */}
-        <div className="shrink-0 border-t border-white/[0.06] px-3 py-2">
+        <div className="shrink-0 border-t border-sidebar-border px-3 py-2">
           <button
             type="button"
             onClick={toggleAdvanced}
@@ -225,10 +225,16 @@ export function WorkspaceShell({
  *  decorated list or the tier-filtered one. */
 function groupAllByCategory<T extends { category?: string }>(items: ReadonlyArray<T>) {
   const m = new Map<string, T[]>();
+  for (const cat of SETTINGS_CATEGORIES) {
+    m.set(cat.id, []);
+  }
   for (const s of items) {
     const k = s.category ?? '';
     if (!m.has(k)) m.set(k, []);
     m.get(k)!.push(s);
+  }
+  for (const [k, v] of [...m.entries()]) {
+    if (v.length === 0) m.delete(k);
   }
   return m;
 }

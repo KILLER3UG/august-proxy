@@ -18,6 +18,7 @@ export interface WorkItem {
   acceptanceCriteria?: string;
   stopCondition?: string;
   maxIterations?: number;
+  skills?: string[];
 }
 
 export interface SpawnRequest {
@@ -147,4 +148,27 @@ export async function continueWorkstream(
     { message, agentId },
     { 'X-Session-Id': sessionId },
   );
+}
+
+export interface HarnessJob {
+  id: string;
+  sessionId: string;
+  status: string;
+  dirty?: boolean;
+  error?: string;
+  waves?: string[][];
+  taskIds?: string[];
+  createdAt?: string;
+  finishedAt?: string;
+}
+
+export async function listJobs(sessionId: string): Promise<HarnessJob[]> {
+  const res = await api.get<{ jobs: HarnessJob[] }>(
+    `/api/subagents/jobs?sessionId=${encodeURIComponent(sessionId)}`,
+  );
+  return res.jobs ?? [];
+}
+
+export async function cancelJob(jobId: string): Promise<{ status: string; jobId?: string; stopped?: number }> {
+  return api.post(`/api/subagents/jobs/${encodeURIComponent(jobId)}/cancel`);
 }

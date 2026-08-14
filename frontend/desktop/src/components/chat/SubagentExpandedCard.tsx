@@ -89,22 +89,24 @@ export function SubagentExpandedCard({
     <>
       <div
         className={cn(
-          'mt-2 rounded-xl border border-border/50 bg-muted/20 overflow-hidden',
-          'shadow-sm',
+          'mt-2 overflow-hidden rounded-xl border border-border/50 bg-muted/20 shadow-sm',
+          isRunning && 'border-primary/25',
         )}
         data-slot="subagent-expanded-card"
         data-testid="subagent-expanded-card"
         data-subagent-status={state.status}
       >
         <header className="flex items-start justify-between gap-3 px-4 pt-3.5 pb-2">
-          <h3 className="min-w-0 text-[14px] font-semibold tracking-tight text-foreground leading-snug">
-            {title}
-          </h3>
-          {state.workstream ? (
-            <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
-              {state.workstream}
-            </span>
-          ) : null}
+          <div className="min-w-0">
+            <h3 className="text-[14px] font-semibold tracking-tight text-foreground leading-snug">
+              {title}
+            </h3>
+            {state.workstream ? (
+              <span className="mt-1 inline-flex rounded-full border border-border/50 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                {state.workstream}
+              </span>
+            ) : null}
+          </div>
           <div className="flex shrink-0 items-center gap-0.5">
             <button
               type="button"
@@ -140,10 +142,20 @@ export function SubagentExpandedCard({
           ) : null}
 
           <div
-            className="text-[12px] text-muted-foreground/70"
+            className={cn(
+              'text-[12px] text-muted-foreground/70',
+              isRunning && 'text-primary/80',
+            )}
             data-slot="subagent-worked-for"
           >
-            {workedLabel}
+            {isRunning ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+                {workedLabel}
+              </span>
+            ) : (
+              workedLabel
+            )}
           </div>
 
           <SubagentTimeline

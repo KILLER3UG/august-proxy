@@ -116,6 +116,16 @@ export class WorkbenchClient {
     );
   }
 
+  async setAgentMode(
+    sessionId: string,
+    agentMode: string,
+  ): Promise<WorkbenchSession> {
+    return wbFetch<WorkbenchSession>(
+      '/api/workbench/agent-mode',
+      jsonInit('POST', { sessionId, agentMode }),
+    );
+  }
+
   async setSandboxMode(
     sessionId: string,
     sandboxMode: string,

@@ -24,8 +24,11 @@ interface SubagentLaunchListProps {
 }
 
 function taskTitle(state: SubagentBlockState): string {
+  const ws = state.workstream?.trim();
   const task = state.task?.trim();
+  if (ws && task) return `${ws} — ${task}`;
   if (task) return task;
+  if (ws) return ws;
   return getAgentRoleLabel(state.agentId);
 }
 
@@ -59,9 +62,7 @@ export function SubagentLaunchList({
     >
       {!liveOpen ? (
         <>
-          <div className="text-[12px] text-muted-foreground/75 px-0.5">
-            Checked to-do list
-          </div>
+          <div className="text-[12.5px] text-muted-foreground/70 px-0.5">Workers</div>
           <ul className="flex flex-col gap-2" role="list">
             {agents.map((agent) => {
               const title = taskTitle(agent);
@@ -93,11 +94,16 @@ export function SubagentLaunchList({
                     data-testid={`subagent-launch-row-${agent.jobId}`}
                   >
                     <span
-                      className="col-start-1 row-start-1 mt-[2px] text-[13px] leading-5 text-muted-foreground/70 select-none"
+                      className={cn(
+                        'col-start-1 row-start-1 mt-[7px] size-1.5 shrink-0 rounded-full',
+                        agent.status === 'running' && 'animate-pulse bg-primary',
+                        agent.status === 'completed' && 'bg-success',
+                        agent.status === 'failed' && 'bg-destructive',
+                        agent.status === 'cancelled' && 'bg-muted-foreground/40',
+                        agent.status === 'partial' && 'bg-warning',
+                      )}
                       aria-hidden
-                    >
-                      •
-                    </span>
+                    />
                     <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2 text-[13px] leading-5">
                       <span className="min-w-0 truncate text-foreground/90">
                         {title}

@@ -31,6 +31,13 @@ export async function setWorkbenchGuardMode(
   return workbenchClient.setGuardMode(sessionId, guardMode);
 }
 
+export async function setWorkbenchAgentMode(
+  sessionId: string,
+  agentMode: string,
+): Promise<WorkbenchSession> {
+  return workbenchClient.setAgentMode(sessionId, agentMode);
+}
+
 export type { SessionHandoffRecord } from './workbench/WorkbenchClient';
 
 /** Ask the backend to summarize context for a model switch and persist it

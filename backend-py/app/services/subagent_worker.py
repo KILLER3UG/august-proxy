@@ -44,6 +44,8 @@ async def runSubagent(
     prior_episodes: str = '',
     woven_sources: str = '',
     episode_required: bool = False,
+    skills: object = None,
+    harness_job_id: str = '',
 ) -> dict[str, Any]:
     """Run a sub-agent and publish lifecycle events to the bus.
 
@@ -125,6 +127,8 @@ async def runSubagent(
             prior_episodes=prior_episodes,
             woven_sources=woven_sources,
             episode_required=episode_required,
+            skills=skills,
+            harness_job_id=harness_job_id,
         )
         status = as_str(subResult.get('status'), 'completed')
         if status != 'completed':

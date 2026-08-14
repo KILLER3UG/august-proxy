@@ -11,9 +11,13 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  GitBranch,
   Hand,
+  MessageSquare,
   Shield,
   ShieldCheck,
+  Terminal,
+  Bot,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -32,6 +36,10 @@ import {
   type WorkbenchSandboxMode,
   type WorkbenchSandboxModeConfig,
 } from '@/components/chat/SandboxModeSelector';
+import {
+  normalizeHarnessMode,
+  type HarnessAgentMode,
+} from '@/components/chat/HarnessModeChip';
 
 export type WorkbenchGuardMode = 'ask' | 'edit' | 'plan' | 'full';
 
@@ -90,13 +98,32 @@ export function applyWorkbenchGuardMode(_mode: WorkbenchGuardMode, message: stri
   return message.trim();
 }
 
-type FlyoutKind = 'reach';
+type FlyoutKind = 'reach' | 'harness';
+
+const HARNESS_OPTIONS: {
+  id: HarnessAgentMode;
+  label: string;
+  description: string;
+  Icon: typeof Bot;
+}[] = [
+  { id: 'agent', label: 'Agent', description: 'Native tools in this chat.', Icon: Bot },
+  {
+    id: 'orchestrator',
+    label: 'Orchestrator',
+    description: 'Dispatch workstreams. Workers edit and shell.',
+    Icon: GitBranch,
+  },
+  { id: 'chat', label: 'Chat', description: 'Text only — no tools.', Icon: MessageSquare },
+  { id: 'code', label: 'Code', description: 'Fenced Python in the workspace.', Icon: Terminal },
+];
 
 interface WorkbenchModeSelectorProps {
   selectedMode: WorkbenchGuardMode;
   onChange: (mode: WorkbenchGuardMode) => void;
   sandboxMode: WorkbenchSandboxMode;
   onSandboxChange: (mode: WorkbenchSandboxMode) => void;
+  harnessMode?: HarnessAgentMode | string;
+  onHarnessChange?: (mode: HarnessAgentMode) => void;
   className?: string;
 }
 
@@ -105,6 +132,8 @@ export function WorkbenchModeSelector({
   onChange,
   sandboxMode,
   onSandboxChange,
+  harnessMode = 'agent',
+  onHarnessChange,
   className,
 }: WorkbenchModeSelectorProps) {
   const [open, setOpen] = useState(false);
@@ -124,6 +153,8 @@ export function WorkbenchModeSelector({
 
   const guard = getWorkbenchGuardMode(selectedMode);
   const sandbox = getWorkbenchSandboxMode(sandboxMode);
+  const harness = normalizeHarnessMode(harnessMode);
+  const harnessMeta = HARNESS_OPTIONS.find((h) => h.id === harness) ?? HARNESS_OPTIONS[0];
   const agentOptions = WORKBENCH_GUARD_MODE_ORDER.map((id) => WORKBENCH_GUARD_MODES[id]);
   const reachOptions = Object.values(WORKBENCH_SANDBOX_MODES) as WorkbenchSandboxModeConfig[];
 
@@ -144,7 +175,7 @@ export function WorkbenchModeSelector({
     const el = triggerRef.current;
     if (!el) return null;
     const width = 280;
-    const estHeight = 260;
+    const estHeight = 320;
     const r = el.getBoundingClientRect();
     const top = Math.max(8, r.top - estHeight - 6);
     let left = r.left;
@@ -317,6 +348,26 @@ export function WorkbenchModeSelector({
               type="button"
               variants={menuItem}
               {...menuItemHover}
+              onClick={() => toggleFlyout('harness')}
+              onMouseEnter={() => scheduleFlyoutOpen('harness')}
+              onMouseLeave={scheduleFlyoutClose}
+              className={cn(
+                'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
+                flyout === 'harness' && 'bg-muted/30',
+              )}
+              data-testid="harness-mode-row"
+            >
+              <span className="text-sm text-foreground">How I work</span>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                {harnessMeta.label}
+                <ChevronRight className="size-3.5 opacity-60" />
+              </span>
+            </motion.button>
+
+            <motion.button
+              type="button"
+              variants={menuItem}
+              {...menuItemHover}
               onClick={() => toggleFlyout('reach')}
               onMouseEnter={() => scheduleFlyoutOpen('reach')}
               onMouseLeave={scheduleFlyoutClose}
@@ -340,7 +391,7 @@ export function WorkbenchModeSelector({
 
   const sideFlyout = (
     <AnimatePresence>
-      {open && flyout === 'reach' && flyoutPos && (
+      {open && (flyout === 'reach' || flyout === 'harness') && flyoutPos && (
         <motion.div
           ref={flyoutRef}
           {...menuFlyout}
@@ -348,10 +399,55 @@ export function WorkbenchModeSelector({
           onMouseLeave={scheduleFlyoutClose}
           className="fixed z-50 w-[280px] bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
           style={{ top: flyoutPos.top, left: flyoutPos.left }}
-          data-testid="tool-reach-flyout"
+          data-testid={flyout === 'harness' ? 'harness-mode-menu' : 'tool-reach-flyout'}
           role="menu"
-          aria-label="Tool reach"
+          aria-label={flyout === 'harness' ? 'How I work' : 'Tool reach'}
         >
+          {flyout === 'harness' ? (
+            <>
+              <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
+                Who acts in this chat. Orchestrator dispatches workers.
+              </div>
+              <div className="py-0.5 pb-1">
+                {HARNESS_OPTIONS.map((option) => {
+                  const selected = harness === option.id;
+                  const Icon = option.Icon;
+                  return (
+                    <motion.button
+                      key={option.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      data-mode={option.id}
+                      {...menuItemHover}
+                      onClick={() => {
+                        onHarnessChange?.(option.id);
+                        setFlyout(null);
+                      }}
+                      className={cn(
+                        'w-full text-left px-3 py-2 transition',
+                        selected
+                          ? 'text-primary bg-primary/10'
+                          : 'text-foreground/85 hover:bg-muted/40',
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2 text-sm font-medium">
+                          <Icon className="size-3.5 opacity-80" />
+                          {option.label}
+                        </span>
+                        {selected && <Check className="size-3.5 shrink-0" />}
+                      </div>
+                      <p className="mt-0.5 pl-5 text-[11px] leading-snug text-muted-foreground">
+                        {option.description}
+                      </p>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <>
           <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
             Where shell/files can go. Separate from agent mode approvals.
           </div>
@@ -388,6 +484,8 @@ export function WorkbenchModeSelector({
               );
             })}
           </div>
+            </>
+          )}
         </motion.div>
       )}
     </AnimatePresence>
@@ -406,15 +504,24 @@ export function WorkbenchModeSelector({
             setOpen(true);
           }
         }}
-        className="h-8 px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted hover:bg-muted/70 text-foreground border border-border/50 inline-flex items-center gap-1.5 max-w-[220px]"
-        title={`${guard.description}\nTool reach: ${sandbox.description}`}
-        aria-label={`Agent mode: ${guard.label}. Tool reach: ${sandbox.shortLabel}`}
+        className={cn(
+          'h-8 px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted hover:bg-muted/70 text-foreground border border-border/50 inline-flex items-center gap-1.5 max-w-[240px]',
+          harness === 'orchestrator' && 'border-primary/35 bg-primary/10',
+        )}
+        title={`${harnessMeta.label}. ${guard.description}\nTool reach: ${sandbox.description}`}
+        aria-label={`${harnessMeta.label}. Approvals: ${guard.label}. Tool reach: ${sandbox.shortLabel}`}
         aria-expanded={open}
         aria-haspopup="menu"
         data-testid="agent-mode-chip"
       >
-        <ModeIcon className="size-3.5 shrink-0 opacity-80" aria-hidden />
-        <span className="truncate">{guard.label}</span>
+        {harness === 'orchestrator' ? (
+          <GitBranch className="size-3.5 shrink-0 opacity-80" aria-hidden />
+        ) : (
+          <ModeIcon className="size-3.5 shrink-0 opacity-80" aria-hidden />
+        )}
+        <span className="truncate">
+          {harness === 'orchestrator' ? 'Orchestrator' : harness === 'chat' || harness === 'code' ? harnessMeta.label : guard.label}
+        </span>
         <ChevronDown
           className={cn(
             'size-3 shrink-0 opacity-60 transition-transform duration-200',

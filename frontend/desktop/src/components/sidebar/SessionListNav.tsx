@@ -119,6 +119,11 @@ export function SessionListNav({
         <span>New chat</span>
       </motion.button>
 
+      <div className="mx-1 my-1.5 h-px bg-sidebar-foreground/[0.06]" />
+      <p className="px-2 pb-0.5 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/35">
+        Workspace
+      </p>
+
       <motion.button
         type="button"
         onClick={() => onNavigate("/brain")}

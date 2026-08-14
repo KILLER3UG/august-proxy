@@ -146,6 +146,8 @@ async def executeSubAgent(
     prior_episodes: str = '',
     woven_sources: str = '',
     episode_required: bool = False,
+    skills: object = None,
+    harness_job_id: str = '',
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``.
 
@@ -225,6 +227,9 @@ async def executeSubAgent(
         jobId = as_str(job['id'])
         updateJob(jobId, {'status': 'running'})
 
+    require_episode = bool(episode_required or workstream)
+    mutated = False
+
     def _commit_episode(status: str, text: str, task_key: str = '') -> None:
         if not workstream:
             return
@@ -245,6 +250,16 @@ async def executeSubAgent(
             )
         except Exception:
             logger.debug('workstream episode persist failed', exc_info=True)
+
+    def _flag_dirty(note: str) -> None:
+        if not (mutated and (require_episode or harness_job_id)):
+            return
+        try:
+            from app.services.harness_jobs import mark_dirty
+
+            mark_dirty(harness_job_id, note)
+        except Exception:
+            logger.debug('mark_dirty failed', exc_info=True)
 
     # NOTE: automatic git-worktree isolation is intentionally NOT performed
     # here. Tool dispatch resolves paths against the parent session's
@@ -338,6 +353,10 @@ async def executeSubAgent(
             pass
     fullTools = toolDefinitions(cast(WorkbenchSession, session))
     fullOpenaiTools = openaiToolDefinitions(cast(WorkbenchSession, session))
+    skill_names = [str(s).strip() for s in (skills or []) if str(s).strip()] if isinstance(skills, list) else []
+    if skill_names:
+        extra_block = {'load_skill', 'load_skills'}
+        restricted_names = set(restricted_names or ()) | extra_block
     if restricted_names:
         fullTools = [t for t in fullTools if _toolName(t) not in restricted_names]
         fullOpenaiTools = [t for t in fullOpenaiTools if _toolName(t) not in restricted_names]
@@ -363,7 +382,6 @@ async def executeSubAgent(
     from app.services.workstreams import DEFAULT_EPISODE_SCHEMA, episode_prompt, goal_contract_prompt
 
     contract = goal_contract_prompt(acceptance_criteria, stop_condition, max_iterations)
-    require_episode = bool(episode_required or workstream)
     if require_episode and not yield_schema:
         yield_schema = DEFAULT_EPISODE_SCHEMA
     systemText = (
@@ -374,6 +392,15 @@ async def executeSubAgent(
     )
     if contract:
         systemText += f'\n\n{contract}'
+    if skill_names:
+        try:
+            from app.services.skill_service import load_bodies
+
+            bodies = load_bodies(skill_names)
+            if bodies:
+                systemText += f'\n\n<preloaded_skills>\n{bodies}\n</preloaded_skills>'
+        except Exception:
+            logger.debug('skill preload failed', exc_info=True)
     systemText += f'\n\n{episode_prompt(require_episode)}'
     isAnthropic = _isAnthropicProvider(provider)
     isOpenai = _isOpenaiProvider(provider)
@@ -472,6 +499,12 @@ async def executeSubAgent(
                 _contextWindow = _resolveModelContextWindow(resolvedModel, provider)
                 _threshold = max(4096, int(_contextWindow * 0.55))
                 if _estimateTokens(messages) > _threshold:
+                    try:
+                        from app.services.transcript_archive import archive_messages
+
+                        archive_messages(str(getattr(session, 'id', '') or ''), messages, reason='subagent-compact')
+                    except Exception:
+                        pass
                     messages = await compressMessages(
                         messages,
                         threshold=_threshold,
@@ -722,6 +755,10 @@ async def executeSubAgent(
                                 )
                     else:
                         try:
+                            from app.services.harness_mode import is_mutating_tool
+
+                            if is_mutating_tool(tName):
+                                mutated = True
                             result = await dispatchTool(tName, tInput)
                         except Exception as exc:
                             result = f'Error executing {tName}: {exc}'
@@ -767,6 +804,8 @@ async def executeSubAgent(
                     }
                 )
             _commit_episode(capStatus, capResult)
+            if capStatus != 'completed':
+                _flag_dirty('Worker mutated then hit loop cap without a clean episode.')
             return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': capStatus, 'error': capErr, 'result': capResult}
         # Schema-validated yields (Oh My Pi lesson): when a yield_schema was
         # requested, parse the final text as JSON and validate it before
@@ -835,6 +874,7 @@ async def executeSubAgent(
                     }
                 )
             _commit_episode('blocked', resultText)
+            _flag_dirty('Worker mutated then exited without a valid episode.')
             return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'failed', 'error': yieldErr, 'result': resultText}
         updateJob(jobId, {'status': 'completed', 'result': resultText[:2000]})
         if emit:
@@ -852,6 +892,7 @@ async def executeSubAgent(
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'completed', 'result': resultText}
     except Exception as exc:
         updateJob(jobId, {'status': 'failed', 'error': str(exc)})
+        _flag_dirty(f'Worker mutated then crashed: {exc}')
         if emit:
             emit(
                 {

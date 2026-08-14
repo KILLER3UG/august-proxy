@@ -1,14 +1,14 @@
 /* ── SubagentSpawnModal — composer launcher bound to the active session ── */
-/* One spawn surface in chat: goal lines + agent role + effort. Launched
- * agents stream into THIS transcript (X-Session-Id binding) and render via
- * the inline SubagentLaunchList. */
+/* Named DAG lines + skill preload. Launched agents stream into THIS chat. */
 
 import { useEffect, useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Bot, ChevronDown, Loader2, Play, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { api } from '@/api/client';
 import * as subagents from '@/api/subagents';
+import { parseSpawnGoals, previewWaves } from '@/lib/parse-spawn-goals';
 import type { ModelItem } from '../model-display';
 
 const AGENT_OPTIONS = [
@@ -22,6 +22,9 @@ const EFFORT_OPTIONS = ['low', 'medium', 'high', 'max'] as const;
 type Effort = (typeof EFFORT_OPTIONS)[number];
 type SpawnMode = 'auto' | 'proposed';
 
+const PLACEHOLDER =
+  'explore: map the repo\nsetup: install test deps\nprofile after:explore,setup: measure the hot path';
+
 export function SubagentSpawnModal({
   sessionId,
   open,
@@ -31,7 +34,6 @@ export function SubagentSpawnModal({
   sessionId?: string;
   open: boolean;
   onClose: () => void;
-  /** Model fleet for the per-launch model override (empty = inherit). */
   models?: ModelItem[];
 }) {
   const [goals, setGoals] = useState('');
@@ -43,10 +45,22 @@ export function SubagentSpawnModal({
   const [context, setContext] = useState('');
   const [restrictedTools, setRestrictedTools] = useState('');
   const [yieldSchema, setYieldSchema] = useState('');
+  const [skillPick, setSkillPick] = useState<string[]>([]);
   const goalsRef = useRef<HTMLTextAreaElement | null>(null);
   const qc = useQueryClient();
 
-  // Escape closes; the goals textarea takes focus on open.
+  const skillsQ = useQuery({
+    queryKey: ['skills-catalogue'],
+    queryFn: async () => {
+      const res = await api.get<{ skills?: { name: string; description?: string }[] }>(
+        '/api/skills',
+      );
+      return res.skills ?? [];
+    },
+    enabled: open,
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -60,16 +74,22 @@ export function SubagentSpawnModal({
     };
   }, [open, onClose]);
 
-  // Per-launch advanced options apply to EVERY work item (the goals
-  // textarea is one prompt per line — per-item editors would need a
-  // structured form; the shared advanced block covers the common cases).
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent<{ goals?: string }>).detail;
+      if (detail?.goals) setGoals(detail.goals);
+    };
+    window.addEventListener('august:open-spawn', onOpen);
+    return () => window.removeEventListener('august:open-spawn', onOpen);
+  }, []);
+
   const parsedSchema = (() => {
     const text = yieldSchema.trim();
     if (!text) return undefined;
     try {
       return JSON.parse(text) as Record<string, unknown>;
     } catch {
-      return null; // invalid JSON — validation hint below
+      return null;
     }
   })();
   const schemaInvalid = parsedSchema === null;
@@ -78,23 +98,25 @@ export function SubagentSpawnModal({
     .map((t) => t.trim())
     .filter(Boolean);
 
+  const parsedItems = parseSpawnGoals(goals);
+  const waves = parsedItems.length ? previewWaves(parsedItems) : [];
+
   const launch = useMutation({
     mutationFn: () =>
       subagents.spawn(
         {
-          workItems: goals
-            .split('\n')
-            .map((g) => g.trim())
-            .filter(Boolean)
-            .map((goal) => ({
-              goal,
-              agentId: agent,
-              effort,
-              ...(modelOverride ? { model: modelOverride } : {}),
-              ...(context.trim() ? { context: context.trim() } : {}),
-              ...(toolsList.length > 0 ? { restrictedTools: toolsList } : {}),
-              ...(parsedSchema ? { yieldSchema: parsedSchema } : {}),
-            })),
+          workItems: parsedItems.map((item) => ({
+            goal: item.goal,
+            agentId: agent,
+            effort,
+            ...(item.name ? { name: item.name, workstream: item.name } : {}),
+            ...(item.dependsOn?.length ? { dependsOn: item.dependsOn } : {}),
+            ...(skillPick.length ? { skills: skillPick } : {}),
+            ...(modelOverride ? { model: modelOverride } : {}),
+            ...(context.trim() ? { context: context.trim() } : {}),
+            ...(toolsList.length > 0 ? { restrictedTools: toolsList } : {}),
+            ...(parsedSchema ? { yieldSchema: parsedSchema } : {}),
+          })),
           mode,
         },
         sessionId,
@@ -103,21 +125,20 @@ export function SubagentSpawnModal({
       toast.success(
         res.status === 'awaiting_approval'
           ? 'Proposal created — approve it in chat'
-          : 'Launched — watch the subagent list in chat',
+          : `Dispatched ${parsedItems.length} worker(s) in ${waves.length || 1} wave(s)`,
       );
       onClose();
       setGoals('');
       void qc.invalidateQueries({ queryKey: ['subagent-runs'] });
+      void qc.invalidateQueries({ queryKey: ['harness-jobs'] });
+      void qc.invalidateQueries({ queryKey: ['workstreams'] });
     },
     onError: (e: Error) => toast.error(e.message || 'Launch failed'),
   });
 
   if (!open) return null;
 
-  const items = goals
-    .split('\n')
-    .map((g) => g.trim())
-    .filter(Boolean).length;
+  const skillRows = skillsQ.data ?? [];
 
   return (
     <div
@@ -131,7 +152,7 @@ export function SubagentSpawnModal({
       >
         <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
           <Bot className="size-4 text-primary" />
-          <h2 className="text-sm font-semibold">Spawn sub-agents</h2>
+          <h2 className="text-sm font-semibold">Dispatch workstreams</h2>
           <button
             type="button"
             aria-label="Close"
@@ -144,7 +165,8 @@ export function SubagentSpawnModal({
         <div className="space-y-3 px-4 py-3">
           <div>
             <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-goals">
-              Goals — one per line
+              One work item per line — <code className="text-[10px]">name: goal</code> or{' '}
+              <code className="text-[10px]">name after:dep: goal</code>
             </label>
             <textarea
               id="spawn-goals"
@@ -152,9 +174,43 @@ export function SubagentSpawnModal({
               value={goals}
               onChange={(e) => setGoals(e.target.value)}
               rows={4}
-              placeholder={'Find all callers of executeSubAgent\nSummarize the retry policy'}
+              placeholder={PLACEHOLDER}
               className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-2 text-xs outline-none focus:border-primary/50"
             />
+          </div>
+          {waves.length > 0 ? (
+            <div className="rounded-md border border-border/50 bg-muted/15 px-2 py-1.5 text-[11px]" data-testid="spawn-wave-preview">
+              {waves.map((w, i) => (
+                <p key={i} className="text-muted-foreground">
+                  Wave {i + 1}: <span className="font-mono text-foreground/80">{w.join(', ')}</span>
+                </p>
+              ))}
+            </div>
+          ) : null}
+          <div>
+            <span className="text-[11px] font-medium text-muted-foreground">Preload skills</span>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {skillRows.slice(0, 12).map((s) => {
+                const name = s.name;
+                if (!name) return null;
+                const on = skillPick.includes(name);
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() =>
+                      setSkillPick((prev) => (on ? prev.filter((x) => x !== name) : [...prev, name]))
+                    }
+                    className={cn(
+                      'rounded-full border px-2 py-0.5 text-[10px]',
+                      on ? 'border-primary/50 bg-primary/15 text-foreground' : 'border-border/60 text-muted-foreground',
+                    )}
+                  >
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-[11px] font-medium text-muted-foreground">Mode</span>
@@ -176,7 +232,7 @@ export function SubagentSpawnModal({
                 onChange={() => setMode('proposed')}
                 className="size-3"
               />
-              Proposed — approve the breakdown first
+              Proposed — approve first
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -196,9 +252,6 @@ export function SubagentSpawnModal({
                   </option>
                 ))}
               </select>
-              <p className="mt-0.5 text-[10px] text-muted-foreground/70">
-                {AGENT_OPTIONS.find((a) => a.id === agent)?.hint}
-              </p>
             </div>
             <div>
               <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-effort">
@@ -216,9 +269,6 @@ export function SubagentSpawnModal({
                   </option>
                 ))}
               </select>
-              <p className="mt-0.5 text-[10px] text-muted-foreground/70">
-                {effort === 'max' ? 'Deepest reasoning (slowest, most thorough)' : `${effort} thinking budget`}
-              </p>
             </div>
             <div>
               <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-model">
@@ -237,9 +287,6 @@ export function SubagentSpawnModal({
                   </option>
                 ))}
               </select>
-              <p className="mt-0.5 text-[10px] text-muted-foreground/70">
-                Override for every work item
-              </p>
             </div>
           </div>
           {!sessionId && (
@@ -261,40 +308,37 @@ export function SubagentSpawnModal({
               <div className="mt-2 space-y-2.5 rounded-md border border-border/60 bg-background/50 p-2.5">
                 <div>
                   <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-context">
-                    Shared context (appended to every goal)
+                    Shared context
                   </label>
                   <textarea
                     id="spawn-context"
                     value={context}
                     onChange={(e) => setContext(e.target.value)}
                     rows={2}
-                    placeholder={'Focus on the backend. Report file:line references.'}
-                    className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-primary/50"
+                    className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 text-xs outline-none"
                   />
                 </div>
                 <div>
                   <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-restrict">
-                    Restricted tools (denylist, comma-separated)
+                    Restricted tools (denylist)
                   </label>
                   <input
                     id="spawn-restrict"
                     value={restrictedTools}
                     onChange={(e) => setRestrictedTools(e.target.value)}
-                    placeholder={'web_search, browser, delete_file'}
-                    className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-primary/50"
+                    className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs outline-none"
                   />
                 </div>
                 <div>
                   <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-schema">
-                    yieldSchema (JSON — each subagent returns a validated object)
+                    yieldSchema JSON
                   </label>
                   <textarea
                     id="spawn-schema"
                     value={yieldSchema}
                     onChange={(e) => setYieldSchema(e.target.value)}
-                    rows={4}
-                    placeholder={'{\n  "type": "object",\n  "required": ["summary"],\n  "properties": { "summary": { "type": "string" } }\n}'}
-                    className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-[11px] outline-none focus:border-primary/50"
+                    rows={3}
+                    className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-[11px] outline-none"
                   />
                   {schemaInvalid && (
                     <p className="mt-1 text-[10px] text-danger">Invalid JSON — the schema will not be sent.</p>
@@ -314,17 +358,13 @@ export function SubagentSpawnModal({
           </button>
           <button
             type="button"
-            disabled={items === 0 || launch.isPending}
+            disabled={parsedItems.length === 0 || launch.isPending}
             onClick={() => launch.mutate()}
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
             data-testid="spawn-launch-button"
           >
-            {launch.isPending ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <Play className="size-3" />
-            )}
-            Launch {items > 0 ? `${items} sub-agent${items === 1 ? '' : 's'}` : 'sub-agents'}
+            {launch.isPending ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
+            Dispatch {parsedItems.length > 0 ? `${parsedItems.length}` : ''}
           </button>
         </div>
       </div>

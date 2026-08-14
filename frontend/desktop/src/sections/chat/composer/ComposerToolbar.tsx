@@ -1,11 +1,11 @@
 /* ── Composer toolbar ──────────────────────────────────────────────────── */
 /* Slim pill controls: + menu, model/effort, voice, send / steer / stop.   */
 
-import { useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useState, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { Loader2, Mic, Send, ShieldCheck, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import { updateSessionModel } from '@/store/sessions';
-import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchVerifier } from '@/api/workbench';
+import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchVerifier, setWorkbenchAgentMode } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage } from '@/types/chat';
 import {
@@ -28,6 +28,7 @@ import { SubagentSpawnModal } from './SubagentSpawnModal';
 import { CostCeilingChip } from './CostCeilingChip';
 import type { AnchorPos } from './useComposerPopovers';
 import { cn } from '@/lib/utils';
+import { normalizeHarnessMode, type HarnessAgentMode } from '@/components/chat/HarnessModeChip';
 
 export function ComposerToolbar({
   sessionId,
@@ -71,6 +72,7 @@ export function ComposerToolbar({
   onAttach,
   onMention,
   onVoice,
+  sendKind = 'send',
 }: {
   sessionId: string | null;
   loadedSessionId: string | null;
@@ -124,9 +126,16 @@ export function ComposerToolbar({
   onAttach: () => void;
   onMention: () => void;
   onVoice: () => void;
+  sendKind?: 'steer' | 'continue' | 'dispatch' | 'send';
 }) {
   const [handoffPreparing, setHandoffPreparing] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
+
+  useEffect(() => {
+    const onOpen = () => setSpawnOpen(true);
+    window.addEventListener('august:open-spawn', onOpen);
+    return () => window.removeEventListener('august:open-spawn', onOpen);
+  }, []);
 
   const canSend =
     !!sessionId &&
@@ -157,6 +166,30 @@ export function ComposerToolbar({
           console.warn('[ChatThread] Failed to persist guard mode:', error);
         });
     }
+  };
+
+  const persistHarnessMode = (next: HarnessAgentMode) => {
+    const apply = (sid: string) => {
+      setWorkbenchSession((prev) => (prev ? { ...prev, agentMode: next } : prev));
+      void setWorkbenchAgentMode(sid, next)
+        .then((updated) => {
+          if (updated) setWorkbenchSession(updated);
+        })
+        .catch((error) => {
+          console.warn('[ChatThread] Failed to persist agent mode:', error);
+        });
+    };
+    if (!workbenchSession?.id) {
+      void ensureWorkbenchSession()
+        .then((session) => {
+          if (session?.id) apply(session.id);
+        })
+        .catch((error) => {
+          console.warn('[ChatThread] Failed to create session for harness mode:', error);
+        });
+      return;
+    }
+    apply(workbenchSession.id);
   };
 
   const sandboxMode = normalizeSandboxMode(workbenchSession?.sandboxMode);
@@ -261,6 +294,8 @@ export function ComposerToolbar({
           onChange={handleModeChange}
           sandboxMode={sandboxMode}
           onSandboxChange={handleSandboxChange}
+          harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
+          onHarnessChange={persistHarnessMode}
         />
       </div>
 
@@ -435,23 +470,39 @@ export function ComposerToolbar({
             }}
             disabled={!canSend}
             title={
-              canSend
-                ? 'Send (Enter)'
-                : !selectedModel
-                  ? 'Select a model first — open the model picker above'
-                  : !sessionId
-                    ? 'Open a chat session first'
-                    : 'Type a message to send'
+              sendKind === 'steer'
+                ? 'Steer this worker on its next round'
+                : sendKind === 'continue'
+                  ? 'Continue the named workstream'
+                  : sendKind === 'dispatch'
+                    ? 'Send to the orchestrator (it will spawn workers)'
+                    : canSend
+                      ? 'Send (Enter)'
+                      : !selectedModel
+                        ? 'Select a model first — open the model picker above'
+                        : !sessionId
+                          ? 'Open a chat session first'
+                          : 'Type a message to send'
             }
-            aria-label="Send"
+            aria-label={
+              sendKind === 'steer'
+                ? 'Steer'
+                : sendKind === 'continue'
+                  ? 'Continue thread'
+                  : sendKind === 'dispatch'
+                    ? 'Dispatch'
+                    : 'Send'
+            }
             className={cn(
-              'h-8 w-8 rounded-full flex items-center justify-center transition',
+              'h-8 rounded-full flex items-center justify-center transition',
+              sendKind === 'send' ? 'w-8' : 'px-2.5 gap-1 text-xs font-medium',
               canSend
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                 : 'bg-muted text-muted-foreground opacity-50',
             )}
           >
             <Send className="size-3.5" />
+            {sendKind === 'steer' ? 'Steer' : sendKind === 'continue' ? 'Continue' : sendKind === 'dispatch' ? 'Dispatch' : null}
           </button>
         )}
       </div>

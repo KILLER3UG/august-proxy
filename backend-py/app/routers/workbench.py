@@ -1745,6 +1745,18 @@ async def compactSession(sessionId: str):
     return result
 
 
+@router.get('/sessions/{sessionId}/transcript')
+async def sessionTranscript(sessionId: str):
+    """Archived transcript (source of truth) with live projection fallback."""
+    from app.services.transcript_archive import derive_messages
+    from app.services.workbench.sessions import get_workbench_session
+
+    session = get_workbench_session(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return {'sessionId': sessionId, 'messages': derive_messages(sessionId, list(session.messages or []))}
+
+
 @router.post('/sessions/{sessionId}/handoff')
 async def createSessionHandoff(sessionId: str, request: Request):
     """Summarize context for a model switch and persist it on the session.
@@ -1900,6 +1912,36 @@ async def setVerifierEnforced(request: Request):
             sessionId=sessionId,
             verifierEnforced=session.verifierEnforced,
         )
+        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
+    except Exception:
+        pass
+    return session.toDict()
+
+
+@router.post('/agent-mode')
+async def setAgentModeApi(request: Request):
+    """Persist harness agent_mode (chat / agent / code / orchestrator)."""
+    from datetime import datetime, timezone
+
+    from app.services.workbench.sessions import save_sessions
+
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    raw = as_str(body.get('agentMode') or body.get('agent_mode'), '').strip().lower()
+    if raw == 'planner':
+        raw = 'orchestrator'
+    if raw not in ('chat', 'agent', 'code', 'orchestrator'):
+        raise HTTPException(status_code=400, detail='agentMode must be chat, agent, code, or orchestrator')
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    session.agent_mode = raw
+    session.updatedAt = datetime.now(timezone.utc).isoformat()
+    save_sessions()
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime('session.updated', sessionId=sessionId, agentMode=raw)
         emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
     except Exception:
         pass

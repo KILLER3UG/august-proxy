@@ -186,7 +186,7 @@ function NestedAgentRows({
   if (agents.length === 0) return null;
   return (
     <div className="mt-1 space-y-1" data-slot="subagent-nested-list">
-      <div className="text-[12px] text-muted-foreground/75 px-0.5">Checked to-do list</div>
+      <div className="text-[12.5px] text-muted-foreground/70 px-0.5">Workers</div>
       <ul className="flex flex-col gap-2" role="list">
         {agents.map((agent) => {
           const title = agent.task?.trim() || getAgentRoleLabel(agent.agentId);
