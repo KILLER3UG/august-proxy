@@ -14,7 +14,9 @@ import { SubagentTimeline } from '@/components/chat/SubagentTimeline';
 import { useSubagentActions } from '@/hooks/useSubagentActions';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
+import { useFocusedSubagent } from '@/components/chat/focused-subagent';
 import { WorkstreamsPanel } from '@/components/chat/WorkstreamsPanel';
+import { api } from '@/api/client';
 
 const ACTIVE_STATUSES = new Set(['pending', 'running']);
 
@@ -24,6 +26,23 @@ const AVATAR_COLORS = [
   'text-orange-300 bg-orange-400/15',
   'text-cyan-300 bg-cyan-400/15',
 ];
+
+function previewTranscriptContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && 'text' in part) {
+          return String((part as { text?: unknown }).text ?? '');
+        }
+        return '';
+      })
+      .join(' ')
+      .trim();
+  }
+  return '';
+}
 
 function statusText(status: string): string {
   if (ACTIVE_STATUSES.has(status)) return 'is working';
@@ -58,11 +77,19 @@ export function RightDrawerSubagentsSection({
   sessionId: string | null;
   workbenchSessionId: string | null;
 }) {
+  const focused = useFocusedSubagent();
   const [openTaskIds, setOpenTaskIds] = useState<string[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const { stop, stopAll, steer } = useSubagentActions();
   const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
     useConfirmDialog();
+  useEffect(() => {
+    if (!focused?.jobId) return;
+    setOpenTaskIds((current) =>
+      current.includes(focused.jobId) ? current : [...current, focused.jobId],
+    );
+    setSelectedTaskId(focused.jobId);
+  }, [focused?.jobId]);
   const subagentBlocks = useSessionStreamStore((state) => {
     const session = sessionId ? state.bySession[sessionId] : undefined;
     return session?.subagentBlocks;
@@ -70,6 +97,14 @@ export function RightDrawerSubagentsSection({
   const subagentPrompts = useSessionStreamStore((state) => {
     const session = sessionId ? state.bySession[sessionId] : undefined;
     return session?.subagentPrompts;
+  });
+  const transcript = useQuery({
+    queryKey: ['workbench-transcript', workbenchSessionId],
+    queryFn: () =>
+      api.get<{ messages?: Array<{ role?: string; content?: unknown }> }>(
+        `/api/workbench/sessions/${encodeURIComponent(workbenchSessionId!)}/transcript`,
+      ),
+    enabled: !!workbenchSessionId,
   });
   const query = useQuery({
     queryKey: ['session-agents', workbenchSessionId],
@@ -336,6 +371,21 @@ export function RightDrawerSubagentsSection({
       )}
 
       <WorkstreamsPanel sessionId={workbenchSessionId} compact />
+      {(transcript.data?.messages?.length ?? 0) > 0 ? (
+        <details className="mx-2 mb-3 rounded-lg border border-border/40 bg-muted/10 px-2 py-1.5">
+          <summary className="cursor-pointer text-[11px] text-muted-foreground">
+            Full run ({transcript.data!.messages!.length} messages)
+          </summary>
+          <ol className="mt-2 max-h-64 space-y-1 overflow-y-auto text-[11px] text-muted-foreground">
+            {transcript.data!.messages!.slice(-40).map((m, i) => (
+              <li key={i} className="line-clamp-3">
+                <span className="font-medium text-foreground/70">{m.role ?? 'msg'}: </span>
+                {previewTranscriptContent(m.content)}
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : null}
 
       {query.isError && (
         <div className="flex items-center gap-1.5 px-2 py-2 text-xs text-destructive/75">

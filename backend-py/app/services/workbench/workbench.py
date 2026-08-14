@@ -700,13 +700,16 @@ def buildSystemPrompt(
     coreFacts = get_memory('coreMemory')
     if coreFacts:
         memory['coreMemory'] = coreFacts
-    # User-authored Added Memory — inject every turn (opposite of on-demand recalled).
+    # User-authored Added Memory — parent chat only. Workers get task
+    # context + skills/recall, not every-turn user facts.
+    is_worker = int(getattr(session, 'subagent_depth', 0) or 0) > 0
     try:
-        from app.services.memory.auto_memory import list_user_added_memories
+        if not is_worker:
+            from app.services.memory.auto_memory import list_user_added_memories
 
-        added = list_user_added_memories(limit=_scaledMemoryLimit(40, _modelWindowForMemory))
-        if added:
-            memory['addedMemories'] = cast(list[JsonValue], added)
+            added = list_user_added_memories(limit=_scaledMemoryLimit(40, _modelWindowForMemory))
+            if added:
+                memory['addedMemories'] = cast(list[JsonValue], added)
     except Exception:
         logger.debug('prompt: added memories load failed', exc_info=True)
     agentContext = None

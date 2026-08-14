@@ -233,11 +233,6 @@ export function AssistantBlockTimeline({
       }
     }
   }
-  // Total elapsed for the whole tool-execution sequence (not per-tool).
-  const sequenceDurationLabel =
-    !anyToolRunning && Number.isFinite(seqStart) && seqEnd > seqStart
-      ? formatSequenceDuration(seqEnd - seqStart)
-      : null;
   // Coalesced consecutive thoughts count as one ThoughtStep in the UI.
   const coalescedThoughtCount = (() => {
     let n = 0;
@@ -258,6 +253,18 @@ export function AssistantBlockTimeline({
     streaming &&
     (processBlocks.length > 0 || showPendingThinking)
   );
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!livePacked) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [livePacked]);
+  const sequenceDurationLabel =
+    Number.isFinite(seqStart) && (anyToolRunning || seqEnd > seqStart)
+      ? formatSequenceDuration(
+          (anyToolRunning ? nowMs : seqEnd) - seqStart,
+        )
+      : null;
 
   const { liveDetail, liveItems } = useMemo(() => {
     const items: LiveActivityItem[] = [];
@@ -812,14 +819,15 @@ export function AssistantBlockTimeline({
           editedCount={editedCount}
           ranCount={ranCount}
           usedCount={usedCount}
+          workersCount={subagentBlocks?.size ?? 0}
           filesTouched={filesTouched.size}
           searches={searchesCount}
           commands={commandsCount}
           errors={errorsCount}
-          summary={processSummary}
+          summary={livePacked ? null : processSummary}
           live={livePacked}
-          liveDetail={liveDetail || null}
-          defaultOpen={livePacked && !hasFinalOutput}
+          liveDetail={null}
+          defaultOpen={false}
           collapseWhen={hasFinalOutput}
           mode={toolsCount > 0 ? 'completion' : 'activity'}
           durationLabel={sequenceDurationLabel}

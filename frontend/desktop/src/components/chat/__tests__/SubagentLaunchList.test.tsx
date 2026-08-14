@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { queryClient } from '@/query-client';
 import { SubagentLaunchList } from '../SubagentLaunchList';
 import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
 
 function wrap(ui: React.ReactElement) {
-  return <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>;
+  return (
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+    </MemoryRouter>
+  );
 }
 
 vi.mock('@/sections/chat/ChatMarkdown', () => ({
@@ -16,6 +21,7 @@ vi.mock('@/sections/chat/ChatMarkdown', () => ({
 vi.mock('@/api/subagents', () => ({
   terminate: vi.fn().mockResolvedValue({ status: 'stopped' }),
   stopAll: vi.fn().mockResolvedValue({ stopped: 0 }),
+  listWorkstreamEpisodes: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('@/components/chat/ToolCallItem', () => ({
@@ -24,11 +30,11 @@ vi.mock('@/components/chat/ToolCallItem', () => ({
   ),
 }));
 
-vi.mock('@/components/chat/ThinkingDisclosure', () => ({
-  ThinkingDisclosure: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="thinking">{children}</div>
-  ),
+vi.mock('@/components/shell/RightDrawerState', () => ({
+  addRightDrawerSection: vi.fn(),
 }));
+
+import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 
 function makeAgent(
   overrides: Partial<SubagentBlockState> & Pick<SubagentBlockState, 'jobId'>,
@@ -51,7 +57,7 @@ describe('SubagentLaunchList', () => {
     vi.clearAllMocks();
   });
 
-  it('renders Checked to-do list rows with status under title and model tag', () => {
+  it('renders worker lanes with status and model tag', () => {
     // Production passes the session's selected model display name here.
     const currentModelLabel = 'Claude Sonnet 4';
     const agents = [
@@ -72,26 +78,21 @@ describe('SubagentLaunchList', () => {
     expect(screen.getByText('Running')).toBeInTheDocument();
   });
 
-  it('opens inline expanded card on row click', () => {
+  it('opens the workers drawer on lane click', () => {
     const currentModelLabel = 'Claude Sonnet 4';
     const agents = [
       makeAgent({
         jobId: 'j1',
         task: 'Find empty folder switch bug',
         status: 'completed',
-        blocks: [
-          { id: 't1', type: 'thinking', content: 'Looking around' },
-          { id: 'f1', type: 'finalOutput', content: 'Root cause was path mismatch.' },
-        ],
       }),
     ];
     render(wrap(<SubagentLaunchList agents={agents} modelLabel={currentModelLabel} />));
 
     fireEvent.click(screen.getByTestId('subagent-launch-row-j1'));
-    expect(screen.getByTestId('subagent-expanded-card')).toBeInTheDocument();
-    // Title appears in the card header (and may also appear in the prompt box).
-    expect(screen.getAllByText('Find empty folder switch bug').length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByTestId('subagent-detail-modal')).not.toBeInTheDocument();
+    expect(addRightDrawerSection).toHaveBeenCalledWith('subagents');
+    expect(screen.queryByTestId('subagent-expanded-card')).not.toBeInTheDocument();
+    expect(screen.getByTestId('subagent-launch-row-j1')).toBeInTheDocument();
   });
 
   it('renders the stop control for running agents WITHOUT nesting it in the row button (no invalid HTML)', () => {
@@ -108,11 +109,10 @@ describe('SubagentLaunchList', () => {
     const row = screen.getByTestId('subagent-launch-row-j1');
     expect(row.tagName).toBe('DIV');
     expect(row).toHaveAttribute('role', 'button');
-    // Clicking stop must NOT open the expanded card (stopPropagation).
     fireEvent.click(stop);
-    expect(screen.queryByTestId('subagent-expanded-card')).not.toBeInTheDocument();
-    // Clicking the row still opens the card.
+    expect(addRightDrawerSection).not.toHaveBeenCalled();
     fireEvent.click(row);
-    expect(screen.getByTestId('subagent-expanded-card')).toBeInTheDocument();
+    expect(addRightDrawerSection).toHaveBeenCalledWith('subagents');
+    expect(screen.getByTestId('subagent-launch-row-j1')).toBeInTheDocument();
   });
 });

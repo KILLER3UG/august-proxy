@@ -20,6 +20,7 @@ export interface ActivitySummaryCounts {
   editedCount?: number;
   ranCount?: number;
   usedCount?: number;
+  workersCount?: number;
   /** §9 completion tally — distinct files touched, searches run, commands run. */
   filesTouched?: number;
   searches?: number;
@@ -92,6 +93,9 @@ export function buildActivityCountSegments(c: ActivitySummaryCounts): Array<{ ke
   } else if ((c.toolsCount ?? 0) > 0) {
     segs.push({ key: 'tools', text: plural(c.toolsCount!, 'tool', 'tools') });
   }
+  if ((c.workersCount ?? 0) > 0) {
+    segs.push({ key: 'workers', text: plural(c.workersCount!, 'worker', 'workers') });
+  }
 
   return segs;
 }
@@ -121,6 +125,7 @@ export function ActivitySummary({
   editedCount = 0,
   ranCount = 0,
   usedCount = 0,
+  workersCount = 0,
   filesTouched = 0,
   searches = 0,
   commands = 0,
@@ -135,17 +140,12 @@ export function ActivitySummary({
   mode = 'activity',
   className,
 }: ActivitySummaryProps) {
-  const [open, setOpen] = useState(defaultOpen || live);
+  const [open, setOpen] = useState(defaultOpen);
   const [bodyClip, setBodyClip] = useState(true);
   const wasLiveRef = useRef(live);
   useEffect(() => {
     if (open) setBodyClip(true);
   }, [open]);
-  // While the turn is live (pre-final), keep the pack open so tools stay
-  // visible in chat (not only in the Activity drawer).
-  useEffect(() => {
-    if (live && !collapseWhen) setOpen(true);
-  }, [live, collapseWhen]);
   // As soon as the final response starts, collapse thinking/tools.
   useEffect(() => {
     if (collapseWhen) setOpen(false);
@@ -163,6 +163,7 @@ export function ActivitySummary({
     editedCount,
     ranCount,
     usedCount,
+    workersCount,
   });
   const prose = summary?.trim() || '';
   const hasProse = prose.length > 0;
@@ -219,9 +220,9 @@ export function ActivitySummary({
                 />
               ) : null}
               {live ? (
-                liveLine ? (
+                liveDetail?.trim() ? (
                   <span className="min-w-0 truncate text-muted-foreground">
-                    {liveLine}
+                    {liveDetail.trim()}
                   </span>
                 ) : null
               ) : completionText ? (
@@ -242,7 +243,7 @@ export function ActivitySummary({
                 <span className="activity-summary-live-dot" aria-hidden />
               </span>
             ) : null}
-            {!live && durationLabel ? (
+            {durationLabel ? (
               <span className="activity-summary-duration" aria-hidden>
                 {durationLabel}
               </span>
@@ -251,6 +252,12 @@ export function ActivitySummary({
         ) : (
           <>
             <span className="activity-summary-counts">
+              {durationLabel ? (
+                <span className="activity-summary-duration" aria-hidden>
+                  {durationLabel}
+                  {hasProse || segments.length > 0 ? ' · ' : ''}
+                </span>
+              ) : null}
               {hasProse ? (
                 <span className="activity-summary-prose" title={prose}>
                   {prose}
@@ -268,12 +275,6 @@ export function ActivitySummary({
                   </span>
                 ))
               )}
-              {durationLabel ? (
-                <span className="activity-summary-duration" aria-hidden>
-                  {hasProse || segments.length > 0 ? ' · ' : ''}
-                  {durationLabel}
-                </span>
-              ) : null}
             </span>
             {/* Collapsed + live: pulse beside the chevron so the row still reads as working. */}
             {live && !open ? (
@@ -296,8 +297,7 @@ export function ActivitySummary({
         )}
       </button>
 
-      {/* Always visible while live so collapse never looks like a freeze. */}
-      {live && liveLine ? (
+      {live && open && liveLine ? (
         <div className="activity-summary-live" aria-live="polite">
           <span className="activity-summary-live-dot" aria-hidden />
           <span className="truncate">{liveLine}</span>

@@ -191,7 +191,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Customize colors for background, chat input, sidebar, settings, and brand — live preview + Apply.',
     icon: Palette,
     category: 'general',
-    tier: 'basic',
+    tier: 'hidden',
     keywords: ['ui designer', 'customize', 'colors', 'paint', 'branding', 'sidebar color', 'chat input color', 'preview'],
     legacyAliases: ['ui-customization', 'theme-editor', 'design-ui'],
   },
@@ -201,7 +201,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Archived chat sessions and per-conversation history.',
     icon: MessagesSquare,
     category: 'general',
-    tier: 'basic',
+    tier: 'advanced',
     keywords: ['conversation', 'history', 'archive', 'session', 'chat'],
     legacyAliases: ['archive', 'conversations', 'chat-history', 'session-history'],
   },
@@ -240,11 +240,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   {
     id: 'memory-knowledge',
-    label: 'Memory & Saved Knowledge',
+    label: 'Memory',
     description: 'Memory store, semantic facts, vector entries, knowledge graph, and system prompt.',
     icon: Network,
     category: 'intelligence',
-    tier: 'advanced',
+    tier: 'basic',
     keywords: ['memory', 'semantic', 'facts', 'vector', 'db', 'graph', 'knowledge', 'prompt', 'learning', 'guidelines'],
     legacyAliases: ['memory', 'semantic-facts', 'vector-db'],
   },
@@ -255,7 +255,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'Browse agent-captured memories August can search on demand in chat (Topics / Areas).',
     icon: BrainCircuit,
     category: 'intelligence',
-    tier: 'advanced',
+    tier: 'hidden',
     // Note: 'memory' is owned by memory-knowledge — this section is
     // reached via 'recall' / 'auto-memory' / category names instead.
     keywords: ['recall', 'recalled', 'auto-memory', 'auto memory', 'category'],
@@ -278,7 +278,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'Facts you explicitly save for August — injected into every chat turn.',
     icon: StickyNote,
     category: 'intelligence',
-    tier: 'advanced',
+    tier: 'hidden',
     keywords: ['added', 'add memory', 'remember this', 'user memory', 'saved fact'],
     legacyAliases: ['added-memories', 'user-memories'],
   },
@@ -289,7 +289,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'Memories August learned from chats inside each project folder.',
     icon: FolderOpen,
     category: 'intelligence',
-    tier: 'basic',
+    tier: 'hidden',
     keywords: ['project', 'folder', 'workspace', 'project memories', 'by project'],
     legacyAliases: ['project-memory', 'folder-memories'],
   },
@@ -300,7 +300,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'Reusable prompt templates with variable placeholders for common tasks.',
     icon: FileText,
     category: 'intelligence',
-    tier: 'basic',
+    tier: 'advanced',
     // 'prompt' is owned by memory-knowledge — keep this section's keywords
     // distinct so the registry audit (unique ownership) stays green.
     keywords: ['templates', 'template', 'reusable', 'variable', 'shortcut'],
@@ -376,7 +376,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Always-here tool grants by workspace path — list, explain, revoke.',
     icon: FolderLock,
     category: 'security',
-    tier: 'basic',
+    tier: 'hidden',
     keywords: ['grant', 'always', 'path-permission', 'revoke', 'allowlist-path'],
     legacyAliases: ['always-grants', 'path-grants'],
   },
@@ -394,7 +394,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'agent-sandbox',
     label: 'Files & Shell Access',
     description:
-      'Where shell/files can go (project only by default). Separate from agent mode approvals.',
+      'Sandbox reach, always-here path grants, and the safe Python cell — one access page.',
     icon: Shield,
     category: 'tools',
     tier: 'basic',
@@ -407,7 +407,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Safe Python cell with no network, banned imports, and timeout.',
     icon: Code2,
     category: 'tools',
-    tier: 'advanced',
+    tier: 'hidden',
     keywords: ['python', 'cell', 'exec'],
     legacyAliases: ['sandbox'],
   },
@@ -456,7 +456,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Real-time stream of proxy, memory, scheduler, and tool events.',
     icon: Radio,
     category: 'activity',
-    tier: 'advanced',
+    tier: 'hidden',
     // Note: 'memory' is owned by memory-knowledge. 'console' is owned
     // by developer-console. 'monitor' is the dominant discoverer here.
     keywords: ['logs', 'live', 'stream', 'events', 'monitor', 'websocket', 'proxy', 'scheduler'],
@@ -489,7 +489,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Preflight a provider + model: connectivity, tool support, and fallback route before relying on it.',
     icon: Stethoscope,
     category: 'activity',
-    tier: 'advanced',
+    tier: 'hidden',
     // Note: 'health' is owned by system-health; 'test'/'connect' are not
     // claimed keywords — this section owns the simulator vocabulary.
     keywords: ['simulate', 'simulator', 'probe', 'preflight', 'diagnose', 'tool support', 'fallback route'],
@@ -535,6 +535,24 @@ export function resolveLegacyTab(raw: string | null): string {
   if (!raw) return SETTINGS_SECTIONS[0].id;
   if (raw === 'services') return 'tools-connections';
   return LEGACY_TAB_MAP.get(raw ?? '') ?? SETTINGS_SECTIONS[0].id;
+}
+
+/** Hidden split-views that still have ids for deep links. The rail
+ *  highlights the parent hub instead of listing each as its own tab. */
+const RAIL_PARENT: Readonly<Record<string, string>> = {
+  'recalled-memory': 'memory-knowledge',
+  'added-memory': 'memory-knowledge',
+  'project-memories': 'memory-knowledge',
+  'ui-designer': 'profile-preferences',
+  'tool-grants': 'agent-sandbox',
+  'python-sandbox': 'agent-sandbox',
+  'backend-monitor': 'observability',
+  'health-simulator': 'system-health',
+};
+
+/** Section id the left rail should mark active. */
+export function railCanonicalId(id: string): string {
+  return RAIL_PARENT[id] ?? id;
 }
 
 export function getSection(id: string): SettingsSection | undefined {

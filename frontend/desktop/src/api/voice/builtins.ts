@@ -160,6 +160,53 @@ voiceCommandRegistry.register({
 });
 
 voiceCommandRegistry.register({
+  id: 'remember',
+  triggers: ['remember this', 'remember that', 'save this memory'],
+  slashCommand: '/remember',
+  category: 'core',
+  description: 'Save a fact August should include in future chats',
+  handler: ({ args, sessionId, messages }) => {
+    const lastUser = [...(messages ?? [])]
+      .reverse()
+      .find((m) => m.role === 'user' && String(m.content || '').trim());
+    const content = (args || String(lastUser?.content || '')).trim();
+    if (!content) {
+      voiceCommandEvents.emit({
+        type: 'toast',
+        level: 'error',
+        message: '/remember needs text. Try: /remember I prefer pytest',
+      });
+      return;
+    }
+    void import('@/api/client').then(({ api }) =>
+      api
+        .post('/api/memory/auto', {
+          key: `user:${content.slice(0, 48)}`,
+          content,
+          category: 'preference',
+          importance: 0.85,
+          source: 'user',
+        })
+        .then(() => {
+          voiceCommandEvents.emit({
+            type: 'toast',
+            level: 'success',
+            message: 'Saved to Added memory',
+          });
+        })
+        .catch(() => {
+          voiceCommandEvents.emit({
+            type: 'toast',
+            level: 'error',
+            message: 'Could not save memory',
+          });
+        }),
+    );
+    void sessionId;
+  },
+});
+
+voiceCommandRegistry.register({
   id: 'init-aug',
   triggers: ['init', 'initialize', 'set up project', 'aug init', 'create aug md'],
   slashCommand: '/init',

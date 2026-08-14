@@ -24,7 +24,7 @@ interface GraphStats { stats?: { counts?: { entities?: number; relations?: numbe
 interface LearningStatus { status?: string; lastTopic?: string }
 interface BrainDiagnostics { guidelines?: number; semanticFacts?: number; vectorEntries?: number }
 
-export function WorkspaceMemorySection() {
+export function WorkspaceMemorySection({ compact }: { compact?: boolean }) {
   const navigate = useNavigate();
   const storeStatus = useQuery<StoreStatus>({
     queryKey: ['ws-mem-store'],
@@ -66,7 +66,8 @@ export function WorkspaceMemorySection() {
     : 'secondary';
 
   return (
-    <div className="px-8 py-6 space-y-6">
+    <div className={compact ? 'space-y-6' : 'px-8 py-6 space-y-6'}>
+      {compact ? null : (
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Memory &amp; Knowledge</h1>
@@ -82,6 +83,7 @@ export function WorkspaceMemorySection() {
           Open Brain →
         </button>
       </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <WorkspaceStatCard

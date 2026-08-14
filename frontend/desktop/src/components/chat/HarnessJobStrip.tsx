@@ -22,9 +22,7 @@ export function HarnessJobStrip({ sessionId }: { sessionId: string | null }) {
     enabled: !!sessionId,
     refetchInterval: 6_000,
   });
-  const rows = (jobs.data ?? []).filter(
-    (j) => j.status === 'running' || j.dirty || j.status === 'failed' || j.status === 'partial',
-  );
+  const rows = (jobs.data ?? []).filter((j) => j.dirty);
   if (!sessionId || rows.length === 0) return null;
   const job = rows[0];
 
@@ -102,11 +100,21 @@ export function HarnessJobStrip({ sessionId }: { sessionId: string | null }) {
           type="button"
           className="mt-1.5 text-[12px] text-warning underline-offset-2 hover:underline"
           onClick={() => {
-            const name = job.waves?.flat().find(Boolean);
-            if (name) setContinueWorkstream(name);
+            const names = (job.waves ?? []).flat().filter(Boolean);
+            const name = names[names.length - 1];
+            if (!name || !sessionId) return;
+            void subagents
+              .continueWorkstream(
+                sessionId,
+                name,
+                'Summarize what changed in this workstream, then continue from the last episode.',
+              )
+              .then(() => {
+                void qc.invalidateQueries({ queryKey: ['harness-jobs'] });
+              });
           }}
         >
-          Continue this thread and summarize what changed
+          Summarize what changed and continue
         </button>
       ) : null}
     </div>

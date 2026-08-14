@@ -183,7 +183,11 @@ export function SystemHealthSection() {
       <header className="shrink-0">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">System &amp; Health</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          The proxy gateway is running and routing requests. Everything below is live.
+          Gateway uptime, RAM, and endpoints.{' '}
+          <Link to="/settings/health-simulator" className="text-foreground/90 underline-offset-2 hover:underline">
+            Preflight a provider
+          </Link>{' '}
+          before you rely on it in chat.
         </p>
       </header>
 

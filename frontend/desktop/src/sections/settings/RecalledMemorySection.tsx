@@ -2,9 +2,10 @@
 
 import { AutoMemoryBrowse } from './AutoMemoryBrowse';
 
-export function RecalledMemorySection() {
+export function RecalledMemorySection({ embedded }: { embedded?: boolean }) {
   return (
     <AutoMemoryBrowse
+      embedded={embedded}
       origin="recalled"
       title="Recalled Memory"
       subtitle="Past context August learned automatically. Searchable on demand in chat — browse by topic, open a row for details."

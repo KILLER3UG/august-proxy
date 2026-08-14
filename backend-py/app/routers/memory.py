@@ -62,6 +62,7 @@ class AutoMemoryUpdate(CamelModel):
     category: str | None = None
     importance: float | None = None
     source: str | None = None
+    pinned: bool | None = None
 
 
 class ProposalCreate(CamelModel):
@@ -194,6 +195,7 @@ async def updateAutoMemoryRoute(memoryId: int, body: AutoMemoryUpdate):
         category=body.category,
         importance=body.importance,
         source=body.source,
+        pinned=body.pinned,
     )
     if not ok:
         raise HTTPException(status_code=404, detail='Memory not found')

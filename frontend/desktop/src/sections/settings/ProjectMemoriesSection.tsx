@@ -4,20 +4,39 @@ import { useState } from 'react';
 import { useSessionsStore } from '@/store/sessions';
 import { AutoMemoryBrowse } from './AutoMemoryBrowse';
 
-export function ProjectMemoriesSection() {
+function folderFromOpenChat(): string {
+  try {
+    const back = sessionStorage.getItem('pre-settings-path') || '';
+    const m = back.match(/\/c\/([^/?#]+)/);
+    if (!m) return '';
+    const sid = decodeURIComponent(m[1]);
+    const sess = useSessionsStore
+      .getState()
+      .sessions.find((s) => s.id === sid || s.workbenchSessionId === sid);
+    return sess?.folderId || '';
+  } catch {
+    return '';
+  }
+}
+
+export function ProjectMemoriesSection({ embedded }: { embedded?: boolean }) {
   const folders = useSessionsStore((s) => s.folders);
-  const [folderId, setFolderId] = useState<string>('');
+  const [folderId, setFolderId] = useState<string>(() => folderFromOpenChat());
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="px-6 pt-5 pb-3 shrink-0 space-y-2">
-        <h2 className="text-lg font-semibold tracking-tight text-foreground">
-          Project Memories
-        </h2>
-        <p className="text-sm leading-5 text-muted-foreground">
-          Memories August learned from chats inside a project folder — browse
-          what it remembers per project.
-        </p>
+    <div className={embedded ? 'space-y-2' : 'flex h-full flex-col'}>
+      <div className={embedded ? 'space-y-2' : 'px-6 pt-5 pb-3 shrink-0 space-y-2'}>
+        {embedded ? null : (
+          <>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              Project Memories
+            </h2>
+            <p className="text-sm leading-5 text-muted-foreground">
+              Memories August learned from chats inside a project folder — browse
+              what it remembers per project.
+            </p>
+          </>
+        )}
         <label className="block">
           <span className="text-xs font-medium text-muted-foreground">Project</span>
           <select
@@ -36,6 +55,7 @@ export function ProjectMemoriesSection() {
       </div>
       <div className="min-h-0 flex-1">
         <AutoMemoryBrowse
+          embedded={embedded}
           origin="recalled"
           title="Project Memories"
           subtitle={

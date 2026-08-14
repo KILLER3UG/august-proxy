@@ -8,6 +8,12 @@ vi.mock('@/api/workbench', () => ({
   listWorkbenchSessionAgents: vi.fn(),
 }));
 
+vi.mock('@/api/client', () => ({
+  api: {
+    get: vi.fn().mockResolvedValue({ messages: [] }),
+  },
+}));
+
 vi.mock('@/api/subagents', () => ({
   listWorkstreams: vi.fn().mockResolvedValue([]),
   listWorkstreamEpisodes: vi.fn().mockResolvedValue([]),

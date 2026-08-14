@@ -965,12 +965,12 @@ input::placeholder {
 
 /* Whole-turn activity summary (Thought + Tools collapsed after final output) */
 .activity-summary {
-  margin: 4px 0;
-  border-radius: 6px;
-  background: transparent;
+  margin: 6px 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dt-foreground) 2.5%, transparent);
 }
 .activity-summary[data-expanded="true"] {
-  background: transparent;
+  background: color-mix(in srgb, var(--dt-foreground) 3.5%, transparent);
 }
 .activity-summary-header {
   display: flex;

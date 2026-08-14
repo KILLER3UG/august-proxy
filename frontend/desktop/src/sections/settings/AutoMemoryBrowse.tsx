@@ -74,6 +74,7 @@ export function AutoMemoryBrowse({
   detailComposerPlaceholder,
   showListComposer,
   folderId,
+  embedded = false,
 }: {
   origin: MemoryOrigin;
   title: string;
@@ -85,6 +86,8 @@ export function AutoMemoryBrowse({
   showListComposer: boolean;
   /** Project (folder) filter — only memories from sessions in this folder. */
   folderId?: string;
+  /** Nested in the Memory hub — no second page title. */
+  embedded?: boolean;
 }) {
   const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
     useConfirmDialog();
@@ -240,14 +243,9 @@ export function AutoMemoryBrowse({
 
   if (selected) {
     const details = detailsOf(selected);
-    return (
-      <SettingsSectionShell
-        title={title}
-        subtitle={subtitle}
-        className="h-full"
-        bodyClassName="px-0 pb-0 flex flex-col"
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-border/50 px-6 py-3">
+    const detailBody = (
+      <>
+        <div className="flex items-center justify-between gap-3 border-b border-border/50 px-1 py-3">
           <button
             type="button"
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
@@ -281,7 +279,7 @@ export function AutoMemoryBrowse({
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto px-6 py-5 space-y-6">
+        <div className="space-y-6 py-4">
           <h2 className="text-xl font-semibold tracking-tight">{titleOf(selected)}</h2>
 
           <section className="space-y-2">
@@ -301,7 +299,7 @@ export function AutoMemoryBrowse({
           </section>
         </div>
 
-        <div className="shrink-0 border-t border-border/60 bg-background/80 px-6 py-3">
+        <div className="shrink-0 border-t border-border/60 bg-background/80 py-3">
           <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-2">
             <input
               type="text"
@@ -328,24 +326,42 @@ export function AutoMemoryBrowse({
             </button>
           </div>
         </div>
+        <ConfirmDialog
+          open={confirmState.open}
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          cancelLabel={confirmState.cancelLabel}
+          variant={confirmState.variant}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+        />
+      </>
+    );
+    if (embedded) {
+      return <div className="rounded-xl border border-border/50 bg-card/30 px-3">{detailBody}</div>;
+    }
+    return (
+      <SettingsSectionShell
+        title={title}
+        subtitle={subtitle}
+        className="h-full"
+        bodyClassName="px-6 pb-0 flex flex-col"
+      >
+        {detailBody}
       </SettingsSectionShell>
     );
   }
 
-  return (
-    <SettingsSectionShell
-      title={title}
-      subtitle={subtitle}
-      className="h-full"
-      bodyClassName="px-0 pb-0 flex flex-col"
-    >
-      <div className="flex-1 overflow-auto px-6 pb-4 space-y-5">
+  const listBody = (
+    <>
+      <div className={cn(embedded ? 'space-y-4' : 'flex-1 overflow-auto px-6 pb-4 space-y-5')}>
         {memoriesQuery.isLoading ? (
-          <div className="flex items-center justify-center py-16 text-muted-foreground">
+          <div className="flex items-center justify-center py-10 text-muted-foreground">
             <Loader2 className="size-5 animate-spin" />
           </div>
         ) : items.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border/60 p-6 text-center text-sm text-muted-foreground">
             <BrainCircuit className="mx-auto mb-2 size-6 text-muted-foreground/60" />
             <p className="font-medium text-foreground/80">{emptyTitle}</p>
             <p className="mt-1">{emptyHint}</p>
@@ -359,7 +375,7 @@ export function AutoMemoryBrowse({
       </div>
 
       {showListComposer ? (
-        <div className="shrink-0 border-t border-border/60 bg-background/80 px-6 py-3">
+        <div className={cn('shrink-0', embedded ? 'pt-3' : 'border-t border-border/60 bg-background/80 px-6 py-3')}>
           <div
             className={cn(
               'flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-2',
@@ -401,6 +417,22 @@ export function AutoMemoryBrowse({
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
+    </>
+  );
+
+  if (embedded) {
+    return <div className="space-y-1">{listBody}</div>;
+  }
+
+  return (
+    <SettingsSectionShell
+      title={title}
+      subtitle={subtitle}
+      className="h-full"
+      bodyClassName="px-0 pb-0 flex flex-col"
+    >
+      {listBody}
     </SettingsSectionShell>
   );
 }
+

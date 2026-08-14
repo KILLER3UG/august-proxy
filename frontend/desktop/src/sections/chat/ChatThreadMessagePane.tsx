@@ -18,6 +18,8 @@ import type { ChatMessage } from '@/types/chat';
 import type { SubagentPromptMap } from './hooks/useSessionStream';
 import type { SubagentBlockState } from './chat-stream-manager';
 import { useMessageEnterAnimation } from './hooks/useMessageEnterAnimation';
+import { ChatRunHeader } from '@/components/chat/ChatRunHeader';
+import type { WorkbenchSession } from '@/types/workbench';
 
 export function ChatThreadMessagePane({
   sessionId,
@@ -46,6 +48,8 @@ export function ChatThreadMessagePane({
   onCompare,
   onBeforeJump,
   virtRef,
+  workbenchSession,
+  pct = 0,
 }: {
   sessionId: string | null;
   messages: ChatMessage[];
@@ -79,6 +83,8 @@ export function ChatThreadMessagePane({
   onBeforeJump?: () => void;
   /** Virtualizer handle for jumping to virtualized rows. */
   virtRef?: React.MutableRefObject<{ scrollToIndex: (index: number, opts?: object) => void } | null>;
+  workbenchSession?: WorkbenchSession | null;
+  pct?: number;
 }) {
   const shouldAnimateEnter = useMessageEnterAnimation(messages, sessionId);
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,6 +138,12 @@ export function ChatThreadMessagePane({
 
   return (
     <div className="august-message-pane flex-1 flex flex-col min-h-0 relative">
+      <ChatRunHeader
+        workbenchSession={workbenchSession ?? null}
+        pct={pct}
+        streaming={streaming}
+        subagentBlocks={subagentBlocks}
+      />
       <InThreadSearch
         messageCount={messages.length}
         onSearch={handleSearch}

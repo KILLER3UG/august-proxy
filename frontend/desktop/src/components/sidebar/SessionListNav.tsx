@@ -1,5 +1,4 @@
-/* ── Session list nav — top actions ─────────────────────────────────── */
-/* Collapse · New chat · Automations · Skills & Tools · Runs              */
+/* ── Session list nav — brand, new chat, icon dock for destinations ─── */
 
 import { motion } from "framer-motion";
 import {
@@ -7,6 +6,7 @@ import {
   Brain,
   History,
   Kanban,
+  ListTodo,
   PanelLeft,
   Plus,
   Wrench,
@@ -25,13 +25,6 @@ export interface SessionListNavProps {
 const rowBase =
   "group w-full flex items-center gap-2 rounded-md px-2 text-left transition-colors";
 
-const quietRow = cn(
-  rowBase,
-  "py-1 text-[12.5px] text-sidebar-foreground/50 hover:bg-white/[0.04] hover:text-sidebar-foreground/80",
-);
-
-const activeRow = cn(quietRow, "bg-white/[0.06] text-sidebar-foreground/90");
-
 const primaryRow = cn(
   rowBase,
   "py-1.5 text-[13px] text-sidebar-foreground/80 hover:bg-white/[0.05] hover:text-sidebar-foreground",
@@ -49,37 +42,16 @@ const plusIconMotion = {
   tap: { scale: 0.9, rotate: 90, transition: t.fast },
 };
 
-const botIconMotion = {
-  rest: { scale: 1, y: 0 },
-  hover: { scale: 1.12, y: -1, transition: t.spring },
-  tap: { scale: 0.92, transition: t.fast },
-};
+const DESTINATIONS = [
+  { path: "/brain", label: "Brain", testId: "sidebar-nav-brain", Icon: Brain },
+  { path: "/automations", label: "Automations", testId: "sidebar-nav-automations", Icon: Bot },
+  { path: "/skills", label: "Skills & Tools", testId: "sidebar-nav-skills", Icon: Wrench },
+  { path: "/runs", label: "Runs", testId: "sidebar-nav-runs", Icon: ListTodo },
+  { path: "/board", label: "Board", testId: "sidebar-nav-board", Icon: Kanban },
+  { path: "/history", label: "History", testId: "sidebar-nav-history", Icon: History },
+] as const;
 
-const wrenchIconMotion = {
-  rest: { scale: 1, rotate: 0 },
-  hover: { scale: 1.12, rotate: -18, transition: t.spring },
-  tap: { scale: 0.92, transition: t.fast },
-};
-
-const brainIconMotion = {
-  rest: { scale: 1, rotate: 0 },
-  hover: { scale: 1.12, rotate: -6, transition: t.spring },
-  tap: { scale: 0.92, transition: t.fast },
-};
-
-const historyIconMotion = {
-  rest: { scale: 1, rotate: 0 },
-  hover: { scale: 1.12, rotate: -12, transition: t.spring },
-  tap: { scale: 0.92, transition: t.fast },
-};
-
-const kanbanIconMotion = {
-  rest: { scale: 1, rotate: 0 },
-  hover: { scale: 1.12, rotate: -6, transition: t.spring },
-  tap: { scale: 0.92, transition: t.fast },
-};
-
-/** Top of the session sidebar: collapse control + primary nav rows. */
+/** Top of the session sidebar: collapse control + new chat + destination dock. */
 export function SessionListNav({
   onNew,
   onNavigate,
@@ -119,113 +91,31 @@ export function SessionListNav({
         <span>New chat</span>
       </motion.button>
 
-      <div className="mx-1 my-1.5 h-px bg-sidebar-foreground/[0.06]" />
-      <p className="px-2 pb-0.5 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/35">
-        Workspace
-      </p>
-
-      <motion.button
-        type="button"
-        onClick={() => onNavigate("/brain")}
-        className={isActive("/brain") ? activeRow : quietRow}
-        aria-current={isActive("/brain") ? "page" : undefined}
-        initial="rest"
-        whileHover="hover"
-        whileTap="tap"
-        variants={rowMotion}
-        data-testid="sidebar-nav-brain"
+      <div
+        className="mt-1.5 flex items-center justify-between gap-0.5 rounded-xl bg-white/[0.03] px-1 py-1"
+        role="navigation"
+        aria-label="Workspace"
       >
-        <motion.span className="inline-flex shrink-0 opacity-60" variants={brainIconMotion}>
-          <Brain className="size-3.5" />
-        </motion.span>
-        <span>Brain</span>
-      </motion.button>
-
-      <motion.button
-        type="button"
-        onClick={() => onNavigate("/automations")}
-        className={isActive("/automations") ? activeRow : quietRow}
-        aria-current={isActive("/automations") ? "page" : undefined}
-        initial="rest"
-        whileHover="hover"
-        whileTap="tap"
-        variants={rowMotion}
-        data-testid="sidebar-nav-automations"
-      >
-        <motion.span className="inline-flex shrink-0 opacity-60" variants={botIconMotion}>
-          <Bot className="size-3.5" />
-        </motion.span>
-        <span>Automations</span>
-      </motion.button>
-
-      <motion.button
-        type="button"
-        onClick={() => onNavigate("/skills")}
-        className={isActive("/skills") ? activeRow : quietRow}
-        aria-current={isActive("/skills") ? "page" : undefined}
-        initial="rest"
-        whileHover="hover"
-        whileTap="tap"
-        variants={rowMotion}
-        data-testid="sidebar-nav-skills"
-      >
-        <motion.span className="inline-flex shrink-0 opacity-60" variants={wrenchIconMotion}>
-          <Wrench className="size-3.5" />
-        </motion.span>
-        <span>Skills & Tools</span>
-      </motion.button>
-
-      <motion.button
-        type="button"
-        onClick={() => onNavigate("/runs")}
-        className={isActive("/runs") ? activeRow : quietRow}
-        aria-current={isActive("/runs") ? "page" : undefined}
-        initial="rest"
-        whileHover="hover"
-        whileTap="tap"
-        variants={rowMotion}
-        data-testid="sidebar-nav-runs"
-      >
-        <motion.span className="inline-flex shrink-0 opacity-60" variants={historyIconMotion}>
-          <History className="size-3.5" />
-        </motion.span>
-        <span>Runs</span>
-      </motion.button>
-
-      <motion.button
-        type="button"
-        onClick={() => onNavigate("/board")}
-        className={isActive("/board") ? activeRow : quietRow}
-        aria-current={isActive("/board") ? "page" : undefined}
-        initial="rest"
-        whileHover="hover"
-        whileTap="tap"
-        variants={rowMotion}
-        data-testid="sidebar-nav-board"
-      >
-        <motion.span className="inline-flex shrink-0 opacity-60" variants={kanbanIconMotion}>
-          <Kanban className="size-3.5" />
-        </motion.span>
-        <span>Board</span>
-      </motion.button>
-
-      <motion.button
-        type="button"
-        onClick={() => onNavigate("/history")}
-        className={isActive("/history") ? activeRow : quietRow}
-        aria-current={isActive("/history") ? "page" : undefined}
-        initial="rest"
-        whileHover="hover"
-        whileTap="tap"
-        variants={rowMotion}
-        data-testid="sidebar-nav-history"
-      >
-        <motion.span className="inline-flex shrink-0 opacity-60" variants={historyIconMotion}>
-          <History className="size-3.5" />
-        </motion.span>
-        <span>History</span>
-      </motion.button>
-
+        {DESTINATIONS.map(({ path, label, testId, Icon }) => (
+          <button
+            key={path}
+            type="button"
+            onClick={() => onNavigate(path)}
+            className={cn(
+              'flex size-7 items-center justify-center rounded-lg transition',
+              isActive(path)
+                ? 'bg-white/[0.08] text-sidebar-foreground'
+                : 'text-sidebar-foreground/45 hover:bg-white/[0.05] hover:text-sidebar-foreground/80',
+            )}
+            aria-current={isActive(path) ? 'page' : undefined}
+            title={label}
+            aria-label={label}
+            data-testid={testId}
+          >
+            <Icon className="size-3.5" />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

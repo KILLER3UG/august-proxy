@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import {
   SETTINGS_SECTIONS,
   SETTINGS_CATEGORIES,
+  railCanonicalId,
   type SettingsSection,
 } from '@/settings/settings-registry';
 
@@ -65,6 +66,8 @@ export function WorkspaceShell({
   const { showAdvanced, toggle: toggleAdvanced } = useSettingsAdvancedPreference();
   const { available: updateAvailable } = useAppUpdate();
 
+  const railActive = railCanonicalId(active);
+
   // Resolve each section's category label, icon, tier, description, and
   // keywords. Falls back to the raw `category` string if a section isn't
   // in the settings registry (e.g., legacy workspace-registry panels
@@ -95,29 +98,37 @@ export function WorkspaceShell({
   // UNLESS the user has deep-linked to one (we keep the active section
   // visible so legacy URLs continue to work). `hidden` sections are never
   // shown in the rail (deep links still resolve via the active id).
+  // Hidden hubs stay off the rail (deep links still resolve). Keep the
+  // canonical parent highlighted instead of listing Recalled / Colors / …
   const tiered = useMemo(() => {
-    const visible = decorated.filter((s) => s.tier !== 'hidden' || s.id === active);
+    const visible = decorated.filter((s) => s.tier !== 'hidden');
     if (showAdvanced) return visible;
-    return visible.filter((s) => s.tier === 'basic' || s.id === active);
-  }, [decorated, showAdvanced, active]);
+    return visible.filter((s) => s.tier === 'basic' || s.id === railActive);
+  }, [decorated, showAdvanced, railActive]);
 
   // Filter by free-text query (matches label, description, keywords).
   // Search bypasses the tier filter so users can still find advanced
   // sections by keyword even when advanced is hidden.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const source = q ? decorated : tiered;
-    const m = new Map<string, typeof decorated>();
-    for (const [cat, items] of groupAllByCategory(source).entries()) {
-      const kept = items.filter((s) => {
-        if (s.label.toLowerCase().includes(q)) return true;
-        if (s.description.toLowerCase().includes(q)) return true;
-        if (s.keywords.some((k) => k.toLowerCase().includes(q)) ) return true;
-        return false;
-      });
-      if (kept.length > 0) m.set(cat, kept);
+    const match = (s: (typeof decorated)[number]) => {
+      if (!q) return true;
+      if (s.label.toLowerCase().includes(q)) return true;
+      if (s.description.toLowerCase().includes(q)) return true;
+      return s.keywords.some((k) => k.toLowerCase().includes(q));
+    };
+    const ids = new Set<string>();
+    const pool = q ? decorated : tiered;
+    for (const s of pool) {
+      if (!match(s)) continue;
+      if (s.tier === 'hidden') {
+        ids.add(railCanonicalId(s.id));
+        continue;
+      }
+      ids.add(s.id);
     }
-    return m;
+    const chosen = decorated.filter((s) => ids.has(s.id) && s.tier !== 'hidden');
+    return groupAllByCategory(chosen);
   }, [decorated, tiered, query]);
 
   const isFiltering = query.trim().length > 0;
@@ -162,33 +173,31 @@ export function WorkspaceShell({
               const Icon = items[0]?.categoryIcon ?? Globe;
               const categoryLabel = items[0]?.categoryLabel ?? category;
               return (
-                <div key={category || 'default'} className="mb-1">
-                  <div className="flex items-center gap-1.5 px-4 pb-1 pt-3 text-[11px] font-medium tracking-wide text-sidebar-foreground/45">
+                <div key={category || 'default'} className="mb-2 px-2">
+                  <div className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/40">
                     <Icon className="size-3" aria-hidden="true" />
                     <span>{categoryLabel}</span>
                   </div>
+                  <div className="flex flex-col gap-0.5 rounded-xl bg-white/[0.025] py-1">
                   {items.map((s) => (
                     <WorkspaceNavLink
                       key={s.id}
                       icon={s.icon}
                       label={s.label}
-                      active={active === s.id}
+                      active={railActive === s.id}
                       badge={
                         s.id === 'app-updates' && updateAvailable
                           ? 'New'
-                          : s.tier === 'advanced' && !isFiltering
-                            ? 'Advanced'
-                            : null
+                          : null
                       }
                       onSelect={() => {
-                        if (s.id === active) return;
+                        if (s.id === railActive && s.id === active) return;
                         setQuery('');
-                        // Client-side nav only — SettingsPage stays mounted;
-                        // section content remounts to refetch live data.
                         void navigate(`/settings/${s.id}`);
                       }}
                     />
                   ))}
+                  </div>
                 </div>
               );
             })

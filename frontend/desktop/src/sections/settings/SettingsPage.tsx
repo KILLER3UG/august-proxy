@@ -186,27 +186,21 @@ const FeatureFlowWrapper = lazySection(() => import('./FeatureFlowSection'), 'Fe
 const ExternalAccessWrapper = lazySection(() => import('./ExternalAccessSection'), 'ExternalAccessSection');
 const AppUpdatesWrapper = lazySection(() => import('./UpdateSection'), 'UpdateSection');
 const UsageWrapper = lazySection(() => import('@/sections/workspace/WorkspaceUsageSection'), 'WorkspaceUsageSection');
-const MemoryWrapper = lazySection(() => import('@/sections/workspace/WorkspaceMemorySection'), 'WorkspaceMemorySection');
-const RecalledMemoryWrapper = lazySection(() => import('./RecalledMemorySection'), 'RecalledMemorySection');
-const AddedMemoryWrapper = lazySection(() => import('./AddedMemorySection'), 'AddedMemorySection');
-const ProjectMemoriesWrapper = lazySection(() => import('./ProjectMemoriesSection'), 'ProjectMemoriesSection');
+const MemoryHubWrapper = lazySection(() => import('./MemoryHubSection'), 'MemoryHubSection');
 const RecurringTasksWrapper = lazySection(() => import('./RecurringTasksSection'), 'RecurringTasksSection');
 const InspectorWrapper = lazySection(() => import('@/sections/workspace/WorkspaceInspectorSection'), 'WorkspaceInspectorSection');
 const ModelsWrapper = lazySection(() => import('@/sections/workspace/WorkspaceModelsSection'), 'WorkspaceModelsSection');
 const AccountWrapper = lazySection(() => import('./AccountSection'), 'AccountSection');
 const GeneralWrapper = lazySection(() => import('@/sections/workspace/WorkspaceGeneralSection'), 'WorkspaceGeneralSection');
 const ProfilePreferencesWrapper = lazySection(() => import('./ProfilePreferencesSection'), 'ProfilePreferencesSection');
-const UiDesignerWrapper = lazySection(() => import('./UiDesignerSection'), 'UiDesignerSection');
 const SystemHealthWrapper = lazySection(() => import('./SystemHealthSection'), 'SystemHealthSection');
 const ToolsConnectionsWrapper = lazySection(() => import('./IntegrationsSection'), 'IntegrationsSection');
 const ConversationsHistoryWrapper = lazySection(() => import('./ConversationsHistorySection'), 'ConversationsHistorySection');
 const AgentsAutomationWrapper = lazySection(() => import('./AgentsAutomationSection'), 'AgentsAutomationSection');
 const SkillsWrapper = lazySection(() => import('./SkillsSection'), 'SkillsSection');
 const ComputerUseWrapper = lazySection(() => import('./ComputerUseSection'), 'ComputerUseSection');
-const ToolGrantsWrapper = lazySection(() => import('./ToolGrantsSection'), 'ToolGrantsSection');
 const KanbanWrapper = lazySection(() => import('./KanbanSection'), 'KanbanSection');
-const PythonSandboxWrapper = lazySection(() => import('./PythonSandboxSection'), 'PythonSandboxSection');
-const AgentSandboxWrapper = lazySection(() => import('./AgentSandboxSection'), 'AgentSandboxSection');
+const AgentSandboxWrapper = lazySection(() => import('./AccessHubSection'), 'AccessHubSection');
 const PromptTemplatesWrapper = lazySection(() => import('./PromptTemplatesSection'), 'PromptTemplatesSection');
 const ReliabilityWrapper = lazySection(() => import('./ReliabilitySection'), 'ReliabilitySection');
 const PrivacyWrapper = lazySection(() => import('./PrivacySection'), 'PrivacySection');
@@ -215,17 +209,17 @@ const AISetupWizardWrapper = lazySection(() => import('./AISetupWizardSection'),
 
 const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   usage: UsageWrapper,
-  memory: MemoryWrapper,
-  'memory-knowledge': MemoryWrapper,
-  'recalled-memory': RecalledMemoryWrapper,
-  'added-memory': AddedMemoryWrapper,
-  'project-memories': ProjectMemoriesWrapper,
+  memory: MemoryHubWrapper,
+  'memory-knowledge': MemoryHubWrapper,
+  'recalled-memory': MemoryHubWrapper,
+  'added-memory': MemoryHubWrapper,
+  'project-memories': MemoryHubWrapper,
   'recurring-tasks': RecurringTasksWrapper,
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
   account: AccountWrapper,
   'profile-preferences': ProfilePreferencesWrapper,
-  'ui-designer': UiDesignerWrapper,
+  'ui-designer': ProfilePreferencesWrapper,
   'system-health': SystemHealthWrapper,
   'tools-connections': ToolsConnectionsWrapper,
   'conversations-history': ConversationsHistoryWrapper,
@@ -241,9 +235,9 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   skills: SkillsWrapper,
   'computer-use': ComputerUseWrapper,
   'api-access': ExternalAccessWrapper,
-  'tool-grants': ToolGrantsWrapper,
+  'tool-grants': AgentSandboxWrapper,
   'agent-board': KanbanWrapper,
-  'python-sandbox': PythonSandboxWrapper,
+  'python-sandbox': AgentSandboxWrapper,
   'agent-sandbox': AgentSandboxWrapper,
   'app-updates': AppUpdatesWrapper,
   'prompt-templates': PromptTemplatesWrapper,

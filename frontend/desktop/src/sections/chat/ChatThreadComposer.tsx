@@ -330,12 +330,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           items={queuedMessages}
         />
       )}
-      {streaming && queuedMessages.length === 0 && (
-        <div className="mb-1.5 px-1 text-[10px] text-muted-foreground/80 animate-in fade-in duration-150">
-          Tip: type a direction while August works — it applies after the next tool step
-          without stopping.
-        </div>
-      )}
 
       <div
         className={cn(

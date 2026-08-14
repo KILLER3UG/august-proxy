@@ -1542,6 +1542,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onReanswerWithModel={(model, index) => handleReanswerWithModel(index, model)}
                 onCompare={handleCompare}
                 footerSlot={inputSlot}
+                workbenchSession={workbenchSession}
+                pct={pct}
               />
             )}
           </AnimatePresence>

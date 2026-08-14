@@ -2,9 +2,10 @@
 
 import { AutoMemoryBrowse } from './AutoMemoryBrowse';
 
-export function AddedMemorySection() {
+export function AddedMemorySection({ embedded }: { embedded?: boolean }) {
   return (
     <AutoMemoryBrowse
+      embedded={embedded}
       origin="added"
       title="Added Memory"
       subtitle="Facts you told August to remember. These are included in every chat turn."

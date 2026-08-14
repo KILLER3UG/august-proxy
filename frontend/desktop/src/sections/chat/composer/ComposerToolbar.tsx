@@ -262,7 +262,8 @@ export function ComposerToolbar({
   };
 
   return (
-    <div className="flex items-center justify-between gap-1.5 px-2 pb-2 pt-0.5">
+    <div className="flex flex-col gap-0">
+      <div className="flex items-center justify-between gap-1.5 px-2 pb-1.5 pt-0.5">
       <div className="flex items-center gap-1 min-w-0">
         <ComposerActionsMenu
           open={actionsOpen}
@@ -289,131 +290,9 @@ export function ComposerToolbar({
             </div>
           }
         />
-        <WorkbenchModeSelector
-          selectedMode={workbenchMode}
-          onChange={handleModeChange}
-          sandboxMode={sandboxMode}
-          onSandboxChange={handleSandboxChange}
-          harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
-          onHarnessChange={persistHarnessMode}
-        />
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
-        {/* Context gauge beside the model dropdown — always visible, like
-            Claude/Codex; hover for the full breakdown. */}
-        <ContextRing
-          pct={pct}
-          estTokens={estTokens}
-          maxContext={maxContext}
-          modelName={modelForRequest?.name}
-          size={20}
-          breakdown={contextBreakdown}
-          serverTokens={sessionUsage}
-          promptCache={
-            sessionUsage
-              ? {
-                  hitTokens: sessionUsage.cacheHitTokens ?? 0,
-                  missTokens: sessionUsage.cacheMissTokens ?? 0,
-                  hitRate: sessionUsage.cacheHitRate,
-                }
-              : null
-          }
-        />
-        <ContextUsedBadge sessionId={sessionId} />
-        <button
-          type="button"
-          onClick={handleVerifierToggle}
-          disabled={!sessionId}
-          aria-pressed={verifierEnforced}
-          aria-label="Enforce verification before final answer"
-          title={
-            verifierEnforced
-              ? 'Verifier ON: final answer withheld until update_state(phase="complete") passes'
-              : 'Verifier OFF: allow answers without a passing verification run'
-          }
-          data-testid="verifier-toggle"
-          className={cn(
-            'flex items-center gap-1 rounded px-1.5 transition disabled:opacity-40',
-            verifierEnforced
-              ? 'text-amber-400 hover:bg-white/[0.06]'
-              : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
-          )}
-        >
-          <ShieldCheck className="size-3.5" />
-          <span className={cn('text-[9px] font-bold uppercase tracking-wide', verifierEnforced ? '' : 'opacity-60')}>
-            {verifierEnforced ? 'Verify · On' : 'Verify'}
-          </span>
-        </button>
-        <ModelEffortMenu
-          models={models}
-          visibleModels={visibleModels}
-          loading={modelsLoading}
-          selected={selectedModel}
-          onRefresh={() => {
-            void onRefreshModels();
-          }}
-          onEditModels={onEditModels}
-          effort={effort}
-          onEffortChange={setEffort}
-          thinkingEnabled={thinkingEnabled}
-          onThinkingChange={setThinkingEnabled}
-          openSignal={modelMenuOpenSignal}
-          promptHint={input}
-          onSelect={(m) => {
-            void (async () => {
-              const prev = selectedModel;
-              const { getOrInitSessionStreamState } = await import(
-                '@/sections/chat/stream/session-stream-store'
-              );
-              const msgs = sessionId
-                ? getOrInitSessionStreamState(sessionId).messages || []
-                : [];
-
-              // Shared stop → handoff → apply flow (single source of truth
-              // with the chat-thread model-selected event handler).
-              const { switchChatModel } = await import('@/sections/chat/switch-model');
-              const result = await switchChatModel({
-                sessionId,
-                prevModel: prev,
-                nextModel: m,
-                streaming,
-                stopStream: async () => {
-                  if (!sessionId) return;
-                  const { stopChatStream } = await import(
-                    '@/sections/chat/stream/start-stop-stream'
-                  );
-                  await stopChatStream(sessionId);
-                },
-                getMessages: () => msgs,
-                setMessages: (updater) => setMessages?.(updater),
-                onModelApplied: (mm) => {
-                  setSelectedModel(mm);
-                  userSelectedRef.current = mm.id;
-                  try {
-                    localStorage.setItem('august_last_model', JSON.stringify(mm));
-                  } catch {
-                    /* silent */
-                  }
-                  if (sessionId) updateSessionModel(sessionId, mm.id, mm.provider);
-                },
-                onHandoffPreparingChange: setHandoffPreparing,
-              });
-              // Auto-continue the interrupted turn with the new model: the
-              // chat-thread event handler owns the truncate+regenerate logic,
-              // so re-dispatch with skipSwitch (audit finding: the composer
-              // path previously dropped the interrupted turn entirely).
-              if (result.interrupted && sessionId) {
-                window.dispatchEvent(
-                  new CustomEvent('august:model-selected', {
-                    detail: { modelId: m.id, provider: m.provider, skipSwitch: true, interrupted: true },
-                  }),
-                );
-              }
-            })();
-          }}
-        />
-
         {handoffPreparing && (
           <span
             className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 px-1"
@@ -443,13 +322,8 @@ export function ComposerToolbar({
               }}
               disabled={!canSend}
               title="Steer mid-run — applies after the current tool step without stopping"
-              className={cn(
-                'h-8 px-2.5 rounded-full text-xs font-medium flex items-center gap-1 transition',
-                'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-                'disabled:opacity-40 disabled:pointer-events-none',
-              )}
+              className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
             >
-              <Send className="size-3" />
               Steer
             </button>
             <button
@@ -457,7 +331,7 @@ export function ComposerToolbar({
               onClick={stop}
               title="Stop"
               aria-label="Stop"
-              className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 text-foreground border border-border/40 transition"
+              className="h-8 w-8 rounded-full flex items-center justify-center bg-primary text-primary-foreground hover:bg-primary/90 transition"
             >
               <Square className="size-3 fill-current" />
             </button>
@@ -488,23 +362,148 @@ export function ComposerToolbar({
               sendKind === 'steer'
                 ? 'Steer'
                 : sendKind === 'continue'
-                  ? 'Continue thread'
+                  ? 'Continue'
                   : sendKind === 'dispatch'
                     ? 'Dispatch'
                     : 'Send'
             }
             className={cn(
-              'h-8 rounded-full flex items-center justify-center transition',
-              sendKind === 'send' ? 'w-8' : 'px-2.5 gap-1 text-xs font-medium',
-              canSend
-                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                : 'bg-muted text-muted-foreground opacity-50',
+              'h-8 rounded-full px-3 text-xs font-medium flex items-center gap-1.5 transition',
+              'bg-primary text-primary-foreground hover:bg-primary/90',
+              'disabled:opacity-40 disabled:pointer-events-none',
             )}
           >
-            <Send className="size-3.5" />
-            {sendKind === 'steer' ? 'Steer' : sendKind === 'continue' ? 'Continue' : sendKind === 'dispatch' ? 'Dispatch' : null}
+            <Send className="size-3" />
+            {sendKind === 'steer'
+              ? 'Steer'
+              : sendKind === 'continue'
+                ? 'Continue'
+                : sendKind === 'dispatch'
+                  ? 'Dispatch'
+                  : 'Send'}
           </button>
         )}
+      </div>
+      </div>
+
+      <div
+        className="flex items-center gap-1.5 overflow-x-auto px-2 pb-2 pt-0.5 text-[11px] text-muted-foreground"
+        data-testid="composer-island-footer"
+      >
+        <WorkbenchModeSelector
+          selectedMode={workbenchMode}
+          onChange={handleModeChange}
+          sandboxMode={sandboxMode}
+          onSandboxChange={handleSandboxChange}
+          harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
+          onHarnessChange={persistHarnessMode}
+        />
+        <span className="text-muted-foreground/25">·</span>
+        <ContextRing
+          pct={pct}
+          estTokens={estTokens}
+          maxContext={maxContext}
+          modelName={modelForRequest?.name}
+          size={16}
+          breakdown={contextBreakdown}
+          serverTokens={sessionUsage}
+          promptCache={
+            sessionUsage
+              ? {
+                  hitTokens: sessionUsage.cacheHitTokens ?? 0,
+                  missTokens: sessionUsage.cacheMissTokens ?? 0,
+                  hitRate: sessionUsage.cacheHitRate,
+                }
+              : null
+          }
+        />
+        <ContextUsedBadge sessionId={sessionId} />
+        <ModelEffortMenu
+          models={models}
+          visibleModels={visibleModels}
+          loading={modelsLoading}
+          selected={selectedModel}
+          onRefresh={() => {
+            void onRefreshModels();
+          }}
+          onEditModels={onEditModels}
+          effort={effort}
+          onEffortChange={setEffort}
+          thinkingEnabled={thinkingEnabled}
+          onThinkingChange={setThinkingEnabled}
+          openSignal={modelMenuOpenSignal}
+          promptHint={input}
+          onSelect={(m) => {
+            void (async () => {
+              const prev = selectedModel;
+              const { getOrInitSessionStreamState } = await import(
+                '@/sections/chat/stream/session-stream-store'
+              );
+              const msgs = sessionId
+                ? getOrInitSessionStreamState(sessionId).messages || []
+                : [];
+
+              const { switchChatModel } = await import('@/sections/chat/switch-model');
+              const result = await switchChatModel({
+                sessionId,
+                prevModel: prev,
+                nextModel: m,
+                streaming,
+                stopStream: async () => {
+                  if (!sessionId) return;
+                  const { stopChatStream } = await import(
+                    '@/sections/chat/stream/start-stop-stream'
+                  );
+                  await stopChatStream(sessionId);
+                },
+                getMessages: () => msgs,
+                setMessages: (updater) => setMessages?.(updater),
+                onModelApplied: (mm) => {
+                  setSelectedModel(mm);
+                  userSelectedRef.current = mm.id;
+                  try {
+                    localStorage.setItem('august_last_model', JSON.stringify(mm));
+                  } catch {
+                    /* silent */
+                  }
+                  if (sessionId) updateSessionModel(sessionId, mm.id, mm.provider);
+                },
+                onHandoffPreparingChange: setHandoffPreparing,
+              });
+              if (result.interrupted && sessionId) {
+                window.dispatchEvent(
+                  new CustomEvent('august:model-selected', {
+                    detail: { modelId: m.id, provider: m.provider, skipSwitch: true, interrupted: true },
+                  }),
+                );
+              }
+            })();
+          }}
+        />
+        <button
+          type="button"
+          onClick={handleVerifierToggle}
+          disabled={!sessionId}
+          aria-pressed={verifierEnforced}
+          aria-label="Enforce verification before final answer"
+          title={
+            verifierEnforced
+              ? 'Verifier ON: final answer withheld until update_state(phase="complete") passes'
+              : 'Verifier OFF: allow answers without a passing verification run'
+          }
+          data-testid="verifier-toggle"
+          className={cn(
+            'ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 transition disabled:opacity-40',
+            verifierEnforced
+              ? 'text-amber-400 hover:bg-white/[0.06]'
+              : 'text-muted-foreground/70 hover:bg-white/[0.06] hover:text-foreground',
+          )}
+        >
+          <ShieldCheck className="size-3.5" />
+          <span className={cn('text-[9px] font-bold uppercase tracking-wide', verifierEnforced ? '' : 'opacity-60')}>
+            {verifierEnforced ? 'Verify · On' : 'Verify'}
+          </span>
+        </button>
       </div>
       <SubagentSpawnModal
         sessionId={workbenchSession?.id}
@@ -515,3 +514,4 @@ export function ComposerToolbar({
     </div>
   );
 }
+

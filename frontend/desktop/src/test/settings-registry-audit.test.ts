@@ -18,6 +18,7 @@ import {
   auditRegistry,
   resolveLegacyTab,
   LEGACY_TAB_MAP,
+  railCanonicalId,
   getSection,
   sectionsForCategory,
 } from '@/settings/settings-registry';
@@ -191,6 +192,15 @@ describe('section getters', () => {
     for (const s of SETTINGS_SECTIONS) {
       expect(getSection(s.id)?.id).toBe(s.id);
     }
+  });
+
+  it('railCanonicalId maps split views onto their hub', () => {
+    expect(railCanonicalId('recalled-memory')).toBe('memory-knowledge');
+    expect(railCanonicalId('ui-designer')).toBe('profile-preferences');
+    expect(railCanonicalId('python-sandbox')).toBe('agent-sandbox');
+    expect(railCanonicalId('backend-monitor')).toBe('observability');
+    expect(railCanonicalId('health-simulator')).toBe('system-health');
+    expect(railCanonicalId('skills')).toBe('skills');
   });
 
   it('getSection returns undefined for unknown ids', () => {

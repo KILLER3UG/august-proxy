@@ -52,6 +52,14 @@ describe('/init command registration', () => {
   });
 });
 
+describe('/remember command', () => {
+  it('is registered as a slash command', () => {
+    const cmd = voiceCommandRegistry.getBySlashCommand('/remember');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.id).toBe('remember');
+  });
+});
+
 describe('aug event types', () => {
   it('init-aug / aug-preview / aug-saved are valid event shapes', () => {
     const spy = vi.fn();

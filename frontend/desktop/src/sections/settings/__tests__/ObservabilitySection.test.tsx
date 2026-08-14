@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 const mockOverviewData = {
     range: '30d' as const,
@@ -51,6 +52,14 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { ObservabilitySection } from '../ObservabilitySection';
 
+function renderObs() {
+    return render(
+        <MemoryRouter>
+            <ObservabilitySection />
+        </MemoryRouter>,
+    );
+}
+
 beforeEach(() => {
     overviewMock = { data: mockOverviewData, isLoading: false };
     usageMock = { data: mockUsage, isLoading: false };
@@ -65,7 +74,7 @@ function tab(name: string) {
 
 describe('ObservabilitySection', () => {
     it('renders the page header and default Overview subtab', () => {
-        render(<ObservabilitySection />);
+        renderObs();
         expect(screen.getByRole('heading', { name: /observability/i, level: 1 })).toBeInTheDocument();
         expect(screen.getByRole('tablist')).toBeInTheDocument();
         for (const label of ['Overview', 'Audit', 'Rollback', 'Observations']) {
@@ -75,7 +84,7 @@ describe('ObservabilitySection', () => {
     });
 
     it('switches to the Audit subtab when clicked', async () => {
-        render(<ObservabilitySection />);
+        renderObs();
         fireEvent.click(tab('Audit'));
         await waitFor(() => {
             expect(tab('Audit')).toHaveAttribute('aria-selected', 'true');
@@ -85,36 +94,36 @@ describe('ObservabilitySection', () => {
 
     it('shows an empty state on Overview when data fails to load', () => {
         overviewMock = { data: undefined, isLoading: false };
-        render(<ObservabilitySection />);
+        renderObs();
         expect(screen.getByText(/could not load observability overview/i)).toBeInTheDocument();
     });
 
     it('renders the status pill with the right variant for host-agent disconnected', () => {
-        render(<ObservabilitySection />);
+        renderObs();
         expect(screen.getAllByText(/disconnected/i).length).toBeGreaterThan(0);
     });
 
-    it('renders all 6 subtabs in the tablist', () => {
-        render(<ObservabilitySection />);
-        for (const label of ['Overview', 'Audit', 'Rollback', 'Observations', 'Traffic', 'Logs']) {
+    it('renders all 5 subtabs in the tablist', () => {
+        renderObs();
+        for (const label of ['Overview', 'Audit', 'Rollback', 'Observations', 'Requests']) {
             expect(tab(label)).toBeInTheDocument();
         }
     });
 
-    it('switches to the Traffic subtab and shows the period filter chips', async () => {
-        render(<ObservabilitySection />);
-        fireEvent.click(tab('Traffic'));
+    it('switches to the Requests subtab and shows the period filter chips', async () => {
+        renderObs();
+        fireEvent.click(tab('Requests'));
         await waitFor(() => {
-            expect(tab('Traffic')).toHaveAttribute('aria-selected', 'true');
+            expect(tab('Requests')).toHaveAttribute('aria-selected', 'true');
         });
-        expect(screen.getByText(/^Period$/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/^Period$/i).length).toBeGreaterThan(0);
     });
 
-    it('switches to the Logs subtab and shows the level filter chips', async () => {
-        render(<ObservabilitySection />);
-        fireEvent.click(tab('Logs'));
+    it('shows log level chips on the Requests subtab', async () => {
+        renderObs();
+        fireEvent.click(tab('Requests'));
         await waitFor(() => {
-            expect(tab('Logs')).toHaveAttribute('aria-selected', 'true');
+            expect(tab('Requests')).toHaveAttribute('aria-selected', 'true');
         });
         const buttons = screen.getAllByRole('button');
         const labels = buttons.map((b) => b.textContent?.trim());

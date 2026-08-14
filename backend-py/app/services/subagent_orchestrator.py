@@ -229,6 +229,7 @@ class SubagentOrchestrator:
                 sid = str(request.session.get('id', ''))
             handle = SubagentHandle(taskId, agentId, goal, sessionId=sid)
             handle.workstream = as_str(item.get('workstream') or item.get('name'), '')
+            handle.skills = [str(s).strip() for s in (item.get('skills') or []) if str(s).strip()]
             self._handles[taskId] = handle
             _record_run(handle)
             handles.append(handle)

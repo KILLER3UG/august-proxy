@@ -24,6 +24,8 @@ import { SettingsTooltip } from '@/components/settings/SettingsTooltip';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { OsNotifyService } from '@/lib/os-notify';
+import { UiDesignerSection } from './UiDesignerSection';
+import type { SettingsSection } from '@/settings/settings-registry';
 
 const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ['⌘', ','],  label: 'Open Settings' },
@@ -52,7 +54,7 @@ const TEXT_SIZE_OPTIONS: { id: TextSize; label: string; scale: string }[] = [
 
 const PRESET_KEY = 'august_preset';
 
-export function ProfilePreferencesSection() {
+export function ProfilePreferencesSection({ active }: { active?: SettingsSection }) {
   const themeMode = useThemeStore((s) => s.mode);
   const textSize = useThemeStore((s) => s.textSize);
   const [activePreset, setActivePreset] = useState<string>(() => {
@@ -68,6 +70,13 @@ export function ProfilePreferencesSection() {
   useEffect(() => {
     setOsNotify(OsNotifyService.isEnabled());
   }, []);
+
+  useEffect(() => {
+    if (active?.id !== 'ui-designer') return;
+    requestAnimationFrame(() => {
+      document.getElementById('settings-colors')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+  }, [active?.id]);
 
   const selectPreset = (id: string) => {
     setActivePreset(id);
@@ -92,10 +101,10 @@ export function ProfilePreferencesSection() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="px-6 pt-5 pb-4 shrink-0">
+      <header className="px-6 pt-5 pb-3 shrink-0">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">Appearance &amp; Behavior</h2>
         <p className="mt-1 text-sm leading-5 text-muted-foreground">
-          Personalize how August looks and behaves. These are app-level preferences.
+          Theme, text size, shortcuts, and colors — one page.
         </p>
       </header>
 
@@ -290,6 +299,10 @@ export function ProfilePreferencesSection() {
             tooltip="The tour highlights where to find chat, settings, and activity."
           />
         </SettingsCard>
+
+        <div id="settings-colors" className="scroll-mt-4">
+          <UiDesignerSection />
+        </div>
       </div>
     </div>
   );

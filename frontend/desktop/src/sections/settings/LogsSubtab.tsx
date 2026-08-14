@@ -51,7 +51,7 @@ function FilterChips<T extends string>({ items, value, onChange, label }: { item
     );
 }
 
-export function LogsSubtab() {
+export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
     const [period, setPeriod] = useState<Period>('today');
     const [level, setLevel] = useState<'all' | 'info' | 'warn' | 'error'>('all');
     const [filter, setFilter] = useState('');
@@ -84,9 +84,11 @@ export function LogsSubtab() {
 
     return (
         <div className="space-y-3">
+            {showPeriod ? (
             <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-white/[0.06] bg-card/60">
                 <FilterChips items={PERIODS} value={period} onChange={setPeriod} label="Period" />
             </div>
+            ) : null}
 
             <SettingsCard
                 icon={ScrollText}

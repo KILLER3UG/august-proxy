@@ -659,6 +659,7 @@ async def _doSpawn(
                     'agentId': h.agentId,
                     'task': h.goal,
                     'workstream': getattr(h, 'workstream', '') or None,
+                    'skills': list(getattr(h, 'skills', None) or []),
                     'parentToolUseId': parentToolUseId or None,
                 }
             )

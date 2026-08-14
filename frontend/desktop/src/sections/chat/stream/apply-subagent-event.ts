@@ -9,7 +9,7 @@ import { updateSessionStreamState } from './session-stream-store';
 import { appendBlockEvent } from './append-block-event';
 
 export type SubagentStreamEvent =
-  | { type: 'subagentStart'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; goal?: string; depth?: number; workstream?: string }
+  | { type: 'subagentStart'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; goal?: string; depth?: number; workstream?: string; skills?: string[] }
   | { type: 'subagentText'; jobId: string; content?: string }
   | { type: 'subagentRetry'; jobId: string; attempt?: number; maxRetries?: number; message?: string }
   | { type: 'subagentToolCall'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
@@ -45,6 +45,7 @@ export function applySubagentEvent(
         task,
         depth: event.depth,
         workstream: event.workstream,
+        skills: event.skills,
         status: 'running',
         startedAt: Date.now(),
         blocks: [],
@@ -168,11 +169,12 @@ export function makeSubagentEventHandlers(sessionId: string): {
     agentId: string;
     parentToolUseId?: string;
     scope?: string;
-        task?: string;
-        goal?: string;
-        depth?: number;
-        workstream?: string;
-      }) => void;
+    task?: string;
+    goal?: string;
+    depth?: number;
+    workstream?: string;
+    skills?: string[];
+  }) => void;
       onSubagentDone: (data: {
         jobId?: string;
         status?: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered' | 'skipped';
@@ -215,6 +217,7 @@ export function makeSubagentEventHandlers(sessionId: string): {
         goal: data.goal,
         depth: data.depth,
         workstream: data.workstream,
+        skills: data.skills,
       });
     },
     onSubagentDone: (data) => {

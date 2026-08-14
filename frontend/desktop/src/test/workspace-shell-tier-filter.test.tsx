@@ -3,7 +3,7 @@
  *   • when showAdvanced = false, only basic-tier sections render in the rail
  *   • when showAdvanced = true, every section renders
  *   • the active section is always rendered even when advanced is hidden
- *     (deep-link case, e.g. /settings/memory-knowledge)
+ *     (deep-link case, e.g. /settings/observability)
  *   • search bypasses the tier filter so users can find advanced sections
  *     by keyword even when advanced is hidden
  *
@@ -40,7 +40,7 @@ const ADV_KEY = 'august-settings-advanced';
 // test exercises the same id/label/icon/category/tier wiring production
 // uses. Cover both tiers and both security + activity categories.
 const BASIC_IDS = ['system-health', 'skills', 'api-access'];
-const ADVANCED_IDS = ['memory-knowledge', 'computer-access', 'observability'];
+const ADVANCED_IDS = ['computer-access', 'observability', 'computer-use'];
 
 function pickSections(): WorkspaceSectionMeta[] {
   const ids = [...BASIC_IDS, ...ADVANCED_IDS];
@@ -101,21 +101,17 @@ describe('WorkspaceShell — tier filter', () => {
   });
 
   it('the active advanced section is always rendered even when advanced is hidden (deep-link case)', () => {
-    // localStorage empty → showAdvanced=false. But active=memory-knowledge
-    // is advanced. Deep links like /settings/memory-knowledge must still
-    // resolve so the user lands somewhere sensible.
     localStorage.clear();
     renderShell(
-      <WorkspaceShell sections={pickSections()} active="memory-knowledge">
+      <WorkspaceShell sections={pickSections()} active="observability">
         <div>main</div>
       </WorkspaceShell>,
     );
     const labels = visibleRailLabels();
-    const mem = SETTINGS_SECTIONS.find((s) => s.id === 'memory-knowledge')!;
-    expect(labels.some((l) => l.includes(mem.label)), 'active advanced section must render').toBe(true);
-    // Other advanced items still hidden.
-    const dev = SETTINGS_SECTIONS.find((s) => s.id === 'observability')!;
-    expect(labels.some((l) => l.includes(dev.label))).toBe(false);
+    const obs = SETTINGS_SECTIONS.find((s) => s.id === 'observability')!;
+    expect(labels.some((l) => l.includes(obs.label)), 'active advanced section must render').toBe(true);
+    const ca = SETTINGS_SECTIONS.find((s) => s.id === 'computer-access')!;
+    expect(labels.some((l) => l.includes(ca.label))).toBe(false);
   });
 
   it('search input matches advanced items by keyword even when advanced is hidden', () => {
@@ -171,7 +167,7 @@ describe('WorkspaceShell — tier filter', () => {
     expect(hide.getAttribute('aria-pressed')).toBe('true');
     // And now an advanced section shows up.
     const labels = visibleRailLabels();
-    const mem = SETTINGS_SECTIONS.find((s) => s.id === 'memory-knowledge')!;
-    expect(labels.some((l) => l.includes(mem.label))).toBe(true);
+    const obs = SETTINGS_SECTIONS.find((s) => s.id === 'observability')!;
+    expect(labels.some((l) => l.includes(obs.label))).toBe(true);
   });
 });

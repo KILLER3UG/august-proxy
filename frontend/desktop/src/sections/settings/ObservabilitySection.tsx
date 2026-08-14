@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { LineChart, History, Image, Shield, Activity, ScrollText, type LucideIcon } from 'lucide-react';
+import { LineChart, History, Image, Shield, Activity, type LucideIcon } from 'lucide-react';
 import { SettingsTabs } from '@/components/settings/SettingsTabs';
 import { ObservabilityOverview } from './ObservabilityOverview';
 import { AuditTimeline } from './AuditTimeline';
@@ -15,7 +15,7 @@ import { ObservationGallery } from './ObservationGallery';
 import { TrafficSubtab } from './TrafficSubtab';
 import { LogsSubtab } from './LogsSubtab';
 
-type SubtabId = 'overview' | 'audit' | 'rollback' | 'observations' | 'traffic' | 'logs';
+type SubtabId = 'overview' | 'audit' | 'rollback' | 'observations' | 'requests';
 
 interface SubtabDef {
     id: SubtabId;
@@ -25,12 +25,11 @@ interface SubtabDef {
 }
 
 const SUBTABS: SubtabDef[] = [
-    { id: 'overview',     label: 'Overview',     icon: LineChart,   description: 'At-a-glance health and recent activity' },
+    { id: 'overview',     label: 'Overview',     icon: LineChart,   description: 'Audit, host agent, and observations' },
     { id: 'audit',        label: 'Audit',        icon: History,     description: 'Full audit log with filters' },
     { id: 'rollback',     label: 'Rollback',     icon: Shield,      description: 'Available and past rollbacks' },
     { id: 'observations', label: 'Observations', icon: Image,       description: 'Post-observation screenshots' },
-    { id: 'traffic',      label: 'Traffic',      icon: Activity,    description: 'Per-request log with period and status filters' },
-    { id: 'logs',         label: 'Logs',         icon: ScrollText,  description: 'Merged activity + request + pending log feed' }
+    { id: 'requests',     label: 'Requests',     icon: Activity,    description: 'HTTP traffic and merged request logs' },
 ];
 
 export function ObservabilitySection() {
@@ -41,7 +40,7 @@ export function ObservabilitySection() {
             <header>
                 <h1 className="text-2xl font-semibold tracking-tight">Observability</h1>
                 <p className="mt-2 text-sm text-muted-foreground">
-                    Audit log, rollback history, post-observation screenshots, host-agent health, and traffic — all in one place.
+                    Audit, rollbacks, observations, and request logs. Token usage is on Usage &amp; Limits.
                 </p>
             </header>
 
@@ -69,8 +68,12 @@ export function ObservabilitySection() {
                     {subtab === 'audit' && <AuditTimeline />}
                     {subtab === 'rollback' && <RollbackHistory />}
                     {subtab === 'observations' && <ObservationGallery />}
-                    {subtab === 'traffic' && <TrafficSubtab />}
-                    {subtab === 'logs' && <LogsSubtab />}
+                    {subtab === 'requests' && (
+                      <div className="space-y-8">
+                        <TrafficSubtab />
+                        <LogsSubtab showPeriod={false} />
+                      </div>
+                    )}
                 </div>
             </div>
         </div>

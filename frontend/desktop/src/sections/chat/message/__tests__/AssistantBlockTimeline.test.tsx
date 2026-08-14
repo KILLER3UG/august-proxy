@@ -115,7 +115,7 @@ describe('AssistantBlockTimeline process UI', () => {
     expect(screen.getByRole('button', { name: /system info/i })).toBeTruthy();
   });
 
-  it('keeps thinking pack open while streaming before final output', () => {
+  it('keeps thinking pack collapsed to one line while streaming before final output', () => {
     renderTimeline(
       [
         {
@@ -128,8 +128,9 @@ describe('AssistantBlockTimeline process UI', () => {
     );
 
     const pack = document.querySelector('[data-slot="activity-summary"]');
-    expect(pack).toHaveAttribute('data-expanded', 'true');
-    expect(document.querySelector('[data-slot="thought-step"]')).toBeTruthy();
+    expect(pack).toHaveAttribute('data-expanded', 'false');
+    expect(pack).toHaveAttribute('data-live', 'true');
+    expect(document.querySelector('[data-slot="thought-step"]')).toBeNull();
   });
 
   it('keeps settled tool-only process pack collapsed to a summary line', () => {
@@ -197,6 +198,7 @@ describe('AssistantBlockTimeline process UI', () => {
       { streaming: true, isLast: true },
     );
 
+    expandActivitySummary();
     const row = document.querySelector(
       '[data-slot="edit-rail-row"][data-status="running"]',
     );
@@ -249,6 +251,7 @@ describe('AssistantBlockTimeline process UI', () => {
       { streaming: true, isLast: true },
     );
 
+    expandActivitySummary();
     const row = document.querySelector(
       '[data-slot="tool-step-row"][data-status="running"]',
     );
@@ -270,6 +273,7 @@ describe('AssistantBlockTimeline process UI', () => {
       { streaming: true },
     );
 
+    expandActivitySummary();
     const a = screen.getByRole('button', { name: /Reading/i });
     const b = screen.getByRole('button', { name: /Writing/i });
     // View tools stay collapsed; edit tools auto-expand while running.
