@@ -52,6 +52,7 @@ import {
 import { buildHandoffSummary, markHandoffPending } from './handoff-summary';
 import { SkillEvolvedChip } from '@/components/chat/SkillEvolvedChip';
 import { MemorySuggestionBar } from './MemorySuggestionBar';
+import { BrainReviewBar } from './BrainReviewBar';
 import { CuratorSuggestionBar } from './CuratorSuggestionBar';
 import { SubagentProposalBar } from './SubagentProposalBar';
 import { ChatCheckpoints } from './ChatCheckpoints';
@@ -1286,6 +1287,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const composer = (
     <>
       <MemorySuggestionBar sessionId={sessionId} />
+      <BrainReviewBar modelId={selectedModel?.id} turnCount={messages.length} />
       <CuratorSuggestionBar />
       <SubagentProposalBar sessionId={sessionId} />
       <ChatThreadComposer

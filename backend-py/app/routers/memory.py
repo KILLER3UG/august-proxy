@@ -65,6 +65,18 @@ class AutoMemoryUpdate(CamelModel):
     pinned: bool | None = None
 
 
+class MemoryReviewRequest(CamelModel):
+    """Ask the selected chat model to review memories."""
+
+    model: str = ''
+
+
+class MemoryReviewApply(CamelModel):
+    """Apply accepted review actions."""
+
+    actions: list[dict[str, object]]
+
+
 class ProposalCreate(CamelModel):
     """Proposal create body. Internals are snake_case; JSON stays camelCase."""
 
@@ -78,6 +90,23 @@ class ProposalDecide(CamelModel):
 
     status: str
     decided_by: str = ''
+
+
+@router.post('/review')
+async def reviewMemoriesRoute(body: MemoryReviewRequest):
+    """Use the selected model to suggest improve / remove / enhance. Does not apply."""
+    from app.services.memory.memory_review import run_memory_review
+
+    return await run_memory_review(body.model)
+
+
+@router.post('/review/apply')
+async def applyMemoryReviewRoute(body: MemoryReviewApply):
+    """Apply user-accepted memory review actions."""
+    from app.services.memory.memory_review import apply_review_actions
+
+    stats = apply_review_actions(list(body.actions or []))
+    return {'status': 'ok', **stats}
 
 
 @router.get('/kv')
