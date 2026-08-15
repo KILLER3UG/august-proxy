@@ -40,6 +40,16 @@ describe('ChatMarkdown Component', () => {
     expect(container.textContent).toContain('cat logs.txt | grep ERROR');
   });
 
+  it('fades only the growing tail block while streaming', () => {
+    const { container } = render(
+      <Markdown content={'First paragraph.\n\nSecond still growing'} live={true} />,
+    );
+    const tails = container.querySelectorAll('.md-live-tail');
+    expect(tails.length).toBe(1);
+    expect(tails[0].textContent).toContain('Second still growing');
+    expect(container.querySelector('.markdown-content')?.textContent).toContain('First paragraph');
+  });
+
   it('renders GFM markdown tables cleanly during live streaming (live=true)', () => {
     const tableMarkdown = `
 | Header 1 | Header 2 |

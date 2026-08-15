@@ -531,22 +531,36 @@ input::placeholder {
 
 /* One-shot rise when the final answer block mounts — not on every token flush. */
 @keyframes chat-final-stream-enter {
-  from {
-    opacity: 0.45;
-    transform: translateY(7px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0.72; }
+  to { opacity: 1; }
 }
 
 .chat-streaming-block--live {
-  animation: chat-final-stream-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: chat-final-stream-enter 0.14s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes md-live-fade {
+  from { opacity: 0.42; }
+  to { opacity: 1; }
+}
+
+.md-live-tail {
+  animation: md-live-fade 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes md-settle-fade {
+  from { opacity: 0.82; }
+  to { opacity: 1; }
+}
+
+.markdown-content--settle {
+  animation: md-settle-fade 0.16s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-streaming-block--live {
+  .chat-streaming-block--live,
+  .md-live-tail,
+  .markdown-content--settle {
     animation: none;
   }
   .streaming-markdown-content {
@@ -636,6 +650,15 @@ input::placeholder {
   background: color-mix(in srgb, var(--dt-background) 92%, black);
   border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 72%, transparent);
   font-size: 0.82rem;
+}
+
+.august-app-chrome button {
+  transition: background-color 0.12s cubic-bezier(0.16, 1, 0.3, 1), color 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.august-session-sidebar,
+.august-right-drawer {
+  will-change: width, opacity;
 }
 
 .august-session-sidebar {

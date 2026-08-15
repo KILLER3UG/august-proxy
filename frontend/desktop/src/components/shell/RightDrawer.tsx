@@ -20,6 +20,7 @@ import { RightDrawerSubagentsSection } from './RightDrawerSubagentsSection';
 import type { WorkbenchSession } from '@/types/workbench';
 import { useRightDrawer } from './RightDrawerState';
 import { getFileIcon } from '@/lib/file-icon';
+import { PANEL_EASE, PANEL_MS } from '@/lib/motion';
 
 const DEFAULT_BASE_WIDTH = 320;   // 1-2 sections
 const DEFAULT_WIDE_WIDTH = 640;   // 3-4 sections — doubles so they don't squish
@@ -29,10 +30,6 @@ const MIN_WIDTH = 200;
 // Leave at least 40% of the viewport for chat — at minimum window widths
 // the drawer previously swallowed the conversation (audit finding).
 const MAX_VIEWPORT_FRACTION = 0.6;
-
-/** Shared panel open/close — matches session sidebar feel. */
-const PANEL_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
-const PANEL_MS = 0.32;
 
 function loadStoredWidth(key: string, fallback: number): number {
   if (typeof window === 'undefined') return fallback;
@@ -145,9 +142,9 @@ export function RightDrawer({
       {open && (
         <motion.aside
           key="workbench-sidebar"
-          initial={{ width: 0, opacity: 0, x: 24 }}
-          animate={{ width, opacity: 1, x: 0 }}
-          exit={{ width: 0, opacity: 0, x: 16 }}
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width, opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
           transition={{
             duration: isDragging ? 0 : PANEL_MS,
             ease: PANEL_EASE,

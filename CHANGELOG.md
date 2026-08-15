@@ -13,6 +13,9 @@ Harness teammate pass — specialists, routines, attention, and a stacked compos
 **Composer**
 - Decision stack (review / distill / pins / proposals). Distill Keep/Discard per item. `@lane:` continues a thread; `@routine:` runs a routine. Lane continue/done toasts, bell, and OS notify when the window is hidden.
 
+**Motion**
+- Live answers fade the growing tail (~140ms) without re-animating settled paragraphs; a light settle fade when the turn ends. Left and right sidebars open/close with a short width + fade (220ms). Honors reduced motion.
+
 ## 0.16.2 (2026-08-13)
 
 

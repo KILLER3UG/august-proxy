@@ -373,6 +373,7 @@ export function RightDrawerSubagentsSection({
         </div>
       )}
 
+      <WorkstreamsPanel
           sessionId={workbenchSessionId}
           compact
           workspacePath={workspacePath}

@@ -17,6 +17,10 @@ export const t = {
   springSoft: { type: 'spring', stiffness: 220, damping: 26, mass: 1.0 } satisfies Transition,
 };
 
+/** Left/right shell drawers — short fade + width, not a slow slide. */
+export const PANEL_EASE = easeOut;
+export const PANEL_MS = 0.22;
+
 /* ── Presets used across the app ───────────────────────────────────── */
 
 /* Simple fade + 4px slide — for panels, overlays, sections. */

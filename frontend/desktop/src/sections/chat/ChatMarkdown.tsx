@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked, type Tokens } from 'marked';
 import katex from 'katex';
 import { highlightCode } from '@/lib/code-highlight';
@@ -370,6 +370,18 @@ export function Markdown({
   live?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const prevLive = useRef(live);
+  const [justSettled, setJustSettled] = useState(false);
+
+  useEffect(() => {
+    if (prevLive.current && !live) {
+      setJustSettled(true);
+      const id = window.setTimeout(() => setJustSettled(false), 180);
+      prevLive.current = live;
+      return () => window.clearTimeout(id);
+    }
+    prevLive.current = live;
+  }, [live]);
 
   const html = useMemo(() => {
     if (!content) return '';
@@ -419,16 +431,20 @@ export function Markdown({
     <div
       ref={ref}
       className={
-        variant === 'assistant'
+        (variant === 'assistant'
           ? 'markdown-content markdown-content--assistant'
-          : 'markdown-content'
+          : 'markdown-content') + (justSettled ? ' markdown-content--settle' : '')
       }
       {...(liveBlocks ? {} : { dangerouslySetInnerHTML: { __html: html as string } })}
     >
       {liveBlocks &&
         liveBlocks.map((blockProp, i) =>
           blockProp.__html ? (
-            <div key={i} dangerouslySetInnerHTML={blockProp} />
+            <div
+              key={i}
+              className={i === liveBlocks.length - 1 ? 'md-live-tail' : undefined}
+              dangerouslySetInnerHTML={blockProp}
+            />
           ) : null,
         )}
     </div>

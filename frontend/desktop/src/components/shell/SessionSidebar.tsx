@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { SessionList } from "@/components/sidebar/SessionList";
 import { useSessionsStore } from "@/store/sessions";
+import { PANEL_EASE, PANEL_MS } from "@/lib/motion";
 
 interface SessionSidebarProps {
   activeId?: string;
@@ -16,9 +17,6 @@ const SIDEBAR_WIDTH_KEY = "august-session-sidebar-width";
 const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 220;
 const MAX_VIEWPORT_FRACTION = 0.33;
-
-const PANEL_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
-const PANEL_MS = 0.32;
 
 function loadStoredWidth(): number {
   if (typeof window === "undefined") return DEFAULT_WIDTH;
@@ -97,9 +95,9 @@ export function SessionSidebar({
       {!collapsed && (
         <motion.aside
           key="sidebar"
-          initial={{ width: 0, opacity: 0, x: -16 }}
-          animate={{ width, opacity: 1, x: 0 }}
-          exit={{ width: 0, opacity: 0, x: -12 }}
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width, opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
           transition={{
             duration: isDragging ? 0 : PANEL_MS,
             ease: PANEL_EASE,
