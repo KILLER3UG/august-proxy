@@ -137,7 +137,10 @@ calls `POST /api/memory/review` with the **currently selected chat model**.
 The model returns improve / remove / always-include suggestions only.
 `POST /api/memory/review/apply` writes **after the user confirms** each row.
 This is separate from hippocampus consolidation (which can still apply
-background plans).
+background plans). Idle sleep-cycle distill stashes a plan at
+`GET /api/brain/pending-consolidation`; Keep is `POST /api/brain/apply-consolidation`,
+Discard is `POST /api/brain/pending-consolidation/discard`. Explicit
+Settings “run consolidation now” still applies immediately.
 
 ### Harness / orchestrator
 

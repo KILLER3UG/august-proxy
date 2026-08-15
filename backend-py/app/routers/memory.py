@@ -199,7 +199,11 @@ async def createAutoMemoryRoute(body: AutoMemoryCreate):
         importance,
         source=src,
     )
-    return {'id': memoryId, 'status': 'ok', 'source': src}
+    if src == 'user' and memoryId:
+        from app.services.memory.auto_memory import update_auto_memory
+
+        update_auto_memory(int(memoryId), pinned=True)
+    return {'id': memoryId, 'status': 'ok', 'source': src, 'pinned': src == 'user'}
 
 
 @router.get('/auto/{memoryId}')

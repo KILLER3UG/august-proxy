@@ -6,11 +6,20 @@ import { cn } from '@/lib/utils';
 import * as subagents from '@/api/subagents';
 import { setContinueWorkstream } from '@/components/chat/composer-intent';
 
-function waveTone(jobStatus: string, waveIndex: number, dirty?: boolean) {
+function laneTone(
+  outcomes: Record<string, { status?: string; error?: string }> | undefined,
+  name: string,
+  jobStatus: string,
+  dirty?: boolean,
+) {
+  const st = (outcomes?.[name]?.status || '').toLowerCase();
+  if (st === 'continuing') return 'running';
+  if (st === 'completed' || st === 'done') return 'done';
+  if (st === 'skipped') return 'skipped';
+  if (st === 'failed' || st === 'error' || st === 'blocked') return 'failed';
+  if (st === 'partial') return 'warning';
   if (dirty && jobStatus !== 'running') return 'warning';
-  if (jobStatus === 'running' && waveIndex === 0) return 'running';
-  if (jobStatus === 'completed') return 'done';
-  if (jobStatus === 'failed' || jobStatus === 'partial') return 'failed';
+  if (jobStatus === 'running') return 'idle';
   return 'idle';
 }
 
@@ -22,7 +31,9 @@ export function HarnessJobStrip({ sessionId }: { sessionId: string | null }) {
     enabled: !!sessionId,
     refetchInterval: 6_000,
   });
-  const rows = (jobs.data ?? []).filter((j) => j.dirty);
+  const rows = (jobs.data ?? []).filter(
+    (j) => j.dirty || j.status === 'running' || j.status === 'failed' || j.status === 'partial',
+  );
   if (!sessionId || rows.length === 0) return null;
   const job = rows[0];
 
@@ -42,24 +53,47 @@ export function HarnessJobStrip({ sessionId }: { sessionId: string | null }) {
           </span>
         ) : null}
         {job.status === 'running' ? (
-          <button
-            type="button"
-            className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            title="Cancel job"
-            onClick={() => {
-              void subagents.cancelJob(job.id).then(() => {
-                void qc.invalidateQueries({ queryKey: ['harness-jobs'] });
-              });
-            }}
-          >
-            <Square className="size-3" />
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Stop this wave"
+              onClick={() => {
+                const live = Object.entries(job.outcomes ?? {})
+                  .filter(([, o]) => (o.status || '').toLowerCase() === 'running')
+                  .map(([n]) => n);
+                const idx = (job.waves ?? []).findIndex((w) =>
+                  w.some((n) => live.includes(n)),
+                );
+                void subagents
+                  .cancelWave(job.id, Math.max(0, idx))
+                  .then(() => {
+                    void qc.invalidateQueries({ queryKey: ['harness-jobs'] });
+                  });
+              }}
+            >
+              Stop wave
+            </button>
+            <button
+              type="button"
+              className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Cancel job"
+              onClick={() => {
+                void subagents.cancelJob(job.id).then(() => {
+                  void qc.invalidateQueries({ queryKey: ['harness-jobs'] });
+                });
+              }}
+            >
+              <Square className="size-3" />
+            </button>
+          </div>
         ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {(job.waves ?? []).flatMap((wave, wi) =>
           wave.filter(Boolean).map((name, ni) => {
-            const tone = waveTone(job.status, wi, job.dirty);
+            const tone = laneTone(job.outcomes, name, job.status, job.dirty);
+            const err = job.outcomes?.[name]?.error;
             return (
               <span key={`${wi}-${name}-${ni}`} className="inline-flex items-center gap-1">
                 {wi > 0 && ni === 0 ? (
@@ -74,9 +108,11 @@ export function HarnessJobStrip({ sessionId }: { sessionId: string | null }) {
                       'border-primary/40 bg-primary/10 text-foreground',
                     tone === 'done' && 'border-success/30 bg-success/10 text-foreground/80',
                     tone === 'failed' && 'border-destructive/40 text-destructive',
+                    tone === 'skipped' && 'border-border/50 text-muted-foreground line-through',
                     tone === 'warning' && 'border-warning/40 bg-warning/10 text-warning',
                     tone === 'idle' && 'border-border/50 text-muted-foreground',
                   )}
+                  title={err || name}
                 >
                   <span
                     className={cn(
@@ -85,7 +121,7 @@ export function HarnessJobStrip({ sessionId }: { sessionId: string | null }) {
                       tone === 'done' && 'bg-success',
                       tone === 'failed' && 'bg-destructive',
                       tone === 'warning' && 'bg-warning',
-                      tone === 'idle' && 'bg-muted-foreground/40',
+                      tone === 'skipped' && 'bg-muted-foreground/35',
                     )}
                   />
                   {name}
@@ -107,14 +143,14 @@ export function HarnessJobStrip({ sessionId }: { sessionId: string | null }) {
               .continueWorkstream(
                 sessionId,
                 name,
-                'Summarize what changed in this workstream, then continue from the last episode.',
+                'Continue from the last episode.',
               )
               .then(() => {
                 void qc.invalidateQueries({ queryKey: ['harness-jobs'] });
               });
           }}
         >
-          Summarize what changed and continue
+          Continue from last episode
         </button>
       ) : null}
     </div>

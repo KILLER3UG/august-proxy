@@ -17,6 +17,12 @@ vi.mock('@/api/client', () => ({
 vi.mock('@/api/subagents', () => ({
   listWorkstreams: vi.fn().mockResolvedValue([]),
   listWorkstreamEpisodes: vi.fn().mockResolvedValue([]),
+  listJobs: vi.fn().mockResolvedValue([]),
+  getDigest: vi.fn().mockResolvedValue({ needsHandoff: [], running: 0, routines: [] }),
+  searchHarness: vi.fn().mockResolvedValue({ hits: [] }),
+  markWorkstreamRead: vi.fn(),
+  saveSkillFromEpisode: vi.fn(),
+  scheduleRoutine: vi.fn(),
   terminate: vi.fn(),
   stopAll: vi.fn(),
   steer: vi.fn(),

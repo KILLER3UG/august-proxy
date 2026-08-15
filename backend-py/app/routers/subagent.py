@@ -87,6 +87,7 @@ def _getSession(request: Request) -> object:
         agent_id=request.headers.get('X-Agent-Id', ''),
         provider=request.headers.get('X-Provider', ''),
         subagent_depth=0,
+        workspacePath=request.headers.get('X-Workspace-Path', ''),
     )
 
 
@@ -183,6 +184,13 @@ async def listHarnessJobs(request: Request, sessionId: Optional[str] = None):
     if not sid:
         raise HTTPException(status_code=400, detail='sessionId is required')
     return {'jobs': list_jobs(sid)}
+
+
+@router.post('/jobs/{jobId}/cancel-wave')
+async def cancelHarnessWave(jobId: str, wave: int = 0):
+    from app.services.harness_jobs import cancel_wave
+
+    return await cancel_wave(jobId, wave)
 
 
 @router.post('/jobs/{jobId}/cancel')
@@ -347,6 +355,178 @@ async def steerSubagent(taskId: str, body: SteerRequest, request: Request):
     return {'status': 'queued', 'taskId': taskId}
 
 
+@router.get('/digest')
+async def harnessDigest(
+    request: Request, sessionId: Optional[str] = None, workspace: Optional[str] = None
+):
+    from app.services.harness_playbook import session_digest
+
+    sid = sessionId or request.headers.get('X-Session-Id', '') or ''
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    return session_digest(sid, workspace or request.headers.get('X-Workspace-Path', ''))
+
+
+@router.get('/specialists')
+async def listSpecialistsApi(request: Request, sessionId: Optional[str] = None):
+    from app.services.harness_playbook import list_specialists
+
+    sid = sessionId or request.headers.get('X-Session-Id', '') or ''
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    return {'specialists': list_specialists(sid)}
+
+
+class SpecialistBody(CamelModel):
+    name: str = ''
+    workstream: str = ''
+    agent_id: str = 'general'
+    skills: list[str] | None = None
+    model: str = ''
+    acceptance: str = ''
+    restricted_tools: list[str] | None = None
+    autonomy: str = 'ask'
+    id: str = ''
+
+
+@router.post('/specialists')
+async def upsertSpecialistApi(body: SpecialistBody, request: Request):
+    from app.services.harness_playbook import upsert_specialist
+
+    sid = request.headers.get('X-Session-Id', '') or as_str(getattr(_getSession(request), 'id', ''), '')
+    payload = body.model_dump()
+    payload['workspacePath'] = request.headers.get('X-Workspace-Path', '')
+    try:
+        return upsert_specialist(sid, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post('/specialists/{specialistId}/autonomy')
+async def setSpecialistAutonomy(specialistId: str, body: dict):
+    from app.services.harness_playbook import set_autonomy
+
+    try:
+        return set_autonomy(specialistId, str(body.get('autonomy') or ''))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete('/specialists/{specialistId}')
+async def deleteSpecialistApi(specialistId: str):
+    from app.services.harness_playbook import delete_specialist
+
+    delete_specialist(specialistId)
+    return {'status': 'ok'}
+
+
+@router.get('/routines')
+async def listRoutinesApi(request: Request, sessionId: Optional[str] = None):
+    from app.services.harness_playbook import list_routines
+
+    sid = sessionId or request.headers.get('X-Session-Id', '') or ''
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    return {'routines': list_routines(sid)}
+
+
+class SaveRoutineBody(CamelModel):
+    name: str = ''
+    workstream: str = ''
+    seq: int | None = None
+
+
+@router.post('/routines')
+async def saveRoutineApi(body: SaveRoutineBody, request: Request):
+    from app.services.harness_playbook import save_routine_from_episode
+
+    sid = request.headers.get('X-Session-Id', '') or as_str(getattr(_getSession(request), 'id', ''), '')
+    try:
+        return save_routine_from_episode(
+            sid, body.workstream, body.seq, request.headers.get('X-Workspace-Path', '')
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post('/routines/{routineId}/run')
+async def runRoutineApi(routineId: str, request: Request):
+    orch = _getOrchestrator(request)
+    session = _getSession(request)
+    sessionId = str(getattr(session, 'id', '') or request.headers.get('X-Session-Id', '') or '')
+    setattr(session, 'id', sessionId)
+    from app.services.harness_playbook import get_routine, routine_work_item
+
+    routine = get_routine(routineId)
+    if not routine:
+        raise HTTPException(status_code=404, detail='Routine not found')
+    item = routine_work_item(sessionId, routine)
+    result = await executeSpawnSubagents(
+        orch, session, [item], mode='auto', emit=_makeEmit(sessionId), background=True
+    )
+    return {**result, 'routineId': routineId, 'workstream': routine.get('workstream')}
+
+
+@router.post('/routines/{routineId}/schedule')
+async def scheduleRoutineApi(routineId: str, body: dict):
+    from app.services.harness_ops import set_routine_schedule
+
+    try:
+        return set_routine_schedule(
+            routineId,
+            str(body.get('schedule') or ''),
+            body.get('paused') if 'paused' in body else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post('/workstreams/{name}/save-skill')
+async def saveSkillFromWorkstream(name: str, request: Request, body: dict | None = None):
+    from app.services.harness_ops import skill_from_episode
+    from app.services.skill_service import SkillValidationError
+
+    sid = request.headers.get('X-Session-Id', '') or as_str(getattr(_getSession(request), 'id', ''), '')
+    seq = (body or {}).get('seq')
+    try:
+        return skill_from_episode(sid, name, int(seq) if seq is not None else None)
+    except SkillValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post('/workstreams/{name}/read')
+async def markWorkstreamRead(name: str, request: Request, sessionId: Optional[str] = None):
+    from app.services.harness_ops import mark_read
+    from app.services.workstreams import latest_episode
+
+    sid = sessionId or request.headers.get('X-Session-Id', '') or ''
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    ep = latest_episode(sid, name)
+    mark_read(sid, name, int((ep or {}).get('seq') or 0))
+    return {'status': 'ok', 'name': name}
+
+
+@router.get('/search')
+async def searchHarnessApi(request: Request, q: str = '', sessionId: Optional[str] = None):
+    from app.services.harness_ops import search_harness
+
+    sid = sessionId or request.headers.get('X-Session-Id', '') or ''
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    return search_harness(sid, q, workspace=request.headers.get('X-Workspace-Path', ''))
+
+
+@router.delete('/routines/{routineId}')
+async def deleteRoutineApi(routineId: str):
+    from app.services.harness_playbook import delete_routine
+
+    delete_routine(routineId)
+    return {'status': 'ok'}
+
+
 @router.post('/workstreams/{name}/continue')
 async def continueWorkstream(name: str, body: ContinueWorkstreamRequest, request: Request):
     """Spawn a fresh worker on a named thread with prior episodes."""
@@ -354,15 +534,18 @@ async def continueWorkstream(name: str, body: ContinueWorkstreamRequest, request
     session = _getSession(request)
     sessionId = str(getattr(session, 'id', '') or request.headers.get('X-Session-Id', '') or '')
     setattr(session, 'id', sessionId)
-    workItems = [
-        {
-            'goal': body.message,
-            'agentId': body.agent_id or 'general',
-            'workstream': name,
-            'name': name,
-        }
-    ]
+    try:
+        from app.services.harness_ops import touch_activity
+
+        touch_activity()
+    except Exception:
+        pass
+    from app.services.harness_playbook import continue_work_item
+
+    item = continue_work_item(sessionId, name, body.message)
+    if body.agent_id and body.agent_id != 'general':
+        item['agentId'] = body.agent_id
     result = await executeSpawnSubagents(
-        orch, session, workItems, mode='auto', emit=_makeEmit(sessionId), background=True
+        orch, session, [item], mode='auto', emit=_makeEmit(sessionId), background=True
     )
     return {**result, 'workstream': name}

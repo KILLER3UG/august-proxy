@@ -53,7 +53,13 @@ export function ChatRunHeader({
     activeJob?.status,
   );
 
-  const quiet = !streaming && !activeJob && liveWorkers === 0 && mode === 'agent';
+  const lastExit = workbenchSession?.lastCommand?.exitCode;
+  const quiet =
+    !streaming &&
+    !activeJob &&
+    liveWorkers === 0 &&
+    mode === 'agent' &&
+    lastExit == null;
   if (quiet) return null;
 
   const tightCtx = pct >= 70;
@@ -65,7 +71,7 @@ export function ChatRunHeader({
     void subagents.continueWorkstream(
       sessionId,
       name,
-      'Summarize what changed in this workstream, then continue from the last episode.',
+      'Continue from the last episode.',
     );
   };
 
@@ -118,6 +124,25 @@ export function ChatRunHeader({
           <span className="text-[11px] text-muted-foreground">Working</span>
         </>
       ) : null}
+      {activeJob?.status === 'failed' || activeJob?.status === 'partial' || activeJob?.error ? (
+        <>
+          <span className="text-muted-foreground/30">·</span>
+          <button
+            type="button"
+            onClick={openWorkers}
+            className="max-w-[14rem] truncate text-[11px] text-destructive hover:underline"
+            title={activeJob.error || activeJob.status}
+          >
+            {activeJob.error || 'Dispatch failed'}
+          </button>
+        </>
+      ) : null}
+      {workbenchSession?.verifierEnforced ? (
+        <>
+          <span className="text-muted-foreground/30">·</span>
+          <span className="text-[11px] text-muted-foreground">Verifier</span>
+        </>
+      ) : null}
       {activeJob?.dirty ? (
         <>
           <span className="text-muted-foreground/30">·</span>
@@ -127,6 +152,56 @@ export function ChatRunHeader({
             className="text-[11px] text-warning hover:underline"
           >
             Needs handoff
+          </button>
+        </>
+      ) : null}
+      {lastExit != null ? (
+        <>
+          <span className="text-muted-foreground/30">·</span>
+          <span
+            className={
+              lastExit === 0
+                ? 'text-[11px] tabular-nums text-muted-foreground'
+                : 'text-[11px] tabular-nums text-destructive'
+            }
+            title={workbenchSession?.lastCommand?.command || 'Last command'}
+          >
+            exit {lastExit}
+          </span>
+        </>
+      ) : null}
+      {workbenchSession?.lastReceipt?.artifacts?.length ? (
+        <>
+          <span className="text-muted-foreground/30">·</span>
+          <span
+            className="max-w-[14rem] truncate text-[11px] text-muted-foreground"
+            title={workbenchSession.lastReceipt.artifacts.join('\n')}
+          >
+            {workbenchSession.lastReceipt.artifacts.slice(0, 2).join(' · ')}
+          </span>
+        </>
+      ) : workbenchSession?.lastCommand?.command ? (
+        <>
+          <span className="text-muted-foreground/30">·</span>
+          <span className="max-w-[12rem] truncate font-mono text-[11px] text-muted-foreground" title={workbenchSession.lastCommand.command}>
+            {workbenchSession.lastCommand.command}
+          </span>
+        </>
+      ) : null}
+      {activeJob?.id && waveTotal > 0 && (activeJob.status === 'running' || liveWorkers > 0) ? (
+        <>
+          <span className="text-muted-foreground/30">·</span>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            title="Stop this wave"
+            onClick={() => {
+              void subagents.cancelWave(activeJob.id, Math.max(0, waveNow - 1)).then(() => {
+                void jobs.refetch();
+              });
+            }}
+          >
+            Stop wave
           </button>
         </>
       ) : null}

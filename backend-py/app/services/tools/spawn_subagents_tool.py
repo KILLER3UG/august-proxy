@@ -490,6 +490,11 @@ async def executeSpawnSubagents(
         Result dict with ``status`` and either ``handles`` (background) or ``results``.
     """
     _expire_stale_proposals()
+    if not workItems:
+        msg = 'Dispatch had no workstreams to start.'
+        if emit:
+            emit({'type': 'error', 'message': msg})
+        return {'status': 'error', 'error': msg, 'total': 0}
     if mode == 'proposed':
         proposalId = f'proposal_{__import__("uuid").uuid4().hex[:8]}'
         createdAt = __import__('time').time()
@@ -634,6 +639,7 @@ async def _doSpawn(
                     'episode_required': bool(item.get('episode_required') or item.get('workstream') or item.get('name')),
                     'skills': item.get('skills') or [],
                     'harness_job_id': job_id,
+                    'autoHop': bool(item.get('autoHop') or item.get('auto_hop')),
                 }
                 for item in items
             ],
@@ -683,11 +689,19 @@ async def _doSpawn(
                         'agentId': item.get('agentId', 'general'),
                         'goal': item.get('goal', ''),
                         'status': 'skipped',
-                        'error': 'Skipped because a same-batch source/dependency failed.',
+                        'error': f'Skipped because {nm or "a dependency"} waited on a failed workstream.',
+                        'workstream': nm,
                     }
                     all_results.append(skipped)
                     if nm:
                         failed_names.add(nm)
+                    if job_id and nm:
+                        try:
+                            from app.services.harness_jobs import record_lane
+
+                            record_lane(job_id, nm, 'skipped', skipped['error'])
+                        except Exception:
+                            pass
                     if emit:
                         emit(
                             {
@@ -705,10 +719,13 @@ async def _doSpawn(
             handles = await _spawn_wave(runnable)
             if job_id:
                 try:
-                    from app.services.harness_jobs import attach_task
+                    from app.services.harness_jobs import attach_task, record_lane
 
                     for h in handles:
                         attach_task(job_id, h.taskId)
+                        ws = getattr(h, 'workstream', '') or ''
+                        if ws:
+                            record_lane(job_id, ws, 'running', task_id=h.taskId)
                 except Exception:
                     logger.debug('attach_task failed', exc_info=True)
             _emit_starts(handles)
@@ -724,6 +741,20 @@ async def _doSpawn(
                     ws = as_str(result.get('workstream'), '')
                 if st in ('failed', 'error', 'cancelled') and ws:
                     failed_names.add(ws)
+                if job_id and ws:
+                    try:
+                        from app.services.harness_jobs import record_lane
+
+                        lane_st = 'failed' if st in ('failed', 'error') else (st or 'completed')
+                        record_lane(
+                            job_id,
+                            ws,
+                            lane_st,
+                            as_str(result.get('error'), ''),
+                            task_id=str(hid or ''),
+                        )
+                    except Exception:
+                        pass
                 if emit:
                     emit(
                         {

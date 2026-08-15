@@ -76,6 +76,19 @@ export interface WorkbenchSession {
    *  session. Drives the banner off the event instead of hydrated session
    *  state, so a restored pending plan doesn't re-show the banner. */
   planSubmittedLive?: boolean;
+  lastCommand?: {
+    name?: string;
+    command?: string;
+    exitCode?: number | null;
+  } | null;
+  lastReceipt?: {
+    workstream?: string;
+    status?: string;
+    next?: string;
+    artifacts?: string[];
+    command?: string;
+    exitCode?: number | null;
+  } | null;
 }
 
 export interface WorkbenchAgent {

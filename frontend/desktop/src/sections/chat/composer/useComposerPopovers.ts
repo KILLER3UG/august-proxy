@@ -18,7 +18,7 @@ import { api } from '@/api/client';
 import { useSessionsStore } from '@/store/sessions';
 import { voiceCommandEvents } from '@/api/voice/registry-events';
 import { getDisplayCommands } from '@/api/voice/registry';
-import { COMPOSER_TOOLS as TOOLS, fetchFileMentions, fetchMcpMentions, parseAtMention, type MentionItem , fetchConversationMentions } from '../composer-mentions';
+import { COMPOSER_TOOLS as TOOLS, fetchFileMentions, fetchMcpMentions, parseAtMention, type MentionItem , fetchConversationMentions, fetchHarnessMentions } from '../composer-mentions';
 
 /** Closers useChatSend calls after a send so open popovers dismiss. */
 export type ComposerDropdownApi = {
@@ -71,6 +71,8 @@ export interface UseComposerPopoversArgs {
   streaming?: boolean;
   /** UI session id — used for the @-mention workspace-file search. */
   sessionId?: string | null;
+  /** Workbench session id — lanes and routines in the @ picker. */
+  workbenchSessionId?: string | null;
 }
 
 /**
@@ -85,6 +87,7 @@ export function useComposerPopovers({
   stop,
   streaming,
   sessionId,
+  workbenchSessionId,
 }: UseComposerPopoversArgs) {
   const [showComposerActionsDropdown, setShowComposerActionsDropdown] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
@@ -96,6 +99,7 @@ export function useComposerPopovers({
   const [mcpMentions, setMcpMentions] = useState<MentionItem[]>([]);
   const [fileMentions, setFileMentions] = useState<MentionItem[]>([]);
   const [conversationMentions, setConversationMentions] = useState<MentionItem[]>([]);
+  const [harnessMentions, setHarnessMentions] = useState<MentionItem[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
 
@@ -199,6 +203,17 @@ export function useComposerPopovers({
     };
   }, [mentionQuery, sessionId]);
 
+  useEffect(() => {
+    if (mentionQuery === null) return;
+    let cancelled = false;
+    void fetchHarnessMentions(workbenchSessionId, mentionQuery.trim()).then((items) => {
+      if (!cancelled) setHarnessMentions(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mentionQuery, workbenchSessionId]);
+
   const mentionItems: MentionItem[] = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
@@ -217,8 +232,9 @@ export function useComposerPopovers({
     const mcp = mcpMentions.filter(matches);
     const files = fileMentions.filter(matches);
     const conversations = conversationMentions.filter(matches);
-    return [...skills, ...tools, ...mcp, ...files, ...conversations];
-  }, [mentionQuery, skillMentions, mcpMentions, fileMentions, conversationMentions]);
+    const harness = harnessMentions.filter(matches);
+    return [...harness, ...skills, ...tools, ...mcp, ...files, ...conversations];
+  }, [mentionQuery, skillMentions, mcpMentions, fileMentions, conversationMentions, harnessMentions]);
 
   const closeAllPopovers = useCallback(() => {
     setShowComposerActionsDropdown(false);

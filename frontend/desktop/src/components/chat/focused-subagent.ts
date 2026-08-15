@@ -9,6 +9,8 @@ import { useSyncExternalStore } from 'react';
 export interface FocusedSubagent {
   jobId: string;
   title: string;
+  workstream?: string;
+  running?: boolean;
 }
 
 let focused: FocusedSubagent | null = null;
@@ -24,7 +26,9 @@ export function setFocusedSubagent(next: FocusedSubagent | null) {
     (focused != null &&
       next != null &&
       focused.jobId === next.jobId &&
-      focused.title === next.title);
+      focused.title === next.title &&
+      focused.workstream === next.workstream &&
+      focused.running === next.running);
   if (same) return;
   focused = next;
   emit();

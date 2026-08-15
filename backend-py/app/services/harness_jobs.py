@@ -58,6 +58,53 @@ def _wave_names(waves: list[list[dict[str, Any]]]) -> list[list[str]]:
     return out
 
 
+def _ensure_outcomes_col(conn) -> None:
+    try:
+        conn.execute("ALTER TABLE harness_jobs ADD COLUMN outcomes_json TEXT DEFAULT '{}'")
+        conn.commit()
+    except Exception:
+        pass
+
+
+def record_lane(job_id: str, name: str, status: str, error: str = '', task_id: str = '') -> None:
+    if not job_id or not name:
+        return
+    try:
+        conn = _conn()
+        _ensure_outcomes_col(conn)
+        row = conn.execute('SELECT outcomes_json FROM harness_jobs WHERE id = ?', (job_id,)).fetchone()
+        if not row:
+            return
+        raw = {}
+        try:
+            loaded = json.loads(row['outcomes_json'] or '{}')
+            if isinstance(loaded, dict):
+                raw = loaded
+        except Exception:
+            raw = {}
+        prev = raw.get(name) if isinstance(raw.get(name), dict) else {}
+        raw[name] = {
+            'status': status,
+            'error': error[:400],
+            'taskId': task_id or as_str(prev.get('taskId'), ''),
+        }
+        conn.execute(
+            'UPDATE harness_jobs SET outcomes_json = ? WHERE id = ?',
+            (json.dumps(raw, ensure_ascii=False), job_id),
+        )
+        conn.commit()
+    except Exception:
+        logger.debug('record_lane failed', exc_info=True)
+
+
+def _parse_outcomes(row: Any) -> dict[str, Any]:
+    try:
+        raw = json.loads(row['outcomes_json'] or '{}')
+        return raw if isinstance(raw, dict) else {}
+    except Exception:
+        return {}
+
+
 def attach_task(job_id: str, task_id: str) -> None:
     if not job_id or not task_id:
         return
@@ -111,48 +158,7 @@ def mark_dirty(job_id: str, note: str = '') -> None:
         logger.debug('mark_dirty failed', exc_info=True)
 
 
-def list_jobs(session_id: str, *, limit: int = 30) -> list[dict[str, Any]]:
-    conn = _conn()
-    rows = conn.execute(
-        'SELECT id, session_id, status, dirty, error, waves_json, task_ids, created_at, finished_at '
-        'FROM harness_jobs WHERE session_id = ? ORDER BY created_at DESC LIMIT ?',
-        (session_id, limit),
-    ).fetchall()
-    out: list[dict[str, Any]] = []
-    for r in rows:
-        try:
-            waves = json.loads(r['waves_json'] or '[]')
-        except Exception:
-            waves = []
-        try:
-            tasks = json.loads(r['task_ids'] or '[]')
-        except Exception:
-            tasks = []
-        out.append(
-            {
-                'id': r['id'],
-                'sessionId': r['session_id'],
-                'status': r['status'],
-                'dirty': bool(r['dirty']),
-                'error': r['error'] or '',
-                'waves': waves,
-                'taskIds': tasks,
-                'createdAt': r['created_at'],
-                'finishedAt': r['finished_at'],
-            }
-        )
-    return out
-
-
-def get_job(job_id: str) -> dict[str, Any] | None:
-    conn = _conn()
-    r = conn.execute(
-        'SELECT id, session_id, status, dirty, error, waves_json, task_ids, created_at, finished_at '
-        'FROM harness_jobs WHERE id = ?',
-        (job_id,),
-    ).fetchone()
-    if not r:
-        return None
+def _row_to_job(r: Any) -> dict[str, Any]:
     try:
         waves = json.loads(r['waves_json'] or '[]')
     except Exception:
@@ -169,9 +175,34 @@ def get_job(job_id: str) -> dict[str, Any] | None:
         'error': r['error'] or '',
         'waves': waves,
         'taskIds': tasks,
+        'outcomes': _parse_outcomes(r),
         'createdAt': r['created_at'],
         'finishedAt': r['finished_at'],
     }
+
+
+def list_jobs(session_id: str, *, limit: int = 30) -> list[dict[str, Any]]:
+    conn = _conn()
+    _ensure_outcomes_col(conn)
+    rows = conn.execute(
+        'SELECT id, session_id, status, dirty, error, waves_json, task_ids, outcomes_json, created_at, finished_at '
+        'FROM harness_jobs WHERE session_id = ? ORDER BY created_at DESC LIMIT ?',
+        (session_id, limit),
+    ).fetchall()
+    return [_row_to_job(r) for r in rows]
+
+
+def get_job(job_id: str) -> dict[str, Any] | None:
+    conn = _conn()
+    _ensure_outcomes_col(conn)
+    r = conn.execute(
+        'SELECT id, session_id, status, dirty, error, waves_json, task_ids, outcomes_json, created_at, finished_at '
+        'FROM harness_jobs WHERE id = ?',
+        (job_id,),
+    ).fetchone()
+    if not r:
+        return None
+    return _row_to_job(r)
 
 
 async def cancel_job(job_id: str) -> dict[str, Any]:
@@ -190,3 +221,30 @@ async def cancel_job(job_id: str) -> dict[str, Any]:
             pass
     finish_job(job_id, 'cancelled')
     return {'status': 'cancelled', 'jobId': job_id, 'stopped': stopped}
+
+
+async def cancel_wave(job_id: str, wave_index: int) -> dict[str, Any]:
+    job = get_job(job_id)
+    if not job:
+        return {'status': 'error', 'error': 'job not found'}
+    waves = job.get('waves') or []
+    if wave_index < 0 or wave_index >= len(waves):
+        return {'status': 'error', 'error': 'wave not found'}
+    names = [n for n in (waves[wave_index] or []) if n]
+    outcomes = job.get('outcomes') or {}
+    from app.services.runtime_services import get_orchestrator
+
+    orch = get_orchestrator()
+    stopped = 0
+    for name in names:
+        info = outcomes.get(name) if isinstance(outcomes.get(name), dict) else {}
+        tid = as_str(info.get('taskId'), '')
+        st = as_str(info.get('status'), '')
+        if tid and st in ('running', 'pending', ''):
+            try:
+                if await orch.terminate(tid):
+                    stopped += 1
+            except Exception:
+                pass
+        record_lane(job_id, name, 'cancelled', 'Stopped with this wave', tid)
+    return {'status': 'ok', 'jobId': job_id, 'wave': wave_index, 'stopped': stopped, 'names': names}

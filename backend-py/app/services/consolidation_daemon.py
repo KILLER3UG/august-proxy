@@ -23,6 +23,7 @@ from app.type_aliases import ConsolidationSummaryDict
 # proposed for archival by the sleep cycle. Deterministic guard — the LLM
 # plan is advisory, the apply step enforces this.
 _ARCHIVE_AGE_DAYS = 60
+PENDING_CONSOLIDATION_KEY = 'pending_consolidation_plan'
 _ARCHIVE_MAX_IMPORTANCE = 0.7
 
 logger = logging.getLogger(__name__)
@@ -334,16 +335,108 @@ async def _apply_consolidation_plan(plan: dict) -> ConsolidationSummaryDict:
     return stats
 
 
-async def runConsolidation() -> ConsolidationSummaryDict:
-    """Run one Hippocampus-driven consolidation cycle (plan + apply).
+def _plan_has_actions(plan: dict) -> bool:
+    return bool(
+        as_list(plan.get('merge'), [])
+        or as_list(plan.get('promote'), [])
+        or as_list(plan.get('delete'), [])
+        or as_list(plan.get('archiveMemories'), [])
+    )
 
-    1. Collect recent auto_memories and all learned_heuristics
-    2. Call Hippocampus with a structured prompt
-    3. Validate the JSON response
-    4. Apply merges, promotions, deletes (most-recent 20 protected)
-    5. Write through db_writer (Phase 0 single-write-queue)
 
-    Returns stats about what was done.
+def get_pending_consolidation() -> dict[str, object] | None:
+    from app.services.memory_store import get_memory
+
+    raw = get_memory(PENDING_CONSOLIDATION_KEY)
+    return raw if isinstance(raw, dict) else None
+
+
+def clear_pending_consolidation() -> None:
+    from app.services.memory_store import delete_memory
+
+    delete_memory(PENDING_CONSOLIDATION_KEY)
+
+
+def stash_pending_consolidation(plan: dict) -> None:
+    from app.services.memory_store import save_memory
+
+    save_memory(PENDING_CONSOLIDATION_KEY, plan)
+
+
+def list_pending_actions(plan: dict | None) -> list[dict[str, object]]:
+    """Flatten a distill plan into Keep/Discard rows."""
+    if not isinstance(plan, dict):
+        return []
+    out: list[dict[str, object]] = []
+    for i, raw in enumerate(as_list(plan.get('merge'), [])):
+        m = as_dict(raw)
+        if not m.get('keepId'):
+            continue
+        out.append(
+            {
+                'id': f'merge:{i}',
+                'kind': 'merge',
+                'label': as_str(m.get('mergedRule'), '')[:140] or f'Merge keep #{m.get("keepId")}',
+            }
+        )
+    for i, raw in enumerate(as_list(plan.get('promote'), [])):
+        p = as_dict(raw)
+        if not (p.get('factKey') and p.get('factValue')):
+            continue
+        out.append(
+            {
+                'id': f'promote:{i}',
+                'kind': 'promote',
+                'label': f'{p.get("factKey")}: {as_str(p.get("factValue"), "")[:100]}',
+            }
+        )
+    for i, raw in enumerate(as_list(plan.get('delete'), [])):
+        out.append({'id': f'delete:{i}', 'kind': 'delete', 'label': f'Delete heuristic #{raw}'})
+    for i, raw in enumerate(as_list(plan.get('archiveMemories'), [])):
+        a = as_dict(raw) if isinstance(raw, dict) else {'id': raw}
+        out.append(
+            {
+                'id': f'archive:{i}',
+                'kind': 'archive',
+                'label': as_str(a.get('reason'), '')[:140] or f'Archive memory #{a.get("id")}',
+            }
+        )
+    return out
+
+
+def take_pending_action(plan: dict, action_id: str) -> tuple[dict, dict]:
+    """Split one action out of a plan. Returns (slice_to_apply, remaining)."""
+    kind, _, idx_s = action_id.partition(':')
+    try:
+        idx = int(idx_s)
+    except ValueError:
+        idx = -1
+    remaining = {
+        'merge': list(as_list(plan.get('merge'), [])),
+        'promote': list(as_list(plan.get('promote'), [])),
+        'delete': list(as_list(plan.get('delete'), [])),
+        'archiveMemories': list(as_list(plan.get('archiveMemories'), [])),
+    }
+    key = {'merge': 'merge', 'promote': 'promote', 'delete': 'delete', 'archive': 'archiveMemories'}.get(kind)
+    if not key or idx < 0 or idx >= len(remaining[key]):
+        raise ValueError(f'Unknown distill action {action_id}')
+    item = remaining[key].pop(idx)
+    empty: list = []
+    slice_plan: dict[str, object] = {
+        'merge': empty,
+        'promote': [],
+        'delete': [],
+        'archiveMemories': [],
+    }
+    slice_plan[key] = [item]
+    return slice_plan, remaining
+
+
+async def runConsolidation(*, apply: bool = True) -> ConsolidationSummaryDict:
+    """Run one Hippocampus-driven consolidation cycle.
+
+    ``apply=True`` (Settings / tests) writes immediately.
+    ``apply=False`` (idle sleep cycle) stashes a Keep/Discard plan instead.
     """
     from app.services.brain_event_bus import emitBrainEvent
 
@@ -376,6 +469,23 @@ async def runConsolidation() -> ConsolidationSummaryDict:
         stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
         _persist_last_run(stats)
         return stats
+    if not apply and _plan_has_actions(plan):
+        stash_pending_consolidation(plan)
+        emitBrainEvent(
+            category='consolidation',
+            layer='consolidation_daemon',
+            summary='Sleep cycle proposed memory distill — waiting for Keep / Discard',
+        )
+        pending_stats: ConsolidationSummaryDict = {
+            'merged': 0,
+            'promoted': 0,
+            'deleted_stale': 0,
+            'errors': [],
+        }
+        pending_stats['pending'] = True  # type: ignore[typeddict-item]
+        _persist_last_run(pending_stats)
+        return pending_stats
+    clear_pending_consolidation()
     return await _apply_consolidation_plan(plan)
 
 

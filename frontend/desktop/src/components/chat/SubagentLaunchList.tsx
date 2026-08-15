@@ -60,7 +60,12 @@ export function SubagentLaunchList({
   if (agents.length === 0) return null;
 
   const openLane = (agent: SubagentBlockState) => {
-    setFocusedSubagent({ jobId: agent.jobId, title: taskTitle(agent) });
+    setFocusedSubagent({
+      jobId: agent.jobId,
+      title: taskTitle(agent),
+      workstream: agent.workstream?.trim() || undefined,
+      running: agent.status === 'running' || agent.status === 'pending',
+    });
     addRightDrawerSection('subagents');
   };
 
@@ -158,10 +163,12 @@ export function SubagentLaunchList({
           </ul>
           {(episodes.data?.length ?? 0) > 0 ? (
             <p className="px-0.5 font-mono text-[11px] text-muted-foreground/70" data-testid="workstream-episode-strip">
-              {(episodes.data ?? [])
-                .slice(-4)
-                .map((ep) => `ep ${ep.seq}${ep.status ? ` ${ep.status}` : ''}`)
-                .join(' → ')}
+              {(() => {
+                const ep = (episodes.data ?? [])[(episodes.data ?? []).length - 1];
+                const next = (ep.next || ep.summary || '').trim();
+                const ws = workstream || 'lane';
+                return `${ws} #${ep.seq} ${ep.status || ''} → ${next}`.replace(/\s+/g, ' ').trim();
+              })()}
             </p>
           ) : null}
     </div>

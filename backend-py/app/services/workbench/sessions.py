@@ -160,6 +160,16 @@ class WorkbenchSession:
             'totalOutputTokens': self.totalOutputTokens,
             'totalCost': self.totalCost,
             'queuedUserMessages': self.queuedUserMessages,
+            'lastCommand': (
+                self.metadata.get('lastCommand')
+                if isinstance(self.metadata.get('lastCommand'), dict)
+                else None
+            ),
+            'lastReceipt': (
+                self.metadata.get('lastReceipt')
+                if isinstance(self.metadata.get('lastReceipt'), dict)
+                else None
+            ),
         }
 
     @staticmethod

@@ -8,10 +8,13 @@ import pytest
 from app.services.workstreams import (
     WorkstreamError,
     append_episode,
+    continue_goal,
     format_episode_context,
     goal_contract_prompt,
     item_name,
+    judge_episode_status,
     list_workstreams,
+    parse_episode_payload,
     plan_waves,
     weave_sources,
 )
@@ -161,3 +164,150 @@ async def test_workstreams_http_list(brain_ready):
     assert r.status_code == 200
     names = [w['name'] for w in r.json()['workstreams']]
     assert 'explore' in names
+
+
+def test_acceptance_without_criteria_met_is_partial():
+    parsed = parse_episode_payload('{"summary":"wrote files","status":"completed"}')
+    judged = judge_episode_status(parsed, acceptance_criteria='pytest -q exits 0')
+    assert judged['status'] == 'partial'
+    assert 'pytest' in judged['unmet'] or 'pytest' in judged['next']
+
+
+def test_criteria_met_flag_keeps_completed():
+    parsed = parse_episode_payload(
+        '{"summary":"green","status":"completed","criteriaMet":true}'
+    )
+    judged = judge_episode_status(parsed, acceptance_criteria='pytest -q exits 0')
+    assert judged['status'] == 'completed'
+
+
+def test_continue_goal_uses_episode_card(brain_ready):
+    append_episode(
+        'sess-card',
+        'auth',
+        status='partial',
+        summary='Login form only',
+        next_action='Add session cookie',
+        raw_json='{"skills":["webapp"],"unmet":"tests"}',
+    )
+    text = continue_goal('sess-card', 'auth', 'keep going')
+    assert 'EPISODE CARD' in text
+    assert 'Login form' in text
+    assert 'keep going' in text
+    assert 'session cookie' in text.lower() or 'next:' in text.lower()
+
+
+def test_should_auto_continue_caps_hops():
+    from app.services.harness_playbook import MAX_AUTO_HOPS, should_auto_continue
+
+    assert should_auto_continue('silent', status='completed', next_action='more', hops=0)
+    assert not should_auto_continue('silent', status='completed', next_action='more', hops=MAX_AUTO_HOPS)
+    assert not should_auto_continue('ask', status='completed', next_action='more', hops=0)
+    assert not should_auto_continue('silent', status='blocked', next_action='more', hops=0)
+    from app.services.harness_playbook import should_ping
+
+    assert should_ping('ask', status='completed', next_action='more')
+    assert not should_ping('silent', status='completed', next_action='more')
+    assert should_ping('silent', status='blocked')
+    assert not should_ping('on_fail', status='completed', next_action='more')
+    assert should_ping('on_fail', status='partial')
+
+
+def test_specialist_and_routine_roundtrip(brain_ready):
+    from app.services.harness_playbook import (
+        continue_work_item,
+        save_routine_from_episode,
+        specialist_for_workstream,
+        upsert_specialist,
+    )
+    from app.services.workstreams import append_episode, list_workstreams
+
+    upsert_specialist(
+        'sess-play',
+        {
+            'name': 'auth',
+            'workstream': 'auth',
+            'skills': ['webapp'],
+            'acceptance': 'tests pass',
+            'autonomy': 'silent',
+            'workspacePath': '/repo',
+        },
+    )
+    spec = specialist_for_workstream('sess-play', 'auth', '/repo')
+    assert spec and spec['autonomy'] == 'silent'
+    append_episode(
+        'sess-play',
+        'auth',
+        status='completed',
+        summary='Tokens persist',
+        next_action='Add refresh path',
+        raw_json='{"skills":["webapp"]}',
+    )
+    rows = list_workstreams('sess-play')
+    assert rows[0]['name'] == 'auth'
+    assert rows[0]['dirty'] is False
+    item = continue_work_item('sess-play', 'auth', '')
+    assert 'refresh' in item['goal'].lower() or 'Continue' in item['goal']
+    assert 'webapp' in item['skills']
+    assert item['acceptanceCriteria'] == 'tests pass'
+    rtn = save_routine_from_episode('sess-play', 'auth')
+    assert rtn['workstream'] == 'auth'
+    assert rtn['sourceSeq'] == 1
+
+
+def test_mark_read_and_attention(brain_ready):
+    from app.services.harness_ops import annotate_attention, last_seen_seq, mark_read
+
+    append_episode('sess-att', 'auth', status='completed', summary='done', next_action='')
+    rows = list_workstreams('sess-att')
+    assert rows[0].get('attention') in ('unread', 'idle', 'needs', 'working')
+    mark_read('sess-att', 'auth', int((rows[0].get('latest') or {}).get('seq') or 1))
+    assert last_seen_seq('sess-att', 'auth') >= 1
+    again = annotate_attention('sess-att', list_workstreams('sess-att'))
+    assert again[0]['attention'] in ('idle', 'needs')
+    assert again[0]['unread'] is False
+
+
+def test_search_harness_hits_episode(brain_ready):
+    from app.services.harness_ops import search_harness
+
+    append_episode('sess-q', 'auth', status='partial', summary='oauth tokens', next_action='refresh')
+    found = search_harness('sess-q', 'oauth')
+    kinds = {h.get('kind') for h in found.get('hits') or []}
+    assert 'episode' in kinds or 'workstream' in kinds
+
+
+def test_unattended_skips_auto_continue(brain_ready, monkeypatch):
+    from app.services.harness_playbook import schedule_auto_continue
+
+    monkeypatch.setattr('app.services.harness_ops.is_unattended', lambda: True)
+    events = []
+    schedule_auto_continue(type('S', (), {'id': 's', 'workspacePath': ''})(), events.append, 'auth', 'next', 0)
+    assert events and events[0].get('kind') == 'harnessLaneDone'
+
+
+def test_skill_from_episode(brain_ready, isolatedSkills):
+    from app.services.harness_ops import skill_from_episode
+
+    append_episode(
+        'sess-sk',
+        'auth',
+        status='completed',
+        summary='Login cookies persist across refresh.',
+        next_action='Add CSRF',
+    )
+    created = skill_from_episode('sess-sk', 'auth', 1)
+    assert created.get('name', '').startswith('lane-')
+
+
+def test_routine_schedule_roundtrip(brain_ready):
+    from app.services.harness_ops import set_routine_schedule
+    from app.services.harness_playbook import save_routine_from_episode
+
+    append_episode('sess-sched', 'auth', status='completed', summary='ok', next_action='more')
+    rtn = save_routine_from_episode('sess-sched', 'auth')
+    updated = set_routine_schedule(rtn['id'], '0 9 * * *', paused=False)
+    assert updated.get('schedule') == '0 9 * * *'
+    paused = set_routine_schedule(rtn['id'], '0 9 * * *', paused=True)
+    assert paused.get('paused') is True
+

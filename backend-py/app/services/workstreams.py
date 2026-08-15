@@ -33,6 +33,11 @@ DEFAULT_EPISODE_SCHEMA: dict[str, Any] = {
             'description': 'Useful file paths or identifiers produced.',
         },
         'next': {'type': 'string', 'description': 'Suggested next action, or empty if done.'},
+        'criteriaMet': {
+            'type': 'boolean',
+            'description': 'True only if acceptance criteria were verified this episode.',
+        },
+        'unmet': {'type': 'string', 'description': 'Which acceptance item is still open.'},
     },
     'required': ['summary', 'status'],
 }
@@ -186,7 +191,7 @@ def list_episodes(session_id: str, name: str, *, limit: int = 20) -> list[dict[s
     if not row:
         return []
     rows = conn.execute(
-        'SELECT seq, task_id, status, summary, artifacts, next_action, created_at '
+        'SELECT seq, task_id, status, summary, artifacts, next_action, created_at, raw_json '
         'FROM workstream_episodes WHERE workstream_id = ? ORDER BY seq ASC',
         (int(row['id']),),
     ).fetchall()
@@ -196,6 +201,19 @@ def list_episodes(session_id: str, name: str, *, limit: int = 20) -> list[dict[s
             arts = json.loads(r['artifacts'] or '[]')
         except Exception:
             arts = []
+        skills: list[str] = []
+        unmet = ''
+        criteria_met = False
+        auto_hop = False
+        try:
+            raw = json.loads(r['raw_json'] or '{}')
+            if isinstance(raw, dict):
+                skills = [str(s) for s in (raw.get('skills') or []) if s][:12]
+                unmet = as_str(raw.get('unmet'), '')
+                criteria_met = bool(raw.get('criteriaMet'))
+                auto_hop = bool(raw.get('autoHop'))
+        except Exception:
+            pass
         out.append(
             {
                 'seq': int(r['seq']),
@@ -205,6 +223,10 @@ def list_episodes(session_id: str, name: str, *, limit: int = 20) -> list[dict[s
                 'artifacts': arts if isinstance(arts, list) else [],
                 'next': r['next_action'] or '',
                 'createdAt': r['created_at'] or '',
+                'skills': skills,
+                'unmet': unmet,
+                'criteriaMet': criteria_met,
+                'autoHop': auto_hop,
             }
         )
     return out
@@ -213,6 +235,50 @@ def list_episodes(session_id: str, name: str, *, limit: int = 20) -> list[dict[s
 def latest_episode(session_id: str, name: str) -> dict[str, Any] | None:
     eps = list_episodes(session_id, name, limit=50)
     return eps[-1] if eps else None
+
+
+def continue_handoff(session_id: str, name: str) -> dict[str, Any] | None:
+    """Latest episode as a structured Continue card (not a transcript dump)."""
+    ep = latest_episode(session_id, name)
+    if not ep:
+        return None
+    return {
+        'workstream': name,
+        'seq': ep.get('seq'),
+        'status': ep.get('status') or '',
+        'summary': ep.get('summary') or '',
+        'next': ep.get('next') or '',
+        'artifacts': ep.get('artifacts') or [],
+        'skills': ep.get('skills') or [],
+        'unmet': ep.get('unmet') or '',
+        'criteriaMet': bool(ep.get('criteriaMet')),
+        'dirty': (ep.get('status') or '') != 'completed' or bool(ep.get('next')),
+    }
+
+
+def continue_goal(session_id: str, name: str, user_message: str = '') -> str:
+    """User Continue text plus one episode card (not the full thread dump)."""
+    user = as_str(user_message, '').strip() or 'Continue from the last episode.'
+    card = continue_handoff(session_id, name)
+    if not card:
+        recap = format_episode_context(session_id, name)
+        return f'{recap}\n\nUser: {user}' if recap else user
+    lines = [
+        f'EPISODE CARD `{name}` #{card["seq"]} status={card["status"]}',
+        str(card['summary'] or '').strip(),
+    ]
+    if card.get('unmet'):
+        lines.append(f'unmet: {card["unmet"]}')
+    if card.get('next'):
+        lines.append(f'next: {card["next"]}')
+    arts = card.get('artifacts') or []
+    if arts:
+        lines.append('artifacts: ' + ', '.join(str(a) for a in arts[:12]))
+    skills = card.get('skills') or []
+    if skills:
+        lines.append('skills: ' + ', '.join(str(s) for s in skills[:8]))
+    lines.append(f'User: {user}')
+    return '\n'.join(lines)
 
 
 def format_episode_context(session_id: str, name: str) -> str:
@@ -262,14 +328,45 @@ def list_workstreams(session_id: str) -> list[dict[str, Any]]:
     for r in rows:
         name = r['name']
         ep = latest_episode(session_id, name)
+        dirty = False
+        if ep:
+            dirty = (ep.get('status') or '') != 'completed' or bool(ep.get('next'))
+        spec = None
+        try:
+            from app.services.harness_playbook import should_ping, specialist_for_workstream
+
+            spec = specialist_for_workstream(session_id, name)
+            if spec:
+                dirty = should_ping(
+                    spec.get('autonomy') or 'ask',
+                    status=as_str((ep or {}).get('status'), ''),
+                    next_action=as_str((ep or {}).get('next'), ''),
+                    unmet=as_str((ep or {}).get('unmet'), ''),
+                )
+        except Exception:
+            spec = None
         out.append(
             {
                 'name': name,
                 'updatedAt': r['updated_at'],
                 'latest': ep,
+                'dirty': dirty,
+                'specialist': spec,
             }
         )
-    return out
+    try:
+        from app.services.harness_jobs import list_jobs
+        from app.services.harness_ops import annotate_attention
+
+        live: set[str] = set()
+        for job in list_jobs(session_id):
+            if job.get('status') != 'running':
+                continue
+            for wave in job.get('waves') or []:
+                live.update(n for n in wave if n)
+        return annotate_attention(session_id, out, live)
+    except Exception:
+        return out
 
 
 def parse_episode_payload(text: str, status_fallback: str = 'completed') -> dict[str, Any]:
@@ -297,13 +394,82 @@ def parse_episode_payload(text: str, status_fallback: str = 'completed') -> dict
         pass
     if not summary:
         summary = '(empty episode)'
+    criteria_met = False
+    unmet = ''
+    try:
+        blob = json.loads(raw) if raw else {}
+        if isinstance(blob, dict):
+            criteria_met = bool(blob.get('criteriaMet'))
+            unmet = as_str(blob.get('unmet'), '')
+            ver = blob.get('verification')
+            if str(ver).lower() in ('pass', 'passed', 'ok', 'true'):
+                criteria_met = True
+    except Exception:
+        blob = {}
     return {
         'status': status,
         'summary': summary[:8000],
         'artifacts': artifacts,
         'next': next_action,
         'raw_json': raw,
+        'criteriaMet': criteria_met,
+        'unmet': unmet,
     }
+
+
+def judge_episode_status(
+    parsed: dict[str, Any],
+    *,
+    acceptance_criteria: str = '',
+    worker_status: str = '',
+) -> dict[str, Any]:
+    """Downgrade completed → partial when acceptance was not verified."""
+    status = as_str(parsed.get('status'), 'completed')
+    next_action = as_str(parsed.get('next'), '')
+    unmet = as_str(parsed.get('unmet'), '')
+    ws = (worker_status or '').strip().lower()
+    if ws in ('failed', 'error'):
+        status = 'blocked'
+        unmet = unmet or as_str(parsed.get('summary'), '')[:300]
+    elif ws in ('partial', 'cancelled'):
+        status = 'partial'
+    acceptance = (acceptance_criteria or '').strip()
+    if acceptance and status == 'completed' and not parsed.get('criteriaMet'):
+        blob = f'{parsed.get("summary") or ""} {parsed.get("raw_json") or ""}'.lower()
+        if 'criteria met' not in blob and 'acceptance met' not in blob:
+            status = 'partial'
+            unmet = unmet or acceptance[:500]
+            if not next_action:
+                next_action = f'Unmet acceptance: {acceptance[:240]}'
+            parsed['criteriaMet'] = False
+    parsed['status'] = status
+    parsed['next'] = next_action
+    parsed['unmet'] = unmet
+    return parsed
+
+
+def merge_episode_raw(
+    parsed: dict[str, Any], *, skills: list[str] | None = None, auto_hop: bool = False
+) -> str:
+    raw: dict[str, Any] = {}
+    try:
+        loaded = json.loads(as_str(parsed.get('raw_json'), '') or '{}')
+        if isinstance(loaded, dict):
+            raw = loaded
+    except Exception:
+        pass
+    raw['status'] = parsed.get('status')
+    raw['summary'] = parsed.get('summary')
+    raw['next'] = parsed.get('next')
+    raw['artifacts'] = parsed.get('artifacts') or []
+    if parsed.get('unmet'):
+        raw['unmet'] = parsed['unmet']
+    raw['criteriaMet'] = bool(parsed.get('criteriaMet'))
+    if skills:
+        raw['skills'] = skills
+    if auto_hop:
+        raw['autoHop'] = True
+    return json.dumps(raw, ensure_ascii=False)[:16000]
 
 
 def goal_contract_prompt(

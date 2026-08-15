@@ -75,9 +75,14 @@ const OPTIONS: Array<Exclude<RightDrawerSectionId, 'file'>> = [
   'subagents',
 ];
 
-export function RightDrawerDropdown({ drawerOpen, onSelect }: {
+export function RightDrawerDropdown({
+  drawerOpen,
+  onSelect,
+  workersBadge = 0,
+}: {
   drawerOpen: boolean;
   onSelect: (section: RightDrawerSectionId) => void;
+  workersBadge?: number;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -99,7 +104,7 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="size-11 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground/60 hover:text-foreground transition"
+        className="relative size-11 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground/60 hover:text-foreground transition"
         title={drawerOpen ? 'Workbench sections' : 'Open Workbench'}
       >
         {drawerOpen ? (
@@ -107,6 +112,11 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
         ) : (
           <PanelRight className="size-3.5" />
         )}
+        {workersBadge > 0 ? (
+          <span className="absolute right-1.5 top-1.5 min-w-3.5 rounded-full bg-warning px-1 text-[9px] font-semibold leading-4 text-warning-foreground">
+            {workersBadge > 9 ? '9+' : workersBadge}
+          </span>
+        ) : null}
       </button>
 
       <AnimatePresence>
@@ -140,7 +150,12 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
                   >
                     <meta.Icon className="size-4 text-muted-foreground/70 shrink-0 mt-0.5" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-sans font-semibold">{meta.label}</span>
+                    <span className="block truncate font-sans font-semibold">
+                      {meta.label}
+                      {sectionId === 'subagents' && workersBadge > 0 ? (
+                        <span className="ml-1.5 tabular-nums text-warning">{workersBadge}</span>
+                      ) : null}
+                    </span>
                       {meta.hint && (
                         <span className="block text-[10px] leading-snug text-muted-foreground font-normal mt-0.5">
                           {meta.hint}

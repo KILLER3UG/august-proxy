@@ -36,22 +36,20 @@ export function CuratorSuggestionBar() {
 
   if (!report) {
     return (
-      <div className="mb-1.5">
-        <button
-          type="button"
-          onClick={run}
-          disabled={running}
-          data-testid="curator-chip"
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-primary/40 transition disabled:opacity-50"
-        >
+      <button
+        type="button"
+        onClick={run}
+        disabled={running}
+        data-testid="curator-chip"
+        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-primary/40 transition disabled:opacity-50"
+      >
           {running ? (
             <Loader2 className="size-3 animate-spin" />
           ) : (
             <Wand2 className="size-3 text-primary" />
           )}
           Curate skills (dry run)
-        </button>
-      </div>
+      </button>
     );
   }
 
@@ -68,7 +66,7 @@ export function CuratorSuggestionBar() {
 
   return (
     <div
-      className="mb-1.5 flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-bottom-1 duration-150"
+      className="inline-flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-bottom-1 duration-150"
       data-testid="curator-report"
     >
       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">

@@ -37,7 +37,7 @@ export function SubagentProposalBar({ sessionId }: { sessionId: string | null })
 
   return (
     <div
-      className="mx-auto mb-2 w-full max-w-2xl rounded-xl border border-primary/40 bg-primary/[0.06] px-4 py-3 text-xs space-y-2"
+      className="w-full rounded-xl border border-primary/40 bg-primary/[0.06] px-3 py-2.5 text-xs space-y-2"
       data-testid="subagent-proposal-bar"
     >
       <div className="flex items-center gap-2">

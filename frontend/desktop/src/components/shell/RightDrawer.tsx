@@ -277,6 +277,7 @@ function renderSection(
         <RightDrawerSubagentsSection
           sessionId={ctx.sessionId}
           workbenchSessionId={ctx.workbenchSession?.id ?? null}
+          workspacePath={ctx.workspacePath}
         />
       );
   }

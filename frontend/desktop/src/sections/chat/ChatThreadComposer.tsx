@@ -32,11 +32,12 @@ import { ComposerCommandsDropdown } from './composer/ComposerCommandsDropdown';
 import { ComposerToolbar } from './composer/ComposerToolbar';
 import { ComposerVoiceListening } from './composer/ComposerVoiceListening';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
 import { useFocusedSubagent } from '@/components/chat/focused-subagent';
 import { setContinueWorkstream, useContinueWorkstream } from '@/components/chat/composer-intent';
 import { HarnessJobStrip } from '@/components/chat/HarnessJobStrip';
 import { normalizeHarnessMode } from '@/components/chat/HarnessModeChip';
-import { continueWorkstream, steer as steerSubagent } from '@/api/subagents';
+import { continueWorkstream, listWorkstreams, runRoutine, steer as steerSubagent } from '@/api/subagents';
 
 export type { ComposerDropdownApi };
 
@@ -172,25 +173,84 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const focusedSubagent = useFocusedSubagent();
   const continueName = useContinueWorkstream();
+  const continueHint = useQuery({
+    queryKey: ['workstreams', workbenchSession?.id],
+    queryFn: () => listWorkstreams(workbenchSession!.id),
+    enabled: !!workbenchSession?.id && !!continueName,
+  });
+  const ghostNext =
+    continueHint.data?.find((w) => w.name === continueName)?.latest?.next?.trim() || '';
   const harnessMode = normalizeHarnessMode(workbenchSession?.agentMode);
   const sendKind =
     focusedSubagent ? 'steer' : continueName ? 'continue' : harnessMode === 'orchestrator' ? 'dispatch' : 'send';
   const sendOrSteer = useCallback(
     async (textOverride?: string) => {
       const text = (textOverride ?? input).trim();
-      if (focusedSubagent && text) {
+      const laneAt = text.match(/^@lane:([^\s]+)\s*([\s\S]*)$/);
+      if (laneAt && workbenchSession?.id) {
         try {
-          await steerSubagent(focusedSubagent.jobId, text);
-          toast.success(`Queued for ${focusedSubagent.title} (next round)`);
+          await continueWorkstream(
+            workbenchSession.id,
+            laneAt[1],
+            laneAt[2].trim() || ghostNext || 'Continue from the last episode.',
+          );
+          toast.success(`Continuing ${laneAt[1]}`);
           setInput('');
         } catch (e) {
-          toast.error(e instanceof Error ? e.message : 'Steer failed');
+          toast.error(e instanceof Error ? e.message : 'Continue failed');
         }
         return;
       }
-      if (continueName && text && workbenchSession?.id) {
+      const routineAt = text.match(/^@routine:([^\s]+)\s*/);
+      if (routineAt && workbenchSession?.id) {
         try {
-          await continueWorkstream(workbenchSession.id, continueName, text);
+          await runRoutine(workbenchSession.id, routineAt[1]);
+          toast.success('Routine running');
+          setInput('');
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : 'Routine failed');
+        }
+        return;
+      }
+      if (focusedSubagent && text) {
+        const running = focusedSubagent.running !== false;
+        try {
+          if (running) {
+            await steerSubagent(focusedSubagent.jobId, text);
+            toast.success(`Steering ${focusedSubagent.title} (next round)`);
+          } else if (focusedSubagent.workstream && workbenchSession?.id) {
+            await continueWorkstream(workbenchSession.id, focusedSubagent.workstream, text);
+            toast.success(`Continuing ${focusedSubagent.workstream}`);
+            setContinueWorkstream(null);
+          } else {
+            await steerSubagent(focusedSubagent.jobId, text);
+            toast.success(`Queued for ${focusedSubagent.title}`);
+          }
+          setInput('');
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Steer failed';
+          if (focusedSubagent.workstream && workbenchSession?.id) {
+            try {
+              await continueWorkstream(workbenchSession.id, focusedSubagent.workstream, text);
+              toast.success(`Worker idle — continued ${focusedSubagent.workstream}`);
+              setInput('');
+              setContinueWorkstream(null);
+              return;
+            } catch {
+              /* fall through */
+            }
+          }
+          toast.error(msg);
+        }
+        return;
+      }
+      if (continueName && workbenchSession?.id) {
+        try {
+          await continueWorkstream(
+            workbenchSession.id,
+            continueName,
+            text || ghostNext || 'Continue from the last episode.',
+          );
           toast.success(`Continuing ${continueName}`);
           setInput('');
           setContinueWorkstream(null);
@@ -201,7 +261,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
       }
       return send(textOverride);
     },
-    [focusedSubagent, continueName, input, send, setInput, workbenchSession?.id],
+    [focusedSubagent, continueName, ghostNext, input, send, setInput, workbenchSession?.id],
   );
   // Live markdown preview is opt-in — Ctrl/Cmd+Shift+P toggles it.
   const [showPreview, setShowPreview] = useState(false);
@@ -226,6 +286,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     stop,
     streaming,
     sessionId,
+    workbenchSessionId: workbenchSession?.id,
   });
 
   // Command palette "Switch model" → bump the counter so the model menu
@@ -372,6 +433,17 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
               onRemove={removeAttachment}
             />
 
+            {sendKind === 'steer' || sendKind === 'continue' ? (
+              <div
+                className="px-4 pt-2 text-[11px] text-muted-foreground"
+                data-testid="composer-harness-chip"
+              >
+                {sendKind === 'steer'
+                  ? `Steering ${focusedSubagent?.workstream || focusedSubagent?.title || 'worker'} (live)`
+                  : `Will continue ${continueName || focusedSubagent?.workstream || 'workstream'}`}
+                {ghostNext && sendKind === 'continue' ? ` · ${ghostNext}` : ''}
+              </div>
+            ) : null}
             <textarea
               ref={taRef}
               value={input}
@@ -384,9 +456,11 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                 streaming
                   ? 'Add a direction while August works…'
                   : focusedSubagent
-                    ? `Steer ${focusedSubagent.title} (next round)`
+                    ? focusedSubagent.running === false && focusedSubagent.workstream
+                      ? ghostNext || `Continue ${focusedSubagent.workstream}…`
+                      : `Steer ${focusedSubagent.title} (next round)`
                     : continueName
-                      ? `Continue workstream ${continueName}…`
+                      ? ghostNext || `Continue workstream ${continueName}…`
                       : harnessMode === 'orchestrator'
                         ? 'Plan the next wave — or open Dispatch from +'
                         : 'Write a message...'

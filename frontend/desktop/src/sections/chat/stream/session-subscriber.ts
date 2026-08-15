@@ -19,7 +19,8 @@
 
 import type { WorkbenchSession } from '@/types/workbench';
 import type { WorkbenchEventHandlers } from '@/types/workbench';
-import { api } from '@/api/client';
+import { toast } from 'sonner';
+import { pushNotification } from '@/store/notifications';
 import { streamWorkbenchReconnect } from '@/api/workbench';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { upsertQueuedMessage, removeQueuedMessage } from '../queue-store';
@@ -142,6 +143,24 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
       console.warn('[chat-stream-manager] warning:', data?.message || data);
     },
     onInfo: (data) => {
+      const kind = (data?.extras as { kind?: string } | undefined)?.kind;
+      if (kind === 'harnessAutoContinue' || kind === 'harnessLaneDone') {
+        const title = kind === 'harnessAutoContinue' ? 'Lane continuing' : 'Lane done';
+        if (data.message) toast.message(data.message);
+        pushNotification(title, data.message, 'info');
+        if (typeof document !== 'undefined' && document.hidden && typeof Notification !== 'undefined') {
+          if (Notification.permission === 'granted') {
+            try {
+              new Notification(title, { body: data.message || '' });
+            } catch {
+              /* ignore */
+            }
+          } else if (Notification.permission === 'default') {
+            void Notification.requestPermission();
+          }
+        }
+        return;
+      }
       console.info('[chat-stream-manager] info:', data?.message || data);
     },
     onBrowserAction: (data) => {

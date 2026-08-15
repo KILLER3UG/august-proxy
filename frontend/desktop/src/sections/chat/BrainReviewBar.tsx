@@ -107,24 +107,22 @@ export function BrainReviewBar({
 
   if (!open && !nudge) {
     return (
-      <div className="mb-1.5">
-        <button
-          type="button"
-          onClick={run}
-          disabled={running}
-          data-testid="brain-review-chip"
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-primary/40 transition disabled:opacity-50"
-        >
-          {running ? <Loader2 className="size-3 animate-spin" /> : <Brain className="size-3 text-primary" />}
-          Review what I remember
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={run}
+        disabled={running}
+        data-testid="brain-review-chip"
+        className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] text-foreground hover:bg-primary/15"
+      >
+        {running ? <Loader2 className="size-3 animate-spin" /> : <Brain className="size-3 text-primary" />}
+        Review what I remember
+      </button>
     );
   }
 
   if (!open && nudge) {
     return (
-      <div className="mb-1.5 flex flex-wrap items-center gap-1.5" data-testid="brain-review-nudge">
+      <div className="inline-flex flex-wrap items-center gap-1.5" data-testid="brain-review-nudge">
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
           <Sparkles className="size-3 text-primary" />
           Memory
@@ -159,7 +157,7 @@ export function BrainReviewBar({
 
   return (
     <div
-      className="mb-2 rounded-xl border border-border/50 bg-muted/15 px-2.5 py-2 space-y-2"
+      className="w-full basis-full rounded-xl border border-border/50 bg-muted/15 px-2.5 py-2 space-y-2"
       data-testid="brain-review-panel"
     >
       <div className="flex items-center justify-between gap-2">

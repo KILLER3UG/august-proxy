@@ -148,6 +148,7 @@ async def executeSubAgent(
     episode_required: bool = False,
     skills: object = None,
     harness_job_id: str = '',
+    auto_hop: bool = False,
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``.
 
@@ -234,20 +235,98 @@ async def executeSubAgent(
         if not workstream:
             return
         try:
-            from app.services.workstreams import append_episode, parse_episode_payload
+            from app.services.workstreams import (
+                append_episode,
+                judge_episode_status,
+                merge_episode_raw,
+                parse_episode_payload,
+            )
 
             sid = str(getattr(session, 'id', '') or '')
             parsed = parse_episode_payload(text, status_fallback=status)
+            parsed = judge_episode_status(
+                parsed,
+                acceptance_criteria=acceptance_criteria,
+                worker_status=status,
+            )
+            parsed['raw_json'] = merge_episode_raw(parsed, skills=skill_names, auto_hop=auto_hop)
+            ep_status = as_str(parsed.get('status'), status)
             append_episode(
                 sid,
                 workstream,
                 task_id=task_key or jobId,
-                status=parsed['status'] if parsed['status'] in ('completed', 'blocked', 'partial') else status,
-                summary=parsed['summary'],
-                artifacts=parsed['artifacts'],
-                next_action=parsed['next'],
-                raw_json=parsed['raw_json'],
+                status=ep_status if ep_status in ('completed', 'blocked', 'partial') else status,
+                summary=as_str(parsed.get('summary'), ''),
+                artifacts=list(parsed.get('artifacts') or []),
+                next_action=as_str(parsed.get('next'), ''),
+                raw_json=as_str(parsed.get('raw_json'), ''),
             )
+            ping = True
+            spec = {}
+            try:
+                from app.services.harness_playbook import should_ping, specialist_for_workstream
+
+                spec = specialist_for_workstream(sid, workstream) or {}
+                ping = should_ping(
+                    spec.get('autonomy') or 'ask',
+                    status=ep_status,
+                    next_action=as_str(parsed.get('next'), ''),
+                    unmet=as_str(parsed.get('unmet'), ''),
+                )
+            except Exception:
+                ping = ep_status != 'completed' or bool(as_str(parsed.get('next'), ''))
+            if ping:
+                try:
+                    from app.services.harness_jobs import mark_dirty
+
+                    mark_dirty(
+                        harness_job_id,
+                        as_str(parsed.get('unmet') or parsed.get('next'), 'Episode incomplete'),
+                    )
+                except Exception:
+                    logger.debug('mark_dirty failed', exc_info=True)
+            arts = list(parsed.get('artifacts') or [])
+            try:
+                session.metadata = dict(getattr(session, 'metadata', None) or {})
+                prev = session.metadata.get('lastCommand') if isinstance(session.metadata.get('lastCommand'), dict) else {}
+                session.metadata['lastReceipt'] = {
+                    'workstream': workstream,
+                    'status': ep_status,
+                    'next': as_str(parsed.get('next'), ''),
+                    'artifacts': arts[:6],
+                    'command': (prev or {}).get('command') or '',
+                    'exitCode': (prev or {}).get('exitCode'),
+                }
+            except Exception:
+                pass
+            try:
+                from app.services.harness_playbook import (
+                    count_auto_hops,
+                    schedule_auto_continue,
+                    should_auto_continue,
+                )
+
+                hops = count_auto_hops(sid, workstream)
+                nxt = as_str(parsed.get('next'), '')
+                if should_auto_continue(
+                    spec.get('autonomy') or 'ask',
+                    status=ep_status,
+                    next_action=nxt,
+                    hops=hops,
+                ):
+                    schedule_auto_continue(session, emit, workstream, nxt, hops)
+                elif emit and (spec.get('autonomy') == 'silent' or auto_hop):
+                    emit(
+                        {
+                            'type': 'info',
+                            'kind': 'harnessLaneDone',
+                            'message': f'{workstream} {ep_status}'
+                            + (f' → {nxt[:80]}' if nxt else ''),
+                            'workstream': workstream,
+                        }
+                    )
+            except Exception:
+                logger.debug('auto-continue failed', exc_info=True)
         except Exception:
             logger.debug('workstream episode persist failed', exc_info=True)
 

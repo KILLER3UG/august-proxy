@@ -63,6 +63,7 @@ asyncio_mode = "auto"
 python_files = ["test_*.py", "*_test.py", "test*.py"]
 python_functions = "test*"
 addopts = "--cov=app --cov-report=term-missing --cov-fail-under=55"
+# Single-file runs trip the 55% floor — use: uv run pytest tests/foo.py -q --no-cov
 timeout = 600
 # A hung subprocess must fail the suite, not hang CI forever (per-test
 # overrides stay possible: @pytest.mark.timeout(120)).

@@ -218,6 +218,12 @@ export function dispatchWorkbenchEvent(
         ...p,
       });
       break;
+    case 'info':
+      handlers.onInfo?.({
+        message: typeof p?.message === 'string' ? p.message : undefined,
+        extras: p as Record<string, unknown>,
+      });
+      break;
     case 'subagentText':
       handlers.onSubagentText?.({
         jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),

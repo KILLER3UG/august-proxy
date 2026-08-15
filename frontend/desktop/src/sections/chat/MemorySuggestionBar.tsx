@@ -20,11 +20,19 @@ export function MemorySuggestionBar({ sessionId }: { sessionId: string | null })
   const suggestions = sessionId ? (bySession[sessionId] ?? []) : [];
 
   const saveFact = useMutation({
-    mutationFn: (fact: string) => api.patch('/api/brain/profile', { addFact: fact }),
+    mutationFn: (fact: string) =>
+      api.post('/api/memory/auto', {
+        key: `user:${fact.slice(0, 48)}`,
+        content: fact,
+        category: 'preference',
+        importance: 0.85,
+        source: 'user',
+      }),
     onSuccess: (_res, fact) => {
-      toast.success('Saved to your profile');
+      toast.success('Saved — always include');
       if (sessionId) dismissMemorySuggestion(sessionId, fact);
       void qc.invalidateQueries({ queryKey: ['brain-learning'] });
+      void qc.invalidateQueries({ queryKey: ['pinned-memories'] });
     },
     onError: (e: Error) => toast.error(e.message || 'Could not save fact'),
   });
@@ -33,7 +41,7 @@ export function MemorySuggestionBar({ sessionId }: { sessionId: string | null })
 
   return (
     <div
-      className="mb-1.5 flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-bottom-1 duration-150"
+      className="flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-bottom-1 duration-150"
       data-testid="memory-suggestion-bar"
     >
       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
@@ -50,7 +58,7 @@ export function MemorySuggestionBar({ sessionId }: { sessionId: string | null })
           </span>
           <button
             type="button"
-            title="Save as a profile fact"
+            title="Save and always include"
             className="p-0.5 rounded text-success hover:bg-success/15 disabled:opacity-50"
             disabled={saveFact.isPending}
             data-testid={`save-memory-suggestion-${s.slice(0, 24)}`}

@@ -83,10 +83,18 @@ export function ComposerMentionsDropdown({
           )}
         >
           <span className="font-mono font-medium text-primary truncate">
-            {item.kind === 'skill' ? `@${item.name}` : item.name}
+            {item.kind === 'skill'
+              ? `@${item.name}`
+              : item.name}
           </span>
           <span className="text-[10px] text-muted-foreground truncate max-w-[50%]">
-            {item.kind === 'skill' ? `skill · ${item.desc}` : item.desc}
+            {item.kind === 'skill'
+              ? `skill · ${item.desc}`
+              : item.kind === 'lane'
+                ? `lane · ${item.desc}`
+                : item.kind === 'routine'
+                  ? `routine · ${item.desc}`
+                  : item.desc}
           </span>
         </button>
       ))}

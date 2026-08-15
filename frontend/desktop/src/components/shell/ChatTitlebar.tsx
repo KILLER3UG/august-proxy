@@ -25,6 +25,7 @@ interface ChatTitlebarProps {
   rightDrawerOpen: boolean;
   onToggleSidebar: () => void;
   onSelectRightDrawerSection: (section: RightDrawerSectionId) => void;
+  workersBadge?: number;
 }
 
 export function ChatTitlebar({
@@ -33,6 +34,7 @@ export function ChatTitlebar({
   rightDrawerOpen,
   onToggleSidebar,
   onSelectRightDrawerSection,
+  workersBadge = 0,
 }: ChatTitlebarProps) {
   const [speaking, setSpeaking] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -163,7 +165,11 @@ export function ChatTitlebar({
       </div>
 
       <div className="flex items-center gap-0.5">
-        <RightDrawerDropdown drawerOpen={rightDrawerOpen} onSelect={onSelectRightDrawerSection} />
+        <RightDrawerDropdown
+          drawerOpen={rightDrawerOpen}
+          onSelect={onSelectRightDrawerSection}
+          workersBadge={workersBadge}
+        />
 
         <div ref={overflowRef} className="relative">
           <button

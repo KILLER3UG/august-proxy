@@ -66,10 +66,15 @@ export function SubagentExpandedCard({
   const isRunning = state.status === 'running';
 
   useEffect(() => {
-    setFocusedSubagent({ jobId: state.jobId, title });
+    setFocusedSubagent({
+      jobId: state.jobId,
+      title,
+      workstream: state.workstream?.trim() || undefined,
+      running: isRunning,
+    });
     dispatchFocusComposer();
     return () => setFocusedSubagent(null);
-  }, [state.jobId, title]);
+  }, [state.jobId, title, isRunning, state.workstream]);
 
   useEffect(() => {
     if (!isRunning) return;

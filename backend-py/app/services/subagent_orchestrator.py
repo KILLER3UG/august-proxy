@@ -254,6 +254,7 @@ class SubagentOrchestrator:
                     episode_required=bool(item.get('episode_required') or item.get('episodeRequired') or handle.workstream),
                     skills=item.get('skills') or [],
                     harness_job_id=as_str(item.get('harness_job_id') or item.get('harnessJobId'), ''),
+                    auto_hop=bool(item.get('autoHop') or item.get('auto_hop')),
                 )
             )
             self._tasks[taskId] = task
@@ -433,6 +434,7 @@ class SubagentOrchestrator:
         episode_required: bool = False,
         skills: object = None,
         harness_job_id: str = '',
+        auto_hop: bool = False,
     ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         try:
@@ -473,6 +475,7 @@ class SubagentOrchestrator:
                     episode_required=episode_required,
                     skills=skills,
                     harness_job_id=harness_job_id,
+                    auto_hop=auto_hop,
                 )
                 handle.result = result
                 handle.finishedAt = time.time()

@@ -74,9 +74,11 @@ function AgentGlyph({ index, status }: { index: number; status: string }) {
 export function RightDrawerSubagentsSection({
   sessionId,
   workbenchSessionId,
+  workspacePath,
 }: {
   sessionId: string | null;
   workbenchSessionId: string | null;
+  workspacePath?: string | null;
 }) {
   const focused = useFocusedSubagent();
   const [openTaskIds, setOpenTaskIds] = useState<string[]>([]);
@@ -371,7 +373,10 @@ export function RightDrawerSubagentsSection({
         </div>
       )}
 
-      <WorkstreamsPanel sessionId={workbenchSessionId} compact />
+          sessionId={workbenchSessionId}
+          compact
+          workspacePath={workspacePath}
+        />
       {(transcript.data?.messages?.length ?? 0) > 0 ? (
         <details className="mx-2 mb-3 rounded-lg border border-border/40 bg-muted/10 px-2 py-1.5">
           <summary className="cursor-pointer text-[11px] text-muted-foreground">

@@ -106,12 +106,126 @@ export interface WorkstreamEpisode {
   artifacts?: string[];
   next?: string;
   createdAt?: string;
+  skills?: string[];
+  unmet?: string;
+  criteriaMet?: boolean;
+  autoHop?: boolean;
 }
 
 export interface WorkstreamRow {
   name: string;
   updatedAt?: string;
   latest?: WorkstreamEpisode | null;
+  dirty?: boolean;
+  specialist?: HarnessSpecialist | null;
+  attention?: 'working' | 'needs' | 'unread' | 'idle' | string;
+  unread?: boolean;
+}
+
+export interface HarnessSpecialist {
+  id: string;
+  sessionId?: string;
+  name: string;
+  workstream?: string;
+  agentId?: string;
+  skills?: string[];
+  model?: string;
+  acceptance?: string;
+  restrictedTools?: string[];
+  autonomy?: 'ask' | 'on_fail' | 'silent' | string;
+  createdAt?: string;
+}
+
+export interface HarnessRoutine {
+  id: string;
+  sessionId?: string;
+  name: string;
+  workstream: string;
+  goal?: string;
+  skills?: string[];
+  agentId?: string;
+  specialistId?: string;
+  sourceSeq?: number;
+  schedule?: string;
+  paused?: boolean;
+  lastRun?: string;
+  createdAt?: string;
+}
+
+export interface HarnessDigest {
+  running?: number;
+  dirtyJobs?: number;
+  unread?: number;
+  needsCount?: number;
+  workingCount?: number;
+  unattended?: boolean;
+  needsHandoff?: Array<{
+    workstream: string;
+    status?: string;
+    next?: string;
+    summary?: string;
+  }>;
+  specialists?: HarnessSpecialist[];
+  routines?: HarnessRoutine[];
+}
+
+export async function getDigest(sessionId: string, workspacePath?: string): Promise<HarnessDigest> {
+  const qs = new URLSearchParams({ sessionId });
+  if (workspacePath) qs.set('workspace', workspacePath);
+  return api.get(`/api/subagents/digest?${qs.toString()}`);
+}
+
+export async function listSpecialists(sessionId: string): Promise<HarnessSpecialist[]> {
+  const res = await api.get<{ specialists: HarnessSpecialist[] }>(
+    `/api/subagents/specialists?sessionId=${encodeURIComponent(sessionId)}`,
+  );
+  return res.specialists ?? [];
+}
+
+export async function upsertSpecialist(
+  sessionId: string,
+  body: Partial<HarnessSpecialist> & { name: string },
+): Promise<HarnessSpecialist> {
+  return api.post('/api/subagents/specialists', body, {
+    'X-Session-Id': sessionId,
+    ...(body.workspacePath ? { 'X-Workspace-Path': body.workspacePath } : {}),
+  });
+}
+
+export async function setSpecialistAutonomy(
+  specialistId: string,
+  autonomy: string,
+): Promise<HarnessSpecialist> {
+  return api.post(`/api/subagents/specialists/${encodeURIComponent(specialistId)}/autonomy`, {
+    autonomy,
+  });
+}
+
+export async function listRoutines(sessionId: string): Promise<HarnessRoutine[]> {
+  const res = await api.get<{ routines: HarnessRoutine[] }>(
+    `/api/subagents/routines?sessionId=${encodeURIComponent(sessionId)}`,
+  );
+  return res.routines ?? [];
+}
+
+export async function saveRoutineFromEpisode(
+  sessionId: string,
+  workstream: string,
+  seq?: number,
+): Promise<HarnessRoutine> {
+  return api.post(
+    '/api/subagents/routines',
+    { workstream, seq },
+    { 'X-Session-Id': sessionId },
+  );
+}
+
+export async function runRoutine(sessionId: string, routineId: string): Promise<SpawnResult> {
+  return api.post(
+    `/api/subagents/routines/${encodeURIComponent(routineId)}/run`,
+    {},
+    { 'X-Session-Id': sessionId },
+  );
 }
 
 export async function listWorkstreams(sessionId: string): Promise<WorkstreamRow[]> {
@@ -158,6 +272,7 @@ export interface HarnessJob {
   error?: string;
   waves?: string[][];
   taskIds?: string[];
+  outcomes?: Record<string, { status?: string; error?: string }>;
   createdAt?: string;
   finishedAt?: string;
 }
@@ -171,4 +286,50 @@ export async function listJobs(sessionId: string): Promise<HarnessJob[]> {
 
 export async function cancelJob(jobId: string): Promise<{ status: string; jobId?: string; stopped?: number }> {
   return api.post(`/api/subagents/jobs/${encodeURIComponent(jobId)}/cancel`);
+}
+
+export async function markWorkstreamRead(sessionId: string, name: string): Promise<void> {
+  await api.post(
+    `/api/subagents/workstreams/${encodeURIComponent(name)}/read?sessionId=${encodeURIComponent(sessionId)}`,
+    {},
+    { 'X-Session-Id': sessionId },
+  );
+}
+
+export async function saveSkillFromEpisode(
+  sessionId: string,
+  workstream: string,
+  seq?: number,
+): Promise<{ name?: string }> {
+  return api.post(
+    `/api/subagents/workstreams/${encodeURIComponent(workstream)}/save-skill`,
+    { seq },
+    { 'X-Session-Id': sessionId },
+  );
+}
+
+export async function scheduleRoutine(
+  routineId: string,
+  schedule: string,
+  paused?: boolean,
+): Promise<HarnessRoutine> {
+  return api.post(`/api/subagents/routines/${encodeURIComponent(routineId)}/schedule`, {
+    schedule,
+    paused,
+  });
+}
+
+export async function searchHarness(sessionId: string, q: string): Promise<{ hits?: Array<Record<string, unknown>> }> {
+  return api.get(
+    `/api/subagents/search?sessionId=${encodeURIComponent(sessionId)}&q=${encodeURIComponent(q)}`,
+  );
+}
+
+export async function cancelWave(
+  jobId: string,
+  waveIndex: number,
+): Promise<{ status: string; jobId?: string; stopped?: number }> {
+  return api.post(
+    `/api/subagents/jobs/${encodeURIComponent(jobId)}/cancel-wave?wave=${waveIndex}`,
+  );
 }

@@ -15,7 +15,7 @@ import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
 import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
-import { approveWorkbenchPlan, getWorkbenchSession, listWorkbenchSessionAgents, rejectWorkbenchPlan, setWorkbenchGuardMode, streamWorkbenchRevision } from "@/api/workbench";
+import { getDigest } from "@/api/subagents";
 import { isNonEmptyPlan, normalizeWorkbenchSession } from "@/lib/workbench-plan";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
@@ -219,6 +219,15 @@ export function ChatLayout() {
   const activeSubagentCount = (sessionAgents.data?.agents ?? []).filter(
     (agent) => agent.status === 'pending' || agent.status === 'running',
   ).length;
+  const digest = useQuery({
+    queryKey: ['harness-digest', workbenchSessionId],
+    queryFn: () => getDigest(workbenchSessionId!),
+    enabled: !!workbenchSessionId,
+    refetchInterval: 12_000,
+  });
+  const workersBadge =
+    (digest.data?.needsCount ?? digest.data?.needsHandoff?.length ?? 0) +
+    (digest.data?.workingCount ?? activeSubagentCount);
   const autoOpenedSubagentsForSessionRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -528,6 +537,7 @@ export function ChatLayout() {
             rightDrawerOpen={showRightSidebar}
             onToggleSidebar={() => setCollapsed((c) => !c)}
             onSelectRightDrawerSection={openWorkbenchSidebar}
+            workersBadge={workersBadge}
           />
           <div className="august-content-area flex-1 min-h-0 overflow-hidden relative flex">
             {/* Settings takes the full width (its own internal layout).

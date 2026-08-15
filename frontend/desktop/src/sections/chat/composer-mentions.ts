@@ -11,7 +11,7 @@ export const COMPOSER_TOOLS = [
 ] as const;
 
 export type MentionItem = {
-  kind: 'skill' | 'tool' | 'mcp' | 'file' | 'conversation';
+  kind: 'skill' | 'tool' | 'mcp' | 'file' | 'conversation' | 'lane' | 'routine';
   name: string;
   desc: string;
   /** Inserted into the composer when picked. */
@@ -93,4 +93,45 @@ export function fetchConversationMentions(
     if (out.length >= 8) break;
   }
   return out;
+}
+
+/** Named workstreams and routines for the @ picker. */
+export async function fetchHarnessMentions(
+  workbenchSessionId: string | null | undefined,
+  query: string,
+): Promise<MentionItem[]> {
+  if (!workbenchSessionId) return [];
+  const q = (query || '').toLowerCase();
+  try {
+    const { listWorkstreams, getDigest } = await import('@/api/subagents');
+    const [streams, digest] = await Promise.all([
+      listWorkstreams(workbenchSessionId),
+      getDigest(workbenchSessionId),
+    ]);
+    const out: MentionItem[] = [];
+    for (const ws of streams) {
+      const name = ws.name || '';
+      if (!name) continue;
+      if (q && !name.toLowerCase().includes(q) && !'lane'.includes(q)) continue;
+      out.push({
+        kind: 'lane',
+        name: `@lane:${name}`,
+        desc: ws.latest?.next || ws.latest?.summary || 'Workstream',
+        insert: `@lane:${name} `,
+      });
+    }
+    for (const rtn of digest.routines ?? []) {
+      const label = rtn.name || rtn.id;
+      if (q && !label.toLowerCase().includes(q) && !'routine'.includes(q)) continue;
+      out.push({
+        kind: 'routine',
+        name: `@routine:${rtn.id}`,
+        desc: rtn.goal || rtn.workstream || 'Routine',
+        insert: `@routine:${rtn.id} `,
+      });
+    }
+    return out.slice(0, 16);
+  } catch {
+    return [];
+  }
 }

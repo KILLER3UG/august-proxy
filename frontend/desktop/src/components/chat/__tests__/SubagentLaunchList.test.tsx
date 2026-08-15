@@ -1,15 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { queryClient } from '@/query-client';
 import { SubagentLaunchList } from '../SubagentLaunchList';
 import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
 
 function wrap(ui: React.ReactElement) {
   return (
-    <MemoryRouter>
-      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+    <MemoryRouter initialEntries={['/chat/sess-1']}>
+      <QueryClientProvider client={queryClient}>
+        <Routes>
+          <Route path="/chat/:sessionId" element={ui} />
+        </Routes>
+      </QueryClientProvider>
     </MemoryRouter>
   );
 }
@@ -17,6 +21,8 @@ function wrap(ui: React.ReactElement) {
 vi.mock('@/sections/chat/ChatMarkdown', () => ({
   Markdown: ({ content }: { content: string }) => <div data-testid="md">{content}</div>,
 }));
+
+import * as subagentsApi from '@/api/subagents';
 
 vi.mock('@/api/subagents', () => ({
   terminate: vi.fn().mockResolvedValue({ status: 'stopped' }),
@@ -114,5 +120,32 @@ describe('SubagentLaunchList', () => {
     fireEvent.click(row);
     expect(addRightDrawerSection).toHaveBeenCalledWith('subagents');
     expect(screen.getByTestId('subagent-launch-row-j1')).toBeInTheDocument();
+  });
+
+  it('renders the latest episode as a one-liner', async () => {
+    vi.mocked(subagentsApi.listWorkstreamEpisodes).mockResolvedValueOnce([
+      {
+        seq: 1,
+        status: 'completed',
+        summary: 'old',
+        next: 'old next',
+      },
+      {
+        seq: 2,
+        status: 'completed',
+        summary: 'Auth tokens persist',
+        next: 'Add refresh path',
+      },
+    ]);
+    render(
+      wrap(
+        <SubagentLaunchList
+          agents={[makeAgent({ jobId: 'j1', workstream: 'auth', task: 'Tokens' })]}
+        />,
+      ),
+    );
+    expect(await screen.findByTestId('workstream-episode-strip')).toHaveTextContent(
+      'auth #2 completed → Add refresh path',
+    );
   });
 });

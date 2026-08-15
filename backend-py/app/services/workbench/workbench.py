@@ -1947,6 +1947,12 @@ async def sendWorkbenchMessageStream(
     5. Handles tool calls in a loop
     6. Emits events for the SSE stream
     """
+    try:
+        from app.services.harness_ops import touch_activity
+
+        touch_activity()
+    except Exception:
+        pass
     # Optional perf span/TTFT tracing (AUGUST_PERF_TIMING=1 or tests force a current trace).
     from app.lib.perf_timing import clear_current, current_trace, start_trace
 
@@ -3745,6 +3751,15 @@ async def _sendWorkbenchMessageStreamImpl(
                     )
                     if len(receipts) > 12:
                         del receipts[: len(receipts) - 12]
+                    cmd = as_str(toolInput.get('command'), '')
+                    out = as_str(result, '')
+                    exit_m = re.search(r'exit code:\s*(-?\d+)', out, re.IGNORECASE)
+                    session.metadata = dict(getattr(session, 'metadata', None) or {})
+                    session.metadata['lastCommand'] = {
+                        'name': toolName,
+                        'command': cmd[:200],
+                        'exitCode': int(exit_m.group(1)) if exit_m else None,
+                    }
                 except Exception:
                     logger.debug('verifier receipt record failed', exc_info=True)
             MAX_SSE_CONTENT = 100 * 1024
@@ -4552,6 +4567,18 @@ _MEMORY_SUGGESTION_PATTERNS = [
     re.compile(r'\b(?:I|we)\s+(?:prefer|use|like|love|hate|dislike|need|want|avoid)\s+(.{8,120})', re.IGNORECASE),
     re.compile(r'\b(?:My|our)\s+(?:name|role|stack|team|company|project|tool)\s+(?:is|are)\s+(.{3,120})', re.IGNORECASE),
     re.compile(r'\b(?:I|we)\s+work(?:ing)?\s+on\s+(.{8,120})', re.IGNORECASE),
+    re.compile(
+        r'\b(?:actually|correction)\s*[:,]?\s+(.{8,120})',
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r'\b(?:that(?:\'s| is) (?:wrong|incorrect)[,.]?\s*)(.{8,120})',
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r'\b(?:I meant|do not|don\'t|never)\s+(.{8,120})',
+        re.IGNORECASE,
+    ),
 ]
 
 

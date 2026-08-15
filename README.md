@@ -22,12 +22,11 @@ lives in [`frontend/mobile/`](frontend/mobile).
   composer Send / Dispatch, mid-run Steer / Stop, checkpoints, context
   compression, and a sticky run header (mode, harness waves, context %, dirty
   Continue).
-- **Harness / orchestrator** — Plan → Dispatch, named workstreams, episode
-  handoffs, spawn DAG, worker lanes (click opens the Workers drawer), skills
-  chips on sub-agents, and harness jobs (Continue uses the last named
-  workstream). Agent modes: `chat` (text only), `agent` (tools, default),
-  `code` (sandboxed Python cell). Verifier enforcement is **opt-in per
-  session**.
+- **Harness / orchestrator** — Plan → Dispatch, named workstreams, **episode
+  cards** (summary / next / unmet acceptance), spawn DAG with per-lane
+  running/done/skipped/failed pills, worker lanes, skills carried on Continue,
+  harness jobs. Composer Steer targets the focused worker (or Continue if that
+  thread is idle). Agent modes: `chat` | `agent` | `code`. Verifier is **opt-in**.
 - **Dual API surface** — `POST /v1/chat/completions`, `POST /v1/messages`,
   `POST /v1/responses` (streaming pass-through where the upstream supports it),
   with format translation. Provider **baseUrl** is used as pasted; August only
@@ -39,11 +38,11 @@ lives in [`frontend/mobile/`](frontend/mobile).
   desktop automation, memory, MCP, skills, sub-agents, sandbox-gated
   `run_command`.
 - **Brain & memory** — SQLite core / semantic / vector / graph store. Settings
-  **Memory** is one hub (Saved / Recalled / Projects / Store). Chat: `/remember`,
-  “Used N memories” + pin as always-include, and **Review what I remember**
-  (selected model suggests improve / remove / always-include; **nothing writes
-  until the user confirms**). Consolidation daemons still run in the
-  background; that is separate from the review UI.
+  **Memory** is one hub (Saved / Recalled / Projects / Store). Chat: `/remember`
+  (pins as always-include), always-include chips above the composer, “Used N
+  memories”, **Review what I remember** (apply only on confirm), Save-this?
+  chips on preference **and correction** phrasing, and Keep/Discard when the
+  sleep-cycle distill proposes cleanup (idle consolidation no longer silent-applies).
 - **Live / voice** — browser speech by default; optional server STT/TTS;
   `/api/live`.
 - **Platform gateways** — Telegram, Slack, Discord (`/stop`, `/new`, `/approve`, …).

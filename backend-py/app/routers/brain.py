@@ -427,6 +427,99 @@ async def runConsolidationEndpoint(body: dict = {}):
     return stats
 
 
+@router.get('/pending-consolidation')
+async def pendingConsolidation():
+    """Stashed sleep-cycle plan waiting for Keep / Discard in chat."""
+    from app.services.consolidation_daemon import get_pending_consolidation
+
+    plan = get_pending_consolidation()
+    if not plan:
+        return {'plan': None, 'merged': 0, 'promoted': 0, 'deleted': 0}
+    merged = sum(
+        1
+        for merge_raw in (plan.get('merge') or [])
+        if isinstance(merge_raw, dict) and merge_raw.get('keepId') is not None
+    )
+    promoted = sum(
+        1
+        for promo_raw in (plan.get('promote') or [])
+        if isinstance(promo_raw, dict) and promo_raw.get('factKey')
+    )
+    deleted = len(plan.get('delete') or []) + len(plan.get('archiveMemories') or [])
+    from app.services.consolidation_daemon import list_pending_actions
+
+    return {
+        'plan': plan,
+        'merged': merged,
+        'promoted': promoted,
+        'deleted': deleted,
+        'actions': list_pending_actions(plan),
+    }
+
+
+@router.post('/pending-consolidation/apply-one')
+async def applyOnePendingConsolidation(body: dict):
+    """Keep a single distill action; leave the rest pending."""
+    from app.services.consolidation_daemon import (
+        _apply_consolidation_plan,
+        _plan_has_actions,
+        clear_pending_consolidation,
+        get_pending_consolidation,
+        list_pending_actions,
+        stash_pending_consolidation,
+        take_pending_action,
+    )
+
+    plan = get_pending_consolidation()
+    if not plan:
+        raise HTTPException(status_code=404, detail='No pending distill')
+    action_id = str(body.get('id') or body.get('actionId') or '')
+    try:
+        slice_plan, remaining = take_pending_action(plan, action_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    stats = await _apply_consolidation_plan(slice_plan)
+    if _plan_has_actions(remaining):
+        stash_pending_consolidation(remaining)
+    else:
+        clear_pending_consolidation()
+    return {'status': 'ok', **stats, 'remaining': list_pending_actions(remaining) if _plan_has_actions(remaining) else []}
+
+
+@router.post('/pending-consolidation/discard-one')
+async def discardOnePendingConsolidation(body: dict):
+    from app.services.consolidation_daemon import (
+        _plan_has_actions,
+        clear_pending_consolidation,
+        get_pending_consolidation,
+        list_pending_actions,
+        stash_pending_consolidation,
+        take_pending_action,
+    )
+
+    plan = get_pending_consolidation()
+    if not plan:
+        raise HTTPException(status_code=404, detail='No pending distill')
+    action_id = str(body.get('id') or body.get('actionId') or '')
+    try:
+        _slice, remaining = take_pending_action(plan, action_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if _plan_has_actions(remaining):
+        stash_pending_consolidation(remaining)
+        return {'status': 'ok', 'remaining': list_pending_actions(remaining)}
+    clear_pending_consolidation()
+    return {'status': 'ok', 'remaining': []}
+
+
+@router.post('/pending-consolidation/discard')
+async def discardPendingConsolidation():
+    from app.services.consolidation_daemon import clear_pending_consolidation
+
+    clear_pending_consolidation()
+    return {'status': 'ok'}
+
+
 @router.post('/apply-consolidation')
 async def applyConsolidation(body: dict):
     """Apply a previously previewed consolidation plan.
@@ -440,6 +533,9 @@ async def applyConsolidation(body: dict):
     if not isinstance(plan, dict):
         raise HTTPException(status_code=400, detail='plan is required')
     stats = await _apply_consolidation_plan(plan)
+    from app.services.consolidation_daemon import clear_pending_consolidation
+
+    clear_pending_consolidation()
     return stats
 
 

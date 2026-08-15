@@ -209,6 +209,12 @@ async def startScheduler(intervalS: int = 60) -> None:
             await automations.tick_automations(now=now)
         except Exception:
             pass
+        try:
+            from app.services.harness_ops import fire_due_routines
+
+            await fire_due_routines()
+        except Exception:
+            pass
         await asyncio.sleep(intervalS)
 
 
