@@ -5,7 +5,7 @@
 | Document | Audience | Contents |
 |----------|----------|----------|
 | [**README.md**](../README.md) | Everyone | Project overview, highlights, repo layout, quick start |
-| [**AGENTS.md**](../AGENTS.md) | Agents / contributors | Desktop is the product; 0.12.21 OpenCode null-body fix notes |
+| [**AGENTS.md**](../AGENTS.md) | Agents / contributors | Desktop is the product; harness, per-model `apiFormat`, version files |
 | [**SETUP.md**](SETUP.md) | All users | Installation (Docker, local, desktop), first-run, connecting a client |
 | [**CONFIGURATION.md**](CONFIGURATION.md) | Operators | `config.json` / `providers.json` / MCP / `.env` reference |
 | [**ARCHITECTURE.md**](ARCHITECTURE.md) | Developers | Request flow, adapters, workbench, brain, gateway, data persistence |
@@ -13,7 +13,7 @@
 | [**DEVELOPER_GUIDE.md**](DEVELOPER_GUIDE.md) | Contributors | Dev setup, tests, conventions, extending the codebase |
 | [**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) | All users | Common issues and fixes |
 | [**GAPS_AND_BUGS.md**](GAPS_AND_BUGS.md) | Maintainers | Known bugs and documentation/code gaps (living list) |
-| [**settings-audit.md**](settings-audit.md) | UI contributors | Settings IA categories and section migration notes |
+| [**settings-audit.md**](settings-audit.md) | UI contributors | Historical Settings IA — **registry is SoT** |
 
 ### Refactor program (closed — archaeology)
 
@@ -54,5 +54,6 @@ sign-off evidence; do not treat them as the product feature list.
 **Backend:** Python **3.12+** FastAPI in [`backend-py/`](../backend-py/)
 (`requires-python >=3.12`; Docker image `python:3.12-slim`).
 
-**Frontend:** Tauri + React desktop SPA (`frontend/desktop/`); Expo mobile
-companion (`frontend/mobile/`); production build served from `web-dist/`.
+**Frontend:** Tauri + React desktop app (`frontend/desktop/`) is the product.
+Expo companion: `frontend/mobile/`. `web-dist/` is the Vite artifact packaged
+into the installer — not a separate web app.

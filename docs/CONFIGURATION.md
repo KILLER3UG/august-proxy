@@ -8,7 +8,7 @@ This document is the operator reference for current options.
 ## Table of Contents
 
 1. [File overview](#file-overview)
-2. [`data/config.json`](#dataconfigjson)
+2. [`data/config.json`](#dataconfigjson) (includes memory review + harness notes)
 3. [`data/providers.json`](#dataprovidersjson)
 4. [`data/mcp-servers.json`](#datamcp-serversjson)
 5. [Environment variables (`.env`)](#environment-variables-env)
@@ -52,7 +52,7 @@ Custom providers may also store `apiKey` on the entry in `providers.json`.
 
 ### `activeProvider`
 
-Dashboard provider picker selection; fallback when a request does not specify one.
+Desktop chat model picker selection; fallback when a request does not specify one.
 
 ```json
 { "activeProvider": "anthropic" }
@@ -126,8 +126,27 @@ Defaults toward the session main provider when unset.
 ### `auxiliary.cognitive`
 
 Cognitive architecture tree (boot, features, fleet, orchestrator). Edited via
-Settings → Brain / fleet UI and `GET/PUT /api/config/cognitive`,
+Settings → Memory / Reliability / model fleet and `GET/PUT /api/config/cognitive`,
 `GET/PUT /api/config/model-fleet`, and `/api/brain/config*`.
+`maxWorkbenchToolLoops` here overrides the workbench tool-round cap (default 25).
+
+### Memory review (selected chat model)
+
+Not a `config.json` key. The desktop composer chip **Review what I remember**
+calls `POST /api/memory/review` with the **currently selected chat model**.
+The model returns improve / remove / always-include suggestions only.
+`POST /api/memory/review/apply` writes **after the user confirms** each row.
+This is separate from hippocampus consolidation (which can still apply
+background plans).
+
+### Harness / orchestrator
+
+Session `agent_mode` is `chat` | `agent` | `code` | `orchestrator` (persisted
+via workbench). Orchestrator mode uses Plan → Dispatch, named workstreams,
+and harness jobs (`/api/subagents/workstreams*`, `/api/harness/*`, MCP
+`harness_*` tools). Verifier hard-gate is **opt-in** per session
+(`verifierEnforced` / composer shield), not a global config flag.
+`AUGUST_VERIFIER_REVIEWER=1` adds an extra one-shot reviewer critique.
 
 ### `auxiliary.session_json_export`
 
@@ -237,7 +256,7 @@ A small number of keys may still mirror older profile shapes (`claude`, `codex`,
 
 ## `data/providers.json`
 
-User-added providers, edited from **Settings → Model Providers** or
+User-added providers, edited from **Settings → Models & Providers** or
 `app.services.config_service`.
 
 ```json
@@ -282,18 +301,18 @@ carry its own `apiFormat` — e.g. `"id": "claude-sonnet-4", "apiFormat":
 model. This is how OpenCode Zen works: one provider (`openaiChat`) serves
 DeepSeek / GLM / Kimi / MiniMax / Grok on `chat/completions`, while Claude
 models tagged `anthropicMessages` route to `v1/messages` and GPT models tagged
-`openaiResponses` route to `responses`. Set it in **Settings → Model settings →
-Providers** (pencil-edit a model row → Wire format dropdown; the UI suggests
-`v1/messages` for `claude-`-prefixed ids). The override applies to workbench
-chat, the **Test** button, and the `/v1/chat/completions` · `/v1/messages` ·
-`/v1/responses` proxy adapters (OpenAI-format requests to a Claude model are
-translated to the Anthropic wire protocol automatically).
+`openaiResponses` route to `responses`. Set it in **Settings → Models & Providers** (pencil-edit a model row → Wire
+format dropdown; the UI suggests `v1/messages` for `claude-`-prefixed ids).
+The override applies to workbench chat, the **Test** button, Live/BTW, and
+the `/v1/chat/completions` · `/v1/messages` · `/v1/responses` proxy adapters
+(OpenAI-format requests to a Claude model are translated to the Anthropic
+wire protocol automatically).
 
 Desktop **0.12.21+** also stops forwarding `session_id: null` on OpenAI
 bodies (Console 400).
 
 There is **no built-in template catalog**. You configure every provider
-yourself (name, base URL, API format, API key) via Settings → Providers or
+yourself (name, base URL, API format, API key) via Settings → Models & Providers or
 `POST /api/providers`. `GET /api/providers/templates` remains for back-compat
 and always returns `[]`.
 
@@ -302,7 +321,7 @@ and always returns `[]`.
 ## `data/mcp-servers.json`
 
 Defines MCP servers (stdio / SSE / streamable HTTP). Managed via
-`/api/mcp/*` and Settings → MCP & Connections. Global env for MCP subprocesses
+`/api/mcp/*` and Settings → Integrations. Global env for MCP subprocesses
 is available at `/api/mcp-env` (includes Google OAuth keys mirrored at boot).
 
 ---
@@ -349,12 +368,13 @@ process env.
 | `AUGUST_SQLITE_SYNC` | unset | Opt-in `NORMAL`/`FULL`/`OFF` |
 | `AUGUST_HOST_AGENT_URL` | unset | External host-agent URL |
 | `AUGUST_AUTO_ROUTE` | unset | `1` forces evidence-driven auto-routing on (equivalent to brain config `autoRoute: true`) |
+| `AUGUST_VERIFIER_REVIEWER` | unset | `1` adds a one-shot reviewer critique when the verifier gate is on |
 
 ### Evidence-driven auto-routing
 
 The routing-evidence loop picks the best model per task type from recorded
-turn outcomes. With **auto-routing** on (Settings → Diagnostics →
-Reliability, or `AUGUST_AUTO_ROUTE=1`), a turn whose task type has enough
+turn outcomes. With **auto-routing** on (Settings → Activity Log / Reliability,
+or `AUGUST_AUTO_ROUTE=1`), a turn whose task type has enough
 samples is automatically switched to the evidence-best model; otherwise the
 candidate is surfaced as a suggestion only (shown in the model picker).
 

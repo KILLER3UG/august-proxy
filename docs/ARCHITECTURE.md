@@ -29,7 +29,7 @@ flows from a client through the proxy to an upstream provider and back.
 
 ```
             ┌─────────────────────────── clients ───────────────────────────┐
-            │  Claude Code · Codex · Cline · dashboard · Tauri · bots · Live │
+            │  Claude Code · Codex · Cline · Tauri desktop · bots · Live │
             └───────────────┬───────────────────────────────┬─────────────────┘
                             │ /v1/messages                  │ /api/*
                             │ /v1/chat/completions           │ (dashboard + gateway)
@@ -145,7 +145,8 @@ and emits SSE events.
 - CRUD and chat APIs live under `/api/workbench/*` (also singular `/session`
   aliases). Related: checkpoints, agent binding, guard mode, todos, plan
   approve/reject, mutations, worktree, compact, undo, queue/steer, doctor,
-  skills hub, Python sandbox.
+  skills hub, Python sandbox, agent mode (`chat`/`agent`/`code`/`orchestrator`),
+  workstreams / episodes, harness jobs.
 
 ### The streaming chat loop
 
@@ -161,6 +162,21 @@ and emits SSE events.
    - Execute tools through the registry (parallel for read-only allowlist).
 5. Persist conversation + token usage to SQLite.
 6. Fire-and-forget: background review, auto-memory, self-evolution, brain sync.
+   User-facing memory review (`POST /api/memory/review`) is **not** this step —
+   it only runs when the user clicks Review in chat.
+
+**Orchestrator / harness:** when `agent_mode` is `orchestrator`, the loop
+exposes Plan → Dispatch, named workstreams, and a spawn DAG. Sub-agent SSE
+includes `skills`. Continue dirty uses the last named workstream + episodes
+(`GET /api/subagents/workstreams/{name}/episodes`). Worker lanes in the
+desktop UI open the right-drawer `subagents` section.
+
+**Agent modes:** `set_agent_mode` / `POST /api/workbench/agent-mode` —
+`chat` blocks tools, `agent` is native tool calling, `code` runs a fenced
+Python block through sandboxed `run_command`.
+
+**Verifier:** default chat is unaffected. Per-session `verifierEnforced`
+withholds `finalOutput` until `update_state(phase='complete')` passes.
 
 ### Guard modes
 
@@ -187,16 +203,11 @@ per session via the `update_state` system tool (`tool_registrations/system_tools
 | `complete` | Done |
 
 State is injected into the next turn's system prompt so the model resumes where
-it left off. The **verifier gate** is enforced (not honor-system) on transitions
-into `review` / `complete`: if no `run_command` / `bash` / `safe_python` receipt
-was recorded for the turn, or the recorded command's verdict is `fail`, the
-transition is blocked with an actionable error. Receipts are cleared at the
+it left off. Receipts (`run_command` / `bash` / `safe_python`) are judged on
+transitions into `review` / `complete`. Casual chat is unaffected unless
+`verifierEnforced` is on (then the final answer is withheld until `complete`
+passes; `verifierBlocked` SSE + amber banner). Receipts are cleared at the
 start of each turn.
-
-> Caveat: the gate only fires when the model actually calls `update_state`. A
-> model that skips `update_state` and emits a final response directly is not
-> blocked — see [`GAPS_AND_BUGS.md`](GAPS_AND_BUGS.md) for the advisory-vs-hard
-> gap and the same-turn `review → complete` bypass.
 
 ### Sub-agents
 
@@ -271,15 +282,20 @@ system backed by `data/august_brain.sqlite` (via
 | `graph_memory.py` / `knowledge_tree.py` / `topic_index.py` | Structured indexes |
 | `vector_db.py` | Cosine similarity over embeddings in SQLite |
 | `memory_curator.py` / `memory_quality.py` / `memory_retention.py` | Governance |
+| `memory_review.py` | Selected-model improve/remove/enhance plan; apply only on user confirm |
 | `brain_orchestrator.py` | Cognitive orchestration settings/runtime |
 | `brain_write_facade.py` | Transactional multi-table brain writes |
 
-HTTP: `/api/memory/*`, `/api/brain/*` (dashboard, config, activity, heuristics,
-consolidation), plus workbench brain sync.
+HTTP: `/api/memory/*` (including `/review` + `/review/apply`), `/api/brain/*`
+(status, config, activity, heuristics, consolidation, harness evals), plus
+workbench brain sync.
 
-> The Brain Orchestrator **Settings panel** was removed (its controls now live
-> in the session sidebar); the `brain_orchestrator.py` backend module and the
-> `/api/brain/config*` endpoints remain.
+Desktop **Settings → Memory** is one hub (Saved / Recalled / Projects / Store).
+Chat: `/remember`, recalled-memory pin (always-include), Brain review bar.
+
+> There is no separate Brain Orchestrator settings tab. Controls live in
+> Memory / Reliability / the session sidebar. `brain_orchestrator.py` and
+> `/api/brain/config*` remain.
 
 ### Unified connectivity (session / config / cognitive SoT)
 
@@ -394,14 +410,17 @@ endpoints return honest **501**. Live config: `GET/PUT /api/config/live`.
 |------|-------|------|
 | `frontend/desktop/` | React 19 + Vite + Tauri 2 | Main product UI |
 | `frontend/mobile/` | Expo | Companion app |
-| `web-dist/` | Build output | Served by FastAPI as SPA |
+| `web-dist/` | Build output | Packaged into Tauri; FastAPI may serve it for backend-only runs |
 
-Major desktop section areas (sidebar/registry-driven): chat/workbench, brain,
-live, providers/models, MCP/connections, agents, automations, exam, terminal,
-memory, traffic/inspector, settings (system health, computer use, API access,
-backend monitor, feature flow, plans, skills, …).
+Major desktop surfaces: chat/workbench (run header, worker lanes, composer
+island, Brain review), Live, Settings hubs (System Status, Models & Providers,
+Memory, Integrations, Skills, Files & Shell Access, Usage, Activity Log,
+External API Access). Hidden rail ids (`backend-monitor`, `health-simulator`,
+split memory tabs, UI Designer) deep-link into those hubs via
+`railCanonicalId`. Feature Flow remains an advanced diagnostics page.
 
-Settings IA is documented in [`settings-audit.md`](settings-audit.md).
+Settings source of truth: [`settings-registry.ts`](../frontend/desktop/src/settings/settings-registry.ts).
+[`settings-audit.md`](settings-audit.md) is a historical IA record.
 
 ---
 

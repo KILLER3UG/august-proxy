@@ -44,7 +44,7 @@ august-proxy/
 ├── frontend/
 │   ├── desktop/                 # React + Vite + Tauri SPA
 │   └── mobile/                  # Expo companion
-├── web-dist/                    # Built SPA served by FastAPI
+├── web-dist/                    # Vite output packaged into Tauri (not a product QA target)
 ├── data/                        # Runtime config + brain DB (gitignored secrets)
 ├── skills/                      # Bundled SKILL.md packs
 └── docs/                        # Documentation
@@ -97,9 +97,9 @@ cd backend-py
 uv run uvicorn app.main:app --reload --port 8085
 ```
 
-`--reload` watches `app/` for changes. The dashboard is served from `web-dist/`
-if present; otherwise run Vite in parallel (`npm run dev:web`) and proxy `/api`
-(and WebSockets) to `:8085`.
+`--reload` watches `app/` for changes. Prefer **`npm run dev:desktop`** for UI
+work. `web-dist/` is packaging output; `npm run dev:web` is only useful as a
+Vite sidecar, not product QA.
 
 Production-style:
 
@@ -116,9 +116,12 @@ Docker: `docker compose up --build -d` (port `8085:8085`).
 ```bash
 cd backend-py
 uv run pytest -q
-uv run pytest tests/test_workbench.py
-uv run pytest -k plan_mode
+uv run pytest tests/test_workbench.py --no-cov
+uv run pytest -k plan_mode --no-cov
 uv run pytest --lf
+
+# Full suite applies --cov-fail-under=55. A single file will miss that floor
+# unless you pass --no-cov.
 
 # From repo root
 npm run test:backend
@@ -273,15 +276,18 @@ snake_case parameters; routers may keep camelCase path params to match URLs.
 
 ## Adding a UI panel / settings section
 
-1. **Settings section:** entry in
-   `frontend/desktop/src/settings/settings-registry.ts`
-   (`id`, `label`, `icon`, component). See [`settings-audit.md`](settings-audit.md).
+1. **Prefer a hub, not a new rail tab.** Memory, Appearance, and Files & Shell
+   Access already stack related pages. Add `tier: 'hidden'` + `railCanonicalId`
+   so deep links highlight the parent. Source of truth:
+   `frontend/desktop/src/settings/settings-registry.ts`.
 2. **Full section route:** lazy-loaded page under `sections/` + register in
    desktop routes (prefer `lazy(() => import(...))`).
 3. **API:** router under `backend-py/app/routers/` + `include_router` in `main.py`.
 4. **State:** dedicated Zustand slice or React Query keys.
 5. **Types:** Zod schema + TS types; no new `any`.
-6. Smoke the route in `npm run dev:web` / `dev:desktop`.
+6. Smoke the route in `npm run dev:desktop` (not a raw Vite browser tab).
+7. Chat chrome (run header, Brain review, worker lanes) lives next to
+   `ChatThread.tsx` — do not add a Settings tab for those.
 
 ---
 
@@ -319,9 +325,10 @@ jump the queue. Prefer direct `memory_store` transactions for user-facing SoT.
 
 ### Checklist — stub settings panel
 
-- [ ] Registry entry + lazy section component
+- [ ] Registry entry + lazy section **or** stack into an existing hub
 - [ ] No change to ChatThread critical path
-- [ ] Path appears under Settings IA
+- [ ] Hidden children use `railCanonicalId`
+- [ ] `npm run check:version` still green if you did not intend a ship
 
 ---
 

@@ -1,11 +1,16 @@
 # Settings IA Audit & Migration Notes
 
-> **SUPERSEDED (0.13.1):** the section inventory below is stale — the
-> registry now has 32 sections (18 basic / 13 advanced / 1 hidden) with 5
-> groups (Essentials / AI & Memory / Capabilities / Diagnostics /
-> Permissions). The source of truth is
-> `frontend/desktop/src/settings/settings-registry.ts`; this file is kept
-> as the historical v3-IA record.
+> **SUPERSEDED.** Do not copy the tables below into new UI. Source of truth:
+> `frontend/desktop/src/settings/settings-registry.ts`.
+>
+> **Current (0.16+):** five rail groups (Essentials / AI & Memory / Capabilities /
+> Diagnostics / Permissions). Hubs stack what used to be extra tabs:
+> Memory (Saved / Recalled / Projects / Store), Appearance + UI Designer,
+> Files & Shell Access (sandbox + path grants + Python cell), Usage
+> (heatmap + per-model), Activity Log (traffic + logs). Hidden ids
+> (`backend-monitor`, `health-simulator`, split memory tabs, `ui-designer`,
+> `tool-grants`, `python-sandbox`) resolve via `railCanonicalId`.
+> Do not add a new left-rail item for a slice of an existing hub.
 
 ## Why this document exists
 

@@ -4,12 +4,12 @@ August Proxy exposes two API families from a single port (default `8085`):
 
 - **`/v1/*`** — the AI proxy surface (OpenAI- and Anthropic-compatible), used by
   external clients like Claude Code, Codex, Cline, and Continue.dev.
-- **`/api/*`** — the management/dashboard surface, used by the React/Tauri UI,
+- **`/api/*`** — the management surface used by the **Tauri desktop app**,
   mobile companion, and platform gateways.
 
 All endpoints accept and return JSON unless noted. Streaming endpoints use
-Server-Sent Events (`text/event-stream`). The Backend Monitor uses WebSocket
-at `/api/logs/stream`.
+Server-Sent Events (`text/event-stream`). Activity Log / live events use
+WebSocket at `/api/logs/stream`.
 
 OpenAPI is available when the server is running at `/docs` and `/openapi.json`.
 
@@ -95,7 +95,7 @@ aliases/cost helpers under `/api/models/*`).
 | `GET /api/stats?period=` | Aggregate usage stats |
 | `GET /api/conversations` | Conversation list for inspector |
 | `GET /api/logs/recent` | Recent log events |
-| `WS /api/logs/stream` | Live log stream (Backend Monitor) |
+| `WS /api/logs/stream` | Live log stream (Activity Log; hidden Backend Monitor deep-link) |
 | `GET /api/host-agent/health` | Host-agent availability |
 | `GET /api/perf/recent` | Perf ring buffer (when `AUGUST_PERF_TIMING=1`) |
 | `GET /api/perf/db-writer` | db_writer lag stats |
@@ -107,7 +107,7 @@ aliases/cost helpers under `/api/models/*`).
 | `GET /api/usage/by-model?period=` | Usage grouped by model |
 | `GET /api/usage/by-day?period=` | Usage grouped by day |
 | `GET /api/usage` | List-all usage records |
-| `GET /api/whats-new` | Changelog / what's-new feed for the dashboard |
+| `GET /api/whats-new` | Changelog / what's-new feed for the desktop app |
 
 > Historical note: an earlier dual registration of `/api/health` dropped the
 > `python` field. That collision is **fixed** — only `main.py` defines health,
@@ -181,6 +181,19 @@ All paths below are relative to `/api/workbench`.
 | `POST /sandbox/python` | Python sandbox exec |
 | `GET /skills/hub` | Skills hub payload |
 | `GET /doctor` | Session doctor diagnostics |
+| `GET /sessions/{id}/transcript` | Recent messages (Workers drawer preview) |
+| `POST /agent-mode` | Persist `chat` / `agent` / `code` / `orchestrator` |
+
+### Harness jobs & workstreams (`/api/subagents`, `/api/harness`)
+
+| Method & path | Purpose |
+|---------------|---------|
+| `GET /api/subagents/workstreams?sessionId=` | Named workstreams + latest episodes |
+| `GET /api/subagents/workstreams/{name}/episodes` | Episode history for Continue |
+| `POST /api/subagents/workstreams/{name}/continue` | Fresh worker on that thread |
+| `GET /api/subagents/jobs` · `POST /api/subagents/jobs/{jobId}/cancel` | Long-running harness jobs |
+| `GET /api/harness/*` · `GET /api/brain/harness/evals` | Trends + golden loop evals |
+| `POST /api/mcp/harness` | MCP tools: `harness_list_workstreams`, `harness_spawn`, `harness_steer`, `harness_continue`, `harness_list_jobs`, `harness_cancel_job` |
 
 ---
 
@@ -190,7 +203,7 @@ All paths below are relative to `/api/workbench`.
 |---------------|---------|
 | `GET /activeProvider` | Active provider + providers with keys |
 | `GET /provider-details` · `POST /provider-details` | Provider detail CRUD helper |
-| `GET /safe` | Full config bootstrap for dashboard |
+| `GET /safe` | Full config bootstrap for the desktop app |
 | `GET/PUT /model-aliases` | Model alias list |
 | `GET/PUT /subagent-fallback` · `POST …/test` | Sub-agent fallback |
 | `GET/PUT /background-review` | Background review LLM |
@@ -285,7 +298,7 @@ Snapshot, alias CRUD, settings put — operator convenience surface.
 ### `/api/sessions`
 
 Separate session store API (list/create/get/delete/messages) used by some
-dashboard paths alongside workbench sessions.
+desktop paths alongside workbench sessions.
 
 ---
 
@@ -295,11 +308,19 @@ dashboard paths alongside workbench sessions.
 
 KV, facts, search, proposals, lifecycle, stats — see `routers/memory.py`.
 
+| Method & path | Purpose |
+|---------------|---------|
+| `POST /api/memory/auto` | Save a memory (`source: user` from `/remember`) |
+| `PUT /api/memory/auto/{id}` | Pin / update (`pinned: true` = always-include) |
+| `POST /api/memory/review` | Selected-model plan: improve / remove / enhance (no writes) |
+| `POST /api/memory/review/apply` | Apply user-accepted `{ kind, id?, rewritten?, content? }` |
+
 ### `/api/brain`
 
 | Area | Paths (representative) |
 |------|------------------------|
-| Dashboard | `GET /status`, `/items`, `/vectors`, `/learning`, `/prompt`, `/search`, `/guidelines`, `/graph`, `/diagnostics` |
+| Status / search | `GET /status`, `/items`, `/vectors`, `/learning`, `/prompt`, `/search`, `/guidelines`, `/graph`, `/diagnostics` |
+| Harness | `GET /harness/trends`, `GET /harness/evals`, `POST /harness/evals/run` |
 | Config | `GET/PUT /config`, `POST /config/reset`, `GET /config/from-session` |
 | Activity | `GET /events`, `GET /events/stream` |
 | Lifecycle | `GET/PUT /delta-consent`, heuristics patch/delete, skill approve/reject, `POST /run-consolidation`, `GET /sync-status`, `POST /backfill-workbench`, `GET /health` |

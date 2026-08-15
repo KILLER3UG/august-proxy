@@ -8,13 +8,13 @@ client connected.
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-2. [Option A — Run with Docker (recommended)](#option-a--run-with-docker-recommended)
-3. [Option B — Run locally with Python](#option-b--run-locally-with-python)
-4. [First-run Configuration](#first-run-configuration)
-5. [Pointing a Client at the Proxy](#pointing-a-client-at-the-proxy)
-6. [Verifying It Works](#verifying-it-works)
-7. [Stopping and Updating](#stopping-and-updating)
-8. [Desktop (Tauri) — primary product UI](#desktop-tauri--primary-product-ui)
+2. [Desktop (Tauri) — primary product UI](#desktop-tauri--primary-product-ui)
+3. [Backend only — Docker](#backend-only--docker)
+4. [Backend only — local Python](#backend-only--local-python)
+5. [First-run Configuration](#first-run-configuration)
+6. [Pointing a Client at the Proxy](#pointing-a-client-at-the-proxy)
+7. [Verifying It Works](#verifying-it-works)
+8. [Stopping and Updating](#stopping-and-updating)
 9. [SPA build artifact / mobile companion](#spa-build-artifact--mobile-companion)
 
 ---
@@ -25,14 +25,17 @@ client connected.
   endpoint such as OpenRouter / Opencode / MiniMax). See
   [`CONFIGURATION.md`](CONFIGURATION.md).
 - **Docker** (for Option A) **or** **Python 3.12+** (for Option B; `uv` recommended).
-- (Optional) Node.js + Rust for the **desktop** app (`npm run dev:desktop`).
+- **Node.js + Rust** for the **desktop** app (`npm run dev:desktop`) — this is
+  the product. Docker / local Python are for the API sidecar.
 - `web-dist/` is the SPA build packaged into Tauri — not a separate product to QA in a browser.
 
 ---
 
-## Option A — Run with Docker (recommended)
+## Backend only — Docker
 
-Docker isolates dependencies and matches the production image (`python:3.12-slim`).
+Use this when you only need the HTTP API (external clients, bots). The
+**product UI is still the desktop app**. Docker isolates dependencies and
+matches the production image (`python:3.12-slim`).
 
 ```bash
 # 1. Create your secrets file
@@ -56,9 +59,9 @@ logs persist across restarts. Source under `backend-py/`, `web-dist/`, and
 
 ---
 
-## Option B — Run locally with Python
+## Backend only — local Python
 
-Use this for development, or when you don't want Docker.
+Use this for backend development without the Tauri shell, or when you don't want Docker.
 
 ```bash
 cd backend-py
@@ -99,7 +102,7 @@ The process **refuses to start on Python &lt; 3.12** (`main.py` fail-fast check)
 ## First-run Configuration
 
 On first start, the proxy reads (or creates) files in `data/`. You can edit them
-directly or use the **desktop app** (**Settings → Model Providers**).
+directly or use the **desktop app** (**Settings → Models & Providers**).
 
 ### 1. Add API keys
 
@@ -145,7 +148,7 @@ Built-in **templates** (see `GET /api/providers/templates`) are currently:
 - `openai` — OpenAI Chat Completions
 - `openai-compatible` — any OpenAI-compatible base URL
 
-Add further providers from **Settings → Model Providers** or by editing
+Add further providers from **Settings → Models & Providers** or by editing
 `data/providers.json`:
 
 ```json
@@ -194,7 +197,7 @@ codex
 Set base URL to `http://127.0.0.1:8085` and use any non-empty API key. The
 proxy resolves the upstream key from `config.json` / `providers.json` / `.env`.
 
-If **external access** is enabled (Settings → API Access), clients may need the
+If **external access** is enabled (Settings → External API Access), clients may need the
 gateway API key (`GATEWAY_API_KEY` / generated key) — see
 [`CONFIGURATION.md`](CONFIGURATION.md#external-access).
 
@@ -220,7 +223,7 @@ curl http://127.0.0.1:8085/v1/chat/completions \
 ```
 
 Then open the **desktop app** (`npm run dev:desktop` or an installed build) for
-Settings → Model Providers and workbench chat. Do not treat a browser tab on
+Settings → Models & Providers and workbench chat. Do not treat a browser tab on
 `:8085` as the product test surface — see [`AGENTS.md`](../AGENTS.md).
 
 ---
@@ -290,9 +293,9 @@ npm run dev:desktop
 
 The Tauri shell starts, probes `http://127.0.0.1:8085/api/health`,
 and spawns the backend from the `.venv` interpreter (falling back to
-`py -3`, then system `python3`). The Backend Monitor (Settings →
-Backend Monitor) streams live proxy / memory / security events over
-`ws://127.0.0.1:8085/api/logs/stream`.
+`py -3`, then system `python3`). Live proxy / memory / security events
+stream over `ws://127.0.0.1:8085/api/logs/stream` (Settings → Activity
+Log; the old Backend Monitor page is hidden and deep-links here).
 
 ### Packaging note
 

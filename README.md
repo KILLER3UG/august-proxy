@@ -1,173 +1,249 @@
 # August Proxy
 
-August Proxy is a multi-provider AI gateway and agentic workbench. It presents an
-OpenAI-compatible Chat Completions API **and** an Anthropic-compatible Messages
-API from a single local endpoint, routes each request to a configurable upstream
-provider, and ships a full agentic layer on top: a streaming workbench chat loop,
-managed tools, persistent memory (brain), skills, sub-agents, browser automation,
-desktop automation, platform gateways, and a Tauri desktop + Expo mobile UI.
+August is a **local AI gateway and agentic workbench**. The user-facing product
+is the **Tauri desktop app** ([`frontend/desktop/`](frontend/desktop) + bundled
+[`backend-py/`](backend-py)). It also exposes OpenAI- and Anthropic-compatible
+HTTP APIs so other clients (Claude Code, Codex, Cline, bots) can use the same
+providers, tools, and memory.
 
-It is the successor to an earlier Node.js HTTP bridge. The server is written in
-**Python 3.12+** (FastAPI) under [`backend-py/`](backend-py). The **product UI**
-is the **Tauri desktop app** in [`frontend/desktop/`](frontend/desktop) (React +
-Vite + TypeScript). `web-dist/` is the SPA build artifact packaged into that
-desktop shell (FastAPI can also serve it for backend-only local runs — not a
-separate product). A companion Expo app lives in [`frontend/mobile/`](frontend/mobile).
+The server is **Python 3.12+** (FastAPI). `web-dist/` is the Vite SPA **build
+artifact** packaged into Tauri (FastAPI can serve it for backend-only runs). It
+is **not** a separate web product to QA against — use `npm run dev:desktop` or
+a packaged installer.
+
+It is the successor to an earlier Node.js HTTP bridge. A companion Expo app
+lives in [`frontend/mobile/`](frontend/mobile).
 
 ---
 
 ## Highlights
 
-- **Dual API surface** — `POST /v1/chat/completions` (OpenAI), `POST /v1/messages`
-  (Anthropic), plus `POST /v1/responses` (OpenAI Responses-style SSE synthesis)
-  with bidirectional format translation and streaming.
-- **User-configured providers** — add any Anthropic- or OpenAI-compatible
-  gateway yourself (name, base URL, format, API key) in Settings or
-  `data/providers.json`. Model aliases map friendly names to provider + model.
-- **Workbench** — streaming chat with multi-round tool loop, effort / thinking
-  budgets, plan-mode approval gate, todos, checkpoints, context compression,
-  message queue / steer, worktrees, and fire-and-forget background review /
-  self-evolution.
-- **Managed tools** — file ops, shell/PTY terminal, web search/fetch, browser
-  (Playwright), desktop automation, memory, MCP, skills, sub-agents, and
-  self-configuration tools.
-- **Brain & learning** — SQLite-backed core/semantic/vector/graph memory, skill
-  curator lifecycle, cognitive fleet config, consolidation daemons, heuristics,
-  and a Brain dashboard (status, search, graph, diagnostics, activity stream).
-- **Live / voice** — browser speech (product default) plus optional server STT/TTS
-  over OpenAI-compatible providers; Live session API under `/api/live`.
-- **Platform gateways** — Telegram, Slack, and Discord adapters with one in-flight
-  turn per session and control commands (`/stop`, `/new`, `/approve`, …).
-- **Integrations** — MCP servers (`mcp-servers.json`), Google OAuth service
-  connections, cron jobs, automations, exam flow, git helpers, security /
-  observability surfaces.
-- **Desktop app** — Tauri shell launches the Python backend, Backend Monitor over
-  WebSocket log stream, auto-update settings.
+- **Desktop chat / workbench** — streaming turns with a multi-round tool loop,
+  composer Send / Dispatch, mid-run Steer / Stop, checkpoints, context
+  compression, and a sticky run header (mode, harness waves, context %, dirty
+  Continue).
+- **Harness / orchestrator** — Plan → Dispatch, named workstreams, episode
+  handoffs, spawn DAG, worker lanes (click opens the Workers drawer), skills
+  chips on sub-agents, and harness jobs (Continue uses the last named
+  workstream). Agent modes: `chat` (text only), `agent` (tools, default),
+  `code` (sandboxed Python cell). Verifier enforcement is **opt-in per
+  session**.
+- **Dual API surface** — `POST /v1/chat/completions`, `POST /v1/messages`,
+  `POST /v1/responses` (streaming pass-through where the upstream supports it),
+  with format translation. Provider **baseUrl** is used as pasted; August only
+  appends the format leaf. Models may override **wire format** (`apiFormat`)
+  when one gateway lists mixed families (e.g. OpenCode Zen).
+- **User-configured providers** — Settings → Models & Providers, or
+  `data/providers.json`. Aliases map a chat-picker name to provider + model.
+- **Managed tools** — files, shell/PTY, web search/fetch, Playwright browser,
+  desktop automation, memory, MCP, skills, sub-agents, sandbox-gated
+  `run_command`.
+- **Brain & memory** — SQLite core / semantic / vector / graph store. Settings
+  **Memory** is one hub (Saved / Recalled / Projects / Store). Chat: `/remember`,
+  “Used N memories” + pin as always-include, and **Review what I remember**
+  (selected model suggests improve / remove / always-include; **nothing writes
+  until the user confirms**). Consolidation daemons still run in the
+  background; that is separate from the review UI.
+- **Live / voice** — browser speech by default; optional server STT/TTS;
+  `/api/live`.
+- **Platform gateways** — Telegram, Slack, Discord (`/stop`, `/new`, `/approve`, …).
+- **Integrations** — MCP (`mcp-servers.json`), Google OAuth connections, cron /
+  automations, exam flow, git helpers.
+- **Settings IA** — fewer rail tabs. Appearance stacks Behavior + UI Designer;
+  Access stacks sandbox + path grants + Python cell; Usage is heatmap +
+  per-model (not a second Activity Log). Backend Monitor and provider preflight
+  are folded into Activity Log / System Status (deep links still work).
+- **Desktop shell** — Tauri launches the bundled Python backend; Windows
+  auto-update downloads the GitHub-release NSIS installer.
 
 ---
 
-## Repository Layout
+## Repository layout
 
 ```text
 august-proxy/
-├── backend-py/              # FastAPI server (Python ≥ 3.12)
+├── backend-py/                 # FastAPI server (Python ≥ 3.12)
 │   ├── app/
-│   │   ├── main.py          # FastAPI app, lifespan, router registration
-│   │   ├── config.py        # Settings: config.json + providers.json + .env
-│   │   ├── adapters/        # Anthropic & OpenAI message/SSE translation
-│   │   ├── providers/       # Templates, clients, resolvers
-│   │   ├── routers/         # /api/* and /v1/* HTTP routes
-│   │   └── services/        # workbench, gateway, memory, skills, tools, …
-│   ├── tests/               # pytest suite (isolatedData autouse)
+│   │   ├── main.py             # App, lifespan, router registration
+│   │   ├── config.py           # config.json + providers.json + .env
+│   │   ├── adapters/           # OpenAI ↔ Anthropic + dump_*_upstream_body
+│   │   ├── providers/          # Templates, HTTP clients, resolvers
+│   │   ├── routers/            # /api/* and /v1/*
+│   │   └── services/           # workbench, harness, memory, skills, tools, …
+│   ├── tests/                  # pytest (isolatedData autouse)
 │   └── pyproject.toml
 ├── frontend/
-│   ├── desktop/             # React + Vite SPA + Tauri (src-tauri)
-│   └── mobile/              # Expo companion app
-├── web-dist/                # Compiled SPA served by the backend
-├── data/                    # Persistent state: config, providers, brain DB, logs
-├── skills/                  # Bundled SKILL.md packs
-├── docs/                    # Project documentation
-├── scripts/                 # Dev, install, release helpers
+│   ├── desktop/                # Product UI: React + Vite + Tauri
+│   └── mobile/                 # Expo companion
+├── web-dist/                   # Vite output packaged into the desktop app
+├── data/                       # Runtime state (gitignored secrets)
+├── skills/                     # Bundled SKILL.md packs
+├── docs/                       # Setup, architecture, API, troubleshooting
+├── scripts/                    # Dev, version sync, desktop release
+├── AGENTS.md                   # Contract for coding agents (read this)
 ├── Dockerfile
 └── docker-compose.yml
 ```
 
+**Who owns what (and how to check it):**
+
+| Area | Owns | Validate with |
+|------|------|----------------|
+| `backend-py/` | Proxy, workbench, brain, MCP, tools | `cd backend-py && uv run pytest -q` |
+| `frontend/desktop/` | Tauri UI | `npm run test:frontend` |
+| `frontend/mobile/` | Expo | `npm run test -w frontend/mobile` |
+| `scripts/` | Install / release | manual |
+| Version files | Desktop ship number | `npm run check:version` |
+
+A **desktop release must include backend changes**. Installed apps copy bundled
+`backend-py` into AppData from the installer stamp; a UI-only rebuild does not
+update the runtime.
+
 ---
 
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
-- Python **3.12+** (or Docker — see below)
-- An API key for at least one provider (Anthropic, OpenAI, or any OpenAI-compatible endpoint)
+- Python **3.12+** (or Docker)
+- Node 22+ for the desktop UI
+- An API key for at least one Anthropic- or OpenAI-compatible provider
 
-### Run with Docker
-
-```bash
-cp .env.example .env          # then edit .env and add your API keys
-docker compose up --build -d
-```
-
-The API listens on **http://localhost:8085**. Use the **desktop app** for the
-product UI (`npm run dev:desktop`). `web-dist/` is only the packaged SPA build.
-
-### Run locally (development)
-
-**One-shot backend setup** (creates `backend-py/.venv` with Python ≥ 3.12 and
-installs the backend as an editable package — run once after cloning):
+### Product UI (preferred)
 
 ```bash
+# Windows
+.\install.ps1
 # macOS / Linux
 ./install.sh
-# Windows (PowerShell)
-.\install.ps1
+
+npm install
+npm run dev:desktop      # Tauri shell + backend
 ```
 
-Then start the backend:
+QA workbench and settings here, not in a raw Vite browser tab.
+
+### Backend only
 
 ```bash
 cd backend-py
-# Recommended
 uv sync --group dev
 uv run uvicorn app.main:app --reload --port 8085
-
-# Or classic venv
-# python -m venv .venv
-# Windows:  .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
-# pip install -e ".[dev]"
-# uvicorn app.main:app --reload --port 8085
 ```
 
-**Product UI (desktop):**
+API: **http://localhost:8085**.
+
+### Docker
 
 ```bash
-npm install
-npm run dev:desktop      # Tauri shell + backend — preferred for UI / workbench QA
+cp .env.example .env          # add keys
+docker compose up --build -d
 ```
 
-The desktop app auto-updates by downloading the full GitHub-release installer on
-Windows (see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)).
-
-`npm run build:web` produces `web-dist/` for packaging into the desktop installer
-(and optional FastAPI static serve). Do not treat browser-only Vite as the
-product test surface — see [`AGENTS.md`](AGENTS.md).
+Same port **8085**. Still use the desktop app for product UI.
 
 ### Point a client at the proxy
 
 ```bash
-# Claude Code / Anthropic clients
 export ANTHROPIC_BASE_URL=http://localhost:8085
 claude
 
-# OpenAI clients / Codex / Cline / Continue.dev
 export OPENAI_BASE_URL=http://localhost:8085
-export OPENAI_API_KEY=dummy   # the proxy uses the key from your config
+export OPENAI_API_KEY=dummy   # proxy uses the key from your config
 codex
 ```
 
-> The `dummy` key above is only accepted when **external access** is enabled
-> in the proxy (Settings → Gateway). When external access is off, `/v1/*`
-> requests are rejected with 403 regardless of key — see
-> [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+The `dummy` key is accepted only when **external access** is on (Settings →
+External API Access). Otherwise `/v1/*` returns 403 — see
+[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
 ---
 
 ## Configuration
 
-Configuration lives in `data/` and is split across these files:
-
 | File | Purpose |
 |------|---------|
-| `data/config.json` | Provider API keys, model aliases, active provider, sub-agent fallback, cognitive/auxiliary config, security, gateway |
-| `data/providers.json` | User-added providers (name, base URL, API format, models) |
-| `data/mcp-servers.json` | MCP server definitions |
-| `data/august_brain.sqlite` | Brain / sessions / memory / audit (source of truth) |
-| `.env` | API keys and runtime env vars (Docker Compose + Pydantic Settings) |
+| `data/config.json` | Keys, aliases, cognitive/harness flags, security, gateway |
+| `data/providers.json` | User providers (name, base URL, API format, models) |
+| `data/mcp-servers.json` | MCP servers |
+| `data/august_brain.sqlite` | Brain / sessions / memory / audit |
+| `.env` | Keys and runtime env (Compose + Pydantic Settings) |
 
-API keys are resolved per-provider: `config.json → {provider}.apiKey`, then the
-provider's declared env vars, then standard `{NAME}_API_KEY` patterns. See
-[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
+Keys resolve: `config.json → {provider}.apiKey`, then declared env vars, then
+`{NAME}_API_KEY`. See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
+
+**Per-model wire format:** if a gateway lists Claude + GPT + DeepSeek on one
+`/models` URL, set **Wire format** on the model (not only on the provider).
+The override wins in workbench, Test, Live, and `/v1` adapters.
+
+---
+
+## For contributors
+
+Start with [`AGENTS.md`](AGENTS.md) and [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the request-flow map.
+
+### Chat UI map (desktop)
+
+Composer sits at the bottom of [`ChatThread.tsx`](frontend/desktop/src/sections/chat/ChatThread.tsx).
+Above it, in order: memory-save chips, **Brain review**
+([`BrainReviewBar.tsx`](frontend/desktop/src/sections/chat/BrainReviewBar.tsx)),
+curator / sub-agent proposal bars, then the composer island. Run chrome is
+[`ChatRunHeader.tsx`](frontend/desktop/src/components/chat/ChatRunHeader.tsx).
+Worker lanes: [`SubagentLaunchList.tsx`](frontend/desktop/src/components/chat/SubagentLaunchList.tsx)
+→ right drawer `subagents`.
+
+Memory review: `POST /api/memory/review` (plan only) and
+`POST /api/memory/review/apply` (user-accepted actions). Implementation:
+[`memory_review.py`](backend-py/app/services/memory/memory_review.py).
+
+### Settings
+
+Rail lives in [`settings-registry.ts`](frontend/desktop/src/settings/settings-registry.ts).
+**Do not add a new left-rail tab** for a slice of an existing hub. Prefer a
+stacked hub + `tier: 'hidden'` + `railCanonicalId` so deep links still work.
+Memory / Access / Appearance already follow that pattern.
+
+### Tests
+
+```bash
+cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q
+npm run test:frontend
+```
+
+`pyproject.toml` sets `--cov-fail-under=55` on the **full** suite. A single
+test file will fail that floor; use `uv run pytest tests/test_foo.py -q --no-cov`
+for a focused run.
+
+### High-risk files
+
+Touch carefully; regressions break all chat or safety:
+
+- `dump_openai_upstream_body` / `dump_anthropic_upstream_body` (never send
+  `null` August-only keys upstream)
+- `backend-py/app/services/sandbox/`
+- Tool definitions (OpenAI + Anthropic surfaces must stay in sync)
+- `adapters/stream_state.py` (`AnthropicNativeStreamState`)
+
+### Version + GitHub release
+
+On desktop ship, **seven** sources must match (`npm run check:version`):
+
+- `package.json`
+- `frontend/desktop/package.json`
+- `frontend/desktop/src-tauri/tauri.conf.json`
+- `frontend/desktop/src-tauri/Cargo.toml`
+- `frontend/desktop/src-tauri/Cargo.lock` (`august-desktop` entry)
+- `package-lock.json` (root + `packages['frontend/desktop']`)
+
+Do not bump these unless you are shipping. Release: push `master`, then
+GitHub Actions **Release desktop** (`workflow_dispatch`, version without `v`).
+That job typechecks the SPA (`tsc -b && vite build`), so a missing import
+fails the whole installer.
+
+Known product gap: one provider `apiFormat` cannot serve mixed families on
+OpenCode Zen without per-model overrides — details in `AGENTS.md` and
+[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
 ---
 
@@ -175,32 +251,14 @@ provider's declared env vars, then standard `{NAME}_API_KEY` patterns. See
 
 | Document | Audience | Contents |
 |----------|----------|----------|
-| [`AGENTS.md`](AGENTS.md) | Agents / contributors | Desktop product surface + recent fix notes |
-| [`docs/SETUP.md`](docs/SETUP.md) | All users | Installation, first-run, clients, desktop |
-| [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Operators | Config / providers / env reference |
+| [`AGENTS.md`](AGENTS.md) | Agents / contributors | Desktop product rules, harness notes, version files |
+| [`docs/SETUP.md`](docs/SETUP.md) | All users | Installation, first-run, clients |
+| [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Operators | Config / providers / env |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Developers | Request flow, workbench, brain, gateway |
-| [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) | Integrators | HTTP endpoints and SSE conventions |
-| [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Contributors | Dev setup, tests, extension points |
-| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | All users | Common issues and fixes |
-| [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md) | Everyone | Full doc index (including historical) |
-| [`docs/GAPS_AND_BUGS.md`](docs/GAPS_AND_BUGS.md) | Maintainers | Known gaps found during doc audit |
-
----
-
-## Development
-
-```bash
-# Backend
-cd backend-py
-uv run pytest -q
-# or from repo root:
-npm run test:backend
-npm run test:frontend
-npm run test              # both
-```
-
-The test suite uses `asyncio_mode = "auto"` and **autouse** `isolatedData` so
-tests never touch live `data/`. See [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md).
+| [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) | Integrators | HTTP + SSE |
+| [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | Contributors | Tests, adding providers / tools / settings |
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | All users | Common failures |
+| [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md) | Everyone | Full doc index |
 
 ---
 

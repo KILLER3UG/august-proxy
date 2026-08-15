@@ -70,7 +70,7 @@ and cognitive snapshots.
 
 A provider only appears as usable if it has an API key configured (config entry,
 `providers.json` entry, or env). Add a key in `data/config.json` or `.env`, or
-complete **Settings → Model Providers**.
+complete **Settings → Models & Providers**.
 
 ### "API key not configured for &lt;provider&gt;"
 
@@ -145,7 +145,7 @@ the model id is valid on the provider.
 
 In `plan` mode, destructive tools are blocked until a plan is approved. The model
 must call `submit_plan`, then approve via `POST /api/workbench/plan/approve` or
-the dashboard banner.
+the desktop plan-approval banner.
 
 ### Context keeps getting compacted
 
@@ -281,7 +281,7 @@ Archived under `data/skills/.archive/<name>/`. Restore with
 
 ## Brain, memory & live
 
-### Brain dashboard empty / no search hits
+### Memory / brain search empty / no hits
 
 Confirm brain DB path (`AUGUST_DATA_DIR` / `august_brain.sqlite`). FTS requires
 correct table-level `MATCH` queries — app-path regressions are covered by
@@ -295,9 +295,16 @@ Live config, or use browser Web Speech (product default).
 
 ### Feature Flow shows nothing
 
-Emits fire on proxy / tool / memory paths. Use Settings → Feature Flow and
-confirm `/api/monitor/events`. Backend Monitor uses `WS /api/logs/stream`
-instead.
+Emits fire on proxy / tool / memory paths. Use Settings → Feature Flow
+(advanced) and confirm `/api/monitor/events`. Live logs use
+`WS /api/logs/stream` (Settings → Activity Log).
+
+### Memory review failed / chip does nothing
+
+- Needs a selected chat model that can complete a non-streaming generate.
+- `POST /api/memory/review` never writes; apply is `POST /api/memory/review/apply`
+  per accepted row.
+- Toast “Memory review failed” means the selected model or resolver errored.
 
 ---
 
@@ -380,12 +387,12 @@ They should not — `isolatedData` is **autouse**. If you see writes under
   Microsoft Store `WindowsApps` stub is rejected.
 - Spawn failures: Tauri `backend_last_error` and `data/logs/backend.log` when present.
 
-### Backend Monitor shows nothing live
+### Activity Log / live events show nothing
 
-- Events: `ws://127.0.0.1:8085/api/logs/stream`. Vite must proxy `/api` with
-  `ws: true`.
+- Events: `ws://127.0.0.1:8085/api/logs/stream`. The old Backend Monitor
+  settings id still deep-links here.
 - Categories are stable strings (`proxy_incoming`, `auto_memory`, `security`, …).
-- Empty monitor usually means no traffic yet or a broken WS proxy.
+- Empty stream usually means no traffic yet or a broken WS proxy.
 
 ### `pip install` hangs on desktop start
 
