@@ -1,6 +1,20 @@
 # August Proxy — Changelog
 
+## 0.16.4 (2026-08-15)
+
+Harness teammate pass — specialists, routines, attention, and a stacked composer so named work can keep going in the desktop app.
+
+**Playbook lanes**
+- Specialists (ask / ping-on-fail / keep going), routines saved from episode cards, Auto-Continue on silent completed lanes (capped hops), workspace-bound playbook, cancel-wave, last command/exit on the run header.
+
+**Attention & idle**
+- Inbox states working / needs you / unread; mark-read on open; workers badge is needs-you + running. Silent hops and scheduled routines pause after 24h idle until you send again. Cron + Pause on routines. Save skill from an episode (`lane-*`). Search across lanes, episodes, and routines.
+
+**Composer**
+- Decision stack (review / distill / pins / proposals). Distill Keep/Discard per item. `@lane:` continues a thread; `@routine:` runs a routine. Lane continue/done toasts, bell, and OS notify when the window is hidden.
+
 ## 0.16.2 (2026-08-13)
+
 
 Smoothness pass — cheap live markdown, terminal reconnect resume, line-buffered commands, and regression coverage for the cancel/progress paths.
 
