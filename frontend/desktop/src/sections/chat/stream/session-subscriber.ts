@@ -21,6 +21,7 @@ import type { WorkbenchSession } from '@/types/workbench';
 import type { WorkbenchEventHandlers } from '@/types/workbench';
 import { toast } from 'sonner';
 import { pushNotification } from '@/store/notifications';
+import { api } from '@/api/client';
 import { streamWorkbenchReconnect } from '@/api/workbench';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { upsertQueuedMessage, removeQueuedMessage } from '../queue-store';

@@ -16,6 +16,14 @@ import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
 import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
 import { getDigest } from "@/api/subagents";
+import {
+  approveWorkbenchPlan,
+  getWorkbenchSession,
+  listWorkbenchSessionAgents,
+  rejectWorkbenchPlan,
+  setWorkbenchGuardMode,
+  streamWorkbenchRevision,
+} from "@/api/workbench";
 import { isNonEmptyPlan, normalizeWorkbenchSession } from "@/lib/workbench-plan";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";

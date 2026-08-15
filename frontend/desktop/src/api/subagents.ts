@@ -133,6 +133,7 @@ export interface HarnessSpecialist {
   acceptance?: string;
   restrictedTools?: string[];
   autonomy?: 'ask' | 'on_fail' | 'silent' | string;
+  workspacePath?: string;
   createdAt?: string;
 }
 
