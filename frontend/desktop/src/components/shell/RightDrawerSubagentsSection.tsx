@@ -16,6 +16,7 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useFocusedSubagent } from '@/components/chat/focused-subagent';
 import { WorkstreamsPanel } from '@/components/chat/WorkstreamsPanel';
+import { closeRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { api } from '@/api/client';
 
 const ACTIVE_STATUSES = new Set(['pending', 'running']);
