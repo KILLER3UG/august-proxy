@@ -51,6 +51,7 @@ import {
 } from './queue-store';
 import { buildHandoffSummary, markHandoffPending } from './handoff-summary';
 import { SkillEvolvedChip } from '@/components/chat/SkillEvolvedChip';
+import { SkillSuggestionChip } from '@/components/chat/SkillSuggestionChip';
 import { ComposerDecisionStack } from './ComposerDecisionStack';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
@@ -1390,6 +1391,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       <DebateView ensureWorkbenchSession={ensureWorkbenchSession} />
       <div className="august-chat-surface flex-1 flex flex-col min-w-0 bg-chat-area h-full overflow-hidden relative">
         <SkillEvolvedChip />
+        <SkillSuggestionChip currentSessionId={workbenchSession?.id || sessionId} />
         <CollaborationInsights />
         {examActive && (
           <ExamHost

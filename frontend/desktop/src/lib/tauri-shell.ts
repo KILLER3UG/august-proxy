@@ -41,12 +41,18 @@ export async function openExternal(url: string): Promise<boolean> {
 }
 
 /**
- * Reveal a file or URL using the OS "open with default app" affordance.
- * Currently unused but exported for the future "Open logs" / "Open
- * config folder" buttons that fit the Integrations IA.
+ * Reveal a file in the OS file manager (Explorer with the file selected on
+ * Windows, Finder on macOS). Falls back to opening the file with its
+ * default app when the reveal command is unavailable.
  */
 export async function revealInFolder(path: string): Promise<void> {
   if (!isTauri) return;
-  const { open } = await import('@tauri-apps/plugin-shell');
-  await open(path);
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke<string>('reveal_in_folder', { path });
+  } catch (err) {
+    console.warn('[tauri-shell] reveal_in_folder failed, opening directly:', err);
+    const { open } = await import('@tauri-apps/plugin-shell');
+    await open(path);
+  }
 }

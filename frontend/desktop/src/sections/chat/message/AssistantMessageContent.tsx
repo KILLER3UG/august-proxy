@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { RecapCard } from '@/components/chat/RecapCard';
 import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
+import { ProducedFilesRow } from '@/components/chat/ProducedFilesRow';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { GitDiffResult } from '@/api/git';
 import type { SubagentBlockState } from '../chat-stream-manager';
@@ -10,7 +11,7 @@ import {
   type ToolProgressMap,
 } from './AssistantBlockTimeline';
 import { AssistantMessageActions } from './AssistantMessageActions';
-import { formatTokenCount } from './token-display';
+import { formatTokenCount, formatTurnDuration } from './token-display';
 
 type DisplayBlock = MessageBlock;
 
@@ -115,6 +116,12 @@ export function AssistantMessageContent({
             ? <ChangedFilesCard changes={message.changedFiles as GitDiffResult} />
             : null;
         })()}
+        {/* Light "Files touched" chips — derived from the turn's edit tool
+            calls, always available (unlike the git-based diff card above).
+            Hidden while streaming so it appears with the settled answer. */}
+        {!(isLast && streaming) && (
+          <ProducedFilesRow blocks={message.blocks} />
+        )}
         {/* End-of-turn recap: instant template from tools/files; AI rewrite optional.
             Hide while this message is still streaming so it appears with the settled answer. */}
         {!(isLast && streaming) && (
@@ -161,6 +168,20 @@ export function AssistantMessageContent({
             data-testid="fallback-chip"
           >
             answered via {message.usedFallback}
+          </div>
+        ) : null}
+        {/* Per-turn stats footer: billed tokens + generation time (from the
+            done payload). Hidden while streaming so it appears settled. */}
+        {!(isLast && streaming) &&
+        message.usage &&
+        (message.usage.inputTokens > 0 || message.usage.outputTokens > 0) ? (
+          <div
+            className="text-[10px] tabular-nums text-muted-foreground/50"
+            data-testid="turn-stats-footer"
+          >
+            {formatTokenCount(message.usage.inputTokens)} in ·{' '}
+            {formatTokenCount(message.usage.outputTokens)} out
+            {message.usage.durationMs ? ` · ${formatTurnDuration(message.usage.durationMs)}` : ''}
           </div>
         ) : null}
       </div>

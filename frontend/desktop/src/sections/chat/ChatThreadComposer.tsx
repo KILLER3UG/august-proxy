@@ -3,18 +3,15 @@
 /* model/effort menu, send / mid-run steer, stop.                          */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage, FileAttachment } from '@/types/chat';
 import type { WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
-import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
-import { WorkspaceBranchChip } from '@/components/workspace/WorkspaceBranchChip';
 import { QueuePills } from './QueuePills';
 import { ArenaLaunchModal } from './composer/ArenaLaunchModal';
 import { DebateLaunchModal } from './debate/DebateLaunchModal';
 import type { DebateRun } from './debate/debate-store';
-import { Swords, Gavel, WifiOff } from 'lucide-react';
+import { WifiOff } from 'lucide-react';
 import type { QueuedUserMessage } from './queue-store';
 import { type ContextBreakdown } from './ChatComposer';
 import { Markdown } from './ChatMarkdown';
@@ -35,7 +32,6 @@ import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import { useFocusedSubagent } from '@/components/chat/focused-subagent';
 import { setContinueWorkstream, useContinueWorkstream } from '@/components/chat/composer-intent';
-import { HarnessJobStrip } from '@/components/chat/HarnessJobStrip';
 import { normalizeHarnessMode } from '@/components/chat/HarnessModeChip';
 import { continueWorkstream, listWorkstreams, runRoutine, steer as steerSubagent } from '@/api/subagents';
 
@@ -168,7 +164,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     dropdownApiRef,
   } = props;
 
-  const navigate = useNavigate();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const focusedSubagent = useFocusedSubagent();
@@ -271,6 +266,11 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
       if (cmd && e.shiftKey && !e.altKey && e.key === 'P') {
         e.preventDefault();
         setShowPreview(v => !v);
+      }
+      // Hermes-style Quick Entry — Cmd/Ctrl+Shift+Space focuses composer from anywhere
+      if (cmd && e.shiftKey && (e.code === 'Space' || e.key === ' ')) {
+        e.preventDefault();
+        taRef.current?.focus();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -380,8 +380,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         </div>
       ) : null}
 
-      <HarnessJobStrip sessionId={workbenchSession?.id || activeWorkbenchSessionId || sessionId} />
-
       {queuedMessages.length > 0 && sessionId && (
         <QueuePills
           sessionId={sessionId}
@@ -394,36 +392,10 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
       <div
         className={cn(
-          'august-composer w-full min-w-0 rounded-3xl border bg-chat-input backdrop-blur-sm shadow-lg',
+          'august-composer w-full min-w-0 rounded-2xl border bg-chat-input backdrop-blur-sm shadow-md',
           'border-border/70 overflow-visible',
         )}
       >
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40">
-          <WorkspaceSelector
-            sessionId={sessionId}
-            onWorkspaceChange={(ws) => {
-              if (!ws) return;
-              void import('@/store/sessions').then(
-                ({ bindSessionToWorkspacePath, findOrCreateSessionForPath }) => {
-                  // New filesystem paths always get a Repositories folder.
-                  // Prefer binding the current chat so it lands under that folder
-                  // instead of spawning an orphan "Project:" session.
-                  if (sessionId) {
-                    bindSessionToWorkspacePath(sessionId, ws.path, ws.name);
-                    return;
-                  }
-                  const { session } = findOrCreateSessionForPath(ws.path, ws.name);
-                  void navigate(`/c/${session.id}`);
-                },
-              );
-            }}
-          />
-          <WorkspaceBranchChip
-            sessionId={sessionId}
-            repoPath={workspacePath}
-          />
-        </div>
-
         {voiceActive ? (
           <ComposerVoiceListening />
         ) : (
@@ -466,8 +438,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                         : 'Write a message...'
               }
               rows={1}
-              className="w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm outline-none placeholder:text-muted-foreground/70"
-              style={{ minHeight: '52px', maxHeight: '360px' }}
+              className="w-full resize-none bg-transparent px-3 pt-2 pb-0.5 text-sm outline-none placeholder:text-muted-foreground/70"
+              style={{ minHeight: '36px', maxHeight: '240px' }}
             />
 
             {showPreview && input.trim() && (
@@ -538,29 +510,9 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
             startVoiceInput();
             popovers.setShowComposerActionsDropdown(false);
           }}
+          onAskParallel={() => setArenaOpen(true)}
+          onStartDebate={() => setDebateOpen(true)}
         />
-        <button
-          type="button"
-          onClick={() => setArenaOpen(true)}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground hover:text-primary hover:bg-muted/60 transition shrink-0"
-          title="Ask in parallel — run this prompt on 2–3 models and pick the best"
-          aria-label="Ask in parallel"
-          data-testid="arena-open"
-        >
-          <Swords className="size-3.5" />
-          Parallel
-        </button>
-        <button
-          type="button"
-          onClick={() => setDebateOpen(true)}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground hover:text-primary hover:bg-muted/60 transition shrink-0"
-          title="Structured debate — two models argue this prompt, optional judge"
-          aria-label="Start a debate"
-          data-testid="debate-open"
-        >
-          <Gavel className="size-3.5" />
-          Debate
-        </button>
       </div>
 
       {debateOpen ? (

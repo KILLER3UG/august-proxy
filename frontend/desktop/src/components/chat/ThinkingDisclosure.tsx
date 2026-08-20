@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, type ReactNode } from 'react';
+import { memo, useRef, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
@@ -23,7 +23,7 @@ interface ThinkingDisclosureProps {
   omitDurationLabel?: boolean;
 }
 
-export function ThinkingDisclosure({
+export const ThinkingDisclosure = memo(function ThinkingDisclosure({
   children,
   pending = false,
   duration,
@@ -147,7 +147,7 @@ export function ThinkingDisclosure({
       </AnimatePresence>
     </div>
   );
-}
+});
 
 function fmtElapsed(sec: number): string {
   if (sec < 1) return `${Math.round(sec * 1000)}ms`;

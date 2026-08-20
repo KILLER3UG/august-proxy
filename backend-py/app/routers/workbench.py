@@ -1930,8 +1930,8 @@ async def setAgentModeApi(request: Request):
     raw = as_str(body.get('agentMode') or body.get('agent_mode'), '').strip().lower()
     if raw == 'planner':
         raw = 'orchestrator'
-    if raw not in ('chat', 'agent', 'code', 'orchestrator'):
-        raise HTTPException(status_code=400, detail='agentMode must be chat, agent, code, or orchestrator')
+    if raw not in ('chat', 'agent', 'code', 'orchestrator', 'benchmark'):
+        raise HTTPException(status_code=400, detail='agentMode must be chat, agent, code, orchestrator, or benchmark')
     session = wb.getWorkbenchSession(sessionId)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')

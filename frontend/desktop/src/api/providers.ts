@@ -149,6 +149,14 @@ export const providersApi = {
     api.get<ProbeResult>(
       p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}/probe`),
     ),
+  /** Persist a per-model capability profile (toolSurface) — used by the
+   *  modelProfileSuggestion Apply chip. Empty/absent toolSurface clears the
+   *  override (revert to provider default). */
+  applyModelProfile: (model: string, toolSurface?: string) =>
+    api.post<{ ok: boolean; model: string; toolSurface?: string | null }>(
+      '/api/models/profile',
+      { model, toolSurface: toolSurface || null },
+    ),
   /** Import a provider config from a JSON blob. */
   importConfig: (config: Record<string, unknown>) =>
     api.post<Provider>(`${p('')}/import-config`, config),

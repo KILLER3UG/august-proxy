@@ -105,6 +105,35 @@ def annotate_attention(session_id: str, rows: list[dict[str, Any]], running_name
     return rows
 
 
+def needs_attention_summary() -> list[dict[str, object]]:
+    """Per-session workstream attention counts, across all sessions.
+
+    Powers the sidebar "needs handoff" dots. Only sessions with at least one
+    running or attention-needing workstream are returned; never raises.
+    """
+    from app.services.workstreams import list_workstreams
+
+    try:
+        conn = _conn()
+        rows = conn.execute('SELECT DISTINCT session_id FROM workstreams').fetchall()
+    except Exception:
+        return []
+    out: list[dict[str, object]] = []
+    for r in rows:
+        sid = as_str(r['session_id'], '')
+        if not sid:
+            continue
+        try:
+            annotated = annotate_attention(sid, list_workstreams(sid))
+        except Exception:
+            continue
+        needs = sum(1 for w in annotated if w.get('attention') in ('needs', 'unread'))
+        working = sum(1 for w in annotated if w.get('attention') == 'working')
+        if needs or working:
+            out.append({'sessionId': sid, 'needs': needs, 'working': working})
+    return out
+
+
 def search_harness(session_id: str, query: str, *, workspace: str = '') -> dict[str, Any]:
     from app.services.harness_playbook import list_routines, list_specialists
     from app.services.workstreams import list_episodes, list_workstreams
@@ -131,8 +160,7 @@ def search_harness(session_id: str, query: str, *, workspace: str = '') -> dict[
     return {'hits': hits[:40], 'query': query}
 
 
-def skill_from_episode(session_id: str, workstream: str, seq: int | None = None) -> dict[str, Any]:
-    from app.services.skill_service import SkillValidationError, createSkill
+def build_skill_payload_from_episode(session_id: str, workstream: str, seq: int | None = None) -> dict[str, Any]:
     from app.services.workstreams import list_episodes
 
     eps = list_episodes(session_id, workstream, limit=80)
@@ -171,12 +199,35 @@ def skill_from_episode(session_id: str, workstream: str, seq: int | None = None)
             ', '.join(str(s) for s in skills[:8]) or '(none)',
         ]
     )
+    return {
+        'name': name,
+        'slug': slug,
+        'description': desc[:60],
+        'body': body,
+        'trigger': workstream,
+        'category': 'harness',
+        'createdBy': 'user',
+        'seq': int(ep.get('seq') or 0),
+    }
+
+
+def skill_from_episode(session_id: str, workstream: str, seq: int | None = None) -> dict[str, Any]:
+    from app.services.skill_service import SkillValidationError, createSkill
+
+    payload = build_skill_payload_from_episode(session_id, workstream, seq)
+    name = payload['name']
+    desc = payload['description']
+    body = payload['body']
+    trigger = payload['trigger']
+    category = payload['category']
+    created_by = payload['createdBy']
+    seq_num = payload['seq']
+    slug = payload['slug']
     try:
-        created = createSkill(name, desc[:60], body, trigger=workstream, category='harness', createdBy='user')
+        return createSkill(name, desc, body, trigger=trigger, category=category, createdBy=created_by)
     except SkillValidationError:
-        name = f'lane-{slug}-{int(ep.get("seq") or 0)}'
-        created = createSkill(name, desc[:60], body, trigger=workstream, category='harness', createdBy='user')
-    return created
+        name = f'lane-{slug}-{seq_num}'
+        return createSkill(name, desc, body, trigger=trigger, category=category, createdBy=created_by)
 
 
 def set_routine_schedule(routine_id: str, schedule: str, paused: bool | None = None) -> dict[str, Any]:

@@ -190,8 +190,18 @@ export type WorkbenchEvent =
 export interface WorkbenchEventHandlers {
   onThinking?: (data: { content: string }) => void;
   onText?: (data: { content: string }) => void;
-  onToolUse?: (data: { id: string; name: string; input: Record<string, unknown> }) => void;
-  onToolResult?: (data: { id: string; content: unknown; isError?: boolean; status?: string; providerSetup?: unknown; integrationSetup?: unknown }) => void;
+  onToolUse?: (data: { id: string; name: string; input: Record<string, unknown>; startedAtMs?: number }) => void;
+  onToolResult?: (data: {
+    id: string;
+    content: unknown;
+    isError?: boolean;
+    status?: string;
+    durationMs?: number;
+    startedAtMs?: number;
+    blocked?: boolean;
+    providerSetup?: unknown;
+    integrationSetup?: unknown;
+  }) => void;
   onToolProgress?: (data: {
     id: string;
     name: string;
@@ -443,4 +453,15 @@ export interface WorkbenchEventHandlers {
    *  update_memory / forget / preference capture) — the chat renders an
    *  inline "August remembered…" notice. */
   onMemoryUpdated?: (data: { action?: string; summary?: string }) => void;
+  /** Per-turn routing-evidence classification (ok / refusal / thinking_only /
+   *  tool_error / …) — feeds the trajectory UI, no dedicated surface. */
+  onEvidenceState?: (data: { state: string }) => void;
+  /** Capability auto-detect suggested a per-model tool surface. The composer
+   *  stack renders an Apply / Dismiss chip that persists via
+   *  POST /api/models/profile. */
+  onModelProfileSuggestion?: (data: {
+    model: string;
+    suggestedProfile?: { toolSurface?: string; reason?: string } | null;
+    message?: string;
+  }) => void;
 }

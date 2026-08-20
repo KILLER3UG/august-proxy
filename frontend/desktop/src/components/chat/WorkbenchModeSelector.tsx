@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   Terminal,
   Bot,
+  Gauge,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -115,6 +116,7 @@ const HARNESS_OPTIONS: {
   },
   { id: 'chat', label: 'Chat', description: 'Text only — no tools.', Icon: MessageSquare },
   { id: 'code', label: 'Code', description: 'Fenced Python in the workspace.', Icon: Terminal },
+  { id: 'benchmark', label: 'Benchmark', description: '2-tool minimal surface (run_command + edit_lines).', Icon: Gauge },
 ];
 
 interface WorkbenchModeSelectorProps {

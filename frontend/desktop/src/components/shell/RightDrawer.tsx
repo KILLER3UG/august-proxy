@@ -17,6 +17,8 @@ import { RightDrawerBrowserSection } from './RightDrawerBrowserSection';
 import { RightDrawerNotesSection } from './RightDrawerNotesSection';
 import { RightDrawerFileSection } from './RightDrawerFileSection';
 import { RightDrawerSubagentsSection } from './RightDrawerSubagentsSection';
+import { RightDrawerTrajectorySection } from './RightDrawerTrajectorySection';
+import { RightDrawerArtifactsSection } from './RightDrawerArtifactsSection';
 import type { WorkbenchSession } from '@/types/workbench';
 import { useRightDrawer } from './RightDrawerState';
 import { getFileIcon } from '@/lib/file-icon';
@@ -213,7 +215,7 @@ export function RightDrawer({
               )}
 
               {sections.length >= 3 && (
-                <div className="grid h-full grid-cols-2 gap-2">
+                <div className="flex h-full flex-col gap-2 overflow-y-auto">
                   {sections.map((sectionId) => (
                     <DrawerSectionCard
                       key={sectionId}
@@ -277,6 +279,10 @@ function renderSection(
           workspacePath={ctx.workspacePath}
         />
       );
+    case 'trajectory':
+      return <RightDrawerTrajectorySection sessionId={ctx.sessionId} />;
+    case 'artifacts':
+      return <RightDrawerArtifactsSection sessionId={ctx.sessionId} />;
   }
 }
 

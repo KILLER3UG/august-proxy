@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Paperclip, Mic, AtSign, Plus, Bot } from 'lucide-react';
+import { Paperclip, Mic, AtSign, Plus, Bot, Swords, Gavel } from 'lucide-react';
 import { ToolBtn } from '../ComposerControls';
 import type { AnchorPos } from './useComposerPopovers';
 
@@ -16,6 +16,8 @@ export function ComposerActionsMenu({
   onMention,
   onVoice,
   onSpawn,
+  onAskParallel,
+  onStartDebate,
   extras,
 }: {
   open: boolean;
@@ -27,6 +29,8 @@ export function ComposerActionsMenu({
   onVoice: () => void;
   /** Open the sub-agent spawn launcher (bound to the active session). */
   onSpawn?: () => void;
+  onAskParallel?: () => void;
+  onStartDebate?: () => void;
   /** Make Changes / context / cost — rendered below primary actions. */
   extras?: ReactNode;
 }) {
@@ -85,6 +89,28 @@ export function ComposerActionsMenu({
               >
                 <span>Dispatch workstreams</span>
                 <Bot className="size-3.5 text-muted-foreground" />
+              </button>
+            )}
+            {onAskParallel && (
+              <button
+                type="button"
+                onClick={onAskParallel}
+                className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
+                data-testid="arena-open"
+              >
+                <span>Ask in parallel</span>
+                <Swords className="size-3.5 text-muted-foreground" />
+              </button>
+            )}
+            {onStartDebate && (
+              <button
+                type="button"
+                onClick={onStartDebate}
+                className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
+                data-testid="debate-open"
+              >
+                <span>Debate</span>
+                <Gavel className="size-3.5 text-muted-foreground" />
               </button>
             )}
             {extras && (

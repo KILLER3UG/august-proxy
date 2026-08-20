@@ -11,6 +11,7 @@ import { ScrollToTopButton } from '@/components/chat/ScrollToTopButton';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { MessageBubble } from './MessageBubble';
 import { InThreadSearch } from './InThreadSearch';
+import { TimelineRail } from './TimelineRail';
 import type { ModelItem } from './model-display';
 import { ModelPickerCard } from './ModelPickerCard';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
@@ -19,6 +20,8 @@ import type { SubagentPromptMap } from './hooks/useSessionStream';
 import type { SubagentBlockState } from './chat-stream-manager';
 import { useMessageEnterAnimation } from './hooks/useMessageEnterAnimation';
 import { ChatRunHeader } from '@/components/chat/ChatRunHeader';
+import { RunTelemetryBar } from '@/components/chat/RunTelemetryBar';
+import { summarizeStreamPerf } from '@/lib/stream-perf';
 import type { WorkbenchSession } from '@/types/workbench';
 
 export function ChatThreadMessagePane({
@@ -136,6 +139,18 @@ export function ChatThreadMessagePane({
     setMatchedIndices([]);
   }, []);
 
+  const perf = sessionId ? summarizeStreamPerf(sessionId) : null;
+  const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+  const toolTimings = (lastAssistant?.tools ?? []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    durationMs: t.duration,
+    startedAtMs: t.startedAt,
+    blocked: t.status === 'error' && Boolean(t.summary?.includes('[Blocked]') || t.error?.includes('[Blocked]')),
+    isError: t.status === 'error',
+    status: t.status,
+  }));
+
   return (
     <div className="august-message-pane flex-1 flex flex-col min-h-0 relative">
       <ChatRunHeader
@@ -144,11 +159,30 @@ export function ChatThreadMessagePane({
         streaming={streaming}
         subagentBlocks={subagentBlocks}
       />
+      <RunTelemetryBar
+        sessionId={sessionId}
+        ttftMs={perf?.ttftMs}
+        toolTimings={toolTimings}
+        streaming={streaming}
+      />
       <InThreadSearch
         messageCount={messages.length}
         onSearch={handleSearch}
         onNavigate={handleNavigate}
         onClear={handleClearSearch}
+      />
+      <TimelineRail
+        messages={messages}
+        onJump={(index) => {
+          onBeforeJump?.();
+          const virt = virtRef?.current;
+          if (virt && typeof virt.scrollToIndex === 'function') {
+            virt.scrollToIndex(index, { align: 'center' });
+            return;
+          }
+          const el = document.querySelector(`[data-message-index="${index}"]`) ?? document.querySelector(`[data-artifact-source]`);
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }}
       />
       <div
         ref={scrollRef}
@@ -265,8 +299,8 @@ export function ChatThreadMessagePane({
       {/* AUG — anchored above the composer in a fixed-height slot with opacity transition to avoid layout reflow when streaming completes. */}
       <div
         className={cn(
-          'mx-auto w-full max-w-3xl px-4 shrink-0 h-7 transition-opacity duration-200',
-          streaming ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+          'mx-auto w-full max-w-3xl px-4 shrink-0 transition-[height,opacity] duration-200',
+          streaming ? 'h-7 opacity-100 pointer-events-auto' : 'h-0 overflow-hidden opacity-0 pointer-events-none',
         )}
         aria-hidden={!streaming}
       >
@@ -276,7 +310,7 @@ export function ChatThreadMessagePane({
       </div>
 
       {/* Plan / approval banners replace the composer until the user decides. */}
-      <div className="august-message-footer shrink-0 z-10 w-full bg-background py-3">
+      <div className="august-message-footer shrink-0 z-10 w-full bg-background py-1.5">
         {footerSlot}
       </div>
     </div>

@@ -1,5 +1,31 @@
 # August Proxy — Changelog
 
+## 0.16.5 (2026-08-21)
+
+**Harness — well-structured like Hermes**
+
+- **Full-result blob**: `subagent_runs.result_full` 20k + `data/cache/delegation/<taskId>.jsonl` live transcript (`GET /{taskId}/transcript`); drawer survives LRU/restart, no clipped Markdown.
+- **Queued/stalling states**: `queued` with `queuePosition/queueTotal`, `stalling` (>90s no `touch`) + `lastActivityAt/apiCalls/iterations`; `AgentGlyph` clock for queued, amber `stalling · no progress`.
+- **Well-structured config**: per-session `delegation {maxConcurrent, maxIterations, maxDepth, worktreeIsolation}` in `workbench.metadata` (`GET/POST /api/subagents/config`); `spawn` caps depth to `maxDepth` (leaf) and `maxIterations` defaults if `0`.
+- **Drawer-only simplicity**: `SubagentLaunchList` pill removed from transcript; `ChatRunHeader` trimmed to 4 segments (Mode · Wave · live · ctx); worker detail only in right-drawer `Subagents` (roster + live timeline + persisted final + steer + `Harness` config + `Goal` card).
+- **TimelineRail**: ≥5 prompts → slim rail with `Open in sidebar` → virtualized jump.
+- **Artifacts gallery**: `lib/artifacts.ts` + `RightDrawerArtifactsSection` (files/images/links) with debounced search (200ms) + Enter jump, kind pills; `collectProducedFiles` reused.
+- **Tracer fixes**: `021_subagent_full_result.sql` migrates existing DBs; `summary 500→4000`, `error 500→2000`; `terminate` appends `subagentDone` to transcript.
+
+**Settings — 8 hubs, not 32 rows**
+
+- `general/intelligence/tools/activity/security` → 8 hubs: System, Appearance, Models, Memory, Automations, Tools & Skills, Access, Insights — each hub stacks only its related sections as pill tabs (one active tab, no long scroll). `LEGACY_HUB_MAP` keeps old deep links; `Show advanced` toggle removed.
+- `WorkspaceShell` rail now 8 hubs (`Activity/Palette/Boxes/BrainCircuit/Bot/Wrench/ShieldCheck/LineChart`); search bypasses hubs.
+- Dark palette deepened to reference black: `background #0F0F0F`, `card #171717`, `sidebar #141414`, `border #262626`.
+
+**Chat polish**
+
+- Empty `ChatEmptyState` starter templates: Standup Git Summary / CI Failures / Create PowerPoint (like Z.ai) → `dispatchInsertComposerText`.
+- `ChatThreadComposer` `Cmd+Shift+Space` quick-entry; `ComposerToolbar` `ContextRing 22px` + `pct%` label + `Artifacts` chip; `CommandPalette` `Recent chats` 8 sessions.
+- `ThinkingDisclosure` + `ToolCallItem` `memo` for 60fps; `PANEL_MS 220→180ms`.
+
+**Validation**: `build:web` ✓ · `773/99` vitest ✓
+
 ## 0.16.4 (2026-08-15)
 
 Harness teammate pass — specialists, routines, attention, and a stacked composer so named work can keep going in the desktop app.

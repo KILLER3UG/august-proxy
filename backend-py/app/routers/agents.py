@@ -110,7 +110,7 @@ def _record_api_job_run(
             conn.execute(
                 'UPDATE subagent_runs SET status = ?, result_summary = ?, error = ?, '
                 'finished_at = ? WHERE task_id = ?',
-                (status, (result or '')[:500], (error or '')[:500], now, job_id),
+                (status, (result or '')[:4000], (error or '')[:2000], now, job_id),
             )
         else:
             conn.execute(
@@ -125,8 +125,8 @@ def _record_api_job_run(
                     status,
                     now,
                     now,
-                    (result or '')[:500],
-                    (error or '')[:500],
+                    (result or '')[:4000],
+                    (error or '')[:2000],
                 ),
             )
         conn.commit()

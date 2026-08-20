@@ -15,6 +15,8 @@ import {
   Globe,
   StickyNote,
   Users,
+  Activity,
+  GalleryVertical,
 } from 'lucide-react';
 import { useRightDrawer, type RightDrawerSectionId } from './RightDrawerState';
 
@@ -62,6 +64,16 @@ const SECTION_META: Record<
     hint: 'Live progress for delegated workers',
     Icon: Users,
   },
+  trajectory: {
+    label: 'Trajectory',
+    hint: 'Per-turn trace ledger with timing overview',
+    Icon: Activity,
+  },
+  artifacts: {
+    label: 'Artifacts',
+    hint: 'Files, images, and links produced this session',
+    Icon: GalleryVertical,
+  },
 };
 
 const OPTIONS: Array<Exclude<RightDrawerSectionId, 'file'>> = [
@@ -73,6 +85,8 @@ const OPTIONS: Array<Exclude<RightDrawerSectionId, 'file'>> = [
   'browser',
   'notes',
   'subagents',
+  'trajectory',
+  'artifacts',
 ];
 
 export function RightDrawerDropdown({

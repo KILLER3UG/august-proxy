@@ -81,3 +81,28 @@ def proxy_orchestrator_enabled() -> bool:
 
 def is_mutating_tool(name: str) -> bool:
     return name in MUTATING_TOOLS
+
+
+BENCHMARK_ALLOWED_TOOLS = frozenset({'run_command', 'edit_lines'})
+BENCHMARK_VERIFIER_EXTRA = frozenset({'update_state'})
+
+
+def is_benchmark_mode(session: object | None) -> bool:
+    mode = str(getattr(session, 'agent_mode', '') or '').strip().lower()
+    return mode == 'benchmark'
+
+
+def filter_benchmark_tools(
+    session: object | None, tools: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    allowed = set(BENCHMARK_ALLOWED_TOOLS)
+    if getattr(session, 'verifierEnforced', False):
+        allowed |= BENCHMARK_VERIFIER_EXTRA
+    return [t for t in tools if tool_name_of(t) in allowed]
+
+
+def benchmark_block_message(tool_name: str) -> str:
+    return (
+        f'[Blocked] Benchmark mode: only run_command and edit_lines are '
+        f'available (raw capability evaluation). `{tool_name}` is disabled.'
+    )

@@ -15,6 +15,8 @@ export function ContextRing({
   breakdown,
   serverTokens,
   promptCache,
+  onCompact,
+  compacting = false,
   size = 22,
   stroke = 3,
 }: {
@@ -28,6 +30,9 @@ export function ContextRing({
   serverTokens?: { total: number; input: number; output: number } | null;
   /** Universal prompt-cache split for this session (hit rate display). */
   promptCache?: { hitTokens: number; missTokens: number; hitRate?: number } | null;
+  /** When provided, the popup gains a "Compact now" action. */
+  onCompact?: () => void;
+  compacting?: boolean;
   size?: number;
   stroke?: number;
 }) {
@@ -228,6 +233,27 @@ export function ContextRing({
                 <span className="opacity-60">Output</span>
                 <span className="font-mono tabular-nums" style={{ color: 'var(--dt-popover-foreground)' }}>{formatTokens(serverTokens.output)}</span>
               </div>
+            </div>
+          )}
+          {onCompact && (
+            <div
+              className="mt-2 pt-2 border-t flex items-center justify-between gap-2"
+              style={{ borderColor: 'var(--dt-border)' }}
+            >
+              <span className="text-[11px] text-muted-foreground">Context getting full?</span>
+              <button
+                type="button"
+                onClick={onCompact}
+                disabled={compacting}
+                className="rounded-md px-2 py-1 text-[11px] font-medium transition-opacity disabled:opacity-60"
+                style={{
+                  backgroundColor: 'var(--dt-primary)',
+                  color: 'var(--dt-primary-foreground)',
+                }}
+                data-testid="context-compact"
+              >
+                {compacting ? 'Compacting…' : 'Compact now'}
+              </button>
             </div>
           )}
         </div>,

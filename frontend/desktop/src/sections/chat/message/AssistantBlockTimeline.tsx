@@ -9,13 +9,13 @@ import {
 } from '@/components/chat/ToolCallItem';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { ThoughtStep } from '@/components/chat/ThoughtStep';
+import { isCollapseThinkingEnabled } from '@/lib/thinking-preference';
 import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { EditRailRow } from '@/components/chat/EditRailRow';
 import { RailDoneRow } from '@/components/chat/RailDoneRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { RecalledMemoryStep } from '@/components/chat/RecalledMemoryStep';
 import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
-import { SubagentLaunchList } from '@/components/chat/SubagentLaunchList';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
@@ -390,6 +390,7 @@ export function AssistantBlockTimeline({
               isGenerating={isGenerating}
               showFull={thoughtExpanded}
               onToggle={() => toggleExpand(thoughtId, !thoughtExpanded)}
+              collapsedDefault={isCollapseThinkingEnabled()}
             />
           ),
         });
@@ -401,11 +402,11 @@ export function AssistantBlockTimeline({
         const isCommand = block.type === 'command';
         const isSubagentCall = !isCommand && isSubagentToolName(tool.name);
 
-        // Consume consecutive subagent launch blocks; render a Cursor-style
-        // checked list inline (SubagentLaunchList). Live progress also
-        // shows in the persistent right drawer.
+        // Subagent launches are **drawer-only** (simplicity pass):
+        // the thread header + right-drawer badge are the single source of
+        // truth; no inline pill in the transcript keeps the chat clean.
+        // Consume the tool-call blocks silently so they never render inline.
         if (isSubagentCall) {
-          const launchToolIds: string[] = [];
           while (
             ti < blocks.length &&
             (blocks[ti].type === 'toolCall' || blocks[ti].type === 'command') &&
@@ -413,28 +414,7 @@ export function AssistantBlockTimeline({
             blocks[ti].type !== 'command' &&
             isSubagentToolName(blocks[ti].tool!.name)
           ) {
-            const tid = blocks[ti].tool!.id || '';
-            if (tid) launchToolIds.push(tid);
             ti++;
-          }
-          // subagentBlocks is keyed by jobId; each state carries the parent
-          // tool-use id that matches the transcript tool block.
-          const launchAgents: SubagentBlockState[] = subagentBlocks
-            ? Array.from(subagentBlocks.values()).filter(
-                (s) => !!s.parentToolId && launchToolIds.includes(s.parentToolId),
-              )
-            : [];
-          if (launchAgents.length > 0) {
-            tagged.push({
-              kind: 'block',
-              node: (
-                <SubagentLaunchList
-                  agents={launchAgents}
-                  subBlocks={subagentBlocks}
-                  subPrompts={subagentPrompts}
-                />
-              ),
-            });
           }
           continue;
         }
@@ -843,6 +823,7 @@ export function AssistantBlockTimeline({
                   !isThoughtExpanded('pending_think'),
                 )
               }
+              collapsedDefault={isCollapseThinkingEnabled()}
             />
           )}
           {renderProcessBlocks(processBlocks)}

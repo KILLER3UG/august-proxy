@@ -17,3 +17,13 @@ export function formatTokensPerSecond(usage: {
   if (!Number.isFinite(rate)) return null;
   return rate >= 100 ? String(Math.round(rate)) : rate.toFixed(1);
 }
+
+/** Compact generation duration: 812 → "812ms", 4500 → "4.5s", 130000 → "2m 10s". */
+export function formatTurnDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return `${m}m ${s}s`;
+}

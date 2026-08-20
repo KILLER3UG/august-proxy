@@ -91,12 +91,9 @@ export function SessionListNav({
         <span>New chat</span>
       </motion.button>
 
-      <div
-        className="mt-1.5 flex items-center justify-between gap-0.5 rounded-xl bg-white/[0.03] px-1 py-1"
-        role="navigation"
-        aria-label="Workspace"
-      >
-        {DESTINATIONS.map(({ path, label, testId, Icon }) => (
+      {/* Hermes/DeepSeek: chat-first. Keep 4 primary actions prominent, tuck the rest into a muted capsule. */}
+      <div className="mt-2 flex items-center gap-1" role="navigation" aria-label="Workspace">
+        {DESTINATIONS.slice(0, 4).map(({ path, label, testId, Icon }) => (
           <button
             key={path}
             type="button"
@@ -104,8 +101,8 @@ export function SessionListNav({
             className={cn(
               'flex size-7 items-center justify-center rounded-lg transition',
               isActive(path)
-                ? 'bg-white/[0.08] text-sidebar-foreground'
-                : 'text-sidebar-foreground/45 hover:bg-white/[0.05] hover:text-sidebar-foreground/80',
+                ? 'bg-white/[0.07] text-sidebar-foreground'
+                : 'text-sidebar-foreground/40 hover:bg-white/[0.04] hover:text-sidebar-foreground/70',
             )}
             aria-current={isActive(path) ? 'page' : undefined}
             title={label}
@@ -115,6 +112,27 @@ export function SessionListNav({
             <Icon className="size-3.5" />
           </button>
         ))}
+        <div className="ml-auto flex items-center gap-0.5 rounded-full bg-white/[0.03] p-0.5">
+          {DESTINATIONS.slice(4).map(({ path, label, testId, Icon }) => (
+            <button
+              key={path}
+              type="button"
+              onClick={() => onNavigate(path)}
+              className={cn(
+                'flex size-6 items-center justify-center rounded-full transition',
+                isActive(path)
+                  ? 'bg-white/[0.08] text-sidebar-foreground'
+                  : 'text-sidebar-foreground/35 hover:text-sidebar-foreground/60',
+              )}
+              aria-current={isActive(path) ? 'page' : undefined}
+              title={label}
+              aria-label={label}
+              data-testid={testId}
+            >
+              <Icon className="size-3" />
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

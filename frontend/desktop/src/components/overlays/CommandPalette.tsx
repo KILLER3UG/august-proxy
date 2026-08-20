@@ -26,12 +26,14 @@ import {
   StickyNote,
   Square,
   ArrowLeftRight,
+  GalleryVertical,
 } from "lucide-react";
 import {
   useCommandPaletteStore,
   closeCommandPalette,
 } from "@/store/command-palette";
 import { openShortcutsModal } from "@/store/shortcuts-modal";
+import { useSessionsStore } from "@/store/sessions";
 import { useResolvedThemeStore, toggleTheme } from "@/store/theme";
 import { SECTION_NAV_ITEMS, SETTINGS_TABS } from '@/routes';
 import { Backdrop } from "./Backdrop";
@@ -47,6 +49,7 @@ export function CommandPalette() {
   const qc = useQueryClient();
   const location = useLocation();
   const trapRef = useFocusTrap<HTMLDivElement>();
+  const sessions = useSessionsStore((s) => s.sessions);
 
   useEffect(() => {
     if (!open) return;
@@ -259,6 +262,18 @@ export function CommandPalette() {
             >
               <StickyNote className="size-3.5" /> Open notepad
             </Command.Item>
+            <Command.Item
+              value="open artifacts files gallery browse generated outputs"
+              onSelect={run(() =>
+                dispatchUiAction({
+                  action: 'set_drawer_section',
+                  target: 'artifacts',
+                }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <GalleryVertical className="size-3.5" /> Artifacts — Browse generated outputs
+            </Command.Item>
           </Command.Group>
 
           <Command.Separator className="my-2 border-t border-border" />
@@ -387,6 +402,26 @@ export function CommandPalette() {
               </Command.Item>
             ))}
           </Command.Group>
+
+          {sessions.length > 0 && (
+            <Command.Group
+              heading="Recent chats"
+              className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground"
+            >
+              {sessions.slice(0, 8).filter((s) => !s.isArchived).map((s) => (
+                <Command.Item
+                  key={s.id}
+                  value={`chat ${s.title} ${s.id}`}
+                  onSelect={run(() => { void navigate(`/c/${s.id}`); })}
+                  className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+                >
+                  <Search className="size-3.5 opacity-60" />
+                  <span className="truncate">{s.title || 'Untitled chat'}</span>
+                  <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono">{s.id.slice(0, 8)}</span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          )}
         </Command.List>
 
         <div className="border-t border-border px-3 py-2 flex items-center gap-3 text-[10px] text-muted-foreground font-mono">

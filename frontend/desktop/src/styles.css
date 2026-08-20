@@ -95,24 +95,24 @@
     /* Help native form controls (select/option) use dark system chrome on Windows */
     color-scheme: dark;
 
-    /* Surface palette — true-neutral charcoal, three clear tiers */
-    --dt-background: #181818;
-    --dt-background-hsl: 0 0% 9.4%;
+    /* Surface palette — deeper black like reference (Z/August), not charcoal */
+    --dt-background: #0F0F0F;
+    --dt-background-hsl: 0 0% 5.9%;
     --dt-foreground: #f0f0f0;
     --dt-foreground-hsl: 0 0% 94.1%;
-    --dt-card: #202020;
-    --dt-card-hsl: 0 0% 12.5%;
+    --dt-card: #171717;
+    --dt-card-hsl: 0 0% 9%;
     --dt-card-foreground: #f0f0f0;
     --dt-card-foreground-hsl: 0 0% 94.1%;
-    --dt-muted: #292929;
-    --dt-muted-hsl: 0 0% 16.1%;
+    --dt-muted: #1E1E1E;
+    --dt-muted-hsl: 0 0% 11.8%;
     --dt-muted-foreground: #a6a6a6;
     --dt-muted-foreground-hsl: 0 0% 65.1%;
-    --dt-popover: #252525;
-    --dt-popover-hsl: 0 0% 14.5%;
+    --dt-popover: #1A1A1A;
+    --dt-popover-hsl: 0 0% 10.2%;
     --dt-popover-foreground: #f0f0f0;
     --dt-popover-foreground-hsl: 0 0% 94.1%;
-    --dt-elevated: #2b2b2b;
+    --dt-elevated: #232323;
     --dt-overlay: rgba(0, 0, 0, 0.65);
 
     /* Brand — bright enough for AAA on charcoal, still restrained */
@@ -124,9 +124,9 @@
     --dt-secondary-foreground: #dbeafe;
     --dt-accent: #1a2238;
     --dt-accent-foreground: #dbeafe;
-    --dt-border: #343434;
-    --dt-border-hsl: 0 0% 20.4%;
-    --dt-input: #3a3a3a;
+    --dt-border: #262626;
+    --dt-border-hsl: 0 0% 15%;
+    --dt-input: #2A2A2A;
     --dt-ring: #6f9bff;
 
     /* Status */
@@ -146,14 +146,14 @@
     --dt-code-block-bg: #0a0a0c;
     --dt-code-block-fg: #e3e3e6;
 
-    /* Sidebar */
-    --dt-sidebar: #202020;
+    /* Sidebar — deeper, matches header #0F0F0F stack */
+    --dt-sidebar: #141414;
     --dt-sidebar-foreground: #eeeeee;
     --dt-sidebar-primary: #6f9bff;
     --dt-sidebar-primary-foreground: #0e0e10;
     --dt-sidebar-accent: #1a2238;
     --dt-sidebar-accent-foreground: #dbeafe;
-    --dt-sidebar-border: #343434;
+    --dt-sidebar-border: #262626;
     --dt-sidebar-ring: #6f9bff;
   }
 
@@ -265,10 +265,246 @@
   .border-warning         { border-color: var(--dt-warning); }
   .border-info            { border-color: var(--dt-info); }
   .border-danger          { border-color: var(--dt-danger); }
-
   /* Focus rings */
   .ring-ring { --tw-ring-color: var(--dt-ring); }
 }
+
+/* ── Status-color alpha utilities (unlayered: Tailwind drops    ──
+     unrecognized `/NN` utilities inside @layer components, so    ──
+     these live outside any layer and always survive the build.   ──*/
+
+/* Status-color alpha utilities — Tailwind does not know these color
+   names, so `/NN` modifiers like bg-warning/10 compile to nothing
+   without this block (color-mix mirrors the `--dt-*-hsl` layer). */
+.bg-success\/5                  { background-color: color-mix(in srgb, var(--dt-success) 5%, transparent); }
+.bg-success\/10                 { background-color: color-mix(in srgb, var(--dt-success) 10%, transparent); }
+.bg-success\/15                 { background-color: color-mix(in srgb, var(--dt-success) 15%, transparent); }
+.bg-success\/20                 { background-color: color-mix(in srgb, var(--dt-success) 20%, transparent); }
+.bg-success\/25                 { background-color: color-mix(in srgb, var(--dt-success) 25%, transparent); }
+.bg-success\/30                 { background-color: color-mix(in srgb, var(--dt-success) 30%, transparent); }
+.bg-success\/35                 { background-color: color-mix(in srgb, var(--dt-success) 35%, transparent); }
+.bg-success\/40                 { background-color: color-mix(in srgb, var(--dt-success) 40%, transparent); }
+.bg-success\/45                 { background-color: color-mix(in srgb, var(--dt-success) 45%, transparent); }
+.bg-success\/50                 { background-color: color-mix(in srgb, var(--dt-success) 50%, transparent); }
+.bg-success\/55                 { background-color: color-mix(in srgb, var(--dt-success) 55%, transparent); }
+.bg-success\/60                 { background-color: color-mix(in srgb, var(--dt-success) 60%, transparent); }
+.bg-success\/65                 { background-color: color-mix(in srgb, var(--dt-success) 65%, transparent); }
+.bg-success\/70                 { background-color: color-mix(in srgb, var(--dt-success) 70%, transparent); }
+.bg-success\/75                 { background-color: color-mix(in srgb, var(--dt-success) 75%, transparent); }
+.bg-success\/80                 { background-color: color-mix(in srgb, var(--dt-success) 80%, transparent); }
+.bg-success\/85                 { background-color: color-mix(in srgb, var(--dt-success) 85%, transparent); }
+.bg-success\/90                 { background-color: color-mix(in srgb, var(--dt-success) 90%, transparent); }
+.bg-success\/95                 { background-color: color-mix(in srgb, var(--dt-success) 95%, transparent); }
+.bg-warning\/5                  { background-color: color-mix(in srgb, var(--dt-warning) 5%, transparent); }
+.bg-warning\/10                 { background-color: color-mix(in srgb, var(--dt-warning) 10%, transparent); }
+.bg-warning\/15                 { background-color: color-mix(in srgb, var(--dt-warning) 15%, transparent); }
+.bg-warning\/20                 { background-color: color-mix(in srgb, var(--dt-warning) 20%, transparent); }
+.bg-warning\/25                 { background-color: color-mix(in srgb, var(--dt-warning) 25%, transparent); }
+.bg-warning\/30                 { background-color: color-mix(in srgb, var(--dt-warning) 30%, transparent); }
+.bg-warning\/35                 { background-color: color-mix(in srgb, var(--dt-warning) 35%, transparent); }
+.bg-warning\/40                 { background-color: color-mix(in srgb, var(--dt-warning) 40%, transparent); }
+.bg-warning\/45                 { background-color: color-mix(in srgb, var(--dt-warning) 45%, transparent); }
+.bg-warning\/50                 { background-color: color-mix(in srgb, var(--dt-warning) 50%, transparent); }
+.bg-warning\/55                 { background-color: color-mix(in srgb, var(--dt-warning) 55%, transparent); }
+.bg-warning\/60                 { background-color: color-mix(in srgb, var(--dt-warning) 60%, transparent); }
+.bg-warning\/65                 { background-color: color-mix(in srgb, var(--dt-warning) 65%, transparent); }
+.bg-warning\/70                 { background-color: color-mix(in srgb, var(--dt-warning) 70%, transparent); }
+.bg-warning\/75                 { background-color: color-mix(in srgb, var(--dt-warning) 75%, transparent); }
+.bg-warning\/80                 { background-color: color-mix(in srgb, var(--dt-warning) 80%, transparent); }
+.bg-warning\/85                 { background-color: color-mix(in srgb, var(--dt-warning) 85%, transparent); }
+.bg-warning\/90                 { background-color: color-mix(in srgb, var(--dt-warning) 90%, transparent); }
+.bg-warning\/95                 { background-color: color-mix(in srgb, var(--dt-warning) 95%, transparent); }
+.bg-info\/5                  { background-color: color-mix(in srgb, var(--dt-info) 5%, transparent); }
+.bg-info\/10                 { background-color: color-mix(in srgb, var(--dt-info) 10%, transparent); }
+.bg-info\/15                 { background-color: color-mix(in srgb, var(--dt-info) 15%, transparent); }
+.bg-info\/20                 { background-color: color-mix(in srgb, var(--dt-info) 20%, transparent); }
+.bg-info\/25                 { background-color: color-mix(in srgb, var(--dt-info) 25%, transparent); }
+.bg-info\/30                 { background-color: color-mix(in srgb, var(--dt-info) 30%, transparent); }
+.bg-info\/35                 { background-color: color-mix(in srgb, var(--dt-info) 35%, transparent); }
+.bg-info\/40                 { background-color: color-mix(in srgb, var(--dt-info) 40%, transparent); }
+.bg-info\/45                 { background-color: color-mix(in srgb, var(--dt-info) 45%, transparent); }
+.bg-info\/50                 { background-color: color-mix(in srgb, var(--dt-info) 50%, transparent); }
+.bg-info\/55                 { background-color: color-mix(in srgb, var(--dt-info) 55%, transparent); }
+.bg-info\/60                 { background-color: color-mix(in srgb, var(--dt-info) 60%, transparent); }
+.bg-info\/65                 { background-color: color-mix(in srgb, var(--dt-info) 65%, transparent); }
+.bg-info\/70                 { background-color: color-mix(in srgb, var(--dt-info) 70%, transparent); }
+.bg-info\/75                 { background-color: color-mix(in srgb, var(--dt-info) 75%, transparent); }
+.bg-info\/80                 { background-color: color-mix(in srgb, var(--dt-info) 80%, transparent); }
+.bg-info\/85                 { background-color: color-mix(in srgb, var(--dt-info) 85%, transparent); }
+.bg-info\/90                 { background-color: color-mix(in srgb, var(--dt-info) 90%, transparent); }
+.bg-info\/95                 { background-color: color-mix(in srgb, var(--dt-info) 95%, transparent); }
+.bg-danger\/5                  { background-color: color-mix(in srgb, var(--dt-danger) 5%, transparent); }
+.bg-danger\/10                 { background-color: color-mix(in srgb, var(--dt-danger) 10%, transparent); }
+.bg-danger\/15                 { background-color: color-mix(in srgb, var(--dt-danger) 15%, transparent); }
+.bg-danger\/20                 { background-color: color-mix(in srgb, var(--dt-danger) 20%, transparent); }
+.bg-danger\/25                 { background-color: color-mix(in srgb, var(--dt-danger) 25%, transparent); }
+.bg-danger\/30                 { background-color: color-mix(in srgb, var(--dt-danger) 30%, transparent); }
+.bg-danger\/35                 { background-color: color-mix(in srgb, var(--dt-danger) 35%, transparent); }
+.bg-danger\/40                 { background-color: color-mix(in srgb, var(--dt-danger) 40%, transparent); }
+.bg-danger\/45                 { background-color: color-mix(in srgb, var(--dt-danger) 45%, transparent); }
+.bg-danger\/50                 { background-color: color-mix(in srgb, var(--dt-danger) 50%, transparent); }
+.bg-danger\/55                 { background-color: color-mix(in srgb, var(--dt-danger) 55%, transparent); }
+.bg-danger\/60                 { background-color: color-mix(in srgb, var(--dt-danger) 60%, transparent); }
+.bg-danger\/65                 { background-color: color-mix(in srgb, var(--dt-danger) 65%, transparent); }
+.bg-danger\/70                 { background-color: color-mix(in srgb, var(--dt-danger) 70%, transparent); }
+.bg-danger\/75                 { background-color: color-mix(in srgb, var(--dt-danger) 75%, transparent); }
+.bg-danger\/80                 { background-color: color-mix(in srgb, var(--dt-danger) 80%, transparent); }
+.bg-danger\/85                 { background-color: color-mix(in srgb, var(--dt-danger) 85%, transparent); }
+.bg-danger\/90                 { background-color: color-mix(in srgb, var(--dt-danger) 90%, transparent); }
+.bg-danger\/95                 { background-color: color-mix(in srgb, var(--dt-danger) 95%, transparent); }
+.text-success\/5                  { color: color-mix(in srgb, var(--dt-success) 5%, transparent); }
+.text-success\/10                 { color: color-mix(in srgb, var(--dt-success) 10%, transparent); }
+.text-success\/15                 { color: color-mix(in srgb, var(--dt-success) 15%, transparent); }
+.text-success\/20                 { color: color-mix(in srgb, var(--dt-success) 20%, transparent); }
+.text-success\/25                 { color: color-mix(in srgb, var(--dt-success) 25%, transparent); }
+.text-success\/30                 { color: color-mix(in srgb, var(--dt-success) 30%, transparent); }
+.text-success\/35                 { color: color-mix(in srgb, var(--dt-success) 35%, transparent); }
+.text-success\/40                 { color: color-mix(in srgb, var(--dt-success) 40%, transparent); }
+.text-success\/45                 { color: color-mix(in srgb, var(--dt-success) 45%, transparent); }
+.text-success\/50                 { color: color-mix(in srgb, var(--dt-success) 50%, transparent); }
+.text-success\/55                 { color: color-mix(in srgb, var(--dt-success) 55%, transparent); }
+.text-success\/60                 { color: color-mix(in srgb, var(--dt-success) 60%, transparent); }
+.text-success\/65                 { color: color-mix(in srgb, var(--dt-success) 65%, transparent); }
+.text-success\/70                 { color: color-mix(in srgb, var(--dt-success) 70%, transparent); }
+.text-success\/75                 { color: color-mix(in srgb, var(--dt-success) 75%, transparent); }
+.text-success\/80                 { color: color-mix(in srgb, var(--dt-success) 80%, transparent); }
+.text-success\/85                 { color: color-mix(in srgb, var(--dt-success) 85%, transparent); }
+.text-success\/90                 { color: color-mix(in srgb, var(--dt-success) 90%, transparent); }
+.text-success\/95                 { color: color-mix(in srgb, var(--dt-success) 95%, transparent); }
+.text-warning\/5                  { color: color-mix(in srgb, var(--dt-warning) 5%, transparent); }
+.text-warning\/10                 { color: color-mix(in srgb, var(--dt-warning) 10%, transparent); }
+.text-warning\/15                 { color: color-mix(in srgb, var(--dt-warning) 15%, transparent); }
+.text-warning\/20                 { color: color-mix(in srgb, var(--dt-warning) 20%, transparent); }
+.text-warning\/25                 { color: color-mix(in srgb, var(--dt-warning) 25%, transparent); }
+.text-warning\/30                 { color: color-mix(in srgb, var(--dt-warning) 30%, transparent); }
+.text-warning\/35                 { color: color-mix(in srgb, var(--dt-warning) 35%, transparent); }
+.text-warning\/40                 { color: color-mix(in srgb, var(--dt-warning) 40%, transparent); }
+.text-warning\/45                 { color: color-mix(in srgb, var(--dt-warning) 45%, transparent); }
+.text-warning\/50                 { color: color-mix(in srgb, var(--dt-warning) 50%, transparent); }
+.text-warning\/55                 { color: color-mix(in srgb, var(--dt-warning) 55%, transparent); }
+.text-warning\/60                 { color: color-mix(in srgb, var(--dt-warning) 60%, transparent); }
+.text-warning\/65                 { color: color-mix(in srgb, var(--dt-warning) 65%, transparent); }
+.text-warning\/70                 { color: color-mix(in srgb, var(--dt-warning) 70%, transparent); }
+.text-warning\/75                 { color: color-mix(in srgb, var(--dt-warning) 75%, transparent); }
+.text-warning\/80                 { color: color-mix(in srgb, var(--dt-warning) 80%, transparent); }
+.text-warning\/85                 { color: color-mix(in srgb, var(--dt-warning) 85%, transparent); }
+.text-warning\/90                 { color: color-mix(in srgb, var(--dt-warning) 90%, transparent); }
+.text-warning\/95                 { color: color-mix(in srgb, var(--dt-warning) 95%, transparent); }
+.text-info\/5                  { color: color-mix(in srgb, var(--dt-info) 5%, transparent); }
+.text-info\/10                 { color: color-mix(in srgb, var(--dt-info) 10%, transparent); }
+.text-info\/15                 { color: color-mix(in srgb, var(--dt-info) 15%, transparent); }
+.text-info\/20                 { color: color-mix(in srgb, var(--dt-info) 20%, transparent); }
+.text-info\/25                 { color: color-mix(in srgb, var(--dt-info) 25%, transparent); }
+.text-info\/30                 { color: color-mix(in srgb, var(--dt-info) 30%, transparent); }
+.text-info\/35                 { color: color-mix(in srgb, var(--dt-info) 35%, transparent); }
+.text-info\/40                 { color: color-mix(in srgb, var(--dt-info) 40%, transparent); }
+.text-info\/45                 { color: color-mix(in srgb, var(--dt-info) 45%, transparent); }
+.text-info\/50                 { color: color-mix(in srgb, var(--dt-info) 50%, transparent); }
+.text-info\/55                 { color: color-mix(in srgb, var(--dt-info) 55%, transparent); }
+.text-info\/60                 { color: color-mix(in srgb, var(--dt-info) 60%, transparent); }
+.text-info\/65                 { color: color-mix(in srgb, var(--dt-info) 65%, transparent); }
+.text-info\/70                 { color: color-mix(in srgb, var(--dt-info) 70%, transparent); }
+.text-info\/75                 { color: color-mix(in srgb, var(--dt-info) 75%, transparent); }
+.text-info\/80                 { color: color-mix(in srgb, var(--dt-info) 80%, transparent); }
+.text-info\/85                 { color: color-mix(in srgb, var(--dt-info) 85%, transparent); }
+.text-info\/90                 { color: color-mix(in srgb, var(--dt-info) 90%, transparent); }
+.text-info\/95                 { color: color-mix(in srgb, var(--dt-info) 95%, transparent); }
+.text-danger\/5                  { color: color-mix(in srgb, var(--dt-danger) 5%, transparent); }
+.text-danger\/10                 { color: color-mix(in srgb, var(--dt-danger) 10%, transparent); }
+.text-danger\/15                 { color: color-mix(in srgb, var(--dt-danger) 15%, transparent); }
+.text-danger\/20                 { color: color-mix(in srgb, var(--dt-danger) 20%, transparent); }
+.text-danger\/25                 { color: color-mix(in srgb, var(--dt-danger) 25%, transparent); }
+.text-danger\/30                 { color: color-mix(in srgb, var(--dt-danger) 30%, transparent); }
+.text-danger\/35                 { color: color-mix(in srgb, var(--dt-danger) 35%, transparent); }
+.text-danger\/40                 { color: color-mix(in srgb, var(--dt-danger) 40%, transparent); }
+.text-danger\/45                 { color: color-mix(in srgb, var(--dt-danger) 45%, transparent); }
+.text-danger\/50                 { color: color-mix(in srgb, var(--dt-danger) 50%, transparent); }
+.text-danger\/55                 { color: color-mix(in srgb, var(--dt-danger) 55%, transparent); }
+.text-danger\/60                 { color: color-mix(in srgb, var(--dt-danger) 60%, transparent); }
+.text-danger\/65                 { color: color-mix(in srgb, var(--dt-danger) 65%, transparent); }
+.text-danger\/70                 { color: color-mix(in srgb, var(--dt-danger) 70%, transparent); }
+.text-danger\/75                 { color: color-mix(in srgb, var(--dt-danger) 75%, transparent); }
+.text-danger\/80                 { color: color-mix(in srgb, var(--dt-danger) 80%, transparent); }
+.text-danger\/85                 { color: color-mix(in srgb, var(--dt-danger) 85%, transparent); }
+.text-danger\/90                 { color: color-mix(in srgb, var(--dt-danger) 90%, transparent); }
+.text-danger\/95                 { color: color-mix(in srgb, var(--dt-danger) 95%, transparent); }
+.border-success\/5                  { border-color: color-mix(in srgb, var(--dt-success) 5%, transparent); }
+.border-success\/10                 { border-color: color-mix(in srgb, var(--dt-success) 10%, transparent); }
+.border-success\/15                 { border-color: color-mix(in srgb, var(--dt-success) 15%, transparent); }
+.border-success\/20                 { border-color: color-mix(in srgb, var(--dt-success) 20%, transparent); }
+.border-success\/25                 { border-color: color-mix(in srgb, var(--dt-success) 25%, transparent); }
+.border-success\/30                 { border-color: color-mix(in srgb, var(--dt-success) 30%, transparent); }
+.border-success\/35                 { border-color: color-mix(in srgb, var(--dt-success) 35%, transparent); }
+.border-success\/40                 { border-color: color-mix(in srgb, var(--dt-success) 40%, transparent); }
+.border-success\/45                 { border-color: color-mix(in srgb, var(--dt-success) 45%, transparent); }
+.border-success\/50                 { border-color: color-mix(in srgb, var(--dt-success) 50%, transparent); }
+.border-success\/55                 { border-color: color-mix(in srgb, var(--dt-success) 55%, transparent); }
+.border-success\/60                 { border-color: color-mix(in srgb, var(--dt-success) 60%, transparent); }
+.border-success\/65                 { border-color: color-mix(in srgb, var(--dt-success) 65%, transparent); }
+.border-success\/70                 { border-color: color-mix(in srgb, var(--dt-success) 70%, transparent); }
+.border-success\/75                 { border-color: color-mix(in srgb, var(--dt-success) 75%, transparent); }
+.border-success\/80                 { border-color: color-mix(in srgb, var(--dt-success) 80%, transparent); }
+.border-success\/85                 { border-color: color-mix(in srgb, var(--dt-success) 85%, transparent); }
+.border-success\/90                 { border-color: color-mix(in srgb, var(--dt-success) 90%, transparent); }
+.border-success\/95                 { border-color: color-mix(in srgb, var(--dt-success) 95%, transparent); }
+.border-warning\/5                  { border-color: color-mix(in srgb, var(--dt-warning) 5%, transparent); }
+.border-warning\/10                 { border-color: color-mix(in srgb, var(--dt-warning) 10%, transparent); }
+.border-warning\/15                 { border-color: color-mix(in srgb, var(--dt-warning) 15%, transparent); }
+.border-warning\/20                 { border-color: color-mix(in srgb, var(--dt-warning) 20%, transparent); }
+.border-warning\/25                 { border-color: color-mix(in srgb, var(--dt-warning) 25%, transparent); }
+.border-warning\/30                 { border-color: color-mix(in srgb, var(--dt-warning) 30%, transparent); }
+.border-warning\/35                 { border-color: color-mix(in srgb, var(--dt-warning) 35%, transparent); }
+.border-warning\/40                 { border-color: color-mix(in srgb, var(--dt-warning) 40%, transparent); }
+.border-warning\/45                 { border-color: color-mix(in srgb, var(--dt-warning) 45%, transparent); }
+.border-warning\/50                 { border-color: color-mix(in srgb, var(--dt-warning) 50%, transparent); }
+.border-warning\/55                 { border-color: color-mix(in srgb, var(--dt-warning) 55%, transparent); }
+.border-warning\/60                 { border-color: color-mix(in srgb, var(--dt-warning) 60%, transparent); }
+.border-warning\/65                 { border-color: color-mix(in srgb, var(--dt-warning) 65%, transparent); }
+.border-warning\/70                 { border-color: color-mix(in srgb, var(--dt-warning) 70%, transparent); }
+.border-warning\/75                 { border-color: color-mix(in srgb, var(--dt-warning) 75%, transparent); }
+.border-warning\/80                 { border-color: color-mix(in srgb, var(--dt-warning) 80%, transparent); }
+.border-warning\/85                 { border-color: color-mix(in srgb, var(--dt-warning) 85%, transparent); }
+.border-warning\/90                 { border-color: color-mix(in srgb, var(--dt-warning) 90%, transparent); }
+.border-warning\/95                 { border-color: color-mix(in srgb, var(--dt-warning) 95%, transparent); }
+.border-info\/5                  { border-color: color-mix(in srgb, var(--dt-info) 5%, transparent); }
+.border-info\/10                 { border-color: color-mix(in srgb, var(--dt-info) 10%, transparent); }
+.border-info\/15                 { border-color: color-mix(in srgb, var(--dt-info) 15%, transparent); }
+.border-info\/20                 { border-color: color-mix(in srgb, var(--dt-info) 20%, transparent); }
+.border-info\/25                 { border-color: color-mix(in srgb, var(--dt-info) 25%, transparent); }
+.border-info\/30                 { border-color: color-mix(in srgb, var(--dt-info) 30%, transparent); }
+.border-info\/35                 { border-color: color-mix(in srgb, var(--dt-info) 35%, transparent); }
+.border-info\/40                 { border-color: color-mix(in srgb, var(--dt-info) 40%, transparent); }
+.border-info\/45                 { border-color: color-mix(in srgb, var(--dt-info) 45%, transparent); }
+.border-info\/50                 { border-color: color-mix(in srgb, var(--dt-info) 50%, transparent); }
+.border-info\/55                 { border-color: color-mix(in srgb, var(--dt-info) 55%, transparent); }
+.border-info\/60                 { border-color: color-mix(in srgb, var(--dt-info) 60%, transparent); }
+.border-info\/65                 { border-color: color-mix(in srgb, var(--dt-info) 65%, transparent); }
+.border-info\/70                 { border-color: color-mix(in srgb, var(--dt-info) 70%, transparent); }
+.border-info\/75                 { border-color: color-mix(in srgb, var(--dt-info) 75%, transparent); }
+.border-info\/80                 { border-color: color-mix(in srgb, var(--dt-info) 80%, transparent); }
+.border-info\/85                 { border-color: color-mix(in srgb, var(--dt-info) 85%, transparent); }
+.border-info\/90                 { border-color: color-mix(in srgb, var(--dt-info) 90%, transparent); }
+.border-info\/95                 { border-color: color-mix(in srgb, var(--dt-info) 95%, transparent); }
+.border-danger\/5                  { border-color: color-mix(in srgb, var(--dt-danger) 5%, transparent); }
+.border-danger\/10                 { border-color: color-mix(in srgb, var(--dt-danger) 10%, transparent); }
+.border-danger\/15                 { border-color: color-mix(in srgb, var(--dt-danger) 15%, transparent); }
+.border-danger\/20                 { border-color: color-mix(in srgb, var(--dt-danger) 20%, transparent); }
+.border-danger\/25                 { border-color: color-mix(in srgb, var(--dt-danger) 25%, transparent); }
+.border-danger\/30                 { border-color: color-mix(in srgb, var(--dt-danger) 30%, transparent); }
+.border-danger\/35                 { border-color: color-mix(in srgb, var(--dt-danger) 35%, transparent); }
+.border-danger\/40                 { border-color: color-mix(in srgb, var(--dt-danger) 40%, transparent); }
+.border-danger\/45                 { border-color: color-mix(in srgb, var(--dt-danger) 45%, transparent); }
+.border-danger\/50                 { border-color: color-mix(in srgb, var(--dt-danger) 50%, transparent); }
+.border-danger\/55                 { border-color: color-mix(in srgb, var(--dt-danger) 55%, transparent); }
+.border-danger\/60                 { border-color: color-mix(in srgb, var(--dt-danger) 60%, transparent); }
+.border-danger\/65                 { border-color: color-mix(in srgb, var(--dt-danger) 65%, transparent); }
+.border-danger\/70                 { border-color: color-mix(in srgb, var(--dt-danger) 70%, transparent); }
+.border-danger\/75                 { border-color: color-mix(in srgb, var(--dt-danger) 75%, transparent); }
+.border-danger\/80                 { border-color: color-mix(in srgb, var(--dt-danger) 80%, transparent); }
+.border-danger\/85                 { border-color: color-mix(in srgb, var(--dt-danger) 85%, transparent); }
+.border-danger\/90                 { border-color: color-mix(in srgb, var(--dt-danger) 90%, transparent); }
+.border-danger\/95                 { border-color: color-mix(in srgb, var(--dt-danger) 95%, transparent); }
+
 
 /* ── Custom UI styling overrides ── */
 
@@ -397,10 +633,10 @@
    `border-*` utilities, which the guard below forces to the opaque
    `--dt-border` color — too visible for a purely decorative indent line. */
 .chat-rail {
-  border-left: 1px solid hsl(var(--foreground) / 0.06);
+  border-left: 1px solid color-mix(in srgb, var(--dt-foreground) 6%, transparent);
 }
 .chat-rail-2 {
-  border-left: 2px solid hsl(var(--foreground) / 0.06);
+  border-left: 2px solid color-mix(in srgb, var(--dt-foreground) 6%, transparent);
 }
 
 /* ── v4 §16.1: KaTeX math sizing ── */
@@ -569,6 +805,18 @@ input::placeholder {
   }
 }
 
+/* Reduced motion: thought fade + live summary shimmer stand still. */
+@media (prefers-reduced-motion: reduce) {
+  .thought-enter,
+  .thought-summary--live .thought-summary-text {
+    animation: none;
+  }
+  .thought-summary--live .thought-summary-text {
+    -webkit-text-fill-color: initial;
+    background: none;
+  }
+}
+
 .thought-content {
   opacity: 0.72;
   transition: opacity 0.25s ease;
@@ -646,10 +894,11 @@ input::placeholder {
 }
 
 .august-app-chrome {
-  color: color-mix(in srgb, var(--dt-foreground) 58%, transparent);
-  background: color-mix(in srgb, var(--dt-background) 92%, black);
-  border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 72%, transparent);
-  font-size: 0.82rem;
+  color: color-mix(in srgb, var(--dt-foreground) 42%, transparent);
+  background: var(--dt-background);
+  border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 55%, transparent);
+  font-size: 0.78rem;
+  height: 28px !important;
 }
 
 .august-app-chrome button {
@@ -769,16 +1018,16 @@ input::placeholder {
 }
 
 .august-titlebar {
-  height: 3.65rem !important;
-  padding-inline: 0.7rem;
-  background: color-mix(in srgb, var(--dt-background) 96%, black);
-  border-bottom-color: color-mix(in srgb, var(--dt-border) 88%, transparent) !important;
+  height: 2.85rem !important;
+  padding-inline: 0.6rem;
+  background: var(--dt-background);
+  border-bottom-color: color-mix(in srgb, var(--dt-border) 65%, transparent) !important;
 }
 
 .august-titlebar h1 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: -0.018em;
+  font-size: 0.875rem;
+  font-weight: 550;
+  letter-spacing: -0.015em;
 }
 
 .august-titlebar [data-testid="session-bar-title"] {
@@ -792,7 +1041,7 @@ input::placeholder {
 }
 
 .august-chat-surface {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-background) 98%, white), var(--dt-background) 38%);
+  background: var(--dt-background);
 }
 
 .august-message-list,
@@ -802,8 +1051,8 @@ input::placeholder {
 }
 
 .august-message-list {
-  padding-top: 2.1rem;
-  padding-bottom: 2.5rem;
+  padding-top: 1rem;
+  padding-bottom: 1.25rem;
 }
 
 .august-empty-state {
@@ -817,8 +1066,8 @@ input::placeholder {
 }
 
 .august-message-footer {
-  padding-top: 0.7rem;
-  padding-bottom: 0.95rem;
+  padding-top: 0.4rem;
+  padding-bottom: 0.55rem;
 }
 
 .august-composer-shell {
@@ -826,21 +1075,17 @@ input::placeholder {
 }
 
 .august-composer {
-  background: color-mix(in srgb, var(--dt-card) 98%, white) !important;
-  border-color: color-mix(in srgb, var(--dt-border) 98%, white) !important;
-  border-radius: 1.1rem !important;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  background: var(--dt-card) !important;
+  border-color: color-mix(in srgb, var(--dt-border) 75%, transparent) !important;
+  border-radius: 0.9rem !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06) !important;
 }
 
 .august-composer textarea {
-  min-height: 4.25rem !important;
-  padding-top: 1rem !important;
-  font-size: 0.9rem;
-}
-
-.august-composer > div:first-of-type {
-  padding-inline: 0.9rem;
-  min-height: 2.35rem;
+  min-height: 2.25rem !important;
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.25rem !important;
+  font-size: 0.875rem;
 }
 
 .august-right-drawer {
@@ -1110,7 +1355,7 @@ input::placeholder {
   width: 18px;
   height: 20px;
   flex-shrink: 0;
-  color: hsl(var(--muted-foreground) / 0.75);
+  color: color-mix(in srgb, var(--dt-muted-foreground) 75%, transparent);
 }
 .process-step-icon {
   width: 12px;
@@ -1254,18 +1499,18 @@ input::placeholder {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: hsl(var(--muted-foreground));
+  color: var(--dt-muted-foreground);
   font-size: 0.8125rem;
   line-height: 1.4;
   text-align: left;
   cursor: pointer;
 }
 .process-tool-toggle:hover {
-  color: hsl(var(--foreground) / 0.82);
-  background: hsl(var(--foreground) / 0.04);
+  color: color-mix(in srgb, var(--dt-foreground) 82%, transparent);
+  background: color-mix(in srgb, var(--dt-foreground) 4%, transparent);
 }
 .process-tool-toggle:focus-visible {
-  outline: 2px solid hsl(var(--ring));
+  outline: 2px solid var(--dt-ring);
   outline-offset: 1px;
 }
 .process-tool-label {
@@ -1275,7 +1520,7 @@ input::placeholder {
   white-space: nowrap;
 }
 .process-tool-label--live {
-  color: hsl(var(--foreground) / 0.78);
+  color: color-mix(in srgb, var(--dt-foreground) 78%, transparent);
 }
 .process-tool-chevron {
   width: 12px;
@@ -1290,8 +1535,8 @@ input::placeholder {
   margin: 2px 0 4px 26px;
   padding: 8px 10px;
   border-radius: 6px;
-  background: hsl(var(--foreground) / 0.035);
-  border: 1px solid hsl(var(--border) / 0.55);
+  background: color-mix(in srgb, var(--dt-foreground) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dt-border) 55%, transparent);
 }
 .process-tool-response-label {
   margin-bottom: 4px;
@@ -1299,12 +1544,12 @@ input::placeholder {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground) / 0.7);
+  color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent);
 }
 .process-tool-response {
   font-size: 0.75rem;
   line-height: 1.45;
-  color: hsl(var(--muted-foreground));
+  color: var(--dt-muted-foreground);
   overflow-x: auto;
 }
 .process-tool-response--empty {
@@ -1326,7 +1571,7 @@ input::placeholder {
   50% {
     opacity: 1;
     transform: scale(1.08);
-    filter: drop-shadow(0 0 6px hsl(var(--primary) / 0.45));
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--dt-primary) 45%, transparent));
   }
 }
 @keyframes brain-functioning-pulse {
@@ -1339,16 +1584,16 @@ input::placeholder {
   50% {
     opacity: 1;
     transform: scale(1.04);
-    filter: drop-shadow(0 0 4px hsl(var(--primary) / 0.28));
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--dt-primary) 28%, transparent));
   }
 }
 .brain-icon-learning {
   animation: brain-learning-pulse 1.6s ease-in-out infinite;
-  color: hsl(var(--primary));
+  color: var(--dt-primary);
 }
 .brain-icon-functioning {
   animation: brain-functioning-pulse 2.8s ease-in-out infinite;
-  color: hsl(var(--primary) / 0.92);
+  color: color-mix(in srgb, var(--dt-primary) 92%, transparent);
 }
 .brain-icon-idle {
   transition: color 0.3s ease, opacity 0.3s ease;
@@ -1361,11 +1606,11 @@ input::placeholder {
   background: transparent;
 }
 .tool-summary[data-expanded="true"] {
-  background: hsl(var(--foreground) / 0.02);
+  background: color-mix(in srgb, var(--dt-foreground) 2%, transparent);
 }
 .tool-summary[data-attention="error"],
 .tool-summary[data-attention="warning"] {
-  background: hsl(var(--foreground) / 0.025);
+  background: color-mix(in srgb, var(--dt-foreground) 2%, transparent);
 }
 .tool-summary-header {
   display: flex;
@@ -1375,7 +1620,7 @@ input::placeholder {
   min-height: 24px;
   padding: 2px 4px;
   font-size: 11px;
-  color: hsl(var(--muted-foreground) / 0.75);
+  color: color-mix(in srgb, var(--dt-muted-foreground) 75%, transparent);
   cursor: pointer;
   user-select: none;
   border: none;
@@ -1384,11 +1629,11 @@ input::placeholder {
   border-radius: 4px;
 }
 .tool-summary-header:hover {
-  background: hsl(var(--foreground) / 0.035);
-  color: hsl(var(--muted-foreground) / 0.95);
+  background: color-mix(in srgb, var(--dt-foreground) 4%, transparent);
+  color: color-mix(in srgb, var(--dt-muted-foreground) 95%, transparent);
 }
 .tool-summary-header:focus-visible {
-  outline: 2px solid hsl(var(--ring));
+  outline: 2px solid var(--dt-ring);
   outline-offset: 1px;
 }
 .tool-summary-counts {
@@ -1409,10 +1654,10 @@ input::placeholder {
   flex-shrink: 0;
 }
 .tool-summary[data-attention="error"] .tool-summary-counts {
-  color: hsl(var(--destructive) / 0.9);
+  color: color-mix(in srgb, var(--dt-destructive) 90%, transparent);
 }
 .tool-summary-divider {
-  border-top: 1px solid hsl(var(--foreground) / 0.05);
+  border-top: 1px solid color-mix(in srgb, var(--dt-foreground) 5%, transparent);
   margin: 0 2px;
 }
 .tool-summary-rows {
@@ -1426,7 +1671,7 @@ input::placeholder {
   min-height: 24px;
   padding: 3px 6px;
   font-size: 11px;
-  color: hsl(var(--muted-foreground) / 0.85);
+  color: color-mix(in srgb, var(--dt-muted-foreground) 85%, transparent);
   cursor: pointer;
   border: none;
   background: transparent;
@@ -1434,21 +1679,21 @@ input::placeholder {
   border-radius: 4px;
 }
 .tool-summary-row:hover {
-  background: hsl(var(--foreground) / 0.035);
+  background: color-mix(in srgb, var(--dt-foreground) 4%, transparent);
 }
 .tool-summary-row:focus-visible {
-  outline: 2px solid hsl(var(--ring));
+  outline: 2px solid var(--dt-ring);
   outline-offset: -1px;
 }
 .tool-summary-row--error {
-  background: hsl(var(--destructive) / 0.06);
+  background: color-mix(in srgb, var(--dt-destructive) 6%, transparent);
 }
 .tool-summary-row--awaiting {
-  background: hsl(var(--warning, 45 93% 47%) / 0.08);
+  background: color-mix(in srgb, var(--dt-warning) 8%, transparent);
 }
 .tool-summary-row-label {
   font-weight: 450;
-  color: hsl(var(--foreground) / 0.62);
+  color: color-mix(in srgb, var(--dt-foreground) 62%, transparent);
   max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1464,7 +1709,7 @@ input::placeholder {
 }
 .tool-summary-row-detail {
   font-family: var(--font-mono, ui-monospace, monospace);
-  color: hsl(var(--foreground) / 0.7);
+  color: color-mix(in srgb, var(--dt-foreground) 70%, transparent);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1473,7 +1718,7 @@ input::placeholder {
 }
 .tool-summary-row-dur {
   font-size: 10px;
-  color: hsl(var(--muted-foreground) / 0.8);
+  color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent);
   font-variant-numeric: tabular-nums;
 }
 .tool-summary-row-status {
@@ -1485,7 +1730,7 @@ input::placeholder {
 .tool-summary-body {
   margin: 0 6px 2px 16px;
   padding: 2px 0 2px 8px;
-  border-left: 1px solid hsl(var(--foreground) / 0.045);
+  border-left: 1px solid color-mix(in srgb, var(--dt-foreground) 4%, transparent);
   min-width: 0;
   max-width: 100%;
   /* Keep horizontal clip, but allow nested result panes (search / list_skills) to scroll. */
@@ -2104,6 +2349,92 @@ input::placeholder {
 }
 .thought-toggle-chevron.is-open {
   transform: rotate(180deg);
+}
+
+/* ── Thought summary — collapsed one-line preview for settled thoughts ── */
+.thought-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 0;
+}
+.thought-summary-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 82%, transparent);
+  font-style: italic;
+}
+.thought-summary-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 78%, transparent);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.thought-summary-toggle:hover {
+  color: var(--dt-foreground);
+}
+.thought-summary-toggle:focus-visible {
+  outline: 2px solid var(--dt-border);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+/* Hidden measuring clone of the prose while the thought is collapsed —
+   keeps layout so scrollHeight (and therefore the clamp decision) is real. */
+.thought-clamp-hide {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+/* Fast mount fade for thought blocks — one-shot, subtle, never delays state. */
+.thought-enter {
+  animation: thought-enter 150ms ease-out both;
+}
+@keyframes thought-enter {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* Live one-line follower: a soft shimmer sweeps the running summary so the
+   throughput signal reads without a marquee (fast tokens move fast, a paused
+   model stops). */
+.thought-summary--live .thought-summary-text {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent) 40%,
+    color-mix(in srgb, var(--dt-foreground) 88%, transparent) 50%,
+    color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent) 60%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thought-summary-shimmer 1.8s linear infinite;
+}
+@keyframes thought-summary-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
 }
 
 /* ── Edit rail row — header faces + code panel ─────────────────────── */

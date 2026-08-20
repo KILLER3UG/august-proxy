@@ -15,7 +15,8 @@ import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
 import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
-import { getDigest } from "@/api/subagents";
+import { getDigest, getNeedsAttention } from "@/api/subagents";
+import { setNeedsAttention } from "@/components/sidebar/needs-handoff-store";
 import {
   approveWorkbenchPlan,
   getWorkbenchSession,
@@ -92,6 +93,26 @@ export function ChatLayout() {
     void reconcileSessionsFromBackend();
     const t = setInterval(() => { void reconcileSessionsFromBackend(); }, 60_000);
     return () => clearInterval(t);
+  }, []);
+
+  // Sidebar "needs handoff" dots: one lightweight aggregate poll for the
+  // whole session list (per-session workstream polls would fan out).
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const rows = await getNeedsAttention();
+        if (!cancelled) setNeedsAttention(rows);
+      } catch {
+        /* non-fatal — sidebar dots just stay stale until the next poll */
+      }
+    };
+    void poll();
+    const t = setInterval(() => void poll(), 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
   }, []);
 
   // Navigate away when the open chat was deleted via realtime.
@@ -489,37 +510,22 @@ export function ChatLayout() {
 
   return (
     <div className="august-shell h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
+      {/* DeepSeek/Hermes simplicity: no IDE-style File/View/Help menubar — header is already in ChatTitlebar. Keep only a 1px drag strip. */}
       <div
-        className="august-app-chrome flex h-9 shrink-0 items-center justify-between select-none"
+        className="august-app-chrome flex h-7 shrink-0 items-center justify-between select-none"
         data-tauri-drag-region
       >
-        <div className="flex items-center gap-1 px-3">
-          <button
-            type="button"
-            onClick={() => void handleNewSession()}
-            className="rounded px-2 py-0.5 text-[12px] text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
-            title="New chat"
-          >
-            File
-          </button>
-          <button
-            type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            className="rounded px-2 py-0.5 text-[12px] text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
-            title="Toggle sidebar"
-          >
-            View
-          </button>
+        <span className="px-3 text-[10px] tracking-[0.07em] text-muted-foreground/35">AUGUST</span>
+        <div className="pr-2 flex items-center gap-1">
           <button
             type="button"
             onClick={() => openShortcutsModal()}
-            className="rounded px-2 py-0.5 text-[12px] text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
-            title="Keyboard shortcuts"
+            className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70"
+            title="Shortcuts (?)"
           >
-            Help
+            ?
           </button>
         </div>
-        <span className="pr-4 text-[10px] tracking-[0.08em] text-muted-foreground/45">AUGUST DESKTOP</span>
       </div>
       <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden">
         {!isSettings && (

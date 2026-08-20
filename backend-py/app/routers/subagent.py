@@ -159,21 +159,102 @@ async def listRuns(sessionId: Optional[str] = None, limit: int = 50):
     if limit < 1 or limit > 500:
         limit = 50
     conn = _conn()
-    if sessionId:
-        rows = conn.execute(
-            'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, error, '
-            'started_at, finished_at, created_at FROM subagent_runs '
-            'WHERE session_id = ? ORDER BY id DESC LIMIT ?',
-            (sessionId, limit),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, error, '
-            'started_at, finished_at, created_at FROM subagent_runs '
-            'ORDER BY id DESC LIMIT ?',
-            (limit,),
-        ).fetchall()
+    try:
+        if sessionId:
+            rows = conn.execute(
+                'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, result_full, error, '
+                'started_at, finished_at, last_activity_at, api_calls, created_at FROM subagent_runs '
+                'WHERE session_id = ? ORDER BY id DESC LIMIT ?',
+                (sessionId, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, result_full, error, '
+                'started_at, finished_at, last_activity_at, api_calls, created_at FROM subagent_runs '
+                'ORDER BY id DESC LIMIT ?',
+                (limit,),
+            ).fetchall()
+    except Exception as e:
+        # Fallback before migration 021
+        if 'no such column' in str(e).lower():
+            if sessionId:
+                rows = conn.execute(
+                    'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, error, '
+                    'started_at, finished_at, created_at FROM subagent_runs '
+                    'WHERE session_id = ? ORDER BY id DESC LIMIT ?',
+                    (sessionId, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, error, '
+                    'started_at, finished_at, created_at FROM subagent_runs '
+                    'ORDER BY id DESC LIMIT ?',
+                    (limit,),
+                ).fetchall()
+        else:
+            raise
     return {'runs': [_row_as_wire(r) for r in rows]}
+
+
+@router.get('/config')
+async def getDelegationConfig(sessionId: Optional[str] = None):
+    """Hermes-style delegation config for a session (well-structured harness)."""
+    from app.services.workbench import workbench as wb
+
+    sid = sessionId or ''
+    if not sid:
+        return {'maxConcurrent': 3, 'maxIterations': 50, 'maxDepth': 1, 'worktreeIsolation': False}
+    sess = wb.getWorkbenchSession(sid)
+    if not sess:
+        return {'maxConcurrent': 3, 'maxIterations': 50, 'maxDepth': 1, 'worktreeIsolation': False}
+    meta = sess.metadata if isinstance(sess.metadata, dict) else {}
+    delegation = meta.get('delegation') if isinstance(meta.get('delegation'), dict) else {}
+    # Migrate from old isolate flag
+    worktree = bool(delegation.get('worktreeIsolation', meta.get('isolateSubagents', False)))
+    return {
+        'maxConcurrent': int(delegation.get('maxConcurrent', 5) or 5),
+        'maxIterations': int(delegation.get('maxIterations', 50) or 50),
+        'maxDepth': int(delegation.get('maxDepth', 1) or 1),
+        'worktreeIsolation': worktree,
+    }
+
+
+@router.post('/config')
+async def setDelegationConfig(request: Request, sessionId: Optional[str] = None):
+    """Persist delegation config for a session."""
+    from app.services.workbench import workbench as wb
+    from app.services.workbench.sessions import save_sessions
+
+    body: dict = {}
+    try:
+        raw = await request.json()
+        if isinstance(raw, dict):
+            body = raw
+    except Exception:
+        body = {}
+    sid = sessionId or str(body.get('sessionId') or body.get('session_id') or request.headers.get('X-Session-Id', '') or '')
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    sess = wb.getWorkbenchSession(sid)
+    if not sess:
+        raise HTTPException(status_code=404, detail='Session not found')
+    meta = dict(sess.metadata) if isinstance(sess.metadata, dict) else {}
+    delegation = dict(meta.get('delegation', {})) if isinstance(meta.get('delegation'), dict) else {}
+    if 'maxConcurrent' in body:
+        delegation['maxConcurrent'] = max(1, min(30, int(body['maxConcurrent'] or 3)))
+    if 'maxIterations' in body:
+        delegation['maxIterations'] = max(5, min(200, int(body['maxIterations'] or 50)))
+    if 'maxDepth' in body:
+        delegation['maxDepth'] = max(1, min(5, int(body['maxDepth'] or 1)))
+    if 'worktreeIsolation' in body:
+        delegation['worktreeIsolation'] = bool(body['worktreeIsolation'])
+        # Keep legacy isolate flag in sync for spawn_subagents_tool
+        meta['isolateSubagents'] = bool(body['worktreeIsolation'])
+        meta['isolateSubagentsExplicit'] = True
+    meta['delegation'] = delegation
+    sess.metadata = meta
+    save_sessions()
+    return {'ok': True, 'config': delegation, 'sessionId': sid}
 
 
 @router.get('/jobs')
@@ -218,6 +299,20 @@ async def stopAllSubagents(request: Request):
             except Exception:
                 logger.debug('stop-all terminate failed for %s', tid, exc_info=True)
     return {'status': 'stopped', 'stopped': stopped, 'total': len(active)}
+
+
+@router.get('/{taskId}/transcript')
+async def getSubagentTranscript(taskId: str, limit: int = 200):
+    """Hermes-style live transcript (cache/delegation jsonl)."""
+    from app.services.subagent_orchestrator import _read_transcript
+
+    if limit < 1 or limit > 500:
+        limit = 200
+    # Sanitize
+    if not taskId or not all(c.isalnum() or c in ("_", "-") for c in taskId):
+        raise HTTPException(status_code=400, detail='Invalid taskId')
+    events = _read_transcript(taskId, limit)
+    return {'taskId': taskId, 'events': events}
 
 
 @router.post('/{taskId}/terminate')
@@ -331,6 +426,18 @@ async def listWorkstreamsApi(request: Request, sessionId: Optional[str] = None):
     if not sid:
         raise HTTPException(status_code=400, detail='sessionId is required')
     return {'workstreams': list_workstreams(sid)}
+
+
+@router.get('/needs-attention')
+async def needsAttention():
+    """Per-session workstream attention counts (sidebar "needs handoff" dots).
+
+    Aggregates across sessions — one lightweight request for the whole
+    session list, instead of a per-session workstream poll.
+    """
+    from app.services.harness_ops import needs_attention_summary
+
+    return {'sessions': needs_attention_summary()}
 
 
 @router.get('/workstreams/{name}/episodes')
@@ -492,6 +599,19 @@ async def saveSkillFromWorkstream(name: str, request: Request, body: dict | None
         return skill_from_episode(sid, name, int(seq) if seq is not None else None)
     except SkillValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get('/workstreams/{name}/skill-preview')
+async def previewSkillFromWorkstream(name: str, request: Request, seq: Optional[int] = None, sessionId: Optional[str] = None):
+    from app.services.harness_ops import build_skill_payload_from_episode
+
+    sid = sessionId or request.headers.get('X-Session-Id', '') or as_str(getattr(_getSession(request), 'id', ''), '')
+    if not sid:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    try:
+        return build_skill_payload_from_episode(sid, name, seq)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

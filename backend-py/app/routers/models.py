@@ -192,3 +192,22 @@ async def estimate_cost(body: CostEstimateBody):
         'currency': 'USD',
         'estimated': False,
     }
+
+
+class ModelProfileApplyBody(CamelModel):
+    model: str
+    tool_surface: str | None = None
+
+
+@router.post('/api/models/profile')
+async def apply_model_profile(body: ModelProfileApplyBody):
+    """Persist a per-model capability profile (toolSurface) suggested by the
+    harness's capability auto-detect (modelProfileSuggestion SSE). An empty
+    ``toolSurface`` removes the override (revert to provider default)."""
+    from app.services import config_service
+
+    if body.tool_surface:
+        ok = config_service.apply_model_tool_surface(body.model, body.tool_surface)
+    else:
+        ok = config_service.clear_model_tool_surface(body.model)
+    return {'ok': ok, 'model': body.model, 'toolSurface': body.tool_surface}

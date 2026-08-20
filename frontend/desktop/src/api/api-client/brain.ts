@@ -11,6 +11,7 @@ export interface BrainEvent {
     | 'memory'
     | 'review'
     | 'skill_genesis'
+    | 'skill_suggestion'
     | 'session';
   layer: string;
   summary: string;

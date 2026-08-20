@@ -1611,6 +1611,46 @@ pub fn read_file_base64(path: String) -> Result<FileData, String> {
     })
 }
 
+/// Reveal a file in the OS file manager — Explorer with the file selected
+/// on Windows, Finder on macOS, parent folder on Linux. Best-effort: the
+/// UI falls back to opening the file directly if this errors.
+#[tauri::command]
+pub fn reveal_in_folder(path: String) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = std::process::Command::new("explorer");
+        // explorer parses `/select,<path>` as one token; quote so paths
+        // with spaces (and commas) select correctly.
+        cmd.arg(format!("/select,\"{}\"", path.replace('"', "")));
+        match cmd.spawn() {
+            Ok(_) => Ok("revealed".into()),
+            Err(e) => Err(format!("explorer failed: {e}")),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        match std::process::Command::new("open").arg("-R").arg(&path).spawn() {
+            Ok(_) => Ok("revealed".into()),
+            Err(e) => Err(format!("open -R failed: {e}")),
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let parent = std::path::Path::new(&path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or(path);
+        match std::process::Command::new("xdg-open").arg(parent).spawn() {
+            Ok(_) => Ok("revealed".into()),
+            Err(e) => Err(format!("xdg-open failed: {e}")),
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", unix)))]
+    {
+        Err("reveal unsupported on this platform".into())
+    }
+}
+
 #[tauri::command]
 pub fn backend_setup_status(app: AppHandle) -> SetupPhase {
     if let Some(state) = app.try_state::<BackendSetupStatus>() {

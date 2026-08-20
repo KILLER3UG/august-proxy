@@ -231,7 +231,7 @@ async def executeSubAgent(
     require_episode = bool(episode_required or workstream)
     mutated = False
 
-    def _commit_episode(status: str, text: str, task_key: str = '') -> None:
+    def _commit_episode(status: str, text: str, task_key: str = '', tool_count: int = 0) -> None:
         if not workstream:
             return
         try:
@@ -251,7 +251,7 @@ async def executeSubAgent(
             )
             parsed['raw_json'] = merge_episode_raw(parsed, skills=skill_names, auto_hop=auto_hop)
             ep_status = as_str(parsed.get('status'), status)
-            append_episode(
+            ep_info = append_episode(
                 sid,
                 workstream,
                 task_id=task_key or jobId,
@@ -261,6 +261,33 @@ async def executeSubAgent(
                 next_action=as_str(parsed.get('next'), ''),
                 raw_json=as_str(parsed.get('raw_json'), ''),
             )
+            try:
+                if (
+                    ep_status == 'completed'
+                    and bool(parsed.get('criteriaMet'))
+                    and (tool_count >= 4 or len(list(parsed.get('artifacts') or [])) >= 4)
+                ):
+                    import re
+
+                    from app.services import skill_service
+                    from app.services.brain_event_bus import emitBrainEvent
+
+                    slug = re.sub(r'[^a-z0-9]+', '-', workstream.lower()).strip('-')[:40] or 'lane'
+                    skill_name = f'lane-{slug}'
+                    if not skill_service.get(skill_name):
+                        emitBrainEvent(
+                            category='skill_suggestion',
+                            layer='workstreams.episode_completed',
+                            summary=f'Suggest skill: {skill_name}',
+                            meta={
+                                'workstream': workstream,
+                                'seq': ep_info.get('seq') if isinstance(ep_info, dict) else None,
+                                'suggestedName': skill_name,
+                                'sessionId': sid,
+                            },
+                        )
+            except Exception:
+                logger.debug('skill suggestion emit failed', exc_info=True)
             ping = True
             spec = {}
             try:
@@ -287,9 +314,9 @@ async def executeSubAgent(
                     logger.debug('mark_dirty failed', exc_info=True)
             arts = list(parsed.get('artifacts') or [])
             try:
-                session.metadata = dict(getattr(session, 'metadata', None) or {})
-                prev = session.metadata.get('lastCommand') if isinstance(session.metadata.get('lastCommand'), dict) else {}
-                session.metadata['lastReceipt'] = {
+                sess_meta = dict(getattr(session, 'metadata', None) or {})
+                prev = sess_meta.get('lastCommand') if isinstance(sess_meta.get('lastCommand'), dict) else {}
+                sess_meta['lastReceipt'] = {
                     'workstream': workstream,
                     'status': ep_status,
                     'next': as_str(parsed.get('next'), ''),
@@ -297,6 +324,7 @@ async def executeSubAgent(
                     'command': (prev or {}).get('command') or '',
                     'exitCode': (prev or {}).get('exitCode'),
                 }
+                setattr(session, 'metadata', sess_meta)
             except Exception:
                 pass
             try:
@@ -521,6 +549,7 @@ async def executeSubAgent(
     _subagentTask = _register_current_subagent(getattr(session, 'id', '') or '')
     try:
         toolRound = 0
+        total_tools_called = 0
         # Sub-agents get the same retry discipline as the parent loop: a
         # transient 429/5xx must not kill the agent outright.
         retryPolicy = _modelRetryPolicy()
@@ -790,6 +819,7 @@ async def executeSubAgent(
             messages.append(assistantMsg)
             toolResults: list[dict[str, object]] = []
             for tu in toolUses:
+                total_tools_called += 1
                 tName = as_str(tu.get('name'), '')
                 tInput = as_dict(tu.get('input'), {})
                 tId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
@@ -882,7 +912,7 @@ async def executeSubAgent(
                         'isFallback': isFallback,
                     }
                 )
-            _commit_episode(capStatus, capResult)
+            _commit_episode(capStatus, capResult, tool_count=total_tools_called)
             if capStatus != 'completed':
                 _flag_dirty('Worker mutated then hit loop cap without a clean episode.')
             return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': capStatus, 'error': capErr, 'result': capResult}
@@ -952,7 +982,7 @@ async def executeSubAgent(
                         'isFallback': isFallback,
                     }
                 )
-            _commit_episode('blocked', resultText)
+            _commit_episode('blocked', resultText, tool_count=total_tools_called)
             _flag_dirty('Worker mutated then exited without a valid episode.')
             return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'failed', 'error': yieldErr, 'result': resultText}
         updateJob(jobId, {'status': 'completed', 'result': resultText[:2000]})
@@ -967,7 +997,7 @@ async def executeSubAgent(
                     'isFallback': isFallback,
                 }
             )
-        _commit_episode('completed', resultText)
+        _commit_episode('completed', resultText, tool_count=total_tools_called)
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'completed', 'result': resultText}
     except Exception as exc:
         updateJob(jobId, {'status': 'failed', 'error': str(exc)})

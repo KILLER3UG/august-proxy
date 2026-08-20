@@ -30,13 +30,19 @@ export interface SubagentInfo {
   taskId: string;
   agentId: string;
   goal: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'partial' | 'recovered';
+  status: 'pending' | 'queued' | 'running' | 'stalling' | 'completed' | 'failed' | 'cancelled' | 'partial' | 'recovered';
   result?: string;
   error?: string;
   startedAt: number;
   finishedAt?: number;
   elapsed: number;
   workstream?: string;
+  lastActivityAt?: number;
+  apiCalls?: number;
+  iterations?: number;
+  queuePosition?: number;
+  queueTotal?: number;
+  rawStatus?: string;
 }
 
 export interface SpawnResult {
@@ -176,6 +182,19 @@ export async function getDigest(sessionId: string, workspacePath?: string): Prom
   return api.get(`/api/subagents/digest?${qs.toString()}`);
 }
 
+export interface NeedsAttentionRow {
+  sessionId: string;
+  needs: number;
+  working: number;
+}
+
+/** Per-session workstream attention counts across all sessions (sidebar
+ *  "needs handoff" dots). One request for the whole session list. */
+export async function getNeedsAttention(): Promise<NeedsAttentionRow[]> {
+  const res = await api.get<{ sessions: NeedsAttentionRow[] }>('/api/subagents/needs-attention');
+  return res.sessions ?? [];
+}
+
 export async function listSpecialists(sessionId: string): Promise<HarnessSpecialist[]> {
   const res = await api.get<{ specialists: HarnessSpecialist[] }>(
     `/api/subagents/specialists?sessionId=${encodeURIComponent(sessionId)}`,
@@ -306,6 +325,28 @@ export async function saveSkillFromEpisode(
     `/api/subagents/workstreams/${encodeURIComponent(workstream)}/save-skill`,
     { seq },
     { 'X-Session-Id': sessionId },
+  );
+}
+
+export interface SkillPreview {
+  name: string;
+  slug: string;
+  description: string;
+  body: string;
+  trigger: string;
+  category: string;
+  createdBy: string;
+  seq: number;
+}
+
+export async function previewSkillFromEpisode(
+  sessionId: string,
+  workstream: string,
+  seq?: number,
+): Promise<SkillPreview> {
+  const qSeq = seq !== undefined ? `&seq=${encodeURIComponent(seq)}` : '';
+  return api.get<SkillPreview>(
+    `/api/subagents/workstreams/${encodeURIComponent(workstream)}/skill-preview?sessionId=${encodeURIComponent(sessionId)}${qSeq}`,
   );
 }
 

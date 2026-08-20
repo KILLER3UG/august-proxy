@@ -135,10 +135,8 @@ export function MessageBubble({
     const Card = cmd?.uiCard;
     if (Card) {
       const dismiss = () => {
-        // Bubble unmount: parent will re-render without this message.
-        // We can't reach setMessages from here without a callback; the
-        // message is removed when the user dismisses it via the card's
-        // own UI. If the card doesn't call onDismiss, the message stays.
+        // Card-internal dismissal; the message leaves on the next parent
+        // re-render once the card is gone — no imperative removal here.
       };
       const props: VoiceCommandCardProps = {
         sessionId: sessionId ?? '',
@@ -281,6 +279,7 @@ export function MessageBubble({
   return (
     <div
       id={`msg-${message.id}`}
+      data-artifact-source={message.id}
       className="w-full flex flex-col"
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}

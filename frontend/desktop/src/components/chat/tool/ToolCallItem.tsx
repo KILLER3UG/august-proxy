@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { AlertCircle, CircleDot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
@@ -39,7 +39,7 @@ function isLongLabel(label: string): boolean {
  * a bordered card. The tool name animates while running, same as the
  * "Thinking" label in ThinkingDisclosure.
  */
-export function ToolCallItem({
+export const ToolCallItem = memo(function ToolCallItem({
   tool,
   progress,
   agentIdOverride,
@@ -243,4 +243,4 @@ export function ToolCallItem({
       )}
     </div>
   );
-}
+});

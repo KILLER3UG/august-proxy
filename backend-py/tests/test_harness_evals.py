@@ -421,3 +421,25 @@ async def test_run_command_idle_warning(monkeypatch):
     assert any('interactive input' in m for m in messages), messages
     assert any('Still working' in m for m in messages), messages
     _record('run-command-idle-warning', events)
+
+
+@pytest.mark.asyncio
+async def test_benchmark_mode_surface(monkeypatch):
+    """In benchmark mode, only run_command and edit_lines are allowed; disallowed tools are blocked."""
+    events, _session = await run_turn(
+        monkeypatch,
+        agent_mode='benchmark',
+        script=[
+            {'type': 'tool', 'name': 'web_search', 'arguments': {'query': 'x'}},
+            {'type': 'tool', 'name': 'run_command', 'arguments': {'command': 'echo ok'}},
+            {'type': 'text', 'text': 'done'},
+        ],
+    )
+    types = event_types(events)
+    assert 'toolResult' in types
+    assert 'done' in types
+    assert 'error' not in types
+    toolResults = [str(e.get('content', '')) for e in events if e.get('type') == 'toolResult']
+    combined = ' '.join(toolResults)
+    assert '[Blocked] Benchmark mode' in combined
+    _record('benchmark-mode-surface', events)

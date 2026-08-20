@@ -92,39 +92,50 @@ export interface SettingsCategory {
 }
 
 /**
- * Top-level categories shown as group headers in the sidebar. Order
- * here is the order they render. Sections reference categories by
- * `category` id.
- *
- * v3 IA (2026-07): replaces the prior 7-category scheme that had
- * singleton categories (memory, activity), a junk drawer ("Advanced"
- * with 5 mixed sections), and duplicate Brain icons across 3 sections.
+ * Top-level categories shown as hubs in the sidebar. 8 hubs, not 32 rows —
+ * each hub stacks its related sections as pill tabs (no long scroll).
+ * Mirrors the reference provider list: hub label = related data group.
  */
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
-    id: 'general',
-    label: 'Essentials',
-    description: 'App-level basics: health, appearance, and conversation history.',
+    id: 'system',
+    label: 'System',
+    description: 'Health, updates, and data retention.',
   },
   {
-    id: 'intelligence',
-    label: 'AI & Memory',
-    description: 'The cognitive core: providers, brain orchestration, and memory.',
+    id: 'appearance',
+    label: 'Appearance',
+    description: 'Theme, layout, and personalization.',
+  },
+  {
+    id: 'models',
+    label: 'Models',
+    description: 'Providers, catalog, and quotas.',
+  },
+  {
+    id: 'memory',
+    label: 'Memory',
+    description: 'Knowledge, recall, and templates.',
+  },
+  {
+    id: 'automations',
+    label: 'Automations',
+    description: 'Agents, board, and recurring tasks.',
   },
   {
     id: 'tools',
-    label: 'Capabilities',
-    description: 'Capabilities the agent can use: MCP servers, skills, computer use, agents.',
+    label: 'Tools & Skills',
+    description: 'Skills, MCP, and computer use.',
   },
   {
-    id: 'activity',
-    label: 'Diagnostics',
-    description: 'Telemetry and observability surfaces: traffic, logs, inspectors.',
+    id: 'access',
+    label: 'Access',
+    description: 'Filesystem, shell, and external API.',
   },
   {
-    id: 'security',
-    label: 'Permissions',
-    description: 'Gating surfaces: API access, filesystem permissions, developer surfaces.',
+    id: 'insights',
+    label: 'Insights',
+    description: 'Activity, usage, and diagnostics.',
   },
 ] as const;
 
@@ -145,7 +156,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'System Status',
     description: 'Gateway status, uptime, RAM, endpoint URLs, and connect-an-app URLs.',
     icon: Activity,
-    category: 'general',
+    category: 'system',
     tier: 'basic',
     // Note: 'gateway' is owned by api-access (the action surface for
     // opening/closing it). 'connect' is owned by api-access.
@@ -159,7 +170,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Account',
     description: 'Local August profiles on this device — create, switch, and edit your account.',
     icon: UserRound,
-    category: 'general',
+    category: 'system',
     tier: 'basic',
     keywords: ['account', 'login', 'sign up', 'display name', 'avatar', 'sign out'],
     legacyAliases: ['accounts', 'user'],
@@ -169,7 +180,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'AI Setup',
     description: 'Guided first-run wizard: connect a provider, test it, pick models, and choose a safety mode.',
     icon: Wand2,
-    category: 'general',
+    category: 'models',
     tier: 'basic',
     // Note: 'onboarding' is owned by profile-preferences — this section is
     // reached via 'wizard' / 'setup' / 'first run' instead.
@@ -180,7 +191,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Appearance & Behavior',
     description: 'Theme, appearance, text size, presets, keyboard shortcuts, and onboarding.',
     icon: SlidersHorizontal,
-    category: 'general',
+    category: 'appearance',
     tier: 'basic',
     keywords: ['profile', 'theme', 'appearance', 'shortcuts', 'hotkeys', 'presets', 'onboarding', 'tour', 'language'],
     legacyAliases: ['appearance', 'theme', 'shortcuts', 'hotkeys'],
@@ -190,7 +201,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'UI Designer',
     description: 'Customize colors for background, chat input, sidebar, settings, and brand — live preview + Apply.',
     icon: Palette,
-    category: 'general',
+    category: 'appearance',
     tier: 'hidden',
     keywords: ['ui designer', 'customize', 'colors', 'paint', 'branding', 'sidebar color', 'chat input color', 'preview'],
     legacyAliases: ['ui-customization', 'theme-editor', 'design-ui'],
@@ -200,7 +211,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Conversations',
     description: 'Archived chat sessions and per-conversation history.',
     icon: MessagesSquare,
-    category: 'general',
+    category: 'insights',
     tier: 'advanced',
     keywords: ['conversation', 'history', 'archive', 'session', 'chat'],
     legacyAliases: ['archive', 'conversations', 'chat-history', 'session-history'],
@@ -210,7 +221,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Updates',
     description: 'Check for desktop app releases from GitHub and install updates.',
     icon: ArrowUpCircle,
-    category: 'general',
+    category: 'system',
     tier: 'basic',
     keywords: ['update', 'release', 'version', 'download app', 'upgrade', 'changelog'],
     legacyAliases: ['updates', 'updater', 'version', 'about'],
@@ -220,7 +231,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Data & Privacy',
     description: 'What August stores on this device — export, purge memories, clear logs, and delete usage.',
     icon: Database,
-    category: 'general',
+    category: 'system',
     tier: 'basic',
     // Note: 'delete' is owned by skills; 'history' by conversations-history.
     // This section is reached via its own vocabulary.
@@ -233,7 +244,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Models & Providers',
     description: 'Provider cards, model catalog, aliases, quotas, and per-model usage + cost.',
     icon: Boxes,
-    category: 'intelligence',
+    category: 'models',
     tier: 'basic',
     keywords: ['model', 'provider', 'api key', 'quota', 'usage', 'cost', 'token', 'catalog', 'alias', 'context window', 'reasoning', 'effort', 'temperature'],
     legacyAliases: ['models', 'providers'],
@@ -243,7 +254,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Memory',
     description: 'Memory store, semantic facts, vector entries, knowledge graph, and system prompt.',
     icon: Network,
-    category: 'intelligence',
+    category: 'memory',
     tier: 'basic',
     keywords: ['memory', 'semantic', 'facts', 'vector', 'db', 'graph', 'knowledge', 'prompt', 'learning', 'guidelines'],
     legacyAliases: ['memory', 'semantic-facts', 'vector-db'],
@@ -254,7 +265,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       'Browse agent-captured memories August can search on demand in chat (Topics / Areas).',
     icon: BrainCircuit,
-    category: 'intelligence',
+    category: 'memory',
     tier: 'hidden',
     // Note: 'memory' is owned by memory-knowledge — this section is
     // reached via 'recall' / 'auto-memory' / category names instead.
@@ -267,7 +278,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       'Recurring-task daemon — time- and workspace-based reminders fired into the notification bell.',
     icon: Bell,
-    category: 'intelligence',
+    category: 'automations',
     tier: 'basic',
     keywords: ['reminder', 'reminders', 'recurring', 'task', 'every', 'when i open', 'daemon'],
   },
@@ -277,7 +288,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       'Facts you explicitly save for August — injected into every chat turn.',
     icon: StickyNote,
-    category: 'intelligence',
+    category: 'memory',
     tier: 'hidden',
     keywords: ['added', 'add memory', 'remember this', 'user memory', 'saved fact'],
     legacyAliases: ['added-memories', 'user-memories'],
@@ -288,7 +299,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       'Memories August learned from chats inside each project folder.',
     icon: FolderOpen,
-    category: 'intelligence',
+    category: 'memory',
     tier: 'hidden',
     keywords: ['project', 'folder', 'workspace', 'project memories', 'by project'],
     legacyAliases: ['project-memory', 'folder-memories'],
@@ -299,7 +310,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       'Reusable prompt templates with variable placeholders for common tasks.',
     icon: FileText,
-    category: 'intelligence',
+    category: 'memory',
     tier: 'advanced',
     // 'prompt' is owned by memory-knowledge — keep this section's keywords
     // distinct so the registry audit (unique ownership) stays green.
@@ -365,7 +376,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Automations',
     description: 'Agent registry, permissions, automations, and approvals.',
     icon: Bot,
-    category: 'tools',
+    category: 'automations',
     tier: 'advanced',
     keywords: ['agent', 'automation', 'permission', 'scope', 'approval', 'terminal', 'schedule', 'job'],
     legacyAliases: ['agents', 'agent-permissions', 'automations', 'terminal'],
@@ -375,7 +386,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Path Permissions',
     description: 'Always-here tool grants by workspace path — list, explain, revoke.',
     icon: FolderLock,
-    category: 'security',
+    category: 'access',
     tier: 'hidden',
     keywords: ['grant', 'always', 'path-permission', 'revoke', 'allowlist-path'],
     legacyAliases: ['always-grants', 'path-grants'],
@@ -385,7 +396,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Agent Board',
     description: 'Durable kanban board for multi-agent work across sessions.',
     icon: Kanban,
-    category: 'tools',
+    category: 'automations',
     tier: 'hidden',
     keywords: ['kanban', 'board', 'multi-agent', 'cards'],
     legacyAliases: ['kanban'],
@@ -396,7 +407,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       'Sandbox reach, always-here path grants, and the safe Python cell — one access page.',
     icon: Shield,
-    category: 'tools',
+    category: 'access',
     tier: 'basic',
     keywords: ['sandbox', 'seatbelt', 'landlock', 'appcontainer', 'isolation', 'workspace-write', 'reach'],
     legacyAliases: ['codex-sandbox', 'agent-sandbox'],
@@ -406,7 +417,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Python Sandbox',
     description: 'Safe Python cell with no network, banned imports, and timeout.',
     icon: Code2,
-    category: 'tools',
+    category: 'access',
     tier: 'hidden',
     keywords: ['python', 'cell', 'exec'],
     legacyAliases: ['sandbox'],
@@ -418,7 +429,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Activity Log',
     description: 'Audit log, rollback history, post-observation screenshots, traffic, and logs.',
     icon: LineChart,
-    category: 'activity',
+    category: 'insights',
     tier: 'advanced',
     // Note: 'screenshot' is owned by computer-use. 'history' is owned
     // by conversations-history. 'security' is owned by computer-access.
@@ -432,7 +443,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Usage & Limits',
     description: 'Token usage, model cost, quotas, and per-model consumption.',
     icon: Gauge,
-    category: 'activity',
+    category: 'insights',
     tier: 'basic',
     keywords: ['limits', 'spend', 'quotas', 'tokens', 'usage-limits'],
     legacyAliases: ['usage-limits'],
@@ -443,7 +454,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Request Inspector',
     description: 'Readable transcript, raw request/response bodies, and assistant thinking.',
     icon: SearchIcon,
-    category: 'activity',
+    category: 'insights',
     tier: 'advanced',
     // Note: 'debug' is owned by developer-console. Conversation Inspector
     // is reached via 'inspector', 'request', 'response', 'thinking'.
@@ -455,7 +466,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Backend Monitor',
     description: 'Real-time stream of proxy, memory, scheduler, and tool events.',
     icon: Radio,
-    category: 'activity',
+    category: 'insights',
     tier: 'hidden',
     // Note: 'memory' is owned by memory-knowledge. 'console' is owned
     // by developer-console. 'monitor' is the dominant discoverer here.
@@ -466,7 +477,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Feature Flow',
     description: 'Animated live pipeline of backend feature execution with inventory directory.',
     icon: GitBranch,
-    category: 'activity',
+    category: 'insights',
     tier: 'advanced',
     keywords: ['feature', 'flow', 'pipeline', 'animation', 'inventory', 'sse', 'execution'],
     legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
@@ -476,7 +487,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Reliability',
     description: 'Fleet health: win rates, latency, token cost, and harness eval pass rates.',
     icon: HeartPulse,
-    category: 'activity',
+    category: 'insights',
     tier: 'advanced',
     // Note: 'model' is owned by model-providers; 'tokens'/'cost' by usage;
     // 'error' by conversation-inspector. This section is reached via its
@@ -488,7 +499,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Provider Health Simulator',
     description: 'Preflight a provider + model: connectivity, tool support, and fallback route before relying on it.',
     icon: Stethoscope,
-    category: 'activity',
+    category: 'insights',
     tier: 'hidden',
     // Note: 'health' is owned by system-health; 'test'/'connect' are not
     // claimed keywords — this section owns the simulator vocabulary.
@@ -500,7 +511,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Desktop App Permissions',
     description: 'Filesystem scope, allowed roots, and computer-use app allowlist.',
     icon: ShieldCheck,
-    category: 'security',
+    category: 'access',
     tier: 'advanced',
     // Note: 'filesystem' is owned by tools-connections (MCP/FS tools).
     keywords: ['roots', 'security', 'allowlist', 'computer-use-scope'],
@@ -510,7 +521,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'External API Access',
     description: 'Open or close the proxy gateway for external clients, manage the API key.',
     icon: Globe,
-    category: 'security',
+    category: 'access',
     tier: 'basic',
     // Note: 'token' is owned by model-providers (token cost tracking).
     // API auth tokens are reached via 'bearer' here.

@@ -46,6 +46,7 @@ import { upsertQueuedMessage, removeQueuedMessage } from './queue-store';
 import { resolveUiSessionId, resolveWorkbenchSessionId } from './stream/session-id-map';
 import { advanceSessionSubscriberLastSeq } from './stream/session-subscriber';
 import { setSubagentProposal } from './subagent-proposals-store';
+import { setModelProfileSuggestion } from './model-profile-store';
 import { pushNotification } from '@/store/notifications';
 import { toast } from 'sonner';
 import { useArenaStore } from './arena/arena-store';
@@ -557,6 +558,25 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         );
       }
     },
+    onModelProfileSuggestion: ({ model, suggestedProfile, message }) => {
+      // Capability auto-detect found a better toolSurface from turn traces.
+      // Surface an Apply/Dismiss chip above the composer; Apply persists via
+      // POST /api/models/profile (same path the AUGUST_AUTO_PROFILE env
+      // opt-in uses). Only offer when there is something to change.
+      if (!model || !suggestedProfile?.toolSurface) return;
+      setModelProfileSuggestion(sessionId, {
+        model,
+        toolSurface: suggestedProfile.toolSurface,
+        reason: suggestedProfile.reason,
+        message,
+      });
+    },
+    onEvidenceState: () => {
+      // Consumed by the Trajectory drawer section (it reads the per-turn
+      // trace store, which records evidence_state per turn). Nothing inline
+      // renders per event — acknowledged so the event is not dropped as
+      // an unknown event.
+    },
     onPlanProposed: ({ plan }) => {
       if (!isNonEmptyPlan(plan)) return;
       setWorkbenchSession((prev) => {
@@ -834,6 +854,15 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // upstream message is noise once the retry count is visible.
       const shortReason = reason.length > 80 ? `${reason.slice(0, 77)}…` : reason;
       retryNotice = `⏳ ${shortReason} — retrying ${attempt}/${maxRetries} in ${Math.max(1, Math.ceil(delayMs / 1000))}s…`;
+      // Roll back the failed attempt's partial stream: the backend now emits
+      // text/thinking per delta, so drop the streaming text/thinking blocks
+      // and reset the accumulators before the retry re-streams. Tool history
+      // is preserved — the retry only re-runs the current round's model call.
+      assistantContent = '';
+      thinkingContent = '';
+      streamBlocks = streamBlocks.filter(
+        (b) => b.type !== 'thinking' && b.type !== 'finalOutput',
+      );
       scheduleUpdate();
     },
     onError: ({ message }) => {

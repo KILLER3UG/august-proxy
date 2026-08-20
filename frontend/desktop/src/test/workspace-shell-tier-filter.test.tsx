@@ -1,22 +1,11 @@
-/* ── WorkspaceShell — tier filter (Show advanced toggle) regression ──── */
-/* Verifies the v3 IA behaviour:
- *   • when showAdvanced = false, only basic-tier sections render in the rail
- *   • when showAdvanced = true, every section renders
- *   • the active section is always rendered even when advanced is hidden
- *     (deep-link case, e.g. /settings/observability)
- *   • search bypasses the tier filter so users can find advanced sections
- *     by keyword even when advanced is hidden
- *
- * Persistence comes from useSettingsAdvancedPreference; the tests pre-seed
- * localStorage in beforeEach to control the initial value. */
+/* ── WorkspaceShell — hub IA (no advanced toggle) ──────────────── */
+/* After v0.16.4 the rail shows 5 category hubs, not 32 section rows.
+ * Search surfaces matching sections grouped by category. */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-// Mock react-router-dom so WorkspaceShell can call useNavigate without a
-// real router. We don't need to assert on navigation here — only on what
-// renders in the rail.
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: '/settings/system-health' }),
@@ -27,23 +16,15 @@ vi.mock('@/hooks/useAppUpdate', () => ({
 }));
 
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
-import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
+import { SETTINGS_SECTIONS, SETTINGS_CATEGORIES } from '@/settings/settings-registry';
 
 function renderShell(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
-const ADV_KEY = 'august-settings-advanced';
-
-// Pick a deterministic, mixed-cohort slice from the real registry so the
-// test exercises the same id/label/icon/category/tier wiring production
-// uses. Cover both tiers and both security + activity categories.
-const BASIC_IDS = ['system-health', 'skills', 'api-access'];
-const ADVANCED_IDS = ['computer-access', 'observability', 'computer-use'];
-
 function pickSections(): WorkspaceSectionMeta[] {
-  const ids = [...BASIC_IDS, ...ADVANCED_IDS];
+  const ids = ['system-health', 'skills', 'api-access', 'computer-access', 'observability', 'computer-use'];
   return SETTINGS_SECTIONS.filter((s) => ids.includes(s.id)).map((s) => ({
     id: s.id,
     label: s.label,
@@ -53,9 +34,6 @@ function pickSections(): WorkspaceSectionMeta[] {
 }
 
 function visibleRailLabels() {
-  // The rail uses <button> elements for each nav link; their accessible
-  // name is the label text. We assert against labels (not ids) because
-  // that's what the user sees.
   const nav = screen.getByRole('navigation');
   return within(nav)
     .getAllByRole('button')
@@ -63,111 +41,44 @@ function visibleRailLabels() {
     .filter((t) => t.length > 0);
 }
 
-describe('WorkspaceShell — tier filter', () => {
+describe('WorkspaceShell — hub IA', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('with showAdvanced=false (default), only basic items render in the rail', () => {
-    // localStorage empty → hook defaults to false.
+  it('shows 5 category hubs in the rail when not searching', () => {
     renderShell(
       <WorkspaceShell sections={pickSections()} active="system-health">
         <div>main</div>
       </WorkspaceShell>,
     );
     const labels = visibleRailLabels();
-    for (const id of BASIC_IDS) {
-      const sec = SETTINGS_SECTIONS.find((s) => s.id === id)!;
-      expect(labels.some((l) => l.includes(sec.label)), `${sec.label} should render`).toBe(true);
-    }
-    for (const id of ADVANCED_IDS) {
-      const sec = SETTINGS_SECTIONS.find((s) => s.id === id)!;
-      expect(labels.some((l) => l.includes(sec.label)), `${sec.label} should be hidden`).toBe(false);
+    for (const cat of SETTINGS_CATEGORIES) {
+      expect(labels.some((l) => l.includes(cat.label)), `${cat.label} hub should render`).toBe(true);
     }
   });
 
-  it('with showAdvanced=true, every section renders in the rail', () => {
-    localStorage.setItem(ADV_KEY, 'true');
+  it('search surfaces matching sections grouped by category', () => {
     renderShell(
       <WorkspaceShell sections={pickSections()} active="system-health">
         <div>main</div>
       </WorkspaceShell>,
     );
-    const labels = visibleRailLabels();
-    for (const id of [...BASIC_IDS, ...ADVANCED_IDS]) {
-      const sec = SETTINGS_SECTIONS.find((s) => s.id === id)!;
-      expect(labels.some((l) => l.includes(sec.label)), `${sec.label} should render`).toBe(true);
-    }
-  });
-
-  it('the active advanced section is always rendered even when advanced is hidden (deep-link case)', () => {
-    localStorage.clear();
-    renderShell(
-      <WorkspaceShell sections={pickSections()} active="observability">
-        <div>main</div>
-      </WorkspaceShell>,
-    );
-    const labels = visibleRailLabels();
-    const obs = SETTINGS_SECTIONS.find((s) => s.id === 'observability')!;
-    expect(labels.some((l) => l.includes(obs.label)), 'active advanced section must render').toBe(true);
-    const ca = SETTINGS_SECTIONS.find((s) => s.id === 'computer-access')!;
-    expect(labels.some((l) => l.includes(ca.label))).toBe(false);
-  });
-
-  it('search input matches advanced items by keyword even when advanced is hidden', () => {
-    localStorage.clear();
-    renderShell(
-      <WorkspaceShell sections={pickSections()} active="system-health">
-        <div>main</div>
-      </WorkspaceShell>,
-    );
-
-    // Search bypasses tier filter — 'audit' is a keyword of
-    // observability (advanced). It should appear even though
-    // showAdvanced=false.
     const input = screen.getByLabelText(/Search settings/i);
     fireEvent.change(input, { target: { value: 'audit' } });
-
-    const labels = visibleRailLabels();
-    const dev = SETTINGS_SECTIONS.find((s) => s.id === 'observability')!;
-    expect(labels.some((l) => l.includes(dev.label))).toBe(true);
-  });
-
-  it('search by label also matches advanced items when advanced is hidden', () => {
-    localStorage.clear();
-    renderShell(
-      <WorkspaceShell sections={pickSections()} active="system-health">
-        <div>main</div>
-      </WorkspaceShell>,
-    );
-
-    const input = screen.getByLabelText(/Search settings/i);
-    // "Computer Access" — search by partial label.
-    fireEvent.change(input, { target: { value: 'computer' } });
-
-    const labels = visibleRailLabels();
-    const ca = SETTINGS_SECTIONS.find((s) => s.id === 'computer-access')!;
-    expect(labels.some((l) => l.includes(ca.label))).toBe(true);
-  });
-
-  it('the "Show advanced" toggle flips the toggle button label', () => {
-    localStorage.clear();
-    renderShell(
-      <WorkspaceShell sections={pickSections()} active="system-health">
-        <div>main</div>
-      </WorkspaceShell>,
-    );
-
-    const btn = screen.getByRole('button', { name: /show advanced/i });
-    expect(btn.getAttribute('aria-pressed')).toBe('false');
-
-    fireEvent.click(btn);
-
-    const hide = screen.getByRole('button', { name: /hide advanced/i });
-    expect(hide.getAttribute('aria-pressed')).toBe('true');
-    // And now an advanced section shows up.
     const labels = visibleRailLabels();
     const obs = SETTINGS_SECTIONS.find((s) => s.id === 'observability')!;
     expect(labels.some((l) => l.includes(obs.label))).toBe(true);
+  });
+
+  it('search with no match shows empty state', () => {
+    renderShell(
+      <WorkspaceShell sections={pickSections()} active="system-health">
+        <div>main</div>
+      </WorkspaceShell>,
+    );
+    const input = screen.getByLabelText(/Search settings/i);
+    fireEvent.change(input, { target: { value: 'zzzznope' } });
+    expect(screen.getByText(/No sections match/)).toBeInTheDocument();
   });
 });

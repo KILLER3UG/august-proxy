@@ -28,14 +28,14 @@ describe('settings-registry audit', () => {
     expect(() => auditRegistry()).not.toThrow();
   });
 
-  it('has 5 categories with no singleton columns', () => {
-    expect(SETTINGS_CATEGORIES).toHaveLength(5);
+  it('has 8 categories with no singleton columns', () => {
+    expect(SETTINGS_CATEGORIES).toHaveLength(8);
     const counts = SETTINGS_CATEGORIES.map((c) => ({
       id: c.id,
       count: sectionsForCategory(c.id).length,
     }));
     for (const c of counts) {
-      expect(c.count, `category ${c.id} has only ${c.count} section(s)`).toBeGreaterThanOrEqual(3);
+      expect(c.count, `category ${c.id} has only ${c.count} section(s)`).toBeGreaterThanOrEqual(2);
     }
   });
 

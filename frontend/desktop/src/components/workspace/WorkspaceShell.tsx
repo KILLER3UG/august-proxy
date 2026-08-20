@@ -7,26 +7,27 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  Activity,
+  Boxes,
+  Bot,
   BrainCircuit,
-  ChevronDown,
-  ChevronRight,
   Globe,
   LineChart,
+  Palette,
   ShieldCheck,
-  SlidersHorizontal,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
-import { useSettingsAdvancedPreference } from '@/hooks/useSettingsAdvancedPreference';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { cn } from '@/lib/utils';
 import {
   SETTINGS_SECTIONS,
   SETTINGS_CATEGORIES,
   railCanonicalId,
+  getSection,
   type SettingsSection,
 } from '@/settings/settings-registry';
 
@@ -38,13 +39,16 @@ export interface WorkspaceSectionMeta {
   category?: string;
 }
 
-/** Map of category id → lucide icon for the rail group header. */
+/** Map of category id → lucide icon for the rail group header. 8 hubs. */
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  general: SlidersHorizontal,
-  intelligence: BrainCircuit,
+  system: Activity,
+  appearance: Palette,
+  models: Boxes,
+  memory: BrainCircuit,
+  automations: Bot,
   tools: Wrench,
-  activity: LineChart,
-  security: ShieldCheck,
+  access: ShieldCheck,
+  insights: LineChart,
 };
 
 interface WorkspaceShellProps {
@@ -63,10 +67,12 @@ export function WorkspaceShell({
   const navigate = useNavigate();
   const location = useLocation();
   const [query, setQuery] = useState('');
-  const { showAdvanced, toggle: toggleAdvanced } = useSettingsAdvancedPreference();
   const { available: updateAvailable } = useAppUpdate();
 
   const railActive = railCanonicalId(active);
+  // Hub IA: active can be a section id OR a category id (e.g. /settings/general). Resolve category for highlight.
+  const activeSection = getSection(active);
+  const activeCategoryId = activeSection?.category ?? (SETTINGS_CATEGORIES.find((c) => c.id === active)?.id ?? null);
 
   // Resolve each section's category label, icon, tier, description, and
   // keywords. Falls back to the raw `category` string if a section isn't
@@ -94,48 +100,35 @@ export function WorkspaceShell({
     });
   }, [sections]);
 
-  // Apply tier filter: when "Show advanced" is off, hide advanced items
-  // UNLESS the user has deep-linked to one (we keep the active section
-  // visible so legacy URLs continue to work). `hidden` sections are never
-  // shown in the rail (deep links still resolve via the active id).
-  // Hidden hubs stay off the rail (deep links still resolve). Keep the
-  // canonical parent highlighted instead of listing Recalled / Colors / …
-  const tiered = useMemo(() => {
-    const visible = decorated.filter((s) => s.tier !== 'hidden');
-    if (showAdvanced) return visible;
-    return visible.filter((s) => s.tier === 'basic' || s.id === railActive);
-  }, [decorated, showAdvanced, railActive]);
+  // Hub IA: no tier filter — all sections stay reachable, but the rail only
+  // shows the 5 category hubs when not searching. Search bypasses hubs and
+  // surfaces matching sections directly (grouped by category) so deep
+  // discovery still works. Hidden sections never appear as rail rows;
+  // they live inside their parent hub's stacked cards.
+  const visibleForSearch = useMemo(() => decorated.filter((s) => s.tier !== 'hidden'), [decorated]);
 
-  // Filter by free-text query (matches label, description, keywords).
-  // Search bypasses the tier filter so users can still find advanced
-  // sections by keyword even when advanced is hidden.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (!q) return new Map<string, typeof decorated>();
     const match = (s: (typeof decorated)[number]) => {
-      if (!q) return true;
       if (s.label.toLowerCase().includes(q)) return true;
       if (s.description.toLowerCase().includes(q)) return true;
       return s.keywords.some((k) => k.toLowerCase().includes(q));
     };
     const ids = new Set<string>();
-    const pool = q ? decorated : tiered;
-    for (const s of pool) {
+    for (const s of visibleForSearch) {
       if (!match(s)) continue;
-      if (s.tier === 'hidden') {
-        ids.add(railCanonicalId(s.id));
-        continue;
-      }
       ids.add(s.id);
     }
     const chosen = decorated.filter((s) => ids.has(s.id) && s.tier !== 'hidden');
     return groupAllByCategory(chosen);
-  }, [decorated, tiered, query]);
+  }, [decorated, visibleForSearch, query]);
 
   const isFiltering = query.trim().length > 0;
-  const totalShown = useMemo(
-    () => Array.from(filtered.values()).reduce((n, items) => n + items.length, 0),
-    [filtered],
-  );
+  const totalShown = useMemo(() => {
+    if (isFiltering) return Array.from(filtered.values()).reduce((n, items) => n + items.length, 0);
+    return SETTINGS_CATEGORIES.length;
+  }, [filtered, isFiltering]);
 
   return (
     <div className={cn('flex h-full min-h-0', className)}>
@@ -163,62 +156,68 @@ export function WorkspaceShell({
           )}
         </div>
         <nav className="flex-1 overflow-y-auto py-1">
-          {totalShown === 0 ? (
-            <div className="px-4 py-6 text-center text-xs text-muted-foreground">
-              No sections match{' '}
-              <span className="font-mono">&ldquo;{query}&rdquo;</span>.
-            </div>
+          {isFiltering ? (
+            totalShown === 0 ? (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                No sections match{' '}
+                <span className="font-mono">&ldquo;{query}&rdquo;</span>.
+              </div>
+            ) : (
+              Array.from(filtered.entries()).map(([category, items]) => {
+                const Icon = items[0]?.categoryIcon ?? Globe;
+                const categoryLabel = items[0]?.categoryLabel ?? category;
+                return (
+                  <div key={category || 'default'} className="mb-2 px-2">
+                    <div className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/40">
+                      <Icon className="size-3" aria-hidden="true" />
+                      <span>{categoryLabel}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5 rounded-xl bg-white/[0.025] py-1">
+                    {items.map((s) => (
+                      <WorkspaceNavLink
+                        key={s.id}
+                        icon={s.icon}
+                        label={s.label}
+                        active={railActive === s.id}
+                        badge={
+                          s.id === 'app-updates' && updateAvailable
+                            ? 'New'
+                            : null
+                        }
+                        onSelect={() => {
+                          if (s.id === railActive && s.id === active) return;
+                          setQuery('');
+                          void navigate(`/settings/${s.id}`);
+                        }}
+                      />
+                    ))}
+                    </div>
+                  </div>
+                );
+              })
+            )
           ) : (
-            Array.from(filtered.entries()).map(([category, items]) => {
-              const Icon = items[0]?.categoryIcon ?? Globe;
-              const categoryLabel = items[0]?.categoryLabel ?? category;
-              return (
-                <div key={category || 'default'} className="mb-2 px-2">
-                  <div className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/40">
-                    <Icon className="size-3" aria-hidden="true" />
-                    <span>{categoryLabel}</span>
-                  </div>
-                  <div className="flex flex-col gap-0.5 rounded-xl bg-white/[0.025] py-1">
-                  {items.map((s) => (
-                    <WorkspaceNavLink
-                      key={s.id}
-                      icon={s.icon}
-                      label={s.label}
-                      active={railActive === s.id}
-                      badge={
-                        s.id === 'app-updates' && updateAvailable
-                          ? 'New'
-                          : null
-                      }
-                      onSelect={() => {
-                        if (s.id === railActive && s.id === active) return;
-                        setQuery('');
-                        void navigate(`/settings/${s.id}`);
-                      }}
-                    />
-                  ))}
-                  </div>
-                </div>
-              );
-            })
+            <div className="px-2 py-1 flex flex-col gap-0.5">
+              {SETTINGS_CATEGORIES.map((cat) => {
+                const Icon = CATEGORY_ICONS[cat.id] ?? Globe;
+                const isActive = activeCategoryId === cat.id;
+                return (
+                  <WorkspaceNavLink
+                    key={cat.id}
+                    icon={Icon}
+                    label={cat.label}
+                    active={!!isActive}
+                    onSelect={() => {
+                      if (isActive && active === cat.id) return;
+                      setQuery('');
+                      void navigate(`/settings/${cat.id}`);
+                    }}
+                  />
+                );
+              })}
+            </div>
           )}
         </nav>
-
-        {/* Bottom: Show advanced toggle. Quiet and always visible so
-         * power users can reveal advanced sections without using search. */}
-        <div className="shrink-0 border-t border-sidebar-border px-3 py-2">
-          <button
-            type="button"
-            onClick={toggleAdvanced}
-            aria-pressed={showAdvanced}
-            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition"
-          >
-            <span>{showAdvanced ? 'Hide advanced' : 'Show advanced'}</span>
-            {showAdvanced
-              ? <ChevronDown className="size-3.5" aria-hidden="true" />
-              : <ChevronRight className="size-3.5" aria-hidden="true" />}
-          </button>
-        </div>
       </aside>
 
       {/* Main content — each section renders its own h1 inside.

@@ -16,14 +16,30 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   resolveLegacyTab,
   SETTINGS_SECTIONS,
+  SETTINGS_CATEGORIES,
+  railCanonicalId,
+  getSection,
+  sectionsForCategory,
   type SettingsSection,
 } from '@/settings/settings-registry';
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
 import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 
-/** The default section when no :section param is present. The user
- *  said clicking Settings should land on Model settings. */
-const DEFAULT_SECTION_ID = 'model-providers';
+/** Hub IA: 8 category hubs (clean, related data per hub). Rail shows hubs, not 32 rows. */
+const HUB_CATEGORY_IDS = new Set(SETTINGS_CATEGORIES.map((c) => c.id));
+const LEGACY_HUB_MAP: Record<string, string> = {
+  general: 'system',
+  intelligence: 'models',
+  tools: 'tools',
+  activity: 'insights',
+  security: 'access',
+};
+function isHubId(id: string | null | undefined): boolean {
+  return !!id && HUB_CATEGORY_IDS.has(id);
+}
+
+/** The default section when no :section param is present. Hub IA: System hub first. */
+const DEFAULT_SECTION_ID = 'system';
 
 /** While first-run setup is incomplete (no provider + workspace yet),
  *  bare /settings lands on the guided AI Setup wizard instead. */
@@ -82,10 +98,16 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const rawSection = params.section;
   const landingSectionId = useLandingSectionId();
-  const activeId = rawSection ? resolveLegacyTab(rawSection) : landingSectionId;
-  const active: SettingsSection =
-    SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0];
-  const prevSectionRef = useRef(active.id);
+  // Hub IA: rawSection can be a category id (e.g. "models") or a legacy section/category.
+  const mappedRaw = rawSection ? (LEGACY_HUB_MAP[rawSection] ?? rawSection) : rawSection;
+  const rawIsHub = isHubId(mappedRaw ?? null);
+  const resolvedSectionId = mappedRaw && !rawIsHub ? resolveLegacyTab(mappedRaw) : null;
+  const activeId = rawIsHub ? mappedRaw! : mappedRaw ? resolvedSectionId! : landingSectionId;
+  const isHub = isHubId(activeId);
+  const active: SettingsSection | null = isHub
+    ? null
+    : (SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0]);
+  const prevSectionRef = useRef(activeId);
 
   // Normalize bare /settings → /settings/<default> so deep links and the
   // left rail stay in sync without remounting this page.
@@ -106,48 +128,100 @@ export function SettingsPage() {
       return;
     }
     // Rewrite legacy aliases in the URL (e.g. /settings/traffic → traffic-activity).
-    if (rawSection !== active.id) {
+    // For hubs, rawSection is the hub id itself — no rewrite.
+    if (!isHub && rawSection !== activeId) {
       const qs = sectionQuery ? `?section=${encodeURIComponent(sectionQuery)}` : '';
-      void navigate(`/settings/${active.id}${qs}`, { replace: true });
+      void navigate(`/settings/${activeId}${qs}`, { replace: true });
     }
-  }, [rawSection, active.id, navigate, searchParams, landingSectionId]);
+  }, [rawSection, activeId, isHub, navigate, searchParams, landingSectionId]);
 
   // Tab switch: remounted section queries may still be within the global
   // 5s staleTime. Invalidate only the settings-domain keys so the newly
   // active tab hits the network — a bare invalidateQueries() refetched
   // every app query (chat-side hooks included) on each tab switch.
   useEffect(() => {
-    if (prevSectionRef.current === active.id) return;
-    prevSectionRef.current = active.id;
+    if (prevSectionRef.current === activeId) return;
+    prevSectionRef.current = activeId;
     void queryClient.invalidateQueries({
       predicate: (q) => SETTINGS_QUERY_DOMAINS.has(String(q.queryKey[0] ?? '')),
     });
-  }, [active.id, queryClient]);
+  }, [activeId, queryClient]);
 
-  const SectionComponent = SECTION_COMPONENTS[active.id] ?? SettingsStub;
+  const SectionComponent = SECTION_COMPONENTS[activeId] ?? SettingsStub;
 
   return (
     <WorkspaceShell
       sections={SETTINGS_SECTIONS as unknown as WorkspaceSectionMeta[]}
-      active={active.id}
+      active={activeId}
     >
-      {/* Content-only transition: shell/rail stay put; section remounts
-          (via key) so each tab's useEffect / react-query runs for fresh data. */}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
-          key={active.id}
+          key={activeId}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
           className="h-full min-h-0"
         >
-          <React.Suspense fallback={<SettingsSectionLoader />}>
-            <SectionComponent active={active} />
-          </React.Suspense>
+          {isHub ? (
+            <CategoryHub categoryId={activeId} />
+          ) : (
+            <React.Suspense fallback={<SettingsSectionLoader />}>
+              <SectionComponent active={active!} />
+            </React.Suspense>
+          )}
         </motion.div>
       </AnimatePresence>
     </WorkspaceShell>
+  );
+}
+
+function CategoryHub({ categoryId }: { categoryId: string }) {
+  const cat = SETTINGS_CATEGORIES.find((c) => c.id === categoryId);
+  const sections = sectionsForCategory(categoryId).filter((s) => s.tier !== 'hidden');
+  const [activeTab, setActiveTab] = React.useState<string>(() => sections[0]?.id ?? categoryId);
+  React.useEffect(() => {
+    if (sections.length > 0 && !sections.some((s) => s.id === activeTab)) {
+      setActiveTab(sections[0].id);
+    }
+  }, [categoryId, sections, activeTab]);
+  if (!cat) return null;
+  const activeSection = sections.find((s) => s.id === activeTab) ?? sections[0];
+  const ActiveComp = activeSection ? SECTION_COMPONENTS[activeSection.id] : null;
+  return (
+    <div className="min-h-0 max-w-5xl mx-auto px-6 py-6">
+      <div className="mb-4">
+        <h1 className="text-[22px] font-semibold tracking-tight text-foreground">{cat.label}</h1>
+        <p className="mt-1 text-[13px] text-muted-foreground">{cat.description}</p>
+      </div>
+      {sections.length > 1 && (
+        <div className="mb-6 flex gap-1.5 overflow-x-auto pb-1 scrollbar-none" role="tablist">
+          {sections.map((s) => {
+            const isActive = s.id === activeTab;
+            return (
+              <button
+                key={s.id}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveTab(s.id)}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition ${
+                  isActive
+                    ? 'bg-foreground text-background shadow-sm'
+                    : 'bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/40'
+                }`}
+              >
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {activeSection && ActiveComp ? (
+        <React.Suspense fallback={<SettingsSectionLoader />}>
+          <ActiveComp active={activeSection} />
+        </React.Suspense>
+      ) : null}
+    </div>
   );
 }
 

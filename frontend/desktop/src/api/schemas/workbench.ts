@@ -56,6 +56,7 @@ export const WorkbenchToolUseEventSchema = WorkbenchBaseSchema.extend({
   id: z.string(),
   name: z.string(),
   input: UnknownDictSchema,
+  startedAtMs: z.number().optional(),
 });
 
 export const WorkbenchToolCallEventSchema = WorkbenchBaseSchema.extend({
@@ -64,6 +65,7 @@ export const WorkbenchToolCallEventSchema = WorkbenchBaseSchema.extend({
   name: z.string(),
   input: UnknownDictSchema.optional(),
   status: z.string().optional(),
+  startedAtMs: z.number().optional(),
 });
 
 export const WorkbenchToolResultEventSchema = WorkbenchBaseSchema.extend({
@@ -76,6 +78,9 @@ export const WorkbenchToolResultEventSchema = WorkbenchBaseSchema.extend({
   summary: z.string().optional(),
   status: z.string().optional(),
   error: z.string().optional(),
+  durationMs: z.number().optional(),
+  startedAtMs: z.number().optional(),
+  blocked: z.boolean().optional(),
   providerSetup: z.unknown().optional(),
   integrationSetup: z.unknown().optional(),
 });

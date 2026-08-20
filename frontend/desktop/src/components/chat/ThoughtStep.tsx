@@ -21,11 +21,17 @@ import { Markdown } from '@/sections/chat/ChatMarkdown';
 /** Lines of prose visible before the clamp + fade kick in. */
 const CLAMP_LINES = 9;
 
+/** Rough char equivalent of CLAMP_LINES (~80 chars/line) — the overflow
+ *  measurement can read 0/stale when a whole-turn burst arrives at once, so
+ *  a long thought must also truncate by length alone. */
+const CLAMP_CHARS = 700;
+
 export function ThoughtStep({
   content,
   isGenerating = false,
   showFull = false,
   onToggle,
+  collapsedDefault = false,
   className,
 }: {
   content: string;
@@ -34,6 +40,10 @@ export function ThoughtStep({
    *  is streaming, false once settled (→ clamped if it overflows). */
   showFull?: boolean;
   onToggle?: () => void;
+  /** Collapse settled thoughts to a one-line summary (dsh-style think row).
+   *  Only applies while clamped and not generating; "Show full reasoning"
+   *  expands, "Show less" returns to the summary. */
+  collapsedDefault?: boolean;
   className?: string;
 }) {
   const reactId = useId();
@@ -68,8 +78,23 @@ export function ThoughtStep({
   // the clamp height it is bounded with a fade + Show more, and the live tail
   // simply streams below the fold (matching the reference, where a mid-stream
   // thought is already truncated). Only an explicit Show more unclamps it.
-  const clamped = overflowing && !showFull;
-  const canReveal = overflowing && typeof onToggle === 'function';
+  // `longThought` falls back to a length check when the pixel measurement is
+  // unavailable or stale — a long thought must never render untruncated.
+  const longThought = overflowing || text.length > CLAMP_CHARS;
+  const clamped = longThought && !showFull;
+
+  // dsh-style think row: while the thought is generating — or settled and
+  // clamped — collapse to a one-line summary. While running the line follows
+  // the latest non-blank line (fast tokens move fast); once settled it rests
+  // on the first line. "Show full reasoning" expands mid-stream (even for
+  // short live thoughts).
+  const summaryCollapsed = collapsedDefault && !showFull && (isGenerating || clamped);
+  const canReveal = (longThought || isGenerating) && typeof onToggle === 'function';
+
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const summaryLine = isGenerating
+    ? lines[lines.length - 1] ?? ''
+    : lines[0] ?? '';
 
   const clockIcon = isGenerating ? (
     <Loader2 className="process-thought-clock animate-spin" aria-hidden />
@@ -79,10 +104,10 @@ export function ThoughtStep({
 
   return (
     <div
-      className={cn('rail-row process-thought', className)}
+      className={cn('rail-row process-thought thought-enter', className)}
       data-slot="thought-step"
       data-generating={isGenerating ? 'true' : 'false'}
-      data-expanded={clamped ? 'false' : 'true'}
+      data-expanded={summaryCollapsed ? 'false' : showFull ? 'true' : 'false'}
       data-clamped={clamped ? 'true' : 'false'}
     >
       <span className="rail-line" aria-hidden />
@@ -91,37 +116,73 @@ export function ThoughtStep({
       </div>
 
       <div className="process-thought-body">
-        <div className={cn('thought-clamp', clamped && 'is-clamped')}>
-          <div
-            ref={proseRef}
-            id={panelId}
-            className="process-thought-prose thought-content chat-thought-text"
-            aria-live={isGenerating ? 'polite' : undefined}
-          >
-            {text ? (
-              <Markdown content={text} />
-            ) : (
-              <div className="process-thought-pending">Thinking…</div>
-            )}
-          </div>
-          {clamped ? <div className="thought-fade" aria-hidden /> : null}
-        </div>
+        {summaryCollapsed ? (
+          <>
+            <div
+              className={cn(
+                'thought-summary',
+                isGenerating && 'thought-summary--live',
+              )}
+              data-slot="thought-summary"
+            >
+              <span className="thought-summary-text">{summaryLine}</span>
+              {canReveal ? (
+                <button
+                  type="button"
+                  className="thought-summary-toggle"
+                  onClick={onToggle}
+                  aria-expanded={false}
+                >
+                  Show full reasoning
+                </button>
+              ) : null}
+            </div>
+            {/* Keep the prose mounted (visually hidden) so the overflow
+                measurement above stays accurate while collapsed. */}
+            <div className="thought-clamp thought-clamp-hide" aria-hidden>
+              <div
+                ref={proseRef}
+                className="process-thought-prose thought-content chat-thought-text"
+              >
+                <Markdown content={text} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={cn('thought-clamp', clamped && 'is-clamped')}>
+              <div
+                ref={proseRef}
+                id={panelId}
+                className="process-thought-prose thought-content chat-thought-text"
+                aria-live={isGenerating ? 'polite' : undefined}
+              >
+                {text ? (
+                  <Markdown content={text} />
+                ) : (
+                  <div className="process-thought-pending">Thinking…</div>
+                )}
+              </div>
+              {clamped ? <div className="thought-fade" aria-hidden /> : null}
+            </div>
 
-        {canReveal ? (
-          <button
-            type="button"
-            className={cn('thought-toggle-btn', isGenerating && 'is-live')}
-            onClick={onToggle}
-            aria-expanded={showFull}
-            aria-controls={panelId}
-          >
-            <span>{showFull ? 'Show less' : 'Show more'}</span>
-            <ChevronDown
-              className={cn('thought-toggle-chevron', showFull && 'is-open')}
-              aria-hidden
-            />
-          </button>
-        ) : null}
+            {canReveal ? (
+              <button
+                type="button"
+                className={cn('thought-toggle-btn', isGenerating && 'is-live')}
+                onClick={onToggle}
+                aria-expanded={showFull}
+                aria-controls={panelId}
+              >
+                <span>{showFull ? 'Show less' : 'Show more'}</span>
+                <ChevronDown
+                  className={cn('thought-toggle-chevron', showFull && 'is-open')}
+                  aria-hidden
+                />
+              </button>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );

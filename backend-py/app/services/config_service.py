@@ -82,6 +82,45 @@ def saveProvidersStore(data: dict[str, object]) -> None:
         pass
 
 
+def apply_model_tool_surface(model_id: str, surface: str) -> bool:
+    """Persist a per-model toolSurface override (capability auto-profile).
+
+    Mirrors the logic the workbench auto-profile uses; kept here so the
+    /api/models/profile endpoint and the harness share one implementation.
+    Returns True when a matching model was updated.
+    """
+    try:
+        store = getProvidersStore()
+        for prov in as_list(store.get('providers'), []):
+            if not isinstance(prov, dict):
+                continue
+            for m in as_list(prov.get('models'), []):
+                if isinstance(m, dict) and str(m.get('id', '')) == model_id:
+                    m['toolSurface'] = surface
+                    saveProvidersStore(store)
+                    return True
+    except Exception:
+        return False
+    return False
+
+
+def clear_model_tool_surface(model_id: str) -> bool:
+    """Remove a model's toolSurface override (revert to provider default)."""
+    try:
+        store = getProvidersStore()
+        for prov in as_list(store.get('providers'), []):
+            if not isinstance(prov, dict):
+                continue
+            for m in as_list(prov.get('models'), []):
+                if isinstance(m, dict) and str(m.get('id', '')) == model_id:
+                    m.pop('toolSurface', None)
+                    saveProvidersStore(store)
+                    return True
+    except Exception:
+        return False
+    return False
+
+
 def getProvidersAsModels() -> list[ProviderConfig]:
     """Read providers from the store and return typed ProviderConfig models."""
     store = getProvidersStore()

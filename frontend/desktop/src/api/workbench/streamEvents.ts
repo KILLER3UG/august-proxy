@@ -50,6 +50,7 @@ export function dispatchWorkbenchEvent(
         id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
         name: typeof p?.name === 'string' ? p.name : JSON.stringify(p?.name ?? ''),
         input: (p?.input as Record<string, unknown>) ?? {},
+        startedAtMs: typeof p?.startedAtMs === 'number' ? p.startedAtMs : undefined,
       });
       break;
     case 'toolCall': {
@@ -63,6 +64,7 @@ export function dispatchWorkbenchEvent(
         id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
         name: typeof p?.name === 'string' ? p.name : JSON.stringify(p?.name ?? ''),
         input,
+        startedAtMs: typeof p?.startedAtMs === 'number' ? p.startedAtMs : undefined,
       });
       break;
     }
@@ -86,6 +88,9 @@ export function dispatchWorkbenchEvent(
         content,
         isError,
         status,
+        durationMs: typeof p?.durationMs === 'number' ? p.durationMs : undefined,
+        startedAtMs: typeof p?.startedAtMs === 'number' ? p.startedAtMs : undefined,
+        blocked: p?.blocked === true,
         providerSetup: p?.providerSetup,
         integrationSetup: p?.integrationSetup,
       });
@@ -263,14 +268,33 @@ export function dispatchWorkbenchEvent(
       });
       break;
     case 'evidenceState':
-      // TODO: backend emits evidence-state snapshots for the verifier /
-      // routing evidence UI. No consumer exists yet (ChatThread has no
-      // evidence panel) — acknowledged, not dropped with a schema warning.
+      // Backend emits per-turn evidence-state snapshots (ok / refusal /
+      // thinking_only / tool_error / …). Consumed by the trajectory view
+      // and routing analytics; nothing renders inline per event.
+      handlers.onEvidenceState?.({
+        state: typeof p?.state === 'string' ? p.state : '',
+      });
       break;
     case 'modelProfileSuggestion':
-      // TODO: backend emits per-model capability suggestions (toolSurface,
-      // maxTools, …). No consumer exists yet — acknowledged, not dropped
-      // with a schema warning.
+      // Capability auto-detect suggested a per-model tool surface. The
+      // composer stack renders an Apply / Dismiss chip (POST /api/models/profile).
+      handlers.onModelProfileSuggestion?.({
+        model: typeof p?.model === 'string' ? p.model : '',
+        suggestedProfile:
+          p?.suggestedProfile && typeof p.suggestedProfile === 'object'
+            ? {
+                toolSurface:
+                  typeof (p.suggestedProfile as Record<string, unknown>).toolSurface === 'string'
+                    ? ((p.suggestedProfile as Record<string, unknown>).toolSurface as string)
+                    : undefined,
+                reason:
+                  typeof (p.suggestedProfile as Record<string, unknown>).reason === 'string'
+                    ? ((p.suggestedProfile as Record<string, unknown>).reason as string)
+                    : undefined,
+              }
+            : undefined,
+        message: typeof p?.message === 'string' ? p.message : undefined,
+      });
       break;
     case 'subagentToolCall':
       handlers.onSubagentToolCall?.({

@@ -799,13 +799,17 @@ def buildSystemPrompt(
                 n = as_str(as_dict(t.get('function')).get('name'), '')
             if n:
                 tool_names.append(n)
-    capabilities_block = ''
-    try:
-        from app.services.memory.capabilities_prompt import build_capabilities_block
+    from app.services.harness_mode import is_benchmark_mode
 
-        capabilities_block = build_capabilities_block(tool_names or None)
-    except Exception:
-        logger.debug('prompt: capabilities block failed', exc_info=True)
+    is_benchmark = is_benchmark_mode(session)
+    capabilities_block = ''
+    if not is_benchmark:
+        try:
+            from app.services.memory.capabilities_prompt import build_capabilities_block
+
+            capabilities_block = build_capabilities_block(tool_names or None)
+        except Exception:
+            logger.debug('prompt: capabilities block failed', exc_info=True)
     sessionDict = {
         # Ambient identity so tools like delete/rename/brain_query can target
         # "this chat" without a prior list call.
@@ -822,7 +826,7 @@ def buildSystemPrompt(
         'cognitiveBudget': cognitiveBudget,
         'memoryStats': memoryStats,
         'whatsNew': whatsNew,
-        'skillsManifest': skillsManifest,
+        'skillsManifest': [] if is_benchmark else skillsManifest,
         'capabilitiesBlock': capabilities_block,
         'toolNames': tool_names,
         'executionState': getattr(session, '_execution_state', None),
@@ -832,9 +836,10 @@ def buildSystemPrompt(
         # Tool self-heal: structured failure from last tool exception (if any).
         'failureFeedback': getattr(session, '_failure_feedback', None),
     }
-    for k in ('coreMemory', 'learnedHeuristics', 'autoMemories'):
-        if k in memory:
-            sessionDict[k] = memory[k]
+    if not is_benchmark:
+        for k in ('coreMemory', 'learnedHeuristics', 'autoMemories'):
+            if k in memory:
+                sessionDict[k] = memory[k]
     # Load workspace AUG.md into Tier 2 as soft context (Claude CLAUDE.md parity).
     augMdBody = ''
     if workspacePath:
@@ -1066,15 +1071,7 @@ def _apply_model_profile(model_id: str, surface: str) -> bool:
     try:
         from app.services import config_service
 
-        store = config_service.getProvidersStore()
-        for prov in as_list(store.get('providers'), []):
-            if not isinstance(prov, dict):
-                continue
-            for m in as_list(prov.get('models'), []):
-                if isinstance(m, dict) and as_str(m.get('id'), '') == model_id:
-                    m['toolSurface'] = surface
-                    config_service.saveProvidersStore(store)
-                    return True
+        return config_service.apply_model_tool_surface(model_id, surface)
     except Exception:
         logger.debug('auto-profile apply failed', exc_info=True)
     return False
@@ -1085,15 +1082,7 @@ def _clear_model_profile(model_id: str) -> bool:
     try:
         from app.services import config_service
 
-        store = config_service.getProvidersStore()
-        for prov in as_list(store.get('providers'), []):
-            if not isinstance(prov, dict):
-                continue
-            for m in as_list(prov.get('models'), []):
-                if isinstance(m, dict) and as_str(m.get('id'), '') == model_id:
-                    m.pop('toolSurface', None)
-                    config_service.saveProvidersStore(store)
-                    return True
+        return config_service.clear_model_tool_surface(model_id)
     except Exception:
         logger.debug('auto-profile clear failed', exc_info=True)
     return False
@@ -1403,10 +1392,17 @@ def _finalize_session_tools(
     session: WorkbenchSession, tools: list[dict[str, object]]
 ) -> list[dict[str, object]]:
     tools = _applyModelCapabilityProfile(session, tools)
-    from app.services.harness_mode import filter_planner_tools, is_orchestrator_mode
+    from app.services.harness_mode import (
+        filter_benchmark_tools,
+        filter_planner_tools,
+        is_benchmark_mode,
+        is_orchestrator_mode,
+    )
 
     if is_orchestrator_mode(session):
         return filter_planner_tools(tools)
+    if is_benchmark_mode(session):
+        return filter_benchmark_tools(session, tools)
     return tools
 
 
@@ -2534,6 +2530,13 @@ async def _sendWorkbenchMessageStreamImpl(
                 'steer. Switch set_agent_mode(mode="agent") to act in this session.\n'
                 '</agent_mode>'
             )
+        elif agentMode == 'benchmark':
+            text = (
+                f'{text}\n\n<agent_mode>\n'
+                'You are in BENCHMARK MODE: minimal tool surface for raw capability evaluation. '
+                'Use run_command and edit_lines to solve the task. No extra scaffolding.\n'
+                '</agent_mode>'
+            )
         return text
 
     with _trace.span('prompt_build'):
@@ -2900,18 +2903,18 @@ async def _sendWorkbenchMessageStreamImpl(
                             'reason': f'Primary model failed — continuing on {resolvedModel}',
                         }
                     )
+            response: dict[str, object] = {}
             for retryAttempt in range(retryPolicy['maxRetries'] + 1):
                 _llmT0 = time.monotonic()
-                # Buffer streamed text per attempt: a failed attempt must not
-                # leave partial finalOutput/thinking in the UI before the
-                # retry re-streams (duplicate/garbled answers — audit fix).
-                # Non-text events (toolResult, warnings) pass through live.
-                attemptBuffer: list[dict[str, object]] = []
+                # Stream text live: per-delta finalOutput/thinking events go
+                # straight to the SSE log so the UI paints incrementally.
+                # A retry rolls the partial attempt back via the `retrying`
+                # event (the frontend clears its streaming buffer on it), so
+                # a failed attempt cannot leave duplicate/garbled answers.
+                # Non-text events (toolResult, warnings) pass through live too.
 
                 def _attemptEmit(evt: dict[str, object]) -> None:
-                    if as_str(evt.get('type'), '') in ('finalOutput', 'final_output', 'thinking'):
-                        attemptBuffer.append(evt)
-                    elif emit is not None:
+                    if emit is not None:
                         emit(evt)
 
                 with _trace.span('llm_wait', round=toolRound, attempt=retryAttempt):
@@ -2959,10 +2962,6 @@ async def _sendWorkbenchMessageStreamImpl(
                 # instead of killing the turn — up to maxRetries, then surface the
                 # error as before.
                 if not _isRetryableModelError(response):
-                    if not response.get('error') and emit is not None:
-                        # Attempt succeeded — flush its buffered stream text.
-                        for evt in attemptBuffer:
-                            emit(evt)
                     break
                 if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():
                     break
@@ -3074,7 +3073,7 @@ async def _sendWorkbenchMessageStreamImpl(
             totalCacheHitTokens += as_int(hitRaw, 0)
             totalCacheMissTokens += as_int(missRaw, 0)
         if isAnthropic:
-            assistantMsg = {'role': 'assistant', 'content': response.get('content', [])}
+            assistantMsg: dict[str, object] = {'role': 'assistant', 'content': response.get('content', [])}
             contentBlocks = cast('list[dict[str, object]]', as_list(response.get('content', []), []))
             textContent = _extractText(contentBlocks)
             thinkingContent = _extractThinking(contentBlocks)
@@ -3085,8 +3084,8 @@ async def _sendWorkbenchMessageStreamImpl(
             choiceMsg = as_dict(choice.get('message', {}))
             assistantMsg = {
                 'role': 'assistant',
-                'content': choiceMsg.get('content', ''),
-                'tool_calls': choiceMsg.get('tool_calls', []),
+                'content': cast('object', choiceMsg.get('content', '')),
+                'tool_calls': cast('object', choiceMsg.get('tool_calls', [])),
             }
             textContent = as_str(response.get('text', ''))
             thinkingContent = as_str(response.get('thinking', '')) or as_str(
@@ -3249,12 +3248,19 @@ async def _sendWorkbenchMessageStreamImpl(
                             'name': toolName,
                             'content': msg,
                             'status': 'done',
+                            'durationMs': 0,
+                            'startedAtMs': int(time.time() * 1000),
+                            'blocked': True,
                         }
                     )
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
                 continue
             from app.services.harness_mode import (
+                BENCHMARK_ALLOWED_TOOLS,
+                BENCHMARK_VERIFIER_EXTRA,
                 PLANNER_ALLOWED_TOOLS,
+                benchmark_block_message,
+                is_benchmark_mode,
                 is_orchestrator_mode,
                 planner_block_message,
             )
@@ -3269,10 +3275,34 @@ async def _sendWorkbenchMessageStreamImpl(
                             'name': toolName,
                             'content': msg,
                             'status': 'done',
+                            'durationMs': 0,
+                            'startedAtMs': int(time.time() * 1000),
+                            'blocked': True,
                         }
                     )
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
                 continue
+            if is_benchmark_mode(session) and toolName:
+                allowed_bench = set(BENCHMARK_ALLOWED_TOOLS)
+                if getattr(session, 'verifierEnforced', False):
+                    allowed_bench |= BENCHMARK_VERIFIER_EXTRA
+                if toolName not in allowed_bench:
+                    msg = benchmark_block_message(toolName)
+                    if emit:
+                        emit(
+                            {
+                                'type': 'toolResult',
+                                'id': toolUseId,
+                                'name': toolName,
+                                'content': msg,
+                                'status': 'done',
+                                'durationMs': 0,
+                                'startedAtMs': int(time.time() * 1000),
+                                'blocked': True,
+                            }
+                        )
+                    toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
+                    continue
             # Tool-call recovery (surpass): malformed JSON arguments must never
             # execute as an empty dict — the model would silently do the wrong
             # thing. The OpenAI path marks failures `_invalid_json`; the
@@ -3283,7 +3313,7 @@ async def _sendWorkbenchMessageStreamImpl(
             if invalidRaw:
                 parseFailures += 1
                 invalidThisRound += 1
-                if parseFailures >= 3 and emit:
+                if parseFailures >= 3 and emit and not is_benchmark_mode(session):
                     emit(
                         {
                             'type': 'warning',
@@ -3303,6 +3333,9 @@ async def _sendWorkbenchMessageStreamImpl(
                             'name': toolName,
                             'content': msg,
                             'status': 'done',
+                            'durationMs': 0,
+                            'startedAtMs': int(time.time() * 1000),
+                            'blocked': True,
                         }
                     )
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
@@ -3456,6 +3489,9 @@ async def _sendWorkbenchMessageStreamImpl(
                             'content': f'[Blocked] {blockedReason}',
                             'error': blockedReason,
                             'status': 'blocked',
+                            'durationMs': 0,
+                            'startedAtMs': int(time.time() * 1000),
+                            'blocked': True,
                         }
                     )
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': f'[Blocked] {blockedReason}'})
@@ -3469,8 +3505,19 @@ async def _sendWorkbenchMessageStreamImpl(
         from app.services.workbench.chat_stages import run_regular_tools_stage
 
         async def _run_regular(toolName: str, toolInput: dict[str, object], toolUseId: str) -> dict[str, object]:
+            tool_started_at = int(time.time() * 1000)
+            t0 = time.perf_counter()
             if emit:
-                emit({'type': 'toolCall', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'status': 'running'})
+                emit(
+                    {
+                        'type': 'toolCall',
+                        'id': toolUseId,
+                        'name': toolName,
+                        'input': toolInput,
+                        'status': 'running',
+                        'startedAtMs': tool_started_at,
+                    }
+                )
             # Filesystem save point before mutating tools (W4 isolation)
             try:
                 if isPlanModeBlocked(toolName, toolInput):
@@ -3809,6 +3856,7 @@ async def _sendWorkbenchMessageStreamImpl(
                             emit({'type': 'memoryUpdated', 'action': toolName, 'summary': notice})
                     except Exception:
                         logger.debug('memory notice emit failed', exc_info=True)
+                tool_duration_ms = int(max(0.0, (time.perf_counter() - t0) * 1000))
                 emit(
                     {
                         'type': 'toolResult',
@@ -3821,6 +3869,8 @@ async def _sendWorkbenchMessageStreamImpl(
                         # Authoritative status: failures begin with "Error:" —
                         # the UI maps this to the red/error tool card.
                         'status': 'error' if str(result).startswith('Error:') else 'done',
+                        'durationMs': tool_duration_ms,
+                        'startedAtMs': tool_started_at,
                         'providerSetup': providerSetup,
                         'integrationSetup': integrationSetup,
                     }

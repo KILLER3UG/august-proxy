@@ -215,6 +215,12 @@ start of each turn.
 plus [`subagent_orchestrator.py`](../backend-py/app/services/subagent_orchestrator.py)
 and HTTP `/api/subagents/*`. Sub-agents resolve inherited model aliases, apply
 `subAgentFallback`, enforce depth caps, and reuse workbench model callers.
+Hermes-structured harness: `delegation {maxConcurrent, maxIterations, maxDepth, worktreeIsolation}`
+in `workbench.metadata.delegation` (`GET/POST /api/subagents/config`). Statuses `queued/running/stalling`
+with `queuePosition/queueTotal`, `lastActivityAt/apiCalls` stall monitor (>90s → `stalling`),
+`result_full` 20k blob + `cache/delegation/<taskId>.jsonl` live transcript (`GET /{taskId}/transcript`).
+Drawer-only UI: transcript no longer has inline `SubagentLaunchList` pills; `ChatRunHeader` is 4 segments
+(Mode·Wave·live·ctx), full detail lives in right-drawer `Subagents` (queue, live timeline, persisted final).
 
 ### Event log
 
@@ -412,12 +418,12 @@ endpoints return honest **501**. Live config: `GET/PUT /api/config/live`.
 | `frontend/mobile/` | Expo | Companion app |
 | `web-dist/` | Build output | Packaged into Tauri; FastAPI may serve it for backend-only runs |
 
-Major desktop surfaces: chat/workbench (run header, worker lanes, composer
-island, Brain review), Live, Settings hubs (System Status, Models & Providers,
-Memory, Integrations, Skills, Files & Shell Access, Usage, Activity Log,
-External API Access). Hidden rail ids (`backend-monitor`, `health-simulator`,
-split memory tabs, UI Designer) deep-link into those hubs via
-`railCanonicalId`. Feature Flow remains an advanced diagnostics page.
+Major desktop surfaces: chat/workbench (run header, drawer-only subagent lanes, composer
+island, Artifacts gallery, TimelineRail, Brain review), Live, Settings 8 hubs
+(System / Appearance / Models / Memory / Automations / Tools & Skills / Access / Insights)
+with inner pill tabs (no long scroll, no `Show advanced`). Hidden ids (`backend-monitor`,
+`health-simulator`, split memory tabs, UI Designer, `tool-grants`, `python-sandbox`)
+deep-link into hubs via `railCanonicalId`. Feature Flow lives in Insights.
 
 Settings source of truth: [`settings-registry.ts`](../frontend/desktop/src/settings/settings-registry.ts).
 [`settings-audit.md`](settings-audit.md) is a historical IA record.

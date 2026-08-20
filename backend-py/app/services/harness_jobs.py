@@ -82,7 +82,8 @@ def record_lane(job_id: str, name: str, status: str, error: str = '', task_id: s
                 raw = loaded
         except Exception:
             raw = {}
-        prev = raw.get(name) if isinstance(raw.get(name), dict) else {}
+        prev_item = raw.get(name) if isinstance(raw, dict) else None
+        prev: dict[str, Any] = prev_item if isinstance(prev_item, dict) else {}
         raw[name] = {
             'status': status,
             'error': error[:400],
@@ -237,7 +238,8 @@ async def cancel_wave(job_id: str, wave_index: int) -> dict[str, Any]:
     orch = get_orchestrator()
     stopped = 0
     for name in names:
-        info = outcomes.get(name) if isinstance(outcomes.get(name), dict) else {}
+        info_item = outcomes.get(name) if isinstance(outcomes, dict) else None
+        info: dict[str, Any] = info_item if isinstance(info_item, dict) else {}
         tid = as_str(info.get('taskId'), '')
         st = as_str(info.get('status'), '')
         if tid and st in ('running', 'pending', ''):

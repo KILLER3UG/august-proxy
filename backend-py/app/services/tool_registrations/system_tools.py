@@ -381,14 +381,15 @@ async def _setAgentMode(mode: str = '') -> str:
              with a workspace-bound tool API (read_file / write_file /
              run_command / list_files).
       orchestrator / planner — dispatch workstreams only; no shell/edit.
+      benchmark — minimal 2-tool surface (run_command + edit_lines).
     """
     from app.services.workbench.workbench import get_session
 
     mode = (mode or '').strip().lower()
     if mode == 'planner':
         mode = 'orchestrator'
-    if mode not in ('chat', 'agent', 'code', 'orchestrator'):
-        return "Error: mode must be one of: chat, agent, code, orchestrator."
+    if mode not in ('chat', 'agent', 'code', 'orchestrator', 'benchmark'):
+        return "Error: mode must be one of: chat, agent, code, orchestrator, benchmark."
     session = get_session()
     if not session:
         return 'Error: no active workbench session.'
@@ -608,15 +609,15 @@ def register() -> None:
     tool_registry.register(
         'set_agent_mode',
         "Switch this session's agent mode: 'chat' (text only), 'agent' (native tools), "
-        "'code' (fenced python workspace API), or 'orchestrator' (dispatch workstreams; "
-        "no shell/edit — alias: planner).",
+        "'code' (fenced python workspace API), 'orchestrator' (dispatch workstreams; "
+        "no shell/edit — alias: planner), or 'benchmark' (2-tool minimal surface).",
         _setAgentMode,
         {
             'type': 'object',
             'properties': {
                 'mode': {
                     'type': 'string',
-                    'enum': ['chat', 'agent', 'code', 'orchestrator', 'planner'],
+                    'enum': ['chat', 'agent', 'code', 'orchestrator', 'planner', 'benchmark'],
                     'description': 'The agent mode to switch to.',
                 }
             },

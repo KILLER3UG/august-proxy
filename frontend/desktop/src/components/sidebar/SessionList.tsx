@@ -472,14 +472,14 @@ export function SessionList({
           </div>
         </div>
 
-        {/* Scrollable sessions area — Recents-first */}
-        <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2.5">
+        {/* Scrollable sessions area — denser, drawer-only simplicity */}
+        <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2">
           {searching && searchMatchCount === 0 && (
             <p className="py-4 text-center text-xs text-sidebar-foreground/30 italic">
               No sessions match “{searchQuery.trim()}”
             </p>
           )}
-          {(!searching || visiblePinned.length > 0) && (
+          {visiblePinned.length > 0 && (
           <Section
             title="Pinned"
             count={visiblePinned.length}

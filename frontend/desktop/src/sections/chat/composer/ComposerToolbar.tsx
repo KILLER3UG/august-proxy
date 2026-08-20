@@ -5,7 +5,7 @@ import { useState, useEffect, type Dispatch, type MutableRefObject, type SetStat
 import { Loader2, Mic, Send, ShieldCheck, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import { updateSessionModel } from '@/store/sessions';
-import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchVerifier, setWorkbenchAgentMode } from '@/api/workbench';
+import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchVerifier, setWorkbenchAgentMode, compactWorkbenchSession } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage } from '@/types/chat';
 import {
@@ -18,7 +18,6 @@ import {
 } from '@/components/chat/SandboxModeSelector';
 import { ProjectRulesBadge } from '@/components/chat/ProjectRulesBadge';
 import { ContextRing, type ContextBreakdown } from '../ChatComposer';
-import { ContextUsedBadge } from './ContextUsedBadge';
 import type { ModelItem } from '../model-display';
 import type { SessionUsageState } from '../hooks/useChatUsage';
 import type { EffortLevel } from '../hooks/useChatSend';
@@ -29,6 +28,8 @@ import { CostCeilingChip } from './CostCeilingChip';
 import type { AnchorPos } from './useComposerPopovers';
 import { cn } from '@/lib/utils';
 import { normalizeHarnessMode, type HarnessAgentMode } from '@/components/chat/HarnessModeChip';
+import { GalleryVertical } from 'lucide-react';
+import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 
 export function ComposerToolbar({
   sessionId,
@@ -73,6 +74,8 @@ export function ComposerToolbar({
   onMention,
   onVoice,
   sendKind = 'send',
+  onAskParallel,
+  onStartDebate,
 }: {
   sessionId: string | null;
   loadedSessionId: string | null;
@@ -127,6 +130,8 @@ export function ComposerToolbar({
   onMention: () => void;
   onVoice: () => void;
   sendKind?: 'steer' | 'continue' | 'dispatch' | 'send';
+  onAskParallel?: () => void;
+  onStartDebate?: () => void;
 }) {
   const [handoffPreparing, setHandoffPreparing] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
@@ -261,9 +266,27 @@ export function ComposerToolbar({
       });
   };
 
+  // "Compact now" from the context-ring panel: force context compression and
+  // swap in the returned session so the chat + right drawer see the result.
+  const [compacting, setCompacting] = useState(false);
+  const handleCompact = async () => {
+    if (!sessionId || compacting) return;
+    setCompacting(true);
+    try {
+      const res = await compactWorkbenchSession(sessionId);
+      if (res.session) setWorkbenchSession(res.session);
+      toast.success(res.message || 'Context compacted');
+    } catch (error) {
+      console.warn('[ChatThread] Failed to compact context:', error);
+      toast.error('Could not compact context');
+    } finally {
+      setCompacting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-0">
-      <div className="flex items-center justify-between gap-1.5 px-2 pb-1.5 pt-0.5">
+      <div className="flex items-center justify-between gap-1.5 px-2 pb-1 pt-0">
       <div className="flex items-center gap-1 min-w-0">
         <ComposerActionsMenu
           open={actionsOpen}
@@ -277,6 +300,22 @@ export function ComposerToolbar({
             onToggleActions();
             setSpawnOpen(true);
           }}
+          onAskParallel={
+            onAskParallel
+              ? () => {
+                  onToggleActions();
+                  onAskParallel();
+                }
+              : undefined
+          }
+          onStartDebate={
+            onStartDebate
+              ? () => {
+                  onToggleActions();
+                  onStartDebate();
+                }
+              : undefined
+          }
           extras={
             <div className="flex items-center gap-2 px-1.5 flex-wrap pt-0.5">
               {sessionUsage && workbenchSession?.id && (
@@ -387,7 +426,7 @@ export function ComposerToolbar({
       </div>
 
       <div
-        className="flex items-center gap-1.5 overflow-x-auto px-2 pb-2 pt-0.5 text-[11px] text-muted-foreground"
+        className="flex items-center gap-1 overflow-x-auto px-2 pb-1.5 pt-0.5 text-[11px] text-muted-foreground scrollbar-none"
         data-testid="composer-island-footer"
       >
         <WorkbenchModeSelector
@@ -398,26 +437,37 @@ export function ComposerToolbar({
           harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
           onHarnessChange={persistHarnessMode}
         />
-        <span className="text-muted-foreground/25">·</span>
-        <ContextRing
-          pct={pct}
-          estTokens={estTokens}
-          maxContext={maxContext}
-          modelName={modelForRequest?.name}
-          size={16}
-          breakdown={contextBreakdown}
-          serverTokens={sessionUsage}
-          promptCache={
-            sessionUsage
-              ? {
-                  hitTokens: sessionUsage.cacheHitTokens ?? 0,
-                  missTokens: sessionUsage.cacheMissTokens ?? 0,
-                  hitRate: sessionUsage.cacheHitRate,
-                }
-              : null
-          }
-        />
-        <ContextUsedBadge sessionId={sessionId} />
+        <span className="inline-flex items-center gap-1">
+          <ContextRing
+            pct={pct}
+            estTokens={estTokens}
+            maxContext={maxContext}
+            modelName={modelForRequest?.name}
+            size={16}
+            breakdown={contextBreakdown}
+            serverTokens={sessionUsage}
+            promptCache={
+              sessionUsage
+                ? {
+                    hitTokens: sessionUsage.cacheHitTokens ?? 0,
+                    missTokens: sessionUsage.cacheMissTokens ?? 0,
+                    hitRate: sessionUsage.cacheHitRate,
+                  }
+                : null
+            }
+            onCompact={sessionId ? handleCompact : undefined}
+            compacting={compacting}
+          />
+          <span className="text-[10px] tabular-nums text-muted-foreground/60">{pct}%</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => addRightDrawerSection('artifacts')}
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] leading-none text-muted-foreground/50 hover:bg-muted/40 hover:text-foreground/80 transition"
+          title="Artifacts — files, images, links from this chat"
+        >
+          <GalleryVertical className="size-3 opacity-70" />
+        </button>
         <ModelEffortMenu
           models={models}
           visibleModels={visibleModels}

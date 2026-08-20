@@ -508,6 +508,18 @@ EVAL_SCENARIOS: list[dict[str, Any]] = [
         # verdict is a pass (never an infinite loop).
         'mustHaveAnyText': ['Tool loop exceeded', 'did not recover'],
     },
+    {
+        'taskId': 'benchmark-mode-surface',
+        'tier': 'benchmark',
+        'agent_mode': 'benchmark',
+        'script': [
+            {'type': 'tool', 'name': 'web_search', 'arguments': {'query': 'x'}},
+            {'type': 'tool', 'name': 'run_command', 'arguments': {'command': 'echo ok'}},
+            {'type': 'text', 'text': 'done'},
+        ],
+        'expect': ['toolResult', 'done'],
+        'mustHaveText': ['[Blocked] Benchmark mode'],
+    },
 ]
 
 
@@ -575,6 +587,7 @@ async def _run_all_scenarios_locked() -> dict[str, Any]:
                     script=spec['script'],
                     message=as_str(spec.get('message'), 'do the task'),
                     verifier_enforced=bool(spec.get('verifier_enforced')),
+                    agent_mode=as_str(spec.get('agent_mode'), ''),
                     throwaway=True,
                 )
                 passed, note = _scenario_passed(events, spec)
