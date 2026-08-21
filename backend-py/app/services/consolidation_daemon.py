@@ -456,6 +456,18 @@ async def runConsolidation(*, apply: bool = True) -> ConsolidationSummaryDict:
             logger.info('consolidation: queued %d frequent heuristics as pending skills', queued)
     except Exception:
         logger.debug('heuristic → pending-skill promotion failed', exc_info=True)
+    # Memory lifecycle: mark never-retrieved memories stale so the harness
+    # stats endpoint and future eviction scoring can see what recall ignores.
+    # Previously this existed in lifecycle.py but nothing ever called it
+    # (audit finding).
+    try:
+        from app.services.memory.lifecycle import mark_stale_memories
+
+        staled = mark_stale_memories(days=30)
+        if staled:
+            logger.info('consolidation: marked %d memories stale (not retrieved in 30d)', staled)
+    except Exception:
+        logger.debug('lifecycle stale marking failed', exc_info=True)
     # Longitudinal trends: weekly harness snapshot (self-gating — writes
     # once per week; feeds GET /api/harness/trends).
     try:

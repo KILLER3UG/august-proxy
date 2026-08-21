@@ -16,6 +16,17 @@ async def _loadSkill(name: str) -> str:
         skill = skill_service.get(name)
         if not skill:
             return f"Error: Skill '{name}' not found."
+        # Real usage telemetry: the model deciding to load a skill is the
+        # strongest "this skill is earning its place" signal. Without this,
+        # the curator's staleness clock fell back to file mtime and the
+        # quality scorer's effectiveness dimension stayed starved
+        # (audit finding).
+        try:
+            from app.services.skills.curator import SkillCurator
+
+            SkillCurator().bump_view(name)
+        except Exception:
+            pass
         return f'# {skill["name"]}\n\n{as_str(skill.get("description"), "")}\n\n{as_str(skill.get("instructions"), "")}'
     except Exception as exc:
         return f"Error loading skill '{name}': {exc}"

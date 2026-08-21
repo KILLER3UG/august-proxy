@@ -16,11 +16,13 @@ Design:
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable, Optional, cast
 
 from app.json_narrowing import as_dict, as_list, as_str
 from app.services import skill_service
@@ -51,11 +53,26 @@ class ReviewGates:
     turn_interval: int = _TURNInterval
     tool_round_interval: int = _TOOLRoundInterval
 
-    def shouldReview(self, *, sessionTurns: int = 0, toolRounds: int = 0, lastReviewedAtTurn: int = 0) -> bool:
+    def shouldReview(
+        self,
+        *,
+        sessionTurns: int = 0,
+        toolRounds: int = 0,
+        lastReviewedAtTurn: int = 0,
+        lastReviewedToolRounds: int = 0,
+    ) -> bool:
+        """Fire when enough NEW turns or NEW tool rounds have accumulated.
+
+        ``toolRounds`` is compared as a delta against ``lastReviewedToolRounds``:
+        the cumulative tool-message count never shrinks within a session, so the
+        old absolute comparison kept firing on every turn once the session had
+        seen ``tool_round_interval`` rounds in total (audit finding).
+        """
         if sessionTurns <= 0:
             return False
         turnDelta = sessionTurns - lastReviewedAtTurn
-        return turnDelta >= self.turn_interval or toolRounds >= self.tool_round_interval
+        roundDelta = max(0, toolRounds - lastReviewedToolRounds)
+        return turnDelta >= self.turn_interval or roundDelta >= self.tool_round_interval
 
 
 ReviewClient = Optional[Callable[[list[dict[str, object]]], Awaitable[str]]]
@@ -87,9 +104,15 @@ async def tryBackgroundReview(
         setattr(session, '_last_reviewed_at_turn', lastTurn)
     toolRounds = len([m for m in messagesSnapshot if as_str(m.get('role')) == 'tool'])
     gates = gates or ReviewGates()
-    if not gates.shouldReview(sessionTurns=sessionTurns, toolRounds=toolRounds, lastReviewedAtTurn=lastTurn):
+    if not gates.shouldReview(
+        sessionTurns=sessionTurns,
+        toolRounds=toolRounds,
+        lastReviewedAtTurn=lastTurn,
+        lastReviewedToolRounds=getattr(session, '_last_reviewed_tool_rounds', 0),
+    ):
         return
     setattr(session, '_last_reviewed_at_turn', sessionTurns)
+    setattr(session, '_last_reviewed_tool_rounds', toolRounds)
     asyncio.create_task(
         _doReview(
             messagesSnapshot,
@@ -445,10 +468,15 @@ def _emitSkillEvent(name: str, action: str, description: str) -> None:
         )
     except Exception:
         pass
+    # Authorship is NOT usage. bump_use previously fired here on every
+    # create/patch, so the curator's staleness clock and the quality scorer's
+    # effectiveness dimension measured how often the reflection loop wrote a
+    # skill — not whether the model ever loaded it (audit finding). Real usage
+    # telemetry lives in skill_tools._loadSkill (bump_view) and the curator.
     try:
         from app.services.skills.curator import SkillCurator
 
-        SkillCurator().bump_use(name)
+        SkillCurator().bump_patch(name)
     except Exception:
         pass
 
@@ -513,12 +541,31 @@ def _parseRecommendations(raw: str) -> dict[str, object]:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        text = text.replace("'", '"')
+        pass
+    # Repair passes for near-miss LLM output. The old fallback blanket-replaced
+    # "'" with '"' which corrupted extracted rule text ("don't X" became
+    # invalid JSON and the correction was silently dropped — audit finding).
+    start, end = text.find('{'), text.rfind('}')
+    if start != -1 and end > start:
+        obj = text[start : end + 1]
+        # 1) Python-style dict literals (single-quoted strings): parse without
+        #    ever touching string contents.
         try:
-            return json.loads(text)
+            parsed = ast.literal_eval(obj)
+            if isinstance(parsed, dict):
+                return cast(dict[str, object], parsed)
+        except (ValueError, SyntaxError):
+            pass
+        # 2) Structural quirk: trailing commas before } or ].
+        repaired = re.sub(r',\s*([}\]])', r'\1', obj)
+        try:
+            parsed = json.loads(repaired)
+            if isinstance(parsed, dict):
+                return cast(dict[str, object], parsed)
         except json.JSONDecodeError:
-            log.warning('background_review: could not parse: %.200s', text)
-            return {'corrections': [], 'facts': [], 'skills': [], 'frustration': False}
+            pass
+    log.warning('background_review: could not parse: %.200s', text)
+    return {'corrections': [], 'facts': [], 'skills': [], 'frustration': False}
 
 
 def _saveFact(action: str, content: str) -> None:

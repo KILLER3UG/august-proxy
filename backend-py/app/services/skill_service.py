@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Optional
 
-from app.json_narrowing import as_str
+from app.json_narrowing import as_int, as_str
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'skills'
 
@@ -257,6 +258,51 @@ def catalogue() -> list[dict[str, object]]:
         for s in list_all()
     ]
     return sorted(entries, key=lambda e: as_str(e.get('name'), ''))
+
+
+def catalogue_with_usage() -> list[dict[str, object]]:
+    """Catalogue entries enriched with curator usage telemetry + quality score.
+
+    Adds ``useCount`` / ``viewCount`` / ``state`` (from the SkillCurator
+    sidecar) and ``quality`` ({score, breakdown} from skills.quality) so the
+    dashboard and prompt builders can rank or annotate by real usage instead
+    of authorship recency. Best-effort: missing telemetry degrades to zeros.
+    """
+    from app.services.skills.curator import SkillCurator
+    from app.services.skills.quality import score_skill
+
+    curator = SkillCurator()
+    out: list[dict[str, object]] = []
+    for entry in catalogue():
+        name = as_str(entry.get('name'), '')
+        rec = curator.get_record(name)
+        entry['useCount'] = rec.useCount if rec else 0
+        entry['viewCount'] = rec.viewCount if rec else 0
+        entry['state'] = rec.state if rec else 'active'
+        try:
+            entry['quality'] = score_skill(
+                name,
+                as_str(entry.get('description'), ''),
+                as_str(skill_body(name), ''),
+                trigger=as_str(entry.get('trigger'), '') or None,
+                category=as_str(entry.get('category'), '') or None,
+                use_count=as_int(entry.get('useCount'), 0),
+                last_used_at=(
+                    time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(rec.lastUsedAt))
+                    if rec and rec.lastUsedAt
+                    else None
+                ),
+            )
+        except Exception:
+            pass
+        out.append(entry)
+    return out
+
+
+def skill_body(name: str) -> str | None:
+    """Full instruction body for a skill, or None when not found."""
+    sk = get(name)
+    return as_str(sk.get('instructions'), '') if sk else None
 
 
 def _bust_prompt_skills_cache() -> None:

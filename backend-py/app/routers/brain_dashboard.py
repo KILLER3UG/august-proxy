@@ -285,6 +285,15 @@ async def brainLearning() -> dict[str, object]:
         friction = get_friction_stats(7)
     except Exception:
         friction = {'total': 0, 'sinceDays': 7, 'byCategory': {}, 'daily': [], 'topTools': []}
+    # Skill catalogue with real usage telemetry + quality scores so the UI can
+    # show which skills are earning their keep (was authorship-only before).
+    skillsWithUsage: list[dict[str, object]] = []
+    try:
+        from app.services import skill_service
+
+        skillsWithUsage = skill_service.catalogue_with_usage()
+    except Exception:
+        pass
     return {
         'status': 'idle',
         'heuristics': heuristics,
@@ -307,6 +316,7 @@ async def brainLearning() -> dict[str, object]:
             'lastFlushAt': lastFlushAt,
         },
         'pendingSkills': pendingSkills,
+        'skillsWithUsage': skillsWithUsage,
         'friction': friction,
         'backgroundReview': backgroundReview,
     }

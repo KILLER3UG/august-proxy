@@ -752,6 +752,8 @@ def getRelevantMemories(
                             added += 1
                     except Exception:
                         logger.debug('hybrid vector recall failed', exc_info=True)
+                    result = _expand_with_graph_neighbors(result, conn, lim, durable_only=durable_only)
+                    _record_retrieval_lifecycle(result)
                     return result
                 # durable_only filtered EVERY FTS hit out — fall through to the
                 # LIKE fallback below (different text fields may match durable
@@ -805,7 +807,106 @@ def getRelevantMemories(
             if not durable_only or _is_durable_recall_memory(r):
                 scored.append((score, enrich_memory_for_model(item)))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [m for __, m in scored[:limit]]
+    result = [m for __, m in scored[:limit]]
+    result = _expand_with_graph_neighbors(result, conn, lim, durable_only=durable_only)
+    _record_retrieval_lifecycle(result)
+    return result
+
+
+def _record_retrieval_lifecycle(items: list[dict[str, object]]) -> None:
+    """Best-effort lifecycle 'retrieved' events for recalled memories.
+
+    The memory_lifecycle table (created → retrieved → applied → stale) was
+    write-orphaned before this hook — only tests ever produced rows, so the
+    harness stats endpoint read an empty table and eviction scoring could not
+    see what recall actually uses (audit finding). Fire-and-forget.
+    """
+    if not items:
+        return
+    try:
+        from app.services.memory.lifecycle import record_retrieved
+
+        keys = [str(it.get('key') or '') for it in items]
+        record_retrieved([k for k in keys if k])
+    except Exception:
+        pass
+
+
+_CATEGORY_HUB_KEYS = frozenset(
+    {
+        'learned_corrections',
+        'user_facts',
+        'project_facts',
+    }
+)
+
+
+def _expand_with_graph_neighbors(
+    result: list[dict[str, object]],
+    conn: sqlite3.Connection,
+    limit: int,
+    *,
+    durable_only: bool = False,
+) -> list[dict[str, object]]:
+    """1-hop graph expansion of recalled memories (best-effort).
+
+    Recall was FTS+vector only; the knowledge graph was written on every save
+    but never read by recall. This pulls memories directly linked to a top hit
+    via ``graph_relations`` (e.g. same category, linked correction) so
+    co-occurring context rides along with an explicit match. Bounded to at
+    most half the recall budget and never displaces a direct hit.
+    """
+    if not result or limit <= 0:
+        return result
+    try:
+        from app.services.memory.graph_memory import _safeKey, listRelationsForKeys
+        from app.services.memory_store import _row_as_wire
+
+        seen_keys = {str(it.get('key') or '') for it in result}
+        top_keys = [k for k in (str(it.get('key') or '') for it in result[:3]) if k]
+        if not top_keys:
+            return result
+        relations = listRelationsForKeys([_safeKey(k) for k in top_keys], limit=20)
+        # Category hub nodes ('fact', 'preference', …) link every memory of a
+        # type together; expanding through them would flood recall with
+        # unrelated siblings. Only follow edges between memory-keyed entities.
+        neighbor_names: list[str] = []
+        for rel in relations:
+            for side in ('source', 'target'):
+                name = str(rel.get(side) or '')
+                key = _safeKey(name)
+                if (
+                    name
+                    and name not in seen_keys
+                    and name not in neighbor_names
+                    and not key.startswith('category_')
+                    and name not in _CATEGORY_HUB_KEYS
+                ):
+                    neighbor_names.append(name)
+        added = 0
+        budget = max(1, limit // 2)
+        for name in neighbor_names:
+            if added >= budget:
+                break
+            row = conn.execute(
+                f'SELECT {_ROW_COLS} FROM auto_memories WHERE key = ?', (name,)
+            ).fetchone()
+            if row is None or _is_expired_row(row):
+                continue
+            if durable_only and not _is_durable_recall_memory(row):
+                continue
+            item = _row_as_wire(row)
+            try:
+                item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
+            except (json.JSONDecodeError, TypeError):
+                pass
+            item['viaGraph'] = True
+            result.append(enrich_memory_for_model(item))
+            seen_keys.add(name)
+            added += 1
+    except Exception:
+        logger.debug('graph neighbor expansion failed', exc_info=True)
+    return result
 
 
 def list_user_added_memories(limit: int = 50) -> list[dict[str, object]]:
