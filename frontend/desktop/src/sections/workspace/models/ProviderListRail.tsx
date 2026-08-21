@@ -23,7 +23,7 @@ export function ProviderListRail({
   onAdd: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 flex flex-col overflow-hidden min-h-0 max-h-full md:max-h-none md:h-full">
+    <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden min-h-0 max-h-full md:max-h-none md:h-full">
       <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">
         <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
           Providers
@@ -48,8 +48,8 @@ export function ProviderListRail({
               className={cn(
                 'w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm text-left transition',
                 selectedId === p.id
-                  ? 'bg-white/[0.06] text-foreground'
-                  : 'text-muted-foreground hover:bg-white/[0.03] hover:text-foreground',
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
               )}
             >
               <Server className="size-3.5 shrink-0" />

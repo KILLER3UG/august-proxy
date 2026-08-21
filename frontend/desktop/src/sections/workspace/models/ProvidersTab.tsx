@@ -68,8 +68,11 @@ export function ProvidersTab() {
       {/*
         Two independent panes: list grows with items (capped), details always
         scroll in their own column — neither is forced to stretch empty space.
+        grid-rows minmax(0,1fr): without an explicit row constraint the implicit
+        row sizes to CONTENT, so min-h-0 below is ignored and the detail card
+        overflows past the viewport instead of scrolling internally.
       */}
-      <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] gap-4 flex-1 min-h-0 items-stretch">
+      <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] gap-4 flex-1 min-h-0 items-stretch">
         <ProviderListRail
           providers={providers}
           selectedId={selectedId}
