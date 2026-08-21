@@ -23,6 +23,7 @@ def _export_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_disabled_flag_short_circuits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mx, "_data_dir", lambda: tmp_path)
     monkeypatch.setenv("AUGUST_MEMORY_MD_EXPORT", "0")
     monkeypatch.setattr(
         "app.services.cognitive_config.get_features",

@@ -9,13 +9,21 @@ import { Server, Boxes, ArrowRightLeft, ShieldCheck, Brain, Gauge } from 'lucide
 import type { AggregatedModel } from '@/api/api-client';
 
 /** API format dropdown options shown when adding or editing a provider.
- * Values must be canonical backend ids (camelCase). Labels stay user-facing.
+ * Values must be canonical backend ids (camelCase). Labels stay user-facing:
+ * friendly name first, exact wire leaf after the dot (the leaf is what August
+ * appends to the pasted baseUrl — never invent or alter it).
  */
 export const API_FORMATS: { value: ApiFormat; label: string }[] = [
-  { value: 'openaiChat', label: 'chat/completions' },
-  { value: 'anthropicMessages', label: 'v1/messages' },
-  { value: 'openaiResponses', label: 'responses' },
+  { value: 'openaiChat', label: 'Chat completions · chat/completions' },
+  { value: 'anthropicMessages', label: 'Messages · v1/messages' },
+  { value: 'openaiResponses', label: 'Responses · responses' },
 ];
+
+/** Compact badge text for a wire format (the leaf only). */
+export function apiFormatShortLabel(value?: string | null): string {
+  if (!value) return '';
+  return API_FORMATS.find((f) => f.value === value)?.label.split('·')[1]?.trim() ?? value;
+}
 
 /** Prefer chat completions for custom OpenAI-compatible gateways (OpenCode, Kilo, …). */
 export const DEFAULT_API_FORMAT: ApiFormat = 'openaiChat';

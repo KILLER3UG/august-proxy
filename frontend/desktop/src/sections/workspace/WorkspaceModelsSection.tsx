@@ -14,7 +14,6 @@
  */
 
 import { useState } from 'react';
-import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { cn } from '@/lib/utils';
 import { ModelFleetTab } from '@/sections/workspace/ModelFleetTab';
 import { LiveSettingsTab } from '@/sections/workspace/LiveSettingsTab';
@@ -28,36 +27,38 @@ import { QuotasTab } from './models/QuotasTab';
 
 export function WorkspaceModelsSection() {
   const [subtab, setSubtab] = useState<ModelSettingsSubtab>('providers');
-  const activeView = SUBTABS.find((t) => t.key === subtab) ?? SUBTABS[0];
 
   return (
     <div className="h-full flex flex-col">
-      <header className="mx-auto w-full max-w-5xl px-8 pt-6 pb-3 shrink-0 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+      <header className="mx-auto w-full max-w-5xl px-8 pt-6 pb-3 shrink-0 flex flex-col gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Model settings</h1>
           <p className="mt-1 text-sm text-muted-foreground max-w-xl">
             Providers are the source of truth for every model dropdown. Add a provider here and chat picks it up without restarting.
           </p>
         </div>
-        <div className="w-full sm:w-64 shrink-0">
-          <label className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-            View
-          </label>
-          <SettingsSelect
-            aria-label="Model settings view"
-            value={subtab}
-            onChange={(k) => setSubtab(k as ModelSettingsSubtab)}
-            options={SUBTABS.map((t) => ({ value: t.key, label: t.label }))}
-          />
-        </div>
+        <nav className="flex flex-wrap items-center gap-1" aria-label="Model settings views">
+          {SUBTABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setSubtab(t.key)}
+              aria-pressed={subtab === t.key}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition',
+                subtab === t.key
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+              )}
+            >
+              <t.icon className="size-3.5" />
+              {t.label}
+            </button>
+          ))}
+        </nav>
       </header>
 
       <div className="flex-1 min-h-0 px-8 pb-8 overflow-hidden flex flex-col">
         <div className="mx-auto w-full max-w-5xl flex-1 min-h-0 flex flex-col overflow-hidden">
-          <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-            {activeView.icon && <activeView.icon className="size-3.5 text-primary" />}
-            <span className="font-medium text-foreground/85">{activeView.label}</span>
-          </div>
           {subtab === 'providers' && <ProvidersTab />}
           {subtab === 'all-models' && <AllModelsTab />}
           {subtab === 'aliases' && <AliasesTab />}

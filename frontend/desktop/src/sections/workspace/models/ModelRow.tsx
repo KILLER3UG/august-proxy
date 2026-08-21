@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
-import { API_FORMATS, fmtContextWindow } from './modelSettingsShared';
+import { API_FORMATS, apiFormatShortLabel, fmtContextWindow } from './modelSettingsShared';
 
 /** Suggest a wire format from the model id family (multi-format gateways like
  *  OpenCode Zen serve Claude at /v1/messages while the provider defaults to
@@ -164,22 +164,6 @@ export function ModelRow({
     update.mutate({ toolSurface: probeResult.suggestedSurface });
   };
 
-  const saveContextWindow = () => {
-    const trimmed = contextWindow.trim();
-    const next = trimmed ? Number(trimmed) : 128000;
-    if (!Number.isFinite(next) || next <= 0) {
-      toast.error('Context window must be a positive number');
-      setContextWindow((model.contextWindow ?? 128000).toString());
-      return;
-    }
-    const prev = model.contextWindow ?? 128000;
-    if (next === prev) {
-      setContextWindow(String(next));
-      return;
-    }
-    update.mutate({ contextWindow: next });
-  };
-
   if (editing) {
     return (
       <div
@@ -209,6 +193,22 @@ export function ModelRow({
               min={1}
               aria-label="Context window"
             />
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <Button size="sm" variant="ghost" onClick={() => probe.mutate()} disabled={probe.isPending}>
+              {probe.isPending ? (
+                <>
+                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  Probing…
+                </>
+              ) : (
+                <>
+                  <ScanSearch className="size-3.5 mr-1.5" />
+                  Probe capabilities
+                </>
+              )}
+            </Button>
+            <span className="text-muted-foreground">Tool-call support, instruction-following, suggested surface</span>
           </div>
           <label className="flex items-center gap-2 text-xs">
             <input type="checkbox" checked={reasoning} onChange={(e) => setReasoning(e.target.checked)} />
@@ -344,22 +344,30 @@ export function ModelRow({
   const ctxLabel = fmtContextWindow(model.contextWindow);
 
   return (
-    <div className="px-3 py-2.5 text-sm">
+    <div className="px-3 py-2.5 text-sm transition-colors hover:bg-muted/20">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           <span className="font-medium truncate">
             {model.pinned && (
               <Pin className="size-3 inline mr-1 -mt-0.5 text-primary" aria-label="Pinned" />
             )}
-            {model.name || model.id}
+            <span className="font-mono text-[13px]">{model.name || model.id}</span>
           </span>
         </div>
+        {ctxLabel && (
+          <span
+            className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground"
+            title={`Context window: ${(model.contextWindow ?? 128000).toLocaleString()} tokens`}
+          >
+            {ctxLabel}
+          </span>
+        )}
         <span
           className={cn(
             'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-mono',
             model.source === 'fetched'
               ? 'bg-blue-500/15 text-blue-400'
-              : 'bg-white/[0.06] text-muted-foreground',
+              : 'bg-muted text-muted-foreground',
           )}
           title={`source: ${model.source}`}
         >
@@ -370,31 +378,9 @@ export function ModelRow({
             className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-mono bg-primary/10 text-primary"
             title="Per-model wire-format override (overrides the provider format)"
           >
-            {API_FORMATS.find((f) => f.value === model.apiFormat)?.label ?? model.apiFormat}
+            {apiFormatShortLabel(model.apiFormat)}
           </span>
         )}
-        <label className="flex items-center gap-1 shrink-0" title="Context window (tokens)">
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">ctx</span>
-          <Input
-            value={contextWindow}
-            onChange={(e) => setContextWindow(e.target.value)}
-            onBlur={saveContextWindow}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.currentTarget.blur();
-              }
-            }}
-            placeholder="128000"
-            type="number"
-            min={1}
-            aria-label="Context window"
-            disabled={update.isPending}
-            className="h-7 w-[7.5rem] px-2 text-[11px] font-mono"
-          />
-          {ctxLabel && (
-            <span className="text-[10px] font-mono text-muted-foreground w-8">{ctxLabel}</span>
-          )}
-        </label>
         <button
           onClick={() => {
             void providersApi
@@ -410,8 +396,8 @@ export function ModelRow({
           className={cn(
             'grid size-7 place-items-center rounded transition',
             model.pinned
-              ? 'text-primary hover:bg-white/[0.06]'
-              : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground',
+              ? 'text-primary hover:bg-muted/60'
+              : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
           )}
         >
           <Pin className="size-3.5" />
@@ -421,7 +407,7 @@ export function ModelRow({
           disabled={connect.isPending}
           aria-label="Test model connection"
           title="Test connection to this model"
-          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition disabled:opacity-50"
+          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground transition disabled:opacity-50"
         >
           {connect.isPending ? (
             <Loader2 className="size-3.5 animate-spin" />
@@ -430,23 +416,10 @@ export function ModelRow({
           )}
         </button>
         <button
-          onClick={() => probe.mutate()}
-          disabled={probe.isPending}
-          aria-label="Probe model capabilities"
-          title="Probe capabilities: connectivity, tool-call support, and instruction-following — with a suggested tool surface"
-          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition disabled:opacity-50"
-        >
-          {probe.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <ScanSearch className="size-3.5" />
-          )}
-        </button>
-        <button
           onClick={() => setEditing(true)}
           aria-label="Edit model"
           title="Edit display name and metadata"
-          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition"
+          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground transition"
         >
           <Pencil className="size-3.5" />
         </button>

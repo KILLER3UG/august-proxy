@@ -248,7 +248,16 @@ export function AutoMemoryBrowse({
     const pct = Math.round(c * 100);
     const cls =
       c >= 0.7 ? 'bg-emerald-500/15 text-emerald-600' : c >= 0.45 ? 'bg-amber-500/15 text-amber-600' : 'bg-red-500/15 text-red-600';
-    return <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', cls)}>{pct}%</span>;
+    // Confidence is derived at write time (pinned 90%, general 70%, chat/
+    // telemetry 45%, generic phrasing lower) — not a per-row model score.
+    return (
+      <span
+        className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', cls)}
+        title={`Confidence ${pct}% — derived from memory kind and pinned state (pinned 90%, general 70%, chat logs 45%)`}
+      >
+        {pct}%
+      </span>
+    );
   }
   function ttlPill(row: AutoMemoryRow) {
     if (!row.expiresAt) return null;

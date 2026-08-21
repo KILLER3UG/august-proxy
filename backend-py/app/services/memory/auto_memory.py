@@ -534,9 +534,14 @@ def present_memory_fields(
 
     title = ''
     if key.startswith('conv_summary_'):
-        m = re.search(r'User asked:\s*(.+?)(?:\s*\(session|\s*$)', preview, re.I | re.S)
-        asked = (m.group(1).strip() if m else '')[:80]
-        title = f'Chat: {asked}' if asked else 'Chat summary'
+        if _is_trivial_conversation(preview):
+            # Test chatter ("User asked: hi") deserves a neutral label, not
+            # "Chat: hi" promoted to a headline.
+            title = 'Conversation'
+        else:
+            m = re.search(r'User asked:\s*(.+?)(?:\s*\(session|\s*$)', preview, re.I | re.S)
+            asked = (m.group(1).strip() if m else '')[:80]
+            title = f'Chat: {asked}' if asked else 'Chat summary'
     elif key.startswith('correction_'):
         title = 'Correction'
         if preview.lower().startswith('user prefers:'):
@@ -1139,6 +1144,57 @@ def rememberMemory(
     return enrich_memory_for_model(item)
 
 
+def _is_trivial_conversation(content: object) -> bool:
+    """True when a conversation summary carries no durable information.
+
+    Legacy ``conv_summary_*`` rows captured raw test chatter ("User asked:
+    hi", "reply pong"). Such rows pollute recall and the Journey view; they
+    are skipped during episode consolidation and purged outright.
+    """
+    text = str(content or '').strip().lower()
+    if not text.startswith('user asked'):
+        return False
+    # Strip the "(session …)" suffix the writer used to append.
+    text = re.sub(r'\s*\(session[^)]*\)\s*$', '', text)
+    body = re.sub(r'^user asked:\s*', '', text).strip(' .!?;:')
+    # Repeated fragments ("User asked: hi; User asked: hi") split into parts;
+    # each may re-carry the prefix or an echo instruction ("reply with
+    # exactly: pong") — strip repeatedly (nested prefixes) before judging.
+    echo = re.compile(r'^(?:user asked|reply(?: with exactly)?|say|respond(?: with)?)\s*:\s*')
+    parts = [p.strip(' .!?;:') for p in body.split(';')]
+    stripped: list[str] = []
+    for part in parts:
+        prev = None
+        while prev != part:
+            prev = part
+            part = echo.sub('', part).strip(' .!?;:')
+        if part:
+            stripped.append(part)
+    parts = stripped
+    trivial = re.compile(r'^(hi+|hello+|hey+|yo|sup|test|testing|ping|pong|ok(ay)?|yes|no|thanks?|thank you|gm|good (morning|evening|afternoon)|123|abc|\.{1,3})$')
+    return all(trivial.match(p) for p in parts if p)
+
+
+def purge_trivial_conv_summaries(limit: int = 200) -> int:
+    """Delete legacy conversation-summary rows that hold only test chatter."""
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, content FROM auto_memories WHERE key LIKE 'conv_summary_%' LIMIT ?",
+            (max(1, limit),),
+        ).fetchall()
+        ids = [int(r['id']) for r in rows if _is_trivial_conversation(r['content'])]
+        if not ids:
+            return 0
+        placeholders = ','.join('?' for _ in ids)
+        conn.execute(f'DELETE FROM auto_memories WHERE id IN ({placeholders})', ids)
+        conn.commit()
+        return len(ids)
+    except Exception:
+        conn.execute('ROLLBACK') if conn.in_transaction else None
+        return 0
+
+
 def consolidate_conv_summaries() -> int:
     """Merge the oldest conversation summaries into one durable episode memory.
 
@@ -1147,7 +1203,11 @@ def consolidate_conv_summaries() -> int:
     (importance 0.55) and the originals deleted — bounded, recallable
     cross-session memory without unbounded summary growth. Returns the
     number of merged rows (0 when below the threshold).
+
+    Trivial summaries (pure greetings / test chatter) never enter episodes;
+    they are dropped instead of merged.
     """
+    purge_trivial_conv_summaries()
     conn = _conn()
     conn.execute('BEGIN IMMEDIATE')
     try:
@@ -1155,6 +1215,7 @@ def consolidate_conv_summaries() -> int:
             "SELECT id, content FROM auto_memories "
             "WHERE key LIKE 'conv_summary_%' ORDER BY updated_at ASC"
         ).fetchall()
+        rows = [r for r in rows if not _is_trivial_conversation(r['content'])]
         if len(rows) < _EPISODE_MERGE_MIN:
             conn.execute('ROLLBACK')
             return 0

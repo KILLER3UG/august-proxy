@@ -5,6 +5,13 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_md_export(monkeypatch):
+    """Keep the debounced markdown-exporter from firing real writes mid-test."""
+    monkeypatch.setenv('AUGUST_MEMORY_MD_EXPORT', '0')
+
+
+
 def test_save_auto_sets_source_and_user_cap_preference(brain_ready):
     from app.services.memory import auto_memory as am
 

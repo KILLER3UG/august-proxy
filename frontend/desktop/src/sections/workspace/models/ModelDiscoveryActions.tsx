@@ -20,7 +20,7 @@ export function ModelDiscoveryActions({
   onToggleAutoFetch: (next: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-white/[0.06] p-3">
+    <div className="flex items-center justify-between rounded-lg border border-border/60 p-3">
       <div>
         <p className="text-sm font-medium">
           Model discovery from <code className="text-xs font-mono">baseUrl/models</code>
@@ -46,7 +46,7 @@ export function ModelDiscoveryActions({
           onClick={() => onToggleAutoFetch(!autoFetch)}
           className={cn(
             'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition',
-            autoFetch ? 'bg-primary' : 'bg-white/[0.15]',
+            autoFetch ? 'bg-primary' : 'bg-muted-foreground/30',
           )}
         >
           <span

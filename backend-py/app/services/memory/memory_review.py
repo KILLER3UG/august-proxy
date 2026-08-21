@@ -151,7 +151,15 @@ def parse_review_plan(raw: str) -> dict[str, list[dict[str, Any]]]:
         if not name:
             continue
         skills_out.append({'action': action, 'name': name, 'description': as_str(row.get('description'), '')[:60], 'body': as_str(row.get('body'), '')[:4000], 'trigger': as_str(row.get('trigger'), '')[:60], 'why': as_str(row.get('why'), '')[:240]})
-    return {'improve': improve, 'remove': remove, 'enhance': enhance, 'skills': skills_out}
+    merge: list[dict[str, Any]] = []
+    for item in as_list(data.get('merge'), [])[:5]:
+        row = as_dict(item)
+        keep_id = as_int(row.get('keepId') or row.get('keep_id'), 0)
+        remove_ids = [i for i in (as_int(x, 0) for x in as_list(row.get('removeIds') or row.get('remove_ids'), [])) if i > 0]
+        merged_text = as_str(row.get('mergedText') or row.get('merged') or row.get('text'), '').strip()
+        if keep_id > 0 and remove_ids and merged_text:
+            merge.append({'keepId': keep_id, 'removeIds': remove_ids[:5], 'mergedText': merged_text[:800], 'why': as_str(row.get('why'), '')[:240]})
+    return {'improve': improve, 'remove': remove, 'enhance': enhance, 'skills': skills_out, 'merge': merge}
 
 
 async def _call_selected_model(model_id: str, prompt: str) -> str:
@@ -212,8 +220,13 @@ async def run_memory_review(
         '{"improve":[{"id":int,"rewritten":str,"why":str}],'
         '"remove":[{"id":int,"why":str}],'
         '"enhance":[{"content":str,"why":str}],'
+        '"merge":[{"keepId":int,"removeIds":[int,...],"mergedText":str,"why":str}],'
         '"skills":[{"action":"create|patch|delete","name":str,"description":str,"body":str,"trigger":str,"why":str}]}\n'
-        'improve = rewrite a noisy/duplicate memory (use its id).\n'
+        'improve = rewrite a noisy/duplicate memory (use its id). Give conversation '
+        'summaries a semantic title line ("About: <topic>") when the first user '
+        'message is meaningless (greetings, "test", "pong").\n'
+        'merge = fold 2+ near-duplicate memories into one: keepId survives with '
+        'mergedText as its new content; every removeIds row is deleted.\n'
         'remove = stale, wrong, or duplicate auto memories (not pinned user facts unless clearly wrong).\n'
         'enhance = one new standing preference that should be always-included.\n'
         'skills: action create= new reusable multi-step workflow, patch= improve existing skill, delete= obsolete. \n'
@@ -242,13 +255,13 @@ async def run_memory_review(
     except Exception:
         pass
     used = as_str(model_id) or 'default'
-    has_any = bool(plan['improve'] or plan['remove'] or plan['enhance'] or plan.get('skills'))
+    has_any = bool(plan['improve'] or plan['remove'] or plan['enhance'] or plan.get('merge') or plan.get('skills'))
     return {'model': used, 'memoryCount': len(memories), **plan, 'message': '' if has_any else 'Looks healthy — no changes suggested.'}
 
 
 def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
     from app.services.memory.auto_memory import delete_auto_memory, saveAutoMemory, update_auto_memory
-    applied = {'improved': 0, 'removed': 0, 'enhanced': 0}
+    applied = {'improved': 0, 'removed': 0, 'enhanced': 0, 'merged': 0}
     for raw in actions:
         row = as_dict(raw)
         kind = as_str(row.get('kind') or row.get('action'), '').lower()
@@ -316,6 +329,17 @@ def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
                 continue
             saveAutoMemory(key=f'user:{text[:48]}', content=text, category='preference', importance=0.88, source='user', pinned=True)
             applied['enhanced'] += 1
+        elif kind in ('merge', 'merge_memories'):
+            keep_id = as_int(row.get('keepId') or row.get('id'), 0)
+            merged_text = as_str(row.get('mergedText') or row.get('rewritten'), '').strip()
+            remove_ids = [i for i in (as_int(x, 0) for x in as_list(row.get('removeIds'), [])) if i > 0]
+            if not keep_id or not merged_text:
+                continue
+            if update_auto_memory(keep_id, content=merged_text):
+                applied['merged'] += 1
+                for rid in remove_ids:
+                    if rid != keep_id:
+                        delete_auto_memory(rid)
     # Self-improvement feed: surface applied curation in the chat thread via
     # the brain SSE stream (category 'self_improvement').
     if any(applied.values()):
@@ -325,6 +349,8 @@ def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
             parts = []
             if applied.get('improved'):
                 parts.append(f"{applied['improved']} improved")
+            if applied.get('merged'):
+                parts.append(f"{applied['merged']} merged")
             if applied.get('removed'):
                 parts.append(f"{applied['removed']} removed")
             if applied.get('enhanced'):

@@ -40,7 +40,7 @@ def test_apply_review_actions(brain_ready):
             {'kind': 'enhance', 'content': 'Always run ruff'},
         ]
     )
-    assert stats == {'improved': 1, 'removed': 1, 'enhanced': 1}
+    assert stats == {'improved': 1, 'removed': 1, 'enhanced': 1, 'merged': 0}
     left = [dict(r) for r in conn.execute('SELECT key, content, pinned, source FROM auto_memories').fetchall()]
     contents = {r['key']: r['content'] for r in left}
     assert contents['k1'] == 'Prefer pytest'

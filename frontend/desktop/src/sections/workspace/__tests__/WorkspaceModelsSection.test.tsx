@@ -67,9 +67,8 @@ vi.mock('@/lib/provider-catalog', () => ({
 }));
 
 function openView(label: string) {
-  fireEvent.click(screen.getByRole('button', { name: 'Model settings view' }));
-  const list = screen.getByRole('listbox');
-  fireEvent.click(within(list).getByText(label));
+  // Views are now inline tab pills (aria-pressed), not a dropdown.
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`${label}`, 'i') }));
 }
 
 beforeEach(() => {

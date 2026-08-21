@@ -11,8 +11,8 @@ import { toast } from 'sonner';
 import { providersApi, type Provider, type ApiFormat } from '@/api/providers';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
-import { WorkspaceToggle } from '@/components/workspace/WorkspaceToggle';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { API_FORMATS } from './modelSettingsShared';
@@ -147,11 +147,28 @@ export function ProviderDetailForm({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <WorkspaceToggle
-            enabled={provider.enabled}
-            onToggle={(next) => update.mutate({ enabled: next })}
+          <span
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
+              provider.enabled ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground',
+            )}
+            aria-live="polite"
+          >
+            <span className={cn('size-1.5 rounded-full', provider.enabled ? 'bg-success' : 'bg-muted-foreground/50')} />
+            {provider.enabled ? 'Enabled' : 'Disabled'}
+          </span>
+          <button
+            onClick={() => update.mutate({ enabled: !provider.enabled })}
             disabled={update.isPending}
-          />
+            className={cn(
+              'rounded-md border px-3 py-1.5 text-xs font-medium transition disabled:opacity-50',
+              provider.enabled
+                ? 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                : 'border-success/40 bg-success/10 text-success hover:bg-success/20',
+            )}
+          >
+            {provider.enabled ? 'Disable' : 'Enable'}
+          </button>
           <button
             onClick={async () => {
               if (
@@ -266,7 +283,7 @@ export function ProviderDetailForm({
           ) : visibleModels.length === 0 ? (
             <p className="text-xs text-muted-foreground italic py-4">No models match “{modelQuery.trim()}”.</p>
           ) : (
-            <div className="rounded-lg border border-white/[0.06] divide-y divide-white/[0.06] overflow-hidden">
+            <div className="rounded-lg border border-border/60 divide-y divide-border/50 overflow-hidden bg-card/30">
               {visibleModels.map((m) => (
                 <ModelRow
                   key={m.id}
@@ -280,7 +297,7 @@ export function ProviderDetailForm({
           <div className="mt-2 flex">
             <button
               onClick={() => setShowAddModel(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-white/[0.15] px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-white/[0.3] transition"
+              className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border/70 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/40 transition"
             >
               <Plus className="size-3" />
               Add model

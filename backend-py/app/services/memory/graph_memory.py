@@ -123,6 +123,13 @@ def _label_from_preview(preview: str) -> str:
     m = re.search(r'User asked:\s*(.+)$', text, re.IGNORECASE | re.DOTALL)
     if m:
         asked = _strip_session_suffix(m.group(1).strip())
+        try:
+            from app.services.memory.auto_memory import _is_trivial_conversation
+
+            if _is_trivial_conversation(text):
+                return 'Conversation'
+        except Exception:
+            pass
         return _truncate_label(f'Chat: {asked}')
     return _truncate_label(_strip_session_suffix(text))
 
