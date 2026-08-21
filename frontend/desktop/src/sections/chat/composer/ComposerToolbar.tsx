@@ -429,14 +429,10 @@ export function ComposerToolbar({
         className="flex items-center gap-1 overflow-x-auto px-2 pb-1.5 pt-0.5 text-[11px] text-muted-foreground scrollbar-none"
         data-testid="composer-island-footer"
       >
-        <WorkbenchModeSelector
-          selectedMode={workbenchMode}
-          onChange={handleModeChange}
-          sandboxMode={sandboxMode}
-          onSandboxChange={handleSandboxChange}
-          harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
-          onHarnessChange={persistHarnessMode}
-        />
+        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border", sandboxMode === 'danger-full-access' ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-muted/40 text-muted-foreground border-border/50") } title={`Tool reach: ${sandboxMode}`}>
+          <ShieldCheck className="size-3" />
+          {sandboxMode === 'danger-full-access' ? 'Full access' : sandboxMode === 'workspace-write' ? 'Workspace' : 'Read-only'}
+        </span>
         <span className="inline-flex items-center gap-1">
           <ContextRing
             pct={pct}
@@ -460,6 +456,14 @@ export function ComposerToolbar({
           />
           <span className="text-[10px] tabular-nums text-muted-foreground/60">{pct}%</span>
         </span>
+        <WorkbenchModeSelector
+          selectedMode={workbenchMode}
+          onChange={handleModeChange}
+          sandboxMode={sandboxMode}
+          onSandboxChange={handleSandboxChange}
+          harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
+          onHarnessChange={persistHarnessMode}
+        />
         <button
           type="button"
           onClick={() => addRightDrawerSection('artifacts')}
@@ -554,6 +558,17 @@ export function ComposerToolbar({
             {verifierEnforced ? 'Verify · On' : 'Verify'}
           </span>
         </button>
+      </div>
+      <div className="flex items-center gap-2 px-2 pt-1.5 mt-1 border-t border-border/40 text-[11px]">
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('august:open-folder'))} className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
+          <span className="size-3 rounded-sm border border-border/60 grid place-items-center text-[9px]">▭</span>
+          {workspacePath ? workspacePath.split(/[\\/]/).pop() || 'Choose project' : 'Choose project'}
+        </button>
+        <span className="text-border/60">·</span>
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('august:ui-action', { detail: { action: 'navigate', target: '/settings/tools' } }))} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+          <span className="size-3 rounded-sm bg-sky-500/20 grid place-items-center text-[8px]">⬢</span> Plugins
+        </button>
+        <span className="ml-auto text-muted-foreground/40 text-[10px]">{selectedModel ? selectedModel.name?.split(' ').slice(0,2).join(' ') : ''}</span>
       </div>
       <SubagentSpawnModal
         sessionId={workbenchSession?.id}

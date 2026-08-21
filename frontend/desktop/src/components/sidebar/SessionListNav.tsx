@@ -91,48 +91,23 @@ export function SessionListNav({
         <span>New chat</span>
       </motion.button>
 
-      {/* Hermes/DeepSeek: chat-first. Keep 4 primary actions prominent, tuck the rest into a muted capsule. */}
-      <div className="mt-2 flex items-center gap-1" role="navigation" aria-label="Workspace">
-        {DESTINATIONS.slice(0, 4).map(({ path, label, testId, Icon }) => (
-          <button
-            key={path}
-            type="button"
-            onClick={() => onNavigate(path)}
-            className={cn(
-              'flex size-7 items-center justify-center rounded-lg transition',
-              isActive(path)
-                ? 'bg-white/[0.07] text-sidebar-foreground'
-                : 'text-sidebar-foreground/40 hover:bg-white/[0.04] hover:text-sidebar-foreground/70',
-            )}
-            aria-current={isActive(path) ? 'page' : undefined}
-            title={label}
-            aria-label={label}
-            data-testid={testId}
-          >
-            <Icon className="size-3.5" />
-          </button>
-        ))}
-        <div className="ml-auto flex items-center gap-0.5 rounded-full bg-white/[0.03] p-0.5">
-          {DESTINATIONS.slice(4).map(({ path, label, testId, Icon }) => (
-            <button
-              key={path}
-              type="button"
-              onClick={() => onNavigate(path)}
-              className={cn(
-                'flex size-6 items-center justify-center rounded-full transition',
-                isActive(path)
-                  ? 'bg-white/[0.08] text-sidebar-foreground'
-                  : 'text-sidebar-foreground/35 hover:text-sidebar-foreground/60',
-              )}
-              aria-current={isActive(path) ? 'page' : undefined}
-              title={label}
-              aria-label={label}
-              data-testid={testId}
-            >
-              <Icon className="size-3" />
-            </button>
-          ))}
-        </div>
+      <div className="mt-2 flex flex-col gap-1 text-[11px]" role="navigation" aria-label="Workspace">
+        <button
+          type="button"
+          onClick={() => onNavigate('/history')}
+          data-testid="sidebar-nav-history"
+          className={cn('flex items-center gap-2 rounded-md px-2 py-1 text-left', isActive('/history') ? 'bg-white/[0.06] text-sidebar-foreground' : 'text-sidebar-foreground/55 hover:bg-white/[0.03] hover:text-sidebar-foreground/80')}
+        >
+          <History className="size-3" /> Scheduled
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate('/skills')}
+          data-testid="sidebar-nav-skills"
+          className={cn('flex items-center gap-2 rounded-md px-2 py-1 text-left', isActive('/skills') ? 'bg-white/[0.06] text-sidebar-foreground' : 'text-sidebar-foreground/55 hover:bg-white/[0.03] hover:text-sidebar-foreground/80')}
+        >
+          <Wrench className="size-3" /> Plugins
+        </button>
       </div>
     </div>
   );

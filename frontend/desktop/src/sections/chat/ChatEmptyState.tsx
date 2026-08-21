@@ -135,10 +135,10 @@ export function ChatEmptyState({
           </>
         ) : (
           <div className="flex flex-col items-center gap-2 text-center">
-            <h1 className="text-[28px] font-[650] tracking-[-0.035em] leading-tight text-foreground text-balance">
-              What should we build in <span className="font-mono font-[500] text-muted-foreground">{project}</span>?
+            <h1 className="text-[30px] font-[620] tracking-[-0.03em] leading-tight text-foreground">
+              What should we work on?
             </h1>
-            <p className="text-[13px] text-muted-foreground/70">Ask, attach files, or pick a workspace — the agent keeps the context.</p>
+            <p className="text-[13px] text-muted-foreground/60">in <span className="font-mono text-foreground/55">{project}</span> — pick a project below or just ask.</p>
           </div>
         )}
 
