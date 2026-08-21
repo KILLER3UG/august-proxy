@@ -69,6 +69,9 @@ class MemoryReviewRequest(CamelModel):
     """Ask the selected chat model to review memories."""
 
     model: str = ''
+    origin: str = 'all'
+    folder_id: str = ''
+    session_id: str = ''
 
 
 class MemoryReviewApply(CamelModel):
@@ -94,10 +97,73 @@ class ProposalDecide(CamelModel):
 
 @router.post('/review')
 async def reviewMemoriesRoute(body: MemoryReviewRequest):
-    """Use the selected model to suggest improve / remove / enhance. Does not apply."""
+    """Use the selected model to suggest improve / remove / enhance. Does not apply.
+
+    Pass origin/folder_id to scope the review to Recalled vs By Project.
+    """
     from app.services.memory.memory_review import run_memory_review
 
-    return await run_memory_review(body.model)
+    return await run_memory_review(body.model, origin=body.origin, folder_id=body.folder_id, session_id=body.session_id)
+
+
+@router.get('/auto/review-candidates')
+async def listReviewCandidatesRoute(
+    origin: str = 'recalled',
+    folder_id: str = '',
+    session_id: str = '',
+    limit: int = 30,
+):
+    """Low-value candidates for bulk keep/remove review (stale, low confidence, expiring).
+
+    Powers the model-checked curation bar: model can keep what is important and
+    remove what is not. Works for recalled and by-project scopes.
+    """
+    from app.services.memory.auto_memory import list_review_candidates
+
+    items = list_review_candidates(origin=origin, folder_id=folder_id, session_id=session_id, limit=limit)
+    return {'items': items, 'origin': origin, 'folderId': folder_id, 'count': len(items)}
+
+
+class BulkMemoryAction(CamelModel):
+    ids: list[int]
+    action: str
+    rewrite: str = ''
+
+
+@router.post('/auto/bulk')
+async def bulkMemoryActionRoute(body: BulkMemoryAction):
+    """Bulk keep / remove / pin / enhance for reviewed batches."""
+    from app.services.memory.auto_memory import delete_auto_memory, get_auto_memory, update_auto_memory
+
+    action = (body.action or '').strip().lower()
+    if action not in ('keep', 'remove', 'pin', 'unpin', 'delete'):
+        raise HTTPException(status_code=400, detail='Unknown action: use keep | remove | pin | unpin')
+    ids = [int(x) for x in (body.ids or []) if int(x) > 0][:50]
+    if not ids:
+        raise HTTPException(status_code=400, detail='ids is required')
+    applied = 0
+    for mid in ids:
+        if action in ('remove', 'delete'):
+            if delete_auto_memory(mid):
+                applied += 1
+        elif action == 'keep':
+            mem = get_auto_memory(mid)
+            if mem:
+                imp = float(mem.get('importance') or 0.5)
+                update_auto_memory(mid, importance=min(1.0, max(imp, 0.85)))
+                applied += 1
+        elif action == 'pin':
+            if update_auto_memory(mid, pinned=True):
+                applied += 1
+        elif action == 'unpin':
+            # Unpin requires clearing pin; route through direct SQL via update path
+            from app.services.memory_store import _conn
+
+            c = _conn()
+            c.execute('UPDATE auto_memories SET pinned = 0, updated_at = datetime("now") WHERE id = ?', (mid,))
+            c.commit()
+            applied += 1
+    return {'status': 'ok', 'action': action, 'applied': applied, 'total': len(ids)}
 
 
 @router.post('/review/apply')

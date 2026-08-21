@@ -37,26 +37,56 @@ def _preview(content: object, n: int = 280) -> str:
     return text if len(text) <= n else text[: n - 1] + '…'
 
 
-def collect_review_payload(limit: int = 80) -> dict[str, Any]:
-    from app.services.memory_store import _conn
+def collect_review_payload(
+    limit: int = 80,
+    origin: str = 'all',
+    folder_id: str = '',
+    session_id: str = '',
+) -> dict[str, Any]:
+    from app.services.memory.auto_memory import list_all_auto_memories
 
-    conn = _conn()
-    memories = [
-        {
-            'id': int(r['id']),
-            'key': as_str(r['key']),
-            'preview': _preview(r['content']),
-            'source': as_str(r['source'] or 'auto'),
-            'pinned': bool(r['pinned']),
-            'importance': float(r['importance'] or 0),
-            'category': as_str(r['category'] or ''),
-        }
-        for r in conn.execute(
-            'SELECT id, key, content, source, pinned, importance, category '
-            'FROM auto_memories ORDER BY pinned DESC, importance DESC, id DESC LIMIT ?',
-            (limit,),
-        ).fetchall()
-    ]
+    # Scoped payload so Review can target Recalled vs By Project vs Saved
+    if origin.strip().lower() in ('recalled', 'added') or folder_id or session_id:
+        items = list_all_auto_memories(
+            origin=origin if origin.strip().lower() in ('recalled', 'added') else 'all',
+            folder_id=folder_id,
+            session_id=session_id,
+            include_telemetry=False,
+        )[: max(1, min(limit, 200))]
+        memories = [
+            {
+                'id': int(m.get('id') or 0),
+                'key': as_str(m.get('key')),
+                'preview': _preview(m.get('content') if m.get('content') is not None else m.get('summary') or ''),
+                'source': as_str(m.get('source') or 'auto'),
+                'pinned': bool(m.get('pinned')),
+                'importance': float(m.get('importance') or 0),
+                'category': as_str(m.get('category') or ''),
+                'confidence': float(m.get('confidence') or 0.7),
+                'expiresAt': as_str(m.get('expiresAt') or m.get('expires_at') or ''),
+            }
+            for m in items
+        ]
+    else:
+        from app.services.memory_store import _conn
+
+        conn = _conn()
+        memories = [
+            {
+                'id': int(r['id']),
+                'key': as_str(r['key']),
+                'preview': _preview(r['content']),
+                'source': as_str(r['source'] or 'auto'),
+                'pinned': bool(r['pinned']),
+                'importance': float(r['importance'] or 0),
+                'category': as_str(r['category'] or ''),
+            }
+            for r in conn.execute(
+                'SELECT id, key, content, source, pinned, importance, category '
+                'FROM auto_memories ORDER BY pinned DESC, importance DESC, id DESC LIMIT ?',
+                (limit,),
+            ).fetchall()
+        ]
     heuristics = [
         {'id': int(r['id']), 'rule': _preview(r['rule'], 200)}
         for r in conn.execute(
@@ -158,8 +188,13 @@ async def _call_selected_model(model_id: str, prompt: str) -> str:
         return ''
 
 
-async def run_memory_review(model_id: str = '') -> dict[str, Any]:
-    payload = collect_review_payload()
+async def run_memory_review(
+    model_id: str = '',
+    origin: str = 'all',
+    folder_id: str = '',
+    session_id: str = '',
+) -> dict[str, Any]:
+    payload = collect_review_payload(origin=origin, folder_id=folder_id, session_id=session_id)
     memories = payload['memories']
     heuristics = payload['heuristics']
     if not memories and not heuristics:

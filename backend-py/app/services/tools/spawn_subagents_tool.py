@@ -640,6 +640,7 @@ async def _doSpawn(
                     'skills': item.get('skills') or [],
                     'harness_job_id': job_id,
                     'autoHop': bool(item.get('autoHop') or item.get('auto_hop')),
+                    'capability': item.get('capability') or 'standard',
                 }
                 for item in items
             ],

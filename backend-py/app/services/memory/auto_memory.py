@@ -26,11 +26,26 @@ logger = logging.getLogger(__name__)
 _MAXMemories = 100
 _AREAS_CATEGORIES = frozenset({'correction', 'learning', 'preference', 'user'})
 _TELEMETRY_KEY_PREFIXES = ('tool_failure_',)
-_ROW_COLS = 'id, key, content, category, importance, source, pinned, created_at, updated_at, source_session_id'
+_ROW_COLS = 'id, key, content, category, importance, source, pinned, created_at, updated_at, source_session_id, expires_at, confidence, ttl_days'
 _NEAR_DUP_THRESHOLD = 0.85
 _NEAR_DUP_IMPORTANCE_STEP = 0.1
 _EPISODE_MERGE_MIN = 8
 _EPISODE_MERGE_COUNT = 5
+
+_TTL_BY_CATEGORY: dict[str, int | None] = {
+    'conversation': 7,
+    'telemetry': 7,
+    'learning': 7,
+    'preference': 60,
+    'general': 60,
+    'auto': 60,
+    'fact': 90,
+    'tasks': 30,
+    'correction': 30,
+}
+_GENERIC_PREF_RE = re.compile(r'user\s+prefers\s*:\s*(you|think)\b', re.I)
+_DEFAULT_CONFIDENCE = 0.7
+_LOW_CONFIDENCE = 0.3
 
 
 def _conn():
@@ -85,6 +100,66 @@ def _decay_factor(ts_value: object, half_life_days: float = 30.0) -> float:
         ts = ts.replace(tzinfo=timezone.utc)
     age_days = max(0.0, (datetime.now(timezone.utc) - ts).total_seconds() / 86400.0)
     return 0.5 ** (age_days / half_life_days)
+
+
+def _derive_ttl_days(category: str, pinned: int) -> int | None:
+    if pinned:
+        return None
+    return _TTL_BY_CATEGORY.get((category or 'auto').strip().lower(), 60)
+
+
+def _derive_confidence(content: object, category: str, pinned: int) -> float:
+    if pinned:
+        return 0.9
+    text = str(content or '')
+    if _GENERIC_PREF_RE.search(text):
+        return _LOW_CONFIDENCE
+    cat = (category or '').strip().lower()
+    if cat in ('conversation', 'telemetry'):
+        return 0.45
+    return _DEFAULT_CONFIDENCE
+
+
+def _compute_expires_at(ttl_days: int | None) -> str | None:
+    if ttl_days is None:
+        return None
+    from datetime import timedelta
+
+    return (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat().replace('+00:00', 'Z')
+
+
+def prune_expired_memories(limit: int = 50) -> int:
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT id FROM auto_memories WHERE expires_at IS NOT NULL AND expires_at < datetime('now') AND COALESCE(pinned, 0) = 0 LIMIT ?",
+            (max(1, limit),),
+        ).fetchall()
+        ids = [int(r['id']) for r in rows]
+        if not ids:
+            return 0
+        placeholders = ','.join('?' for _ in ids)
+        conn.execute(f'DELETE FROM auto_memories WHERE id IN ({placeholders})', ids)
+        conn.commit()
+        return len(ids)
+    except Exception:
+        return 0
+
+
+def _is_expired_row(row: object) -> bool:
+    try:
+        exp = row['expires_at'] if isinstance(row, dict) else row['expires_at']  # type: ignore[index]
+    except Exception:
+        return False
+    if not exp:
+        return False
+    ts = _parse_ts(exp)
+    if ts is None:
+        return False
+    now = datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts < now
 
 
 def _normalize_text(text: object) -> str:
@@ -246,6 +321,9 @@ def saveAutoMemory(
     src = _normalize_source(source)
     pin = 1 if pinned else 0
     importance = _clamp_importance(importance)
+    confidence = _derive_confidence(contentJson, category, pin)
+    ttl_days = _derive_ttl_days(category, pin)
+    expires_at = _compute_expires_at(ttl_days)
     # Backstop: secrets never enter long-lived memory from model/agent paths.
     # User-added memories (UI / API) are the user's own choice.
     if not _is_user_source(src):
@@ -269,8 +347,9 @@ def saveAutoMemory(
             conn.execute(
                 'UPDATE auto_memories SET content = ?, importance = ?, category = ?, '
                 'source = ?, pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ?, '
-                'source_session_id = COALESCE(?, source_session_id) WHERE id = ?',
-                (contentJson, importance, category, keep_src, pin, now, session_id or None, existing['id']),
+                'source_session_id = COALESCE(?, source_session_id), '
+                'expires_at = COALESCE(?, expires_at), confidence = ?, ttl_days = COALESCE(?, ttl_days) WHERE id = ?',
+                (contentJson, importance, category, keep_src, pin, now, session_id or None, expires_at, confidence, ttl_days, existing['id']),
             )
         else:
             dup = _find_near_dup(conn, content, exclude_key=key)
@@ -283,17 +362,18 @@ def saveAutoMemory(
                     'UPDATE auto_memories SET content = ?, category = ?, '
                     'importance = MIN(1.0, importance + ?), '
                     'pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ?, '
-                    'source_session_id = COALESCE(?, source_session_id) WHERE id = ?',
-                    (contentJson, category, _NEAR_DUP_IMPORTANCE_STEP, pin, now, session_id or None, dup['id']),
+                    'source_session_id = COALESCE(?, source_session_id), '
+                    'expires_at = COALESCE(?, expires_at), confidence = ?, ttl_days = COALESCE(?, ttl_days) WHERE id = ?',
+                    (contentJson, category, _NEAR_DUP_IMPORTANCE_STEP, pin, now, session_id or None, expires_at, confidence, ttl_days, dup['id']),
                 )
                 conn.commit()
                 _emit_memory_saved(key, category, importance, src, preview=contentJson[:160])
                 return
             try:
                 conn.execute(
-                    'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at, source_session_id) '
-                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    (key, contentJson, category, importance, src, pin, now, now, session_id or None),
+                    'INSERT INTO auto_memories (key, content, category, importance, source, pinned, created_at, updated_at, source_session_id, expires_at, confidence, ttl_days) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (key, contentJson, category, importance, src, pin, now, now, session_id or None, expires_at, confidence, ttl_days),
                 )
             except sqlite3.IntegrityError:
                 # A concurrent writer inserted the same key between our SELECT
@@ -301,8 +381,9 @@ def saveAutoMemory(
                 conn.execute(
                     'UPDATE auto_memories SET content = ?, importance = ?, category = ?, '
                     'source = ?, pinned = MAX(COALESCE(pinned, 0), ?), updated_at = ?, '
-                    'source_session_id = COALESCE(?, source_session_id) WHERE key = ?',
-                    (contentJson, importance, category, src, pin, now, session_id or None, key),
+                    'source_session_id = COALESCE(?, source_session_id), '
+                    'expires_at = COALESCE(?, expires_at), confidence = ?, ttl_days = COALESCE(?, ttl_days) WHERE key = ?',
+                    (contentJson, importance, category, src, pin, now, session_id or None, expires_at, confidence, ttl_days, key),
                 )
         # Commit before cap enforcement: _enforce_cap opens its own
         # BEGIN IMMEDIATE transactions (eviction + episode merge) and must not
@@ -552,10 +633,15 @@ def getRelevantMemories(
     explicit memory-search tool.
     """
     conn = _conn()
+    try:
+        prune_expired_memories(limit=50)
+    except Exception:
+        pass
     lim = max(1, min(int(limit), 50))
     from app.services.memory_store import _fts_match_query, _row_as_wire
 
-    cols = 't.id, t.key, t.content, t.category, t.importance, t.source, t.pinned, t.created_at, t.updated_at'
+    cols = 't.id, t.key, t.content, t.category, t.importance, t.source, t.pinned, t.created_at, t.updated_at, t.expires_at, t.confidence, t.ttl_days'
+    min_conf = 0.65 if durable_only else 0.45
     try:
         ftsQ = _fts_match_query(query) if query and query.strip() else ''
         if ftsQ:
@@ -571,10 +657,17 @@ def getRelevantMemories(
                 maxAbs = max(maxAbs, 1e-9)
                 scored = []
                 for r in rows:
+                    if _is_expired_row(r):
+                        continue
                     rank = abs(float(r['rank'])) if r['rank'] is not None else 0.0
                     norm = min(1.0, rank / maxAbs)
                     decay = _decay_factor(r['updated_at'])
-                    scored.append((norm * 0.6 + decay * 0.4, r))
+                    conf = float(r['confidence']) if r['confidence'] is not None else _DEFAULT_CONFIDENCE
+                    # Generic noise is low-confidence; keep only if still relevant + durable filter handles it.
+                    if not durable_only and _GENERIC_PREF_RE.search(str(r['content'] or '')):
+                        conf = min(conf, _LOW_CONFIDENCE)
+                    scored.append((conf * 0.5 + norm * 0.3 + decay * 0.2, r))
+                scored = [s for s in scored if (s[1]['confidence'] is None or float(s[1]['confidence']) >= min_conf) or bool(s[1]['pinned'])]
                 scored.sort(key=lambda x: x[0], reverse=True)
                 candidates = (
                     [item for item in scored if _is_durable_recall_memory(item[1])]
@@ -646,14 +739,22 @@ def getRelevantMemories(
     if like == '%%':
         return []
     allRows = conn.execute(
-        'SELECT id, key, content, category, importance, source, pinned, created_at, updated_at '
-        'FROM auto_memories WHERE key LIKE ? ESCAPE \'\\\' OR content LIKE ? ESCAPE \'\\\' '
+        'SELECT id, key, content, category, importance, source, pinned, created_at, updated_at, expires_at, confidence, ttl_days '
+        'FROM auto_memories WHERE (expires_at IS NULL OR expires_at > datetime(\'now\')) AND (key LIKE ? ESCAPE \'\\\' OR content LIKE ? ESCAPE \'\\\' ) '
         'ORDER BY importance DESC LIMIT ?',
         (like, like, max(lim * 4, 20)),
     ).fetchall()
     scored = []
     q = query.lower()
     for r in allRows:
+        if _is_expired_row(r):
+            continue
+        if r['confidence'] is not None and float(r['confidence']) < min_conf and not bool(r['pinned']):
+            continue
+        if _GENERIC_PREF_RE.search(str(r['content'] or '')) and not bool(r['pinned']):
+            # Demote generic noise below threshold unless explicitly pinned
+            if (float(r['confidence']) if r['confidence'] is not None else _DEFAULT_CONFIDENCE) <= 0.45:
+                continue
         score = 0.0
         key = str(r['key'] or '').lower()
         content = str(r['content'] or '').lower()
@@ -661,7 +762,9 @@ def getRelevantMemories(
             score += 0.5
         if q and q in content:
             score += 0.3
-        score += (0.0 if r['importance'] is None else float(r['importance'])) * 0.2
+        score += (0.0 if r['importance'] is None else float(r['importance'])) * 0.15
+        conf = float(r['confidence']) if r['confidence'] is not None else _DEFAULT_CONFIDENCE
+        score += conf * 0.15
         if _is_user_source(r['source']):
             score += 0.15
         score += 0.25 * _decay_factor(r['updated_at'])
@@ -756,7 +859,102 @@ def list_all_auto_memories(
         except (json.JSONDecodeError, TypeError):
             pass
         result.append(enrich_memory_for_model(item))
+    result = attach_graph_to_items(result)
     return result
+
+
+_GRAPH_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
+_GRAPH_CACHE_TTL_S = 30.0
+
+
+def _attach_graph(item: dict[str, object]) -> dict[str, object]:
+    """Attach lightweight graph context (entity + relation count) with a 30s cache."""
+    import time as _time
+
+    key = str(item.get('key') or '')
+    if not key:
+        return item
+    now = _time.time()
+    cached = _GRAPH_CACHE.get(key)
+    if cached and (now - cached[0]) < _GRAPH_CACHE_TTL_S:
+        item['graph'] = cached[1]
+        return item
+    try:
+        from app.services.memory.graph_memory import getEntity, getRelations
+
+        ent = getEntity(key)
+        rels = getRelations(key) if ent else []
+        graph: dict[str, object] = {
+            'entity': ent['type'] if ent else None,
+            'entityLabel': ent['metadata'].get('label') if ent and isinstance(ent.get('metadata'), dict) else None,
+            'relationCount': len(rels),
+            'relations': [
+                {'target': r.get('target'), 'type': r.get('type'), 'label': r.get('type')}
+                for r in rels[:6]
+            ],
+        }
+        # Observation count (cheap) for badge
+        try:
+            from app.services.memory.graph_memory import _conn as _gconn
+
+            c = _gconn()
+            from app.services.memory.graph_memory import _safeKey
+
+            cnt = c.execute('SELECT COUNT(*) AS c FROM graph_observations WHERE entity_key = ?', (_safeKey(key),)).fetchone()
+            graph['observationCount'] = int(cnt['c']) if cnt else 0
+        except Exception:
+            graph['observationCount'] = 0
+        _GRAPH_CACHE[key] = (now, graph)
+        item['graph'] = graph
+    except Exception:
+        item['graph'] = {'relationCount': 0, 'observationCount': 0}
+    return item
+
+
+def attach_graph_to_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [_attach_graph(dict(it)) for it in items]
+
+
+def list_review_candidates(
+    origin: str = 'recalled',
+    folder_id: str = '',
+    session_id: str = '',
+    limit: int = 30,
+) -> list[dict[str, object]]:
+    """Low-value candidates for bulk keep/remove review (model-checked curation).
+
+    Flags: confidence<0.6 OR expiring within 7d OR importance*decay < 0.35.
+    Pinned items are never candidates.
+    """
+    items = list_all_auto_memories(origin=origin, folder_id=folder_id, session_id=session_id, include_telemetry=False)
+    out: list[dict[str, object]] = []
+    now = datetime.now(timezone.utc)
+    for it in items:
+        if bool(it.get('pinned')):
+            continue
+        conf = float(it.get('confidence') or _DEFAULT_CONFIDENCE)
+        imp = float(it.get('importance') or 0.5)
+        decay = _decay_factor(it.get('updatedAt') or it.get('updated_at'))
+        score = imp * decay
+        exp_raw = str(it.get('expiresAt') or it.get('expires_at') or '')
+        expiring_soon = False
+        if exp_raw:
+            ts = _parse_ts(exp_raw)
+            if ts is not None:
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                delta_days = (ts - now).total_seconds() / 86400.0
+                expiring_soon = delta_days <= 7
+        is_candidate = conf < 0.6 or expiring_soon or score < 0.35 or _GENERIC_PREF_RE.search(str(it.get('content') or it.get('summary') or '')) is not None
+        if is_candidate:
+            reason = 'low confidence' if conf < 0.6 else ('expiring soon' if expiring_soon else ('stale' if score < 0.35 else 'generic'))
+            it = dict(it)
+            it['candidateReason'] = reason
+            it['candidateScore'] = round(score, 3)
+            out.append(it)
+        if len(out) >= max(1, min(limit, 50)):
+            break
+    return attach_graph_to_items(out)
 
 
 def get_auto_memory(memory_id: int) -> dict[str, object] | None:

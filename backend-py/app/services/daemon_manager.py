@@ -19,11 +19,14 @@ import time
 from dataclasses import dataclass
 from typing import cast
 
+import httpx  # noqa: F401
+
 from app.json_narrowing import as_float, as_int, as_str
 from app.type_aliases import DaemonStatusDict
 
 logger = logging.getLogger(__name__)
-MAX_DAEMONS_PER_SESSION = 3
+MAX_DAEMONS_PER_SESSION = 10
+MAX_DAEMONS_PER_WORKSPACE = 20
 RESULT_EXPIRY_TURNS = 5
 BACKOFF_SCHEDULE = [5, 15, 45, 135]
 BACKOFF_CAP = 300
@@ -40,6 +43,7 @@ class DaemonSpec:
     prompt: str
     watchCondition: str | None = None
     tools: list[str] | None = None
+    persistWorkspace: bool = False
 
 
 @dataclass
@@ -74,14 +78,34 @@ class DaemonManager:
             ]
             if len(sessionDaemons) >= MAX_DAEMONS_PER_SESSION:
                 return f'Error: max {MAX_DAEMONS_PER_SESSION} daemons per session'
+            workspacePath = ''
+            try:
+                from app.services.workbench.sessions import get_workbench_session
+
+                sess = get_workbench_session(sessionId)
+                if sess is not None:
+                    workspacePath = str(getattr(sess, 'workspacePath', '') or '')
+            except Exception:
+                pass
+            if workspacePath:
+                ws_daemons = [
+                    d
+                    for d in self._daemons.values()
+                    if as_str(d.get('workspace_path')) == workspacePath
+                    and getattr(cast('DaemonResult | None', d.get('result')), 'status', '') != 'errored'
+                ]
+                if len(ws_daemons) >= MAX_DAEMONS_PER_WORKSPACE:
+                    return f'Error: max {MAX_DAEMONS_PER_WORKSPACE} daemons per workspace'
             daemonId = f'{sessionId}_{spec.name}_{int(time.time())}'
             info: dict[str, object] = {
                 'id': daemonId,
                 'name': spec.name,
                 'session_id': sessionId,
+                'workspace_path': workspacePath,
                 'prompt': spec.prompt,
                 'watch_condition': spec.watchCondition,
                 'tools': spec.tools,
+                'persist_workspace': bool(getattr(spec, 'persistWorkspace', False)),
                 'result': DaemonResult(),
                 'context': context or {},
                 'retries': 0,
@@ -92,6 +116,34 @@ class DaemonManager:
             task = asyncio.create_task(self._runLoop(daemonId))
             self._tasks[daemonId] = task
             logger.info('Daemon spawned: %s', daemonId)
+            try:
+                import json as _json
+
+                from app.services.memory_store import _conn as _mem_conn
+
+                c = _mem_conn()
+                c.execute(
+                    'INSERT OR REPLACE INTO daemons (id, session_id, workspace_path, name, spec_json, result_json, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))',
+                    (
+                        daemonId,
+                        sessionId,
+                        workspacePath,
+                        spec.name,
+                        _json.dumps(
+                            {
+                                'prompt': spec.prompt,
+                                'watchCondition': spec.watchCondition,
+                                'tools': spec.tools,
+                                'persistWorkspace': bool(getattr(spec, 'persistWorkspace', False)),
+                            }
+                        ),
+                        _json.dumps({'status': 'running'}),
+                        'running',
+                    ),
+                )
+                c.commit()
+            except Exception:
+                pass
             return daemonId
 
     async def kill(self, daemonId: str) -> bool:
@@ -107,7 +159,61 @@ class DaemonManager:
                     r.status = 'completed'
                 del self._daemons[daemonId]
             logger.info('Daemon killed: %s', daemonId)
+            try:
+                from app.services.memory_store import _conn as _mem_conn2
+
+                c2 = _mem_conn2()
+                c2.execute('DELETE FROM daemons WHERE id = ?', (daemonId,))
+                c2.commit()
+            except Exception:
+                pass
             return True
+
+    def rehydrate_from_db(self) -> int:
+        """Rehydrate in-memory daemon entries from DB after restart."""
+        try:
+            import json as _json
+
+            from app.services.memory_store import _conn as _mem_conn3
+
+            c = _mem_conn3()
+            rows = c.execute('SELECT id, session_id, workspace_path, name, spec_json, result_json, status FROM daemons WHERE status = "running"').fetchall()
+            n = 0
+            for r in rows:
+                did = str(r['id'])
+                if did in self._daemons:
+                    continue
+                try:
+                    spec_d = _json.loads(r['spec_json'] or '{}')
+                    res_d = _json.loads(r['result_json'] or '{}')
+                except Exception:
+                    continue
+                info: dict[str, object] = {
+                    'id': did,
+                    'name': str(r['name'] or spec_d.get('name') or 'daemon'),
+                    'session_id': str(r['session_id'] or ''),
+                    'workspace_path': str(r['workspace_path'] or ''),
+                    'prompt': str(spec_d.get('prompt') or ''),
+                    'watch_condition': spec_d.get('watchCondition'),
+                    'tools': spec_d.get('tools'),
+                    'persist_workspace': bool(spec_d.get('persistWorkspace')),
+                    'result': DaemonResult(status=str(res_d.get('status') or 'running')),
+                    'context': {},
+                    'retries': 0,
+                    'backoff_index': 0,
+                    'backoff_until': 0.0,
+                }
+                self._daemons[did] = info
+                try:
+                    import asyncio as _asyncio
+
+                    self._tasks[did] = _asyncio.create_task(self._runLoop(did))
+                except Exception:
+                    pass
+                n += 1
+            return n
+        except Exception:
+            return 0
 
     def list_daemons(self, sessionId: str | None = None) -> list[DaemonStatusDict]:
         """List daemons, optionally filtered by session.

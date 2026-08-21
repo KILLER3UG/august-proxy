@@ -52,15 +52,58 @@ async def _describeEnvironment() -> str:
         f'Data directory: {settings.dataDir}',
         f'Platform: {sys.platform}',
     ]
-    try:
-        import subprocess
 
-        cwd = str(settings.dataDir.parent)
-        branch = subprocess.run(
-            ['git', 'branch', '--show-current'], cwd=cwd, capture_output=True, text=True, timeout=5
-        ).stdout.strip()
-        if branch:
-            parts.append(f'Git branch: {branch}')
+    def _run(cmd: list[str], cwd: str | None = None) -> str:
+        try:
+            import subprocess
+
+            return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=5).stdout.strip()
+        except Exception:
+            return ''
+
+    cwd = str(settings.dataDir.parent)
+    # Versions
+    for prog, args in [('python', ['python', '--version']), ('node', ['node', '--version']), ('go', ['go', 'version']), ('uv', ['uv', '--version']), ('pnpm', ['pnpm', '--version']), ('rg', ['rg', '--version']), ('fd', ['fd', '--version']), ('jq', ['jq', '--version'])]:
+        out = _run(args)
+        if out:
+            parts.append(f'{prog}: {out.splitlines()[0][:120]}')
+    # Git
+    branch = _run(['git', 'branch', '--show-current'], cwd=cwd)
+    if branch:
+        parts.append(f'Git branch: {branch}')
+    status = _run(['git', 'status', '--porcelain'], cwd=cwd)
+    if status:
+        parts.append(f'Git status:\n{status[:2000]}')
+    else:
+        parts.append('Git status: clean')
+    head = _run(['git', 'rev-parse', '--short', 'HEAD'], cwd=cwd)
+    if head:
+        parts.append(f'Git HEAD: {head}')
+    # Disk
+    try:
+        import shutil
+
+        du = shutil.disk_usage(cwd)
+        parts.append(f'Disk free: {du.free // (1024*1024)} MB / total {du.total // (1024*1024)} MB')
+    except Exception:
+        pass
+    # Env (filtered)
+    try:
+        import os
+
+        for k in ('PATH', 'PYTHONPATH', 'NODE_ENV', 'VIRTUAL_ENV', 'CONDA_PREFIX'):
+            v = os.environ.get(k, '')
+            if v:
+                parts.append(f'Env {k}: {v[:300]}')
+    except Exception:
+        pass
+    # Workspace path
+    try:
+        from app.services.workbench.workbench import get_session
+
+        sess = get_session()
+        if sess and getattr(sess, 'workspacePath', ''):
+            parts.append(f'Workspace: {sess.workspacePath}')
     except Exception:
         pass
     try:
@@ -147,6 +190,42 @@ async def _writeScratchpad(text: str) -> str:
         return 'Scratchpad updated.'
     except Exception as exc:
         return f'Error writing scratchpad: {exc}'
+
+
+async def _summarizeSession(include_scratchpad: bool = True) -> str:
+    """Summarize the current session's state for handoff/compaction."""
+    from app.services.workbench.workbench import get_session
+
+    try:
+        session = get_session()
+        if not session:
+            return 'Error: no active session.'
+        from app.services.workbench.sessions import summarize_session
+
+        base = summarize_session(session)
+        scratch = ''
+        if include_scratchpad:
+            scratch = as_str(getattr(session, '_working_memory', ''), '').strip()
+        # Recent dialogue summary (local fallback).
+        recent = ''
+        try:
+            from app.services.workbench.context_compressor import localSummarize
+
+            msgs = getattr(session, 'messages', []) or []
+            if msgs:
+                recent = localSummarize(msgs[-20:])
+        except Exception:
+            pass
+        import json as _json
+
+        out: dict[str, object] = {**base}
+        if scratch:
+            out['scratchpad'] = scratch[:4000]
+        if recent:
+            out['recentSummary'] = recent[:4000]
+        return _json.dumps(out, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        return f'Error summarizing session: {exc}'
 
 
 _EXIT_CODE_RE = re.compile(r'exit code:\s*(-?\d+)', re.IGNORECASE)
@@ -449,15 +528,33 @@ async def _updateState(
                 as_list(getattr(session, '_verification_receipts', None), []),
                 expected_command=declaredCmd,
             )
+            # Enrich detail with expected command + last receipt exit code when available
+            _detail2 = detail
+            if declaredCmd and declaredCmd not in _detail2:
+                _detail2 = f"{detail} (expected: {declaredCmd})" if detail else f"expected: {declaredCmd}"
+            try:
+                _receipts = as_list(getattr(session, '_verification_receipts', None), [])
+                if _receipts:
+                    _last = _receipts[-1] if isinstance(_receipts[-1], dict) else {}
+                    _rc_txt = str(_last.get('content') or '')
+                    import re as _re2
+                    _m = _re2.search(r'exit code:\s*(-?\d+)', _rc_txt, _re2.I)
+                    if _m and _m.group(1) not in _detail2:
+                        _detail2 = f"{_detail2} [exit code: {_m.group(1)}]" if _detail2 else f"exit code: {_m.group(1)}"
+            except Exception:
+                pass
             if verdict == 'none':
                 return (
+                    f'Verifier gate: no command was run this turn. Run the relevant test / lint / '
+                    f'build command first (via run_command), confirm it passes, then call '
+                    f'update_state again. ({_detail2})' if _detail2 else
                     'Verifier gate: no command was run this turn. Run the relevant test / lint / '
                     'build command first (via run_command), confirm it passes, then call '
                     'update_state again.'
                 )
             if verdict == 'fail':
                 return (
-                    f'Verifier gate: the verification run did not pass ({detail}). Fix the '
+                    f'Verifier gate: the verification run did not pass ({_detail2}). Fix the '
                     'failures, re-run the command, then call update_state again.'
                 )
             if targetPhase == 'complete' and verdict in ('pass', 'unclear'):
@@ -570,6 +667,21 @@ def register() -> None:
                 }
             },
             'required': ['text'],
+        },
+    )
+    tool_registry.register(
+        'summarize_session',
+        'Summarize the current session (tokens, costs, scratchpad, recent dialogue) for handoff or compaction. Preserves key state without manual work. At high/critical cognitive budget, use this plus write_scratchpad before compact.',
+        _summarizeSession,
+        {
+            'type': 'object',
+            'properties': {
+                'include_scratchpad': {
+                    'type': 'boolean',
+                    'description': 'Include the current scratchpad content. Default true.',
+                }
+            },
+            'required': [],
         },
     )
     tool_registry.register(

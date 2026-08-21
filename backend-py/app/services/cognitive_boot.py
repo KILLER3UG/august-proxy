@@ -184,11 +184,17 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
     else:
         services['environment_watcher'] = {'skipped': True}
 
-    # Ensure daemon manager singleton exists
+    # Ensure daemon manager singleton exists and rehydrate from DB
     try:
         from app.services.daemon_manager import getManager
 
-        getManager()
+        mgr = getManager()
+        try:
+            n = mgr.rehydrate_from_db()
+            if n:
+                logger.info('Daemon rehydrate: %d daemons restored', n)
+        except Exception:
+            pass
         services['daemon_manager'] = {'ok': True}
     except Exception as exc:
         errors.append(f'daemon_manager: {exc}')

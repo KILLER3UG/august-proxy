@@ -34,7 +34,7 @@ def test_get_manager_returns_singleton():
 
 
 def test_constants_are_exposed():
-    assert MAX_DAEMONS_PER_SESSION == 3
+    assert MAX_DAEMONS_PER_SESSION == 10
     assert BACKOFF_SCHEDULE == [5, 15, 45, 135]
     assert BACKOFF_CAP == 300
     assert RESULT_EXPIRY_TURNS == 5

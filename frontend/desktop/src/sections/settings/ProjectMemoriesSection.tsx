@@ -21,7 +21,16 @@ function folderFromOpenChat(): string {
 
 export function ProjectMemoriesSection({ embedded }: { embedded?: boolean }) {
   const folders = useSessionsStore((s) => s.folders);
+  const sessions = useSessionsStore((s) => s.sessions);
   const [folderId, setFolderId] = useState<string>(() => folderFromOpenChat());
+  const counts = (() => {
+    const m = new Map<string, number>();
+    for (const s of sessions) {
+      const fid = (s as unknown as { folderId?: string }).folderId ?? '';
+      if (fid) m.set(fid, (m.get(fid) ?? 0) + 1);
+    }
+    return m;
+  })();
 
   return (
     <div className={embedded ? 'space-y-2' : 'flex h-full flex-col'}>
@@ -32,8 +41,7 @@ export function ProjectMemoriesSection({ embedded }: { embedded?: boolean }) {
               Project Memories
             </h2>
             <p className="text-sm leading-5 text-muted-foreground">
-              Memories August learned from chats inside a project folder — browse
-              what it remembers per project.
+              Same recalled memories, filtered to one project. Pick a project to see its counts and graph.
             </p>
           </>
         )}
@@ -47,7 +55,7 @@ export function ProjectMemoriesSection({ embedded }: { embedded?: boolean }) {
             <option value="">All projects</option>
             {folders.map((f) => (
               <option key={f.id} value={f.id}>
-                {f.name}
+                {f.name} {counts.get(f.id) ? `(${counts.get(f.id)} chats)` : ''}
               </option>
             ))}
           </select>

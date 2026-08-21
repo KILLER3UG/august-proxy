@@ -25,16 +25,42 @@ BULK_OPS = (
     'kill_daemons',
     'fetch_urls',
     'load_skills',
+    'run_commands',
 )
 
 
-async def _bulk_read_files(paths: object = None, path: str = '') -> str:
+async def _bulk_read_files(paths: object = None, path: str = '', offset: int | None = None, limit: int | None = None, files: object = None) -> str:
     from app.services.tool_registrations.file_tools import _readFile
 
-    ids = coerce_str_list(paths, single=path)
+    # Accept files: [{path, offset, limit}] for per-file paging of large logs/datasets
+    ids: list[str] = []
+    per_file_params: list[tuple[int | None, int | None]] = []
+    if files is not None and isinstance(files, list):
+        for entry in files:
+            if isinstance(entry, dict):
+                fp = str(entry.get('path') or entry.get('file') or '').strip()
+                if fp:
+                    ids.append(fp)
+                    off = entry.get('offset')
+                    lim = entry.get('limit')
+                    try:
+                        off_v = int(off) if off is not None else offset
+                    except Exception:
+                        off_v = offset
+                    try:
+                        lim_v = int(lim) if lim is not None else limit
+                    except Exception:
+                        lim_v = limit
+                    per_file_params.append((off_v, lim_v))
+            elif isinstance(entry, str) and entry.strip():
+                ids.append(entry.strip())
+                per_file_params.append((offset, limit))
+    else:
+        ids = coerce_str_list(paths, single=path)
+        per_file_params = [(offset, limit)] * len(ids)
     if not ids:
         return 'Error: paths is required (array of file paths to read).'
-    results = await asyncio.gather(*[_readFile(p) for p in ids], return_exceptions=True)
+    results = await asyncio.gather(*[_readFile(p, offset=off, limit=lim) for (p, (off, lim)) in zip(ids, per_file_params)], return_exceptions=True)
     blocks: list[str] = []
     ok: list[str] = []
     errors: list[str] = []
@@ -200,10 +226,44 @@ async def _bulk_load_skills(names: object = None, name: str = '') -> str:
     return f'{header}\n\n{body}'
 
 
+async def _bulk_run_commands(commands: object = None, command: str = '') -> str:
+    from app.services.tool_registrations.bulk_helpers import BULK_MAX_ITEMS as _BULK_MAX
+    from app.services.tool_registrations.file_tools import _runCommand
+
+    ids = coerce_str_list(commands, single=command)
+    if not ids:
+        # Also accept list of dicts with 'command'
+        items = coerce_object_list(commands)
+        if items:
+            ids = [as_str(i.get('command') or i.get('cmd') or '') for i in items if as_str(i.get('command') or i.get('cmd') or '')]
+        if not ids:
+            return 'Error: commands is required (array of shell commands).'
+    ids = ids[: min(_BULK_MAX, 10)]  # cap 10 parallel (budget: each counts toward MAX_MANAGED_TOOL_ROUNDS)
+    results = await asyncio.gather(*[_runCommand(c) for c in ids], return_exceptions=True)
+    blocks: list[str] = []
+    ok: list[str] = []
+    errors: list[str] = []
+    for c, res in zip(ids, results, strict=False):
+        if isinstance(res, BaseException):
+            errors.append(f'{c}: {res}')
+            continue
+        text = str(res)
+        if 'Error:' in text[:120]:
+            errors.append(f'{c}: {text[:400]}')
+        else:
+            ok.append(c[:60])
+        blocks.append(f'===== $ {c} =====\n{text[:8000]}')
+    header = format_bulk_report(label='run_commands', total=len(ids), ok_ids=ok, errors=errors)
+    body = '\n\n'.join(blocks) if blocks else '(no output)'
+    return f'{header}\n\n{body}'
+
+
 async def _bulk(
     operation: str = '',
     paths: object = None,
     files: object = None,
+    offset: int | None = None,
+    limit: int | None = None,
     sessionIds: object = None,
     sessionId: str = '',
     renames: object = None,
@@ -214,6 +274,8 @@ async def _bulk(
     url: str = '',
     names: object = None,
     name: str = '',
+    commands: object = None,
+    command: str = '',
 ) -> str:
     """Meta bulk dispatcher — one entry point for homogeneous multi-item work."""
     op = (operation or '').strip().lower().replace('-', '_')
@@ -229,6 +291,7 @@ async def _bulk(
         'web_fetch': 'fetch_urls',
         'fetch': 'fetch_urls',
         'load_skill': 'load_skills',
+        'run_command': 'run_commands',
     }
     op = aliases.get(op, op)
     if op not in BULK_OPS:
@@ -238,7 +301,7 @@ async def _bulk(
             + f'. Got: {operation!r}'
         )
     if op == 'read_files':
-        return await _bulk_read_files(paths=paths)
+        return await _bulk_read_files(paths=paths, offset=offset, limit=limit, files=files if isinstance(files, list) and files and isinstance(files[0], dict) else None)
     if op == 'write_files':
         return await _bulk_write_files(files=files if files is not None else items)
     if op == 'delete_sessions':
@@ -251,6 +314,8 @@ async def _bulk(
         return await _bulk_fetch_urls(urls=urls, url=url)
     if op == 'load_skills':
         return await _bulk_load_skills(names=names, name=name)
+    if op == 'run_commands':
+        return await _bulk_run_commands(commands=commands if commands is not None else items, command=command)
     return f'Error: bulk operation {op!r} is not implemented.'
 
 
@@ -439,5 +504,22 @@ def register() -> None:
                 },
             },
             'required': ['names'],
+        },
+    )
+    tool_registry.register(
+        'run_commands',
+        f'Run multiple shell commands in parallel (max {BULK_MAX_ITEMS}). Prefer over many run_command calls.',
+        _bulk_run_commands,
+        {
+            'type': 'object',
+            'properties': {
+                'commands': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': 'Commands to run in parallel.',
+                },
+                'command': {'type': 'string', 'description': 'Single command fallback.'},
+            },
+            'required': ['commands'],
         },
     )

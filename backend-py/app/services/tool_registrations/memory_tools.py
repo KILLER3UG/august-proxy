@@ -229,6 +229,74 @@ async def _updateMemory(
         return f'Error updating memory: {exc}'
 
 
+async def _search(query: str, scope: str = 'memory,files', limit: int = 10) -> str:
+    """Unified search across memory, files, and web with dedup."""
+    from app.json_narrowing import as_int as _as_int
+
+    scopes = [s.strip().lower() for s in (scope or 'memory,files').split(',') if s.strip()]
+    lim = max(1, min(_as_int(limit, 10), 30))
+    blocks: list[str] = []
+    seen: set[str] = set()
+
+    def _dedupe_key(text: str) -> str:
+        return ' '.join(text.lower().split())[:200]
+
+    if 'memory' in scopes or 'auto' in scopes:
+        try:
+            mem = await _memorySearch(query)
+            if 'No memory results' not in mem:
+                for line in mem.splitlines()[1:]:
+                    k = _dedupe_key(line)
+                    if k and k not in seen:
+                        seen.add(k)
+                        blocks.append(line)
+                        if len(blocks) >= lim:
+                            break
+        except Exception:
+            pass
+        if 'fact' in scopes or 'memory' in scopes:
+            try:
+                fact = await _factSearch(query)
+                if 'No fact results' not in fact:
+                    for line in fact.splitlines()[1:]:
+                        k = _dedupe_key(line)
+                        if k and k not in seen:
+                            seen.add(k)
+                            blocks.append(line)
+            except Exception:
+                pass
+    if 'files' in scopes:
+        try:
+            from app.services.tool_registrations.file_tools import _searchFiles
+
+            fres = await _searchFiles(query)
+            if 'No matches' not in fres and 'Error' not in fres[:30]:
+                for line in fres.splitlines():
+                    k = _dedupe_key(line)
+                    if k and k not in seen:
+                        seen.add(k)
+                        blocks.append(f'[file] {line}')
+        except Exception:
+            pass
+    if 'web' in scopes:
+        try:
+            from app.services.tool_registrations.web_tools import _webSearch
+
+            wres = await _webSearch(query)
+            text = str(wres)[:6000]
+            for line in text.splitlines():
+                k = _dedupe_key(line)
+                if k and k not in seen and len(line.strip()) > 20:
+                    seen.add(k)
+                    blocks.append(f'[web] {line[:300]}')
+        except Exception:
+            pass
+    if not blocks:
+        return f'No results for: {query} (scopes: {",".join(scopes)})'
+    header = f'Unified search for: {query} (scopes: {",".join(scopes)})\n'
+    return header + '\n'.join(blocks[:lim])
+
+
 async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int = 10) -> str:
     """Read-only unified brain query across any cognitive store.
 
@@ -603,6 +671,23 @@ def register() -> None:
                 },
             },
             'required': ['sessionIds'],
+        },
+    )
+    tool_registry.register(
+        'search',
+        'Unified search across memory, files, and web with dedup. Replaces needing memory_search vs fact_search vs brain_query vs search_files — one call, scope decides. Prefer this.',
+        _search,
+        {
+            'type': 'object',
+            'properties': {
+                'query': {'type': 'string', 'description': 'Search query.'},
+                'scope': {
+                    'type': 'string',
+                    'description': 'Comma-separated scopes: memory,files,web (e.g. "memory,files"). Default memory,files.',
+                },
+                'limit': {'type': 'integer', 'description': 'Max results (1-30). Default 10.'},
+            },
+            'required': ['query'],
         },
     )
     tool_registry.register(

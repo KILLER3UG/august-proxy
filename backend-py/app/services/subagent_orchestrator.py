@@ -429,6 +429,7 @@ class SubagentOrchestrator:
                     skills=item.get('skills') or [],
                     harness_job_id=as_str(item.get('harness_job_id') or item.get('harnessJobId'), ''),
                     auto_hop=bool(item.get('autoHop') or item.get('auto_hop')),
+                    capability=as_str(item.get('capability') or 'standard'),
                 )
             )
             self._tasks[taskId] = task
@@ -623,6 +624,7 @@ class SubagentOrchestrator:
         skills: object = None,
         harness_job_id: str = '',
         auto_hop: bool = False,
+        capability: str = 'standard',
     ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         # If queued, update to running on dequeue; touch for stall monitor
@@ -669,6 +671,7 @@ class SubagentOrchestrator:
                     skills=skills,
                     harness_job_id=harness_job_id,
                     auto_hop=auto_hop,
+                    capability=capability,
                 )
                 handle.result = result
                 handle.finishedAt = time.time()

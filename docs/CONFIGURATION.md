@@ -485,3 +485,14 @@ workspace (preview → save). API: `/api/aug/*`.
 
 - Loader / writer / generator: `backend-py/app/services/aug_directive_service.py`
 - API: `backend-py/app/routers/aug.py`
+
+---
+
+## Workspace template & guaranteed tools
+
+New workspaces inherit the Docker image toolchain (or host `scripts/ensure-toolchain.sh` visibility check).
+
+**Guaranteed CLIs:** `uv` (Python), `pnpm` + `npm`/`node` (JS), `ripgrep` (`rg`), `fd` (`fd-find`), `jq`. Verified by `scripts/ensure-toolchain.sh` and baked into `Dockerfile` (`apt: ripgrep fd-find jq` + `npm i -g pnpm`).
+
+**Run manually:** `bash scripts/ensure-toolchain.sh` (host) or `docker exec august-proxy bash /app/scripts/ensure-toolchain.sh`.
+

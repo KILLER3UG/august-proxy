@@ -6,7 +6,13 @@ from app.json_narrowing import as_bool, as_dict, as_str
 from app.services import tool_registry
 
 
-async def _spawnDaemon(name: str, prompt: str, watchCondition: str = '', tools: str = '') -> str:
+async def _spawnDaemon(
+    name: str,
+    prompt: str,
+    watchCondition: str = '',
+    tools: str = '',
+    persistWorkspace: bool = False,
+) -> str:
     """Spawn a background daemon (subconscious agent).
 
     Daemons run headless on the Cerebellum model (fast, cheap) with a
@@ -25,7 +31,7 @@ async def _spawnDaemon(name: str, prompt: str, watchCondition: str = '', tools: 
             toolsList = []
         elif tools:
             toolsList = [t.strip() for t in tools.split(',') if t.strip()]
-        spec = DaemonSpec(name=name, prompt=prompt, watchCondition=watchCondition or None, tools=toolsList)
+        spec = DaemonSpec(name=name, prompt=prompt, watchCondition=watchCondition or None, tools=toolsList, persistWorkspace=bool(persistWorkspace))
         from app.services.workbench.workbench import get_session
 
         session = get_session()
@@ -72,11 +78,12 @@ async def _killDaemon(daemonId: str) -> str:
         return f'Error killing daemon: {exc}'
 
 
-async def _writeBlackboard(key: str, value: str, priority: int = 0) -> str:
+async def _writeBlackboard(key: str, value: str, priority: int = 0, persistWorkspace: bool = False) -> str:
     """Write a note to the shared blackboard.
 
     Blackboard notes are visible to all agents in the session (main loop
-    and daemons). They expire after a TTL or when acknowledged.
+    and daemons). They expire after a TTL or when acknowledged. With
+    persistWorkspace, they survive to the next session in the same workspace.
     """
     from app.services.blackboard_service import writeNote
     from app.services.workbench.workbench import get_session
@@ -85,8 +92,8 @@ async def _writeBlackboard(key: str, value: str, priority: int = 0) -> str:
         session = get_session()
         sessionId = getattr(session, 'id', '') if session else ''
         agent = getattr(session, '_current_agent', 'main')
-        writeNote(sessionId, agent, key, value, priority)
-        return f'Blackboard note written: {key}'
+        writeNote(sessionId, agent, key, value, priority, persist='workspace' if persistWorkspace else 'session')
+        return f'Blackboard note written: {key}' + (' (workspace-persisted)' if persistWorkspace else '')
     except Exception as exc:
         return f'Error writing blackboard: {exc}'
 
@@ -258,7 +265,7 @@ def register() -> None:
     """Register daemon, blackboard, and subagent tools."""
     tool_registry.register(
         'spawn_daemon',
-        'Spawn a background daemon (subconscious agent). Daemons run on the Cerebellum model (fast, cheap) with a restricted read-only tool set. Use for polling, monitoring, and watching CI. Results appear in <subconscious_updates> on subsequent turns. Max 3 daemons per session.',
+        'Spawn a background daemon (subconscious agent). Daemons run on the Cerebellum model (fast, cheap) with a restricted read-only tool set. Use for polling, monitoring, and watching CI. Results appear in <subconscious_updates> on subsequent turns. Max 10 daemons per session (20 per workspace). Use persistWorkspace for cross-session watchers (RSS/GitHub/CI) that survive the session.',
         _spawnDaemon,
         {
             'type': 'object',
@@ -272,6 +279,10 @@ def register() -> None:
                 'tools': {
                     'type': 'string',
                     'description': "Comma-separated tool allowlist, or 'none' for no tools, or empty for defaults.",
+                },
+                'persistWorkspace': {
+                    'type': 'boolean',
+                    'description': 'When true, the daemon persists beyond this session and can hand off via workspace blackboard (use for watchers). Default false.',
                 },
             },
             'required': ['name', 'prompt'],
@@ -301,7 +312,7 @@ def register() -> None:
     )
     tool_registry.register(
         'write_blackboard',
-        'Write a note to the shared blackboard. Notes are visible to all agents (main loop and daemons) in the session. Use for inter-agent coordination (e.g. daemon posting test results for the main model).',
+        'Write a note to the shared blackboard. Notes are visible to all agents (main loop and daemons) in the session. Add persistWorkspace for cross-session handoff (daemon → next session). Use for inter-agent coordination (e.g. daemon posting test results for the main model).',
         _writeBlackboard,
         {
             'type': 'object',
@@ -309,6 +320,10 @@ def register() -> None:
                 'key': {'type': 'string', 'description': 'Note key (e.g. test_result, file_change).'},
                 'value': {'type': 'string', 'description': 'Note content (plain text or JSON).'},
                 'priority': {'type': 'integer', 'description': 'Priority (0-10, higher = more urgent). Default 0.'},
+                'persistWorkspace': {
+                    'type': 'boolean',
+                    'description': 'When true, persist to workspace so the next session in this workspace sees it (daemon handoff). Default false.',
+                },
             },
             'required': ['key', 'value'],
         },
@@ -385,6 +400,12 @@ def register() -> None:
                                 'type': 'array',
                                 'items': {'type': 'string'},
                                 'description': 'Skill names to preload into the worker (full SKILL.md).',
+                            },
+                            'capability': {
+                                'type': 'string',
+                                'enum': ['read_only', 'standard', 'full'],
+                                'default': 'standard',
+                                'description': 'Tool surface for the worker: read_only (Cerebellum read-only), standard (inherit parent), full (all tools).',
                             },
                         },
                         'required': ['goal'],

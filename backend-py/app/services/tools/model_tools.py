@@ -181,5 +181,24 @@ def assembleToolDefs(
         removed = preloadedDefs.pop()
         totalTokens -= _estimateToolTokens(removed)
         result.preloadedToolCount = len(preloadedDefs)
+    # Inline short schemas for remaining deferrable tools so model doesn't need extra round-trip
+    remaining = [td for td in deferrableDefs if td.get('name', '') not in preloadedNames][:30]
+    if remaining:
+        short_lines = []
+        for td in remaining:
+            name2 = td.get('name', '')
+            desc = str(td.get('description', ''))[:80].replace('\n', ' ')
+            params = td.get('input_schema', td.get('parameters', {}))
+            props = params.get('properties', {}) if isinstance(params, dict) else {}
+            keys = ', '.join(list(props.keys())[:4])
+            short_lines.append(f'- {name2}: {desc} [{keys}]')
+        if short_lines:
+            hint = ' Available (short): ' + ' | '.join(short_lines[:15])
+            for i, bd in enumerate(_BRIDGEToolDefs):
+                if bd.get('name') == 'tool_search':
+                    patched = dict(bd)
+                    patched['description'] = str(bd.get('description', '')) + hint[:800]
+                    _BRIDGEToolDefs[i] = patched
+                    break
     result.tool_defs = coreDefs + preloadedDefs + _BRIDGEToolDefs
     return result

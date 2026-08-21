@@ -45,6 +45,20 @@ SUBAGENT_BLOCKED_TOOLS = frozenset(
      'interrupt_subagent', 'send_subagent_message'}
 )
 
+# Capability tiers for subagents — main model picks per-launch.
+SUBAGENT_CAPABILITY_READ_ONLY = {'read_file', 'read_files', 'list_directory', 'search_files', 'brain_query', 'memory_search', 'fact_search', 'web_search', 'web_fetch', 'web_fetch_many', 'read_blackboard', 'describe_environment', 'diagnose_proxy', 'context_read', 'list_agents', 'list_skills', 'load_skill', 'load_skills'}
+SUBAGENT_CAPABILITY_FULL = None  # None means inherit all allowed (no extra filter)
+
+
+def _capability_filter(capability: str | None) -> set[str] | None:
+    """Return allowed names for the capability tier, or None for full."""
+    c = (capability or 'standard').strip().lower()
+    if c in ('read_only', 'readonly', 'read-only'):
+        return set(SUBAGENT_CAPABILITY_READ_ONLY)
+    if c in ('full', 'all'):
+        return None
+    return None  # standard — inherit parent permissions without extra cap
+
 # In-flight sub-agent tasks per session. Orchestrator workers are tracked by
 # task id on the orchestrator; recurring-task sub-agents (dispatched by the
 # workbench chat loop) bypass the orchestrator entirely, so executeSubAgent
@@ -149,6 +163,7 @@ async def executeSubAgent(
     skills: object = None,
     harness_job_id: str = '',
     auto_hop: bool = False,
+    capability: str = 'standard',
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``.
 
@@ -467,13 +482,26 @@ async def executeSubAgent(
     if restricted_names:
         fullTools = [t for t in fullTools if _toolName(t) not in restricted_names]
         fullOpenaiTools = [t for t in fullOpenaiTools if _toolName(t) not in restricted_names]
-    allowedNames = {
-        _toolName(t)
-        for t in fullTools
-        if _toolAllowed(agent, _toolName(t)) and _toolName(t) not in SUBAGENT_BLOCKED_TOOLS
-    }
-    tools = [t for t in fullTools if _toolName(t) in allowedNames]
-    openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
+    cap_filter = _capability_filter(capability)
+    if cap_filter is not None and (capability or '').strip().lower() in ('read_only', 'readonly', 'read-only'):
+        # Read-only: restrict to the explicit allowlist even if parent has 'all'.
+        allowedNames = {n for n in cap_filter if n not in SUBAGENT_BLOCKED_TOOLS}
+        # Guard by guardMode — full is required for write/shell subagents; read_only is always allowed.
+        if restricted_names:
+            allowedNames -= set(restricted_names)
+        tools = [t for t in fullTools if _toolName(t) in allowedNames]
+        openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
+    else:
+        raw_allowed = {
+            _toolName(t)
+            for t in fullTools
+            if _toolAllowed(agent, _toolName(t)) and _toolName(t) not in SUBAGENT_BLOCKED_TOOLS
+        }
+        if cap_filter is not None:
+            raw_allowed &= cap_filter
+        allowedNames = raw_allowed
+        tools = [t for t in fullTools if _toolName(t) in allowedNames]
+        openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
     try:
         from app.services.memory.capabilities_prompt import (
             build_capabilities_block,

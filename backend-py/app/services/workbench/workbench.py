@@ -981,11 +981,18 @@ def _scaledMemoryLimit(base: int, context_window: int) -> int:
     return max(1, int(base * _memoryInjectionScale(context_window)))
 
 
-def _shouldAutoCompact(attention_pressure: str, turns_since_compaction: int) -> bool:
+def _shouldAutoCompact(
+    attention_pressure: str,
+    turns_since_compaction: int,
+    remaining_tokens: int | None = None,
+) -> bool:
     """Auto-compact at high (≥80%) or critical (≥90%) pressure after a short cooldown.
 
     Cooldown avoids re-compacting every turn once we are near the window.
+    When remaining tokens are provided, also triggers if headroom is very low.
     """
+    if remaining_tokens is not None and remaining_tokens < 8000:
+        return True
     return attention_pressure in ('high', 'critical') and turns_since_compaction >= 2
 
 
@@ -2604,10 +2611,29 @@ async def _sendWorkbenchMessageStreamImpl(
             currentTurn = getattr(session, 'turnCount', 0)
             lastCompaction = getattr(session, '_last_compaction_turn', -100)
             turnsSinceCompaction = currentTurn - lastCompaction
+            remainingTokens = max(0, contextWindow - originalTokens)
             # Compress toward ~55% of the real window so the next turn has headroom.
             threshold = max(4096, int(contextWindow * 0.55))
             currentMessages = list(session.messages)
-            if _shouldAutoCompact(attentionPressure, turnsSinceCompaction):
+            if _shouldAutoCompact(attentionPressure, turnsSinceCompaction, remainingTokens):
+                # Preserve key state without manual work: auto-summarize before compact so handoff survives compression.
+                try:
+                    from app.services.workbench.context_compressor import localSummarize as _localSumm
+                    from app.services.workbench.sessions import summarize_session as _summ_sess
+                    _snap = _summ_sess(session)
+                    _recent = _localSumm(currentMessages[-20:]) if currentMessages else ''
+                    _scratch = getattr(session, '_working_memory', '') or ''
+                    _payload = dict(_snap)
+                    if _scratch:
+                        _payload['scratchpad'] = str(_scratch)[:3000]
+                    if _recent:
+                        _payload['recentSummary'] = _recent[:3000]
+                    import json as _jsum
+
+                    from app.services.brain_write_facade import save_kv as _skv
+                    _skv(f'pre_compact_snapshot:{sessionId}', _jsum.dumps(_payload, ensure_ascii=False)[:40000])
+                except Exception:
+                    pass
                 try:
                     from app.services.transcript_archive import archive_messages
 
@@ -5183,6 +5209,18 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
         if is_plan_file_write(session, toolName, args):
             # The plan markdown is the only file writable in plan mode.
             return None
+        # Advisory plan mode: low-risk trivial multi-file fixes are allowed with a warning
+        # — only high-risk mutations are hard-blocked. Risk is inferred from tool type
+        # and destructive bucket; shell and delete are always high.
+        risk = str(getattr(session, 'planRisk', '') or as_str(getattr(session, '_plan_risk', '') or '')).lower()
+        if risk not in ('high', 'critical'):
+            if toolName.lower() in ('run_command', 'delete_file', 'delete_session', 'delete_sessions', 'kill_daemon', 'kill_daemons', 'clear_blackboard'):
+                pass  # high-risk: fall through to block
+            elif is_shell_mutation(toolName, args):
+                pass
+            else:
+                # Advisory — allow with soft warning (caller may surface).
+                return None
         return (
             f"Tool '{toolName}' is destructive and cannot run in plan mode. "
             f'The only file you may write is the plan itself ({plan_file_relpath(session.id)}). '
@@ -5190,6 +5228,18 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
             'file, call `submit_plan`, and wait for the user to approve before executing.'
         )
     # Edit automatically: file edits proceed; shell/commands still need approval.
+    # Cognitive budget hardening: at critical, nudge non-essential writes toward scratchpad/summarize/compact first.
+    # This is advisory (not hard-blocked) but surfaces via deny string so model sees the prompt.
+    try:
+        _budget_bth = getattr(session, 'cognitiveBudget', None) or getattr(session, 'cognitive_budget', None)
+        if isinstance(_budget_bth, dict):
+            _press_bth = str(_budget_bth.get('attention_pressure') or _budget_bth.get('attentionPressure') or '').lower()
+            _rem_bth = int(_budget_bth.get('remaining_tokens') or _budget_bth.get('remainingTokens') or 999999)
+            if _press_bth == 'critical' or _rem_bth < 8000:
+                if toolName not in ('write_scratchpad', 'summarize_session', 'compact', 'update_state') and is_mutating(toolName, args):
+                    return (f"Cognitive budget critical ({_press_bth}, { _rem_bth} tokens left) — save key state via write_scratchpad and summarize_session, then compact before further writes. Tool '{toolName}' throttled.")
+    except Exception:
+        pass
     if mode == 'edit' and is_shell_mutation(toolName, args):
         if has_tool_grant(session, toolName, args):
             return None

@@ -1,63 +1,76 @@
-/* Memory — one page: saved, recalled, projects, store. No inner tabs. */
-
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { SettingsSectionShell } from '@/components/settings/SettingsSectionShell';
 import type { SettingsSection } from '@/settings/settings-registry';
 import { WorkspaceMemorySection } from '@/sections/workspace/WorkspaceMemorySection';
 import { RecalledMemorySection } from './RecalledMemorySection';
 import { AddedMemorySection } from './AddedMemorySection';
 import { ProjectMemoriesSection } from './ProjectMemoriesSection';
+import { MemoryGraphSection } from './MemoryGraphSection';
+import {
+  MemoryHubTabs,
+  type MemoryHubTabId,
+} from './MemoryHubTabs';
 
-const ANCHOR: Record<string, string> = {
-  'added-memory': 'memory-added',
-  'recalled-memory': 'memory-recalled',
-  'project-memories': 'memory-projects',
-  'memory-knowledge': 'memory-store',
+const ANCHOR_TAB: Record<string, MemoryHubTabId> = {
+  'recalled-memory': 'recalled',
+  'project-memories': 'by-project',
+  'added-memory': 'saved',
+  'memory-knowledge': 'graph',
 };
 
+function tabFromActive(activeId: string): MemoryHubTabId {
+  return ANCHOR_TAB[activeId] ?? 'recalled';
+}
+
 export function MemoryHubSection({ active }: { active: SettingsSection }) {
+  const [tab, setTab] = useState<MemoryHubTabId>(() => tabFromActive(active.id));
   useEffect(() => {
-    const id = ANCHOR[active.id];
-    if (!id) return;
-    requestAnimationFrame(() => {
-      document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    });
+    setTab(tabFromActive(active.id));
   }, [active.id]);
 
   return (
     <SettingsSectionShell
       title="Memory"
-      subtitle="Facts you saved, what August recalled, project notes, and the knowledge store — one list, not four tabs."
+      subtitle={
+        <>
+          <span className="font-medium text-foreground/80">Recalled</span> is what August learned automatically (all projects, ranked when relevant).
+          {' '}<span className="font-medium text-foreground/80">By Project</span> is the same pool filtered to one folder via the session&apos;s project — same memory, different view.
+        </>
+      }
+      toolbar={<MemoryHubTabs active={tab} onChange={setTab} />}
     >
-      <div className="mx-auto max-w-3xl space-y-10">
-        <section id="memory-added" className="scroll-mt-4 space-y-3">
-          <h3 className="text-sm font-semibold text-foreground">Saved for every chat</h3>
-          <p className="text-[13px] text-muted-foreground">
-            You told August to remember these. They are included on parent turns.
-          </p>
-          <AddedMemorySection embedded />
-        </section>
-
-        <section id="memory-recalled" className="scroll-mt-4 space-y-3">
-          <h3 className="text-sm font-semibold text-foreground">Recalled on demand</h3>
-          <p className="text-[13px] text-muted-foreground">
-            Agent-captured context. Searchable in chat; pin a row to always include it.
-          </p>
-          <RecalledMemorySection embedded />
-        </section>
-
-        <section id="memory-projects" className="scroll-mt-4 space-y-3">
-          <h3 className="text-sm font-semibold text-foreground">By project</h3>
-          <ProjectMemoriesSection embedded />
-        </section>
-
-        <section id="memory-store" className="scroll-mt-4 space-y-3">
-          <h3 className="text-sm font-semibold text-foreground">Knowledge store</h3>
-          <p className="text-[13px] text-muted-foreground">
-            Facts, vectors, graph, and the system prompt.
-          </p>
-          <WorkspaceMemorySection compact />
-        </section>
+      <div className="mx-auto max-w-3xl">
+        {tab === 'recalled' ? (
+          <section className="space-y-3">
+            <p className="text-[13px] leading-5 text-muted-foreground">Review mode lets the model check each recalled memory — keep what matters, remove what doesn&apos;t.</p>
+            <RecalledMemorySection embedded />
+          </section>
+        ) : null}
+        {tab === 'by-project' ? (
+          <section className="space-y-3">
+            <p className="text-[13px] leading-5 text-muted-foreground">Same recalled memories, scoped to the project folder their chat lived in. Counts and graph update per project.</p>
+            <ProjectMemoriesSection embedded />
+          </section>
+        ) : null}
+        {tab === 'saved' ? (
+          <section className="space-y-3">
+            <p className="text-[13px] leading-5 text-muted-foreground">You told August to remember these — pinned and injected into every chat turn.</p>
+            <AddedMemorySection embedded />
+          </section>
+        ) : null}
+        {tab === 'graph' ? (
+          <section className="space-y-3">
+            <p className="text-[13px] leading-5 text-muted-foreground">Knowledge graph — entities and relations built from memories, with project-filtered neighborhoods.</p>
+            <MemoryGraphSection embedded />
+            <div className="border-t border-border/40 pt-6">
+              <h4 className="text-sm font-semibold text-foreground">Knowledge store</h4>
+              <p className="mt-1 text-[13px] text-muted-foreground">Facts, vectors, and system prompt.</p>
+              <div className="mt-3">
+                <WorkspaceMemorySection compact />
+              </div>
+            </div>
+          </section>
+        ) : null}
       </div>
     </SettingsSectionShell>
   );

@@ -81,6 +81,7 @@ class WorkbenchSession:
     goal: str = ''
     plan: dict[str, object] | None = None
     planApproved: bool = False
+    planRisk: str = ''
     clarify: dict[str, object] | None = None
     todos: list[dict[str, object]] | None = None
     messages: list[dict[str, object]] = field(default_factory=list)

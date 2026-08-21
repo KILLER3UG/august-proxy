@@ -131,7 +131,10 @@ _CORE_SCHEMA_SQL = """
             source TEXT DEFAULT '',
             pinned INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (datetime('now')),
+            expires_at TEXT,
+            confidence REAL DEFAULT 0.7,
+            ttl_days INTEGER
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS auto_memories_fts USING fts5(
@@ -379,14 +382,39 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
         )
     """
     )
+    # Additive columns for blackboard workspace persistence (must run before indexes on them).
+    ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
+    ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
     # Indexes for tables created after the main executescript (must run after CREATE TABLE).
     conn.execute('CREATE INDEX IF NOT EXISTS idx_blackboard_session ON blackboard(session_id)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_blackboard_workspace ON blackboard(workspace_path)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_exam_attempts_exam ON exam_attempts(exam_id)')
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daemons (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            workspace_path TEXT DEFAULT '',
+            name TEXT NOT NULL,
+            spec_json TEXT DEFAULT '{}',
+            result_json TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'running',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            expires_at TEXT
+        )
+        """
+    )
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_daemons_session ON daemons(session_id)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_daemons_workspace ON daemons(workspace_path)')
     conn.commit()
     # auto_memories.source_session_id is written by saveAutoMemory and read by
     # the project-memories view — ensure it exists on fresh installs (the
     # CREATE TABLE predates the column).
     ensure_column(conn, 'auto_memories', 'source_session_id', 'TEXT')
+    ensure_column(conn, 'auto_memories', 'expires_at', 'TEXT')
+    ensure_column(conn, 'auto_memories', 'confidence', 'REAL DEFAULT 0.7')
+    ensure_column(conn, 'auto_memories', 'ttl_days', 'INTEGER')
     # auto_memories.key must be UNIQUE: saveAutoMemory's check-then-insert was
     # non-transactional, so concurrent writers inserted twin rows under one
     # key (audit finding). Dedup any historical twins (keep the OLDEST row)
@@ -480,7 +508,7 @@ def create_vector_graph_tables(conn: sqlite3.Connection) -> None:
 # Bump when DDL / indexes change in a way that requires re-running create_*.
 # user_version is set after a successful ensure_schema so warm boots can skip
 # the heavy CREATE IF NOT EXISTS + migration probe when already current.
-_SCHEMA_USER_VERSION = 8
+_SCHEMA_USER_VERSION = 9
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
@@ -605,6 +633,11 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
             ensure_column(conn, 'auto_memories', 'pinned', 'INTEGER DEFAULT 0')
+            ensure_column(conn, 'auto_memories', 'expires_at', 'TEXT')
+            ensure_column(conn, 'auto_memories', 'confidence', 'REAL DEFAULT 0.7')
+            ensure_column(conn, 'auto_memories', 'ttl_days', 'INTEGER')
+            ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
+            ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
             ensure_column(conn, 'learned_heuristics', 'confidence', 'REAL DEFAULT 0.5')
             create_vector_graph_tables(conn)
             _ensure_messages_fts(conn)

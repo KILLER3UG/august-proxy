@@ -10,7 +10,7 @@ from app.services import tool_registry
 from app.services.execution_world import bind_path, run_sandboxed
 from app.services.sandbox import policy_from_session, unsandboxed_grant_key
 
-_MAXFileSize = 10 * 1024 * 1024
+_MAXFileSize = 20 * 1024 * 1024
 _MAXSearchResults = 100
 # Python fallback search bounds — rg isn't bundled on Windows, so the fallback
 # is the common path; it must stay fast and interruptible instead of hanging
@@ -119,7 +119,21 @@ async def _readFile(
     Optional ``offset``/``limit`` (1-based line start + line count) and
     ``start_line``/``end_line`` let models page large files. Unknown kwargs
     are ignored so provider schema drift cannot crash the tool.
+    Large files are chunk-paged via offset/limit to avoid the 10MB hard fail.
     """
+    # 30s result cache for repeated reads within a turn.
+    try:
+        from app.services.workbench.context import currentSessionId
+
+        sid = currentSessionId.get() or ''
+        if sid and offset is None and limit is None and start_line is None and end_line is None:
+            from app.services.workbench.tool_result_cache import get as _cache_get
+
+            cached = _cache_get(sid, 'read_file', str(path))
+            if cached is not None:
+                return cached
+    except Exception:
+        pass
     filePath, err = bind_path(path, _workspace(), for_write=False)
     if err or filePath is None:
         return err or f'Error: Invalid path: {path}'
@@ -128,8 +142,8 @@ async def _readFile(
     if not filePath.is_file():
         return f'Error: Not a file: {path}'
     size = filePath.stat().st_size
-    if size > _MAXFileSize:
-        return f'Error: File too large ({size} bytes). Maximum: {_MAXFileSize} bytes.'
+    if size > _MAXFileSize and offset is None and limit is None and start_line is None and end_line is None:
+        return f'Error: File too large ({size} bytes). Maximum: {_MAXFileSize} bytes. Use offset/limit to page it, e.g. read_file(path, offset=1, limit=200).'
     try:
         import aiofiles
 
@@ -176,8 +190,30 @@ async def _readFile(
             # Per-line anchors (R1): numbered lines let the model reference
             # exact lines in edit_lines.changes[].line and verify its anchors.
             numbered = '\n'.join(f'{start_i + i:5d}| {line}' for i, line in enumerate(sliced))
-            return hashHeader + header + numbered + ('\n' if numbered else '')
-        return hashHeader + content
+            out = hashHeader + header + numbered + ('\n' if numbered else '')
+            try:
+                from app.services.workbench.context import currentSessionId as _csid
+
+                _sid2 = _csid.get() or ''
+                if _sid2:
+                    from app.services.workbench.tool_result_cache import put as _cache_put
+
+                    _cache_put(_sid2, 'read_file', f'{path}:{start_i}-{end_i}', out)
+            except Exception:
+                pass
+            return out
+        out2 = hashHeader + content
+        try:
+            from app.services.workbench.context import currentSessionId as _csid2
+
+            _sid3 = _csid2.get() or ''
+            if _sid3:
+                from app.services.workbench.tool_result_cache import put as _cache_put2
+
+                _cache_put2(_sid3, 'read_file', str(path), out2)
+        except Exception:
+            pass
+        return out2
     except Exception as exc:
         return f'Error reading file: {exc}'
 
@@ -204,6 +240,16 @@ async def _writeFile(path: str, content: str, **_extra: object) -> str:
 
         async with aiofiles.open(str(filePath), 'w', encoding='utf-8') as f:
             await f.write(content)
+        try:
+            from app.services.workbench.context import currentSessionId as _csid_w
+
+            _sid_w = _csid_w.get() or ''
+            if _sid_w:
+                from app.services.workbench.tool_result_cache import clear as _cache_clear
+
+                _cache_clear()
+        except Exception:
+            pass
         return f'Successfully wrote {len(content)} bytes to {path}'
     except Exception as exc:
         return f'Error writing file: {exc}'
@@ -299,6 +345,18 @@ async def _editLines(
 
 async def _listDirectory(path: str) -> str:
     """List files and directories (workspace-bound)."""
+    try:
+        from app.services.workbench.context import currentSessionId as _csid3
+
+        _sid = _csid3.get() or ''
+        if _sid:
+            from app.services.workbench.tool_result_cache import get as _cache_get2
+
+            cached = _cache_get2(_sid, 'list_directory', str(path))
+            if cached is not None:
+                return cached
+    except Exception:
+        pass
     dirPath, err = bind_path(path, _workspace(), for_write=False)
     if err or dirPath is None:
         return err or f'Error: Invalid path: {path}'
@@ -312,9 +370,77 @@ async def _listDirectory(path: str) -> str:
             entryType = 'dir' if entry.is_dir() else 'file'
             size = entry.stat().st_size if entry.is_file() else 0
             entries.append(f'{entryType:4s} {entry.name:50s} {size:>10,} bytes')
-        return '\n'.join(entries) if entries else '(empty directory)'
+        out = '\n'.join(entries) if entries else '(empty directory)'
+        try:
+            from app.services.workbench.context import currentSessionId as _csid4
+
+            _sid4 = _csid4.get() or ''
+            if _sid4:
+                from app.services.workbench.tool_result_cache import put as _cache_put3
+
+                _cache_put3(_sid4, 'list_directory', str(path), out)
+        except Exception:
+            pass
+        return out
     except Exception as exc:
         return f'Error listing directory: {exc}'
+
+
+async def _applyPatch(path: str, patch: str, fileHash: str = '') -> str:
+    """Apply a unified diff patch (git apply style). Requires fileHash for safety."""
+    session = _session()
+    mode = (getattr(session, 'sandboxMode', None) or 'workspace-write') if session else 'workspace-write'
+    if str(mode).lower() in ('read-only', 'readonly', 'read'):
+        return 'Error: Sandbox is read-only. Switch to Workspace or Full access before patching.'
+    filePath, err = bind_path(path, _workspace(), for_write=True)
+    if err or filePath is None:
+        return err or f'Error: Invalid path: {path}'
+    if fileHash:
+        try:
+            import hashlib
+
+            raw = filePath.read_bytes() if filePath.exists() else b''
+            actual = hashlib.sha256(raw).hexdigest()
+            if actual != fileHash.strip().lower():
+                return 'Error: File changed since you read it (hash mismatch). Re-read and retry.'
+        except Exception as exc:
+            return f'Error checking hash: {exc}'
+    if not patch or '@@' not in patch:
+        return 'Error: patch must be a unified diff (git diff) with @@ hunks.'
+    try:
+        import subprocess
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False, encoding='utf-8') as tf:
+            tf.write(patch)
+            tf.flush()
+            pf = tf.name
+        # Try git apply first, fallback to patch
+        result = subprocess.run(['git', 'apply', '--check', pf], cwd=str(filePath.parent), capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            # Try with workspace root
+            ws = _workspace()
+            cwd2 = ws or str(filePath.parent)
+            result2 = subprocess.run(['git', 'apply', '--check', pf], cwd=cwd2, capture_output=True, text=True, timeout=10)
+            if result2.returncode != 0:
+                # Try patch command
+                result3 = subprocess.run(['patch', '--dry-run', '-p1', '-i', pf], cwd=cwd2, capture_output=True, text=True, timeout=10)
+                if result3.returncode != 0:
+                    return f'Error: patch does not apply cleanly: {result.stderr or result2.stderr or result3.stderr}'
+        # Apply
+        subprocess.run(['git', 'apply', pf], cwd=str(filePath.parent), capture_output=True, timeout=10)
+        import pathlib as _pl
+
+        _pl.Path(pf).unlink(missing_ok=True)
+        try:
+            from app.services.workbench.tool_result_cache import clear as _cc2
+
+            _cc2()
+        except Exception:
+            pass
+        return f'Applied patch to {path}.'
+    except Exception as exc:
+        return f'Error applying patch: {exc}'
 
 
 async def _searchFiles(query: str, path: str = '.') -> str:
@@ -485,6 +611,7 @@ async def _runCommand(
     timeout: float | int | None = None,
     timeout_s: float | int | None = None,
     cwd: str | None = None,
+    network: bool | None = None,
     **_extra: object,
 ) -> str:
     """Run a shell command inside the Codex-like sandbox.
@@ -492,12 +619,17 @@ async def _runCommand(
     Non-interactive only: stdin is closed, pagers/prompts are discouraged via
     env. Unknown kwargs (e.g. proxy ``cwd``) are ignored so schema drift cannot
     crash the tool — workspace cwd comes from the session policy.
+    ``network=True`` enables network for this single invocation (curl/gh/pip).
     """
     _ = cwd  # workspace cwd is applied by the sandbox policy, not caller cwd
+    _network_flag = bool(network) if network is not None else False
     firstWord = command.strip().split()[0].lower() if command.strip() else ''
     if firstWord.endswith('.exe'):
         firstWord = firstWord[:-4]
-    if firstWord not in _ALLOWEDCommandPrefixes and (not command.startswith('./')):
+    allowed = list(_ALLOWEDCommandPrefixes)
+    if _network_flag and 'gh' not in allowed:
+        allowed.append('gh')
+    if firstWord not in allowed and (not command.startswith('./')):
         return f"Error: Command '{firstWord}' is not in the allowed list."
     dangerous = [
         'rm -rf /',
@@ -542,10 +674,13 @@ async def _runCommand(
         except Exception:
             allow_unsandboxed = False
 
+    network_on = bool(getattr(session, 'sandboxNetwork', False)) if session else False
+    if _network_flag:
+        network_on = True
     policy = policy_from_session(
         sandbox_mode=getattr(session, 'sandboxMode', None) if session else None,
         workspace_path=_workspace(),
-        sandbox_network=bool(getattr(session, 'sandboxNetwork', False)) if session else False,
+        sandbox_network=network_on,
         allow_unsandboxed=allow_unsandboxed,
     )
 
@@ -679,13 +814,28 @@ def register() -> None:
         },
     )
     tool_registry.register(
+        'apply_patch',
+        'Apply a unified diff patch to a file (git apply style). More robust than edit_lines for multi-hunk changes. Requires fileHash from read_file when provided.',
+        _applyPatch,
+        {
+            'type': 'object',
+            'properties': {
+                'path': {'type': 'string', 'description': 'Absolute path to the file to patch.'},
+                'patch': {'type': 'string', 'description': 'Unified diff patch text (git diff format with @@ hunks).'},
+                'fileHash': {'type': 'string', 'description': 'Optional sha256 from last read_file; rejects if file changed.'},
+            },
+            'required': ['path', 'patch'],
+        },
+    )
+    tool_registry.register(
         'run_command',
         'Run a non-interactive shell command in the session sandbox (workspace-write by default, network off). '
         'Stdin is closed — never use pagers, REPLs, password prompts, or commands that wait for input. '
         'Prefer flags like --yes / -y / --non-interactive; GIT_PAGER=cat is already applied. '
         'On Windows, prefer PowerShell/cmd (or use read_file instead of head/cat/tail). '
         'Common Unix head/tail/cat/ls are auto-translated when possible. '
-        f'Default timeout {_DEFAULTCommandTimeout}s (max {_MAXCommandTimeout}s); optional timeout_s.',
+        f'Default timeout {_DEFAULTCommandTimeout}s (max {_MAXCommandTimeout}s); optional timeout_s. '
+        'Use network:true for curl/gh/pip without toggling the session.',
         _runCommand,
         {
             'type': 'object',
@@ -700,6 +850,10 @@ def register() -> None:
                         f'Optional timeout in seconds (1–{_MAXCommandTimeout}, '
                         f'default {_DEFAULTCommandTimeout}).'
                     ),
+                },
+                'network': {
+                    'type': 'boolean',
+                    'description': 'Enable network for this command only (curl/gh/pip). Default follows session sandboxNetwork.',
                 },
             },
             'required': ['command'],

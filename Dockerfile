@@ -13,7 +13,11 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     nodejs \
     npm \
-    && rm -rf /var/lib/apt/lists/*
+    ripgrep \
+    fd-find \
+    jq \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g pnpm 2>/dev/null || npm install -g pnpm@latest
 
 # Install uv for fast Python dependency management
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh

@@ -487,6 +487,37 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
     # memory_* tools for on-demand recall.
     autoMemories = as_list(_get(session, 'autoMemories', 'auto_memories'), [])
     if autoMemories:
+        # TTL/expired and low-confidence noise (e.g. User prefers: you/think) are dropped
+        # unless pinned — prevents stale auto-recall from polluting the prompt.
+        _now_iso = None
+        try:
+            from datetime import datetime as _dt
+            from datetime import timezone as _tz
+
+            _now_iso = _dt.now(_tz.utc).isoformat().replace('+00:00', 'Z')
+        except Exception:
+            pass
+        filtered: list[object] = []
+        for _it in autoMemories:
+            if not isinstance(_it, dict):
+                filtered.append(_it)
+                continue
+            _exp = str(_it.get('expires_at') or '').strip()
+            if _exp and _now_iso and _exp < _now_iso and not bool(_it.get('pinned')):
+                continue
+            _conf = _it.get('confidence')
+            try:
+                _conf_v = float(_conf) if _conf is not None else 0.7
+            except Exception:
+                _conf_v = 0.7
+            if _conf_v < 0.45 and not bool(_it.get('pinned')):
+                continue
+            _body = str(_it.get('content') or _it.get('description') or '')
+            if 'user prefers:' in _body.lower() and (' you' in _body.lower() or 'think' in _body.lower()) and not bool(_it.get('pinned')):
+                if _conf_v < 0.6:
+                    continue
+            filtered.append(_it)
+        autoMemories = filtered
         lines: list[str] = []
         for item in autoMemories[:8]:
             if isinstance(item, dict):
