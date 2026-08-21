@@ -14,6 +14,7 @@ import {
   Globe,
   LineChart,
   Palette,
+  Settings2,
   ShieldCheck,
   Wrench,
   type LucideIcon,
@@ -22,6 +23,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
+import { useAccountStore } from '@/store/account';
 import { cn } from '@/lib/utils';
 import {
   SETTINGS_SECTIONS,
@@ -172,7 +174,7 @@ export function WorkspaceShell({
                       <Icon className="size-3" aria-hidden="true" />
                       <span>{categoryLabel}</span>
                     </div>
-                    <div className="flex flex-col gap-0.5 rounded-xl bg-white/[0.025] py-1">
+                    <div className="flex flex-col gap-0.5 rounded-xl bg-sidebar-accent/40 py-1">
                     {items.map((s) => (
                       <WorkspaceNavLink
                         key={s.id}
@@ -198,6 +200,9 @@ export function WorkspaceShell({
             )
           ) : (
             <div className="px-2 py-1 flex flex-col gap-0.5">
+              <p className="px-2 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/40">
+                Settings
+              </p>
               {SETTINGS_CATEGORIES.map((cat) => {
                 const Icon = CATEGORY_ICONS[cat.id] ?? Globe;
                 const isActive = activeCategoryId === cat.id;
@@ -218,6 +223,10 @@ export function WorkspaceShell({
             </div>
           )}
         </nav>
+
+        {/* Bottom profile row — mirrors the reference design's pinned identity
+            footer. Routes to the local Accounts manager. */}
+        <ProfileRailRow />
       </aside>
 
       {/* Main content — each section renders its own h1 inside.
@@ -245,4 +254,39 @@ function groupAllByCategory<T extends { category?: string }>(items: ReadonlyArra
     if (v.length === 0) m.delete(k);
   }
   return m;
+}
+
+/** Pinned identity footer at the bottom of the settings rail. Shows the
+ *  active local account (initials avatar + name); click routes to the
+ *  Accounts section. Hidden entirely when no account exists yet. */
+function ProfileRailRow() {
+  const navigate = useNavigate();
+  const accounts = useAccountStore((s) => s.accounts);
+  const activeAccountId = useAccountStore((s) => s.activeAccountId);
+  const account = accounts.find((a) => a.id === activeAccountId) ?? null;
+  if (!account) return null;
+  return (
+    <div className="shrink-0 border-t border-sidebar-border p-2">
+      <button
+        onClick={() => {
+          void navigate('/settings/account');
+        }}
+        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition hover:bg-sidebar-accent/50"
+        aria-label={`Account: ${account.displayName}. Open accounts settings.`}
+      >
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+          {account.initials || account.displayName.slice(0, 2).toUpperCase()}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium text-sidebar-foreground">
+            {account.displayName}
+          </span>
+          <span className="block truncate text-[11px] text-sidebar-foreground/55">
+            {account.email || `@${account.username}` || 'Local account'}
+          </span>
+        </span>
+        <Settings2 className="size-3.5 shrink-0 text-sidebar-foreground/40" aria-hidden="true" />
+      </button>
+    </div>
+  );
 }
