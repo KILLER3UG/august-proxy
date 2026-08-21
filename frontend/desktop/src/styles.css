@@ -557,16 +557,16 @@
   overflow-anchor: none;
 }
 
-/* AUG working indicator — CSS so it keeps moving during heavy stream rerenders */
+/* AUG working indicator — subtle, not dominant (ChatGPT-clean) */
 @keyframes augLetterBounce {
   0%,
   100% {
     transform: translateY(0);
-    opacity: 0.45;
+    opacity: 0.35;
   }
   50% {
-    transform: translateY(-5px);
-    opacity: 1;
+    transform: translateY(-3px);
+    opacity: 0.75;
   }
 }
 @keyframes augCaretBlink {

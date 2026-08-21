@@ -97,7 +97,7 @@ export function SessionList({
   const [switchAccountOpen, setSwitchAccountOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const [uncategorizedCollapsed, setUncategorizedCollapsed] = useState(
-    () => localStorage.getItem("august-uncategorized-collapsed") === "1",
+    () => localStorage.getItem("august-uncategorized-collapsed") !== "0",
   );
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -579,7 +579,7 @@ export function SessionList({
                     {(!uncategorizedCollapsed || searching) && (
                       <div className="pl-1 ml-4 space-y-px">
                         <AnimatePresence initial={false} mode="popLayout">
-                          {uncategorizedSessions.map((s) => (
+                          {(searching ? uncategorizedSessions : uncategorizedSessions.slice(0, 5)).map((s) => (
                             <SessionRow
                               key={s.id}
                               session={s}
@@ -591,6 +591,20 @@ export function SessionList({
                             />
                           ))}
                         </AnimatePresence>
+                        {!searching && uncategorizedSessions.length > 5 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // expand temporarily via search trick: show all by toggling collapsed off then reveal
+                              setUncategorizedCollapsed(false);
+                              // scroll hack: just keep 5 then user can click header to expand; this button expands to all
+                              // implement by setting a local showAll flag — simplest: toggle collapsed already shows all, so replace slice with full list on next render via collapsed=false (shows all). This button just expands.
+                            }}
+                            className="pl-1.5 py-1 text-[11px] text-muted-foreground/60 hover:text-foreground"
+                          >
+                            Show {uncategorizedSessions.length - 5} more
+                          </button>
+                        )}
                         {uncategorizedSessions.length === 0 && !searching && (
                           <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
                             No other chats

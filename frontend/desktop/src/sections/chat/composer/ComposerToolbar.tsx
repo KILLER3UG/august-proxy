@@ -559,16 +559,16 @@ export function ComposerToolbar({
           </span>
         </button>
       </div>
-      <div className="flex items-center gap-2 px-2 pt-1.5 mt-1 border-t border-border/40 text-[11px]">
-        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('august:open-folder'))} className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-          <span className="size-3 rounded-sm border border-border/60 grid place-items-center text-[9px]">▭</span>
+      <div className="flex items-center gap-2 mx-1 mt-2 rounded-lg bg-white/[0.04] border border-white/[0.06] px-2.5 py-1.5 text-[11px]">
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('august:open-folder'))} className="inline-flex items-center gap-1.5 text-foreground/80 hover:text-foreground">
+          <span className="size-3 rounded-sm border border-border/60 bg-card grid place-items-center text-[9px]">▭</span>
           {workspacePath ? workspacePath.split(/[\\/]/).pop() || 'Choose project' : 'Choose project'}
         </button>
-        <span className="text-border/60">·</span>
-        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('august:ui-action', { detail: { action: 'navigate', target: '/settings/tools' } }))} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+        <span className="text-white/10">·</span>
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('august:ui-action', { detail: { action: 'navigate', target: '/settings/tools' } }))} className="inline-flex items-center gap-1 text-foreground/70 hover:text-foreground">
           <span className="size-3 rounded-sm bg-sky-500/20 grid place-items-center text-[8px]">⬢</span> Plugins
         </button>
-        <span className="ml-auto text-muted-foreground/40 text-[10px]">{selectedModel ? selectedModel.name?.split(' ').slice(0,2).join(' ') : ''}</span>
+        <span className="ml-auto text-muted-foreground/30 text-[10px]">{selectedModel ? selectedModel.name?.split(' ').slice(0,2).join(' ') : ''}</span>
       </div>
       <SubagentSpawnModal
         sessionId={workbenchSession?.id}

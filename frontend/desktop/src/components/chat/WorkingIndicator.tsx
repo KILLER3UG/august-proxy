@@ -10,21 +10,14 @@ function cn(...classes: (string | undefined | null | false)[]) {
 export function WorkingIndicator({ className }: WorkingIndicatorProps) {
   return (
     <div
-      className={cn('flex items-center gap-0.5 py-1', className)}
+      className={cn('flex items-center gap-1 py-1', className)}
       role="status"
       aria-live="polite"
       aria-label="August is working"
       data-aug-indicator
     >
-      {['A', 'U', 'G'].map((char) => (
-        <span
-          key={char}
-          className="aug-letter text-lg font-bold text-primary"
-        >
-          {char}
-        </span>
-      ))}
-      <span className="aug-caret text-lg font-bold text-primary/60">|</span>
+      <span className="size-1.5 rounded-full bg-primary/70 animate-pulse" />
+      <span className="text-[11px] tracking-wide text-muted-foreground/70">Working</span>
     </div>
   );
 }
