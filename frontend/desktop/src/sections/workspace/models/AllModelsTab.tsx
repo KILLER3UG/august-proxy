@@ -157,8 +157,8 @@ export function AllModelsTab() {
     refreshAll.mutate();
   }
 
-  return (
-    <div className="space-y-3 h-full flex flex-col">
+    return (
+    <div className="space-y-3 flex-1 min-h-0 flex flex-col overflow-hidden">
       {/* Summary + actions */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-6 flex-wrap">
@@ -229,7 +229,7 @@ export function AllModelsTab() {
           No models match &quot;{query}&quot;.
         </div>
       ) : (
-        <div className="space-y-6 flex-1 overflow-auto">
+        <div className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {grouped.map(([providerId, providerRows]) => {
             const first = providerRows[0];
             return (

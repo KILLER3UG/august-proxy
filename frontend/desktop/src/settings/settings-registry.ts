@@ -181,9 +181,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Guided first-run wizard: connect a provider, test it, pick models, and choose a safety mode.',
     icon: Wand2,
     category: 'models',
-    tier: 'basic',
-    // Note: 'onboarding' is owned by profile-preferences — this section is
-    // reached via 'wizard' / 'setup' / 'first run' instead.
+    tier: 'hidden',
+    // Hidden from Models hub per user request — still reachable via legacy alias / deep link.
     keywords: ['setup', 'wizard', 'getting started', 'first run', 'beginner', 'welcome'],
   },
   {

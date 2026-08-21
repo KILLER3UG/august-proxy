@@ -62,20 +62,15 @@ export function ContextRing({
       if (!rootRef.current) return;
       const r = rootRef.current.getBoundingClientRect();
       const TOOLTIP_W = 288; // w-72
-      const TOOLTIP_H = 180; // approximate popover height for clamping
+      const TOOLTIP_H = 280; // full content may be 250+ with cache/compact rows
       const margin = 8;
-      // Position the tooltip above and right-aligned with the trigger,
-      // clamped so it never spills outside the viewport (negative coords
-      // + position:fixed produced the black-rectangle regression).
+      // Keep tooltip fully on-screen. Composer sits at the very bottom, so
+      // the only safe placement is *above* the trigger; falling below would
+      // be off-screen. Clamp to viewport with margin.
       let left = r.right - TOOLTIP_W;
       let top = r.top - TOOLTIP_H - margin;
       left = Math.max(margin, Math.min(left, window.innerWidth - TOOLTIP_W - margin));
-      if (top < margin) {
-        // Not enough room above — show below the trigger instead.
-        top = r.bottom + margin;
-        top = Math.min(top, window.innerHeight - TOOLTIP_H - margin);
-      }
-      top = Math.max(margin, top);
+      top = Math.max(margin, Math.min(top, window.innerHeight - TOOLTIP_H - margin));
       setTooltipPos({ top, left });
     };
     compute();
@@ -152,7 +147,7 @@ export function ContextRing({
 
       {tooltipPos && createPortal(
         <div
-          className="fixed z-50 w-72 rounded-lg shadow-2xl p-3 text-left animate-in fade-in slide-in-from-bottom-1 duration-100"
+          className="fixed z-50 w-72 rounded-lg shadow-2xl p-3 text-left animate-in fade-in slide-in-from-bottom-1 duration-100 max-h-[min(72vh,420px)] overflow-y-auto overscroll-contain"
           style={{
             top: tooltipPos.top,
             left: tooltipPos.left,

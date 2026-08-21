@@ -579,7 +579,12 @@ export function SessionList({
                     {(!uncategorizedCollapsed || searching) && (
                       <div className="pl-1 ml-4 space-y-px">
                         <AnimatePresence initial={false} mode="popLayout">
-                          {(searching ? uncategorizedSessions : uncategorizedSessions.slice(0, 5)).map((s) => (
+                          {(searching
+                            ? uncategorizedSessions
+                            : uncategorizedCollapsed
+                              ? uncategorizedSessions.slice(0, 5)
+                              : uncategorizedSessions
+                          ).map((s) => (
                             <SessionRow
                               key={s.id}
                               session={s}
@@ -594,15 +599,10 @@ export function SessionList({
                         {!searching && uncategorizedSessions.length > 5 && (
                           <button
                             type="button"
-                            onClick={() => {
-                              // expand temporarily via search trick: show all by toggling collapsed off then reveal
-                              setUncategorizedCollapsed(false);
-                              // scroll hack: just keep 5 then user can click header to expand; this button expands to all
-                              // implement by setting a local showAll flag — simplest: toggle collapsed already shows all, so replace slice with full list on next render via collapsed=false (shows all). This button just expands.
-                            }}
+                            onClick={() => setUncategorizedCollapsed((v) => !v)}
                             className="pl-1.5 py-1 text-[11px] text-muted-foreground/60 hover:text-foreground"
                           >
-                            Show {uncategorizedSessions.length - 5} more
+                            {uncategorizedCollapsed ? `Show ${uncategorizedSessions.length - 5} more` : 'Show less'}
                           </button>
                         )}
                         {uncategorizedSessions.length === 0 && !searching && (

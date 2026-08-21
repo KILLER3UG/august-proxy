@@ -52,20 +52,8 @@ export function WorkspaceModelsSection() {
         </div>
       </header>
 
-      {/* Providers needs overflow-hidden so its two panes scroll independently.
-          Other views scroll the page body as usual. */}
-      <div
-        className={cn(
-          'flex-1 min-h-0 px-8 pb-8',
-          subtab === 'providers' ? 'overflow-hidden flex flex-col' : 'overflow-auto',
-        )}
-      >
-        <div
-          className={cn(
-            'mx-auto w-full max-w-5xl',
-            subtab === 'providers' && 'flex-1 min-h-0 flex flex-col',
-          )}
-        >
+      <div className="flex-1 min-h-0 px-8 pb-8 overflow-hidden flex flex-col">
+        <div className="mx-auto w-full max-w-5xl flex-1 min-h-0 flex flex-col overflow-hidden">
           <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground shrink-0">
             {activeView.icon && <activeView.icon className="size-3.5 text-primary" />}
             <span className="font-medium text-foreground/85">{activeView.label}</span>
