@@ -17,9 +17,6 @@ import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import { WorkspaceBranchChip } from "@/components/workspace/WorkspaceBranchChip";
 import type { Session } from "@/store/sessions";
 import type { RightDrawerSectionId } from "./RightDrawerState";
-import { useSessionStream } from "@/sections/chat/hooks/useSessionStream";
-import { normalizeHarnessMode } from "@/components/chat/HarnessModeChip";
-import { setWorkbenchAgentMode } from "@/api/workbench";
 
 interface ChatTitlebarProps {
   session: Session | null;
@@ -119,19 +116,9 @@ export function ChatTitlebar({
     setSpeaking(true);
   };
 
-  const { workbenchSession } = useSessionStream(session?.id ?? null);
-  const harness = normalizeHarnessMode(workbenchSession?.agentMode ?? null);
-  const isWork = harness === 'orchestrator';
-  const toggleWork = () => {
-    const next = isWork ? 'agent' : 'orchestrator';
-    const wbId = workbenchSession?.id ?? session?.workbenchSessionId;
-    if (!wbId) return;
-    setWorkbenchAgentMode(wbId, next).catch(() => toast.error('Could not switch mode'));
-  };
-
   return (
     <header data-tauri-drag-region className="august-titlebar h-11 bg-background flex items-center justify-between shrink-0 select-none border-b border-border/20">
-      <div className="flex items-center min-w-0 gap-2">
+      <div className="flex items-center min-w-0">
         {sidebarCollapsed && (
           <button
             onClick={onToggleSidebar}
@@ -144,8 +131,8 @@ export function ChatTitlebar({
         )}
 
         <div className={cn(
-          "flex items-center gap-1.5 min-w-0 max-w-[min(36vw,22rem)]",
-          sidebarCollapsed ? "px-1.5" : "pl-2 pr-1",
+          "flex items-center gap-1.5 min-w-0 max-w-[min(48vw,32rem)]",
+          sidebarCollapsed ? "px-1.5" : "pl-3 pr-1.5",
         )}>
           <h1 className="text-[13px] font-medium text-foreground/90 min-w-0 flex-1">
             <MarqueeTitle
@@ -163,28 +150,6 @@ export function ChatTitlebar({
             />
           ) : null}
         </div>
-
-        {/* Center Chat | Work pill — like ref image */}
-        {session && (
-          <div className="hidden md:flex items-center rounded-full bg-muted/40 p-0.5 ml-2" role="tablist" aria-label="Mode">
-            <button
-              role="tab"
-              aria-selected={!isWork}
-              onClick={() => isWork && toggleWork()}
-              className={cn("px-3 py-1 rounded-full text-[11px] font-medium transition", !isWork ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-            >
-              Chat
-            </button>
-            <button
-              role="tab"
-              aria-selected={isWork}
-              onClick={() => !isWork && toggleWork()}
-              className={cn("px-3 py-1 rounded-full text-[11px] font-medium transition", isWork ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-            >
-              Work
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="flex items-center gap-0.5">
