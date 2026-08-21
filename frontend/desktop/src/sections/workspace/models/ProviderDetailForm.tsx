@@ -189,7 +189,7 @@ export function ProviderDetailForm({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
         <WorkspaceField
           label="Base URL"
           hint="Used exactly as pasted — API format appends the leaf (chat/completions, v1/messages, responses). Anthropic already includes v1 in the leaf."

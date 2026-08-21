@@ -36,7 +36,7 @@ export function ProviderListRail({
           <RefreshCw className={cn('size-3', isFetching && 'animate-spin')} />
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1 space-y-0.5">
+      <div className="min-h-0 flex-1 overflow-y-auto p-1 space-y-0.5">
         {providers.length === 0 ? (
           <p className="px-3 py-4 text-xs text-muted-foreground text-center">No providers yet</p>
         ) : (
