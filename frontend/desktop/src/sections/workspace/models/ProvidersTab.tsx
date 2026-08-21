@@ -64,25 +64,27 @@ export function ProvidersTab() {
   }
 
   return (
-    <div className="h-full min-h-0 flex flex-col" data-testid="providers-split">
+    <div data-testid="providers-split">
       {/*
-        Two independent panes: list grows with items (capped), details always
-        scroll in their own column — neither is forced to stretch empty space.
-        grid-rows minmax(0,1fr): without an explicit row constraint the implicit
-        row sizes to CONTENT, so min-h-0 below is ignored and the detail card
-        overflows past the viewport instead of scrolling internally.
+        Natural document flow: the settings shell's own scrollbar carries the
+        page (same as every other settings section). The provider rail sticks
+        below the header while the taller detail form scrolls past it.
       */}
-      <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] gap-4 flex-1 min-h-0 items-stretch">
-        <ProviderListRail
-          providers={providers}
-          selectedId={selectedId}
-          isFetching={listQ.isFetching}
-          onRefresh={() => void listQ.refetch()}
-          onSelect={selectProvider}
-          onAdd={openAddProvider}
-        />
+      <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] gap-4">
+        <div>
+          <div className="md:sticky md:top-4">
+            <ProviderListRail
+              providers={providers}
+              selectedId={selectedId}
+              isFetching={listQ.isFetching}
+              onRefresh={() => void listQ.refetch()}
+              onSelect={selectProvider}
+              onAdd={openAddProvider}
+            />
+          </div>
+        </div>
 
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 flex flex-col overflow-hidden min-h-0 h-full max-h-full">
+        <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden">
           {mode === 'add' ? (
             <AddProviderForm
               onCancel={() => {

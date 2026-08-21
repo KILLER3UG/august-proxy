@@ -120,8 +120,8 @@ export function ProviderDetailForm({
   }
 
   return (
-    <div className="flex flex-col min-h-0 h-full max-h-full">
-      <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between gap-3 shrink-0">
+    <div className="flex flex-col">
+      <div className="px-5 pt-4 pb-3 border-b border-border/60 flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {editingName ? (
             <Input
@@ -189,7 +189,7 @@ export function ProviderDetailForm({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
+      <div className="p-5 space-y-4">
         <WorkspaceField
           label="Base URL"
           hint="Used exactly as pasted — API format appends the leaf (chat/completions, v1/messages, responses). Anthropic already includes v1 in the leaf."

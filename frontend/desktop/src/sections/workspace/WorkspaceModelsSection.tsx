@@ -57,23 +57,20 @@ export function WorkspaceModelsSection() {
         </nav>
       </header>
 
-      <div className="flex-1 min-h-0 px-8 pb-8">
-        {/* absolute inset-0 gives every pane below a DEFINITE height (the
-            positioned ancestor's padding box) instead of relying on the
-            h-full percentage chain — a single auto-height ancestor anywhere
-            above used to collapse it, leaving the provider card content-
-            tall and its scrollbar dead (overscroll ate the wheel). */}
-        <div className="relative mx-auto w-full max-w-5xl h-full">
-          <div className="absolute inset-0 flex flex-col">
-            {subtab === 'providers' && <ProvidersTab />}
-            {subtab === 'all-models' && <AllModelsTab />}
-            {subtab === 'aliases' && <AliasesTab />}
-            {subtab === 'fallback' && <FallbackTab />}
-            {subtab === 'reflection' && <BackgroundReflectionTab />}
-            {subtab === 'fleet' && <ModelFleetTab />}
-            {subtab === 'live' && <LiveSettingsTab />}
-            {subtab === 'quotas' && <QuotasTab />}
-          </div>
+      <div className="px-8 pb-8">
+        {/* Natural flow — the settings shell's own scroll carries the page,
+            exactly like every other settings section. No h-full/absolute
+            height anchoring: one auto-height ancestor anywhere upstream
+            silently collapsed those chains (vanishing panes, dead wheels). */}
+        <div className="mx-auto w-full max-w-5xl">
+          {subtab === 'providers' && <ProvidersTab />}
+          {subtab === 'all-models' && <AllModelsTab />}
+          {subtab === 'aliases' && <AliasesTab />}
+          {subtab === 'fallback' && <FallbackTab />}
+          {subtab === 'reflection' && <BackgroundReflectionTab />}
+          {subtab === 'fleet' && <ModelFleetTab />}
+          {subtab === 'live' && <LiveSettingsTab />}
+          {subtab === 'quotas' && <QuotasTab />}
         </div>
       </div>
     </div>

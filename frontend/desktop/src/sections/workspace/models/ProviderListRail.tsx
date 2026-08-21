@@ -23,7 +23,7 @@ export function ProviderListRail({
   onAdd: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden min-h-0 max-h-full md:max-h-none md:h-full">
+    <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden md:max-h-[calc(100vh-9rem)]">
       <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">
         <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
           Providers
