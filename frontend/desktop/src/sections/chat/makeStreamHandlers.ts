@@ -768,7 +768,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: warning, system: true });
       scheduleUpdate();
     },
-    onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens }) => {
+    onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens, promptCache }) => {
       // Live-meter event — the backend emits one per turn, not only when the
       // window is nearly full. Only surface the warning when the budget is
       // actually stressed (see isContextPressured); low/medium pressure is a
@@ -780,7 +780,10 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         Number.isFinite(Number(totalTokens)) && Number(remainingTokens) > 0
           ? ` — ${Number(remainingTokens).toLocaleString()} tokens left${Number(maxContext) ? ` of ${Number(maxContext).toLocaleString()}` : ''}`
           : '';
-      const warning = `⚠️ Context window nearly full${label}${detail}. Consider compacting or starting a new session.`;
+      const pc = promptCache as unknown as { hitTokens?: number; missTokens?: number; hitRate?: number } | undefined;
+      const hitRate = pc?.hitRate ?? (pc && (pc.hitTokens ?? 0) + (pc.missTokens ?? 0) > 0 ? (pc.hitTokens ?? 0) / ((pc.hitTokens ?? 0) + (pc.missTokens ?? 0)) : undefined);
+      const cacheSuffix = typeof hitRate === 'number' ? ` — cache ${Math.round(hitRate * 100)}% (goal 96%)` : '';
+      const warning = `⚠️ Context window nearly full${label}${detail}${cacheSuffix}. Consider compacting or starting a new session.`;
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: warning, system: true });
       scheduleUpdate();
     },

@@ -450,6 +450,9 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
                 'command, confirm the result, then call update_state(phase="complete").',
             )
         )
+    reviewReq = as_str(_get(session, 'review_required', 'reviewRequired'), '')
+    if reviewReq:
+        blocks.append(wrapTag('review_required', reviewReq))
     workingMemory = _get(session, 'working_memory', 'workingMemory')
     if workingMemory:
         blocks.append(wrapTag('working_memory', _fmtVal(workingMemory, 2000)))

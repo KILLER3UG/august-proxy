@@ -882,6 +882,11 @@ def buildSystemPrompt(
     )
     cacheKey = hashlib.sha256(_hash_inputs.encode()).hexdigest()[:32]
     cachedT12 = promptCache.get(cacheKey)
+    # Mandatory memory+skills review gate: inject <review_required> when due
+    try:
+        _inject_review_required(session, sessionDict)
+    except Exception:
+        pass
     base = ctxBuild(
         session=sessionDict,
         memory=cast('dict[str, object]', memory),
@@ -895,6 +900,18 @@ def buildSystemPrompt(
 
             t1 = buildTier1(sessionDict)
             t2 = buildTier2(sessionDict)
+            # Derived markdown mirror (best-effort) — reuse the tiers we just
+            # built so the mirror never causes redundant tier builds.
+            try:
+                from app.services.memory.context_builder import buildTier3
+                from app.services.memory.markdown_export import export_system_prompt_markdown
+
+                export_system_prompt_markdown(
+                    session=sessionDict,
+                    tiers=(t1, t2, buildTier3(sessionDict)),
+                )
+            except Exception:
+                pass
             t12Parts = []
             # Cache the same wrapped form that buildSystemPrompt emits (no double-emit).
             if t1:
@@ -2035,6 +2052,32 @@ def _record_turn_lesson(
         )
     except Exception:
         logger.debug('turn lesson record failed', exc_info=True)
+
+
+def _inject_review_required(session: object, session_dict: dict) -> None:
+    """Inject <review_required> when memory curation is due (12+ turns since last review).
+
+    The marker is written by POST /api/memory/review into session.metadata
+    ('lastMemoryReviewAtTurn') so a completed review clears the nag until the
+    next interval.
+    """
+    try:
+        turns = getattr(session, 'turnCount', 0) or 0
+        meta = getattr(session, 'metadata', None)
+        last = 0
+        if isinstance(meta, dict):
+            try:
+                last = int(meta.get('lastMemoryReviewAtTurn') or 0)
+            except Exception:
+                last = 0
+        if turns - last >= 12:
+            # Only when there are memories to review
+            from app.services.memory.auto_memory import list_review_candidates
+            cands = list_review_candidates(limit=5)
+            if cands:
+                session_dict['review_required'] = f"Review {len(cands)} candidate memories/skills: run POST /api/memory/review (origin=recalled) and apply keep/remove/skill actions before update_state(phase='complete')."
+    except Exception:
+        pass
 
 
 def _verifier_gated_emit(session: object, emit):

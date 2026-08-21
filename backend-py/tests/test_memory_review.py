@@ -18,7 +18,11 @@ def test_parse_review_plan_extracts_capped_actions():
 
 
 def test_parse_review_plan_empty_on_garbage():
-    assert parse_review_plan('not json') == {'improve': [], 'remove': [], 'enhance': []}
+    plan = parse_review_plan('not json')
+    assert plan['improve'] == []
+    assert plan['remove'] == []
+    assert plan['enhance'] == []
+    assert plan['skills'] == []
 
 
 def test_apply_review_actions(brain_ready):

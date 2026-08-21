@@ -346,6 +346,7 @@ export interface WorkbenchEventHandlers {
     totalTokens?: number;
     maxContext?: number;
     remainingTokens?: number;
+    promptCache?: { hitTokens: number; missTokens: number; hitRate?: number } | null;
   }) => void;
   /** Informational messages (auto-memory sync, guideline updates, etc.).
    *  Unknown fields go into `extras` for the same reason as onWarning. */

@@ -402,6 +402,12 @@ def createSkill(
     (agentDir / 'SKILL.md').write_text(_renderSkillMd(frontmatter, body), 'utf-8')
     parsed = _parseSkill(agentDir / 'SKILL.md')
     _bust_prompt_skills_cache()
+    try:
+        from app.services.memory.markdown_export import export_skills_markdown
+
+        export_skills_markdown()
+    except Exception:
+        pass
     return parsed or {'name': name, 'description': description}
 
 
@@ -442,6 +448,12 @@ def patchSkill(
     md.write_text(_renderSkillMd(frontmatter, newBody), 'utf-8')
     parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
+    try:
+        from app.services.memory.markdown_export import export_skills_markdown
+
+        export_skills_markdown()
+    except Exception:
+        pass
     return parsed or {'name': name, 'description': frontmatter.get('description', '')}
 
 
@@ -480,4 +492,10 @@ def deleteSkill(name: str) -> dict[str, object]:
         raise SkillValidationError(f"Skill '{name}' not found.")
     shutil.rmtree(agentDir)
     _bust_prompt_skills_cache()
+    try:
+        from app.services.memory.markdown_export import export_skills_markdown
+
+        export_skills_markdown()
+    except Exception:
+        pass
     return {'name': name, 'deleted': True}

@@ -40,10 +40,11 @@ export function AssistantMessageActions({
   return (
     <div className={cn(
       "flex items-center gap-0.5 mt-1 transition-opacity duration-150 self-start",
-      showActions ? "opacity-100" : "opacity-0"
+      showActions ? "opacity-100" : "opacity-0 group-focus-within:opacity-100"
     )}>
       <button
         onClick={onSpeak}
+        aria-label={speaking ? "Pause reading" : "Read aloud"}
         className={cn(
           "p-1 rounded transition",
           speaking
@@ -62,6 +63,7 @@ export function AssistantMessageActions({
         onClick={onCopy}
         className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition relative"
         title="Copy"
+        aria-label="Copy"
       >
         <div className={cn("transition-transform duration-200", copied ? "scale-110 text-success" : "scale-100")}>
           {copied ? (
@@ -82,6 +84,7 @@ export function AssistantMessageActions({
             reanswerOpen && "text-primary",
           )}
           title="Answer this with another model"
+          aria-label="Answer this with another model"
           aria-expanded={reanswerOpen}
           data-testid="reanswer-open"
         >
@@ -94,6 +97,7 @@ export function AssistantMessageActions({
           disabled={streaming}
           className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
           title="Compare models — re-run this prompt on 2–3 models side by side"
+          aria-label="Compare models side by side"
           data-testid="compare-open"
         >
           <GitCompare className="size-3" />
@@ -104,6 +108,7 @@ export function AssistantMessageActions({
         disabled={streaming || isRegenerating}
         className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
         title="Retry / Regenerate"
+        aria-label="Retry / Regenerate"
       >
         <RefreshCw
           className={cn("size-3", isRegenerating && "animate-spin")}
@@ -115,6 +120,7 @@ export function AssistantMessageActions({
           disabled={streaming}
           className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
           title="Fork conversation from here"
+          aria-label="Fork conversation from here"
         >
           <GitBranch className="size-3" />
         </button>
@@ -123,6 +129,7 @@ export function AssistantMessageActions({
         onClick={() => setShowRaw(!showRaw)}
         className={cn("p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition", showRaw && "text-primary")}
         title="Toggle raw data"
+        aria-label="Toggle raw data"
       >
         <Bug className="size-3" />
       </button>

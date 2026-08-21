@@ -10,6 +10,7 @@ export interface BrainEvent {
     | 'heuristic'
     | 'memory'
     | 'review'
+    | 'self_improvement'
     | 'skill_genesis'
     | 'skill_suggestion'
     | 'session';

@@ -36,12 +36,19 @@ function QuotaRow({ q }: { q: ModelQuota }) {
         </div>
       </div>
       {hasLimit && (
-        <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+        <div
+          className="h-1.5 rounded-full bg-muted overflow-hidden"
+          role="progressbar"
+          aria-valuenow={Math.round(q.percent)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`${q.model || 'Quota'} usage`}
+        >
           <div
             className="h-full rounded-full transition-all duration-300"
             style={{
               width: `${Math.max(1, Math.min(100, q.percent))}%`,
-              backgroundColor: q.percent > 90 ? '#f87171' : q.percent > 70 ? '#f59e0b' : '#4ade80',
+              backgroundColor: q.percent > 90 ? 'var(--dt-danger)' : q.percent > 70 ? 'var(--dt-warning)' : 'var(--dt-success)',
             }}
           />
         </div>

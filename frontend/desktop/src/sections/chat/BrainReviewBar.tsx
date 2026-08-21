@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Brain, Check, Loader2, Sparkles, Trash2, Wand2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { openBrainEventStream, type BrainEvent } from '@/api/api-client';
 
 interface ImproveItem {
   id: number;
@@ -52,9 +53,11 @@ function shouldNudge(): boolean {
 export function BrainReviewBar({
   modelId,
   turnCount,
+  sessionId,
 }: {
   modelId?: string | null;
   turnCount?: number;
+  sessionId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [nudge, setNudge] = useState(false);
@@ -65,6 +68,26 @@ export function BrainReviewBar({
     if ((turnCount ?? 0) >= 6 && shouldNudge()) setNudge(true);
   }, [turnCount]);
 
+  // Backend-driven nudge: the cognitive-boot tick emits memoryReviewPending
+  // when this session crosses its review interval — surface the bar.
+  useEffect(() => {
+    const es = openBrainEventStream();
+    es.onmessage = (ev: MessageEvent) => {
+      try {
+        const brainEvent: BrainEvent = JSON.parse(ev.data);
+        if (
+          brainEvent.category === 'review' &&
+          (brainEvent.meta as Record<string, unknown> | undefined)?.type === 'memoryReviewPending'
+        ) {
+          setNudge(true);
+        }
+      } catch {
+        /* ignore malformed frames */
+      }
+    };
+    return () => es.close();
+  }, []);
+
   const run = () => {
     if (running) return;
     setRunning(true);
@@ -72,7 +95,7 @@ export function BrainReviewBar({
     setNudge(false);
     stampReview();
     void api
-      .post<ReviewResult>('/api/memory/review', { model: modelId || '' })
+      .post<ReviewResult>('/api/memory/review', { model: modelId || '', sessionId: sessionId || '' })
       .then((res) => setResult(res))
       .catch(() => {
         toast.error('Memory review failed');
@@ -83,7 +106,7 @@ export function BrainReviewBar({
 
   const apply = (kind: string, extra: Record<string, unknown>) => {
     void api
-      .post('/api/memory/review/apply', { actions: [{ kind, ...extra }] })
+      .post('/api/memory/review/apply', { actions: [{ kind, ...extra }], sessionId: sessionId || '' })
       .then(() => {
         toast.success(
           kind === 'remove' ? 'Removed' : kind === 'enhance' ? 'Always include' : 'Updated',

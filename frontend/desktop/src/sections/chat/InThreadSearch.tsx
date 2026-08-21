@@ -136,13 +136,18 @@ export function InThreadSearch({
         onChange={e => handleSearch(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Search in thread…"
+        aria-label="Search in thread"
         className="w-48 text-sm bg-transparent border-none outline-none placeholder:text-muted-foreground"
       />
-      {matchCount > 0 && (
-        <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+      {query && matchCount === 0 ? (
+        <span className="text-xs text-muted-foreground whitespace-nowrap" aria-live="polite">
+          No matches
+        </span>
+      ) : matchCount > 0 ? (
+        <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap" aria-live="polite">
           {currentMatch}/{matchCount}
         </span>
-      )}
+      ) : null}
       <button
         onClick={() => navigateMatch('prev')}
         disabled={matchCount === 0}

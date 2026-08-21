@@ -45,21 +45,29 @@ export function ProjectMemoriesSection({ embedded }: { embedded?: boolean }) {
             </p>
           </>
         )}
-        <label className="block">
+        <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-muted-foreground">Project</span>
-          <select
-            value={folderId}
-            onChange={(e) => setFolderId(e.target.value)}
-            className="mt-1 w-full max-w-sm rounded-md border border-border bg-popover px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-primary/50"
+          <a
+            href={`/api/memory/export?origin=recalled${folderId ? `&folder_id=${encodeURIComponent(folderId)}` : ''}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-primary hover:underline"
           >
-            <option value="">All projects</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name} {counts.get(f.id) ? `(${counts.get(f.id)} chats)` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+            View Markdown{folderId ? ' (this project)' : ''}
+          </a>
+        </div>
+        <select
+          value={folderId}
+          onChange={(e) => setFolderId(e.target.value)}
+          className="mt-1 w-full max-w-sm rounded-md border border-border bg-popover px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-primary/50"
+        >
+          <option value="">All projects</option>
+          {folders.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name} {counts.get(f.id) ? `(${counts.get(f.id)} chats)` : ''}
+            </option>
+          ))}
+        </select>
       </div>
       <div className="min-h-0 flex-1">
         <AutoMemoryBrowse

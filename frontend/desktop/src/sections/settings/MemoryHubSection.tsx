@@ -42,13 +42,16 @@ export function MemoryHubSection({ active }: { active: SettingsSection }) {
       <div className="mx-auto max-w-3xl">
         {tab === 'recalled' ? (
           <section className="space-y-3">
-            <p className="text-[13px] leading-5 text-muted-foreground">Review mode lets the model check each recalled memory — keep what matters, remove what doesn&apos;t.</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[13px] leading-5 text-muted-foreground">Review mode lets the model check each recalled memory — keep what matters, remove what doesn&apos;t.</p>
+              <a href="/api/memory/export?origin=recalled" target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">View Markdown</a>
+            </div>
             <RecalledMemorySection embedded />
           </section>
         ) : null}
         {tab === 'by-project' ? (
           <section className="space-y-3">
-            <p className="text-[13px] leading-5 text-muted-foreground">Same recalled memories, scoped to the project folder their chat lived in. Counts and graph update per project.</p>
+            <p className="text-[13px] leading-5 text-muted-foreground">Same recalled memories, scoped to the project folder their chat lived in.</p>
             <ProjectMemoriesSection embedded />
           </section>
         ) : null}

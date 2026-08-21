@@ -445,6 +445,29 @@ def saveAutoMemory(
                 pass
     except Exception:
         pass
+    # Derived markdown mirror (best-effort, debounced, secrets already scrubbed)
+    try:
+        from app.services.memory.markdown_export import debounced_export_memory
+
+        # Derive folder_id from session if available
+        fid = ""
+        if session_id:
+            try:
+                from app.services.workbench.sessions import get_workbench_session as _gws
+
+                sess = _gws(session_id)
+                if sess:
+                    fid = str(getattr(sess, "folderId", "") or getattr(sess, "folder_id", "") or "")
+                    # Also handle dict-style
+                    if not fid and isinstance(sess, dict):
+                        fid = str(sess.get("folderId") or sess.get("folder_id") or "")
+            except Exception:
+                pass
+        debounced_export_memory(folder_id=fid, origin="all")
+        if fid:
+            debounced_export_memory(folder_id=fid, origin="recalled")
+    except Exception:
+        pass
 
 
 def _emit_memory_saved(key: str, category: str, importance: float, source: str, preview: str = '') -> None:

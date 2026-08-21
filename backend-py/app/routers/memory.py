@@ -78,6 +78,7 @@ class MemoryReviewApply(CamelModel):
     """Apply accepted review actions."""
 
     actions: list[dict[str, object]]
+    session_id: str = ''
 
 
 class ProposalCreate(CamelModel):
@@ -100,10 +101,20 @@ async def reviewMemoriesRoute(body: MemoryReviewRequest):
     """Use the selected model to suggest improve / remove / enhance. Does not apply.
 
     Pass origin/folder_id to scope the review to Recalled vs By Project.
+    When session_id is given, records the review marker so the per-turn
+    <review_required> nag clears until the next interval.
     """
     from app.services.memory.memory_review import run_memory_review
 
-    return await run_memory_review(body.model, origin=body.origin, folder_id=body.folder_id, session_id=body.session_id)
+    result = await run_memory_review(body.model, origin=body.origin, folder_id=body.folder_id, session_id=body.session_id)
+    if body.session_id:
+        try:
+            from app.services.workbench.sessions import mark_memory_reviewed
+
+            mark_memory_reviewed(body.session_id)
+        except Exception:
+            pass
+    return result
 
 
 @router.get('/auto/review-candidates')
@@ -172,7 +183,55 @@ async def applyMemoryReviewRoute(body: MemoryReviewApply):
     from app.services.memory.memory_review import apply_review_actions
 
     stats = apply_review_actions(list(body.actions or []))
+    if body.session_id:
+        try:
+            from app.services.workbench.sessions import mark_memory_reviewed
+
+            mark_memory_reviewed(body.session_id)
+        except Exception:
+            pass
     return {'status': 'ok', **stats}
+
+
+@router.get('/export')
+async def exportMemoryRoute(folder_id: str = "", origin: str = "all"):
+    """Derived markdown view of memory (global or per-project). SQLite is SoT."""
+    from app.services.memory.markdown_export import export_memory_markdown
+    path = export_memory_markdown(folder_id=folder_id, origin=origin)
+    if not path or not path.exists():
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse("# Memory export\n\n_(no data yet)_\n", media_type="text/markdown")
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="text/markdown")
+
+
+@router.get('/prompt/export')
+async def exportPromptRoute(sessionId: str = ""):
+    """Derived markdown view of the assembled system prompt for a session."""
+    import os
+    from pathlib import Path
+
+    from fastapi.responses import PlainTextResponse
+
+    from app.lib.paths import dataPath
+    # Path-traversal guard: session ids are generated slugs ("wb_..."). Reject
+    # anything with separators/dot-segments before it touches the filesystem.
+    if sessionId and (
+        "/" in sessionId
+        or "\\" in sessionId
+        or ".." in sessionId
+        or os.path.basename(sessionId) != sessionId
+    ):
+        sessionId = ""
+    if sessionId:
+        candidates = [Path(str(dataPath())) / ".aug" / "system-prompt" / f"{sessionId}.md", Path(str(dataPath())) / "system-prompt.md"]
+        for cand in candidates:
+            if cand.exists():
+                return PlainTextResponse(cand.read_text(encoding="utf-8"), media_type="text/markdown")
+    global_path = Path(str(dataPath())) / "system-prompt.md"
+    if global_path.exists():
+        return PlainTextResponse(global_path.read_text(encoding="utf-8"), media_type="text/markdown")
+    return PlainTextResponse("# System Prompt\n\n_(no snapshot yet \u2014 send a message to generate)_\n", media_type="text/markdown")
 
 
 @router.get('/kv')

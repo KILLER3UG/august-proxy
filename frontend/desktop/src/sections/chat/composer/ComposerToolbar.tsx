@@ -429,7 +429,7 @@ export function ComposerToolbar({
         className="flex items-center gap-1 overflow-x-auto px-2 pb-1.5 pt-0.5 text-[11px] text-muted-foreground scrollbar-none"
         data-testid="composer-island-footer"
       >
-        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border", sandboxMode === 'danger-full-access' ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-muted/40 text-muted-foreground border-border/50") } title={`Tool reach: ${sandboxMode}`}>
+        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border", sandboxMode === 'danger-full-access' ? "bg-warning/10 text-warning border-warning/20" : "bg-muted/40 text-muted-foreground border-border/50") } title={`Tool reach: ${sandboxMode}`}>
           <ShieldCheck className="size-3" />
           {sandboxMode === 'danger-full-access' ? 'Full access' : sandboxMode === 'workspace-write' ? 'Workspace' : 'Read-only'}
         </span>
@@ -549,8 +549,8 @@ export function ComposerToolbar({
           className={cn(
             'ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 transition disabled:opacity-40',
             verifierEnforced
-              ? 'text-amber-400 hover:bg-white/[0.06]'
-              : 'text-muted-foreground/70 hover:bg-white/[0.06] hover:text-foreground',
+              ? 'text-warning hover:bg-muted'
+              : 'text-muted-foreground/70 hover:bg-muted hover:text-foreground',
           )}
         >
           <ShieldCheck className="size-3.5" />
@@ -559,14 +559,14 @@ export function ComposerToolbar({
           </span>
         </button>
       </div>
-      <div className="flex items-center gap-2 mx-1 mt-2 rounded-lg bg-white/[0.04] border border-white/[0.06] px-2.5 py-1.5 text-[11px]">
+      <div className="flex items-center gap-2 mx-1 mt-2 rounded-lg bg-muted/40 border border-border/50 px-2.5 py-1.5 text-[11px]">
         <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('august:open-folder'))} className="inline-flex items-center gap-1.5 text-foreground/80 hover:text-foreground">
           <span className="size-3 rounded-sm border border-border/60 bg-card grid place-items-center text-[9px]">▭</span>
           {workspacePath ? workspacePath.split(/[\\/]/).pop() || 'Choose project' : 'Choose project'}
         </button>
-        <span className="text-white/10">·</span>
+        <span className="text-border">·</span>
         <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('august:ui-action', { detail: { action: 'navigate', target: '/settings/tools' } }))} className="inline-flex items-center gap-1 text-foreground/70 hover:text-foreground">
-          <span className="size-3 rounded-sm bg-sky-500/20 grid place-items-center text-[8px]">⬢</span> Plugins
+          <span className="size-3 rounded-sm bg-primary/15 grid place-items-center text-[8px]">⬢</span> Plugins
         </button>
         <span className="ml-auto text-muted-foreground/30 text-[10px]">{selectedModel ? selectedModel.name?.split(' ').slice(0,2).join(' ') : ''}</span>
       </div>

@@ -37,6 +37,7 @@ function FilterChips<T extends string>({ items, value, onChange, label }: { item
                 <button
                     key={p.key}
                     onClick={() => onChange(p.key)}
+                    aria-pressed={value === p.key}
                     className={cn(
                         'rounded-md px-2 py-1 font-mono transition',
                         value === p.key
@@ -108,6 +109,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
                             <button
                                 key={f.key}
                                 onClick={() => setLevel(f.key)}
+                                aria-pressed={level === f.key}
                                 className={cn(
                                     'rounded-md px-2 py-1 font-mono transition',
                                     level === f.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',

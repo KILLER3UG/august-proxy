@@ -116,7 +116,7 @@ export function ChatCheckpoints({ messages, scrollRef }: {
             <button
               key={msg.id}
               onClick={() => scrollTo(msg.id)}
-              aria-label={`Go to message`}
+              aria-label={`Go to message ${msg.id}`}
               style={{ 
                 top: `${pos.top}px`,
                 opacity: pos.visible ? (hovered ? 1 : 0.4) : 0,

@@ -22,6 +22,17 @@ function escapeHtml(value: string): string {
 /** When true, renderCode skips highlight.js (set only during live stream parses). */
 let liveMarkdownParse = false;
 
+/**
+ * Raw HTML in model output is untrusted (prompt injection can carry
+ * <script>/<iframe>/<img onerror>). marked passes html tokens through
+ * verbatim by default; we render them as escaped text instead. Legit
+ * markdown (headings, links, tables) is unaffected — only hand-written
+ * HTML inside the message body is neutralized.
+ */
+function renderHtml(token: Tokens.HTML | Tokens.Tag): string {
+  return escapeHtml(token.text ?? '');
+}
+
 function renderCode(token: Tokens.Code): string {
   const lang = (token.lang || '').trim();
   const langClass = lang ? ` class="hljs language-${escapeAttr(lang)}"` : ' class="hljs"';
@@ -255,7 +266,7 @@ const mathBlockExtension = {
 marked.use({
   gfm: true,
   breaks: true,
-  renderer: { code: renderCode },
+  renderer: { code: renderCode, html: renderHtml },
   extensions: [mathInlineExtension, mathBlockExtension],
 });
 

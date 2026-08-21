@@ -263,6 +263,38 @@ async def _doReview(
             name = as_str(recDict.get('name'), '')
             if not name:
                 continue
+            # Worthiness gate: search existing catalogue — near-duplicate forces patch, not create
+            if action == 'create':
+                try:
+                    if skill_service.get(name):
+                        action = 'patch'
+                    else:
+                        hits = skill_service.search(name) if hasattr(skill_service, 'search') else []
+                        if hits and any(str(h.get('name') or '').lower() == name.lower() for h in hits):
+                            action = 'patch'
+                except Exception:
+                    pass
+                # Quality gate: a skill body should carry actionable structure.
+                # Never silently drop a proposal — the reviewer would re-propose
+                # it next interval (token loop). Instead queue it with a
+                # curation note so the approver sees what needs fleshing out.
+                body_ck = as_str(recDict.get('body'), '')
+                has_structure = any(
+                    marker in body_ck
+                    for marker in (
+                        'How to Run',
+                        'How to run',
+                        'When to Use',
+                        'when to use',
+                        '## Steps',
+                        '1.',
+                    )
+                )
+                if body_ck and not has_structure:
+                    recDict['body'] = body_ck + (
+                        '\n\n> [august curator] Draft lacks step-by-step run/verify'
+                        ' sections — patch with concrete steps before activating.'
+                    )
             if action == 'create':
                 # Route through pending_skills for user approval (Phase 3.6)
                 _queue_pending_skill(
@@ -453,6 +485,9 @@ def _buildReviewPrompt(messagesSnapshot: list[dict[str, object]]) -> list[dict[s
             'Do NOT save transient task details.\n'
             '- skills: ONLY create when a multi-step workflow was completed successfully and is genuinely reusable. '
             'Do NOT create a skill for simple Q&A or single-step tasks.\n'
+            '- skills worthiness: Before creating, imagine searching the existing catalogue — if a near-duplicate exists, use action "patch" to improve it, not "create". '
+            'A proper skill must have: a specific trigger (not "help me"), a body with sections When to Use / Prerequisites / How to Run / Verification, and a concrete multi-step example. '
+            'Tool rounds >=3 and a completed multi-step success are evidence of reusability. Vague single-step helps are not skills.\n'
             '- frustration: set true if the user showed repeated frustration, corrections, or dissatisfaction.\n'
             '- Return empty arrays/false when nothing qualifies. Silence is better than noise.'
         ),

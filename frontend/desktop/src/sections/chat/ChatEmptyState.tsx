@@ -155,7 +155,7 @@ export function ChatEmptyState({
                   dispatchInsertComposerText(s.prompt);
                   dispatchFocusComposer();
                 }}
-                className="text-left rounded-xl border border-white/[0.06] bg-card/40 backdrop-blur px-3.5 py-3 hover:bg-card/60 hover:border-white/[0.08] transition text-foreground/90"
+                className="text-left rounded-xl border border-border/40 bg-card/40 backdrop-blur px-3.5 py-3 hover:bg-card/60 hover:border-border/60 transition text-foreground/90"
               >
                 <div className="flex items-center gap-1.5 text-[12px] font-medium">
                   <s.Icon className="size-3.5 text-muted-foreground/70" />

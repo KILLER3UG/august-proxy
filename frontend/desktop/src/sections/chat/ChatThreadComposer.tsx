@@ -424,6 +424,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
               }}
               onKeyDown={popovers.onKey}
               onPaste={handleComposerPaste}
+              aria-label="Chat message"
               placeholder={
                 streaming
                   ? 'Add a direction while August works…'
@@ -435,7 +436,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                       ? ghostNext || `Continue workstream ${continueName}…`
                       : harnessMode === 'orchestrator'
                         ? 'Plan the next wave — or open Dispatch from +'
-                        : 'Write a message...'
+                        : 'Write a message…'
               }
               rows={1}
               className="w-full resize-none bg-transparent px-3 pt-2 pb-0.5 text-sm outline-none placeholder:text-muted-foreground/70"

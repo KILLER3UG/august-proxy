@@ -1326,6 +1326,30 @@ def create_workbench_handoff(
     return record
 
 
+def mark_memory_reviewed(session_id: str | None) -> bool:
+    """Record that a memory review completed for this session.
+
+    Writes ``lastMemoryReviewAtTurn`` into session.metadata so both the
+    per-turn ``<review_required>`` injection and the background review tick
+    stay quiet until the next turn interval. Returns True when a live
+    session was found and stamped.
+    """
+    if not session_id:
+        return False
+    sess = get_workbench_session(session_id)
+    if sess is None:
+        return False
+    meta = dict(sess.metadata) if isinstance(sess.metadata, dict) else {}
+    meta['lastMemoryReviewAtTurn'] = int(getattr(sess, 'turnCount', 0) or 0)
+    sess.metadata = meta
+    sess.updatedAt = _now()
+    try:
+        save_sessions()
+    except Exception:
+        logger.exception('Failed to persist memory-review marker')
+    return True
+
+
 def take_session_handoff(session_id: str) -> dict[str, object] | None:
     """Pop the persisted handoff record so the next chat turn consumes it once."""
     session = get_workbench_session(session_id)

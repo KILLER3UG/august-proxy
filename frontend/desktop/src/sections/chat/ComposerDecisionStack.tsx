@@ -19,7 +19,7 @@ export function ComposerDecisionStack({
 }) {
   return (
     <div className="mb-1 space-y-1 empty:mb-0" data-testid="composer-decision-stack">
-      <BrainReviewBar modelId={modelId} turnCount={turnCount} />
+      <BrainReviewBar modelId={modelId} turnCount={turnCount} sessionId={sessionId} />
       <CuratorSuggestionBar />
       <PinnedMemoryBar />
       <DistillPendingBar />

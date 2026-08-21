@@ -27,10 +27,16 @@ import { OsNotifyService } from '@/lib/os-notify';
 import { UiDesignerSection } from './UiDesignerSection';
 import type { SettingsSection } from '@/settings/settings-registry';
 
+const IS_MAC =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
 const SHORTCUTS: { keys: string[]; label: string }[] = [
-  { keys: ['⌘', ','],  label: 'Open Settings' },
-  { keys: ['⌘', 'K'],  label: 'Command palette' },
-  { keys: ['esc'],     label: 'Close overlay / dialog' },
+  { keys: [IS_MAC ? '⌘' : 'Ctrl', ','], label: 'Open Settings' },
+  { keys: [IS_MAC ? '⌘' : 'Ctrl', 'K'], label: 'Command palette' },
+  { keys: [IS_MAC ? '⌘' : 'Ctrl', 'F'], label: 'Search in thread' },
+  { keys: ['Ctrl', 'Shift', 'Space'],   label: 'Focus composer' },
+  { keys: ['Ctrl', 'Shift', 'P'],       label: 'Markdown preview' },
+  { keys: ['esc'],                      label: 'Close overlay / dialog' },
 ];
 
 interface Preset {

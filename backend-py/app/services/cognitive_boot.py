@@ -196,9 +196,67 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
         except Exception:
             pass
         services['daemon_manager'] = {'ok': True}
-    except Exception as exc:
-        errors.append(f'daemon_manager: {exc}')
-        services['daemon_manager'] = {'ok': False, 'error': str(exc)}
+    except Exception as exc2:
+        errors.append(f'daemon_manager: {exc2}')
+        services['daemon_manager'] = {'ok': False, 'error': str(exc2)}
+
+    # Mandatory memory+prompt review gate: schedule background task that emits
+    # memoryReviewPending brain events for sessions past their review interval.
+    try:
+        import asyncio as _asyncio
+
+        async def _memory_review_tick():
+            while True:
+                try:
+                    await _asyncio.sleep(180)
+                    from app.services.memory.background_review import ReviewGates
+
+                    gates = ReviewGates(turn_interval=12, tool_round_interval=20)
+                    from app.services.workbench.sessions import (
+                        get_workbench_session,
+                        list_workbench_sessions,
+                    )
+
+                    # list_workbench_sessions returns summarized dicts — use them
+                    # for the cheap turnCount prefilter, then fetch the live
+                    # session object for the persisted review marker.
+                    for summary in list_workbench_sessions():
+                        sid = str(summary.get('id') or '')
+                        if not sid:
+                            continue
+                        try:
+                            turns = int(summary.get('turnCount') or 0)
+                            if turns <= 0 or not gates.shouldReview(
+                                sessionTurns=turns, toolRounds=0
+                            ):
+                                continue
+                            live = get_workbench_session(sid)
+                            meta = getattr(live, 'metadata', None) if live else None
+                            last = 0
+                            if isinstance(meta, dict):
+                                try:
+                                    last = int(meta.get('lastMemoryReviewAtTurn') or 0)
+                                except Exception:
+                                    last = 0
+                            if turns - last < gates.turn_interval:
+                                continue
+                            from app.services.brain_event_bus import emitBrainEvent
+
+                            emitBrainEvent(
+                                category='review',
+                                layer='memory_review.pending',
+                                summary=f'Memory review pending for session {sid}',
+                                meta={'sessionId': sid, 'type': 'memoryReviewPending'},
+                            )
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
+        _tasks.append(_asyncio.create_task(_memory_review_tick(), name='memory_review_tick'))
+        services['memory_review_tick'] = {'ok': True}
+    except Exception as exc3:
+        services['memory_review_tick'] = {'ok': False, 'error': str(exc3)}
 
     # MCP: load durable config and auto-start enabled servers
     try:
