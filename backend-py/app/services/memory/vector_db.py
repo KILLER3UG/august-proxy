@@ -8,6 +8,7 @@ One-shot import from ``august_vector_memory.json`` if the table is empty.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import uuid
@@ -25,6 +26,26 @@ _db_lock = threading.Lock()
 _json_migrated = False
 
 _encoder = None
+
+# Embedding-degradation tracking: _embed() falls back to a lossy char-frequency
+# vector whenever the sentence encoder is unavailable (import failure, model
+# download failure, runtime encode error). That fallback silently degrades
+# recall quality — audit finding #6. These flags record WHY so the dashboard
+# can surface it instead of failing quietly.
+_char_embed_reason = ''
+_char_embed_warned = False
+
+
+def embeddingStatus() -> dict[str, object]:
+    """Report which embedder is active and why, for dashboard health surfaces."""
+    using_char = _encoder is False or (not _char_embed_reason and _getEncoder() is None)
+    return {
+        'encoder': 'char-freq' if using_char else 'minilm',
+        'degraded': bool(using_char),
+        'reason': _char_embed_reason,
+        'dimension': _EMBEDDINGDim,
+        'entries': count(),
+    }
 
 
 def _db_path() -> Path:
@@ -78,12 +99,38 @@ def _getEncoder():
 
 
 def _embed(text: str) -> list[float]:
+    global _char_embed_warned
     encoder = _getEncoder()
     if encoder is not None:
         try:
             return encoder.encode([text])[0].tolist()
-        except Exception:
-            pass
+        except Exception as exc:
+            # Encoder loaded but failed at runtime — record the reason.
+            if not _char_embed_reason:
+                globals()['_char_embed_reason'] = f'encode error: {exc}'
+    else:
+        # _getEncoder() returned None: either char-only mode (env/pytest) or a
+        # load failure. Distinguish so the dashboard can say which.
+        if not _char_embed_reason:
+            if os.environ.get('AUGUST_VECTOR_CHAR_EMBED', '').strip().lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            ):
+                globals()['_char_embed_reason'] = 'forced via AUGUST_VECTOR_CHAR_EMBED'
+            elif os.environ.get('PYTEST_CURRENT_TEST'):
+                globals()['_char_embed_reason'] = 'pytest char-embed default'
+            else:
+                globals()['_char_embed_reason'] = (
+                    'sentence-transformers unavailable or model load failed'
+                )
+    if not _char_embed_warned:
+        _char_embed_warned = True
+        logging.getLogger(__name__).warning(
+            'vector recall degraded: using lossy char-frequency embeddings (%s)',
+            _char_embed_reason,
+        )
     return _charEmbed(text)
 
 
@@ -231,6 +278,36 @@ def delete(entryId: str) -> bool:
         cur = conn.execute('DELETE FROM vector_entries WHERE id = ?', (entryId,))
         conn.commit()
         return cur.rowcount > 0
+
+
+def deleteByKey(key: str, namespace: str = 'auto_memory') -> int:
+    """Delete every entry whose metadata ``key`` matches in a namespace.
+
+    Mirrors upsert's delete-before-insert scan so stale embeddings can be
+    removed without inserting a replacement (used when a memory is demoted or
+    superseded rather than updated). Returns the number of entries removed.
+    """
+    if not key:
+        return 0
+    ns = namespace or 'auto_memory'
+    removed = 0
+    with _db_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        rows = conn.execute(
+            'SELECT id, metadata FROM vector_entries WHERE namespace = ?', (ns,)
+        ).fetchall()
+        for row in rows:
+            try:
+                meta = json.loads(row['metadata'] or '{}')
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(meta, dict) and meta.get('key') == key:
+                cur = conn.execute('DELETE FROM vector_entries WHERE id = ?', (row['id'],))
+                removed += max(0, int(cur.rowcount))
+        if removed:
+            conn.commit()
+    return removed
 
 
 def count(namespace: str = '') -> int:

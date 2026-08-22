@@ -478,10 +478,29 @@ export function LearningTab() {
                     <p className="text-muted-foreground">{s.description}</p>
                     {s.createdAt ? (
                       <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                        proposed {new Date(s.createdAt).toLocaleString()}
-                        {typeof s.useCount === 'number' && s.useCount > 0 ? ` · used ${s.useCount}×` : ''}
-                      </p>
-                    ) : null}
+                          proposed {new Date(s.createdAt).toLocaleString()}
+                          {typeof s.useCount === 'number' && s.useCount > 0 ? ` · used ${s.useCount}×` : ''}
+                        </p>
+                      ) : null}
+                      {(() => {
+                        // Surface the curator quality score for a re-proposed skill so the
+                        // reviewer sees whether the refinement is improving or degrading it.
+                        const usage = data.skillsWithUsage.find((u) => u.name === s.name);
+                        return typeof usage?.qualityScore === 'number' ? (
+                          <span
+                            className={`inline-block rounded-full px-1.5 py-px text-[9px] mt-1 ${
+                              usage.qualityScore >= 0.7
+                                ? 'bg-success/15 text-success'
+                                : usage.qualityScore >= 0.4
+                                  ? 'bg-warning/15 text-warning'
+                                  : 'bg-danger/15 text-danger'
+                            }`}
+                            title={`Curator quality score for the active version of this skill`}
+                          >
+                            current quality Q {(usage.qualityScore * 100).toFixed(0)}
+                          </span>
+                        ) : null;
+                      })()}
                   </div>
                   <button
                     type="button"
@@ -533,6 +552,78 @@ export function LearningTab() {
           </ul>
         )}
       </Card>
+
+      {/* Embedder health — recall quality warning (audit #6) */}
+      {data.embedding.degraded ? (
+        <Card
+          className="p-4 space-y-1 md:col-span-2 border-warning/40 bg-warning/[0.04]"
+          data-testid="embedding-degraded-banner"
+        >
+          <div className="flex items-center gap-2">
+            <Zap className="size-4 text-warning" />
+            <h3 className="font-medium text-sm text-warning">Vector recall degraded</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Memory embeddings are using the lossy char-frequency fallback
+            ({data.embedding.encoder}), so semantic recall is weaker than normal.
+            {data.embedding.reason ? ` Reason: ${data.embedding.reason}.` : ''} Installing{' '}
+            <code className="text-foreground">sentence-transformers</code> and restarting restores full recall.
+          </p>
+        </Card>
+      ) : null}
+
+      {/* Active skill telemetry (viewCount/useCount/patchCount + quality) */}
+      {data.skillsWithUsage.length > 0 ? (
+        <Card className="p-4 space-y-2 md:col-span-2">
+          <div className="flex items-center gap-2">
+            <Eye className="size-4 text-primary" />
+            <h3 className="font-medium text-sm">Skill usage</h3>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+              {data.skillsWithUsage.length} active
+            </span>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Views = loaded into context · Uses = applied in a turn · Patches = improved after authorship.
+            Low views with high patches usually means a skill keeps being rewritten but never helps.
+          </p>
+          <ul className="space-y-1" data-testid="skill-usage-list">
+            {[...data.skillsWithUsage]
+              .sort((a, b) => (b.qualityScore ?? -1) - (a.qualityScore ?? -1))
+              .map((s) => (
+                <li
+                  key={s.name}
+                  className="text-xs flex items-center gap-2 p-1.5 rounded border border-border"
+                  data-testid={`skill-usage-${s.name}`}
+                >
+                  <span className="font-medium truncate flex-1 min-w-0">{s.name}</span>
+                  <span className="text-muted-foreground whitespace-nowrap" title="Times loaded into context">
+                    👁 {s.viewCount}
+                  </span>
+                  <span className="text-muted-foreground whitespace-nowrap" title="Times applied in a turn">
+                    ⚡ {s.useCount}
+                  </span>
+                  <span className="text-muted-foreground whitespace-nowrap" title="Improvements after authorship">
+                    ✎ {s.patchCount}
+                  </span>
+                  {typeof s.qualityScore === 'number' ? (
+                    <span
+                      className={`rounded-full px-1.5 py-px text-[10px] ${
+                        s.qualityScore >= 0.7
+                          ? 'bg-success/15 text-success'
+                          : s.qualityScore >= 0.4
+                            ? 'bg-warning/15 text-warning'
+                            : 'bg-danger/15 text-danger'
+                      }`}
+                      title="Curator quality score"
+                    >
+                      Q {(s.qualityScore * 100).toFixed(0)}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+          </ul>
+        </Card>
+      ) : null}
 
       {/* Delta engine */}
       <Card className="p-4 space-y-2 md:col-span-2">

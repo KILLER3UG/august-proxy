@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional, cast
 
-from app.json_narrowing import as_dict, as_list, as_str
+from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services import skill_service
 from app.type_aliases import JsonValue
 
@@ -253,6 +253,11 @@ async def _doReview(
             if added is not None:
                 as_list(result['corrections_added']).append(rule[:80])
                 _syncCorrectionToGraph(rule)
+                superseded = _supersedeStaleFacts(rule)
+                if superseded:
+                    result['memories_superseded'] = (
+                        as_int(result.get('memories_superseded'), 0) + superseded
+                    )
         except Exception as exc:
             as_list(result['errors']).append(f'correction: {exc}')
 
@@ -433,10 +438,23 @@ def _queue_pending_skill(
         f.write(f'---\nname: {name}\ndescription: {description}\ntrigger: {trigger}\ncategory: {category}\n---\n\n{body}\n')
 
     conn = _conn()
+    # Re-proposals must UPDATE, not vanish: when the reflection loop drafts a
+    # better version of a skill it already proposed (or the user previously
+    # rejected), the improved draft should replace the old one and return to
+    # the pending queue. The old ON CONFLICT DO NOTHING silently dropped every
+    # refinement — audit finding P3-10. Only 'approved' rows are protected:
+    # overwriting those would mutate skills already live on disk.
     conn.execute(
         '''INSERT INTO pending_skills (name, description, trigger_text, draft_path, source_session_id, status)
            VALUES (?, ?, ?, ?, ?, 'pending')
-           ON CONFLICT(name) DO NOTHING''',
+           ON CONFLICT(name) DO UPDATE SET
+               description = excluded.description,
+               trigger_text = excluded.trigger_text,
+               draft_path = excluded.draft_path,
+               source_session_id = excluded.source_session_id,
+               status = 'pending'
+           WHERE pending_skills.status != 'approved'
+        ''',
         (name, description, trigger, draft_path, session_id),
     )
     conn.commit()
@@ -632,6 +650,62 @@ def _syncCorrectionToGraph(rule: str) -> None:
         graph_memory.addRelation('learned_corrections', key, 'contains')
     except Exception:
         pass
+
+
+def _supersedeStaleFacts(correction: str) -> int:
+    """Demote memories contradicted by a learned correction (audit finding P3-9).
+
+    A correction used to land in learned_heuristics + graph while the
+    superseded fact stayed fully live in auto_memories AND its vector twin —
+    recall then served both sides of a contradiction. This halves importance,
+    confidence, and TTL on near-duplicate rows (never user-added or pinned)
+    so the corrected rule wins recall, and deletes the stale vector entry.
+    Returns the number of demoted rows. Best-effort: any failure is logged
+    at debug and reported as 0.
+    """
+    demoted = 0
+    try:
+        from datetime import datetime, timedelta, timezone
+
+        from app.services.memory.auto_memory import _NEAR_DUP_THRESHOLD, _similarity
+        from app.services.memory_store import _conn
+
+        conn = _conn()
+        rows = conn.execute('SELECT id, key, content FROM auto_memories').fetchall()
+        for r in rows:
+            if str(r['key'] or '').startswith('user_added_'):
+                continue
+            if _similarity(correction, r['content']) < _NEAR_DUP_THRESHOLD:
+                continue
+            conn.execute(
+                "UPDATE auto_memories SET "
+                'importance = MIN(importance, 0.2), '
+                'confidence = MIN(COALESCE(confidence, 1.0), 0.2), '
+                'expires_at = ? '
+                'WHERE id = ?',
+                (
+                    (datetime.now(timezone.utc) + timedelta(days=7))
+                    .isoformat()
+                    .replace('+00:00', 'Z'),
+                    r['id'],
+                ),
+            )
+            demoted += 1
+            try:
+                from app.services.memory import vector_db
+
+                # Vector entries are keyed by metadata ('key' field), not id.
+                vector_db.deleteByKey(str(r['key'] or ''), namespace='auto_memory')
+            except Exception:
+                pass
+        if demoted:
+            conn.commit()
+            log.info(
+                'background_review: correction superseded %d stale memory row(s)', demoted
+            )
+    except Exception:
+        log.debug('_supersedeStaleFacts failed', exc_info=True)
+    return demoted
 
 
 def _syncFactToGraph(fact: str) -> None:

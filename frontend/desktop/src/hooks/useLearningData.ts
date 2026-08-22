@@ -47,6 +47,25 @@ export interface PendingSkill {
   createdAt?: string;
 }
 
+/** Usage telemetry + quality score for an active skill (from the curator
+ *  sidecar, surfaced via catalogue_with_usage). */
+export interface SkillUsage {
+  name: string;
+  viewCount: number;
+  useCount: number;
+  patchCount: number;
+  lastUsedAt?: number | null;
+  qualityScore?: number;
+}
+
+/** Embedder health from the learning payload: recall degrades to lossy
+ *  char-frequency vectors when the sentence encoder is unavailable. */
+export interface EmbeddingStatus {
+  encoder: string;
+  degraded: boolean;
+  reason: string;
+}
+
 export interface ActiveProject {
   name?: string;
   path?: string | null;
@@ -65,6 +84,8 @@ export interface LearningData {
   sleepCycle: { lastRunAt: string | null; lastMerged: number; lastPromoted: number; lastDeleted: number };
   deltaEngine: { consentGranted: boolean; queueSize: number; lastFlushAt: string | null };
   pendingSkills: PendingSkill[];
+  skillsWithUsage: SkillUsage[];
+  embedding: EmbeddingStatus;
 }
 
 export function useLearningData() {
@@ -97,6 +118,18 @@ export function useLearningData() {
           lastFlushAt: (deltaBlock?.lastFlushAt ?? null) as string | null,
         },
         pendingSkills: (json.pendingSkills ?? []) as PendingSkill[],
+        skillsWithUsage: (json.skillsWithUsage ?? []) as SkillUsage[],
+        embedding: {
+          encoder:
+            typeof (json.embedding as Record<string, unknown> | undefined)?.encoder === 'string'
+              ? ((json.embedding as Record<string, unknown>).encoder as string)
+              : 'unknown',
+          degraded: Boolean((json.embedding as Record<string, unknown> | undefined)?.degraded),
+          reason:
+            typeof (json.embedding as Record<string, unknown> | undefined)?.reason === 'string'
+              ? ((json.embedding as Record<string, unknown>).reason as string)
+              : '',
+        },
       };
     },
     staleTime: 10_000,

@@ -294,6 +294,15 @@ async def brainLearning() -> dict[str, object]:
         skillsWithUsage = skill_service.catalogue_with_usage()
     except Exception:
         pass
+    # Embedder health: recall silently degrades to lossy char-freq vectors when
+    # the sentence encoder is unavailable — surface that instead (audit #6).
+    embedding: dict[str, object] = {'encoder': 'unknown', 'degraded': False, 'reason': ''}
+    try:
+        from app.services.memory import vector_db
+
+        embedding = vector_db.embeddingStatus()
+    except Exception:
+        pass
     return {
         'status': 'idle',
         'heuristics': heuristics,
@@ -317,6 +326,7 @@ async def brainLearning() -> dict[str, object]:
         },
         'pendingSkills': pendingSkills,
         'skillsWithUsage': skillsWithUsage,
+        'embedding': embedding,
         'friction': friction,
         'backgroundReview': backgroundReview,
     }
