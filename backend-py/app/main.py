@@ -246,6 +246,14 @@ async def lifespan(app: FastAPI):
         flush_pending_saves()
     except Exception:
         pass
+    # Drain the async event-log persistence queue — buffered SSE events
+    # would otherwise be lost to restart-replay (round-5 hot-path fix).
+    try:
+        from app.services.event_log import event_log
+
+        event_log.flush(timeout=10.0)
+    except Exception:
+        pass
     if _gateway is not None:
         try:
             await _gateway.stop()

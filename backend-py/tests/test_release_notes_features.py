@@ -207,6 +207,8 @@ def test_event_log_rehydrates_from_jsonl(tmp_path, monkeypatch):
     log1.append('sess_a', 'thinking', {'content': 'first'})
     seq2 = log1.append('sess_a', 'finalOutput', {'content': 'second'})
     assert seq2 == 2
+    # Persistence is async (writer thread) — drain before simulating a restart.
+    assert log1.flush() is True
 
     # A fresh instance (simulating a backend restart) must replay the tail.
     log2 = el.EventLog()
@@ -228,6 +230,7 @@ def test_event_log_skips_torn_line(tmp_path, monkeypatch):
     monkeypatch.setattr('app.lib.paths.dataDir', lambda: tmp_path)
     log1 = el.EventLog()
     log1.append('sess_b', 'thinking', {})
+    assert log1.flush() is True
     # Corrupt the JSONL with a torn line, then rehydrate.
     p = el._log_path('sess_b')
     with p.open('a', encoding='utf-8') as f:
