@@ -105,7 +105,31 @@ def collect_review_payload(
         heuristics = [{'id': int(r['id']), 'rule': _preview(r['rule'], 200)} for r in cc.execute('SELECT id, rule FROM learned_heuristics ORDER BY id DESC LIMIT 40').fetchall()]
     except Exception:
         heuristics = []
-    return {'memories': memories, 'heuristics': heuristics, 'skills': skills, 'pendingSkills': pending}
+    # Cross-loop awareness (round-5 unification): recent decisions by the
+    # other curators so the review does not redo or contradict them.
+    recent_curation: list[dict[str, Any]] = []
+    try:
+        from app.services.memory.curation_ledger import recent as _ledgerRecent
+
+        recent_curation = [
+            {
+                'actor': str(r.get('actor') or ''),
+                'action': str(r.get('action') or ''),
+                'targetKind': str(r.get('target_kind') or ''),
+                'targetKey': str(r.get('target_key') or ''),
+                'reason': str(r.get('reason') or '')[:120],
+            }
+            for r in _ledgerRecent(15)
+        ]
+    except Exception:
+        pass
+    return {
+        'memories': memories,
+        'heuristics': heuristics,
+        'skills': skills,
+        'pendingSkills': pending,
+        'recentCuration': recent_curation,
+    }
 
 
 def parse_review_plan(raw: str) -> dict[str, list[dict[str, Any]]]:
@@ -261,6 +285,8 @@ async def run_memory_review(
 
 def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
     from app.services.memory.auto_memory import delete_auto_memory, saveAutoMemory, update_auto_memory
+    from app.services.memory.curation_ledger import record as _ledger
+
     applied = {'improved': 0, 'removed': 0, 'enhanced': 0, 'merged': 0}
     for raw in actions:
         row = as_dict(raw)
@@ -293,6 +319,7 @@ def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
                     from app.services.memory.background_review import _queue_pending_skill
                     _queue_pending_skill(name, as_str(row.get('description'), ''), as_str(row.get('body'), ''), as_str(row.get('trigger'), ''), session_id=None)
                     applied['enhanced'] += 1
+                    _ledger('model_review', 'propose_skill', 'skill', name, reason=as_str(row.get('description'), '')[:200])
                 except Exception:
                     pass
             elif action == 'patch':
@@ -300,6 +327,7 @@ def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
                     from app.services import skill_service as _ss3
                     _ss3.patchSkill(name, body=as_str(row.get('body'), '') or None, description=as_str(row.get('description'), '') or None, trigger=as_str(row.get('trigger'), '') or None)
                     applied['improved'] += 1
+                    _ledger('model_review', 'update_skill', 'skill', name)
                 except Exception:
                     pass
             elif action == 'delete':
@@ -307,10 +335,18 @@ def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
                     from app.services.skills.curator import shared_curator
                     try:
                         shared_curator().archive(name)
+                        archived = True
                     except Exception:
+                        archived = False
                         from app.services import skill_service as _ss4
                         _ss4.deleteSkill(name)
                     applied['removed'] += 1
+                    _ledger(
+                        'model_review',
+                        'archive_skill' if archived else 'delete_skill',
+                        'skill',
+                        name,
+                    )
                 except Exception:
                     pass
             continue
@@ -319,16 +355,19 @@ def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
             text = as_str(row.get('rewritten') or row.get('content'), '').strip()
             if mid and text and update_auto_memory(mid, content=text):
                 applied['improved'] += 1
+                _ledger('model_review', 'update_memory', 'auto_memory', f'memory:{mid}', reason=text[:200])
         elif kind == 'remove':
             mid = as_int(row.get('id'), 0)
             if mid and delete_auto_memory(mid):
                 applied['removed'] += 1
+                _ledger('model_review', 'delete_memory', 'auto_memory', f'memory:{mid}')
         elif kind == 'enhance':
             text = as_str(row.get('content'), '').strip()
             if not text:
                 continue
             saveAutoMemory(key=f'user:{text[:48]}', content=text, category='preference', importance=0.88, source='user', pinned=True)
             applied['enhanced'] += 1
+            _ledger('model_review', 'pin_memory', 'auto_memory', f'user:{text[:48]}', reason=text[:200])
         elif kind in ('merge', 'merge_memories'):
             keep_id = as_int(row.get('keepId') or row.get('id'), 0)
             merged_text = as_str(row.get('mergedText') or row.get('rewritten'), '').strip()
@@ -337,6 +376,14 @@ def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
                 continue
             if update_auto_memory(keep_id, content=merged_text):
                 applied['merged'] += 1
+                _ledger(
+                    'model_review',
+                    'merge',
+                    'auto_memory',
+                    f'memory:{keep_id}',
+                    detail=f'removed={remove_ids}',
+                    reason=merged_text[:200],
+                )
                 for rid in remove_ids:
                     if rid != keep_id:
                         delete_auto_memory(rid)

@@ -103,6 +103,9 @@ def _record_audit(action: str, target_key: str = '', reason: str = '', detail: s
 
     Written from the db_writer worker thread alongside the mutation it
     describes, so the trail stays in lock-step with what actually changed.
+    Also mirrored into the unified curation ledger so other loops (model
+    review, reflection) see sleep-cycle decisions instead of redoing or
+    contradicting them (round-5 unification).
     """
     try:
         from app.services.memory_store import _conn
@@ -115,6 +118,20 @@ def _record_audit(action: str, target_key: str = '', reason: str = '', detail: s
         conn.commit()
     except Exception:
         logger.debug('consolidation audit record failed (non-fatal)', exc_info=True)
+    try:
+        from app.services.memory.curation_ledger import record as _ledger
+
+        kind = 'auto_memory' if action == 'archive-memory' else 'heuristic'
+        _ledger(
+            'sleep_cycle',
+            action,
+            kind,
+            f'heuristic:{target_key}' if kind == 'heuristic' else str(target_key),
+            reason=reason,
+            detail=detail,
+        )
+    except Exception:
+        logger.debug('curation ledger mirror failed (non-fatal)', exc_info=True)
 
 
 async def _call_hippocampus(prompt: str) -> str:
@@ -172,7 +189,21 @@ async def _build_consolidation_plan() -> dict | None:
         if not (heuristics or autoMemories):
             _last_skip_reason = 'no_data'
             return None
-        prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...],\n 'archiveMemories': [{{'id': int, 'reason': str}}]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\narchiveMemories may only propose stale (old, low-importance, unpinned, auto) memories —\nthe apply step enforces this.\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": [], "archiveMemories": []}}.\n"""
+        # Cross-loop awareness (round-5 unification): recent decisions from
+        # the other curators ride in the prompt so the plan does not undo a
+        # fresh supersession or re-merge what reflection just cleaned.
+        try:
+            from app.services.memory.curation_ledger import summary_for_prompt
+
+            ledgerSummary = summary_for_prompt(12)
+        except Exception:
+            ledgerSummary = ''
+        ledgerBlock = (
+            f"\nRecent curation decisions by other loops (do NOT contradict or redo them):\n{ledgerSummary}\n"
+            if ledgerSummary
+            else ''
+        )
+        prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...],\n 'archiveMemories': [{{'id': int, 'reason': str}}]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n{ledgerBlock}\nPreserve the most recent 20 rules (do not delete them).\narchiveMemories may only propose stale (old, low-importance, unpinned, auto) memories —\nthe apply step enforces this.\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": [], "archiveMemories": []}}.\n"""
         raw = await _callHippocampus(prompt)
         if not raw:
             _last_skip_reason = 'empty_reply'

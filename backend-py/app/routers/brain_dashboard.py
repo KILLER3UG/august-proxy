@@ -317,6 +317,15 @@ async def brainLearning() -> dict[str, object]:
         embedding['lastReconciliation'] = last_reconciliation()
     except Exception:
         pass
+    # Unified curation journal (round-5): the most recent decisions from all
+    # loops — reflection, sleep cycle, model review, promotion, curator.
+    curationLedger: list[dict[str, object]] = []
+    try:
+        from app.services.memory.curation_ledger import recent as _ledgerRecent
+
+        curationLedger = _ledgerRecent(10)
+    except Exception:
+        pass
     return {
         'status': 'idle',
         'heuristics': heuristics,
@@ -341,6 +350,7 @@ async def brainLearning() -> dict[str, object]:
         'pendingSkills': pendingSkills,
         'skillsWithUsage': skillsWithUsage,
         'embedding': embedding,
+        'curationLedger': curationLedger,
         'friction': friction,
         'backgroundReview': backgroundReview,
     }

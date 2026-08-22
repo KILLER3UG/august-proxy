@@ -209,6 +209,12 @@ class SkillCurator:
             rec.state = 'archived'
             rec.archivedAt = time.time()
             self._save()
+        try:
+            from app.services.memory.curation_ledger import record as _ledger
+
+            _ledger('curator', 'archive_skill', 'skill', name, reason='lifecycle transition')
+        except Exception:
+            pass
         return True
 
     def restore(self, name: str) -> bool:

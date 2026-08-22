@@ -441,6 +441,21 @@ async def reconcileVectorMirror():
     return {'report': report, 'previous': last_reconciliation()}
 
 
+@router.get('/curation/ledger')
+async def curationLedger(limit: int = 50, actor: str = '', target_kind: str = ''):
+    """Unified curation decision journal.
+
+    Every loop that merges/promotes/supersedes/archives/deletes a memory,
+    heuristic, or skill appends one row — reflection ('reflection'), the
+    sleep cycle ('sleep_cycle'), model review ('model_review'), heuristic
+    graduation ('promotion'), and the skill curator ('curator'). This is the
+    single answer to "why did the harness change its memory?".
+    """
+    from app.services.memory.curation_ledger import recent
+
+    return {'entries': recent(limit, actor=actor, target_kind=target_kind)}
+
+
 @router.get('/pending-consolidation')
 async def pendingConsolidation():
     """Stashed sleep-cycle plan waiting for Keep / Discard in chat."""

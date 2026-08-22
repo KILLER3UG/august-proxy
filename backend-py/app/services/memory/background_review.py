@@ -296,6 +296,19 @@ async def _doReview(
                     result['memories_superseded'] = (
                         as_int(result.get('memories_superseded'), 0) + superseded
                     )
+                try:
+                    from app.services.memory.curation_ledger import record as _ledger
+
+                    _ledger(
+                        'reflection',
+                        'learn_heuristic',
+                        'heuristic',
+                        f'heuristic:{added}',
+                        reason=rule[:200],
+                        detail=f'superseded={superseded}',
+                    )
+                except Exception:
+                    pass
         except Exception as exc:
             as_list(result['errors']).append(f'correction: {exc}')
 
@@ -496,6 +509,18 @@ def _queue_pending_skill(
         (name, description, trigger, draft_path, session_id),
     )
     conn.commit()
+    try:
+        from app.services.memory.curation_ledger import record as _ledger
+
+        _ledger(
+            'reflection',
+            'propose_skill',
+            'skill',
+            name,
+            reason=(description or '')[:200],
+        )
+    except Exception:
+        pass
     log.info('Queued pending skill for approval: %s', name)
 
 
@@ -627,6 +652,7 @@ def _parseRecommendations(raw: str) -> dict[str, object]:
 
 def _saveFact(action: str, content: str) -> None:
     """Save a fact to the core memory KV store (near-dups refresh, never twin)."""
+    from app.services.memory.curation_ledger import record as _ledger
     from app.services.memory.user_profile import _similarity
     from app.services.memory_store import get_memory, save_memory
 
@@ -640,6 +666,7 @@ def _saveFact(action: str, content: str) -> None:
             if isinstance(f, dict) and f.get('fact', '') == content:
                 facts[i] = newFact
                 save_memory(KEY, facts)
+                _ledger('reflection', 'update_fact', 'fact', KEY, reason=content[:200])
                 return
         facts.append(newFact)
     else:
@@ -655,9 +682,11 @@ def _saveFact(action: str, content: str) -> None:
                 # shorter paraphrase.
                 facts[i] = {**dict(f), 'updated_at': now}
                 save_memory(KEY, facts)
+                _ledger('reflection', 'refresh_fact', 'fact', KEY, reason=existing[:200])
                 return
         facts.append(newFact)
     save_memory(KEY, facts)
+    _ledger('reflection', 'save_fact', 'fact', KEY, reason=content[:200])
 
 
 def _syncCorrectionToGraph(rule: str) -> None:
@@ -730,6 +759,18 @@ def _supersedeStaleFacts(correction: str) -> int:
                 ),
             )
             demoted += 1
+            try:
+                from app.services.memory.curation_ledger import record as _ledger
+
+                _ledger(
+                    'reflection',
+                    'supersede',
+                    'auto_memory',
+                    str(r['key'] or ''),
+                    reason=correction[:300],
+                )
+            except Exception:
+                pass
             try:
                 from app.services.memory import vector_db
 

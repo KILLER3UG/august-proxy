@@ -412,7 +412,7 @@ def promoteFrequentHeuristics(
     try:
         conn = _conn()
         rows = conn.execute(
-            'SELECT id, rule, category, source FROM learned_heuristics '
+            'SELECT id, rule, category, source, use_count, confidence FROM learned_heuristics '
             'WHERE COALESCE(suppressed, 0) = 0 '
             'AND COALESCE(use_count, 0) >= ? AND COALESCE(confidence, 0) >= ? '
             'ORDER BY use_count DESC LIMIT 10',
@@ -422,7 +422,7 @@ def promoteFrequentHeuristics(
         return 0
     if not rows:
         return 0
-    from app.json_narrowing import as_str
+    from app.json_narrowing import as_float, as_int, as_str
 
     queued = 0
     for r in rows:
@@ -444,6 +444,19 @@ def promoteFrequentHeuristics(
                 category='learned',
             )
             queued += 1
+            try:
+                from app.services.memory.curation_ledger import record as _ledger
+
+                _ledger(
+                    'promotion',
+                    'graduate_heuristic',
+                    'skill',
+                    name,
+                    reason=rule[:200],
+                    detail=f'use_count={as_int(r["use_count"], 0)} confidence={as_float(r["confidence"], 0.0)}',
+                )
+            except Exception:
+                pass
         except Exception:
             pass
     return queued
