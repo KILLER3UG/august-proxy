@@ -105,9 +105,6 @@ buildOpenaiAggregatedForAnthropicFromStream = (
     _anthropic_stream_translate.buildOpenaiAggregatedForAnthropicFromStream
 )
 
-# 0 = unlimited managed tool rounds (default). Positive values cap the loop.
-MAX_MANAGED_TOOL_ROUNDS = 0
-
 
 def deriveSessionIdFromAnthropic(
     body: AnthropicRequest | dict[str, object] | None, request: object | None = None
@@ -485,12 +482,7 @@ async def resolveManagedAnthropicToolUses(
     finalUsage: dict[str, object] | None = None
     if not client:
         return (currentMessages, {'error': 'No client available for tool resolution'})
-    # 0 = unlimited; positive values cap managed tool rounds.
-    _round = 0
     while True:
-        _round += 1
-        if MAX_MANAGED_TOOL_ROUNDS > 0 and _round > MAX_MANAGED_TOOL_ROUNDS:
-            break
         reqBody: dict[str, object] = {
             'model': model,
             'messages': cast(JsonValue, currentMessages),
@@ -882,10 +874,7 @@ async def _streamAnthropicNative(
     reqBody['stream'] = True
     toolRound = 0
     currentMessages: list[dict[str, object]] = cast('list[dict[str, object]]', as_list(body.get('messages'), []))
-    # 0 = unlimited managed tool rounds
     while True:
-        if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound >= MAX_MANAGED_TOOL_ROUNDS:
-            break
         st = AnthropicNativeStreamState()
         # Buffer the round's terminal message_stop — Anthropic SDK clients
         # finalize on it, so it must not be emitted between managed-tool
@@ -981,10 +970,7 @@ async def _streamOpenaiAsAnthropic(
     # tool rounds — clients finalize on message_stop and would drop round-2
     # events. Flushed once the loop actually ends.
     pendingStop: str | None = None
-    # 0 = unlimited managed tool rounds
     while True:
-        if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound >= MAX_MANAGED_TOOL_ROUNDS:
-            break
         st = OpenaiToAnthropicStreamState()
         roundBody = dict(openaiBody)
         roundBody['messages'] = cast(JsonValue, currentMessages)

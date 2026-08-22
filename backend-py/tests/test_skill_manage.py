@@ -115,8 +115,22 @@ async def testSkillManageToolCreatePatchDelete(isolatedSkills):
     assert "Patched skill 'tool-skill'" in out
     assert 'Patched body.' in skill_service.get('tool-skill')['instructions']
     out = await _skillManage('delete', name='tool-skill')
-    assert "Deleted skill 'tool-skill'" in out
+    # Archive-first: agent-authored skills are restorable via the curator
+    # instead of rmtree'd by the model.
+    assert "Archived skill 'tool-skill'" in out
     assert skill_service.get('tool-skill') is None
+
+
+@pytest.mark.asyncio
+async def testSkillManageDeletePinnedRefuses(isolatedSkills):
+    from app.services.skills.curator import shared_curator
+    from app.services.tool_definitions import _skillManage
+
+    await _skillManage('create', name='pinned-skill', description='Pinned.', body='body.')
+    assert shared_curator().pin('pinned-skill') is True
+    out = await _skillManage('delete', name='pinned-skill')
+    assert 'pinned' in out.lower()
+    assert skill_service.get('pinned-skill') is not None
 
 
 @pytest.mark.asyncio

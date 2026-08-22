@@ -810,6 +810,18 @@ def buildSystemPrompt(
             capabilities_block = build_capabilities_block(tool_names or None)
         except Exception:
             logger.debug('prompt: capabilities block failed', exc_info=True)
+    # Relevance-picked skill descriptions (Tier 3): Tier 1 carries only the
+    # compact name index now, so this re-injects descriptions for the handful
+    # of skills the current request actually touches. Workers build their own
+    # capabilities block; benchmark mode strips skills entirely.
+    relevantSkillsText = ''
+    if not is_benchmark and int(getattr(session, 'subagent_depth', 0) or 0) == 0:
+        try:
+            from app.services.memory.capabilities_prompt import build_relevant_skills_block
+
+            relevantSkillsText = build_relevant_skills_block(_lastUserMessageText(session))
+        except Exception:
+            logger.debug('prompt: relevant skills failed', exc_info=True)
     sessionDict = {
         # Ambient identity so tools like delete/rename/brain_query can target
         # "this chat" without a prior list call.
@@ -828,6 +840,7 @@ def buildSystemPrompt(
         'whatsNew': whatsNew,
         'skillsManifest': [] if is_benchmark else skillsManifest,
         'capabilitiesBlock': capabilities_block,
+        'relevantSkillsBlock': relevantSkillsText,
         'toolNames': tool_names,
         'executionState': getattr(session, '_execution_state', None),
         'verifierEnforced': bool(getattr(session, 'verifierEnforced', False)),

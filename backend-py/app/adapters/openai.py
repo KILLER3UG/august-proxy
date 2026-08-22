@@ -56,9 +56,6 @@ writeOpenaiSseError = write_openai_sse_error
 writeOpenaiSseDone = write_openai_sse_done
 sendSimulatedOpenaiStream = send_simulated_openai_stream
 
-# 0 = unlimited managed tool rounds (default). Positive values cap the loop.
-MAX_MANAGED_TOOL_ROUNDS = 0
-
 
 def deriveSessionIdFromOpenai(
     body: ChatCompletionRequest | dict[str, object] | None, request: object | None = None
@@ -266,12 +263,7 @@ async def resolveManagedOpenaiToolCalls(
     """
     currentMessages = cast('list[dict[str, object]]', list(messages))
     finalUsage: dict[str, object] | None = None
-    # 0 = unlimited; positive values cap managed tool rounds.
-    _round = 0
     while True:
-        _round += 1
-        if MAX_MANAGED_TOOL_ROUNDS > 0 and _round > MAX_MANAGED_TOOL_ROUNDS:
-            break
         reqBody = cast(
             dict[str, object],
             camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}),
@@ -406,9 +398,6 @@ async def streamUpstreamAndResolveToolsOpenai(
     client = await _getClient()
     while True:
         toolRound += 1
-        # 0 = unlimited managed tool rounds
-        if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
-            break
         acc = OpenaiStreamAccumulator()
         if toolRound == 1:
             streamBody = cast('dict[str, object]', strip_none_deep(cast(JsonValue, camelToSnake({**raw_body, 'stream': True}))))

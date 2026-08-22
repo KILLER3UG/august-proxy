@@ -268,10 +268,10 @@ def catalogue_with_usage() -> list[dict[str, object]]:
     dashboard and prompt builders can rank or annotate by real usage instead
     of authorship recency. Best-effort: missing telemetry degrades to zeros.
     """
-    from app.services.skills.curator import SkillCurator
+    from app.services.skills.curator import shared_curator
     from app.services.skills.quality import score_skill
 
-    curator = SkillCurator()
+    curator = shared_curator()
     out: list[dict[str, object]] = []
     for entry in catalogue():
         name = as_str(entry.get('name'), '')
@@ -457,6 +457,26 @@ def createSkill(
     return parsed or {'name': name, 'description': description}
 
 
+def _snapshot_skill_history(agentDir: Path, md: Path, text: str) -> None:
+    """Snapshot the prior SKILL.md into ``<skill>/.history/`` before a patch.
+
+    Patches overwrite SKILL.md in place from three concurrent writers (model
+    skill_manage, UI PATCH, reflection loop) with no audit trail beyond the
+    patch counter. The last 10 prior versions are kept so a bad auto-patch is
+    recoverable; best-effort — history failure must never block a patch.
+    """
+    try:
+        historyDir = agentDir / '.history'
+        historyDir.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime('%Y%m%dT%H%M%S', time.gmtime())
+        (historyDir / f'SKILL.{stamp}.md').write_text(text, 'utf-8')
+        snaps = sorted(historyDir.glob('SKILL.*.md'))
+        for old in snaps[:-10]:
+            old.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def patchSkill(
     name: str,
     *,
@@ -474,6 +494,7 @@ def patchSkill(
     agentDir = _copyOnWrite(name)
     md = agentDir / 'SKILL.md'
     text = md.read_text('utf-8')
+    _snapshot_skill_history(agentDir, md, text)
     m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
     if not m:
         raise SkillValidationError(f"Skill '{name}' has malformed frontmatter.")

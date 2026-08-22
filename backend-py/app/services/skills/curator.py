@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +57,11 @@ class SkillCurator:
             except Exception:
                 dataDir = Path.cwd()
         self._usagePath = Path(dataDir) / 'skills' / _USAGEFilename
+        # RLock: bump_* → _ensure → (save) recurse on the same thread; the
+        # lock serializes read-modify-write cycles against concurrent tool
+        # bumps from other threads, which previously lost increments because
+        # every caller constructed a fresh instance from the sidecar file.
+        self._mutex = threading.RLock()
         self._usage: dict[str, SkillUsageRecord] = {}
         self._load()
 
@@ -93,22 +99,25 @@ class SkillCurator:
             log.warning('curator: could not save usage: %s', exc)
 
     def bump_use(self, name: str) -> None:
-        rec = self._ensure(name)
-        rec.useCount += 1
-        rec.lastUsedAt = time.time()
-        self._save()
+        with self._mutex:
+            rec = self._ensure(name)
+            rec.useCount += 1
+            rec.lastUsedAt = time.time()
+            self._save()
 
     def bump_view(self, name: str) -> None:
-        rec = self._ensure(name)
-        rec.viewCount += 1
-        rec.lastViewedAt = time.time()
-        self._save()
+        with self._mutex:
+            rec = self._ensure(name)
+            rec.viewCount += 1
+            rec.lastViewedAt = time.time()
+            self._save()
 
     def bump_patch(self, name: str) -> None:
-        rec = self._ensure(name)
-        rec.patchCount += 1
-        rec.lastPatchedAt = time.time()
-        self._save()
+        with self._mutex:
+            rec = self._ensure(name)
+            rec.patchCount += 1
+            rec.lastPatchedAt = time.time()
+            self._save()
 
     def _ensure(self, name: str) -> SkillUsageRecord:
         if name not in self._usage:
@@ -137,9 +146,10 @@ class SkillCurator:
         """Pin a skill (exempt from auto-transitions).  Only agent-authored."""
         if not self._is_agent_skill(name):
             return False
-        rec = self._ensure(name)
-        rec.pinned = True
-        self._save()
+        with self._mutex:
+            rec = self._ensure(name)
+            rec.pinned = True
+            self._save()
         return True
 
     def unpin(self, name: str) -> bool:
@@ -150,8 +160,9 @@ class SkillCurator:
             # Provenance gate: builtin skills can never be unpinned through
             # the curator (they were never agent-pinned in the first place).
             return False
-        rec.pinned = False
-        self._save()
+        with self._mutex:
+            rec.pinned = False
+            self._save()
         return True
 
     @staticmethod
@@ -182,21 +193,22 @@ class SkillCurator:
             return False
         if not self._is_agent_skill(name):
             return False
-        rec = self._ensure(name)
-        if rec.pinned:
-            return False
-        agentSkillsBase = skill_service._agentSkillsDir()
-        skillDir = agentSkillsBase / name
-        archiveBase = agentSkillsBase / '.archive'
-        if skillDir.exists():
-            import shutil
+        with self._mutex:
+            rec = self._ensure(name)
+            if rec.pinned:
+                return False
+            agentSkillsBase = skill_service._agentSkillsDir()
+            skillDir = agentSkillsBase / name
+            archiveBase = agentSkillsBase / '.archive'
+            if skillDir.exists():
+                import shutil
 
-            archiveBase.mkdir(parents=True, exist_ok=True)
-            target = archiveBase / name
-            shutil.move(str(skillDir), str(target))
-        rec.state = 'archived'
-        rec.archivedAt = time.time()
-        self._save()
+                archiveBase.mkdir(parents=True, exist_ok=True)
+                target = archiveBase / name
+                shutil.move(str(skillDir), str(target))
+            rec.state = 'archived'
+            rec.archivedAt = time.time()
+            self._save()
         return True
 
     def restore(self, name: str) -> bool:
@@ -211,12 +223,13 @@ class SkillCurator:
             return False
         import shutil
 
-        target = agentSkillsBase / name
-        shutil.move(str(archiveDir), str(target))
-        rec = self._ensure(name)
-        rec.state = 'active'
-        rec.archivedAt = None
-        self._save()
+        with self._mutex:
+            target = agentSkillsBase / name
+            shutil.move(str(archiveDir), str(target))
+            rec = self._ensure(name)
+            rec.state = 'active'
+            rec.archivedAt = None
+            self._save()
         return True
 
     def _is_agent_skill(self, name: str, *, archived: bool = False) -> bool:
@@ -242,47 +255,82 @@ class SkillCurator:
         """
         now = time.time()
         report: dict[str, object] = {'active': 0, 'staled': [], 'archived': [], 'errors': []}
-        for skill in skill_service.list_all():
-            if as_str(skill.get('created_by'), '') not in _EVOLVINGCreatedTags:
-                continue
-            name = as_str(skill['name'], '')
-            rec = self._ensure(name)
-            if rec.pinned:
-                report['active'] = as_int(report['active'], 0) + 1
-                continue
-            lastActivity = max(rec.lastUsedAt or 0, rec.lastViewedAt or 0, rec.lastPatchedAt or 0)
-            if not lastActivity:
-                lastActivity = as_float(skill.get('updatedAt'), float(now))
-            daysIdle = (now - lastActivity) / 86400
-            if rec.state == 'active' and daysIdle >= _STALEAfterDays:
-                if not dryRun:
-                    rec.state = 'stale'
-                    self._save()
-                staled = as_list(report['staled'], [])
-                staled.append(name)
-            elif rec.state == 'stale' and daysIdle >= _ARCHIVEAfterDays:
-                if not dryRun:
-                    self.archive(name)
-                archived = as_list(report['archived'], [])
-                archived.append(name)
-            elif rec.state == 'stale' and daysIdle < _STALEAfterDays:
-                # Used again after going stale: revive so the 60-day sweep
-                # doesn't archive a skill that is actively being used.
-                if not dryRun:
-                    rec.state = 'active'
-                    self._save()
-                report['active'] = as_int(report['active'], 0) + 1
-            else:
-                report['active'] = as_int(report['active'], 0) + 1
+        with self._mutex:
+            for skill in skill_service.list_all():
+                if as_str(skill.get('created_by'), '') not in _EVOLVINGCreatedTags:
+                    continue
+                name = as_str(skill['name'], '')
+                rec = self._ensure(name)
+                if rec.pinned:
+                    report['active'] = as_int(report['active'], 0) + 1
+                    continue
+                lastActivity = max(rec.lastUsedAt or 0, rec.lastViewedAt or 0, rec.lastPatchedAt or 0)
+                if not lastActivity:
+                    lastActivity = as_float(skill.get('updatedAt'), float(now))
+                daysIdle = (now - lastActivity) / 86400
+                if rec.state == 'active' and daysIdle >= _STALEAfterDays:
+                    if not dryRun:
+                        rec.state = 'stale'
+                        self._save()
+                    staled = as_list(report['staled'], [])
+                    staled.append(name)
+                elif rec.state == 'stale' and daysIdle >= _ARCHIVEAfterDays:
+                    if not dryRun:
+                        self.archive(name)
+                    archived = as_list(report['archived'], [])
+                    archived.append(name)
+                elif rec.state == 'stale' and daysIdle < _STALEAfterDays:
+                    # Used again after going stale: revive so the 60-day sweep
+                    # doesn't archive a skill that is actively being used.
+                    if not dryRun:
+                        rec.state = 'active'
+                        self._save()
+                    report['active'] = as_int(report['active'], 0) + 1
+                else:
+                    report['active'] = as_int(report['active'], 0) + 1
         return report
+
+
+_SHARED_INIT_LOCK = threading.Lock()
+_shared: Optional['SkillCurator'] = None
+
+
+def shared_curator() -> 'SkillCurator':
+    """Process-wide curator instance for telemetry bumps and lifecycle moves.
+
+    Ad-hoc ``SkillCurator()`` construction re-read ``.usage.json`` on every
+    bump, so concurrent tool calls raced on read-modify-write cycles and lost
+    increments. Reuse the runtime-services background instance when one
+    exists; otherwise create (and memoize) a plain one.
+    """
+    global _shared
+    with _SHARED_INIT_LOCK:
+        if _shared is not None:
+            return _shared
+        try:
+            from app.services import runtime_services
+
+            existing = getattr(runtime_services, '_curator', None)
+            if isinstance(existing, SkillCurator):
+                _shared = existing
+                return _shared
+        except Exception:
+            pass
+        _shared = SkillCurator()
+        return _shared
 
 
 def make_background_curator(dataDir: Path | None = None) -> tuple[SkillCurator, asyncio.Task]:
     """Create a curator and start its background curation loop.
 
     Returns (curator, task) — caller should cancel the task on shutdown.
+    The instance is also registered as the process-wide shared curator so
+    tool bumps and the curation loop share one telemetry view.
     """
+    global _shared
     curator = SkillCurator(dataDir=dataDir)
+    with _SHARED_INIT_LOCK:
+        _shared = curator
 
     async def _loop() -> None:
         while True:

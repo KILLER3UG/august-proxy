@@ -10,6 +10,7 @@ the caution level of their primary bucket (read / write / destructive / …).
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from typing import Iterable
 
@@ -318,6 +319,203 @@ def format_skills_by_category(
     return '\n'.join(lines).rstrip()
 
 
+_SKILL_RELEVANCE_LIMIT = 8
+# Below this best-score the message carried no usable relevance signal
+# (greeting / very short text) and the caller falls back to the full
+# descriptive catalogue instead of an arbitrary top-K.
+_MIN_RELEVANCE_SCORE = 1.5
+
+_SKILL_STOP_TOKENS = frozenset(
+    {
+        'the', 'a', 'an', 'to', 'of', 'in', 'for', 'and', 'or', 'with', 'on',
+        'at', 'by', 'from', 'how', 'do', 'does', 'did', 'i', 'my', 'me', 'we',
+        'you', 'your', 'is', 'are', 'was', 'be', 'can', 'could', 'should',
+        'what', 'when', 'where', 'which', 'who', 'why', 'use', 'using',
+        'this', 'that', 'these', 'those', 'it', 'its', 'as', 'please', 'help',
+    }
+)
+
+
+def skill_relevance_enabled() -> bool:
+    """Per-turn skill relevance gating gate.
+
+    Off when the env kill switch ``AUGUST_SKILL_RELEVANCE=0`` is set or the
+    brain-config ``skillRelevanceMatch`` flag is explicitly disabled.
+    """
+    import os
+
+    v = os.environ.get('AUGUST_SKILL_RELEVANCE', '1').strip().lower()
+    if v in ('0', 'false', 'no', 'off'):
+        return False
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        return bool(getRuntimeConfig().get('skillRelevanceMatch', True))
+    except Exception:
+        return True
+
+
+def format_skill_index(catalogue: list[dict[str, object]] | None = None) -> str:
+    """Compact name-only skills index for the Tier-1 ``<skills>`` section.
+
+    The old descriptive catalogue (name + description + trigger per entry)
+    made the cacheable system-prompt prefix grow with the bundle (~90 entries
+    ≈ 1k+ tokens every turn) even though discovery only needs names and
+    grouping. Descriptions for the entries relevant to the current request
+    are injected per-turn in Tier 3 (``build_relevant_skills_block``);
+    ``list_skills`` / ``search`` still return full descriptions on demand.
+    """
+    if catalogue is None:
+        try:
+            from app.services import skill_service
+
+            catalogue = skill_service.catalogue()
+        except Exception:
+            catalogue = []
+    lines: list[str] = [
+        'Skills are on-demand capability extensions (knowledge, not actions).',
+        'To use: call load_skill(name), then follow the returned body. For many: load_skills.',
+        'Descriptions for the skills most relevant to the current request appear in',
+        '<relevant_skills>. For anything else: call list_skills (optionally with a query).',
+        'This catalogue includes:',
+        '  (1) Bundled skills shipped with August',
+        '  (2) Evolving skills created through chat (background review / approved genesis)',
+        '      — tagged [evolving] below. Both use the same load_skill tool.',
+        '',
+    ]
+    if not catalogue:
+        lines.append('(no skills discovered)')
+        return '\n'.join(lines)
+
+    by_cat: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for s in catalogue:
+        cat = as_str(s.get('category'), 'uncategorized') or 'uncategorized'
+        by_cat[cat].append(s)
+
+    for cat in sorted(by_cat.keys()):
+        lines.append(f'### {cat}')
+        for s in sorted(by_cat[cat], key=lambda x: as_str(x.get('name'), '')):
+            name = as_str(s.get('name'), '')
+            if not name:
+                continue
+            evolving = ' [evolving]' if as_str(s.get('created_by'), '') in _EVOLVING_CREATED_BY else ''
+            lines.append(f'- {name}{evolving}')
+        lines.append('')
+    return '\n'.join(lines).rstrip()
+
+
+def _skill_tokens(text: object) -> set[str]:
+    found = re.findall(r'[a-z0-9]{2,}', str(text or '').lower())
+    return {t for t in found if t not in _SKILL_STOP_TOKENS}
+
+
+def select_relevant_skills(
+    catalogue: list[dict[str, object]],
+    user_text: object,
+    *,
+    limit: int = _SKILL_RELEVANCE_LIMIT,
+) -> tuple[list[dict[str, object]], bool]:
+    """Rank catalogue entries against the current user message.
+
+    Returns ``(entries, fell_back)``. ``fell_back=True`` means the message
+    carried no usable relevance signal — the caller should render the full
+    descriptive catalogue instead of an arbitrary top-K. Scoring: trigger
+    phrase hit > name-token overlap > description overlap, tiebroken by real
+    usage (curator ``useCount`` / recency) so proven skills win ties.
+    Evolving (agent-authored) skills get a small tie-break bonus so the
+    loop's own lessons are favored when relevance signal is equal.
+    """
+    if not catalogue:
+        return ([], True)
+    text = ' '.join(str(user_text or '').split())
+    if len(text) < 12:
+        return ([], True)
+    low = text.lower()
+    qtokens = _skill_tokens(low)
+    if not qtokens:
+        return ([], True)
+    usage: dict[str, tuple[int, float]] = {}
+    try:
+        from app.json_narrowing import as_float, as_int
+        from app.services.skills.curator import shared_curator
+
+        for row in shared_curator().list_usage():
+            usage[as_str(row.get('name'), '')] = (
+                as_int(row.get('useCount'), 0),
+                as_float(row.get('lastUsedAt'), 0.0),
+            )
+    except Exception:
+        usage = {}
+    scored: list[tuple[float, int, float, str, dict[str, object]]] = []
+    for s in catalogue:
+        name = as_str(s.get('name'), '')
+        if not name:
+            continue
+        trigger = as_str(s.get('trigger'), '')
+        desc = as_str(s.get('description'), '')
+        cat = as_str(s.get('category'), '')
+        score = 0.0
+        if trigger:
+            trig_low = trigger.lower().strip()
+            if len(trig_low) >= 4 and trig_low in low:
+                score += 6.0
+            else:
+                score += 1.5 * min(len(_skill_tokens(trig_low) & qtokens), 3)
+        name_tokens = _skill_tokens(name.replace('-', ' ').replace('.', ' '))
+        score += 1.5 * len(name_tokens & qtokens)
+        score += 0.4 * min(len(_skill_tokens(desc) & qtokens), 5)
+        if cat and _skill_tokens(cat) & qtokens:
+            score += 0.5
+        use_count, last_used = usage.get(name, (0, 0.0))
+        if use_count >= 3:
+            score += 0.5
+        if as_str(s.get('created_by'), '') in _EVOLVING_CREATED_BY:
+            # Participation bonus, not a floor: a genuine text match on a
+            # bundled skill must still win, but ties and near-misses favor
+            # the loop's own lessons. When nothing matches at all the caller
+            # falls back to the full descriptive catalogue, so evolving
+            # skills never become undiscoverable via the heuristic.
+            score += 0.25
+        scored.append((score, use_count, last_used, name, s))
+    if not scored:
+        return ([], True)
+    if max(s[0] for s in scored) < _MIN_RELEVANCE_SCORE:
+        return ([], True)
+    scored.sort(key=lambda t: (-t[0], -t[1], -t[2], t[3]))
+    return ([s[4] for s in scored[: max(1, limit)]], False)
+
+
+def build_relevant_skills_block(user_text: object) -> str:
+    """Per-turn relevance-picked skill descriptions for the Tier-3 block.
+
+    Returns '' when there is nothing to inject (disabled, no catalogue).
+    Falls back to the full descriptive catalogue when the message carries no
+    usable signal, so discovery never degrades below the old always-full
+    behaviour on greetings / one-word messages.
+    """
+    if not skill_relevance_enabled():
+        return ''
+    try:
+        from app.services import skill_service
+
+        catalogue = skill_service.catalogue()
+    except Exception:
+        return ''
+    if not catalogue:
+        return ''
+    entries, fell_back = select_relevant_skills(catalogue, user_text)
+    if fell_back:
+        shown = len(catalogue)
+        body = format_skills_by_category(catalogue)
+    else:
+        shown = len(entries)
+        body = format_skills_by_category(entries)
+    total = len(catalogue)
+    if shown >= total:
+        return body
+    return f'{body}\n({total - shown} more available — call list_skills to see all names.)'
+
+
 def format_agents_block() -> str:
     return '\n'.join(
         [
@@ -344,8 +542,15 @@ def build_capabilities_block(
     catalogue: list[dict[str, object]] | None = None,
     *,
     include_skills: bool = True,
+    compact_skills: bool = False,
 ) -> str:
-    """Full ``<capabilities>`` XML block for main or subagent prompts."""
+    """Full ``<capabilities>`` XML block for main or subagent prompts.
+
+    ``compact_skills=True`` renders the name-only index (main-agent Tier 1 —
+    per-turn descriptions ride in <relevant_skills> instead); the default
+    descriptive catalogue stays for subagent prompts, which have no Tier-3
+    relevance pass.
+    """
     parts = [
         '<capabilities>',
         '<tools>',
@@ -353,7 +558,10 @@ def build_capabilities_block(
         '</tools>',
     ]
     if include_skills:
-        parts.extend(['', '<skills>', format_skills_by_category(catalogue), '</skills>'])
+        skills_inner = (
+            format_skill_index(catalogue) if compact_skills else format_skills_by_category(catalogue)
+        )
+        parts.extend(['', '<skills>', skills_inner, '</skills>'])
     else:
         parts.extend(
             [

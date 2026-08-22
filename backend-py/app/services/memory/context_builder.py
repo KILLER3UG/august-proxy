@@ -320,7 +320,7 @@ def buildTier1(session: dict[str, object] | None = None) -> str:
 
             tool_names = as_list(_get(session, 'tool_names', 'toolNames'), [])
             names = [as_str(n, '') for n in tool_names if as_str(n, '')]
-            capabilities = build_capabilities_block(names or None)
+            capabilities = build_capabilities_block(names or None, compact_skills=True)
         except Exception:
             capabilities = ''
     if capabilities:
@@ -485,6 +485,13 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
     primed = _get(session, 'primed_playbooks', 'primedPlaybooks')
     if primed:
         blocks.append(wrapTag('primed_playbooks', as_str(primed) or _fmt_jsonish(primed)))
+    # Relevance-picked skill descriptions for this request. Tier 1 carries
+    # only the compact name index; this restores descriptions for the handful
+    # of skills the current user message actually touches (volatile by
+    # design — it lives in Tier 3 so the Tier-1 cache prefix stays stable).
+    relevantSkills = as_str(_get(session, 'relevant_skills', 'relevantSkillsBlock'), '')
+    if relevantSkills:
+        blocks.append(wrapTag('relevant_skills', relevantSkills))
     # Optional auto-memories block — populated by the workbench budget-gated
     # auto-recall when there is prompt headroom; otherwise the model uses the
     # memory_* tools for on-demand recall.

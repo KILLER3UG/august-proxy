@@ -123,7 +123,7 @@ def _build_skills_segments() -> tuple[str, str]:
     extra = ''
     try:
         from app.services import skill_service
-        from app.services.memory.capabilities_prompt import format_skills_by_category
+        from app.services.memory.capabilities_prompt import format_skill_index
 
         cat = skill_service.catalogue()
         if not cat:
@@ -139,7 +139,10 @@ def _build_skills_segments() -> tuple[str, str]:
                 entry += f' (trigger: {trigger})'
             lines_m.append(entry)
         manifest = '\n'.join(lines_m)
-        extra = format_skills_by_category(cat)
+        # Tier-1 <skills> carries the compact name-only index; per-turn
+        # descriptions for relevant entries are injected separately in
+        # Tier 3 (capabilities_prompt.build_relevant_skills_block).
+        extra = format_skill_index(cat)
     except Exception:
         return '', ''
     return manifest, extra

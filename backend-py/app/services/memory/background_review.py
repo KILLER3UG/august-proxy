@@ -490,11 +490,12 @@ def _emitSkillEvent(name: str, action: str, description: str) -> None:
     # create/patch, so the curator's staleness clock and the quality scorer's
     # effectiveness dimension measured how often the reflection loop wrote a
     # skill — not whether the model ever loaded it (audit finding). Real usage
-    # telemetry lives in skill_tools._loadSkill (bump_view) and the curator.
+    # telemetry lives in skill_tools._loadSkill, which now bumps BOTH view and
+    # use on every successful body load.
     try:
-        from app.services.skills.curator import SkillCurator
+        from app.services.skills.curator import shared_curator
 
-        SkillCurator().bump_patch(name)
+        shared_curator().bump_patch(name)
     except Exception:
         pass
 

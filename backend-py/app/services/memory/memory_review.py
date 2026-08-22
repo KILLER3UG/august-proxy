@@ -304,9 +304,9 @@ def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
                     pass
             elif action == 'delete':
                 try:
-                    from app.services.skills.curator import SkillCurator
+                    from app.services.skills.curator import shared_curator
                     try:
-                        SkillCurator().archive(name)
+                        shared_curator().archive(name)
                     except Exception:
                         from app.services import skill_service as _ss4
                         _ss4.deleteSkill(name)

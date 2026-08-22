@@ -48,6 +48,7 @@ boolKeys: tuple[str, ...] = (
     'parallelReadTools',
     'reviewLearnedGuidelines',
     'autoRoute',
+    'skillRelevanceMatch',
 )
 numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops', 'autoRouteMinSamples')
 floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap')
@@ -67,6 +68,9 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('adapterParallelTools', 'adapter_parallel_tools', DEFAULT_FEATURES.get('adapter_parallel_tools', True), 'bool'),
     ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'),
     ('reviewLearnedGuidelines', 'review_learned_guidelines', True, 'bool'),
+    # Per-turn skill relevance gating (Tier-1 compact index + Tier-3
+    # <relevant_skills>). Default on; AUGUST_SKILL_RELEVANCE=0 also forces off.
+    ('skillRelevanceMatch', 'skill_relevance_match', True, 'bool'),
     ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'),
     # The documented default is 25 tool rounds (MAX_MANAGED_TOOL_ROUNDS);
     # the stale 100 seed made that constant dead on every fresh install.

@@ -28,6 +28,8 @@ _ALLCamelKeys = {
     'adapterParallelTools',
     'parallelReadTools',
     'reviewLearnedGuidelines',
+    # Per-turn skill relevance gating (compact Tier-1 index + Tier-3 picks).
+    'skillRelevanceMatch',
     'maxAgentDepth',
     'maxWorkbenchToolLoops',
     # Evidence-driven auto-routing (surpass #1 closed loop).

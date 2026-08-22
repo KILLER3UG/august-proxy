@@ -16,15 +16,16 @@ async def _loadSkill(name: str) -> str:
         skill = skill_service.get(name)
         if not skill:
             return f"Error: Skill '{name}' not found."
-        # Real usage telemetry: the model deciding to load a skill is the
-        # strongest "this skill is earning its place" signal. Without this,
-        # the curator's staleness clock fell back to file mtime and the
-        # quality scorer's effectiveness dimension stayed starved
-        # (audit finding).
+        # Real usage telemetry: a successful body load IS the usage event —
+        # the model pulled the skill into context to act on it. viewCount
+        # alone starved the quality scorer's effectiveness dimension (always
+        # 0) and left the curator's lastUsedAt staleness clock blind.
         try:
-            from app.services.skills.curator import SkillCurator
+            from app.services.skills.curator import shared_curator
 
-            SkillCurator().bump_view(name)
+            curator = shared_curator()
+            curator.bump_view(name)
+            curator.bump_use(name)
         except Exception:
             pass
         return f'# {skill["name"]}\n\n{as_str(skill.get("description"), "")}\n\n{as_str(skill.get("instructions"), "")}'
@@ -89,6 +90,19 @@ async def _skillManage(
             result = skill_service.removeSkillFile(name, filePath)
             return f"Removed '{filePath}' from skill '{name}'.\n" + json.dumps(result, default=str)
         if action == 'delete':
+            # Archive-first: the model's delete lands in the curator archive
+            # (restorable) instead of rmtree. Hard deletion stays a UI/curator
+            # decision; bundled skills are refused by both paths.
+            from app.services.skills.curator import _EVOLVINGCreatedTags, shared_curator
+
+            sk = skill_service.get(name)
+            if as_str((sk or {}).get('created_by'), '') in _EVOLVINGCreatedTags:
+                if shared_curator().archive(name):
+                    return (
+                        f"Archived skill '{name}' (restorable via the curator). "
+                        f'It is no longer discoverable or loadable.'
+                    )
+                return f"Error: skill '{name}' is pinned — unpin it before archiving."
             result = skill_service.deleteSkill(name)
             return f"Deleted skill '{name}'.\n" + json.dumps(result, default=str)
         return f"Error: unknown skill_manage action '{action}'. Use one of: create, patch, write_file, remove_file, delete."
@@ -122,7 +136,7 @@ def register() -> None:
     )
     tool_registry.register(
         'skill_manage',
-        'Author and maintain skills: create a new skill, patch an existing one, write/remove support files (scripts/, references/, templates/), or delete. Captured lessons live as skills the model loads via load_skill.',
+        'Author and maintain skills: create a new skill, patch an existing one, write/remove support files (scripts/, references/, templates/), or delete. Deleting an agent-authored skill archives it (restorable via the curator) rather than erasing it. Captured lessons live as skills the model loads via load_skill.',
         _skillManage,
         {
             'type': 'object',

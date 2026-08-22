@@ -124,9 +124,10 @@ class TestParseRecommendations:
 def isolatedCurator(tmp_path, monkeypatch):
     """Point the curator sidecar + skill roots at temp dirs.
 
-    SkillCurator() instances constructed after this fixture read/write the
-    temp sidecar (its __init__ resolves dataDir from settings, which conftest
-    already isolates) — no class patching needed.
+    The production bump paths go through ``shared_curator()`` (process-wide
+    singleton, so concurrent tool calls can't lose increments); the fixture
+    installs its own instance as that singleton so assertions read exactly
+    what the code under test wrote.
     """
     from app.services import skill_service
 
@@ -138,11 +139,13 @@ def isolatedCurator(tmp_path, monkeypatch):
     monkeypatch.setattr(skill_service, 'SKILLS_DIR', bundledRoot)
     skill_service._flat_migrate_done = False
 
+    import app.services.skills.curator as curator_mod
     from app.services.skills.curator import SkillCurator
     from app.services.workbench import prompt_segments_cache
 
     prompt_segments_cache.clear()
     curator = SkillCurator(dataDir=tmp_path)
+    monkeypatch.setattr(curator_mod, 'shared_curator', lambda: curator)
     yield curator, skill_service
     prompt_segments_cache.clear()
     skill_service._flat_migrate_done = False
@@ -162,11 +165,11 @@ async def test_load_skill_bumps_view(isolatedCurator):
 
     out = await _loadSkill('telemetry-skill')
     assert 'telemetry-skill' in out
-    # The loader bumps via its own curator instance persisted to the shared
-    # sidecar — re-read before asserting.
-    curator._load()
+    # A successful body load is the usage event: view AND use both move, so
+    # the quality scorer's effectiveness dimension and the staleness clock
+    # see real signal.
     rec = curator.get_record('telemetry-skill')
-    assert rec is not None and rec.viewCount == 1
+    assert rec is not None and rec.viewCount == 1 and rec.useCount == 1
 
 
 def test_skill_authorship_bumps_patch_not_use(isolatedCurator):
@@ -175,9 +178,6 @@ def test_skill_authorship_bumps_patch_not_use(isolatedCurator):
 
     curator, __ = isolatedCurator
     _emitSkillEvent('authored-skill', 'create', 'desc')
-    # The event emitter bumps via its own curator instance persisted to the
-    # shared sidecar — re-read before asserting.
-    curator._load()
     rec = curator.get_record('authored-skill')
     assert rec is not None
     assert rec.patchCount == 1
