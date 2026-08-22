@@ -159,7 +159,10 @@ def prune_expired_memories(limit: int = 50) -> int:
         conn.execute(f'DELETE FROM auto_memories WHERE id IN ({placeholders})', ids)
         conn.commit()
         return len(ids)
-    except Exception:
+    except Exception as exc:
+        # A silent failure here left expired rows forever (recall-lazy pruning
+        # was the only other sweeper). Log so the sweep is debuggable.
+        logger.warning('prune_expired_memories failed: %s', exc)
         return 0
 
 
@@ -1422,19 +1425,35 @@ def extractAndSaveTodos(
 
     Merges with any previously stored todos (union by text) so items noted
     in earlier turns are not silently replaced by the current turn's list.
+    Items the model has since checked off (``- [x]``) are retired — the old
+    union-only merge made completed todos immortal until cap eviction
+    (round-4 audit). Prior state reads from the SAME store this writes
+    (the ``auto_memories`` row keyed ``todos``) — the old ``get_memory``
+    KV read was a store mismatch, so the union merge never actually saw
+    prior items.
     """
-    todos = []
+    todos: list[str] = []
+    done: list[str] = []
     for msg in messages:
         if msg.get('role') != 'assistant':
             continue
         content = msg.get('content', '')
         if isinstance(content, str):
-            items = re.findall('- \\[ \\] (.+)', content)
-            todos.extend(items)
-    if todos:
-        existing = get_memory('todos')
-        prior = [str(t) for t in existing] if isinstance(existing, list) else []
-        merged = list(dict.fromkeys(prior + todos))
+            todos.extend(re.findall('- \\[ \\] (.+)', content))
+            done.extend(re.findall('- \\[[xX]\\] (.+)', content))
+    prior: list[str] = []
+    try:
+        row = _conn().execute('SELECT content FROM auto_memories WHERE key = ?', ('todos',)).fetchone()
+        if row is not None:
+            parsed = json.loads(row['content'])
+            if isinstance(parsed, list):
+                prior = [str(t) for t in parsed]
+    except Exception:
+        prior = []
+    doneSet = {d.strip() for d in done}
+    keptPrior = [t for t in prior if t.strip() not in doneSet]
+    if doneSet or len(keptPrior) != len(prior) or todos:
+        merged = list(dict.fromkeys(keptPrior + todos))
         saveAutoMemory(
             'todos', merged, category='tasks', importance=0.8, source='auto', session_id=session_id
         )

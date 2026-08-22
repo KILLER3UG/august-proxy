@@ -32,6 +32,16 @@ _RECENTProtectionCount = 20
 _lastRun: dict[str, object] | None = None
 _last_run = None  # kept in sync by _persist_last_run for tests
 _LAST_RUN_KEY = 'cognitive:consolidation:last_run'
+# Why the last plan build produced None ('' when a plan was built). Set by
+# _build_consolidation_plan; consumed by runConsolidation / preview.
+_last_skip_reason = ''
+# TTL-sweep count for the current/last cycle — _apply_consolidation_plan
+# builds its own stats dict, so _persist_last_run falls back to this.
+_pruned_this_run = 0
+
+
+def get_last_skip_reason() -> str:
+    return _last_skip_reason
 
 
 def get_last_run() -> dict[str, object] | None:
@@ -59,6 +69,8 @@ def _persist_last_run(stats: ConsolidationSummaryDict) -> None:
         'promoted': stats.get('promoted', 0),
         'deleted_stale': stats.get('deleted_stale', 0),
         'errors': list(stats.get('errors') or []),
+        'pruned_expired': int(stats.get('pruned_expired', _pruned_this_run) or 0),
+        'skipped': as_str(stats.get('skipped'), ''),
     }
     _lastRun = payload
     _last_run = payload
@@ -143,8 +155,12 @@ async def _build_consolidation_plan() -> dict | None:
     """Steps 1–2: collect memories/heuristics and ask Hippocampus for a plan.
 
     Returns the validated plan dict (``{merge, promote, delete}``) or None
-    when there is nothing to consolidate or the model call fails.
+    when there is nothing to consolidate or the model call fails. The reason
+    for None is recorded in ``_last_skip_reason`` so callers can report
+    'healthy no-op' differently from 'degraded: model unavailable'
+    (round-4 audit — both used to look identical).
     """
+    global _last_skip_reason
     try:
         from app.services.memory_store import _conn
 
@@ -154,18 +170,26 @@ async def _build_consolidation_plan() -> dict | None:
         ]
         heuristics = [dict(r) for r in conn.execute('SELECT * FROM learned_heuristics ORDER BY id DESC').fetchall()]
         if not (heuristics or autoMemories):
+            _last_skip_reason = 'no_data'
             return None
         prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...],\n 'archiveMemories': [{{'id': int, 'reason': str}}]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\narchiveMemories may only propose stale (old, low-importance, unpinned, auto) memories —\nthe apply step enforces this.\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": [], "archiveMemories": []}}.\n"""
         raw = await _callHippocampus(prompt)
         if not raw:
+            _last_skip_reason = 'empty_reply'
             return None
         try:
             plan = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
+            _last_skip_reason = 'invalid_json'
             return None
-        return plan if isinstance(plan, dict) else None
+        if not isinstance(plan, dict):
+            _last_skip_reason = 'invalid_json'
+            return None
+        _last_skip_reason = ''
+        return plan
     except Exception as exc:
         logger.error('Consolidation plan error: %s', exc)
+        _last_skip_reason = f'error: {exc}'
         return None
 
 
@@ -476,10 +500,54 @@ async def runConsolidation(*, apply: bool = True) -> ConsolidationSummaryDict:
         record_weekly_snapshot()
     except Exception:
         logger.debug('weekly harness snapshot failed', exc_info=True)
+    # TTL sweep: expired rows were only deleted lazily inside recall, so an
+    # idle workspace accumulated dead rows forever (round-4 audit).
+    global _pruned_this_run
+    pruned = 0
+    try:
+        from app.services.memory.auto_memory import prune_expired_memories
+
+        pruned = prune_expired_memories(limit=200)
+        if pruned:
+            logger.info('consolidation: pruned %d expired memories', pruned)
+    except Exception:
+        logger.debug('ttl sweep failed', exc_info=True)
+    _pruned_this_run = pruned
+    # Vector-mirror reconciliation: repair missing twins / drop orphans so
+    # hybrid recall doesn't silently drift from the SQL store (round-4).
+    mirror: dict[str, object] = {}
+    try:
+        from app.json_narrowing import as_int as _as_int
+        from app.services.memory.vector_mirror import reconcile_vector_mirror
+
+        mirror = reconcile_vector_mirror()
+        if _as_int(mirror.get('missing_repaired'), 0) or _as_int(mirror.get('orphans_removed'), 0):
+            logger.info('consolidation: vector mirror reconciled: %s', mirror)
+    except Exception:
+        logger.debug('vector mirror reconciliation failed', exc_info=True)
+    global _last_skip_reason
+    _last_skip_reason = ''
     plan = await _build_consolidation_plan()
     if plan is None:
-        stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
+        reason = _last_skip_reason or 'no_data'
+        stats: ConsolidationSummaryDict = {
+            'merged': 0,
+            'promoted': 0,
+            'deleted_stale': 0,
+            'errors': [],
+            'pruned_expired': pruned,
+            'skipped': reason,
+        }
         _persist_last_run(stats)
+        if reason not in ('no_data', ''):
+            # Degraded (model unavailable / bad reply) — say so instead of
+            # reporting a silent healthy no-op (round-4 audit).
+            emitBrainEvent(
+                category='consolidation',
+                layer='consolidation_daemon',
+                summary=f'Sleep cycle skipped: {reason}',
+                meta={'reason': reason},
+            )
         return stats
     if not apply and _plan_has_actions(plan):
         stash_pending_consolidation(plan)
@@ -509,7 +577,14 @@ async def previewConsolidation() -> dict[str, object]:
     """
     plan = await _build_consolidation_plan()
     if plan is None:
-        return {'plan': None, 'merged': 0, 'promoted': 0, 'deleted': 0, 'errors': []}
+        return {
+            'plan': None,
+            'merged': 0,
+            'promoted': 0,
+            'deleted': 0,
+            'errors': [],
+            'skipped': _last_skip_reason or 'no_data',
+        }
     merged = 0
     for mergeRaw in as_list(plan.get('merge'), []):
         m = as_dict(mergeRaw)

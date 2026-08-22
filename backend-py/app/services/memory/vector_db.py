@@ -228,7 +228,9 @@ def insert(text: str, metadata: dict[str, object] | None = None, namespace: str 
             'text': text[:5000],
             'embedding': emb,
             'metadata': meta,
-            'namespace': namespace or 'default',
+            # Mirror the stored namespace — a 'default' fallback here sent
+            # callers reading the result to the wrong namespace (round-4 audit).
+            'namespace': namespace or 'auto_memory',
             'createdAt': created,
         }
 

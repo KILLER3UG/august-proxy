@@ -78,6 +78,40 @@ class ReviewGates:
 ReviewClient = Optional[Callable[[list[dict[str, object]]], Awaitable[str]]]
 
 
+def _restoreReviewGates(session: object) -> None:
+    """Restore gate markers from persisted metadata once per session object.
+
+    The markers live on dynamic session attributes, which a restart wipes —
+    the first turns after relaunch then re-reviewed already-reviewed ground
+    (round-4 audit). Live attribute values always win; metadata is only the
+    cold-start fallback.
+    """
+    if getattr(session, '_gates_restored', False):
+        return
+    setattr(session, '_gates_restored', True)
+    if getattr(session, '_last_reviewed_at_turn', 0) or getattr(session, '_last_reviewed_tool_rounds', 0):
+        return
+    meta = getattr(session, 'metadata', None)
+    if not isinstance(meta, dict):
+        return
+    gateTurn = int(meta.get('reviewGateTurn') or 0)
+    gateRounds = int(meta.get('reviewGateToolRounds') or 0)
+    if gateTurn or gateRounds:
+        setattr(session, '_last_reviewed_at_turn', gateTurn)
+        setattr(session, '_last_reviewed_tool_rounds', gateRounds)
+
+
+def _persistReviewGates(session: object, sessionTurns: int, toolRounds: int) -> None:
+    """Mirror the gate markers into session.metadata (debounced save rides along)."""
+    try:
+        meta = getattr(session, 'metadata', None)
+        if isinstance(meta, dict):
+            meta['reviewGateTurn'] = int(sessionTurns)
+            meta['reviewGateToolRounds'] = int(toolRounds)
+    except Exception:
+        pass
+
+
 async def tryBackgroundReview(
     session: object,
     messagesSnapshot: list[dict[str, object]],
@@ -95,6 +129,7 @@ async def tryBackgroundReview(
         return
     if not messagesSnapshot:
         return
+    _restoreReviewGates(session)
     lastTurn = getattr(session, '_last_reviewed_at_turn', 0)
     sessionTurns = getattr(session, 'messageCount', 0) // 2
     # Auto-compaction shrinks messageCount, which would otherwise wedge the
@@ -113,6 +148,7 @@ async def tryBackgroundReview(
         return
     setattr(session, '_last_reviewed_at_turn', sessionTurns)
     setattr(session, '_last_reviewed_tool_rounds', toolRounds)
+    _persistReviewGates(session, sessionTurns, toolRounds)
     asyncio.create_task(
         _doReview(
             messagesSnapshot,
@@ -137,6 +173,7 @@ async def tryEndOfSessionReview(
         return
     if not messagesSnapshot:
         return
+    _restoreReviewGates(session)
     lastTurn = getattr(session, '_last_reviewed_at_turn', 0)
     sessionTurns = getattr(session, 'messageCount', 0) // 2
     if lastTurn > sessionTurns:
@@ -145,6 +182,7 @@ async def tryEndOfSessionReview(
     if sessionTurns <= 0 or sessionTurns - lastTurn <= 0:
         return
     setattr(session, '_last_reviewed_at_turn', sessionTurns)
+    _persistReviewGates(session, sessionTurns, getattr(session, '_last_reviewed_tool_rounds', 0))
     asyncio.create_task(
         _doReview(
             messagesSnapshot,

@@ -427,6 +427,20 @@ async def runConsolidationEndpoint(body: dict = {}):
     return stats
 
 
+@router.post('/memory/reconcile')
+async def reconcileVectorMirror():
+    """Repair auto_memories ↔ vector_entries drift on demand.
+
+    Re-embeds rows whose vector twin went missing (skipped while the encoder
+    is degraded) and removes orphaned twins whose memory row vanished.
+    Also runs each sleep cycle; this endpoint exposes it for the Brain UI.
+    """
+    from app.services.memory.vector_mirror import last_reconciliation, reconcile_vector_mirror
+
+    report = reconcile_vector_mirror()
+    return {'report': report, 'previous': last_reconciliation()}
+
+
 @router.get('/pending-consolidation')
 async def pendingConsolidation():
     """Stashed sleep-cycle plan waiting for Keep / Discard in chat."""

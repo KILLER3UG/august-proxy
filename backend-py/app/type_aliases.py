@@ -54,6 +54,10 @@ class ConsolidationSummaryDict(TypedDict, total=False):
     heuristics: int
     duration_ms: int
     errors: list[str]
+    pruned_expired: int
+    # Why the LLM plan phase produced nothing ('no_data' | 'empty_reply' |
+    # 'invalid_json' | 'error: …'). Absent when a plan was built.
+    skipped: str
 
 
 class DaemonStatusDict(TypedDict, total=False):

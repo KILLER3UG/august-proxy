@@ -256,6 +256,11 @@ async def brainLearning() -> dict[str, object]:
                 'lastMerged': as_int(last.get('merged'), 0),
                 'lastPromoted': as_int(last.get('promoted'), 0),
                 'lastDeleted': as_int(last.get('deleted_stale') if last.get('deleted_stale') is not None else last.get('deletedStale'), 0),
+                # Round-4 honesty: why the plan phase produced nothing
+                # ('' = a plan was built; 'no_data' = healthy no-op;
+                # 'empty_reply'/… = degraded — the model never answered).
+                'skippedReason': as_str(last.get('skipped'), ''),
+                'prunedExpired': as_int(last.get('pruned_expired'), 0),
             }
         )
     pendingSkills: list[dict[str, object]] = []
@@ -301,6 +306,15 @@ async def brainLearning() -> dict[str, object]:
         from app.services.memory import vector_db
 
         embedding = vector_db.embeddingStatus()
+    except Exception:
+        pass
+    # Last vector-mirror reconciliation report (round-4): shows how much
+    # drift the sleep cycle repaired and whether repairs are blocked on a
+    # degraded encoder.
+    try:
+        from app.services.memory.vector_mirror import last_reconciliation
+
+        embedding['lastReconciliation'] = last_reconciliation()
     except Exception:
         pass
     return {
