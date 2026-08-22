@@ -323,12 +323,26 @@ def addEntity(name: str, entityType: str = 'general', metadata: dict[str, object
                 'createdAt': existing['created_at'],
                 'updatedAt': now,
             }
-        # Cap entities
+        # Cap entities. Victim selection must NOT blindly take the oldest row:
+        # learned corrections (workflowRule), user facts (userDetail) and
+        # high-importance entities are durable memory — evicting them under
+        # graph pressure silently erased corrections the loop had learned
+        # (audit finding P3-8). Protect them; fall back to plain LRU only if
+        # everything left is protected.
         count = conn.execute('SELECT COUNT(*) AS c FROM graph_entities').fetchone()['c']
         if int(count) >= _MAXEntities:
             victim = conn.execute(
-                'SELECT name_key FROM graph_entities ORDER BY updated_at ASC LIMIT 1'
+                """
+                SELECT name_key FROM graph_entities
+                WHERE entity_type NOT IN ('workflowRule', 'userDetail')
+                  AND CAST(json_extract(metadata, '$.importance') AS REAL) < 0.7
+                ORDER BY updated_at ASC LIMIT 1
+                """
             ).fetchone()
+            if victim is None:
+                victim = conn.execute(
+                    'SELECT name_key FROM graph_entities ORDER BY updated_at ASC LIMIT 1'
+                ).fetchone()
             if victim:
                 vk = victim['name_key']
                 # Cascade: evicting the entity alone left dangling relations/

@@ -62,9 +62,9 @@ def make_review_llm_client(
             from app.services.background_review_service import getConfig
 
             reviewConfig = getConfig()
-            review_model = reviewConfig.get('reviewModel', '') or review_model_hint
+            review_model = as_str(reviewConfig.get('reviewModel'), '') or review_model_hint
             if review_model:
-                provider = providerResolver.resolve(as_str(review_model))
+                provider = providerResolver.resolve(review_model)
         except Exception:
             review_model = review_model_hint
         if not provider:
@@ -82,7 +82,15 @@ def make_review_llm_client(
         if not apiKey:
             return None
         _client = client
-        _reviewModel = as_str(review_model) or 'claude-sonnet-4-20250514'
+        # Model precedence: explicit config > the chat session's own model.
+        # The old fallback hardcoded a specific Anthropic model name that fired
+        # whenever the hint was empty — memory/reflection calls would silently
+        # target a model the user never selected (and likely one with no API
+        # access on this install). resolve_model falls back to the provider's
+        # defaultModel, which is what the user actually configured.
+        if not as_str(review_model, ''):
+            review_model = resolve_model(provider)
+        _reviewModel = as_str(review_model, '') or as_str(provider.get('defaultModel', ''))
 
         async def reviewLlm(prompt: list[dict[str, object]]) -> str:
             """Call a cheap/fast model for background review."""

@@ -171,7 +171,14 @@ async def test_backoff_schedule_tail_and_cap_relationship(mgr):
 
 @pytest.mark.asyncio
 async def test_concurrent_spawns_respect_cap(mgr):
-    """Parallel spawn attempts for same session never exceed 3 live non-errored."""
+    """Parallel spawn attempts for same session never exceed the per-session cap.
+
+    Spawn count is derived from MAX_DAEMONS_PER_SESSION (+3 overflow) so the
+    invariant holds no matter how the constant is tuned (it moved 3 -> 10 in
+    bf0b5f49 and this test previously kept a hardcoded range(8)).
+    """
+    overflow = 3
+    attempts = MAX_DAEMONS_PER_SESSION + overflow
 
     async def idle_loop(daemonId: str):
         try:
@@ -184,13 +191,13 @@ async def test_concurrent_spawns_respect_cap(mgr):
         results = await asyncio.gather(
             *[
                 mgr.spawn(DaemonSpec(name=f'c{i}', prompt='p'), sessionId='conc')
-                for i in range(8)
+                for i in range(attempts)
             ]
         )
     oks = [r for r in results if not str(r).startswith('Error:')]
     errs = [r for r in results if str(r).startswith('Error:')]
     assert len(oks) == MAX_DAEMONS_PER_SESSION
-    assert len(errs) == 8 - MAX_DAEMONS_PER_SESSION
+    assert len(errs) == attempts - MAX_DAEMONS_PER_SESSION
     # Live non-errored count
     live = [
         d

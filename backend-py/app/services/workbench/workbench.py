@@ -5255,8 +5255,13 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
         # Advisory plan mode: low-risk trivial multi-file fixes are allowed with a warning
         # — only high-risk mutations are hard-blocked. Risk is inferred from tool type
         # and destructive bucket; shell and delete are always high.
+        # FAIL-CLOSED: bf0b5f49 keyed this escape hatch on session.planRisk but
+        # shipped no setter, so the default '' silently ALLOWED every non-shell
+        # mutation in plan mode while prompts/docs still promised blocking
+        # (round-3 audit). An UNASSESSED risk must block; only an explicit
+        # low/medium assessment may take the advisory allowance.
         risk = str(getattr(session, 'planRisk', '') or as_str(getattr(session, '_plan_risk', '') or '')).lower()
-        if risk not in ('high', 'critical'):
+        if risk in ('low', 'medium'):
             if toolName.lower() in ('run_command', 'delete_file', 'delete_session', 'delete_sessions', 'kill_daemon', 'kill_daemons', 'clear_blackboard'):
                 pass  # high-risk: fall through to block
             elif is_shell_mutation(toolName, args):

@@ -26,6 +26,10 @@ _ORACLE_READ = frozenset({
     'pptx_list_elements',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
     'web_fetch_many', 'web_search',
+    # Unified cross-store search (memory/files/web) — read-only.
+    'search',
+    # Session state summary for handoff/compaction — read-only.
+    'summarize_session',
 })
 _ORACLE_WRITE = frozenset({
     'browser_click', 'browser_evaluate', 'browser_scroll', 'browser_select',
@@ -41,6 +45,8 @@ _ORACLE_WRITE = frozenset({
     'edit_lines',
     # PPTX commenting (mutating).
     'pptx_comment',
+    # Unified-diff patch application — a file write.
+    'apply_patch',
 })
 _ORACLE_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',
@@ -49,7 +55,7 @@ _ORACLE_DESTRUCTIVE = frozenset({
     # Post-consolidation addition: model-driven memory delete.
     'forget',
 })
-_ORACLE_SHELL = frozenset({'run_command'})
+_ORACLE_SHELL = frozenset({'run_command', 'run_commands'})
 _ORACLE_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
     'spawn_subagents', 'update_agent', 'set_agent_mode',

@@ -27,6 +27,10 @@ _PROMPT_READ = frozenset({
     'pptx_list_elements',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
     'web_fetch_many', 'web_search',
+    # Unified cross-store search (memory/files/web) — read-only.
+    'search',
+    # Session state summary for handoff/compaction — read-only.
+    'summarize_session',
 })
 
 _PROMPT_WRITE = frozenset({
@@ -39,6 +43,8 @@ _PROMPT_WRITE = frozenset({
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad', 'edit_lines',
     'pptx_comment',
     'remember',
+    # Unified-diff patch application — a file write (plan-blocked via markers).
+    'apply_patch',
 })
 
 _PROMPT_DESTRUCTIVE = frozenset({
@@ -47,7 +53,7 @@ _PROMPT_DESTRUCTIVE = frozenset({
     'kill_daemons', 'forget',
 })
 
-_PROMPT_SHELL = frozenset({'run_command'})
+_PROMPT_SHELL = frozenset({'run_command', 'run_commands'})
 
 _PROMPT_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
