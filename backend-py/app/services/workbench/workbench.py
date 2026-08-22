@@ -4588,6 +4588,42 @@ async def _sendWorkbenchMessageStreamImpl(
         )
     except Exception:
         pass
+    # Episode summarization (#5): when enough conversation summaries piled up,
+    # fold the oldest into one narrative episode using this session's model.
+    # Runs only at end-of-session (idle) — never on the save hot path; any
+    # failure inside falls back to the mechanical join automatically.
+    try:
+        from app.services.memory.auto_memory import consolidate_conv_summaries
+
+        async def _summarizeEpisodeParts(parts: list[str]) -> str:
+            prompt = [
+                {
+                    'role': 'system',
+                    'content': (
+                        'Compress these conversation summaries into ONE dense episode '
+                        'paragraph (max 120 words). Keep: decisions, corrections, '
+                        'preferences, open threads, project/tool names. Drop greetings, '
+                        'echo chatter and filler. Output only the paragraph.'
+                    ),
+                },
+                {
+                    'role': 'user',
+                    'content': json.dumps(parts, default=str)[:8000],
+                },
+            ]
+            client = _makeReviewLlmClient(resolvedProvider, review_model)
+            if client is None:
+                return ''
+            return await client(prompt)
+
+        async def _runEpisodeSummarization() -> None:
+            await asyncio.to_thread(
+                consolidate_conv_summaries, summarizer=_summarizeEpisodeParts
+            )
+
+        _spawn_background(_runEpisodeSummarization(), 'episode_summarization')
+    except Exception:
+        pass
     # Diff learning: derive correction rules from committed git history.
     # Gated inside (feature flag + interval + git availability), so a
     # non-git workspace or off-flag is a cheap no-op.

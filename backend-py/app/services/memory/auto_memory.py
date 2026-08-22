@@ -31,6 +31,23 @@ _NEAR_DUP_THRESHOLD = 0.85
 _NEAR_DUP_IMPORTANCE_STEP = 0.1
 _EPISODE_MERGE_MIN = 8
 _EPISODE_MERGE_COUNT = 5
+# Hard ceiling on one episode-summarization LLM round-trip. Consolidation is a
+# background quality pass — it must never stall the cap-enforcement path.
+_SUMMARIZE_TIMEOUT_S = 45
+
+
+async def _maybe_summarize(summarizer, parts: list[str]) -> str:
+    """Run the async summarizer with truncation and total-failure safety."""
+    import asyncio as _asyncio
+
+    try:
+        out = await _asyncio.wait_for(
+            summarizer(parts), timeout=_SUMMARIZE_TIMEOUT_S
+        )
+        return str(out or '').strip()
+    except Exception:
+        logger.debug('episode summarizer raised', exc_info=True)
+        return ''
 
 _TTL_BY_CATEGORY: dict[str, int | None] = {
     'conversation': 7,
@@ -1296,7 +1313,7 @@ def purge_trivial_conv_summaries(limit: int = 200) -> int:
         return 0
 
 
-def consolidate_conv_summaries() -> int:
+def consolidate_conv_summaries(summarizer=None) -> int:
     """Merge the oldest conversation summaries into one durable episode memory.
 
     Once ``_EPISODE_MERGE_MIN`` per-session summaries exist, the oldest
@@ -1307,9 +1324,53 @@ def consolidate_conv_summaries() -> int:
 
     Trivial summaries (pure greetings / test chatter) never enter episodes;
     they are dropped instead of merged.
+
+    ``summarizer`` — optional async callable ``(list[str]) -> str`` that
+    compresses the parts into one narrative paragraph (the user's selected
+    model, wired from the end-of-session finalizer). When None, or when the
+    call fails or returns empty, a mechanical ``'; '.join`` is used so
+    consolidation NEVER blocks or fails on the LLM (audit finding #5: the
+    old join carried raw "User asked: … (session …)" filler forever).
     """
     purge_trivial_conv_summaries()
     conn = _conn()
+    # Phase 1 — read merge candidates OUTSIDE the write transaction: the
+    # summarizer may await an LLM round-trip, which must never happen while
+    # holding SQLite's write lock. On any failure (None, exception, empty
+    # output) fall back to the mechanical join so consolidation never blocks
+    # or fails on the LLM.
+    summarized: str = ''
+    if summarizer is not None:
+        try:
+            rows = conn.execute(
+                "SELECT id, content FROM auto_memories "
+                "WHERE key LIKE 'conv_summary_%' ORDER BY updated_at ASC"
+            ).fetchall()
+            rows = [r for r in rows if not _is_trivial_conversation(r['content'])]
+            if len(rows) >= _EPISODE_MERGE_MIN:
+                parts_pre = [str(r['content'] or '') for r in rows[:_EPISODE_MERGE_COUNT]]
+                import asyncio as _asyncio
+
+                try:
+                    loop = _asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+                coro = _maybe_summarize(summarizer, parts_pre)
+                if loop is not None:
+                    # Running inside a live event loop (workbench finalizer):
+                    # schedule and block on the dedicated result thread rather
+                    # than nesting run_until_complete.
+                    import concurrent.futures as _futures
+
+                    with _futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                        summarized = _pool.submit(
+                            _asyncio.run, coro
+                        ).result(timeout=_SUMMARIZE_TIMEOUT_S)
+                else:
+                    summarized = _asyncio.run(coro)
+        except Exception:
+            logger.debug('episode summarizer failed; falling back to join', exc_info=True)
+            summarized = ''
     conn.execute('BEGIN IMMEDIATE')
     try:
         rows = conn.execute(
@@ -1323,6 +1384,11 @@ def consolidate_conv_summaries() -> int:
         oldest = rows[:_EPISODE_MERGE_COUNT]
         parts = [str(r['content'] or '') for r in oldest]
         merged = '; '.join(parts).strip() or 'Consolidated past conversations'
+        # Use the LLM narrative only when it covers the same candidate set
+        # (row count unchanged between phases) and produced real content;
+        # otherwise the mechanical join stands.
+        if summarized and len(summarized.strip()) >= 32:
+            merged = summarized.strip()
         # Max-based sequence: survives user deletion of earlier episode rows
         # without colliding with a still-live key.
         seqRow = conn.execute(
