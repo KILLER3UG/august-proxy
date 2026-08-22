@@ -1378,19 +1378,20 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
 _HEAVY_TOOL_PREFIXES = ('web_', 'browser', 'voice', 'notion', 'slack', 'discord', 'search', 'fetch')
 _BARE_TOOL_ALLOW = frozenset(
     {
+        # Names MUST match registered tools exactly (see
+        # tests::test_bare_tool_allowlist_matches_registry). A stale name here
+        # silently vanishes from the bare surface — e.g. the old 'edit_file' /
+        # 'list_files' entries left weak models with no editor and no listing.
         'read_file',
-        'read_multiple_files',
-        'list_files',
+        'read_files',
+        'list_directory',
         'write_file',
-        'edit_file',
-        'str_replace_editor',
-        'str_replace',
+        'edit_lines',
         'run_command',
         'update_state',
         'write_scratchpad',
         'memory_search',
         'diagnose_proxy',
-        'get_session_info',
     }
 )
 

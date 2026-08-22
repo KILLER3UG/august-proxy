@@ -273,12 +273,32 @@ def test_model_capability_profile_bare_surface(isolatedData):
         {'name': 'run_command'},
         {'name': 'web_search'},
         {'name': 'read_file'},
-        {'name': 'edit_file'},
+        {'name': 'edit_lines'},
     ]
     filtered = wb._applyModelCapabilityProfile(session, synthetic)
     names = {wb._toolDefName(t) for t in filtered}
-    assert names == {'run_command', 'read_file', 'edit_file'}
+    assert names == {'run_command', 'read_file', 'edit_lines'}
     assert 'web_search' not in names
+
+
+def test_bare_tool_allowlist_matches_registry(isolatedData):
+    """Every _BARE_TOOL_ALLOW name must be a registered tool.
+
+    Regression guard: the allowlist once referenced legacy names
+    (edit_file / list_files / read_multiple_files / get_session_info) that
+    the registry never registered, so bare-surface models silently lost
+    file listing and editing.
+    """
+    from app.services.tool_definitions import registerAll
+    from app.services.tool_registry import listTools
+    from app.services.workbench import workbench as wb
+
+    registerAll()
+    # The registry stores OpenAI-format defs — the name lives at
+    # t['function']['name'], not the top level.
+    registered = {str(t['function']['name']) for t in listTools()}
+    dead = wb._BARE_TOOL_ALLOW - registered
+    assert not dead, f'_BARE_TOOL_ALLOW references unregistered tools: {sorted(dead)}'
 
 
 def test_model_capability_profile_max_tools(isolatedData):

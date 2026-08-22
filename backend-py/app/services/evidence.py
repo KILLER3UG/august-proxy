@@ -10,9 +10,10 @@ from __future__ import annotations
 import re
 from enum import Enum
 
-# Tools that mutate the filesystem
+# Tools that mutate the filesystem (registered names — edit_lines is the
+# bundled editor; write_files the bulk writer).
 _MUTATING_TOOLS = re.compile(
-    r'^(write_file|edit_file|create_file|delete_file|move_file|run_command)$'
+    r'^(write_file|write_files|edit_lines|apply_patch|run_command|run_commands)$'
 )
 
 # Commands/patterns that indicate verification

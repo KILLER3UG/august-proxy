@@ -6,13 +6,16 @@ import os
 
 MUTATING_TOOLS = frozenset(
     {
+        # Registered mutating tools (keep in sync with tool_registrations).
+        # Legacy aliases (edit_file / str_replace / delete_file) were never
+        # registered names — a worker editing via edit_lines was previously
+        # not flagged as having mutated anything.
         'write_file',
-        'edit_file',
-        'str_replace_editor',
-        'str_replace',
-        'run_command',
+        'write_files',
+        'edit_lines',
         'apply_patch',
-        'delete_file',
+        'run_command',
+        'run_commands',
     }
 )
 

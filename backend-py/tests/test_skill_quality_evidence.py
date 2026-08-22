@@ -112,7 +112,7 @@ class TestEvidenceStates:
 
     def test_lint_counts_as_verification(self):
         tracker = TurnEvidenceTracker()
-        tracker.record_tool('edit_file', {'path': 'app/main.py', 'diff': '...'})
+        tracker.record_tool('edit_lines', {'path': 'app/main.py', 'diff': '...'})
         tracker.record_tool('run_command', {'command': 'ruff check .'}, result='All checks passed')
         assert tracker.classify() == EvidenceState.VERIFIED
 
