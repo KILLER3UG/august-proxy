@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 
-export type MemoryHubTabId = 'recalled' | 'by-project' | 'saved' | 'graph';
+export type MemoryHubTabId = 'recalled' | 'saved' | 'graph';
 
 export const MEMORY_HUB_TABS: Array<{
   id: MemoryHubTabId;
@@ -8,7 +8,6 @@ export const MEMORY_HUB_TABS: Array<{
   hint: string;
 }> = [
   { id: 'recalled', label: 'Recalled', hint: 'All projects' },
-  { id: 'by-project', label: 'By Project', hint: 'Per folder' },
   { id: 'saved', label: 'Saved', hint: 'Always included' },
   { id: 'graph', label: 'Graph', hint: 'Relations' },
 ];

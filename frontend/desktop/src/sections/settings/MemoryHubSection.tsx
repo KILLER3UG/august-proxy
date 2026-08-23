@@ -4,16 +4,18 @@ import type { SettingsSection } from '@/settings/settings-registry';
 import { WorkspaceMemorySection } from '@/sections/workspace/WorkspaceMemorySection';
 import { RecalledMemorySection } from './RecalledMemorySection';
 import { AddedMemorySection } from './AddedMemorySection';
-import { ProjectMemoriesSection } from './ProjectMemoriesSection';
 import { MemoryGraphSection } from './MemoryGraphSection';
 import {
   MemoryHubTabs,
   type MemoryHubTabId,
 } from './MemoryHubTabs';
 
+// 0.16.8: 'by-project' tab removed — it rendered the SAME recalled pool
+// filtered to one folder (Recalled already covers all projects). Old deep
+// links land on the recalled tab.
 const ANCHOR_TAB: Record<string, MemoryHubTabId> = {
   'recalled-memory': 'recalled',
-  'project-memories': 'by-project',
+  'project-memories': 'recalled',
   'added-memory': 'saved',
   'memory-knowledge': 'graph',
 };
@@ -34,7 +36,7 @@ export function MemoryHubSection({ active }: { active: SettingsSection }) {
       subtitle={
         <>
           <span className="font-medium text-foreground/80">Recalled</span> is what August learned automatically (all projects, ranked when relevant).
-          {' '}<span className="font-medium text-foreground/80">By Project</span> is the same pool filtered to one folder via the session&apos;s project — same memory, different view.
+          {' '}<span className="font-medium text-foreground/80">Saved</span> memories are pinned and always included.
         </>
       }
       toolbar={<MemoryHubTabs active={tab} onChange={setTab} />}
@@ -47,12 +49,6 @@ export function MemoryHubSection({ active }: { active: SettingsSection }) {
               <a href="/api/memory/export?origin=recalled" target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">View Markdown</a>
             </div>
             <RecalledMemorySection embedded />
-          </section>
-        ) : null}
-        {tab === 'by-project' ? (
-          <section className="space-y-3">
-            <p className="text-[13px] leading-5 text-muted-foreground">Same recalled memories, scoped to the project folder their chat lived in.</p>
-            <ProjectMemoriesSection embedded />
           </section>
         ) : null}
         {tab === 'saved' ? (

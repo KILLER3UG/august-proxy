@@ -32,6 +32,7 @@ import type { RightDrawerSectionId } from "./RightDrawerState";
 import { dispatchFocusComposer, dispatchInsertComposerText, onUiAction } from "@/api/ui-events";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { useSelfMaintenanceToasts } from "@/hooks/useSelfMaintenanceToasts";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 const WORKBENCH_SIDEBAR_OPEN_KEY = "august-workbench-sidebar-open";
@@ -40,6 +41,9 @@ export function ChatLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
+  // Quiet toasts when memory/skills change (auto-review, skill genesis,
+  // boot maintenance) — the "you can see it worked" feedback channel.
+  useSelfMaintenanceToasts(true);
   const { sessionId } = useParams<{ sessionId?: string }>();
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem(SESSIONS_COLLAPSED_KEY) === "1",

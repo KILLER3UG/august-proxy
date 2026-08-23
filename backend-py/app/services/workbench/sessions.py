@@ -216,6 +216,11 @@ class WorkbenchSession:
 
 # Single source of truth for in-memory store + status listeners
 _sessions: dict[str, WorkbenchSession] = {}
+# RAM pass 0.16.8: recency window for the in-memory session cache. Each
+# WorkbenchSession holds its full message array — 200 cached sessions of
+# long agent chats cost hundreds of MB. 60 hot sessions is ample (the UI
+# shows far fewer at once) and SQLite reloads evicted ones transparently.
+_SESSION_WINDOW = 60
 _status_subscribers: list[Callable[[dict[str, object]], None]] = []
 # Serialize full-file snapshots so concurrent chat tasks cannot interleave dumps.
 _sessions_lock = threading.Lock()
@@ -398,7 +403,7 @@ def _load_sessions() -> None:
         from app.services.memory_store import list_workbench_blobs
 
         memory_store.init()
-        blobs = list_workbench_blobs(limit=200)
+        blobs = list_workbench_blobs(limit=_SESSION_WINDOW)
         for item in blobs:
             session = WorkbenchSession.fromDict(item)
             if session.id:
@@ -521,13 +526,16 @@ def _persist_sessions_snapshot() -> None:
     ``_sessions_lock`` is still only held for the in-memory copy so concurrent
     chat turns are not stalled across I/O.
 
-    The in-memory map is a recency window (200, matching ``_load_sessions``);
-    SQLite stays the source of truth and ``list_workbench_sessions`` merges
-    sessions beyond the window so they never silently disappear from the UI.
+    The in-memory map is a recency window (60, RAM pass 0.16.8 — was 200;
+    each cached WorkbenchSession carries its full message array, so 200
+    long-running sessions cost hundreds of MB on big installs). SQLite stays
+    the source of truth and ``list_workbench_sessions`` merges sessions beyond
+    the window so they never silently disappear from the UI; a pruned session
+    is transparently reloaded from SQLite on next access.
     """
     with _persist_io_lock:
         with _sessions_lock:
-            sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:200]
+            sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:_SESSION_WINDOW]
             keep_ids = {s.id for s in sorted_sessions}
             snapshot_time = datetime.now(timezone.utc)
             for sid in list(_sessions.keys()):
@@ -661,7 +669,7 @@ def export_sessions_json() -> Path:
     with _sessions_lock:
         if not _sessions:
             _load_sessions()
-        sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:200]
+        sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:_SESSION_WINDOW]
         path = _sessions_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         write_json_atomic(path, [s.toDict() for s in sorted_sessions], indent=2)
@@ -676,7 +684,7 @@ def reload_sessions_from_sot() -> int:
         from app.services.memory_store import list_workbench_blobs
 
         memory_store.init()
-        blobs = list_workbench_blobs(limit=200)
+        blobs = list_workbench_blobs(limit=_SESSION_WINDOW)
         for item in blobs:
             session = WorkbenchSession.fromDict(item)
             if session.id:
@@ -870,9 +878,9 @@ def get_workbench_session(session_id: str | None) -> WorkbenchSession | None:
     """Get a session by ID. Returns None if not found.
 
     When the id is missing from the in-memory map (the debounced snapshot
-    prunes it to the top-50 by recency), reload it from SQLite so replying
-    resumes the ORIGINAL conversation instead of silently creating a new
-    session (audit finding).
+    prunes it to the recency window — 60 as of the 0.16.8 RAM pass), reload
+    it from SQLite so replying resumes the ORIGINAL conversation instead of
+    silently creating a new session (audit finding).
     """
     if not session_id:
         return None
@@ -1017,7 +1025,7 @@ def delete_workbench_session(session_id: str) -> bool:
         notify_session_deleted(session_id)
         try:
             path = _sessions_path()
-            remaining = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:200]
+            remaining = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:_SESSION_WINDOW]
             write_json_atomic(path, [s.toDict() for s in remaining], indent=2)
         except Exception:
             pass

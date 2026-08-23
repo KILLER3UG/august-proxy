@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import { normalizeHarnessMode, type HarnessAgentMode } from '@/components/chat/HarnessModeChip';
 import { GalleryVertical } from 'lucide-react';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
+import { WorkspaceChip } from './WorkspaceChip';
 
 export function ComposerToolbar({
   sessionId,
@@ -427,6 +428,7 @@ export function ComposerToolbar({
           {sandboxMode === 'danger-full-access' ? 'Full access' : sandboxMode === 'workspace-write' ? 'Workspace' : 'Read-only'}
         </span>
         <span className="inline-flex items-center gap-1">
+          <WorkspaceChip workspacePath={workspacePath} />
           <ContextRing
             pct={pct}
             estTokens={estTokens}

@@ -33,6 +33,8 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
   omitDurationLabel = false,
 }: ThinkingDisclosureProps) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  // Claude-parity: done reasoning clamps to a short window with Show more.
+  const [expanded, setExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
@@ -131,9 +133,30 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
               'mt-0.5 w-full min-w-0 max-w-full wrap-anywhere pb-1 text-muted-foreground/65',
             )}
           >
+            {/* Claude-parity truncation: while streaming the live preview
+                scroll-pins (existing behavior). Once DONE the reasoning is
+                CLAMPED to a short window with a "Show more / Show less"
+                expander — long reasoning must never dominate the transcript. */}
+            {!pending && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                data-testid="thinking-show-more"
+                className="mb-0.5 text-[11px] text-muted-foreground/60 hover:text-primary"
+              >
+                {expanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
             <div
               ref={scrollRef}
-              className="tool-result-scroll max-h-36 overflow-y-auto overscroll-contain thinking-scroll"
+              className={cn(
+                'tool-result-scroll overscroll-contain thinking-scroll',
+                pending
+                  ? 'max-h-36 overflow-y-auto'
+                  : expanded
+                    ? ''
+                    : 'relative max-h-16 overflow-hidden',
+              )}
               onWheel={(e) => {
                 if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) {
                   e.stopPropagation();

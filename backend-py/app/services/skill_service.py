@@ -42,6 +42,31 @@ def _skillRoots() -> list[Path]:
 _NAMEPattern = re.compile('^[a-z0-9][a-z0-9._-]*$')
 _NAMEMax = 64
 _flat_migrate_done = False
+# Catalogue memoization (latency pass 0.16.8): keyed on skill-root dir mtimes
+# so create/patch/delete invalidates automatically without explicit busts.
+_cat_cache: list[dict[str, object]] | None = None
+_cat_cache_key: tuple | None = None
+
+
+def _root_mtime(root: Path) -> float:
+    try:
+        return root.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _bust_catalogue_cache() -> None:
+    """Invalidate the catalogue memo (create/patch/delete paths).
+
+    Root-dir mtime catches folder-level changes, but editing a SKILL.md
+    INSIDE a skill folder does not touch the root — so mutations call this
+    explicitly.
+    """
+    global _cat_cache, _cat_cache_key
+    _cat_cache = None
+    _cat_cache_key = None
+
+
 _DESCRIPTIONMax = 60
 _MARKETINGWords = [
     'revolutionary',
@@ -246,7 +271,21 @@ def catalogue() -> list[dict[str, object]]:
     discovery is the standard. Returns entries sorted by name for stable
     prompt output. Includes ``created_by`` so evolving/agent-authored skills
     can be labeled in the prompt.
+
+    Latency pass 0.16.8: results are memoized against the skill roots'
+    mtimes (a cold build parses ~84 SKILL.md files ≈ 0.5s and this used to
+    run on MANY turns via the Tier-3 relevance pass). Any create/patch/
+    delete bumps the roots' mtime → next call rebuilds automatically.
     """
+    global _cat_cache, _cat_cache_key
+    try:
+        roots = tuple(str(r) for r in _skillRoots())
+        marks = tuple(_root_mtime(r) for r in _skillRoots())
+        key = (roots, marks)
+    except Exception:
+        key = None
+    if key is not None and _cat_cache is not None and _cat_cache_key == key:
+        return _cat_cache
     entries = [
         {
             'name': s['name'],
@@ -257,7 +296,11 @@ def catalogue() -> list[dict[str, object]]:
         }
         for s in list_all()
     ]
-    return sorted(entries, key=lambda e: as_str(e.get('name'), ''))
+    out = sorted(entries, key=lambda e: as_str(e.get('name'), ''))
+    if key is not None:
+        _cat_cache = out
+        _cat_cache_key = key
+    return out
 
 
 def catalogue_with_usage() -> list[dict[str, object]]:
@@ -308,10 +351,13 @@ def skill_body(name: str) -> str | None:
 def _bust_prompt_skills_cache() -> None:
     """Global bust of skills-related prompt caches.
 
-    Clears both the prompt-segments cache and the Tier 1/2 prompt cache so
-    newly created/patched evolving skills appear in the next turn's
-    ``<capabilities>`` block instead of waiting out the 5-minute TTL.
+    Clears the catalogue memo, the prompt-segments cache, and the Tier 1/2
+    prompt cache so newly created/patched evolving skills appear in the next
+    turn's ``<capabilities>`` block instead of waiting out any TTL.
     """
+    global _cat_cache, _cat_cache_key
+    _cat_cache = None
+    _cat_cache_key = None
     try:
         from app.services.workbench import prompt_segments_cache
 

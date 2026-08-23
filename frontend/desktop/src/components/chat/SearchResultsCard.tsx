@@ -51,20 +51,23 @@ function SiteFavicon({ url }: { url: string }) {
   );
 }
 
-/** Scroll-capped results list — one row per hit: favicon · title · domain. */
+/** Scroll-capped results list — one row per hit: favicon · title · domain.
+ *  Claude-parity: shows the first N hits inline with a "Show N more results"
+ *  expander instead of an inner scrollbar (no nested scroll inside chat). */
+const INLINE_HITS = 4;
+
 export function SearchResultsList({ hits }: { hits: SearchHit[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? hits : hits.slice(0, INLINE_HITS);
+  const hidden = hits.length - visible.length;
   return (
     <div
       className={cn(
-        'tool-result-scroll max-h-52 min-w-0 overflow-y-auto overscroll-contain',
-        'rounded-lg border border-border bg-popover px-2.5 py-2',
+        'min-w-0 rounded-lg border border-border bg-popover px-2.5 py-2',
       )}
-      onWheel={(e) => {
-        if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
-      }}
     >
       <ol className="m-0 grid list-none gap-1.5 p-0">
-        {hits.map((hit, i) => {
+        {visible.map((hit, i) => {
           const host = hit.url ? hostFromUrl(hit.url) : null;
           return (
             <li key={`${hit.url || hit.title}-${i}`} className="flex min-w-0 items-center gap-2">
@@ -91,6 +94,16 @@ export function SearchResultsList({ hits }: { hits: SearchHit[] }) {
           );
         })}
       </ol>
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="mt-1.5 w-full border-t border-border/50 pt-1.5 text-left text-xs text-muted-foreground hover:text-primary"
+          data-testid="search-results-show-more"
+        >
+          Show {hidden} more result{hidden === 1 ? '' : 's'}
+        </button>
+      )}
     </div>
   );
 }

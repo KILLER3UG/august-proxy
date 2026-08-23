@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 MAX_FILES = 20          # files whose signature lines we include
 MAX_SIG_LINES = 3       # signature lines per file
 MAX_LINE_LEN = 120
-_CACHE_TTL_S = 30.0
+_CACHE_TTL_S = 120.0  # RAM/CPU pass: was 30s — a bounded walk + stat() of the
+                      # workspace ran every prompt build; 2 min is still fresh
 _SKIP_DIRS = frozenset({'.git', 'node_modules', 'dist', 'build', '.venv', 'venv', '__pycache__', '.next', '.turbo'})
 _SKIP_EXTS = frozenset({'.png', '.jpg', '.jpeg', '.gif', '.ico', '.lock', '.map', '.min.js', '.woff', '.woff2', '.ttf'})
 

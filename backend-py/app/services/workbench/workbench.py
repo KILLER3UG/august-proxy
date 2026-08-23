@@ -816,7 +816,7 @@ def buildSystemPrompt(
                 memory['autoMemories'] = cast(list[JsonValue], recalled)
                 if _is_probe:
                     session._probe_recall_cache = {  # type: ignore[attr-defined]
-                        'q': (_lastUserMessageText(session) or '').strip().lower(),
+                        'q': (_lastUser or '').strip().lower(),
                         'rows': recalled,
                     }
         if not getattr(session, '_turn1_recall_done', False):

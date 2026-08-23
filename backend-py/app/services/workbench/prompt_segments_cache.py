@@ -21,7 +21,10 @@ _lock = threading.Lock()
 _skills: tuple[float, str, str] | None = None  # (mono, manifest, capabilities_skills_inner)
 _hits = 0
 _misses = 0
-_SKILLS_TTL = 30.0  # seconds — skills rarely change mid-session
+# RAM/latency pass 0.16.8: was 30s — a cold rebuild costs ~0.5s (84 files
+# parsed) and landed on a turn every 30 seconds. Skills mutate rarely and
+# clear() is invoked on every mutation path, so 10 minutes is safe.
+_SKILLS_TTL = 600.0  # seconds
 
 CLARIFY_BLOCK = (
     '<clarify_policy>\n'

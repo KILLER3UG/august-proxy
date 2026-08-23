@@ -1,5 +1,19 @@
 # August Proxy — Changelog
 
+## 0.16.9 (2026-08-23)
+
+**Folder picker returns + change toasts + Claude-style truncation + RAM/latency pass**
+
+- **Workspace chip**: folder selection restored as a quiet pill in the composer footer (folder icon + project name, dashed "Set folder" when empty) — click opens the Tauri picker via the existing `august:open-folder` event. Replaces the boxed meta row removed in 0.16.7 without bringing back the bar.
+- **Change feedback UI**: `useSelfMaintenanceToasts` listens on the brain SSE stream and raises quiet toasts when memories are updated (auto-review, boot maintenance) or skills created/evolved — deduplicated by event id, reconnect-safe. The in-chat SelfImprovementStrip stays.
+- **Claude-parity search block**: `SearchResultsList` shows the first 4 hits inline with a "Show N more results" expander — no more nested scrollbar inside the transcript.
+- **Reasoning clamp**: once a thought finishes, its body is clamped to a short window with Show more/Show less; long reasoning no longer dominates the chat (streaming keeps the live scroll-pinned preview).
+- **Memory settings**: "By Project" tab removed (same pool as Recalled filtered to one folder); old deep links land on Recalled.
+- **RAM**: workbench session recency window 200 → 60 (each cached session holds its full message array; SQLite transparently reloads evicted sessions).
+- **Latency**: skills-catalogue memoized against skill-root mtimes (~0.5s cold build no longer re-runs on turns; mutations bust it explicitly), segments-cache TTL 30s→10min, code-map walk TTL 30s→120s.
+
+**Validation:** ruff ✓ · mypy at baseline (19) · vitest 773/773 ✓ · tsc clean ✓ · build:web ✓ · session/skill suites green
+
 ## 0.16.8 (2026-08-23)
 
 **Fresh-open full refresh — boot always updates everything, visibly**
