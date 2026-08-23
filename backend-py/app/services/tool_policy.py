@@ -29,6 +29,8 @@ _PROMPT_READ = frozenset({
     'web_fetch_many', 'web_search',
     # Unified cross-store search (memory/files/web) — read-only.
     'search',
+    # Harness self-inspection — read-only aggregation of runtime state.
+    'harness_introspect',
     # Session state summary for handoff/compaction — read-only.
     'summarize_session',
 })
@@ -43,6 +45,9 @@ _PROMPT_WRITE = frozenset({
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad', 'edit_lines',
     'pptx_comment',
     'remember',
+    # Harness self-improvement: files proposals for human review (no direct
+    # application from the model — approval runs a deterministic applier).
+    'harness_propose',
     # Unified-diff patch application — a file write (plan-blocked via markers).
     'apply_patch',
 })

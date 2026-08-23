@@ -2,6 +2,8 @@ export interface ContextBreakdown {
   messages: number;
   thinking: number;
   systemTools: number;
+  /** MCP tool definitions only — subset of systemTools when known. */
+  mcpTools?: number;
   systemPrompt: number;
   skills: number;
   meta: number;
@@ -47,6 +49,9 @@ export function estimateContextBreakdown(args: {
   toolTokenEstimate?: number;
   /** Optional: bytes of core memory / skills injected into the prompt. */
   coreMemoryBytes?: number;
+  /** Optional: estimated tokens of MCP tool definitions alone (subset of
+   *  systemTools). When provided, shown as its own indented sub-row. */
+  mcpToolTokens?: number;
   /** Optional ground-truth total to anchor the breakdown to. When provided,
    *  the category estimates are scaled so they sum exactly to this value
    *  (used when the backend reports the real current context fill). */
@@ -83,6 +88,7 @@ export function estimateContextBreakdown(args: {
   // Use the backend's actual serialized tool token estimate when available;
   // fall back to ~180 tokens per tool definition (name + description + JSON schema).
   const systemTools = args.toolTokenEstimate ?? Math.ceil(args.toolCount * 180);
+  const mcpTools = args.mcpToolTokens ?? 0;
   // System prompt is part of the provider-reported input_tokens when a ground
   // truth exists, so we do not add a separate flat constant that would inflate
   // the pre-request heuristic. Keep a small constant only for the fallback so
@@ -92,7 +98,7 @@ export function estimateContextBreakdown(args: {
   const skills = Math.ceil((args.coreMemoryBytes ?? 0) / 4);
   const meta = 100; // session metadata, attachments index, etc.
 
-  const raw = { messages, thinking, systemTools, systemPrompt, skills, meta };
+  const raw = { messages, thinking, systemTools, systemPrompt, skills, meta, mcpTools };
   const scaleToTotal = args.scaleToTotal;
   if (scaleToTotal == null) return raw;
 
@@ -101,7 +107,15 @@ export function estimateContextBreakdown(args: {
     raw.messages + raw.thinking + raw.systemTools + raw.systemPrompt + raw.skills + raw.meta;
   if (rawTotal <= 0) {
     // No heuristic signal at all — attribute everything to messages.
-    return { messages: scaleToTotal, thinking: 0, systemTools: 0, systemPrompt: 0, skills: 0, meta: 0 };
+    return {
+      messages: scaleToTotal,
+      thinking: 0,
+      systemTools: 0,
+      mcpTools: 0,
+      systemPrompt: 0,
+      skills: 0,
+      meta: 0,
+    };
   }
   const factor = scaleToTotal / rawTotal;
   const scaled = {
@@ -111,6 +125,7 @@ export function estimateContextBreakdown(args: {
     systemPrompt: Math.round(raw.systemPrompt * factor),
     skills: Math.round(raw.skills * factor),
     meta: 0, // fold rounding remainder into messages so the sum is exact
+    mcpTools: Math.round(raw.mcpTools * factor),
   };
   const scaledTotal =
     scaled.messages + scaled.thinking + scaled.systemTools + scaled.systemPrompt + scaled.skills + scaled.meta;

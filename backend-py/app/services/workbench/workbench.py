@@ -773,20 +773,54 @@ def buildSystemPrompt(
     except Exception:
         logger.debug('prompt: cognitive budget failed', exc_info=True)
     # Budget-gated auto-recall: with headroom, surface the most relevant past
-    # memories directly; under pressure the on-demand memory tools stay the
-    # only recall path so we never push the conversation toward compaction.
+    # memories directly. Turn 1 always recalls (cap shrinks under pressure —
+    # Claude's memory ritual); later turns stay cadence/probe-gated because
+    # they re-key the provider prompt cache. Probe-triggered recalls are
+    # cached per session so repeated "what did I say about X" turns refetch
+    # nothing.
     try:
-        if _shouldAutoRecall(cognitiveBudget, session=session) and not memory.get('autoMemories'):
+        _recall_gate_ok = False
+        _is_probe = False
+        if not memory.get('autoMemories'):
+            _lastUser = _lastUserMessageText(session)
+            _is_probe = bool(_PROBES_PAST_RE.search(_lastUser or ''))
+            if getattr(session, '_turn1_recall_done', False):
+                # Turn 1 already recalled; later turns need gate OR a fresh probe.
+                if _is_probe:
+                    _cached = getattr(session, '_probe_recall_cache', None) or {}
+                    if _cached.get('q') == (_lastUser or '').strip().lower():
+                        recalled_cached = _cached.get('rows') or []
+                        if recalled_cached:
+                            session._last_recalled_memories = recalled_cached
+                            memory['autoMemories'] = cast(list[JsonValue], recalled_cached)
+                        _recall_gate_ok = False  # served from cache, skip fetch
+                    else:
+                        _recall_gate_ok = True
+                else:
+                    _recall_gate_ok = _shouldAutoRecall(
+                        cognitiveBudget, session=session, probe=_is_probe
+                    )
+            else:
+                _recall_gate_ok = True
+        if _recall_gate_ok and not memory.get('autoMemories'):
             from app.services.memory.auto_memory import getRelevantMemories
 
+            base_limit = _scaledMemoryLimit(5, _modelWindowForMemory)
             recalled = getRelevantMemories(
                 _lastUserMessageText(session),
-                limit=_scaledMemoryLimit(5, _modelWindowForMemory),
+                limit=_probe_recall_limit(cognitiveBudget, base_limit),
                 durable_only=True,
             ) or []
             if recalled:
                 session._last_recalled_memories = recalled
                 memory['autoMemories'] = cast(list[JsonValue], recalled)
+                if _is_probe:
+                    session._probe_recall_cache = {  # type: ignore[attr-defined]
+                        'q': (_lastUserMessageText(session) or '').strip().lower(),
+                        'rows': recalled,
+                    }
+        if not getattr(session, '_turn1_recall_done', False):
+            session._turn1_recall_done = True  # type: ignore[attr-defined]
     except Exception:
         logger.debug('prompt: auto-recall failed', exc_info=True)
     if tools is None:
@@ -936,12 +970,31 @@ def buildSystemPrompt(
         except Exception:
             logger.debug('prompt: T1/T2 cache write failed', exc_info=True)
     # Skills catalogue is inside Tier 1 <capabilities>; do not append a duplicate
-    # markdown "## Available Skills" block.
-    extraParts: list[str] = [
-        _seg_cache.CLARIFY_BLOCK,
-        _seg_cache.BULK_BLOCK,
-        _seg_cache.WEB_BLOCK,
-    ]
+    # markdown "## Available Skills" block. Policy blocks are conditional
+    # (P4): only inject <clarify_policy> / <bulk_tools> / <web_research> when
+    # the corresponding tools are actually offered to the model this turn.
+    offeredTools = set(tool_names)
+    _BULK_TOOL_NAMES = {
+        'bulk',
+        'read_files',
+        'write_files',
+        'delete_sessions',
+        'rename_sessions',
+        'kill_daemons',
+        'web_fetch_many',
+        'load_skills',
+    }
+    extraParts: list[str] = []
+    # <clarify_policy> stays UNCONDITIONAL on purpose: submit_clarify is not a
+    # registered tool — the turn loop intercepts it (workbench.py:3642) and
+    # drives the ClarifyTool UI. Without this block the model never learns the
+    # tool name exists, so gating it on the tools array would kill the
+    # clarify flow entirely.
+    extraParts.append(_seg_cache.CLARIFY_BLOCK)
+    if offeredTools & _BULK_TOOL_NAMES:
+        extraParts.append(_seg_cache.BULK_BLOCK)
+    if offeredTools & {'web_search', 'web_fetch'}:
+        extraParts.append(_seg_cache.WEB_BLOCK)
     # Snapshot of what this turn's prompt actually injected — carried into the
     # per-turn `done` event and the chat context panel (A5).
     try:
@@ -1187,18 +1240,21 @@ def _shouldAutoRecall(
     min_headroom: int = 6000,
     *,
     session: object | None = None,
+    probe: bool = False,
 ) -> bool:
     """Auto-recall when there is prompt headroom.
 
-    ``low``/``medium`` attention pressure plus at least ``min_headroom``
-    remaining tokens keeps recall free of cost under pressure. On later
-    turns, recall fires on a cadence (every 3rd user turn) or when the
-    message probes the past ("what did I say about X", "remember", "last
-    week") — a personal assistant must recall mid-conversation, not only
-    on the first turn.
+    Turn 1 ALWAYS recalls when any headroom exists (Claude's memory ritual:
+    a fresh session never starts with zero recall) — under pressure the
+    LIMIT shrinks instead of the recall vanishing. On later turns, recall
+    fires on a cadence (every 3rd user turn) or when the message probes the
+    past ("what did I say about X", "remember", "last week") and still
+    requires low/medium pressure plus ``min_headroom``, because later-turn
+    injections re-key the provider prompt cache.
     """
     if not cognitive_budget:
         return False
+    is_turn_one = True
     if session is not None:
         messages = getattr(session, 'messages', None)
         if isinstance(messages, list):
@@ -1211,15 +1267,91 @@ def _shouldAutoRecall(
                     if isinstance(content, str):
                         last_user_text = content
             if user_turns > 1:
+                is_turn_one = False
                 # Later turns: probe verbs or a cadence, never every send.
                 if user_turns % 3 != 0 and not _PROBES_PAST_RE.search(last_user_text or ''):
                     return False
         elif int(getattr(session, 'messageCount', 0) or 0) > 1:
+            is_turn_one = False
             return False
-    pressure = as_str(cognitive_budget.get('attention_pressure'), '')
     raw_remaining = cognitive_budget.get('remaining_tokens')
     remaining = int(raw_remaining) if isinstance(raw_remaining, (int, float)) else 0
+    pressure = as_str(cognitive_budget.get('attention_pressure'), '')
+    if probe and not is_turn_one:
+        # Probe messages recall under ANY pressure (cap still shrinks via
+        # _probe_recall_limit) — "what did I say about X" is a direct request.
+        return remaining >= 1500
+    if is_turn_one:
+        # Claude-style guarantee: even high/critical pressure recalls a tiny
+        # capped set rather than nothing (the caller shrinks the limit).
+        return remaining >= 1500
     return pressure in ('low', 'medium') and remaining >= min_headroom
+
+
+def _probe_recall_limit(
+    cognitive_budget: dict[str, object] | None,
+    base_limit: int,
+) -> int:
+    """Shrink the auto-recall limit under attention pressure instead of
+    dropping recall entirely (Claude-style: always some, never too much)."""
+    if not cognitive_budget:
+        return base_limit
+    remaining = as_int(cognitive_budget.get('remaining_tokens'), 0)
+    pressure = as_str(cognitive_budget.get('attention_pressure'), '')
+    if pressure == 'critical' or (remaining and remaining < 2500):
+        return max(1, base_limit // 5)  # floor: one memory, not zero
+    if pressure == 'high':
+        return max(2, base_limit // 2)
+    return base_limit
+
+
+# P2: correction / preference markers that suggest a durable lesson was just
+# spoken mid-run (background review would only see it post-turn).
+_MEMORY_NUDGE_RE = re.compile(
+    r"\b(actually|no,|i said|that'?s wrong|is wrong|instead of|rather than|"
+    r"don'?t|do not|stop doing|never |always |i prefer|i like|i hate|"
+    r"from now on|keep in mind|going forward|for future|my bad)\b",
+    re.IGNORECASE,
+)
+_MEMORY_NUDGE_MIN_ROUND = 4
+
+
+def _build_memory_nudge(
+    messages: list[dict[str, object]],
+    called_tools: set[str],
+    cognitive_budget: dict[str, object] | None,
+) -> str:
+    """One-shot mid-turn `<memory_nudge>` appended to a tool result.
+
+    Fires when: deep enough into the turn, a user correction/preference
+    pattern appears in recent history, no ``remember`` happened this turn,
+    and attention pressure is not high/critical (never compete with the
+    compaction warning). Returns '' when suppressed.
+    """
+    if 'remember' in called_tools or 'update_memory' in called_tools:
+        return ''
+    if isinstance(cognitive_budget, dict):
+        pressure = as_str(cognitive_budget.get('attention_pressure'), '')
+        if pressure in ('high', 'critical'):
+            return ''
+    user_texts: list[str] = []
+    for m in reversed(messages):
+        if isinstance(m, dict) and m.get('role') == 'user':
+            c = m.get('content', '')
+            if isinstance(c, str) and c.strip():
+                user_texts.append(c)
+            if len(user_texts) >= 4:
+                break
+    if not any(_MEMORY_NUDGE_RE.search(t) for t in user_texts):
+        return ''
+    return (
+        '<memory_nudge>'
+        'One of the user\'s recent messages reads as a correction or durable preference. '
+        'If it is a lasting preference/lesson worth carrying into FUTURE sessions, capture it '
+        'now with one remember(key=<short-key>, content=<one-line fact>) call, then continue. '
+        'If it only concerns the current task, ignore this notice.'
+        '</memory_nudge>'
+    )
 
 
 # Snake_case alias for tests / external callers.
@@ -2795,6 +2927,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 ),
             )
             if isinstance(_budget, dict):
+                turnBudget = _budget
                 _cHit = as_int(getattr(session, 'cacheHitTokens', 0), 0)
                 _cMiss = as_int(getattr(session, 'cacheMissTokens', 0), 0)
                 emit(
@@ -2818,6 +2951,9 @@ async def _sendWorkbenchMessageStreamImpl(
     lastExecSig: tuple[str, int] | None = None
     stalledRounds = 0
     stallMessageSent = False
+    # P2: mid-turn memory nudge fires at most once per turn.
+    memoryNudgedThisTurn = False
+    _ = turnBudget  # assigned earlier by the contextPressure pass (mypy: keep alive)
     # Turn-scoped malformed-tool counter: accumulates ACROSS rounds (a reset
     # per round meant repeated malformed calls never triggered the downgrade).
     parseFailures = 0
@@ -4112,6 +4248,22 @@ async def _sendWorkbenchMessageStreamImpl(
             assistantMsg.pop('tool_calls', None)
         currentMessages.append(assistantMsg)
         currentMessages.extend(toolResults)
+        # P2 mid-task persistence nudge: once per turn, from a tool round deep
+        # enough that background review hasn't run yet, when the user's recent
+        # messages carry a correction/preference pattern and no remember call
+        # happened. Rides in a tool result — the system prompt is cache-stable.
+        if (
+            not memoryNudgedThisTurn
+            and toolRound >= _MEMORY_NUDGE_MIN_ROUND
+            and not cancelledMidRound
+        ):
+            nudge = _build_memory_nudge(currentMessages, calledTools, turnBudget)
+            if nudge:
+                last_result = toolResults[-1]
+                last_result['content'] = (
+                    as_str(last_result.get('content'), '') + '\n' + nudge
+                )
+                memoryNudgedThisTurn = True
         if planSubmittedThisRound:
             break
         if clarifySubmittedThisRound:
@@ -5913,11 +6065,21 @@ def listProxyCapabilities() -> dict[str, object]:
         agentCount = len(listAgents())
     except Exception:
         pass
+    # MCP tool-token split (U7): the context-ring popover breaks "system tools"
+    # into built-in vs MCP so the user can see what an MCP server really costs.
+    mcp_entries: list[dict[str, object]] = []
+    for group_list in grouped.values():
+        for e in group_list:
+            if str(e['name']).startswith('mcp__'):
+                mcp_entries.append(e)
+    mcp_token_total = sum(as_int(e.get('estimated_tokens'), 0) for e in mcp_entries)
     return {
         'tools_by_group': grouped,
         'total_tools': len(allTools),
         'mutating_tools': sum((1 for t in allTools if (t.get('name') if isinstance(t, dict) else t) in _MUTATING_TOOLS)),
         'estimated_total_tokens': sum((len(str(t)) // 4 + 50 for t in allTools)),
+        'mcp_tools': len(mcp_entries),
+        'estimated_mcp_tokens': mcp_token_total,
         'agent_count': agentCount,
     }
 

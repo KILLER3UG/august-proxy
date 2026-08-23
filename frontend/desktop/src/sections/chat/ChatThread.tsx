@@ -251,6 +251,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
   const [workbenchToolTokens, setWorkbenchToolTokens] = useState<number | null>(null);
+  const [workbenchMcpTokens, setWorkbenchMcpTokens] = useState<number | null>(null);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
     const saved = localStorage.getItem(
       'august_last_workbench_guard_mode',
@@ -455,15 +456,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     let cancelled = false;
     listWorkbenchCapabilities()
-      .then(({ totalTools, toolTokenEstimate }) => {
+      .then(({ totalTools, toolTokenEstimate, mcpToolTokens }) => {
         if (cancelled) return;
         if (Number.isFinite(totalTools)) setWorkbenchToolCount(totalTools);
         if (Number.isFinite(toolTokenEstimate)) setWorkbenchToolTokens(toolTokenEstimate!);
+        if (Number.isFinite(mcpToolTokens)) setWorkbenchMcpTokens(mcpToolTokens!);
       })
       .catch(() => {
         if (!cancelled) {
           setWorkbenchToolCount(null);
           setWorkbenchToolTokens(null);
+          setWorkbenchMcpTokens(null);
         }
       });
 
@@ -1131,6 +1134,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         input,
         toolCount: toolCountForBreakdown,
         toolTokenEstimate: toolTokenEstimate ?? undefined,
+        mcpToolTokens: workbenchMcpTokens ?? undefined,
         scaleToTotal: hasServerTruth
           ? estTokens
           : hasContentToSend
@@ -1142,6 +1146,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       input,
       toolCountForBreakdown,
       toolTokenEstimate,
+      workbenchMcpTokens,
       hasServerTruth,
       estTokens,
       hasContentToSend,

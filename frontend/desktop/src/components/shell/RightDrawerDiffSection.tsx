@@ -210,6 +210,15 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
           );
         })}
       </div>
+
+      {/* U2: commit composer — stage-free commit of the current working tree,
+          with an optional AI-generated message (session's own model). */}
+      {files.length > 0 && sessionId && (
+        <CommitComposer sessionId={sessionId} onCommitted={() => {
+          clearRightDrawerDiff();
+          refreshDiff();
+        }} />
+      )}
       <ConfirmDialog
         open={confirmState.open}
         title={confirmState.title}
@@ -220,6 +229,96 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
+    </div>
+  );
+}
+
+/* ── CommitComposer — message input + generate + commit ──────────────── */
+
+function CommitComposer({ sessionId, onCommitted }: { sessionId: string; onCommitted: () => void }) {
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  /** Ask the session's model for a conventional-commit message from the diff. */
+  const generateMessage = async () => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const res = await fetch('/api/workbench/btw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          question:
+            'Write a git commit message for the current working-tree changes. Reply with ONLY the subject line plus an optional short body — no quotes, no backticks, no commentary.',
+        }),
+      });
+      if (!res.ok) throw new Error(`generate failed: ${res.status}`);
+      const data = await res.json() as { output?: string; answer?: string; text?: string };
+      const text = (data.output || data.answer || data.text || '').trim();
+      if (text) setMessage(text.slice(0, 500));
+      else throw new Error('empty suggestion');
+    } catch (err) {
+      toast.error(`Could not generate a message: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleCommit = async () => {
+    const trimmed = message.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    try {
+      await gitApi.commit(sessionId, trimmed);
+      toast.success('Committed');
+      setMessage('');
+      onCommitted();
+    } catch (err) {
+      toast.error(`Commit failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-card/60 p-2.5 space-y-2">
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Commit message…"
+        rows={2}
+        data-testid="git-commit-message"
+        className="w-full resize-none rounded-md border border-border/60 bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:border-primary/40"
+      />
+      <div className="flex items-center gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          disabled={!message.trim() || busy}
+          onClick={() => void handleCommit()}
+          data-testid="git-commit-button"
+        >
+          {busy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+          Commit
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={generating || busy}
+          onClick={() => void generateMessage()}
+          title="Draft a message from the diff using this session's model"
+          data-testid="git-generate-message"
+        >
+          {generating ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+          Generate
+        </Button>
+        <span className="ml-auto text-[10px] text-muted-foreground">
+          Commits the whole working tree
+        </span>
+      </div>
     </div>
   );
 }

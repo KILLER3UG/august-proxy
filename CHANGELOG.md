@@ -1,5 +1,43 @@
 # August Proxy — Changelog
 
+## 0.16.6 (2026-08-23)
+
+**Self-improving harness — the model can now inspect and improve its own harness**
+
+- `harness_introspect` tool: read-only aggregation of the registered tool surface (health, bucket counts, >300ch descriptions), skills catalogue + real usage telemetry, memory-store sizes, active brain-config knobs, latest golden-eval results, recent curation-ledger entries, and open proposals. The model sees what was previously operator-only.
+- `harness_propose` tool: files a structured improvement proposal (`problem / evidence / proposal / rollback / kind`). Proposals land as `data/harness_proposals/*.json`, emit a brain SSE event, and are **never applied by the model** — approval runs one deterministic applier (`brain_config` patches via `validatePatch`; skill create/patch/delete via `skill_service`), everything else is recorded for human implementation. Every decision lands in the curation ledger. Endpoints: `GET /api/brain/harness/proposals`, `POST /api/brain/harness/proposals/{id}/decide`.
+
+**Claude-style recall ritual (P1)**
+
+- Turn 1 always recalls when any headroom exists — under pressure the LIMIT shrinks (floor 1) instead of dropping to zero (`_shouldAutoRecall` + `_probe_recall_limit`). Later turns stay cadence/probe-gated, but probe messages now recall under any pressure.
+- Probe-triggered recalls are cached per session (`_probe_recall_cache`) so repeated "what did I say about X" turns refetch nothing.
+- Always-visible memory pointer line in `<runtime_context>`: store size + newest ledger entry ("harness last change") so recall is never silently absent.
+
+**Mid-task persistence nudge (P2)**
+
+- Once per turn, from tool round ≥4, when recent user messages carry a correction/preference pattern and no `remember` call happened: a bounded `<memory_nudge>` rides in the last tool result suggesting one `remember()` capture. Suppressed under high/critical pressure.
+
+**Prompt hygiene (P4) + tool registry**
+
+- `<bulk_tools>` / `<web_research>` blocks are injected only when the corresponding tools are offered; `<clarify_policy>` stays unconditional on purpose (submit_clarify is loop-intercepted, not registered — documented).
+- Descriptions trimmed ≤300ch: `remember`, `customize_ui`, `setup_provider`. New tools classified in `tool_policy` (`harness_introspect`=read, `harness_propose`=write).
+
+**UI (Hermes/DeepSeek-aligned minimal pass)**
+
+- Context ring popover gains an indented **MCP tools** sub-row; backend reports `mcp_tools` / `estimated_mcp_tokens` split. Fixed latent bug: `/capabilities` served snake_case but the client destructured camelCase — `toolTokenEstimate` never actually reached the UI until now (normalized in `WorkbenchClient.listCapabilities`).
+- Git review pane (right drawer → diff): new commit composer with **Generate message** (drafts from the working-tree diff via `/btw` on the session's own model) and Commit action.
+- Tasks drawer is now an interactive checklist: click/Enter toggles done via `PATCH /api/workbench/todos`, optimistic update with rollback on failure.
+- Knowledge graph gains All / Learned / Recent scope pills (backend `?filter=` keeps agent-authored or last-7-days entities).
+- Find-in-transcript verified already shipped (`InThreadSearch`, ⌘F + match navigation) — no rework needed.
+
+**P0 fixes landed this round (verified against HEAD)**
+
+- Truthful shell grounding on Windows: Tier 2 now says cmd.exe (+POSIX shim note) instead of PowerShell (`context_builder._osShellLine`).
+- False `archive_skill` ledger entries fixed: curator refusal returns `False` → `deleteSkill` fallback reachable, no phantom `removed` counts (`memory_review.py`).
+- Checked-off todos no longer re-save + re-embed every turn forever (`auto_memory.extractAndSaveTodos` gates on actual state change).
+
+**Validation:** ruff ✓ · mypy 19 errors (baseline 20 — none introduced) · targeted backend suites 84 passed (recall/self-improve/curation/todos/routes) · vitest 773/773 · tsc clean · build:web ✓
+
 ## 0.16.5 (2026-08-21)
 
 **Harness — well-structured like Hermes**

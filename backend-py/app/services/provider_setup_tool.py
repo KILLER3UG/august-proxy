@@ -137,14 +137,9 @@ def register() -> None:
     tool_registry.register(
         'setup_provider',
         (
-            'Configure a model provider hands-free. First use web_search / web_fetch to find the '
-            "provider's base URL and API format. Suggest a friendly name (and ask the user to "
-            'confirm or rename it), then call this tool WITHOUT an apiKey to create the provider '
-            'with name, baseUrl, and apiFormat pre-filled. The chat UI will then show the user an '
-            'inline field to paste their API key. To finish setup, the user pastes the key into that '
-            'field (preferred); or you may call this tool again with providerId + apiKey if the user '
-            'pasted the key into the chat. Returns the new provider id plus a needsApiKey flag. '
-            'Valid apiFormat values: openaiChat | anthropicMessages | openaiResponses.'
+            'Configure a model provider hands-free. Call WITHOUT an apiKey to create the provider '
+            '(name, baseUrl, apiFormat). The UI then shows an inline field for the user key; or '
+            'call again with providerId + apiKey. Valid apiFormat: openaiChat | anthropicMessages | openaiResponses.'
         ),
         setupProvider,
         {

@@ -257,7 +257,7 @@ function renderSection(
     case 'terminal':
       return <RightDrawerTerminalSection />;
     case 'tasks':
-      return <RightDrawerTasksSection todos={ctx.workbenchSession?.todos ?? []} />;
+      return <RightDrawerTasksSection sessionId={ctx.sessionId} todos={ctx.workbenchSession?.todos ?? []} />;
     case 'plan':
       return (
         <RightDrawerPlanSection

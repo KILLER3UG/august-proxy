@@ -272,15 +272,10 @@ def register() -> None:
     )
     tool_registry.register(
         'customize_ui',
-        "Change the app's UI colors from chat (e.g. user says 'change the chat "
-        "input to gray' or 'make the chat area black'). Pass a token→color map; "
-        "colors may be hex (#rrggbb) or named (black, white, gray, red, blue, "
-        "green, purple, …). Tokens: chatBackground (conversation area), "
-        "chatInputBackground (composer/typing box), userBubble (sent messages), "
-        "input (input borders), background (whole app), foreground (text), card "
-        "(panels), muted, mutedForeground, border, sidebar, sidebarForeground, "
-        "sidebarAccent, sidebarBorder, primary (buttons/accents), "
-        "primaryForeground, accent, ring. Pass reset=true to restore defaults.",
+        "Change the app's UI colors from chat (e.g. 'make the chat area black'). "
+        "Pass a token→color map (hex or named colors); reset=true restores defaults. "
+        "Tokens include background, foreground, card, border, primary, accent, chatBackground, "
+        "chatInputBackground, userBubble, sidebar, muted, ring.",
         customizeUi,
         {
             'type': 'object',

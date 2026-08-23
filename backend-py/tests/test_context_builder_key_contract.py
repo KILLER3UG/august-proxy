@@ -124,3 +124,26 @@ def test_cached_t12_snake_and_camel_kwargs():
     assert marker in r1
     r2 = buildSystemPrompt(session={}, cached_t12=marker)
     assert marker in r2
+
+
+def test_windows_shell_grounding_matches_reality():
+    """Round-6 P0: Tier 2 claimed `shell: PowerShell` while sandbox backends
+    spawn create_subprocess_shell → cmd.exe on Windows. Grounding must name
+    the shell that actually executes (cmd.exe) and steer the model away from
+    PS-only syntax."""
+    import io
+    import sys
+    from unittest import mock
+
+    from app.services.memory.context_builder import _osShellLine
+
+    with mock.patch.object(sys, 'platform', 'win32'):
+        line = _osShellLine()
+    assert 'Windows' in line
+    assert 'PowerShell' not in line.replace('avoid PowerShell-only syntax', '')
+    assert 'cmd.exe' in line
+    # Non-Windows platforms still report $SHELL.
+    with mock.patch.object(sys, 'platform', 'linux'), mock.patch.dict(
+        'os.environ', {'SHELL': '/bin/zsh'}
+    ):
+        assert _osShellLine().endswith('shell: zsh')

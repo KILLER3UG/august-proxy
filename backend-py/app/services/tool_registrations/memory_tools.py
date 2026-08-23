@@ -493,15 +493,7 @@ def register() -> None:
     )
     tool_registry.register(
         'remember',
-        'Store a durable memory the user will want in future sessions. '
-        'Use when the user says to remember something ("remember that...", "don\'t forget..."), '
-        'states a stable preference or correction ("always use pnpm"), or a durable project fact '
-        'that is NOT derivable from the code or git history. Save before finishing your turn. '
-        'Prefer updating an existing memory over creating a duplicate; repeated facts refresh '
-        'the stored row. Do NOT save session trivia, anything already recorded in the repo, '
-        'or git history. Allowed categories: correction, preference, project, reference. '
-        'Pinned memories are injected into every prompt; use sparingly. '
-        'To read memories later, use memory_search / fact_search / context_read / brain_query.',
+        'Store a durable memory for future sessions. Use for explicit remember requests, stable user preferences/corrections, or project facts not derivable from code/git. Update existing rows instead of duplicating; save before the turn ends. Categories: correction | preference | project | reference.',
         _rememberMemory,
         {
             'type': 'object',

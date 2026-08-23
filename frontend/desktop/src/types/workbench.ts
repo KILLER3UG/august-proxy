@@ -137,6 +137,10 @@ export interface WorkbenchCapabilities {
   totalTools: number;
   /** Estimated token count of all serialized tool definitions (name + description + input_schema). */
   toolTokenEstimate?: number;
+  /** Count of MCP-provided tools (mcp__*), when the backend reports the split. */
+  mcpToolCount?: number;
+  /** Estimated token cost of MCP tool definitions alone (subset of toolTokenEstimate). */
+  mcpToolTokens?: number;
   groups: Record<string, WorkbenchCapability[]>;
   /** Map of agent id → agent definition. Backend serialises the agent
    *  registry here; consumers should narrow with `as WorkbenchAgent` or

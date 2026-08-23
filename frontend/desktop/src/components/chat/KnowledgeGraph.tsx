@@ -124,6 +124,7 @@ export function KnowledgeGraph({ className }: { className?: string }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [tick, setTick] = useState(0);
+  const [graphFilter, setGraphFilter] = useState<'all' | 'learned' | 'recent'>('all');
   const svgRef = useRef<SVGSVGElement>(null);
   const nodesRef = useRef<Map<string, Node>>(new Map());
 
@@ -133,10 +134,11 @@ export function KnowledgeGraph({ className }: { className?: string }) {
   }, [query]);
 
   const { data, isLoading, isFetching } = useQuery<GraphSearchResult>({
-    queryKey: ['brain-graph-search', debouncedQ],
+    queryKey: ['brain-graph-search', debouncedQ, graphFilter],
     queryFn: () => {
       const params = new URLSearchParams();
       if (debouncedQ) params.set('q', debouncedQ);
+      if (graphFilter !== 'all') params.set('filter', graphFilter);
       params.set('limit', '50');
       return api.get<GraphSearchResult>(`/api/brain/graph?${params.toString()}`);
     },
@@ -272,7 +274,7 @@ export function KnowledgeGraph({ className }: { className?: string }) {
 
   return (
     <div className={cn('flex flex-col h-full min-h-[420px]', className)} data-testid="knowledge-graph">
-      {/* Search bar */}
+      {/* Search bar + U5 scope filters (All / Learned / Recent) */}
       <div className="p-3 border-b border-border/30">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50" />
@@ -282,6 +284,32 @@ export function KnowledgeGraph({ className }: { className?: string }) {
             placeholder="Filter entities (optional)…"
             className="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/30 rounded-md border-none outline-none text-foreground placeholder:text-muted-foreground/50"
           />
+        </div>
+        <div className="mt-1.5 flex items-center gap-1" role="tablist" aria-label="Graph scope">
+          {(['all', 'learned', 'recent'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="tab"
+              aria-selected={graphFilter === mode}
+              onClick={() => setGraphFilter(mode)}
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors',
+                graphFilter === mode
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              title={
+                mode === 'learned'
+                  ? 'Only what August learned on its own (reflections, auto-memory, corrections)'
+                  : mode === 'recent'
+                    ? 'Entities touched in the last 7 days'
+                    : 'Everything'
+              }
+            >
+              {mode === 'all' ? 'All' : mode === 'learned' ? 'Learned' : 'Recent'}
+            </button>
+          ))}
         </div>
         {data?.stats?.counts && (
           <p className="mt-1.5 text-[10px] text-muted-foreground font-mono">

@@ -287,3 +287,45 @@ class TestTodoLifecycle:
         messages = [{'role': 'assistant', 'content': 'Nothing to do here.'}]
         assert extractAndSaveTodos(messages) == []
         assert self._storedTodos() == ['stable item']
+
+    def test_checked_off_history_no_churn(self, brain_ready, monkeypatch):
+        """Round-6 P0: once a ``- [x]`` exists in history the old gate
+        (``doneSet or …``) stayed true forever → identical row re-saved (and
+        re-embedded via the vector mirror) every turn. Save must fire only on
+        an actual merged-state change."""
+        from app.services.memory import auto_memory
+        from app.services.memory.auto_memory import extractAndSaveTodos, saveAutoMemory
+
+        saveAutoMemory('todos', ['done deal', 'still open'], category='tasks', source='auto')
+        messages = [
+            {'role': 'assistant', 'content': '- [x] done deal\n- [ ] still open\n'}
+        ]
+        first = extractAndSaveTodos(messages, session_id='s-churn')
+        assert first == ['still open']
+        stored = self._storedTodos()
+        assert 'done deal' not in stored and 'still open' in stored
+
+        calls = {'n': 0}
+        real_save = auto_memory.saveAutoMemory
+
+        def _counting(*args: object, **kwargs: object) -> object:
+            calls['n'] += 1
+            return real_save(*args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(auto_memory, 'saveAutoMemory', _counting)
+        # Identical history replayed on the next turn must be a no-op.
+        assert extractAndSaveTodos(messages, session_id='s-churn') == ['still open']
+        assert extractAndSaveTodos(messages, session_id='s-churn') == ['still open']
+        assert calls['n'] == 0, f'state unchanged — save fired {calls["n"]}x'
+        assert self._storedTodos() == stored
+
+        # A genuine change still saves exactly once.
+        messages2 = [
+            {'role': 'assistant', 'content': '- [ ] still open\n- [ ] fresh item\n'}
+        ]
+        assert extractAndSaveTodos(messages2, session_id='s-churn') == [
+            'still open',
+            'fresh item',
+        ]
+        assert calls['n'] == 1
+        assert 'fresh item' in self._storedTodos()

@@ -333,12 +333,15 @@ def apply_review_actions(actions: list[dict[str, Any]]) -> dict[str, int]:
             elif action == 'delete':
                 try:
                     from app.services.skills.curator import shared_curator
-                    try:
-                        shared_curator().archive(name)
-                        archived = True
-                    except Exception:
-                        archived = False
+
+                    # archive() REFUSES by returning False (bundled / pinned /
+                    # unsafe name) — it does not raise. Only trust its bool;
+                    # fall back to deleteSkill, which raises loudly for bundled
+                    # skills, so the refusal can never masquerade as success.
+                    archived = bool(shared_curator().archive(name))
+                    if not archived:
                         from app.services import skill_service as _ss4
+
                         _ss4.deleteSkill(name)
                     applied['removed'] += 1
                     _ledger(

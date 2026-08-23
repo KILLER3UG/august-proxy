@@ -107,14 +107,36 @@ export function ContextRing({
           1,
           breakdown.messages + breakdown.thinking + breakdown.systemTools + breakdown.systemPrompt + breakdown.skills + breakdown.meta
         );
-        const items: Array<{ label: string; tokens: number; pct: number; opacity: number }> = [
-          { label: 'Messages',       tokens: breakdown.messages,     pct: (breakdown.messages / total) * 100,     opacity: 1    },
-          { label: 'Thinking',       tokens: breakdown.thinking,     pct: (breakdown.thinking / total) * 100,     opacity: 0.80 },
-          { label: 'Tool definitions', tokens: breakdown.systemTools,  pct: (breakdown.systemTools / total) * 100,  opacity: 0.65 },
-          { label: 'System prompt',  tokens: breakdown.systemPrompt, pct: (breakdown.systemPrompt / total) * 100, opacity: 0.45 },
-          { label: 'Skills',         tokens: breakdown.skills,       pct: (breakdown.skills / total) * 100,       opacity: 0.30 },
-          { label: 'Meta context',   tokens: breakdown.meta,         pct: (breakdown.meta / total) * 100,         opacity: 0    },
+        // MCP tools are a SUBSET of system tools — shown as an indented sub-row
+        // (share of *used* context, Kilo-Code-style popover per the P5 spec).
+        const mcpTokens = breakdown.mcpTools ?? 0;
+        const items: Array<{
+          label: string;
+          tokens: number;
+          pct: number;
+          opacity: number;
+          indent?: boolean;
+          sub?: boolean;
+        }> = [
+          { label: 'Messages',      tokens: breakdown.messages,     pct: (breakdown.messages / total) * 100,     opacity: 1    },
+          { label: 'Thinking',      tokens: breakdown.thinking,     pct: (breakdown.thinking / total) * 100,     opacity: 0.80 },
+          { label: 'System tools',  tokens: breakdown.systemTools,  pct: (breakdown.systemTools / total) * 100,  opacity: 0.65 },
         ];
+        if (mcpTokens > 0) {
+          items.push({
+            label: 'MCP tools',
+            tokens: mcpTokens,
+            pct: (mcpTokens / total) * 100,
+            opacity: 0.55,
+            indent: true,
+            sub: true,
+          });
+        }
+        items.push(
+          { label: 'System prompt', tokens: breakdown.systemPrompt, pct: (breakdown.systemPrompt / total) * 100, opacity: 0.45 },
+          { label: 'Skills',        tokens: breakdown.skills,       pct: (breakdown.skills / total) * 100,       opacity: 0.30 },
+          { label: 'Meta context',  tokens: breakdown.meta,         pct: (breakdown.meta / total) * 100,         opacity: 0    },
+        );
         return items;
       })()
     : null;
@@ -182,7 +204,10 @@ export function ContextRing({
           {rows && (
             <div className="space-y-0.5">
               {rows.map((r) => (
-                <div key={r.label} className="flex items-center gap-1.5 py-[2px] text-[11.5px]">
+                <div
+                  key={r.label}
+                  className={'flex items-center gap-1.5 py-[2px] text-[11.5px]' + (r.indent ? ' pl-3' : '')}
+                >
                   <span
                     className="w-1.5 h-1.5 rounded-full shrink-0"
                     style={{
@@ -190,7 +215,10 @@ export function ContextRing({
                       opacity: r.opacity === 0 ? 1 : r.opacity,
                     }}
                   />
-                  <span style={{ color: 'var(--dt-muted-foreground)' }}>{r.label}</span>
+                  <span style={{ color: 'var(--dt-muted-foreground)' }}>
+                    {r.label}
+                    {r.sub && <span className="opacity-60"> ↳</span>}
+                  </span>
                   <span className="ml-auto font-mono tabular-nums text-muted-foreground text-[11px]">
                     {r.pct.toFixed(1)}%
                   </span>

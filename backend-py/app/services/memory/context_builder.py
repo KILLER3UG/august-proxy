@@ -129,16 +129,23 @@ def _trunc(val: object, maxChars: int, what: str) -> str:
 
 
 def _osShellLine() -> str:
-    """Stable machine grounding: OS + shell (the model runs commands here)."""
+    """Stable machine grounding: OS + the shell commands ACTUALLY spawn."""
     import os
     import sys
 
     names = {'win32': 'Windows', 'darwin': 'macOS', 'linux': 'Linux'}
     osName = names.get(sys.platform, sys.platform)
     if sys.platform == 'win32':
-        shell = 'PowerShell'
-    else:
-        shell = os.environ.get('SHELL', '/bin/sh').rsplit('/', 1)[-1] or 'sh'
+        # Ground truth: sandbox backends spawn via create_subprocess_shell,
+        # which is cmd.exe on Windows (a small POSIX shim translates common
+        # read-only one-liners). Claiming PowerShell here made the model emit
+        # PS syntax cmd.exe cannot parse.
+        return (
+            f'OS: {osName} ({sys.platform}) · shell: cmd.exe '
+            '(common POSIX utilities (ls/cat/grep/head/tail) are auto-translated; '
+            'avoid PowerShell-only syntax like $env: or Get-ChildItem)'
+        )
+    shell = os.environ.get('SHELL', '/bin/sh').rsplit('/', 1)[-1] or 'sh'
     return f'OS: {osName} ({sys.platform}) · shell: {shell}'
 
 
@@ -635,6 +642,27 @@ def buildTier3(session: dict[str, object] | None = None) -> str:
                 statsLines.append(f'  {k}: {v}')
         if statsLines:
             rcParts.append('Memory stats:\n' + '\n'.join(statsLines))
+    # Claude-style always-visible memory pointer (P1.2): ONE bounded line so
+    # recall is never silently absent — even when <auto_memories> stayed empty
+    # this turn (pressure/cadence gates), the model knows the store exists,
+    # how big it is, and what the harness last learned (trust signal).
+    try:
+        from app.services.memory import curation_ledger as _curation_ledger
+
+        pointer = 'Memory: past sessions are stored — recall with memory_search(query) / fact_search() when the user references anything prior.'
+        _mc = memoryStats.get('memoryStore')
+        if isinstance(_mc, int) and _mc > 0:
+            pointer += f' Store: {_mc} durable memories.'
+        _ledger_rows = _curation_ledger.recent(limit=1)
+        _ledger_row = as_dict(_ledger_rows[0]) if _ledger_rows else {}
+        if _ledger_row:
+            _act = as_str(_ledger_row.get('action'), '')
+            _key = as_str(_ledger_row.get('target_key'), '')
+            if _act and _key:
+                pointer += f' Harness last change: {_act} {_key}.'
+        rcParts.append(f'{pointer}\n')
+    except Exception:
+        pass
     if rcParts:
         blocks.append(wrapTag('runtime_context', '\n'.join(rcParts)))
     return '\n\n'.join((b for b in blocks if b.strip()))

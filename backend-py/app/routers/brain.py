@@ -324,6 +324,48 @@ async def runHarnessEvals():
     return {'started': True, 'note': 'eval suite running in the background'}
 
 
+@router.get('/harness/proposals')
+async def harnessProposals(limit: int = 50):
+    """Harness self-improvement proposals filed by the model.
+
+    Rows live under ``data/harness_proposals/*.json``; approve/reject via
+    ``POST /api/brain/harness/proposals/{id}/decide``. Approvable kinds
+    (brain_config / skill_*) run a deterministic applier; everything else is
+    recorded for human implementation.
+    """
+    from app.services.harness_self_improve import list_proposals
+
+    rows = list_proposals(limit=limit)
+    return {
+        'proposals': rows,
+        'total': len(rows),
+        'open': sum(1 for r in rows if r.get('status') == 'open'),
+    }
+
+
+@router.post('/harness/proposals/{pid}/decide')
+async def harnessProposalDecide(pid: str, body: dict = {}):
+    """Approve / reject / dismiss one harness proposal.
+
+    ``{"decision": "approve"|"reject"|"dismiss", "note": "..."}``. Approval
+    executes the deterministic applier for approvable kinds and records the
+    outcome in the curation ledger.
+    """
+    from fastapi import HTTPException
+
+    from app.json_narrowing import as_dict, as_str
+    from app.services.harness_self_improve import decide_proposal
+
+    decision = as_str(as_dict(body).get('decision'), '')
+    note = as_str(as_dict(body).get('note'), '')
+    if not decision:
+        raise HTTPException(status_code=400, detail='decision is required')
+    try:
+        return decide_proposal(pid, decision, note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get('/routing/best-by-task')
 async def routingBestByTask(days: int = 30, minSamples: int = 3):
     """Best model per task type (win-rate desc) — the Reliability

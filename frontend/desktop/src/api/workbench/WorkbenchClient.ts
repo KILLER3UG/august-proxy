@@ -434,7 +434,34 @@ export class WorkbenchClient {
   }
 
   async listCapabilities(): Promise<WorkbenchCapabilities> {
-    return wbFetch('/api/workbench/capabilities');
+    const raw = await wbFetch<Record<string, unknown>>('/api/workbench/capabilities');
+    // The backend serves snake_case here (no global camel middleware on this
+    // route) — normalize so `totalTools` / `toolTokenEstimate` destructuring
+    // in ChatThread actually receives values (they silently fell back to
+    // heuristics before this mapping existed).
+    return {
+      generatedAt: typeof raw.generatedAt === 'string' ? raw.generatedAt : '',
+      totalTools: Number(raw.total_tools ?? raw.totalTools ?? 0),
+      toolTokenEstimate:
+        raw.estimated_total_tokens != null || raw.toolTokenEstimate != null
+          ? Number(raw.estimated_total_tokens ?? raw.toolTokenEstimate)
+          : undefined,
+      mcpToolCount:
+        raw.mcp_tools != null || raw.mcpToolCount != null
+          ? Number(raw.mcp_tools ?? raw.mcpToolCount)
+          : undefined,
+      mcpToolTokens:
+        raw.estimated_mcp_tokens != null || raw.mcpToolTokens != null
+          ? Number(raw.estimated_mcp_tokens ?? raw.mcpToolTokens)
+          : undefined,
+      groups: (raw.tools_by_group ?? raw.groups ?? {}) as WorkbenchCapabilities['groups'],
+      agents: (raw.agents ?? {}) as WorkbenchCapabilities['agents'],
+      approvalGate: (raw.approvalGate ??
+        raw.approval_gate ?? {
+          readSearchInspectAllowed: true,
+          mutationsRequireApprovedPlan: false,
+        }) as WorkbenchCapabilities['approvalGate'],
+    };
   }
 }
 

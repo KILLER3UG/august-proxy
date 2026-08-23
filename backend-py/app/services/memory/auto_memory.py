@@ -1452,8 +1452,12 @@ def extractAndSaveTodos(
         prior = []
     doneSet = {d.strip() for d in done}
     keptPrior = [t for t in prior if t.strip() not in doneSet]
-    if doneSet or len(keptPrior) != len(prior) or todos:
-        merged = list(dict.fromkeys(keptPrior + todos))
+    merged = list(dict.fromkeys(keptPrior + todos))
+    # Save only on an actual state change. The old gate (``doneSet or …``)
+    # stayed true forever once any ``- [x]`` existed in history, rewriting the
+    # byte-identical row — and re-embedding it through the vector mirror —
+    # on every single turn.
+    if merged != prior:
         saveAutoMemory(
             'todos', merged, category='tasks', importance=0.8, source='auto', session_id=session_id
         )

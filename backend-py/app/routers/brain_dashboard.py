@@ -515,6 +515,11 @@ async def brainTimeline(
 async def brainGraph(
     q: str = Query('', description='Optional entity search; empty = default neighborhood'),
     limit: int = Query(50, ge=1, le=200),
+    filter: str = Query(
+        'all',
+        description="all | learned | recent — 'learned' keeps only agent-authored "
+        '(reflection/auto) entities; recent keeps entities touched in the last 7 days.',
+    ),
 ) -> dict[str, object]:
     """Return knowledge graph stats + searchable subgraph for the UI.
 
@@ -552,6 +557,32 @@ async def brainGraph(
             raw_entities = graph_memory.searchEntities(query)[:limit]
         else:
             raw_entities = graph_memory.listEntities(limit)
+
+        # U5 filters (client passes ?filter=): 'learned' keeps agent-authored
+        # entities (metadata.source in reflection/auto/diff-learning family);
+        # 'recent' keeps entities updated within the last 7 days.
+        fmode = (filter or 'all').strip().lower()
+        if fmode == 'learned':
+            _learned_sources = {'reflection', 'auto', 'diff_learning', 'agent', 'auto-gen'}
+            learned_rows: list[dict[str, object]] = []
+            for e in raw_entities:
+                ed = as_dict(e)
+                meta = ed.get('metadata')
+                src = (
+                    as_str(as_dict(meta).get('source'), '')
+                    if isinstance(meta, dict)
+                    else ''
+                )
+                if src in _learned_sources or as_str(ed.get('type'), '').lower() == 'workflowrule':
+                    learned_rows.append(ed)
+            raw_entities = learned_rows
+        elif fmode == 'recent':
+            import datetime as _dt
+
+            cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=7)).isoformat()
+            raw_entities = [
+                as_dict(e) for e in raw_entities if as_str(as_dict(e).get('updatedAt'), '') >= cutoff
+            ]
 
         # Optional content lookup so older conv_summary_* nodes (saved before
         # label metadata) still show what the user actually asked.

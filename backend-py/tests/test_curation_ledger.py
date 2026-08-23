@@ -155,3 +155,46 @@ class TestCrossLoopAwareness:
         payload = collect_review_payload(limit=5)
         entries = payload.get('recentCuration') or []
         assert any(e['targetKey'] == 'heuristic:7' and e['actor'] == 'sleep_cycle' for e in entries)
+
+
+class TestArchiveLedgerHonesty:
+    """Round-6 P0: a REFUSED archive (bundled / pinned / unsafe name) must not
+    record a ledger entry or bump ``removed`` — archive() returns False, it
+    does not raise, so the old ``archived = True`` unconditional lied."""
+
+    def test_refused_archive_records_nothing(self, brain_ready, ledger, monkeypatch):
+        from app.services.memory import memory_review
+        from app.services.skills.curator import shared_curator
+
+        name = 'test-driven-development'  # bundled: archive refuses, delete raises
+
+        def _refuse(_name: str) -> bool:
+            return False
+
+        monkeypatch.setattr(shared_curator(), 'archive', _refuse)
+
+        from app.services import skill_service as ss
+
+        def _raise_bundled(_name: str) -> dict[str, object]:
+            raise ValueError(f"Refusing to delete bundled skill '{_name}'.")
+
+        monkeypatch.setattr(ss, 'deleteSkill', _raise_bundled)
+
+        applied = memory_review.apply_review_actions(
+            [{'kind': 'skill_delete', 'name': name, 'body': 'x'}]
+        )
+        assert applied['removed'] == 0
+        rows = [r for r in ledger.recent(20) if r['target_key'] == name]
+        assert rows == [], f'refused archive must not reach the ledger: {rows}'
+
+    def test_successful_archive_still_ledgers(self, brain_ready, ledger, monkeypatch):
+        from app.services.memory import memory_review
+        from app.services.skills.curator import shared_curator
+
+        monkeypatch.setattr(shared_curator(), 'archive', lambda _n: True)
+        applied = memory_review.apply_review_actions(
+            [{'kind': 'skill_delete', 'name': 'temp-skill-a1', 'body': 'x'}]
+        )
+        assert applied['removed'] == 1
+        rows = [r for r in ledger.recent(20) if r['target_key'] == 'temp-skill-a1']
+        assert rows and rows[0]['action'] == 'archive_skill'

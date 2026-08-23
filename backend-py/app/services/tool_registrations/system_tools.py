@@ -7,6 +7,7 @@ import sys
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services import tool_registry
+from app.services.harness_self_improve import _harnessIntrospect, _harnessPropose
 
 
 async def _diagnoseProxy() -> str:
@@ -610,6 +611,37 @@ def register() -> None:
         'Describe the workspace environment: data paths, VCS status, registered tools. Use diagnose_proxy to understand the proxy runtime itself.',
         _describeEnvironment,
         {'type': 'object', 'properties': {}, 'required': []},
+    )
+    tool_registry.register(
+        'harness_introspect',
+        'Inspect your own harness: registered tools + health, skills + usage, memory store sizes, active brain-config knobs, latest golden-eval results, recent harness changes, open improvement proposals. Call this before proposing any harness change.',
+        _harnessIntrospect,
+        {'type': 'object', 'properties': {}, 'required': []},
+    )
+    tool_registry.register(
+        'harness_propose',
+        'File a harness-improvement proposal for HUMAN review. Requires problem, evidence, proposal, rollback, kind. kind=brain_config|skill_* applies on approval via payload; tool_bucket|tool_description|observation is recorded for humans. Never assume a proposal is applied.',
+        _harnessPropose,
+        {
+            'type': 'object',
+            'properties': {
+                'problem': {'type': 'string', 'description': 'What in the harness underperforms and why it matters (1-3 sentences).'},
+                'evidence': {'type': 'string', 'description': 'Concrete observations: eval results, usage counts, error patterns, token costs.'},
+                'proposal': {'type': 'string', 'description': 'The specific change to make.'},
+                'rollback': {'type': 'string', 'description': 'How to undo the change if the metric regresses.'},
+                'kind': {
+                    'type': 'string',
+                    'description': 'Proposal class.',
+                    'enum': ['brain_config', 'skill_create', 'skill_patch', 'skill_delete', 'tool_bucket', 'tool_description', 'observation'],
+                },
+                'expectedMetric': {'type': 'string', 'description': 'Which measured number should improve (eval pass-rate, tokens/turn, latency).'},
+                'payload': {
+                    'type': 'object',
+                    'description': 'Machine-readable part: {patch:{...}} for brain_config; {name,body,description,trigger} for skill kinds.',
+                },
+            },
+            'required': ['problem', 'evidence', 'proposal', 'rollback', 'kind'],
+        },
     )
     tool_registry.register(
         'update_heuristics',
