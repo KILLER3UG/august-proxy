@@ -326,11 +326,34 @@ async def runHarnessEvals():
 
 @router.get('/auto-maintenance')
 async def autoMaintenanceStatus():
-    """Quiet status for the SelfMaintenanceLine: last automatic memory-review
-    run (the loop also covers skill curation via the hourly curator)."""
-    from app.services.memory.auto_review_loop import last_run_summary
+    """Quiet status for the SelfMaintenanceLine.
 
-    return {'lastRunSummary': last_run_summary()}
+    Returns the last automatic review summary plus live boot-maintenance
+    state (`running: true` while the fresh-open full refresh is in flight).
+    """
+    from app.services.memory.auto_review_loop import (
+        boot_running,
+        last_run_summary,
+        read_boot_state,
+    )
+
+    boot = read_boot_state()
+    return {
+        'lastRunSummary': last_run_summary(),
+        'running': bool(boot_running() or boot.get('running')),
+        'boot': boot,
+    }
+
+
+@router.post('/auto-maintenance/run')
+async def autoMaintenanceRun():
+    """Trigger the full maintenance pass now (boot parity, user-invoked)."""
+    import asyncio
+
+    from app.services.memory.auto_review_loop import run_boot_maintenance
+
+    task = asyncio.create_task(run_boot_maintenance())
+    return {'started': True, 'taskId': id(task)}
 
 
 @router.get('/harness/proposals')

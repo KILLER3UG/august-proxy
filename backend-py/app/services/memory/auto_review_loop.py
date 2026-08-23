@@ -26,7 +26,146 @@ from app.json_narrowing import as_dict, as_int, as_list
 log = logging.getLogger(__name__)
 
 _KV_KEY = 'auto_memory_review_state'
-_DEFAULT_INTERVAL_S = 12 * 3600  # twice a day is plenty for memory hygiene
+_DEFAULT_INTERVAL_S = 12 * 3600  # idle cadence — boot ALWAYS runs a full pass
+
+# Boot-maintenance state (separate KV so the UI can show "updating…" live).
+_BOOT_KEY = 'boot_maintenance_state'
+
+# Process-wide flag: set while a boot pass is running. The status endpoint
+# reads this to report `running: true` without touching the loop task.
+_bootRunning = False
+
+
+def boot_running() -> bool:
+    return _bootRunning
+
+
+def read_boot_state() -> dict[str, object]:
+    try:
+        from app.services.memory_store import get_memory
+
+        raw = get_memory(_BOOT_KEY)
+        if isinstance(raw, dict):
+            return raw
+    except Exception:
+        pass
+    return {}
+
+
+def _write_boot_state(state: dict[str, object]) -> None:
+    try:
+        from app.services.memory_store import save_memory
+
+        save_memory(_BOOT_KEY, state)
+    except Exception:
+        log.debug('boot maintenance: failed to persist state', exc_info=True)
+
+
+async def run_boot_maintenance(*, force_review: bool = True) -> dict[str, object]:
+    """Full refresh pass on FRESH APP OPEN (user rule: boot ⇒ update everything).
+
+    Runs the fast deterministic sweeps synchronously, then the LLM memory
+    review with ``force=True`` (bypasses the 12h idle gate — a fresh open is
+    exactly when the user expects everything up to date). Persists progress
+    so GET /api/brain/auto-maintenance can show a live 'updating…' state.
+    """
+    global _bootRunning
+    if _bootRunning:
+        return {'ran': False, 'reason': 'already-running'}
+    import asyncio as _asyncio
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    _bootRunning = True
+    started = time.time()
+    try:
+        _write_boot_state({'running': True, 'startedAt': _dt.now(_tz.utc).isoformat()})
+        try:
+            from app.services.brain_event_bus import emitBrainEvent
+
+            emitBrainEvent(
+                category='self_improvement',
+                layer='auto_maintenance.boot',
+                summary='Fresh start: updating memories and skills…',
+                meta={'type': 'bootMaintenance', 'phase': 'start'},
+            )
+        except Exception:
+            pass
+
+        report: dict[str, object] = {'ran': True}
+        # 1) Deterministic sweeps (fast, no LLM): expired-memory TTL prune,
+        #    vector-mirror reconciliation, skill stale/archive transitions.
+        try:
+            from app.services.memory.auto_memory import prune_expired_memories
+
+            report['prunedExpired'] = prune_expired_memories(limit=200)
+        except Exception as exc:
+            report['prunedExpiredError'] = str(exc)[:150]
+        try:
+            from app.services.memory.vector_mirror import reconcile_vector_mirror
+
+            mirror = await _asyncio.to_thread(reconcile_vector_mirror)
+            report['mirrorRepaired'] = as_int(as_dict(mirror).get('repaired'), 0)
+        except Exception as exc:
+            report['mirrorError'] = str(exc)[:150]
+        try:
+            from app.services.skills.curator import shared_curator
+
+            cur = shared_curator().run_curation()
+            report['staled'] = len(as_list(as_dict(cur).get('staled'), []))
+            report['archivedSkills'] = len(as_list(as_dict(cur).get('archived'), []))
+        except Exception as exc:
+            report['curatorError'] = str(exc)[:150]
+
+        # 2) LLM memory review — forced on boot.
+        review = await run_auto_review(force=force_review)
+        report['review'] = {k: v for k, v in as_dict(review).items()}
+
+        report['durationMs'] = int((time.time() - started) * 1000)
+    finally:
+        # ALWAYS clear the live flag — even when the pass throws mid-way, or
+        # the UI would spin "Updating memory & skills…" forever.
+        _bootRunning = False
+    _write_boot_state({
+        'running': False,
+        'lastCompletedAt': int(started),
+        'applied': as_int(as_dict(report.get('review')).get('applied'), 0),
+        'skippedRemove': as_int(as_dict(report.get('review')).get('skippedRemove'), 0),
+        'summary': last_run_summary(),
+    })
+    try:
+        from app.services.brain_event_bus import emitBrainEvent
+
+        applied = as_int(as_dict(report.get('review')).get('applied'), 0)
+        emitBrainEvent(
+            category='self_improvement',
+            layer='auto_maintenance.boot',
+            summary=(
+                f'Fresh-start maintenance done in {report.get("durationMs", 0)}ms'
+                + (f' · {applied} improvements applied' if applied else '')
+                + (' · (with errors)' if any(k.endswith('Error') for k in report) else '')
+            ),
+            meta={'type': 'bootMaintenance', 'phase': 'done', **{k: v for k, v in report.items() if k != 'review'}},
+        )
+    except Exception:
+        pass
+    return report
+
+
+async def make_boot_maintenance_task() -> 'object':
+    """Fire-and-forget boot pass spawned from lifespan AFTER the server starts."""
+    import asyncio
+
+    async def _run() -> None:
+        # Small delay so the UI connects first and sees the running state.
+        await asyncio.sleep(2.5)
+        try:
+            await run_boot_maintenance()
+        except Exception:
+            log.exception('boot maintenance failed')
+
+    return asyncio.create_task(_run())
+
 
 
 def _kv() -> object:
@@ -91,7 +230,9 @@ async def run_auto_review(*, model: str = '', force: bool = False) -> dict[str, 
     try:
         from app.services.memory.memory_review import apply_review_actions, run_memory_review
 
-        result = await run_memory_review(model or '', origin='', folder_id='', session_id='')
+        result = await run_memory_review(
+            model or '', origin='', folder_id='', session_id='', force=force
+        )
         reviewed_model = str(as_dict(result).get('model') or model or '')
         actions: list[dict[str, object]] = []
         for kind, key in (('improve', 'improve'), ('enhance', 'enhance'), ('merge', 'merge')):

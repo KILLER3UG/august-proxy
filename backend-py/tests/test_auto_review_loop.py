@@ -37,7 +37,7 @@ def test_force_bypasses_interval_gate(_kv_store, monkeypatch):
 
     auto_review_loop._write_state({'lastRunAt': time.time()})
 
-    async def fake_review(model_id='', origin='all', folder_id='', session_id=''):
+    async def fake_review(model_id='', origin='all', folder_id='', session_id='', **kw):
         return {'model': 'test-model', 'improve': [], 'remove': [], 'enhance': [], 'merge': []}
 
     import app.services.memory.memory_review as mr
@@ -52,7 +52,7 @@ def test_removals_become_proposals_never_applied(_kv_store, monkeypatch):
 
     applied_actions: list[list] = []
 
-    async def fake_review(model_id='', origin='all', folder_id='', session_id=''):
+    async def fake_review(model_id='', origin='all', folder_id='', session_id='', **kw):
         return {
             'model': 'test-model',
             'improve': [{'id': 1, 'rewritten': 'better text', 'why': 'clearer'}],
@@ -92,3 +92,46 @@ def test_last_run_summary_formats_quietly(_kv_store):
     # Never-run store → empty string (UI hides the line).
     auto_review_loop._write_state({})
     assert auto_review_loop.last_run_summary() == ''
+
+
+# ── Boot pass: fresh app open ⇒ full refresh ────────────────────────────────
+
+def test_boot_pass_runs_and_clears_running_flag(_kv_store, monkeypatch):
+    import asyncio
+
+    async def fake_review(model_id='', origin='all', folder_id='', session_id='', **kw):
+        # Boot MUST force the review past the 12h idle gate.
+        assert kw.get('force') is True
+        return {
+            'ran': True,
+            'ok': True,
+            'model': 'm',
+            'improve': [{'id': 7, 'rewritten': 'cleaner text', 'why': 'dedup'}],
+            'remove': [],
+            'enhance': [],
+            'merge': [],
+        }
+
+    import app.services.memory.memory_review as mr
+
+    monkeypatch.setattr(mr, 'run_memory_review', fake_review)
+    out = asyncio.run(auto_review_loop.run_boot_maintenance())
+    assert out['ran'] is True
+    # applied counts ACTION ROWS the loop feeds the applier (1 improve here),
+    # not any passthrough field from the review payload.
+    assert out['review']['applied'] == 1
+    assert auto_review_loop.boot_running() is False
+    boot = auto_review_loop.read_boot_state()
+    assert boot.get('running') is False
+    assert boot.get('applied') == 1
+
+
+def test_boot_pass_never_double_runs(_kv_store, monkeypatch):
+    import asyncio
+
+    auto_review_loop._bootRunning = True
+    try:
+        out = asyncio.run(auto_review_loop.run_boot_maintenance())
+        assert out['ran'] is False and out['reason'] == 'already-running'
+    finally:
+        auto_review_loop._bootRunning = False

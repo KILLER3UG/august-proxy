@@ -230,7 +230,14 @@ async def run_memory_review(
     origin: str = 'all',
     folder_id: str = '',
     session_id: str = '',
+    force: bool = False,
 ) -> dict[str, Any]:
+    """Run one LLM memory review pass.
+
+    ``force`` is honored by callers that gate on their own schedule (the
+    auto-review loop passes force=True on fresh-app-open boot passes); the
+    review itself has no internal gate.
+    """
     payload = collect_review_payload(origin=origin, folder_id=folder_id, session_id=session_id)
     memories = payload['memories']
     heuristics = payload['heuristics']

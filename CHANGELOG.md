@@ -1,5 +1,17 @@
 # August Proxy — Changelog
 
+## 0.16.8 (2026-08-23)
+
+**Fresh-open full refresh — boot always updates everything, visibly**
+
+- New `run_boot_maintenance()` pass fired automatically on every fresh app open: expired-memory TTL prune → vector-mirror reconciliation → skill stale/archive curation → **forced** LLM memory review (bypasses the 12h idle gate; a fresh open is exactly when everything should be current).
+- The pass is observable: `GET /api/brain/auto-maintenance` now returns `running` + boot state; `SelfMaintenanceLine` polls it and shows a live spinner — *"Updating memory & skills…"* — while the pass runs (fast 1.5s poll while active, 60s idle), then settles into the quiet summary line. Brain SSE events mark start/done.
+- `POST /api/brain/auto-maintenance/run` triggers the same full pass on demand.
+- Safety details: double-run guard (`already-running`), `_bootRunning` flag cleared in `finally` so the spinner can never hang forever, per-step error capture reported as "(with errors)" instead of failing the whole pass.
+- `run_memory_review(force=...)` parameter added so callers with their own schedule can bypass internal gates.
+
+**Validation:** ruff ✓ · mypy at baseline (19) · vitest 773/773 ✓ · tsc clean ✓ · build:web ✓ · test_auto_review_loop.py extended to 6 tests (boot runs+clears flag, forced review asserted, no double-run).
+
 ## 0.16.7 (2026-08-23)
 
 **Fully automatic self-maintenance — the user just chats**

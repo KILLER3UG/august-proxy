@@ -223,6 +223,16 @@ async def lifespan(app: FastAPI):
         logger.info('Automatic memory review loop started')
     except Exception:
         logger.exception('Auto memory review loop failed to start (continuing)')
+    # Fresh-open full refresh (0.16.7): boot ALWAYS runs the complete pass —
+    # TTL prune + vector-mirror reconcile + skill curation + forced LLM
+    # review — so everything is up to date when the user starts chatting.
+    try:
+        from app.services.memory.auto_review_loop import make_boot_maintenance_task
+
+        app.state.boot_maintenance_task = await make_boot_maintenance_task()
+        logger.info('Boot maintenance pass scheduled')
+    except Exception:
+        logger.exception('Boot maintenance failed to start (continuing)')
     # Schema/workbench blob columns are created by the earlier memory_store.init().
     yield
     # Tear down the log-stream hub and root handler on shutdown.
@@ -251,6 +261,9 @@ async def lifespan(app: FastAPI):
         _auto_task = getattr(app.state, 'auto_review_task', None)
         if _auto_task is not None:
             _auto_task.cancel()
+        _boot_task = getattr(app.state, 'boot_maintenance_task', None)
+        if _boot_task is not None:
+            _boot_task.cancel()
     except Exception:
         pass
     # Flush debounced workbench session saves — the daemon timer dies with
