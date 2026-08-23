@@ -324,6 +324,15 @@ async def runHarnessEvals():
     return {'started': True, 'note': 'eval suite running in the background'}
 
 
+@router.get('/auto-maintenance')
+async def autoMaintenanceStatus():
+    """Quiet status for the SelfMaintenanceLine: last automatic memory-review
+    run (the loop also covers skill curation via the hourly curator)."""
+    from app.services.memory.auto_review_loop import last_run_summary
+
+    return {'lastRunSummary': last_run_summary()}
+
+
 @router.get('/harness/proposals')
 async def harnessProposals(limit: int = 50):
     """Harness self-improvement proposals filed by the model.

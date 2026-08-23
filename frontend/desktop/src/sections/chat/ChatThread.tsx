@@ -1289,12 +1289,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [offlineCount, flushingOffline, flushOffline]);
 
   const composer = (
-    <>
-      <ComposerDecisionStack
-        sessionId={sessionId}
-        modelId={selectedModel?.id}
-        turnCount={messages.length}
-      />
+      <>
+        <ComposerDecisionStack
+          sessionId={sessionId}
+        />
       <ChatThreadComposer
       sessionId={sessionId}
       loadedSessionId={loadedSessionId}

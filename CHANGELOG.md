@@ -1,5 +1,15 @@
 # August Proxy — Changelog
 
+## 0.16.7 (2026-08-23)
+
+**Fully automatic self-maintenance — the user just chats**
+
+- New backend loop `auto_review_loop`: scheduled LLM memory review (12h interval, calm-down after boot) that **auto-applies** the safe subset — improve / enhance / merge via `apply_review_actions`, each journaled in the curation ledger. **Removals are never automatic**: they become open harness proposals for one-click human approval. Emits a brain SSE event per run.
+- The "Review what I remember" and "Curate skills (dry run)" pills are **removed from the UI**. Skill curation was already automatic (hourly curator loop); memory review now joins it. Replaced by `SelfMaintenanceLine` — a single quiet status line under the composer ("self-maintenance ran 2h ago · 3 improvements applied · 1 removal awaits approval") fed by `GET /api/brain/auto-maintenance`. Hidden until the first run.
+- Composer minimalism pass: icon-only round send button (DeepSeek-style ↑ pill; mode context moved to tooltip; streaming keeps explicit Steer/Stop), removed the boxed project/plugins/model-echo meta row (project badge already lives above; model is in the picker), reasoning line rendered in italic like DeepSeek's "Thought for N s".
+
+**Validation:** ruff ✓ · mypy at baseline (19, none introduced) · vitest 773/773 ✓ · tsc clean ✓ · build:web ✓ · new tests `test_auto_review_loop.py` (gating, safe-apply-only, removals→proposals, quiet summary)
+
 ## 0.16.6 (2026-08-23)
 
 **Self-improving harness — the model can now inspect and improve its own harness**

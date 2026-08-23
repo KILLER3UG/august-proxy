@@ -214,6 +214,15 @@ async def lifespan(app: FastAPI):
         logger.info('Curator + subagent orchestrator ready')
     except Exception:
         logger.exception('Runtime services (curator/orchestrator) failed to start')
+    # Automatic memory self-maintenance (0.16.6): scheduled LLM review with
+    # safe auto-apply — the user never clicks "Review what I remember".
+    try:
+        from app.services.memory.auto_review_loop import make_auto_review_task
+
+        app.state.auto_review_task = make_auto_review_task()
+        logger.info('Automatic memory review loop started')
+    except Exception:
+        logger.exception('Auto memory review loop failed to start (continuing)')
     # Schema/workbench blob columns are created by the earlier memory_store.init().
     yield
     # Tear down the log-stream hub and root handler on shutdown.
@@ -235,6 +244,13 @@ async def lifespan(app: FastAPI):
         from app.services.runtime_services import shutdown_runtime_services
 
         await shutdown_runtime_services()
+    except Exception:
+        pass
+    # Stop the automatic memory-review loop.
+    try:
+        _auto_task = getattr(app.state, 'auto_review_task', None)
+        if _auto_task is not None:
+            _auto_task.cancel()
     except Exception:
         pass
     # Flush debounced workbench session saves — the daemon timer dies with

@@ -1,7 +1,10 @@
-/* One composer card for decisions + always-include, instead of stacked bars. */
+/* One composer card for decisions + always-include, instead of stacked bars.
+ * 0.16.6: the memory-review and skill-curation pills were REMOVED — both are
+ * automatic now (backend auto-review loop + hourly curator). A quiet
+ * SelfMaintenanceLine shows the last run instead; removals still reach the
+ * user, but as proposals in this stack / Insights, never as click-me chips. */
 
-import { BrainReviewBar } from './BrainReviewBar';
-import { CuratorSuggestionBar } from './CuratorSuggestionBar';
+import { SelfMaintenanceLine } from './SelfMaintenanceLine';
 import { DistillPendingBar } from './DistillPendingBar';
 import { MemorySuggestionBar } from './MemorySuggestionBar';
 import { PinnedMemoryBar } from './PinnedMemoryBar';
@@ -10,17 +13,12 @@ import { ModelProfileSuggestionBar } from './ModelProfileSuggestionBar';
 
 export function ComposerDecisionStack({
   sessionId,
-  modelId,
-  turnCount,
 }: {
   sessionId: string | null;
-  modelId?: string | null;
-  turnCount?: number;
 }) {
   return (
     <div className="mb-1 space-y-1 empty:mb-0" data-testid="composer-decision-stack">
-      <BrainReviewBar modelId={modelId} turnCount={turnCount} sessionId={sessionId} />
-      <CuratorSuggestionBar />
+      <SelfMaintenanceLine />
       <PinnedMemoryBar />
       <DistillPendingBar />
       <MemorySuggestionBar sessionId={sessionId} />

@@ -94,7 +94,7 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
           {icon}
           <span
             className={cn(
-              'text-[12.5px] font-normal leading-5',
+              'text-[12.5px] font-normal italic leading-5',
               pending
                 ? 'text-muted-foreground/85 shimmer thinking-content-generating'
                 : 'text-muted-foreground/55',
