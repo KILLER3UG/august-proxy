@@ -378,7 +378,7 @@ def _kebab_name(name: str) -> str:
 
 def _renderSkillMd(frontmatter: dict[str, str], body: str) -> str:
     lines = ['---']
-    for key in ('name', 'description', 'trigger', 'category', 'created_by'):
+    for key in ('name', 'description', 'trigger', 'category', 'created_by', 'disabled'):
         val = frontmatter.get(key)
         if val:
             lines.append(f'{key}: {val}')
@@ -502,4 +502,32 @@ def deleteSkill(name: str) -> dict[str, object]:
     _shutil.rmtree(agent_dir)
     _bust_prompt_skills_cache()
     return {'deleted': name}
+
+
+def setEnabled(name: str, *, enabled: bool) -> dict[str, object]:
+    """Enable/disable a skill by flipping frontmatter ``disabled``.
+
+    Disabled skills stay discoverable in the catalogue (with
+    ``enabled: false``) so the settings UI can show them, but are excluded
+    from prompt injection. Copy-on-write for bundled skills.
+    """
+    agent_dir = _copyOnWrite(name)
+    md = agent_dir / 'SKILL.md'
+    text = md.read_text('utf-8')
+    m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
+    if not m:
+        raise SkillValidationError(f"Skill '{name}' has malformed frontmatter.")
+    frontmatter: dict[str, str] = {}
+    for line in m.group(1).split('\n'):
+        if ':' in line:
+            key, __, val = line.partition(':')
+            frontmatter[key.strip()] = val.strip()
+    if enabled:
+        frontmatter.pop('disabled', None)
+    else:
+        frontmatter['disabled'] = 'true'
+    md.write_text(_renderSkillMd(frontmatter, m.group(2).strip()), 'utf-8')
+    parsed = _parseSkill(md)
+    _bust_prompt_skills_cache()
+    return parsed or {'name': name, 'enabled': enabled}
 

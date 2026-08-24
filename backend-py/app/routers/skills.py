@@ -25,6 +25,7 @@ class SkillPatch(CamelModel):
     description: str | None = None
     trigger: str | None = None
     category: str | None = None
+    disabled: bool | None = None
 
 
 class SkillFileWrite(CamelModel):
@@ -79,6 +80,8 @@ async def createSkill(body: SkillCreate):
 async def patchSkill(name: str, body: SkillPatch):
     """Patch an existing skill (copy-on-write for bundled skills)."""
     try:
+        if body.disabled is not None:
+            skill_service.setEnabled(name, enabled=not body.disabled)
         return skill_service.patchSkill(
             name,
             body=body.body,

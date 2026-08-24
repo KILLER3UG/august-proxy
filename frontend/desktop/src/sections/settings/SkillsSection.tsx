@@ -149,16 +149,15 @@ export function SkillsSection() {
     }
   };
 
-  const toggleEnabled = async (name: string, enabled: boolean) => {
-    // Optimistic flip via patch (disabled ⇄ frontmatter 'disabled').
+  const toggleEnabled = async (name: string, currently: boolean) => {
     try {
       await api.patch(`/api/skills/${encodeURIComponent(name)}`, {
-        ...(enabled ? {} : {}),
-      } as Record<string, unknown>);
+        disabled: currently, // sending disabled=true flips it off
+      });
+      toast.success(currently ? `'${name}' disabled` : `'${name}' enabled`);
       refresh();
-    } catch {
-      /* toggling is best-effort; the backend owns the source of truth */
-      toast.error('Could not update skill');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not update skill');
     }
   };
 
@@ -317,6 +316,33 @@ export function SkillsSection() {
                       See less
                     </button>
                   )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2 pt-1">
+                  <span
+                    className="text-[11px] text-muted-foreground"
+                    id={`skill-enabled-label-${selected.name}`}
+                  >
+                    {selected.enabled === false ? 'Disabled' : 'Enabled'}
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={selected.enabled !== false}
+                    aria-labelledby={`skill-enabled-label-${selected.name}`}
+                    onClick={() => void toggleEnabled(selected.name, selected.enabled !== false)}
+                    data-testid="skill-enabled-toggle"
+                    className={cn(
+                      'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+                      selected.enabled !== false ? 'bg-primary' : 'bg-muted',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block size-3.5 transform rounded-full bg-background shadow transition-transform',
+                        selected.enabled !== false ? 'translate-x-[18px]' : 'translate-x-[3px]',
+                      )}
+                    />
+                  </button>
                 </div>
               </div>
 
