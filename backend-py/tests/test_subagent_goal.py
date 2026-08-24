@@ -286,20 +286,6 @@ def test_unattended_skips_auto_continue(brain_ready, monkeypatch):
     assert events and events[0].get('kind') == 'harnessLaneDone'
 
 
-def test_skill_from_episode(brain_ready, isolatedSkills):
-    from app.services.harness_ops import skill_from_episode
-
-    append_episode(
-        'sess-sk',
-        'auth',
-        status='completed',
-        summary='Login cookies persist across refresh.',
-        next_action='Add CSRF',
-    )
-    created = skill_from_episode('sess-sk', 'auth', 1)
-    assert created.get('name', '').startswith('lane-')
-
-
 def test_routine_schedule_roundtrip(brain_ready):
     from app.services.harness_ops import set_routine_schedule
     from app.services.harness_playbook import save_routine_from_episode

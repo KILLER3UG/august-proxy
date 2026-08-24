@@ -138,7 +138,7 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
                 msgs.append({'role': m['role'], 'content': str(m['content'])[:1500]})
         msgs.append({'role': 'user', 'content': transcript})
         system_text = (
-            'You are August Live voice mode. Answer concisely for spoken delivery. '
+            'You are a voice assistant. Answer concisely for spoken delivery. '
             'No tools. Prefer short sentences.'
         )
         if is_anthropic_provider(provider):

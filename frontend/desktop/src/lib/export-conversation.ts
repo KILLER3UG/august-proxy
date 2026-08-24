@@ -29,7 +29,7 @@ export function messagesToMarkdown(
   title?: string | null,
 ): string {
   const lines: string[] = [];
-  lines.push(`# ${title?.trim() || 'August conversation'}`);
+  lines.push(`# ${title?.trim() || 'Conversation'}`);
   lines.push('');
   lines.push(`_Exported ${new Date().toLocaleString()}_`);
   lines.push('');
@@ -48,7 +48,7 @@ export function messagesToMarkdown(
     const text = assistantText(message);
     if (!text && tools.length === 0) continue;
 
-    lines.push('## August');
+    lines.push('## Assistant');
     lines.push('');
     if (tools.length > 0) {
       lines.push(...tools);
@@ -124,7 +124,7 @@ export function exportConversationToPdf(
 <html>
 <head>
 <meta charset="utf-8">
-<title>${escapeHtml(title || 'August Conversation')}</title>
+<title>${escapeHtml(title || 'Conversation')}</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a; line-height: 1.6; }
   h1 { font-size: 24px; border-bottom: 2px solid #e5e5e5; padding-bottom: 8px; }

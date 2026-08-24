@@ -46,7 +46,7 @@ const SANDBOX_OPTIONS = [
   {
     id: 'read-only',
     label: 'Read-only',
-    description: 'August can read files and run non-mutating commands, but cannot write or delete.',
+    description: 'The assistant can read files and run non-mutating commands, but cannot write or delete.',
   },
   {
     id: 'workspace-write',
@@ -56,7 +56,7 @@ const SANDBOX_OPTIONS = [
   {
     id: 'danger-full-access',
     label: 'Danger — full access',
-    description: 'No sandbox: August can change anything your user account can. Only for trusted projects.',
+    description: 'No sandbox: the assistant can change anything your user account can. Only for trusted projects.',
   },
 ] as const;
 
@@ -159,7 +159,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
       localStorage.setItem('august_last_sandbox_mode', sandboxMode);
     } catch { /* silent */ }
     onboarding.markDone();
-    toast.success('Setup complete — enjoy August');
+    toast.success('Setup complete');
     void qc.invalidateQueries({ queryKey: ['providers'] });
     navigate('/');
   };
@@ -255,7 +255,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
           <div className="space-y-4">
             <h2 className="text-base font-semibold">2 · Test the connection</h2>
             <p className="text-xs text-muted-foreground">
-              August sends a minimal probe and expects an exact reply — a stricter check than a network ping.
+              A minimal probe is sent and must answer exactly — a stricter check than a network ping.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
@@ -402,7 +402,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
               <div className="flex items-center gap-2">
                 <FolderOpen className="size-4 text-primary shrink-0" />
                 <span className="text-xs text-muted-foreground">
-                  {hasWorkspace ? 'Workspace folder: set ✓' : 'No project folder yet — optional, but August works best with one.'}
+                  {hasWorkspace ? 'Workspace folder: set ✓' : 'No project folder yet — optional, but it works best with one.'}
                 </span>
                 <button
                   type="button"

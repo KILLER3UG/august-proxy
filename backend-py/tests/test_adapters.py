@@ -227,7 +227,7 @@ class TestAnthropicAdapter:
         assert 'helpful' in text
         enriched = buildAnthropicSystemBlocks('You are helpful.')
         assert len(enriched) >= 2
-        assert any(('August' in b.get('text', '') for b in enriched))
+        assert any(('multi-model AI gateway' in b.get('text', '') for b in enriched))
 
     def testMessageTranslation(self):
         anthropicMsgs = [

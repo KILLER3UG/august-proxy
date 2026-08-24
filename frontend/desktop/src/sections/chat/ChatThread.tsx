@@ -32,7 +32,6 @@ import { ModelVisibilityModal } from '@/components/overlays/ModelVisibilityModal
 import { ArenaLaunchModal } from './composer/ArenaLaunchModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { useSessionStatus } from '@/hooks/useSessionStatus';
-import { CollaborationInsights } from '@/components/chat/CollaborationInsights';
 import { ExamHost } from '@/sections/exam/ExamHost';
 import { useQueryClient } from '@tanstack/react-query';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
@@ -50,9 +49,6 @@ import {
   type QueuedUserMessage,
 } from './queue-store';
 import { buildHandoffSummary, markHandoffPending } from './handoff-summary';
-import { SkillEvolvedChip } from '@/components/chat/SkillEvolvedChip';
-import { SelfImprovementStrip } from '@/components/chat/SelfImprovementStrip';
-import { SkillSuggestionChip } from '@/components/chat/SkillSuggestionChip';
 import { ComposerDecisionStack } from './ComposerDecisionStack';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
@@ -627,6 +623,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     clearAttachments,
     attachments,
     workspacePath: activeSession?.workspacePath,
+    workbenchSessionId: activeSession?.workbenchSessionId,
     send,
     setExamActive,
     setExamSeed,
@@ -701,7 +698,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const handleFork = useCallback(
     (index: number) => {
       if (streaming) {
-        toast.message('Stop August first, then fork the chat.');
+        toast.message('Stop the current run first, then fork the chat.');
         return;
       }
       const wbId =
@@ -1394,10 +1391,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       {/* Debate overlay — null when no debate is active. */}
       <DebateView ensureWorkbenchSession={ensureWorkbenchSession} />
       <div className="august-chat-surface flex-1 flex flex-col min-w-0 bg-chat-area h-full overflow-hidden relative">
-        <SkillEvolvedChip />
-        <SelfImprovementStrip />
-        <SkillSuggestionChip currentSessionId={workbenchSession?.id || sessionId} />
-        <CollaborationInsights />
         {examActive && (
           <ExamHost
             topic={examSeed.topic}
@@ -1549,8 +1542,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onReanswerWithModel={(model, index) => handleReanswerWithModel(index, model)}
                 onCompare={handleCompare}
                 footerSlot={inputSlot}
-                workbenchSession={workbenchSession}
-                pct={pct}
               />
             )}
           </AnimatePresence>

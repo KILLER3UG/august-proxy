@@ -177,7 +177,7 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
         ? 'The backend is taking much longer than expected. Try the diagnostics below.'
         : waitPhase === 'slow'
           ? 'Taking longer than usual. Common fixes are listed below.'
-          : 'Please wait — August opens after the backend is ready.');
+          : 'Please wait — the app opens after the backend is ready.');
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background">
@@ -224,7 +224,7 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
           <BackendSetupPlan setup={displaySetup} headline={headline} detail={detail} />
           {!proxyUp && (
             <p className="mt-4 text-center text-[11px] text-muted-foreground">
-              August will open automatically when the backend is ready.
+              The app will open automatically when the backend is ready.
             </p>
           )}
         </div>

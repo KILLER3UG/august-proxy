@@ -58,7 +58,7 @@ export class OsNotifyService {
   }
 
   static async notifyJobComplete(label: string, detail?: string): Promise<void> {
-    await this.notify(`August · ${label}`, {
+    await this.notify(`${label} · assistant`, {
       body: detail || 'Background job finished',
       tag: `august-job-${label}`,
     });

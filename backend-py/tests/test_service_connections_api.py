@@ -514,13 +514,6 @@ async def test_mcp_directory_includes_google_workspace(client):
 
 
 @pytest.mark.asyncio
-async def test_usage_analytics_empty(client):
-    for path in ('/api/usage/stats', '/api/usage/heatmap', '/api/usage/by-model', '/api/usage/by-day'):
-        r = await client.get(f'{path}?range=30d')
-        assert r.status_code == 200, path
-
-
-@pytest.mark.asyncio
 async def test_security_and_system(client):
     r = await client.put(
         '/api/security',

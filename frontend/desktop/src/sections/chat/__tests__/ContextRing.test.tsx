@@ -154,7 +154,7 @@ describe('ContextRing gauge percentage from server ground truth', () => {
 });
 
 describe('ContextRing prompt-cache display', () => {
-  it('shows the cache hit rate in the tooltip when cache data is present', () => {
+  it('shows the average cache hit rate in the tooltip when cache data is present', () => {
     render(
       <ContextRing
         pct={30}
@@ -166,8 +166,8 @@ describe('ContextRing prompt-cache display', () => {
     fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
     const tooltip = document.querySelector('[data-composer-popover]');
     expect(tooltip).toBeInTheDocument();
-    expect(tooltip?.textContent).toContain('Prompt cache');
-    expect(tooltip?.textContent).toContain('80% hit');
+    expect(tooltip?.textContent).toContain('Avg cache hit rate');
+    expect(tooltip?.textContent).toContain('80%');
     expect(tooltip?.textContent).toContain('8.0K / 10.0K');
   });
 
@@ -175,6 +175,6 @@ describe('ContextRing prompt-cache display', () => {
     render(<ContextRing pct={30} estTokens={500} maxContext={4000} />);
     fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
     const tooltip = document.querySelector('[data-composer-popover]');
-    expect(tooltip?.textContent).not.toContain('Prompt cache');
+    expect(tooltip?.textContent).not.toContain('Avg cache hit rate');
   });
 });

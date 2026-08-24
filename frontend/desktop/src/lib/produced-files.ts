@@ -20,7 +20,17 @@ export function collectProducedFiles(blocks?: MessageBlock[] | null): string[] {
   const files: string[] = [];
   for (const block of blocks) {
     if (block.type !== 'toolCall' || !block.tool) continue;
-    if (classifyTool(block.tool.name || '') !== 'edit') continue;
+    const name = block.tool.name || '';
+    const bucket = classifyTool(name);
+    // Edit-classified calls carry file paths in args. Office/creation tools
+    // (pptx_*, docx generation via run_command scripts writing decks/docs)
+    // surface their output path too — those are deliverables like any other.
+    const isEdit = bucket === 'edit';
+    const isOfficeDeliverable =
+      typeof name === 'string' &&
+      /^pptx_/i.test(name) &&
+      extractFilename(block.tool.context) != null;
+    if (!isEdit && !isOfficeDeliverable) continue;
     const path = extractFilename(block.tool.context);
     if (!path) continue;
     if (AUG_INTERNAL.test(path)) continue;

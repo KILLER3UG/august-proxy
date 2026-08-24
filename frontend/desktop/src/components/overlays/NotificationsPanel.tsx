@@ -80,13 +80,16 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
       list.push({
         id: `update-${update.version}`,
         kind: 'update',
-        title: `August ${update.version} is available`,
+        title: `Version ${update.version} is available`,
         detail: update.body?.trim() || 'A new desktop build is ready to install.',
         when: update.date,
       });
     }
     const data = query.data;
-    for (const rel of data?.releases ?? []) {
+    // GitHub first; when it yields nothing (rate limit / offline), fall back
+    // to the bundled changelog so the panel is never a silent blank.
+    const releases = data?.releases.length ? data.releases : data?.changelog ?? [];
+    for (const rel of releases) {
       list.push(releaseToItem(rel));
     }
     for (const commit of data?.commits ?? []) {
@@ -152,7 +155,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
                     {progress.phase === 'ready'
                       ? `${update?.version ?? 'Update'} is ready`
                       : progress.phase === 'restarting'
-                        ? 'Restarting August…'
+                        ? 'Restarting app…'
                       : progress.phase === 'installing'
                         ? 'Installing update…'
                         : 'Downloading update…'}

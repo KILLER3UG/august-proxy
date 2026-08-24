@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Query
@@ -116,7 +117,47 @@ async def get_whats_new(hours: int = Query(default=48, ge=1, le=168)):
         'releases': releases,
         'repoUrl': f'https://github.com/{repo}',
         'errors': errors,
+        'changelog': _changelog_fallback() if not commits and not releases else [],
     }
+
+
+def _changelog_fallback(limit: int = 6) -> list[dict]:
+    """Local CHANGELOG.md digest shown when GitHub yields nothing.
+
+    Without this, What's New / Notifications render a silent blank whenever
+    the GitHub API fails (rate limit, private repo, offline). Honest source:
+    we say the notes come from the bundled changelog.
+    """
+    candidates = [
+        Path(__file__).resolve().parents[3] / 'CHANGELOG.md',
+        Path.cwd().parent / 'CHANGELOG.md',
+        Path.cwd() / 'CHANGELOG.md',
+    ]
+    for p in candidates:
+        try:
+            if not p.is_file():
+                continue
+            entries: list[dict] = []
+            current: dict | None = None
+            for line in p.read_text(encoding='utf-8', errors='replace').splitlines():
+                if line.startswith('## '):
+                    if current is not None:
+                        entries.append(current)
+                    current = {'tag': line[3:].strip(), 'name': line[3:].strip(), 'body': '', 'date': '', 'url': '', 'prerelease': False, 'source': 'changelog'}
+                    if len(entries) >= limit:
+                        break
+                elif current is not None and line.strip():
+                    body = current['body']
+                    current['body'] = (body + '\n' if body else '') + line.strip()
+                    if len(current['body']) > 600:
+                        current['body'] = current['body'][:600]
+            if current is not None and len(entries) < limit:
+                entries.append(current)
+            if entries:
+                return entries
+        except Exception:
+            continue
+    return []
 
 
 def __getattr__(name: str) -> object:

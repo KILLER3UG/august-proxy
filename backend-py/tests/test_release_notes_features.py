@@ -115,7 +115,7 @@ def test_pptx_comment_adds_ooxml_parts(pptx_file):
         assert 'cmAuthorLstIdLst' in pres
         comments = zf.read('ppt/comments/comment1.xml').decode('utf-8')
         assert 'Update this slide' in comments
-        assert 'August' in zf.read('ppt/commentAuthors.xml').decode('utf-8')
+        assert 'Assistant' in zf.read('ppt/commentAuthors.xml').decode('utf-8')
     # The file still opens/parses afterwards.
     assert pptx_tools.list_elements(pptx_file)['ok'] is True
 

@@ -7,7 +7,6 @@ import sys
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services import tool_registry
-from app.services.harness_self_improve import _harnessIntrospect, _harnessPropose
 
 
 async def _diagnoseProxy() -> str:
@@ -103,8 +102,9 @@ async def _describeEnvironment() -> str:
         from app.services.workbench.workbench import get_session
 
         sess = get_session()
-        if sess and getattr(sess, 'workspacePath', ''):
-            parts.append(f'Workspace: {sess.workspacePath}')
+        ws_path = str(getattr(sess, 'workspacePath', '') or '') if sess else ''
+        if ws_path:
+            parts.append(f'Workspace: {ws_path}')
     except Exception:
         pass
     try:
@@ -115,48 +115,6 @@ async def _describeEnvironment() -> str:
     except Exception:
         pass
     return '\n'.join(parts)
-
-
-async def _updateHeuristics(action: str, rule: str = '') -> str:
-    """Manage learned behavioral heuristics.
-
-    Actions:
-      add    — Persist a new rule: "Project uses Yarn, not NPM"
-      remove — Remove a rule by id or exact text
-      clear  — Clear all rules
-      list   — Return current rules
-    """
-    from app.services.heuristics_service import addHeuristic, clearHeuristics, listHeuristics, removeByRule
-
-    try:
-        if action == 'add':
-            if not rule:
-                return "Error: 'rule' is required for add action."
-            result = addHeuristic(rule)
-            if result is not None:
-                return f'Heuristic added (id={result}).'
-            return 'Heuristic already exists (duplicate).'
-        elif action == 'remove':
-            if not rule:
-                return "Error: 'rule' is required for remove action."
-            if removeByRule(rule):
-                return f'Heuristic removed: {rule}'
-            return f'Heuristic not found: {rule}'
-        elif action == 'clear':
-            count = clearHeuristics()
-            return f'Cleared {count} heuristic(s).'
-        elif action == 'list':
-            heuristics = listHeuristics()
-            if not heuristics:
-                return 'No learned heuristics.'
-            lines = ['Learned heuristics:']
-            for h in heuristics:
-                lines.append(f'  [{h["id"]}] {h["rule"]} (source: {h["source"]}, category: {h["category"]})')
-            return '\n'.join(lines)
-        else:
-            return f'Unknown action: {action}. Use add, remove, clear, or list.'
-    except Exception as exc:
-        return f'Error managing heuristics: {exc}'
 
 
 async def _writeScratchpad(text: str) -> str:
@@ -613,54 +571,6 @@ def register() -> None:
         {'type': 'object', 'properties': {}, 'required': []},
     )
     tool_registry.register(
-        'harness_introspect',
-        'Inspect your own harness: registered tools + health, skills + usage, memory store sizes, active brain-config knobs, latest golden-eval results, recent harness changes, open improvement proposals. Call this before proposing any harness change.',
-        _harnessIntrospect,
-        {'type': 'object', 'properties': {}, 'required': []},
-    )
-    tool_registry.register(
-        'harness_propose',
-        'File a harness-improvement proposal for HUMAN review. Requires problem, evidence, proposal, rollback, kind. kind=brain_config|skill_* applies on approval via payload; tool_bucket|tool_description|observation is recorded for humans. Never assume a proposal is applied.',
-        _harnessPropose,
-        {
-            'type': 'object',
-            'properties': {
-                'problem': {'type': 'string', 'description': 'What in the harness underperforms and why it matters (1-3 sentences).'},
-                'evidence': {'type': 'string', 'description': 'Concrete observations: eval results, usage counts, error patterns, token costs.'},
-                'proposal': {'type': 'string', 'description': 'The specific change to make.'},
-                'rollback': {'type': 'string', 'description': 'How to undo the change if the metric regresses.'},
-                'kind': {
-                    'type': 'string',
-                    'description': 'Proposal class.',
-                    'enum': ['brain_config', 'skill_create', 'skill_patch', 'skill_delete', 'tool_bucket', 'tool_description', 'observation'],
-                },
-                'expectedMetric': {'type': 'string', 'description': 'Which measured number should improve (eval pass-rate, tokens/turn, latency).'},
-                'payload': {
-                    'type': 'object',
-                    'description': 'Machine-readable part: {patch:{...}} for brain_config; {name,body,description,trigger} for skill kinds.',
-                },
-            },
-            'required': ['problem', 'evidence', 'proposal', 'rollback', 'kind'],
-        },
-    )
-    tool_registry.register(
-        'update_heuristics',
-        "Manage learned behavioral heuristics. Add a rule when you notice a recurring user preference (e.g. 'Project uses Yarn, not NPM'). Rules persist across sessions. Actions: add, remove, clear, list.",
-        _updateHeuristics,
-        {
-            'type': 'object',
-            'properties': {
-                'action': {
-                    'type': 'string',
-                    'description': 'Action to perform: add | remove | clear | list',
-                    'enum': ['add', 'remove', 'clear', 'list'],
-                },
-                'rule': {'type': 'string', 'description': 'The heuristic rule text (required for add/remove).'},
-            },
-            'required': ['action'],
-        },
-    )
-    tool_registry.register(
         'update_state',
         "Track execution state across a multi-step task. Call this when you start, progress through, or complete a phase. The state is injected into the next turn's system prompt so you know where you left off.",
         _updateState,
@@ -673,17 +583,13 @@ def register() -> None:
                     'enum': ['research', 'plan', 'implement', 'review', 'complete'],
                 },
                 'step': {'type': 'integer', 'description': 'Step number within the current phase.'},
-                'completed': {
-                    'type': 'string',
-                    'description': 'Newline-separated list of completed items for this step.',
-                },
-                'blockers': {'type': 'string', 'description': 'Newline-separated list of blockers.'},
+                'note': {'type': 'string', 'description': 'Short free-form note about progress.'},
                 'verificationCommand': {
                     'type': 'string',
-                    'description': 'Command to verify this step is complete (optional, for Verifier Reflex).',
+                    'description': 'Command that verifies the work (required to pass the verifier gate on complete).',
                 },
             },
-            'required': [],
+            'required': ['phase'],
         },
     )
     tool_registry.register(

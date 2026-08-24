@@ -15,26 +15,17 @@ ROLES = (
     'cerebellum',
     'hippocampus',
     'prefrontal',
-    # Chat role routing (surpass #2): blank = use the selected model.
-    'chat_default',
-    'chat_smol',
-    'chat_slow',
-    'chat_plan',
-    'chat_vision',
     # Fallback chain (comma-separated model ids) + context-promotion model.
+    # Blank everywhere by default — background jobs fall back to the session
+    # model; nothing hardcodes a vendor model id.
     'chat_chain',
     'chat_context_promotion',
 )
 DEFAULTS: dict[str, str] = {
     'cortex': '',
-    'cerebellum': 'claude-3-haiku-20240307',
-    'hippocampus': 'claude-3-haiku-20240307',
-    'prefrontal': 'claude-3-5-sonnet-20240620',
-    'chat_default': '',
-    'chat_smol': '',
-    'chat_slow': '',
-    'chat_plan': '',
-    'chat_vision': '',
+    'cerebellum': '',
+    'hippocampus': '',
+    'prefrontal': '',
     'chat_chain': '',
     'chat_context_promotion': '',
 }

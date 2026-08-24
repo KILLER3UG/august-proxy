@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.services.memory.capabilities_prompt import (
+from app.services.capabilities_prompt import (
     build_capabilities_block,
     skills_tools_allowed,
 )

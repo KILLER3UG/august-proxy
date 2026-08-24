@@ -6,7 +6,7 @@ import json
 
 import pytest
 from app.services import integration_tools
-from app.services.memory.capabilities_prompt import classify_tool, unclassified_tools
+from app.services.capabilities_prompt import classify_tool, unclassified_tools
 from app.services.tool_registry import get, listRaw, register, unregister
 
 

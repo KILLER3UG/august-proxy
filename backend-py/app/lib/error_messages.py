@@ -68,7 +68,7 @@ def map_provider_error(
         if 'session_id' in detail.lower() and 'null' in detail.lower():
             return {
                 'code': 400,
-                'message': f'{provider_name} rejected the request (null session_id). August will strip null fields — try updating.',
+                'message': f'{provider_name} rejected the request (null session_id). Null fields will be stripped — try updating.',
                 'action': {'type': 'none'},
                 'severity': 'error',
             }

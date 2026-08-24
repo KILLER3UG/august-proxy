@@ -287,7 +287,7 @@ export function CommandPalette() {
               onSelect={run(() => { void navigate("/brain?tab=you"); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
-              <Brain className="size-3.5" /> What August knows about you
+              <Brain className="size-3.5" /> What the assistant knows about you
             </Command.Item>
             <Command.Item
               value="action brain pending skills"

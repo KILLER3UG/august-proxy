@@ -15,11 +15,11 @@ from app.adapters import anthropic as anthropic_adapter
 from app.adapters import openai as openai_adapter
 from app.adapters.stream_state import AnthropicNativeStreamState
 from app.main import app
-from app.services.memory.context_compressor import (
+from app.services.sandbox.policy import SandboxResult
+from app.services.workbench.context_compressor import (
     _isSummaryMessage,
     buildSummaryMessage,
 )
-from app.services.sandbox.policy import SandboxResult
 from fastapi.testclient import TestClient
 
 # ── 1. Critical: tool_use input_json_delta accumulation ──────────────────
@@ -329,19 +329,6 @@ def test_model_capability_profile_max_tools(isolatedData):
 
 
 # ── 12. Routing evidence records failures, not hardcoded wins ────────────
-
-
-def test_routing_evidence_ok_uses_real_outcome(isolatedData):
-    from app.services.routing_evidence import get_suggestions, record_turn
-
-    record_turn(session_id='s1', task_type='bugfix', model='m-a', provider='p', ok=False)
-    record_turn(session_id='s2', task_type='bugfix', model='m-a', provider='p', ok=True)
-    suggestions = get_suggestions('bugfix', min_samples=2)
-    assert suggestions
-    assert suggestions[0]['winRate'] == 0.5
-
-
-# ── 13. Verifier gate: only the DECLARED verification command counts ─────
 
 
 def test_verifier_verdict_requires_declared_command():

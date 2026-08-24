@@ -59,27 +59,3 @@ def test_json_delete_history_loads_from_sqlite():
     msgs = memory_store.get_messages('wb_json_del_test')
     assert any('history-marker-ABC' in str(m.get('content', '')) for m in msgs)
 
-
-def test_vector_graph_sqlite_sot(tmp_path, monkeypatch):
-    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(tmp_path / 'brain2.sqlite'))
-    from app.config import settings
-
-    monkeypatch.setattr(settings, 'dataDir', tmp_path)
-    settings.reload()
-    from app.services import memory_store
-    from app.services.memory import graph_memory, vector_db
-
-    memory_store.init()
-    # Reset migration flags
-    vector_db._json_migrated = False
-    graph_memory._json_migrated = False
-    e = vector_db.insert('hello sqlite vector', namespace='t')
-    assert e['id']
-    assert vector_db.count('t') >= 1
-    ent = graph_memory.addEntity('NodeA', entityType='thing')
-    assert ent['name'] == 'NodeA'
-    graph_memory.addRelation('NodeA', 'NodeB', 'links')
-    stats = graph_memory.graphStats()
-    assert stats['entities'] >= 2
-    assert stats['relations'] >= 1

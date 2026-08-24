@@ -113,19 +113,14 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     description: 'Providers, catalog, and quotas.',
   },
   {
-    id: 'memory',
-    label: 'Memory',
-    description: 'Knowledge, recall, and templates.',
-  },
-  {
     id: 'automations',
     label: 'Automations',
     description: 'Agents, board, and recurring tasks.',
   },
   {
     id: 'tools',
-    label: 'Tools & Skills',
-    description: 'Skills, MCP, and computer use.',
+    label: 'Tools',
+    description: 'Integrations, MCP, and computer use.',
   },
   {
     id: 'access',
@@ -249,29 +244,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['models', 'providers'],
   },
   {
-    id: 'memory-knowledge',
-    label: 'Memory',
-    description: 'Memory store, semantic facts, vector entries, knowledge graph, and system prompt.',
-    icon: Network,
-    category: 'memory',
-    tier: 'basic',
-    keywords: ['memory', 'semantic', 'facts', 'vector', 'db', 'graph', 'knowledge', 'prompt', 'learning', 'guidelines'],
-    legacyAliases: ['memory', 'semantic-facts', 'vector-db'],
-  },
-  {
-    id: 'recalled-memory',
-    label: 'Recalled Memory',
-    description:
-      'Browse agent-captured memories August can search on demand in chat (Topics / Areas).',
-    icon: BrainCircuit,
-    category: 'memory',
-    tier: 'hidden',
-    // Note: 'memory' is owned by memory-knowledge — this section is
-    // reached via 'recall' / 'auto-memory' / category names instead.
-    keywords: ['recall', 'recalled', 'auto-memory', 'auto memory', 'category'],
-    legacyAliases: ['recalled-memories', 'auto-memories'],
-  },
-  {
     id: 'recurring-tasks',
     label: 'Reminders',
     description:
@@ -282,34 +254,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     keywords: ['reminder', 'reminders', 'recurring', 'task', 'every', 'when i open', 'daemon'],
   },
   {
-    id: 'added-memory',
-    label: 'Added Memory',
-    description:
-      'Facts you explicitly save for August — injected into every chat turn.',
-    icon: StickyNote,
-    category: 'memory',
-    tier: 'hidden',
-    keywords: ['added', 'add memory', 'remember this', 'user memory', 'saved fact'],
-    legacyAliases: ['added-memories', 'user-memories'],
-  },
-  {
-    id: 'project-memories',
-    label: 'Project Memories',
-    description:
-      'Memories August learned from chats inside each project folder.',
-    icon: FolderOpen,
-    category: 'memory',
-    tier: 'hidden',
-    keywords: ['project', 'folder', 'workspace', 'project memories', 'by project'],
-    legacyAliases: ['project-memory', 'folder-memories'],
-  },
-  {
     id: 'prompt-templates',
     label: 'Prompt Templates',
     description:
       'Reusable prompt templates with variable placeholders for common tasks.',
     icon: FileText,
-    category: 'memory',
+    category: 'tools',
     tier: 'advanced',
     // 'prompt' is owned by memory-knowledge — keep this section's keywords
     // distinct so the registry audit (unique ownership) stays green.
@@ -317,6 +267,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
 
   /* ── Tools & Skills ──────────────────────────────────────────── */
+  {
+    id: 'skills',
+    label: 'Skills',
+    description: 'Create, edit, and manage agent skills and their lifecycle (active / stale / archived).',
+    icon: BookOpen,
+    category: 'tools',
+    tier: 'basic',
+    keywords: ['skill', 'author', 'create', 'edit', 'manage', 'curator', 'lifecycle', 'stale', 'pin'],
+    legacyAliases: ['skills-authoring', 'skill-curator'],
+  },
   {
     id: 'tools-connections',
     label: 'Integrations',
@@ -340,24 +300,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'directory',
     ],
     legacyAliases: ['mcp', 'commands', 'connections', 'services', 'tools-connections'],
-  },
-  {
-    id: 'skills',
-    label: 'Skills',
-    description: 'Create, edit, and manage agent skills and their lifecycle (active / stale / archived).',
-    icon: BookOpen,
-    category: 'tools',
-    tier: 'basic',
-    // Merged keywords from the old skill-curator + skills-authoring
-    // sections. Authoring actions are reached via 'author' or 'create';
-    // lifecycle actions via 'curator', 'lifecycle', or 'stale'.
-    // 'skill' is owned by this section. 'archive' is owned by
-    // conversations-history (archived sessions), so we don't claim it
-    // here — pin/unpin/curate are reached via their own keywords.
-    keywords: ['skill', 'author', 'create', 'edit', 'delete', 'manage', 'curator', 'lifecycle', 'stale', 'consolidate', 'pin'],
-    // Old ids preserved so /settings/skills-authoring and
-    // /settings/skill-curator deep links still resolve here.
-    legacyAliases: ['skills-authoring', 'skill-curator'],
   },
   {
     id: 'computer-use',
@@ -449,6 +391,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
 
   {
+    id: 'harness-improve',
+    label: 'Harness Improvements',
+    description: 'Improvement proposals the model filed against its own harness — review, approve, or reject.',
+    icon: HeartPulse,
+    category: 'insights',
+    tier: 'basic',
+    keywords: ['harness', 'proposal', 'self-improvement', 'introspect', 'review queue', 'approve'],
+    legacyAliases: ['reliability', 'harness-proposals'],
+  },
+
+  {
     id: 'conversation-inspector',
     label: 'Request Inspector',
     description: 'Readable transcript, raw request/response bodies, and assistant thinking.',
@@ -480,18 +433,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'advanced',
     keywords: ['feature', 'flow', 'pipeline', 'animation', 'inventory', 'sse', 'execution'],
     legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
-  },
-  {
-    id: 'reliability',
-    label: 'Reliability',
-    description: 'Fleet health: win rates, latency, token cost, and harness eval pass rates.',
-    icon: HeartPulse,
-    category: 'insights',
-    tier: 'advanced',
-    // Note: 'model' is owned by model-providers; 'tokens'/'cost' by usage;
-    // 'error' by conversation-inspector. This section is reached via its
-    // own vocabulary: win/pass rates, latency, fleet, regression.
-    keywords: ['reliability', 'win rate', 'pass rate', 'latency', 'fleet', 'trend', 'regression', 'harness'],
   },
   {
     id: 'health-simulator',

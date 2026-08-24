@@ -9,9 +9,10 @@ from app.services import aug_directive_service
 
 
 def testResolveAugPathFallsBackToProjectRoot(tmp_path):
-    # workspace provided (tmp_path is a real directory)
+    # workspace provided (tmp_path is a real directory).
+    # 0.17.0: the directive filename is AGENTS.md (legacy AUG.md still loads).
     p = aug_directive_service._resolveAugPath(str(tmp_path))
-    assert p == tmp_path / 'AUG.md'
+    assert p == tmp_path / 'AGENTS.md'
 
 
 def testWriteAndLoadRoundTrip(tmp_path):

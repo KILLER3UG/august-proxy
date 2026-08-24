@@ -72,7 +72,7 @@ async def createSkill(body: SkillCreate):
             body.name, body.description, body.body, trigger=body.trigger, category=body.category
         )
     except SkillValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.patch('/{name}')
@@ -80,10 +80,14 @@ async def patchSkill(name: str, body: SkillPatch):
     """Patch an existing skill (copy-on-write for bundled skills)."""
     try:
         return skill_service.patchSkill(
-            name, body=body.body, description=body.description, trigger=body.trigger, category=body.category
+            name,
+            body=body.body,
+            description=body.description,
+            trigger=body.trigger,
+            category=body.category,
         )
     except SkillValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete('/{name}')
@@ -92,22 +96,4 @@ async def deleteSkill(name: str):
     try:
         return skill_service.deleteSkill(name)
     except SkillValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.post('/{name}/files')
-async def writeSkillFile(name: str, body: SkillFileWrite):
-    """Write a support file (scripts/, references/, templates/) into a skill."""
-    try:
-        return skill_service.writeSkillFile(name, body.file_path, body.content)
-    except SkillValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.delete('/{name}/files')
-async def deleteSkillFile(name: str, filePath: str = Query(..., description='Relative path within the skill dir')):
-    """Remove a support file from a skill dir."""
-    try:
-        return skill_service.removeSkillFile(name, filePath)
-    except SkillValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

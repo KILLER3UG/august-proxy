@@ -44,8 +44,8 @@ def test_snapshot_prune_skips_session_with_active_turn(monkeypatch):
     finally:
         set_active_turn_check(None)
     assert active_id in _sessions
-    # Only the 4 other out-of-window (non-active) sessions were pruned.
-    assert len(_sessions) == 201
+    # Recency window is 60 (0.16.9): the active session survives on top.
+    assert len(_sessions) == 61
 
 
 def test_snapshot_prune_skips_recently_updated_without_probe():

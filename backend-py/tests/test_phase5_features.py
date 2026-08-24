@@ -167,32 +167,3 @@ class TestProviderDetect:
 
 # ─── Longitudinal Trends (5.4) ────────────────────────────────────────────────
 
-
-class TestTrends:
-    def test_record_and_retrieve(self, tmp_path, monkeypatch):
-        import sqlite3
-
-        from app.services.memory_schema import ensure_schema
-
-        db_file = tmp_path / 'trends.sqlite'
-        conn = sqlite3.connect(str(db_file))
-        conn.row_factory = sqlite3.Row
-        ensure_schema(conn)
-
-        import app.services.memory_store as ms
-        monkeypatch.setattr(ms, '_conn', lambda: conn)
-
-        from app.services.memory.trends import get_trends, record_weekly_snapshot
-
-        snapshot = record_weekly_snapshot()
-        assert snapshot is not None
-        assert 'weekStart' in snapshot
-
-        # Second call same week returns None (already recorded)
-        assert record_weekly_snapshot() is None
-
-        trends = get_trends(weeks=12)
-        assert len(trends) == 1
-        assert trends[0]['frictionTotal'] == 0
-
-        conn.close()

@@ -87,7 +87,7 @@ export function ProviderOnboardingModal() {
         className="relative w-full max-w-md rounded-2xl border border-white/[0.06] bg-card p-6 shadow-2xl"
         role="dialog"
         aria-modal="true"
-        aria-label="August setup checklist"
+        aria-label="Setup checklist"
         data-testid="setup-checklist-modal"
       >
         <button
@@ -103,7 +103,7 @@ export function ProviderOnboardingModal() {
           <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-primary/10">
             <Cloud className="size-6 text-primary" />
           </div>
-          <h2 className="text-lg font-semibold">Set up August</h2>
+          <h2 className="text-lg font-semibold">Set up your assistant</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             A short checklist so chat, files, and integrations work on first run.
           </p>

@@ -266,7 +266,7 @@ async def executeSubAgent(
             )
             parsed['raw_json'] = merge_episode_raw(parsed, skills=skill_names, auto_hop=auto_hop)
             ep_status = as_str(parsed.get('status'), status)
-            ep_info = append_episode(
+            append_episode(
                 sid,
                 workstream,
                 task_id=task_key or jobId,
@@ -276,33 +276,6 @@ async def executeSubAgent(
                 next_action=as_str(parsed.get('next'), ''),
                 raw_json=as_str(parsed.get('raw_json'), ''),
             )
-            try:
-                if (
-                    ep_status == 'completed'
-                    and bool(parsed.get('criteriaMet'))
-                    and (tool_count >= 4 or len(list(parsed.get('artifacts') or [])) >= 4)
-                ):
-                    import re
-
-                    from app.services import skill_service
-                    from app.services.brain_event_bus import emitBrainEvent
-
-                    slug = re.sub(r'[^a-z0-9]+', '-', workstream.lower()).strip('-')[:40] or 'lane'
-                    skill_name = f'lane-{slug}'
-                    if not skill_service.get(skill_name):
-                        emitBrainEvent(
-                            category='skill_suggestion',
-                            layer='workstreams.episode_completed',
-                            summary=f'Suggest skill: {skill_name}',
-                            meta={
-                                'workstream': workstream,
-                                'seq': ep_info.get('seq') if isinstance(ep_info, dict) else None,
-                                'suggestedName': skill_name,
-                                'sessionId': sid,
-                            },
-                        )
-            except Exception:
-                logger.debug('skill suggestion emit failed', exc_info=True)
             ping = True
             spec = {}
             try:
@@ -503,7 +476,7 @@ async def executeSubAgent(
         tools = [t for t in fullTools if _toolName(t) in allowedNames]
         openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
     try:
-        from app.services.memory.capabilities_prompt import (
+        from app.services.capabilities_prompt import (
             build_capabilities_block,
             skills_tools_allowed,
         )
@@ -630,7 +603,7 @@ async def executeSubAgent(
             # 110k threshold overflowed those windows before compaction ran).
             try:
                 from app.providers.clients.base import estimateTokens as _estimateTokens
-                from app.services.memory.context_compressor import compressMessages
+                from app.services.workbench.context_compressor import compressMessages
 
                 _contextWindow = _resolveModelContextWindow(resolvedModel, provider)
                 _threshold = max(4096, int(_contextWindow * 0.55))

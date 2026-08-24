@@ -120,7 +120,6 @@ extract_thinking = _providers_mod.extract_thinking
 supports_thinking = _providers_mod.supports_thinking
 call_anthropic_workbench = _providers_mod.call_anthropic_workbench
 call_openai_workbench = _providers_mod.call_openai_workbench
-background_task_model = _providers_mod.background_task_model
 make_review_llm_client = _providers_mod.make_review_llm_client
 _resolveWorkbenchProvider = _providers_mod.resolve_workbench_provider
 _resolveModel = _providers_mod.resolve_model
@@ -132,8 +131,6 @@ _extractThinking = _providers_mod.extract_thinking
 _supportsThinking = _providers_mod.supports_thinking
 _callAnthropicWorkbench = _providers_mod.call_anthropic_workbench
 _callOpenaiWorkbench = _providers_mod.call_openai_workbench
-_backgroundTaskModel = _providers_mod.background_task_model
-_makeReviewLlmClient = _providers_mod.make_review_llm_client
 
 
 def normalizeGuardMode(mode: str) -> str:
@@ -308,46 +305,18 @@ def _memoryChangeNotice(
     try:
         if toolName == 'remember':
             content = as_str(toolInput.get('content'), '')
-            return f'August remembered: {content[:140]}' if content else 'August saved a memory.'
+            return f'Remembered: {content[:140]}' if content else 'Saved a memory.'
         if toolName == 'update_memory':
             content = as_str(toolInput.get('content'), '')
-            return f'August updated a memory: {content[:140]}' if content else 'August updated a memory.'
+            return f'Updated a memory: {content[:140]}' if content else 'Updated a memory.'
         if toolName == 'forget':
             mid = as_int(toolInput.get('memoryId'), 0)
-            return f'August forgot a memory (id {mid}).' if mid else 'August forgot a memory.'
+            return f'Forgot a memory (id {mid}).' if mid else 'Forgot a memory.'
         if toolName == 'update_heuristics':
-            return 'August updated a learned rule.'
+            return 'Updated a learned rule.'
     except Exception:
         pass
     return text[:140]
-
-
-def _turnOutcomeGrade(
-    *,
-    turn_error: str | None,
-    refusals: int,
-    thinking_only: bool,
-    tool_errors: int,
-    evidence_state: str,
-    verifier_withheld: bool = False,
-) -> str:
-    """Graded turn outcome for routing evidence (task success, not just
-    error-absence). Order matters: an error dominates; a refusal is not a
-    win even though the loop survived; a verifier-withheld answer is not a
-    win (the model failed the gate); verified mutation beats a bare ok."""
-    if turn_error:
-        return 'error'
-    if verifier_withheld:
-        return 'verifier_blocked'
-    if refusals > 0:
-        return 'refusal'
-    if thinking_only:
-        return 'thinking_only'
-    if tool_errors > 0:
-        return 'tool_error'
-    if evidence_state == 'verified':
-        return 'verified'
-    return 'ok'
 
 
 def _modelRetryPolicy() -> dict[str, int]:
@@ -603,226 +572,73 @@ def _spawn_background(coro: Coroutine[Any, Any, object], name: str):
     return task
 
 
+def _modelDisplayName(modelId: str) -> str:
+    """Friendly model name for the prompt identity (e.g. 'Claude Sonnet 4.5')."""
+    raw = (modelId or '').strip()
+    if not raw:
+        return 'the selected model'
+    for prefix in ('models/', 'openai/', 'anthropic/', 'azure/', 'openrouter/', 'gemini/'):
+        if raw.lower().startswith(prefix):
+            raw = raw[len(prefix):]
+    raw = raw.split('@')[0].split(':')[0]
+    tokens = [tok for tok in re.split(r'[-_.]+', raw) if tok]
+    out: list[str] = []
+    digits: list[str] = []
+    for tok in tokens:
+        if tok.isdigit() and len(tok) == 8:
+            continue  # date-stamped snapshot ids
+        if tok.isdigit():
+            digits.append(tok)
+            continue
+        if digits:
+            out.append('.'.join(digits))
+            digits = []
+        out.append(tok.upper() if tok.lower() in ('gpt', 'llm', 'ai') else tok.capitalize())
+    if digits:
+        out.append('.'.join(digits))
+    return ' '.join(out).strip() or 'the selected model'
+
+
+_HARNESS_SKILL_NAMES = ('august-harness', 'august-tools')
+_harness_guide_cache: dict[str, str] = {}
+_caps_block_cache: dict[str, str] = {}
+
+
+def _harness_guide_text() -> str:
+    """Inlined bodies of the two built-in harness skills (memoized)."""
+    if 'text' not in _harness_guide_cache:
+        try:
+            from app.services import skill_service
+
+            _harness_guide_cache['text'] = skill_service.load_bodies(
+                list(_HARNESS_SKILL_NAMES)
+            )
+        except Exception:
+            logger.debug('prompt: harness skills load failed', exc_info=True)
+            _harness_guide_cache['text'] = ''
+    return _harness_guide_cache['text']
+
+
 def buildSystemPrompt(
     session: WorkbenchSession,
     tools: list[dict[str, object]] | None = None,
 ) -> str:
-    """Assemble the 3-tier XML system prompt for a workbench session (Phase 1).
+    """Assemble the lean system prompt for a workbench session.
 
-    Uses the Phase 1 context_builder which emits the 3-tier structure:
-      Tier 1: Identity & Constraints (static)
-      Tier 2: Environment & Experience (semi-stable)
-      Tier 3: Dynamic Runtime (volatile)
-
-    Wires brain_orchestrator classification, workspace, VCS, memory stats,
-    whats-new, and guard mode rules — achieving Node.js parity.
-
-    ``tools``: optional pre-built Anthropic tool defs. Pass them when the
-    caller already built the list so we do not call ``toolDefinitions`` again
-    inside the prompt-build timing span.
+    Single-pass build with no memory recall, no heuristics and no skill
+    relevance scoring: core operating rules, the two harness skills
+    inlined, workspace context (VCS + AUG.md), live session state and the
+    tool protocol. Expensive pieces (git probe, skill bodies, capabilities
+    block) are memoized so a turn never pays for them twice.
     """
-    from app.services.memory.context_builder import buildSystemPrompt as ctxBuild
-    from app.services.memory_store import get_memory
+    from app.services.harness_mode import is_benchmark_mode
     from app.services.workbench import prompt_segments_cache as _seg_cache
 
-    memory: dict[str, JsonValue] = {}
-    profile = get_memory('userProfile')
-    if profile:
-        memory['userProfile'] = profile
-    context = get_memory('current_context')
-    if context:
-        memory['global_context'] = context
-    projects = get_memory('active_projects')
-    if projects:
-        memory['active_projects'] = projects
-    # Cross-session continuity: the last few chat titles are injected into
-    # Tier 3 so the model can reference "that chat about X" — cheap, no
-    # query cost per turn.
-    try:
-        from app.services.workbench.sessions import list_workbench_sessions
-
-        recent_sessions = [
-            as_str(s.get('title') or s.get('id'), '')
-            for s in list_workbench_sessions()[:5]
-            if as_str(s.get('id'), '') != getattr(session, 'id', '')
-        ]
-        if recent_sessions:
-            memory['recentSessions'] = cast(JsonValue, recent_sessions)
-    except Exception:
-        logger.debug('recent sessions preload failed', exc_info=True)
     session._last_recalled_memories = None
     session._last_context_snapshot = None
-    # Auto-memories are on-demand by default; the budget-gated auto-recall
-    # below injects a small recall when there is headroom. The model pulls
-    # deeper past-session context via memory_search / fact_search /
-    # context_read / brain_query when the user asks about prior work.
-    _HEURISTIC_CAP = 15
-    _modelWindowForMemory = 128000
-    try:
-        _modelWindowForMemory = _resolveModelContextWindow(
-            as_str(getattr(session, 'model', ''), ''), None
-        )
-    except Exception:
-        pass
-    _HEURISTIC_LIMIT = _scaledMemoryLimit(_HEURISTIC_CAP, _modelWindowForMemory)
-    try:
-        from app.services.memory_store import _conn as brainConn
-
-        conn = brainConn()
-        heuristicsRows = conn.execute(
-            'SELECT id, rule, source, category, confidence FROM learned_heuristics '
-            "WHERE COALESCE(suppressed, 0) = 0 "
-            'ORDER BY confidence DESC, updated_at DESC LIMIT ?',
-            (_HEURISTIC_LIMIT,),
-        ).fetchall()
-        if heuristicsRows:
-            memory['learnedHeuristics'] = [dict(r) for r in heuristicsRows]
-            # "This rule keeps winning" bookkeeping: bump use_count for the
-            # injected rules (feeds skill promotion — see
-            # heuristics_service.promoteFrequentHeuristics).
-            try:
-                from app.services.heuristics_service import markHeuristicSurfaced
-
-                markHeuristicSurfaced([int(r['id']) for r in heuristicsRows])
-            except Exception:
-                logger.debug('heuristic surfaced-count update failed', exc_info=True)
-        totalHeuristics = conn.execute('SELECT COUNT(*) FROM learned_heuristics').fetchone()[0]
-        if totalHeuristics > _HEURISTIC_CAP:
-            from app.services.brain_event_bus import emitBrainEvent
-
-            emitBrainEvent(
-                category='heuristic',
-                layer='workbench.prompt_injection',
-                summary=f'Heuristic cap active: showing {_HEURISTIC_CAP} of {totalHeuristics} rules',
-            )
-    except Exception:
-        logger.debug('prompt: heuristics load failed', exc_info=True)
-    coreFacts = get_memory('coreMemory')
-    if coreFacts:
-        memory['coreMemory'] = coreFacts
-    # User-authored Added Memory — parent chat only. Workers get task
-    # context + skills/recall, not every-turn user facts.
     is_worker = int(getattr(session, 'subagent_depth', 0) or 0) > 0
-    try:
-        if not is_worker:
-            from app.services.memory.auto_memory import list_user_added_memories
+    is_benchmark = is_benchmark_mode(session)
 
-            added = list_user_added_memories(limit=_scaledMemoryLimit(40, _modelWindowForMemory))
-            if added:
-                memory['addedMemories'] = cast(list[JsonValue], added)
-    except Exception:
-        logger.debug('prompt: added memories load failed', exc_info=True)
-    agentContext = None
-    if session.agentId:
-        try:
-            from app.services.tools.agent_registry import renderAgentContext
-
-            agentContext = renderAgentContext(session.agentId)
-        except Exception:
-            logger.debug('prompt: agent context failed', exc_info=True)
-    brainPolicy = None
-    try:
-        from app.services.memory.brain_orchestrator import classifyTask, extractTextFromMessages, policyForTask
-
-        msgs = []
-        if hasattr(session, 'messages') and session.messages:
-            msgs = session.messages
-        taskText = extractTextFromMessages(msgs)
-        taskType = classifyTask(taskText)
-        brainPolicy = policyForTask(taskType)
-    except Exception:
-        logger.debug('prompt: brain policy failed', exc_info=True)
-    workspacePath = str(session.workspacePath) if hasattr(session, 'workspacePath') and session.workspacePath else ''
-    vcsInfo = ''
-    whatsNew = ''
-    if workspacePath:
-        vcsInfo, whatsNew = _probe_workspace_git(workspacePath)
-    memoryStats = {}
-    try:
-        from app.services.memory_store import get_stats as memStats
-
-        memoryStats = memStats()
-    except Exception:
-        logger.debug('prompt: memory stats failed', exc_info=True)
-    skillsManifest, _skillsInner = _seg_cache.get_skills_segments()
-    cognitiveBudget = None
-    try:
-        from app.services.workbench.token_budget import computeBudget
-
-        provider = getattr(session, 'provider', None) or ''
-        model = getattr(session, 'model', None) or ''
-        providerName = provider.get('name', '') if isinstance(provider, dict) else str(provider)
-        modelName = model.get('name', '') if isinstance(model, dict) else str(model)
-        msgsForBudget = getattr(session, 'messages', []) or []
-        # Budget against the model's real window, not a fixed default, so the
-        # pressure signal and the auto-recall gate below reflect reality.
-        window = _resolveModelContextWindow(
-            modelName or '', provider if isinstance(provider, dict) else None
-        )
-        cognitiveBudget = computeBudget(
-            msgsForBudget,
-            model=modelName or None,
-            provider=providerName or None,
-            maxContext=window,
-            api_mode=(
-                as_str((provider or {}).get('apiMode') or (provider or {}).get('apiFormat'), '')
-                if isinstance(provider, dict)
-                else None
-            ),
-        )
-    except Exception:
-        logger.debug('prompt: cognitive budget failed', exc_info=True)
-    # Budget-gated auto-recall: with headroom, surface the most relevant past
-    # memories directly. Turn 1 always recalls (cap shrinks under pressure —
-    # Claude's memory ritual); later turns stay cadence/probe-gated because
-    # they re-key the provider prompt cache. Probe-triggered recalls are
-    # cached per session so repeated "what did I say about X" turns refetch
-    # nothing.
-    try:
-        _recall_gate_ok = False
-        _is_probe = False
-        if not memory.get('autoMemories'):
-            _lastUser = _lastUserMessageText(session)
-            _is_probe = bool(_PROBES_PAST_RE.search(_lastUser or ''))
-            if getattr(session, '_turn1_recall_done', False):
-                # Turn 1 already recalled; later turns need gate OR a fresh probe.
-                if _is_probe:
-                    _cached = getattr(session, '_probe_recall_cache', None) or {}
-                    if _cached.get('q') == (_lastUser or '').strip().lower():
-                        recalled_cached = _cached.get('rows') or []
-                        if recalled_cached:
-                            session._last_recalled_memories = recalled_cached
-                            memory['autoMemories'] = cast(list[JsonValue], recalled_cached)
-                        _recall_gate_ok = False  # served from cache, skip fetch
-                    else:
-                        _recall_gate_ok = True
-                else:
-                    _recall_gate_ok = _shouldAutoRecall(
-                        cognitiveBudget, session=session, probe=_is_probe
-                    )
-            else:
-                _recall_gate_ok = True
-        if _recall_gate_ok and not memory.get('autoMemories'):
-            from app.services.memory.auto_memory import getRelevantMemories
-
-            base_limit = _scaledMemoryLimit(5, _modelWindowForMemory)
-            recalled = getRelevantMemories(
-                _lastUserMessageText(session),
-                limit=_probe_recall_limit(cognitiveBudget, base_limit),
-                durable_only=True,
-            ) or []
-            if recalled:
-                session._last_recalled_memories = recalled
-                memory['autoMemories'] = cast(list[JsonValue], recalled)
-                if _is_probe:
-                    session._probe_recall_cache = {  # type: ignore[attr-defined]
-                        'q': (_lastUser or '').strip().lower(),
-                        'rows': recalled,
-                    }
-        if not getattr(session, '_turn1_recall_done', False):
-            session._turn1_recall_done = True  # type: ignore[attr-defined]
-    except Exception:
-        logger.debug('prompt: auto-recall failed', exc_info=True)
     if tools is None:
         tools = toolDefinitions(session)
     tool_names: list[str] = []
@@ -833,61 +649,15 @@ def buildSystemPrompt(
                 n = as_str(as_dict(t.get('function')).get('name'), '')
             if n:
                 tool_names.append(n)
-    from app.services.harness_mode import is_benchmark_mode
 
-    is_benchmark = is_benchmark_mode(session)
-    capabilities_block = ''
-    if not is_benchmark:
-        try:
-            from app.services.memory.capabilities_prompt import build_capabilities_block
-
-            capabilities_block = build_capabilities_block(tool_names or None)
-        except Exception:
-            logger.debug('prompt: capabilities block failed', exc_info=True)
-    # Relevance-picked skill descriptions (Tier 3): Tier 1 carries only the
-    # compact name index now, so this re-injects descriptions for the handful
-    # of skills the current request actually touches. Workers build their own
-    # capabilities block; benchmark mode strips skills entirely.
-    relevantSkillsText = ''
-    if not is_benchmark and int(getattr(session, 'subagent_depth', 0) or 0) == 0:
-        try:
-            from app.services.memory.capabilities_prompt import build_relevant_skills_block
-
-            relevantSkillsText = build_relevant_skills_block(_lastUserMessageText(session))
-        except Exception:
-            logger.debug('prompt: relevant skills failed', exc_info=True)
-    sessionDict = {
-        # Ambient identity so tools like delete/rename/brain_query can target
-        # "this chat" without a prior list call.
-        'id': getattr(session, 'id', None) or '',
-        'title': getattr(session, 'title', None) or '',
-        'goal': session.goal,
-        'plan': session.plan,
-        'planApproved': session.planApproved,
-        'guardMode': normalizeGuardMode(getattr(session, 'guardMode', None) or 'full'),
-        'agentId': getattr(session, 'agentId', None) or '',
-        'workspacePath': workspacePath,
-        'vcs': vcsInfo,
-        'brainPolicy': brainPolicy,
-        'cognitiveBudget': cognitiveBudget,
-        'memoryStats': memoryStats,
-        'whatsNew': whatsNew,
-        'skillsManifest': [] if is_benchmark else skillsManifest,
-        'capabilitiesBlock': capabilities_block,
-        'relevantSkillsBlock': relevantSkillsText,
-        'toolNames': tool_names,
-        'executionState': getattr(session, '_execution_state', None),
-        'verifierEnforced': bool(getattr(session, 'verifierEnforced', False)),
-        'workingMemory': getattr(session, '_working_memory', None),
-        'subconsciousUpdates': _buildDaemonUpdates(getattr(session, 'id', '')),
-        # Tool self-heal: structured failure from last tool exception (if any).
-        'failureFeedback': getattr(session, '_failure_feedback', None),
-    }
-    if not is_benchmark:
-        for k in ('coreMemory', 'learnedHeuristics', 'autoMemories'):
-            if k in memory:
-                sessionDict[k] = memory[k]
-    # Load workspace AUG.md into Tier 2 as soft context (Claude CLAUDE.md parity).
+    workspacePath = (
+        str(session.workspacePath)
+        if hasattr(session, 'workspacePath') and session.workspacePath
+        else ''
+    )
+    vcsInfo = ''
+    if workspacePath:
+        vcsInfo, _whatsNew = _probe_workspace_git(workspacePath)
     augMdBody = ''
     if workspacePath:
         try:
@@ -898,83 +668,101 @@ def buildSystemPrompt(
                 augMdBody = as_str(loaded.get('body', ''))
         except Exception:
             logger.debug('prompt: AUG.md load failed', exc_info=True)
-    sessionDict['augMd'] = augMdBody
-    sessionDict['todos'] = session.todos
-    from app.services.workbench.prompt_cache import getCache
 
-    promptCache = getCache()
-    # Content-hash key: Tier1+Tier2 are deterministic functions of these inputs.
-    # When any input changes the hash changes → cache miss → rebuild. This makes
-    # staleness structurally impossible (no manual invalidate needed).
-    import hashlib
-    import json as _json
-
-    _hash_inputs = _json.dumps(
-        [
-            sessionDict.get('guardMode', ''),
-            sessionDict.get('id', ''),
-            sessionDict.get('capabilitiesBlock', ''),
-            str(sessionDict.get('toolNames', [])),
-            sessionDict.get('workspacePath', ''),
-            sessionDict.get('vcs', ''),
-            sessionDict.get('goal', ''),
-            _json.dumps(sessionDict.get('plan'), default=str, sort_keys=True),
-            sessionDict.get('planApproved', ''),
-            sessionDict.get('augMd', ''),
-            str(sessionDict.get('learnedHeuristics', [])),
-            str(memory.get('userProfile', '') if isinstance(memory, dict) else ''),
-        ],
-        default=str,
-        sort_keys=True,
+    # Identity = the model the user actually picked, not a product persona.
+    modelName = _modelDisplayName(as_str(getattr(session, 'model', ''), ''))
+    parts: list[str] = [
+        '<core>\n'
+        f"You are {modelName}, a coding agent on the user's machine.\n"
+        'Rules:\n'
+        '- Lead with the outcome; be concise; never narrate tool use — emit the call.\n'
+        '- Read before writing; pass the read sha256 as fileHash on writes/edits.\n'
+        '- Batch independent calls; run_command is non-interactive; its exit code is your receipt.\n'
+        '- Track multi-step work with update_state '
+        '(research | plan | implement | review | complete); finish on complete.\n'
+        '- Never invent file contents or command output.\n'
+        '</core>'
+    ]
+    if not is_worker and not is_benchmark:
+        guide = _harness_guide_text()
+        if guide:
+            parts.append(f'<harness_guide>\n{guide}\n</harness_guide>')
+    if workspacePath:
+        ws = ['<workspace>', f'path: {workspacePath}']
+        if vcsInfo:
+            ws.append(f'vcs: {vcsInfo}')
+        ws.append('</workspace>')
+        parts.append('\n'.join(ws))
+        if augMdBody:
+            parts.append(f'<aug_directives>\n{augMdBody}\n</aug_directives>')
+    agentMode = as_str(getattr(session, 'agent_mode', '') or '')
+    sessionBlock = [
+        '<session>',
+        f"id: {getattr(session, 'id', '') or ''}",
+        f"title: {getattr(session, 'title', '') or ''}",
+    ]
+    if session.goal:
+        sessionBlock.append(f'goal: {session.goal}')
+    if session.plan:
+        sessionBlock.append(f'plan: {json.dumps(session.plan, default=str)}')
+    if session.plan:
+        sessionBlock.append('plan status: ' + ('approved' if session.planApproved else 'pending'))
+    sessionBlock.append(
+        'guardMode: ' + normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
     )
-    cacheKey = hashlib.sha256(_hash_inputs.encode()).hexdigest()[:32]
-    cachedT12 = promptCache.get(cacheKey)
-    # Mandatory memory+skills review gate: inject <review_required> when due
-    try:
-        _inject_review_required(session, sessionDict)
-    except Exception:
-        pass
-    base = ctxBuild(
-        session=sessionDict,
-        memory=cast('dict[str, object]', memory),
-        tools=tools,
-        agentContext=agentContext,
-        cachedT12=cachedT12,
-    )
-    if cachedT12 is None:
+    if agentMode:
+        sessionBlock.append(f'agentMode: {agentMode}')
+    if getattr(session, 'verifierEnforced', False):
+        sessionBlock.append(
+            'verifier: ON — the final answer is withheld until '
+            "update_state(phase='complete') passes verification."
+        )
+    execState = getattr(session, '_execution_state', None)
+    if execState:
+        sessionBlock.append(f'execution_state: {json.dumps(execState, default=str)}')
+    working = getattr(session, '_working_memory', None)
+    if working:
+        sessionBlock.append(
+            f'scratchpad: {working if isinstance(working, str) else json.dumps(working, default=str)}'
+        )
+    failure = getattr(session, '_failure_feedback', None)
+    if failure:
+        sessionBlock.append(
+            f'last_tool_failure: {failure if isinstance(failure, str) else json.dumps(failure, default=str)}'
+        )
+    if session.todos:
+        sessionBlock.append(f'todos: {json.dumps(session.todos, default=str)}')
+    sessionBlock.append('</session>')
+    parts.append('\n'.join(sessionBlock))
+    if session.agentId:
         try:
-            from app.services.memory.context_builder import buildTier1, buildTier2, wrapTag
+            from app.services.tools.agent_registry import renderAgentContext
 
-            t1 = buildTier1(sessionDict)
-            t2 = buildTier2(sessionDict)
-            # Derived markdown mirror (best-effort) — reuse the tiers we just
-            # built so the mirror never causes redundant tier builds.
-            try:
-                from app.services.memory.context_builder import buildTier3
-                from app.services.memory.markdown_export import export_system_prompt_markdown
-
-                export_system_prompt_markdown(
-                    session=sessionDict,
-                    tiers=(t1, t2, buildTier3(sessionDict)),
-                )
-            except Exception:
-                pass
-            t12Parts = []
-            # Cache the same wrapped form that buildSystemPrompt emits (no double-emit).
-            if t1:
-                t12Parts.append(wrapTag('tier1_identity', t1))
-            if t2:
-                t12Parts.append(wrapTag('tier2_experience', t2))
-            if t12Parts:
-                promptCache.set(cacheKey, '\n\n'.join(t12Parts))
+            agentContext = renderAgentContext(session.agentId)
+            if agentContext:
+                parts.append(f'<agent>\n{agentContext}\n</agent>')
         except Exception:
-            logger.debug('prompt: T1/T2 cache write failed', exc_info=True)
-    # Skills catalogue is inside Tier 1 <capabilities>; do not append a duplicate
-    # markdown "## Available Skills" block. Policy blocks are conditional
-    # (P4): only inject <clarify_policy> / <bulk_tools> / <web_research> when
-    # the corresponding tools are actually offered to the model this turn.
+            logger.debug('prompt: agent context failed', exc_info=True)
+    if not is_benchmark and tool_names:
+        capsKey = '\n'.join(sorted(tool_names))
+        caps = _caps_block_cache.get(capsKey)
+        if caps is None:
+            try:
+                from app.services.capabilities_prompt import build_capabilities_block
+
+                caps = build_capabilities_block(tool_names)
+            except Exception:
+                logger.debug('prompt: capabilities block failed', exc_info=True)
+                caps = ''
+            _caps_block_cache[capsKey] = caps
+        if caps:
+            parts.append(f'<capabilities>\n{caps}\n</capabilities>')
+    # Conditional policy blocks: only when the matching tools are offered.
+    # CLARIFY stays unconditional — submit_clarify is intercepted by the turn
+    # loop, not registered, so the model only learns it from this block.
     offeredTools = set(tool_names)
-    _BULK_TOOL_NAMES = {
+    parts.append(_seg_cache.CLARIFY_BLOCK)
+    if offeredTools & {
         'bulk',
         'read_files',
         'write_files',
@@ -983,47 +771,11 @@ def buildSystemPrompt(
         'kill_daemons',
         'web_fetch_many',
         'load_skills',
-    }
-    extraParts: list[str] = []
-    # <clarify_policy> stays UNCONDITIONAL on purpose: submit_clarify is not a
-    # registered tool — the turn loop intercepts it (workbench.py:3642) and
-    # drives the ClarifyTool UI. Without this block the model never learns the
-    # tool name exists, so gating it on the tools array would kill the
-    # clarify flow entirely.
-    extraParts.append(_seg_cache.CLARIFY_BLOCK)
-    if offeredTools & _BULK_TOOL_NAMES:
-        extraParts.append(_seg_cache.BULK_BLOCK)
+    }:
+        parts.append(_seg_cache.BULK_BLOCK)
     if offeredTools & {'web_search', 'web_fetch'}:
-        extraParts.append(_seg_cache.WEB_BLOCK)
-    # Snapshot of what this turn's prompt actually injected — carried into the
-    # per-turn `done` event and the chat context panel (A5).
-    try:
-        recalled = getattr(session, '_last_recalled_memories', None) or []
-        session._last_context_snapshot = {
-            'profileSummaryUsed': bool(memory.get('userProfile')),
-            'heuristicsUsed': len(as_list(memory.get('learnedHeuristics'), [])),
-            'addedMemories': len(as_list(memory.get('addedMemories'), [])),
-            'recalledMemories': [
-                {
-                    'id': as_int(m.get('id'), 0) or None,
-                    'key': as_str(m.get('key'), ''),
-                    'category': as_str(m.get('category'), 'auto'),
-                    'snippet': as_str(
-                        m.get('description') or m.get('label') or m.get('content') or m.get('text') or '', ''
-                    )[:200],
-                }
-                for m in recalled
-                if isinstance(m, dict)
-            ][:5],
-            'currentContextUsed': bool(memory.get('global_context')),
-            'activeProjects': len(as_list(memory.get('active_projects'), [])),
-            'coreFactsUsed': bool(memory.get('coreMemory')),
-            'augDirectiveUsed': bool(sessionDict.get('augMd')),
-        }
-    except Exception:
-        logger.debug('prompt: context snapshot failed', exc_info=True)
-        session._last_context_snapshot = None
-    return base + '\n\n' + '\n\n'.join(extraParts)
+        parts.append(_seg_cache.WEB_BLOCK)
+    return '\n\n'.join(p for p in parts if p)
 
 
 def _resolveModelContextWindow(
@@ -1039,29 +791,6 @@ def _resolveModelContextWindow(
     except Exception:
         logger.debug('resolveModelContextWindow failed', exc_info=True)
     return 128000
-
-
-def _memoryInjectionScale(context_window: int) -> float:
-    """Memory injection scale for the model's context window.
-
-    A 32k model gets half the memory payload of a 128k one; a 200k model
-    gets 1.5x. Applied to recalled/added memories and heuristics so weak
-    windows are not drowned by memory context.
-    """
-    if context_window < 32768:
-        return 0.5
-    if context_window < 65536:
-        return 0.75
-    if context_window < 131072:
-        return 1.0
-    if context_window < 262144:
-        return 1.5
-    return 2.0
-
-
-def _scaledMemoryLimit(base: int, context_window: int) -> int:
-    """Scale a memory injection cap by the model's context window."""
-    return max(1, int(base * _memoryInjectionScale(context_window)))
 
 
 def _shouldAutoCompact(
@@ -1154,240 +883,6 @@ def _session_cost_usd(session: object) -> float:
         cache_hit=as_int(getattr(session, 'cacheHitTokens', 0), 0),
         cache_miss=as_int(getattr(session, 'cacheMissTokens', 0), 0),
     )
-
-
-def _apply_model_profile(model_id: str, surface: str) -> bool:
-    """Write a model's toolSurface into the provider store. Returns True on success."""
-    try:
-        from app.services import config_service
-
-        return config_service.apply_model_tool_surface(model_id, surface)
-    except Exception:
-        logger.debug('auto-profile apply failed', exc_info=True)
-    return False
-
-
-def _clear_model_profile(model_id: str) -> bool:
-    """Remove a model's toolSurface override (revert to provider default)."""
-    try:
-        from app.services import config_service
-
-        return config_service.clear_model_tool_surface(model_id)
-    except Exception:
-        logger.debug('auto-profile clear failed', exc_info=True)
-    return False
-
-
-def _auto_profile_tick(model_id: str, fp: dict[str, object]) -> None:
-    """Evaluate an active profile experiment against the fresh fingerprint.
-
-    Runs every turn while an experiment exists. Once the model accumulated
-    ``minTurns`` new traces since the apply, compare failure rates: if any
-    regressed by more than the tolerance, revert to the previous surface;
-    otherwise mark the experiment confirmed. Never raises.
-    """
-    import os as _os
-
-    if _os.environ.get('AUGUST_AUTO_PROFILE') != '1':
-        return
-    try:
-        from app.services.memory_store import get_memory, save_memory
-
-        key = f'profile-experiment:{model_id}'
-        exp = get_memory(key)
-        expDict = exp if isinstance(exp, dict) else {}
-        if not expDict:
-            return
-        minTurns = max(3, as_int(expDict.get('minTurns'), 8))
-        total = as_int(fp.get('total'), 0)
-        if total < as_int(expDict.get('beforeTotal'), 0) + minTurns:
-            return
-        beforeRaw = expDict.get('beforeRates')
-        beforeDict: dict[str, object] = beforeRaw if isinstance(beforeRaw, dict) else {}
-        beforeRates = (
-            as_float(beforeDict.get('invalid_json'), 0.0),
-            as_float(beforeDict.get('refusal'), 0.0),
-            as_float(beforeDict.get('stall'), 0.0),
-        )
-        nowRates = (
-            as_float(fp.get('invalid_json_rate'), 0.0),
-            as_float(fp.get('refusal_rate'), 0.0),
-            as_float(fp.get('stall_rate'), 0.0),
-        )
-        regressed = any(a > b + 0.08 for a, b in zip(nowRates, beforeRates))
-        prevSurface = as_str(expDict.get('prevSurface'), '')
-        if regressed:
-            reverted = (
-                _apply_model_profile(model_id, prevSurface) if prevSurface else _clear_model_profile(model_id)
-            )
-            logger.warning(
-                'auto-profile: %s regressed after %s — %s to %s',
-                model_id,
-                minTurns,
-                'reverted' if reverted else 'revert FAILED',
-                prevSurface or '(provider default)',
-            )
-            save_memory(key, {**expDict, 'status': 'reverted', 'checkedAt': _now()})
-        else:
-            logger.info('auto-profile: %s confirmed after %s turns (rates held/improved)', model_id, minTurns)
-            save_memory(key, {**expDict, 'status': 'confirmed', 'checkedAt': _now()})
-    except Exception:
-        logger.debug('auto-profile tick failed', exc_info=True)
-
-
-def _shouldAutoRecall(
-    cognitive_budget: dict[str, object] | None,
-    min_headroom: int = 6000,
-    *,
-    session: object | None = None,
-    probe: bool = False,
-) -> bool:
-    """Auto-recall when there is prompt headroom.
-
-    Turn 1 ALWAYS recalls when any headroom exists (Claude's memory ritual:
-    a fresh session never starts with zero recall) — under pressure the
-    LIMIT shrinks instead of the recall vanishing. On later turns, recall
-    fires on a cadence (every 3rd user turn) or when the message probes the
-    past ("what did I say about X", "remember", "last week") and still
-    requires low/medium pressure plus ``min_headroom``, because later-turn
-    injections re-key the provider prompt cache.
-    """
-    if not cognitive_budget:
-        return False
-    is_turn_one = True
-    if session is not None:
-        messages = getattr(session, 'messages', None)
-        if isinstance(messages, list):
-            user_turns = 0
-            last_user_text = ''
-            for message in messages:
-                if isinstance(message, dict) and message.get('role') == 'user':
-                    user_turns += 1
-                    content = message.get('content', '')
-                    if isinstance(content, str):
-                        last_user_text = content
-            if user_turns > 1:
-                is_turn_one = False
-                # Later turns: probe verbs or a cadence, never every send.
-                if user_turns % 3 != 0 and not _PROBES_PAST_RE.search(last_user_text or ''):
-                    return False
-        elif int(getattr(session, 'messageCount', 0) or 0) > 1:
-            is_turn_one = False
-            return False
-    raw_remaining = cognitive_budget.get('remaining_tokens')
-    remaining = int(raw_remaining) if isinstance(raw_remaining, (int, float)) else 0
-    pressure = as_str(cognitive_budget.get('attention_pressure'), '')
-    if probe and not is_turn_one:
-        # Probe messages recall under ANY pressure (cap still shrinks via
-        # _probe_recall_limit) — "what did I say about X" is a direct request.
-        return remaining >= 1500
-    if is_turn_one:
-        # Claude-style guarantee: even high/critical pressure recalls a tiny
-        # capped set rather than nothing (the caller shrinks the limit).
-        return remaining >= 1500
-    return pressure in ('low', 'medium') and remaining >= min_headroom
-
-
-def _probe_recall_limit(
-    cognitive_budget: dict[str, object] | None,
-    base_limit: int,
-) -> int:
-    """Shrink the auto-recall limit under attention pressure instead of
-    dropping recall entirely (Claude-style: always some, never too much)."""
-    if not cognitive_budget:
-        return base_limit
-    remaining = as_int(cognitive_budget.get('remaining_tokens'), 0)
-    pressure = as_str(cognitive_budget.get('attention_pressure'), '')
-    if pressure == 'critical' or (remaining and remaining < 2500):
-        return max(1, base_limit // 5)  # floor: one memory, not zero
-    if pressure == 'high':
-        return max(2, base_limit // 2)
-    return base_limit
-
-
-# P2: correction / preference markers that suggest a durable lesson was just
-# spoken mid-run (background review would only see it post-turn).
-_MEMORY_NUDGE_RE = re.compile(
-    r"\b(actually|no,|i said|that'?s wrong|is wrong|instead of|rather than|"
-    r"don'?t|do not|stop doing|never |always |i prefer|i like|i hate|"
-    r"from now on|keep in mind|going forward|for future|my bad)\b",
-    re.IGNORECASE,
-)
-_MEMORY_NUDGE_MIN_ROUND = 4
-
-
-def _build_memory_nudge(
-    messages: list[dict[str, object]],
-    called_tools: set[str],
-    cognitive_budget: dict[str, object] | None,
-) -> str:
-    """One-shot mid-turn `<memory_nudge>` appended to a tool result.
-
-    Fires when: deep enough into the turn, a user correction/preference
-    pattern appears in recent history, no ``remember`` happened this turn,
-    and attention pressure is not high/critical (never compete with the
-    compaction warning). Returns '' when suppressed.
-    """
-    if 'remember' in called_tools or 'update_memory' in called_tools:
-        return ''
-    if isinstance(cognitive_budget, dict):
-        pressure = as_str(cognitive_budget.get('attention_pressure'), '')
-        if pressure in ('high', 'critical'):
-            return ''
-    user_texts: list[str] = []
-    for m in reversed(messages):
-        if isinstance(m, dict) and m.get('role') == 'user':
-            c = m.get('content', '')
-            if isinstance(c, str) and c.strip():
-                user_texts.append(c)
-            if len(user_texts) >= 4:
-                break
-    if not any(_MEMORY_NUDGE_RE.search(t) for t in user_texts):
-        return ''
-    return (
-        '<memory_nudge>'
-        'One of the user\'s recent messages reads as a correction or durable preference. '
-        'If it is a lasting preference/lesson worth carrying into FUTURE sessions, capture it '
-        'now with one remember(key=<short-key>, content=<one-line fact>) call, then continue. '
-        'If it only concerns the current task, ignore this notice.'
-        '</memory_nudge>'
-    )
-
-
-# Snake_case alias for tests / external callers.
-_should_auto_compact = _shouldAutoCompact
-
-
-def _buildDaemonUpdates(sessionId: str) -> str:
-    """Build the <subconscious_updates> XML block from daemon results.
-
-    v2: Preserves the [CRITICAL] prefix on daemon output so the model
-    can detect critical alerts and pause to inform the user.
-    """
-    try:
-        from app.services.daemon_manager import getManager
-
-        manager = getManager()
-        daemons = manager.list_daemons(sessionId)
-        if not daemons:
-            return ''
-        lines: list[str] = ['<subconscious_updates>']
-        for d in daemons:
-            attrs = f'''name="{_xmlEscape(d['name'])}" status="{d['status']}"'''
-            if d.get('triggered'):
-                attrs += ' triggered="true"'
-            output = as_str(d.get('output'), '')
-            if d.get('error'):
-                attrs += f''' error="{_xmlEscape(as_str(d.get('error')))}"'''
-                lines.append(f'  <daemon {attrs} />')
-            elif output:
-                lines.append(f'  <daemon {attrs}>{_xmlEscape(output)}</daemon>')
-            else:
-                lines.append(f'  <daemon {attrs} />')
-        lines.append('</subconscious_updates>')
-        return '\n'.join(lines)
-    except Exception:
-        return ''
 
 
 def _xmlEscape(s: str) -> str:
@@ -1522,7 +1017,6 @@ _BARE_TOOL_ALLOW = frozenset(
         'run_command',
         'update_state',
         'write_scratchpad',
-        'memory_search',
         'diagnose_proxy',
     }
 )
@@ -2162,70 +1656,6 @@ async def sendWorkbenchMessageStream(
             clear_current()
 
 
-def _record_turn_lesson(
-    *,
-    turn_error: str,
-    model: str,
-    provider: str,
-    task_type: str,
-    session_id: str,
-) -> None:
-    """Self-improvement (turn-level): record a heuristic when a turn fails.
-
-    Tool-level failures already have deterministic-signal lessons; this
-    covers upstream/loop failures (provider errors, stall hard-stops,
-    format rejections). The rule is injected into future system prompts
-    (top-N by confidence), so the model is nudged away from the failing
-    path — confidence grows on repeats via ``addHeuristic``'s merge, and
-    secrets never land in a rule (memory_scrubber gate).
-    """
-    try:
-        from app.services.heuristics_service import addHeuristic
-
-        first_line = (turn_error or '').strip().splitlines()[0][:120] if turn_error else ''
-        if not first_line:
-            return
-        rule = (
-            f'Turn failed on {model or "model"} via {provider or "provider"} '
-            f'({task_type or "general"} task): {first_line} — prefer a different '
-            'model or check provider configuration for this task type.'
-        )
-        addHeuristic(
-            rule,
-            source='turn-lesson',
-            category='provider_reliability',
-            session_id=session_id,
-        )
-    except Exception:
-        logger.debug('turn lesson record failed', exc_info=True)
-
-
-def _inject_review_required(session: object, session_dict: dict) -> None:
-    """Inject <review_required> when memory curation is due (12+ turns since last review).
-
-    The marker is written by POST /api/memory/review into session.metadata
-    ('lastMemoryReviewAtTurn') so a completed review clears the nag until the
-    next interval.
-    """
-    try:
-        turns = getattr(session, 'turnCount', 0) or 0
-        meta = getattr(session, 'metadata', None)
-        last = 0
-        if isinstance(meta, dict):
-            try:
-                last = int(meta.get('lastMemoryReviewAtTurn') or 0)
-            except Exception:
-                last = 0
-        if turns - last >= 12:
-            # Only when there are memories to review
-            from app.services.memory.auto_memory import list_review_candidates
-            cands = list_review_candidates(limit=5)
-            if cands:
-                session_dict['review_required'] = f"Review {len(cands)} candidate memories/skills: run POST /api/memory/review (origin=recalled) and apply keep/remove/skill actions before update_state(phase='complete')."
-    except Exception:
-        pass
-
-
 def _verifier_gated_emit(session: object, emit):
     """Wrap a turn's emit callback with the opt-in verifier final-answer gate.
 
@@ -2280,30 +1710,6 @@ def _verifier_gated_emit(session: object, emit):
                             },
                         }
                     )
-                    # Self-improvement: the verifier rejected completion — record
-                    # a correction heuristic so future turns run the declared
-                    # verification command before declaring done (merged/confidence-
-                    # bumped on repeats; scrubbed of secrets upstream).
-                    try:
-                        from app.services.heuristics_service import addHeuristic
-
-                        # Stable rule text (no per-turn blocker detail): the
-                        # heuristic store merges repeats by similarity, and a
-                        # rule that changes every turn would fragment into N
-                        # near-duplicates crowding the Tier-2 budget.
-                        rule = (
-                            'Verifier gate: final answer is withheld until '
-                            "update_state(phase='complete') runs after a passing "
-                            'verification command.'
-                        )
-                        addHeuristic(
-                            rule,
-                            source='verifier-lesson',
-                            category='verifier',
-                            session_id=as_str(getattr(session, 'id', '')),
-                        )
-                    except Exception:
-                        logger.debug('verifier lesson record failed', exc_info=True)
                 return
             if forceRelease:
                 emit(
@@ -2364,39 +1770,12 @@ async def _sendWorkbenchMessageStreamImpl(
     effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
     # Persist so later turns / BTW inherit the composer effort selection.
     session.metadata['effort'] = effectiveEffort
-    # Role routing (surpass #2): derive the task role for this turn — plan
-    # mode → plan role, max effort → slow role, image attachments → vision.
-    # A configured ``chat_<role>`` fleet model wins over the picked model;
-    # blank roles fall through to the normal selection (one-model default).
-    chat_role = 'default'
-    try:
-        gm = as_str(getattr(session, 'guardMode', '') or '')
-        if gm == 'plan':
-            chat_role = 'plan'
-        elif effectiveEffort == 'max':
-            chat_role = 'slow'
-        else:
-            for cand in reversed(session.messages):
-                if cand.get('role') != 'user':
-                    continue
-                raw_attachments = cand.get('attachments')
-                attachments = raw_attachments if isinstance(raw_attachments, list) else []
-                if any(
-                    as_str(a.get('type'), '').startswith('image') or as_str(a.get('mimeType'), '').startswith('image/')
-                    for a in attachments
-                    if isinstance(a, dict)
-                ):
-                    chat_role = 'vision'
-                    break
-    except Exception:
-        chat_role = 'default'
+    # The model the user picked always wins — no fleet/role override.
     resolvedProvider, resolvedModel = _resolveChatLlm(
         model=model or '',
         model_provider=modelProvider or '',
         session_provider=session.provider or provider or '',
         session_model=session.model or '',
-        role=chat_role,
-        workspace=as_str(getattr(session, 'workspacePath', '') or '').rstrip('/\\').split('/')[-1].split('\\')[-1],
     )
     # Remember model/provider on the session so BTW and Live use the same ones.
     if resolvedModel:
@@ -2405,120 +1784,6 @@ async def _sendWorkbenchMessageStreamImpl(
         pname = as_str(resolvedProvider.get('name') or resolvedProvider.get('id'))
         if pname:
             session.provider = pname
-    # Routing-evidence consult (surpass #7 closed loop): with enough samples,
-    # a materially better model for this task type is surfaced as a
-    # routingSuggestion SSE event; with auto-routing enabled (brain config
-    # `autoRoute`, or AUGUST_AUTO_ROUTE=1 for legacy env setups) it replaces
-    # the resolved model for this turn instead. Flap guard: the candidate
-    # must beat the CURRENT model's win rate by `autoRouteWinGap` (or the
-    # current model has no evidence yet) — otherwise routing would oscillate
-    # between two good models.
-    session._auto_routed = False
-    try:
-        import os as _os
-
-        from app.services.brain_config_service import getRuntimeConfig
-        from app.services.routing_evidence import (
-            classify_task_type,
-            get_suggestions,
-            record_auto_route_decision,
-        )
-
-        bc = getRuntimeConfig()
-        autoRoute = bool(bc.get('autoRoute')) or _os.environ.get('AUGUST_AUTO_ROUTE') == '1'
-        minSamples = max(1, as_int(bc.get('autoRouteMinSamples'), 3))
-        minWinRate = max(0.05, min(1.0, as_float(bc.get('autoRouteMinWinRate'), 0.6)))
-        minGap = max(0.0, min(0.9, as_float(bc.get('autoRouteWinGap'), 0.15)))
-
-        taskType = classify_task_type(message or _lastUserMessageText(session))
-        if taskType and taskType != 'general':
-            topSuggestions = get_suggestions(taskType, min_samples=minSamples, limit=5)
-            if topSuggestions:
-                top = topSuggestions[0]
-                topModel = as_str(top.get('model'), '')
-                topProvider = as_str(top.get('provider'), '')
-                topWinRate = as_float(top.get('winRate'), 0.0)
-                currentProviderName = (
-                    as_str(resolvedProvider.get('name') or resolvedProvider.get('id'), '')
-                    if resolvedProvider
-                    else ''
-                )
-                different = bool(topModel) and topModel != resolvedModel and topProvider != currentProviderName
-                # Current model's own evidence (if any) — used for the gap check.
-                currentRow = next(
-                    (s for s in topSuggestions if as_str(s.get('model'), '') == resolvedModel),
-                    None,
-                )
-                currentWinRate = as_float(currentRow.get('winRate'), 0.0) if currentRow else None
-                # Exploration (P6, epsilon-greedy): a configured model with too
-                # few samples for this task type must sometimes run anyway so it
-                # can accumulate evidence — otherwise an auto-routed incumbent
-                # starves the alternative forever and a better configured model
-                # can never overtake it.
-                currentTotal = as_int(currentRow.get('total'), 0) if currentRow else 0
-                exploreNow = currentTotal < max(3, minSamples * 2) and random.random() < 0.5
-                gap = topWinRate - (currentWinRate if currentWinRate is not None else 0.0)
-                qualifies = (
-                    different
-                    and topWinRate >= minWinRate
-                    and (currentWinRate is None or gap >= minGap)
-                )
-                if qualifies and not exploreNow and emit:
-                    if autoRoute:
-                        from app.providers.resolver import apply_model_format_override
-                        from app.services.workbench.providers import resolve_model, resolve_workbench_provider
-
-                        prevModel = as_str(resolvedModel, '')
-                        prevProvider = currentProviderName
-                        suggested = resolve_workbench_provider('', topModel)
-                        if suggested:
-                            resolvedProvider = suggested
-                            resolvedModel = resolve_model(suggested, topModel)
-                            resolvedProvider = apply_model_format_override(resolvedProvider, resolvedModel)
-                            if resolvedProvider:
-                                session._auto_routed = True
-                                session.model = resolvedModel
-                                pname = as_str(resolvedProvider.get('name') or resolvedProvider.get('id'))
-                                if pname:
-                                    session.provider = pname
-                                record_auto_route_decision(
-                                    task_type=taskType,
-                                    from_model=prevModel,
-                                    from_provider=prevProvider,
-                                    to_model=resolvedModel,
-                                    to_provider=pname,
-                                    win_rate=topWinRate,
-                                    gap=gap,
-                                )
-                            emit(
-                                {
-                                    'type': 'routingSuggestion',
-                                    'applied': True,
-                                    'taskType': taskType,
-                                    'model': resolvedModel,
-                                    'provider': pname,
-                                    'winRate': topWinRate,
-                                    'gap': gap,
-                                    'currentModel': prevModel,
-                                    'reason': 'Evidence shows this model wins this task type more often.',
-                                }
-                            )
-                    else:
-                        emit(
-                            {
-                                'type': 'routingSuggestion',
-                                'applied': False,
-                                'taskType': taskType,
-                                'model': topModel,
-                                'provider': topProvider,
-                                'winRate': topWinRate,
-                                'gap': gap,
-                                'currentModel': resolvedModel,
-                                'reason': 'Evidence shows this model wins this task type more often.',
-                            }
-                        )
-    except Exception:
-        logger.debug('routing-evidence consult failed (non-fatal)', exc_info=True)
     if emit:
         emit({'type': 'started', 'sessionId': sessionId, 'model': resolvedModel})
     # Recurring-task daemon (B7): fire due reminders at turn start — surfaced
@@ -2740,22 +2005,6 @@ async def _sendWorkbenchMessageStreamImpl(
         tools = toolDefinitions(session)
         openaiTools = openaiToolDefinitions(session)
         systemText = _buildSystemText(session, tools)
-        if emit and session._last_recalled_memories:
-            emit(
-                {
-                    'type': 'recalledMemories',
-                    'items': [
-                        {
-                            'id': str(m.get('id') or m.get('key') or ''),
-                            'key': str(m.get('key') or ''),
-                            'category': str(m.get('category') or 'auto'),
-                            'snippet': str(m.get('description') or m.get('label') or '')[:200],
-                        }
-                        for m in session._last_recalled_memories
-                        if isinstance(m, dict)
-                    ],
-                }
-            )
     isAnthropic = _isAnthropicProvider(resolvedProvider)
     isOpenai = _isOpenaiProvider(resolvedProvider)
 
@@ -2783,7 +2032,7 @@ async def _sendWorkbenchMessageStreamImpl(
     chainUsedAt: str | None = None
     try:
         from app.providers.clients.base import estimateTokens
-        from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
+        from app.services.workbench.context_compressor import compressMessages, isFeatureEnabled
 
         if isFeatureEnabled():
             contextWindow = _resolveModelContextWindow(resolvedModel, resolvedProvider)
@@ -2805,24 +2054,6 @@ async def _sendWorkbenchMessageStreamImpl(
             threshold = max(4096, int(contextWindow * 0.55))
             currentMessages = list(session.messages)
             if _shouldAutoCompact(attentionPressure, turnsSinceCompaction, remainingTokens):
-                # Preserve key state without manual work: auto-summarize before compact so handoff survives compression.
-                try:
-                    from app.services.workbench.context_compressor import localSummarize as _localSumm
-                    from app.services.workbench.sessions import summarize_session as _summ_sess
-                    _snap = _summ_sess(session)
-                    _recent = _localSumm(currentMessages[-20:]) if currentMessages else ''
-                    _scratch = getattr(session, '_working_memory', '') or ''
-                    _payload = dict(_snap)
-                    if _scratch:
-                        _payload['scratchpad'] = str(_scratch)[:3000]
-                    if _recent:
-                        _payload['recentSummary'] = _recent[:3000]
-                    import json as _jsum
-
-                    from app.services.brain_write_facade import save_kv as _skv
-                    _skv(f'pre_compact_snapshot:{sessionId}', _jsum.dumps(_payload, ensure_ascii=False)[:40000])
-                except Exception:
-                    pass
                 try:
                     from app.services.transcript_archive import archive_messages
 
@@ -2853,9 +2084,6 @@ async def _sendWorkbenchMessageStreamImpl(
                 compressedTokens = estimateTokens(compressed)
                 if compressedTokens < originalTokens:
                     compressedCount = len(currentMessages) - len(compressed)
-                    # Audit trail (Letta-style persistence beyond the window):
-                    # the summarized middle must never be unrecoverable.
-                    removedMiddle = currentMessages[4:-6] if len(currentMessages) > 10 else currentMessages
                     currentMessages = compressed
                     # Persist so later turns / reload don't re-send the bloated history.
                     session.messages = list(compressed)
@@ -2865,23 +2093,6 @@ async def _sendWorkbenchMessageStreamImpl(
                         saveSessions()
                     except Exception:
                         logger.exception('workbench save_sessions failed after auto-compact')
-                    try:
-                        import json as _json
-
-                        from app.services.brain_write_facade import save_kv
-
-                        save_kv(
-                            f'compaction_audit:{sessionId}',
-                            {
-                                'at': time.time(),
-                                'originalTokens': originalTokens,
-                                'compressedTokens': compressedTokens,
-                                'removedCount': compressedCount,
-                                'removedMiddle': _json.dumps(removedMiddle, ensure_ascii=False)[:50000],
-                            },
-                        )
-                    except Exception:
-                        logger.debug('compaction audit persist failed', exc_info=True)
                     if emit:
                         emit(
                             {
@@ -2951,8 +2162,6 @@ async def _sendWorkbenchMessageStreamImpl(
     lastExecSig: tuple[str, int] | None = None
     stalledRounds = 0
     stallMessageSent = False
-    # P2: mid-turn memory nudge fires at most once per turn.
-    memoryNudgedThisTurn = False
     _ = turnBudget  # assigned earlier by the contextPressure pass (mypy: keep alive)
     # Turn-scoped malformed-tool counter: accumulates ACROSS rounds (a reset
     # per round meant repeated malformed calls never triggered the downgrade).
@@ -2967,11 +2176,6 @@ async def _sendWorkbenchMessageStreamImpl(
     # ok=False for error turns, not a hardcoded win.
     turnError: str | None = None
     managedToolLoopCap = _managedToolLoopCap()
-    # Graded-outcome bookkeeping for routing evidence (task success, not
-    # error-absence).
-    turnEndedThinkingOnly = False
-    toolErrorsThisTurn = 0
-    turnEvidenceTracker = None
     # Trace-store bookkeeping: tool names dispatched this turn + self-heal
     # counters (recorded with the turn trace for replay/drift analysis).
     calledTools: set[str] = set()
@@ -3100,7 +2304,7 @@ async def _sendWorkbenchMessageStreamImpl(
         for chainIndex in range(len(chainModels) + 1):
             if chainIndex > 0:
                 nextModel = chainModels[chainIndex - 1]
-                nProvider, nModel = _resolveChatLlm(model=nextModel, role='')
+                nProvider, nModel = _resolveChatLlm(model=nextModel)
                 if not nProvider or not nModel:
                     continue
                 resolvedProvider, resolvedModel = nProvider, nModel
@@ -3211,7 +2415,7 @@ async def _sendWorkbenchMessageStreamImpl(
             # before walking the normal fallback chain.
             if not promotionUsed and promotionModel and _isContextOverflowError(response):
                 promotionUsed = True
-                pProvider, pModel = _resolveChatLlm(model=promotionModel, role='')
+                pProvider, pModel = _resolveChatLlm(model=promotionModel)
                 if pProvider and pModel:
                     resolvedProvider, resolvedModel = pProvider, pModel
                     # Same wire-format caveat as the fallback chain: the
@@ -3378,7 +2582,6 @@ async def _sendWorkbenchMessageStreamImpl(
                 if emit and (
                     stop_reason in ('max_tokens', 'length') or len(thinkingContent) > 2000
                 ):
-                    turnEndedThinkingOnly = True
                     emit(
                         {
                             'type': 'finalOutput',
@@ -4158,22 +3361,6 @@ async def _sendWorkbenchMessageStreamImpl(
             if emit:
                 emit({'type': 'error', 'message': f'Tool stage failed: {exc}'})
             break
-        # Graded-outcome bookkeeping: feed the turn evidence tracker
-        # (mutation → verification) and count failed tool results so routing
-        # evidence reflects task success, not just error-absence.
-        try:
-            if turnEvidenceTracker is None:
-                from app.services.evidence import TurnEvidenceTracker
-
-                turnEvidenceTracker = TurnEvidenceTracker()
-            stage_results = toolResults[len(toolResults) - len(pending_regular):]
-            for (_tn, _ti, _tid), _tr in zip(pending_regular, stage_results):
-                result_text = as_str(_tr.get('content', ''), '')
-                turnEvidenceTracker.record_tool(_tn, _ti, result_text[:2000])
-                if _tr.get('is_error') or result_text.startswith('Error:'):
-                    toolErrorsThisTurn += 1
-        except Exception:
-            logger.debug('turn evidence tracking failed', exc_info=True)
         # The model recovered: valid arguments this round reset the turn-scoped
         # malformed counter (it accumulates only across consecutive bad rounds).
         if invalidThisRound == 0:
@@ -4248,22 +3435,6 @@ async def _sendWorkbenchMessageStreamImpl(
             assistantMsg.pop('tool_calls', None)
         currentMessages.append(assistantMsg)
         currentMessages.extend(toolResults)
-        # P2 mid-task persistence nudge: once per turn, from a tool round deep
-        # enough that background review hasn't run yet, when the user's recent
-        # messages carry a correction/preference pattern and no remember call
-        # happened. Rides in a tool result — the system prompt is cache-stable.
-        if (
-            not memoryNudgedThisTurn
-            and toolRound >= _MEMORY_NUDGE_MIN_ROUND
-            and not cancelledMidRound
-        ):
-            nudge = _build_memory_nudge(currentMessages, calledTools, turnBudget)
-            if nudge:
-                last_result = toolResults[-1]
-                last_result['content'] = (
-                    as_str(last_result.get('content'), '') + '\n' + nudge
-                )
-                memoryNudgedThisTurn = True
         if planSubmittedThisRound:
             break
         if clarifySubmittedThisRound:
@@ -4340,7 +3511,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     and not (session.metadata or {}).get('summary')
                     and getattr(session, 'metadata', None) is not None
                 ):
-                    from app.services.memory.context_compressor import localSummarize
+                    from app.services.workbench.context_compressor import localSummarize
 
                     summary = localSummarize(list(session.messages), maxSummaryChars=800)
                     if summary.strip():
@@ -4465,16 +3636,6 @@ async def _sendWorkbenchMessageStreamImpl(
                         # task type (never auto-run — the model decides what
                         # actually validates its work).
                         suggestedCmd = ''
-                        try:
-                            from app.services.routing_evidence import classify_task_type
-
-                            taskKind = classify_task_type(as_str(getattr(session, 'goal', '') or message, ''))
-                            if taskKind in ('tests', 'bugfix', 'refactor'):
-                                suggestedCmd = 'pytest -q'
-                            elif taskKind == 'docs':
-                                suggestedCmd = 'python -m compileall . -q'
-                        except Exception:
-                            logger.debug('verifier command inference failed', exc_info=True)
                         steer = (
                             '[VERIFIER STEER] The verifier gate requires a verification run before '
                             "the final answer is released. Declare and run a verification command "
@@ -4506,203 +3667,6 @@ async def _sendWorkbenchMessageStreamImpl(
             # fallback/promotion switch happened mid-turn.
             if chainUsedAt:
                 doneEvent['usedFallback'] = chainUsedAt
-            # Per-turn context snapshot (A5): what the harness injected into
-            # this turn's prompt — the chat context panel's data feed.
-            snapshot = getattr(session, '_last_context_snapshot', None)
-            if isinstance(snapshot, dict):
-                doneEvent['context'] = snapshot
-                try:
-                    from app.services.brain_write_facade import save_kv
-
-                    save_kv(f'session_context:{sessionId}', snapshot)
-                except Exception:
-                    logger.debug('context snapshot persist failed', exc_info=True)
-            # Proactive memory suggestions (F3): cheap deterministic preference
-            # candidates from the last user message — the chat renders
-            # one-click "Save as memory" chips. Only emitted when the user has
-            # not already stated the same fact (profile near-dup guard).
-            try:
-                suggestions = _extract_memory_suggestions(session)
-                if suggestions:
-                    doneEvent['memorySuggestions'] = suggestions
-            except Exception:
-                logger.debug('memory suggestions extract failed', exc_info=True)
-            # Routing evidence (surpass #1/#7): record this turn's outcome by
-            # task type so the harness learns which model wins what.
-            task_type = 'general'
-            try:
-                from app.services.routing_evidence import classify_task_type, record_turn
-
-                # Graded outcome: routing must reflect task SUCCESS — a
-                # refusal or thinking-only turn is not a win even though the
-                # loop survived without an exception.
-                evidence_state = 'unseen'
-                if turnEvidenceTracker is not None:
-                    try:
-                        evidence_state = as_str(turnEvidenceTracker.classify().value, 'unseen')
-                        if emit:
-                            emit({'type': 'evidenceState', 'state': evidence_state})
-                    except Exception:
-                        pass
-                verifierWithheld = bool(getattr(session, '_verifier_blocked_this_turn', False))
-                outcome = _turnOutcomeGrade(
-                    turn_error=turnError,
-                    refusals=as_int(getattr(session, '_refusal_count', 0), 0),
-                    thinking_only=turnEndedThinkingOnly,
-                    tool_errors=toolErrorsThisTurn,
-                    evidence_state=evidence_state,
-                    verifier_withheld=verifierWithheld,
-                )
-                task_type = classify_task_type(_lastUserMessageText(session))
-                record_turn(
-                    session_id=sessionId,
-                    task_type=task_type,
-                    model=as_str(resolvedModel, ''),
-                    provider=as_str(
-                        (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
-                    ),
-                    ok=turnError is None and not verifierWithheld,
-                    outcome=outcome,
-                    input_tokens=totalInputTokens,
-                    output_tokens=totalOutputTokens,
-                    duration_ms=int(totalGenerationMs),
-                    # Auto-routed turns keep their source so the decision is
-                    # measurable (they still count toward model win rates).
-                    source='auto-route' if getattr(session, '_auto_routed', False) else 'turn',
-                )
-            except Exception:
-                logger.debug('routing evidence record failed', exc_info=True)
-            # Per-turn trace (replay/drift): prompt hash, tools, rounds,
-            # self-heal counters, graded outcome. Fire-and-forget.
-            try:
-                import hashlib
-
-                from app.services.trace_store import record_turn_trace
-
-                userText = _lastUserMessageText(session)
-                record_turn_trace(
-                    session_id=sessionId,
-                    turn_seq=as_int(getattr(session, 'turnCount', 0), 0),
-                    prompt_hash=hashlib.sha256((userText or '').encode('utf-8')).hexdigest()[:16],
-                    prompt_preview=(userText or '')[:300],
-                    task_type=task_type,
-                    model=as_str(resolvedModel, ''),
-                    provider=as_str(
-                        (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
-                    ),
-                    outcome=outcome,
-                    rounds=toolRound,
-                    tools_offered=len(tools),
-                    tool_calls=sorted(calledTools),
-                    self_heal_events={
-                        'parse_failures': parseFailures,
-                        'refusals': as_int(getattr(session, '_refusal_count', 0), 0),
-                        'stall_nudges': 1 if stallMessageSent else 0,
-                        'compacted_this_turn': currentTurn == as_int(
-                            getattr(session, '_last_compaction_turn', -1), -1
-                        ),
-                    },
-                    evidence_state=evidence_state,
-                    input_tokens=totalInputTokens,
-                    output_tokens=totalOutputTokens,
-                    duration_ms=int(totalGenerationMs),
-                    error=turnError or '',
-                )
-            except Exception:
-                logger.debug('trace record failed', exc_info=True)
-            # Capability auto-detect: when a model's failure fingerprint
-            # crosses thresholds (malformed JSON / refusals / stalls), suggest
-            # a capability profile (toolSurface/maxTools) — data-driven
-            # replacement for manual per-model config. Deduped per model so a
-            # broken model doesn't spam the suggestion every turn.
-            try:
-                from app.services.trace_store import capability_fingerprint
-
-                modelIdForProfile = as_str(resolvedModel, '')
-                if modelIdForProfile:
-                    profileProvider = as_str(
-                        (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
-                    )
-                    fp = capability_fingerprint(modelIdForProfile, profileProvider)
-                    # Auto-profile experiments (A5, opt-in): evaluate any
-                    # active experiment against the fresh fingerprint BEFORE
-                    # the suggestion logic runs — revert when rates regressed,
-                    # confirm when they held or improved.
-                    _auto_profile_tick(modelIdForProfile, fp)
-                    suggestedRaw = fp.get('suggestedProfile')
-                    suggested = (
-                        suggestedRaw if isinstance(suggestedRaw, dict) else None
-                    )
-                    if suggested:
-                        from app.services.memory_store import get_memory, save_memory
-
-                        dedupKey = f'profile-suggested:{modelIdForProfile}'
-                        prev = get_memory(dedupKey)
-                        prevDict = prev if isinstance(prev, dict) else {}
-                        if prevDict.get('toolSurface') != suggested.get('toolSurface'):
-                            save_memory(
-                                dedupKey,
-                                {
-                                    'toolSurface': suggested.get('toolSurface'),
-                                    'at': _now(),
-                                },
-                            )
-                            if emit:
-                                emit(
-                                    {
-                                        'type': 'modelProfileSuggestion',
-                                        'model': modelIdForProfile,
-                                        'suggestedProfile': suggested,
-                                        'message': (
-                                            f'Model {modelIdForProfile}: consider changing the tool '
-                                            f'surface to {suggested.get("toolSurface")} '
-                                            f'({suggested.get("reason", "")}).'
-                                        ),
-                                    }
-                                )
-                            # Auto-apply (opt-in): write the profile into the
-                            # provider store and open an experiment that
-                            # reverts the change if failure rates regress.
-                            import os as _profile_os
-
-                            if _profile_os.environ.get('AUGUST_AUTO_PROFILE') == '1':
-                                appliedSurface = as_str(suggested.get('toolSurface'), '')
-                                if appliedSurface and _apply_model_profile(modelIdForProfile, appliedSurface):
-                                    save_memory(
-                                        f'profile-experiment:{modelIdForProfile}',
-                                        {
-                                            'appliedAt': _now(),
-                                            'prevSurface': as_str(prevDict.get('toolSurface'), ''),
-                                            'appliedSurface': appliedSurface,
-                                            'beforeTotal': as_int(fp.get('total'), 0),
-                                            'beforeRates': {
-                                                'invalid_json': as_float(fp.get('invalid_json_rate'), 0.0),
-                                                'refusal': as_float(fp.get('refusal_rate'), 0.0),
-                                                'stall': as_float(fp.get('stall_rate'), 0.0),
-                                            },
-                                            'minTurns': 8,
-                                        },
-                                    )
-                                    logger.warning(
-                                        'auto-profile: applied %s surface %s for %s',
-                                        appliedSurface,
-                                        modelIdForProfile,
-                                        suggested.get('reason', ''),
-                                    )
-            except Exception:
-                logger.debug('capability suggestion failed', exc_info=True)
-            # Self-improvement: failed turns become provider-reliability lessons
-            # (injected into future prompts, merged/confidence-bumped on repeats).
-            if turnError is not None:
-                _record_turn_lesson(
-                    turn_error=as_str(turnError, ''),
-                    model=as_str(resolvedModel, ''),
-                    provider=as_str(
-                        (resolvedProvider or {}).get('name') or (resolvedProvider or {}).get('id'), ''
-                    ),
-                    task_type=task_type,
-                    session_id=sessionId,
-                )
             emit(doneEvent)
     # LLM sidebar title after the first exchange (placeholder titles only).
     # Runs even for headless sessions — automation runs still deserve a
@@ -4718,153 +3682,6 @@ async def _sendWorkbenchMessageStreamImpl(
         )
     except Exception:
         logger.debug('schedule auto-title failed for %s', sessionId, exc_info=True)
-    # Headless (unattended) sessions skip the memory-extraction side effects —
-    # background review, auto-memory sync, and diff learning are all LLM work
-    # that exists to build the user model; automation-triggered runs get
-    # leaner without them (audit feature).
-    if getattr(session, 'headless', False):
-        return
-    review_model = _backgroundTaskModel('reviewModel', resolvedModel)
-    auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
-    try:
-        from app.services.memory.background_review import (
-            ReviewGates,
-            scheduleEndOfSessionReview,
-            tryBackgroundReview,
-        )
-
-        review_client = _makeReviewLlmClient(resolvedProvider, review_model)
-
-        _spawn_background(
-            tryBackgroundReview(
-                session,
-                list(currentMessages),
-                gates=ReviewGates(turn_interval=3, tool_round_interval=6),
-                llm_client=review_client,
-            ),
-            'background_review',
-        )
-        _spawn_background(
-            scheduleEndOfSessionReview(
-                session,
-                list(currentMessages),
-                llm_client=review_client,
-            ),
-            'end_of_session_review',
-        )
-    except Exception:
-        pass
-    # Episode summarization (#5): when enough conversation summaries piled up,
-    # fold the oldest into one narrative episode using this session's model.
-    # Runs only at end-of-session (idle) — never on the save hot path; any
-    # failure inside falls back to the mechanical join automatically.
-    try:
-        from app.services.memory.auto_memory import consolidate_conv_summaries
-
-        async def _summarizeEpisodeParts(parts: list[str]) -> str:
-            prompt = [
-                {
-                    'role': 'system',
-                    'content': (
-                        'Compress these conversation summaries into ONE dense episode '
-                        'paragraph (max 120 words). Keep: decisions, corrections, '
-                        'preferences, open threads, project/tool names. Drop greetings, '
-                        'echo chatter and filler. Output only the paragraph.'
-                    ),
-                },
-                {
-                    'role': 'user',
-                    'content': json.dumps(parts, default=str)[:8000],
-                },
-            ]
-            client = _makeReviewLlmClient(resolvedProvider, review_model)
-            if client is None:
-                return ''
-            return await client(prompt)
-
-        async def _runEpisodeSummarization() -> None:
-            await asyncio.to_thread(
-                consolidate_conv_summaries, summarizer=_summarizeEpisodeParts
-            )
-
-        _spawn_background(_runEpisodeSummarization(), 'episode_summarization')
-    except Exception:
-        pass
-    # Diff learning: derive correction rules from committed git history.
-    # Gated inside (feature flag + interval + git availability), so a
-    # non-git workspace or off-flag is a cheap no-op.
-    try:
-        workspace = str(getattr(session, 'workspacePath', '') or '').strip()
-        if workspace:
-            from app.services.memory.diff_learning import learn_from_diffs
-
-            _spawn_background(
-                learn_from_diffs(
-                    workspace,
-                    llm_client=_makeReviewLlmClient(resolvedProvider, review_model),
-                ),
-                'diff_learning',
-            )
-    except Exception:
-        pass
-    try:
-        from app.services.workbench.chat_stages import schedule_post_turn_side_effects
-
-        schedule_post_turn_side_effects(
-            session=session,
-            messages=list(currentMessages),
-            auto_memory_model=auto_memory_model or None,
-            sync_auto_memory=_syncAutoMemory,
-        )
-    except Exception:
-        pass
-
-
-def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]], model: str = '') -> None:
-    """Auto-memory sync — extract durable todos without archiving every turn.
-
-    Runs fire-and-forget after each workbench turn so it never delays
-    the response. Explicit model ``remember`` calls and the gated background
-    review own durable fact capture; this hook only keeps actionable todos.
-    The ``model`` argument is retained for the scheduler callback contract."""
-    from app.services.memory.auto_memory import extractAndSaveTodos
-    from app.services.memory.cross_session_context import sync_from_turn
-
-    try:
-        extractAndSaveTodos(messages, session_id=str(getattr(session, 'id', '') or ''))
-    except Exception:
-        pass
-    try:
-        lastUserMsg = _lastUserMessageText(session)
-        # Deterministic preference capture (no LLM): "I prefer X" / "my
-        # favorite Y" / "never Z" folds into the user profile the same turn.
-        try:
-            from app.services.memory.user_profile import note_user_message
-
-            prefHits = note_user_message(lastUserMsg)
-            if prefHits:
-                # Worker-thread context: surface the notice via the session
-                # event log (the durable SSE subscriber relays it to the UI).
-                from app.services import event_log
-
-                event_log.event_log.append(
-                    str(getattr(session, 'id', '') or ''),
-                    'memoryUpdated',
-                    {
-                        'action': 'preference',
-                        'summary': f'August remembered a preference: {prefHits[0][:140]}',
-                    },
-                )
-        except Exception:
-            logger.debug('preference capture failed', exc_info=True)
-        # Cross-session bridge: active_projects + current_context (not userProfile).
-        sync_from_turn(
-            workspace_path=as_str(getattr(session, 'workspacePath', '') or ''),
-            last_user_text=lastUserMsg,
-            session_title=as_str(getattr(session, 'title', '') or ''),
-        )
-    except Exception:
-        pass
 
 
 def _lastUserMessageText(session: WorkbenchSession) -> str:
@@ -4901,53 +3718,6 @@ _MEMORY_SUGGESTION_PATTERNS = [
         re.IGNORECASE,
     ),
 ]
-
-
-def _extract_memory_suggestions(session: WorkbenchSession) -> list[str]:
-    """Candidate "save as memory" facts from the last user message.
-
-    Near-dup guard against facts already in the user profile, and a
-    per-session seen-set so the same statement is not re-suggested on every
-    turn. Returns up to 3 clean candidates; empty when nothing qualifies.
-    """
-    import re as _re
-
-    text = _lastUserMessageText(session)
-    if not text.strip():
-        return []
-    seen = getattr(session, '_memory_suggestions_seen', None)
-    if seen is None:
-        seen = set()
-        setattr(session, '_memory_suggestions_seen', seen)
-    # Existing profile facts (near-dup guard)
-    known: list[str] = []
-    try:
-        from app.services.memory_store import get_memory
-
-        profile = get_memory('userProfile')
-        if isinstance(profile, dict):
-            for f in as_list(profile.get('facts'), []):
-                d = as_dict(f)
-                if d:
-                    known.append(as_str(d.get('fact'), '').lower())
-    except Exception:
-        pass
-    candidates: list[str] = []
-    for pattern in _MEMORY_SUGGESTION_PATTERNS:
-        for m in pattern.finditer(text):
-            cand = _re.sub(r'\s+', ' ', m.group(1)).strip(' .,;:!?')
-            if not (8 <= len(cand) <= 120):
-                continue
-            low = cand.lower()
-            if any(low in k or k in low for k in known):
-                continue
-            if low in seen:
-                continue
-            seen.add(low)
-            candidates.append(cand)
-            if len(candidates) >= 3:
-                return candidates
-    return candidates
 
 
 async def _executeTool(

@@ -339,14 +339,18 @@ class SubagentOrchestrator:
                 _sid_probe = str(request.session.get('id', '') or '')
             if _sid_probe:
                 from app.services.workbench import workbench as _wb
+
                 _sess = _wb.getWorkbenchSession(_sid_probe)
-                if _sess and isinstance(_sess.metadata, dict):
-                    delegation = _sess.metadata.get('delegation', {}) if isinstance(_sess.metadata.get('delegation'), dict) else {}
+                _meta = getattr(_sess, 'metadata', None)
+                if _sess and isinstance(_meta, dict):
+                    _delegation_raw = _meta.get('delegation', {})
+                    if isinstance(_delegation_raw, dict):
+                        delegation = _delegation_raw
         except Exception:
             delegation = {}
-        max_concurrent = max(1, min(30, int(delegation.get('maxConcurrent', 5) or 5)))  # Hermes default 3, August default 5
-        default_max_iter = max(5, min(200, int(delegation.get('maxIterations', 50) or 50)))
-        max_depth = max(1, min(5, int(delegation.get('maxDepth', 1) or 1)))
+        max_concurrent = max(1, min(30, as_int(delegation.get('maxConcurrent', 5), 5) or 5))  # Hermes default 3, August default 5
+        default_max_iter = max(5, min(200, as_int(delegation.get('maxIterations', 50), 50) or 50))
+        max_depth = max(1, min(5, as_int(delegation.get('maxDepth', 1), 1) or 1))
         # Enforce per-call concurrency cap (Hermes max_concurrent_children)
         work_items = request.workItems
         if len(work_items) > max_concurrent:

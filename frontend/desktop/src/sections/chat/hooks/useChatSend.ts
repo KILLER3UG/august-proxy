@@ -462,7 +462,7 @@ export function useChatSend(opts: UseChatSendOptions) {
           setShowCommandsDropdown(false);
           clearComposerDraft(sessionId);
           toast.message('Direction queued', {
-            description: 'August will apply this after the current tool step.',
+            description: 'Applied after the current tool step.',
           });
         } catch (err) {
           console.error('[send] steer failed', err);

@@ -69,6 +69,15 @@ export type VoiceCommandEvent =
   | {
       type: 'aug-saved';
       path: string;
+    }
+  | {
+      type: 'compact';
+      sessionId?: string;
+    }
+  | {
+      type: 'goal';
+      sessionId?: string;
+      args: string;
     };
 
 type Listener = (event: VoiceCommandEvent) => void;

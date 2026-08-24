@@ -1,10 +1,11 @@
 """
 Background review config service — read/write the background review model config.
 
-Backed by ``config.json`` ``auxiliary.background_review`` key. The reflection
-loop and auto-memory extraction read this config to determine which model to
-use for each background task. If not configured or disabled, they fall back
-to the chat session's model (the default).
+Backed by ``config.json`` ``auxiliary.background_review`` key. Background tasks
+read this config to determine which model to use for each task. If not
+configured or disabled, they fall back to the chat session's model (the
+default). Restored in 0.17.0 — the config router and the Models → Background &
+Reflection settings tab both depend on it.
 
 Three independent model selectors are supported:
   • reviewModel      — reviewing and summarising conversations
@@ -24,7 +25,12 @@ from app.config import settings
 from app.lib.paths import dataPath
 from app.services.memory_store import record_config_audit
 
-_DEFAULTConfig: dict[str, object] = {'enabled': True, 'reviewModel': '', 'reflectionModel': '', 'autoMemoryModel': ''}
+_DEFAULTConfig: dict[str, object] = {
+    'enabled': True,
+    'reviewModel': '',
+    'reflectionModel': '',
+    'autoMemoryModel': '',
+}
 
 
 def getConfig() -> dict[str, object]:

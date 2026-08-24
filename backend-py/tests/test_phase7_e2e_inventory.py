@@ -118,18 +118,6 @@ def test_phase7_proxy_messages_http_e2e(isolatedData, monkeypatch):
 # ── 2. Memory ─────────────────────────────────────────────────────────
 
 
-def test_phase7_memory_auto_save_emits_feature_flow(isolatedData):
-    from app.services.memory.auto_memory import saveAutoMemory
-
-    feature_flow_bus._events.clear()
-    saveAutoMemory('e2e_mem_key', 'User prefers short answers', category='e2e', importance=0.9)
-    recent = feature_flow_bus.recent(20, feature='memory')
-    assert any(e.get('stage') == 'write' and 'e2e_mem_key' in str(e.get('summary')) for e in recent)
-
-
-# ── 3. Tools + live backend (feature_flow during tool stage) ──────────
-
-
 @pytest.mark.asyncio
 async def test_phase7_tools_emit_live_backend_feature_flow():
     """CI proof: tool execution stages emit feature_flow (live backend action)."""

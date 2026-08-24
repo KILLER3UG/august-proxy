@@ -25,27 +25,6 @@ const ORCH_EXAMPLES = [
   },
 ];
 
-const NORMAL_STARTERS = [
-  {
-    label: 'Standup Git Summary',
-    hint: 'Summarize commits, PRs, and blockers from the week across aug…',
-    prompt: 'Summarize the standup: git log, open PRs, and recent CI failures for this week.',
-    Icon: Clock,
-  },
-  {
-    label: 'CI Failures & Flaky Tests',
-    hint: 'Root-cause the last CI run, surface flaky tests and likely fixes.',
-    prompt: 'Analyze the last CI failure log, find the root cause, and propose a minimal fix with a sample patch.',
-    Icon: Bug,
-  },
-  {
-    label: 'Create PowerPoint',
-    hint: 'Draft a high-tech deck: The Evolution of AI Agents (5 slides).',
-    prompt: 'Please help me create a high-tech PowerPoint presentation on the topic "The Evolution of AI Agents" (5 slides).',
-    Icon: FileText,
-  },
-];
-
 export function ChatEmptyState({
   workspacePath,
   children,
@@ -144,28 +123,6 @@ export function ChatEmptyState({
 
         <div className="w-full pt-1">{children}</div>
 
-        {/* Reference-inspired starter templates — only on blank normal mode, like Z.ai “Standup / CI / PowerPoint” */}
-        {harness !== 'orchestrator' && (
-          <div className="grid w-full grid-cols-3 gap-3 pt-2" data-testid="empty-starter-templates">
-            {NORMAL_STARTERS.map((s) => (
-              <button
-                key={s.label}
-                type="button"
-                onClick={() => {
-                  dispatchInsertComposerText(s.prompt);
-                  dispatchFocusComposer();
-                }}
-                className="text-left rounded-xl border border-border/40 bg-card/40 backdrop-blur px-3.5 py-3 hover:bg-card/60 hover:border-border/60 transition text-foreground/90"
-              >
-                <div className="flex items-center gap-1.5 text-[12px] font-medium">
-                  <s.Icon className="size-3.5 text-muted-foreground/70" />
-                  {s.label}
-                </div>
-                <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">{s.hint}</p>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </motion.div>
   );

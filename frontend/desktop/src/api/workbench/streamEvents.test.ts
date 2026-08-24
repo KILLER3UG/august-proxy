@@ -57,19 +57,6 @@ describe('toolResult error mapping', () => {
 });
 
 describe('previously-undispatched backend events', () => {
-  it('memoryUpdated dispatches onMemoryUpdated with action + summary', () => {
-    const onMemoryUpdated = vi.fn();
-    dispatchWorkbenchEvent(
-      'memoryUpdated',
-      { action: 'remember', summary: 'August remembered that you prefer TypeScript.' },
-      { onMemoryUpdated },
-    );
-    expect(onMemoryUpdated).toHaveBeenCalledWith({
-      action: 'remember',
-      summary: 'August remembered that you prefer TypeScript.',
-    });
-  });
-
   it('subagentRetry dispatches onSubagentRetry with backoff numbers', () => {
     const onSubagentRetry = vi.fn();
     dispatchWorkbenchEvent(
@@ -97,17 +84,4 @@ describe('previously-undispatched backend events', () => {
     );
   });
 
-  it('evidenceState and modelProfileSuggestion are acknowledged without throwing', () => {
-    const handlers: WorkbenchEventHandlers = {};
-    expect(() =>
-      dispatchWorkbenchEvent('evidenceState', { state: 'unseen' }, handlers),
-    ).not.toThrow();
-    expect(() =>
-      dispatchWorkbenchEvent(
-        'modelProfileSuggestion',
-        { model: 'claude-3-5-sonnet', suggestedProfile: { toolSurface: 'full' }, message: 'consider changing the tool surface' },
-        handlers,
-      ),
-    ).not.toThrow();
-  });
 });

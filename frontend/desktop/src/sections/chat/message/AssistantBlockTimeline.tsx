@@ -14,7 +14,6 @@ import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { EditRailRow } from '@/components/chat/EditRailRow';
 import { RailDoneRow } from '@/components/chat/RailDoneRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
-import { RecalledMemoryStep } from '@/components/chat/RecalledMemoryStep';
 import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
@@ -158,8 +157,6 @@ export function AssistantBlockTimeline({
 
     {},
   );
-  // Verifier banner "Run it for me" in-flight flag.
-  const [verifierRunning, setVerifierRunning] = useState(false);
 
   // When the turn finishes, drop expand overrides so thoughts re-collapse.
   useEffect(() => {
@@ -512,46 +509,6 @@ export function AssistantBlockTimeline({
         continue;
       }
 
-      if (block.type === 'recalledMemories' && block.memories && block.memories.length > 0) {
-        const recallId = block.id || `recall_${ti}`;
-        const recallExpanded = isToolExpanded(recallId, 'done');
-        tagged.push({
-          kind: 'block',
-          node: (
-            <RecalledMemoryStep
-              key={recallId}
-              memories={block.memories}
-              expanded={recallExpanded}
-              onToggle={() => toggleExpand(recallId, !recallExpanded)}
-            />
-          ),
-        });
-        ti++;
-        continue;
-      }
-
-      if (block.type === 'memoryNotice') {
-        // In-chat notice: August remembered / updated / forgot a memory.
-        tagged.push({
-          kind: 'block',
-          node: (
-            <div
-              key={block.id || `memory_${ti}`}
-              className="mx-3 my-1 flex items-start gap-1.5 rounded-md border border-border/40 bg-card/30 px-2.5 py-1.5 text-[11px] leading-relaxed text-muted-foreground"
-            >
-              <span aria-hidden="true" className="shrink-0">
-                🧠
-              </span>
-              <span className="min-w-0 break-words">
-                {block.content || 'August updated its memory.'}
-              </span>
-            </div>
-          ),
-        });
-        ti++;
-        continue;
-      }
-
       if (block.type === 'error') {
         // Real generation/tool failure — red banner, never collapsed away.
         // Friendly copy up front; the raw upstream text sits in an
@@ -676,36 +633,6 @@ export function AssistantBlockTimeline({
                           data-testid="verifier-copy-command"
                         >
                           Copy command
-                        </button>
-                        <button
-                          type="button"
-                          disabled={verifierRunning}
-                          onClick={() => {
-                            setVerifierRunning(true);
-                            const wbId = resolveWorkbenchSessionId(liveSessionKey);
-                            api
-                              .post<{ status: string; output?: string; error?: string }>(
-                                `/api/workbench/sessions/${encodeURIComponent(wbId)}/verify-run`,
-                                { command: ev.verificationCommand ?? '' },
-                              )
-                              .then((res) => {
-                                if (res.status === 'ok') {
-                                  toast.success(
-                                    'Verification ran — August was told to finish the gate',
-                                  );
-                                } else {
-                                  toast.error(res.error || 'Verification run failed');
-                                }
-                              })
-                              .catch((err: Error) =>
-                                toast.error(err.message || 'Verification run failed'),
-                              )
-                              .finally(() => setVerifierRunning(false));
-                          }}
-                          className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-200 hover:bg-amber-500/25 disabled:opacity-50"
-                          data-testid="verifier-run-command"
-                        >
-                          {verifierRunning ? 'Running…' : 'Run it for me'}
                         </button>
                       </li>
                     ) : null}

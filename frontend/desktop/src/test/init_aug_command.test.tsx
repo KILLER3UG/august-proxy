@@ -1,5 +1,8 @@
 /**
  * Tests for the /init slash command + AUG.md event flow.
+ *
+ * 0.17.0: the built-in surface is /compact · /init · /btw · /goal only
+ * (user directive) — /remember was trimmed, so its test now asserts absence.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -25,9 +28,9 @@ describe('/init command registration', () => {
     const cmd = voiceCommandRegistry.getBySlashCommand('/init');
     expect(cmd).not.toBeNull();
     expect(cmd!.id).toBe('init-aug');
-    expect(cmd!.description.toLowerCase()).toContain('aug.md');
+    expect(cmd!.description.toLowerCase()).toContain('agents.md');
     expect(cmd!.triggers).toEqual(
-      expect.arrayContaining(['init', 'initialize', 'set up project', 'aug init']),
+      expect.arrayContaining(['init', 'initialize', 'set up project']),
     );
   });
 
@@ -52,11 +55,9 @@ describe('/init command registration', () => {
   });
 });
 
-describe('/remember command', () => {
-  it('is registered as a slash command', () => {
-    const cmd = voiceCommandRegistry.getBySlashCommand('/remember');
-    expect(cmd).not.toBeNull();
-    expect(cmd!.id).toBe('remember');
+describe('/remember command (trimmed in 0.17.0)', () => {
+  it('is no longer registered as a slash command', () => {
+    expect(voiceCommandRegistry.getBySlashCommand('/remember')).toBeNull();
   });
 });
 

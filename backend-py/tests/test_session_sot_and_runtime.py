@@ -37,10 +37,6 @@ async def client(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_curator_and_subagents_no_longer_503(client):
-    r = await client.get('/api/curator/usage')
-    assert r.status_code == 200, r.text
-    assert 'usage' in r.json()
-
     r2 = await client.get('/api/subagents/active')
     assert r2.status_code == 200, r2.text
     assert 'agents' in r2.json()

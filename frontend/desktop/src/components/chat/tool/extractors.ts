@@ -141,7 +141,7 @@ export function extractDiffData(tool: { context?: string; result?: unknown; name
 /**
  * Best-effort extraction of a human-written *intent* for a file edit, e.g.
  * "Add a note clarifying the document is self-contained". Some upstream
- * agents (and August's own tools, when wired) attach a short imperative
+ * agents (and built-in tools, when wired) attach a short imperative
  * description to each edit; when present the rail row leads with it instead
  * of a bare "Editing <file>" verb. Returns null when the args carry no such
  * field — the caller falls back to the verb + filename chip.

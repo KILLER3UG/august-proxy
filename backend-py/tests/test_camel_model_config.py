@@ -56,18 +56,3 @@ def test_simple_config_bodies():
     assert FallbackTest(model='m').model == 'm'
     assert ExternalAccessUpdate(enabled=False).enabled is False
 
-
-@pytest.mark.asyncio
-async def test_put_background_review_accepts_camelcase_json(client, isolatedData):
-    resp = await client.put(
-        '/api/config/background-review',
-        json={
-            'enabled': True,
-            'reviewModel': 'camel-review-model',
-            'reflectionModel': '',
-            'autoMemoryModel': '',
-        },
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data.get('reviewModel') == 'camel-review-model' or data.get('enabled') is True

@@ -5,7 +5,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { Search, Settings, X } from "lucide-react";
+import { ChevronUp, Search, X } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
 import { isTauri } from "@/lib/tauri-detect";
 import { t } from "@/lib/motion";
@@ -63,12 +64,6 @@ const settingsRowMotion = {
   rest: { x: 0 },
   hover: { x: 3, transition: t.fast },
   tap: { scale: 0.98, transition: t.fast },
-};
-
-const settingsIconMotion = {
-  rest: { scale: 1, rotate: 0 },
-  hover: { scale: 1.12, rotate: -18, transition: t.spring },
-  tap: { scale: 0.92, transition: t.fast },
 };
 
 interface Props {
@@ -153,7 +148,7 @@ export function SessionList({
         setSwitchAccountOpen(true);
         break;
       case "download":
-        toast.message("You're already in the August desktop app.");
+        toast.message("You're already in the desktop app.");
         break;
       case "whats-new":
         setWhatsNewOpen(true);
@@ -220,10 +215,13 @@ export function SessionList({
   // session that has a backend generation in progress shows the pulse
   // dot even when the user is on a different session. The local status
   // takes precedence when both are present.
+  // The live poller is authoritative: a stale local 'idle'/'done' must
+  // never hide a background generation (rows showed Working only after
+  // being clicked while the local status was refreshed).
   const mergedSessionStates: Record<string, SessionStatus> = (() => {
     const next: Record<string, SessionStatus> = { ...sessionStates };
     for (const [id, status] of Object.entries(activeChatSessions)) {
-      if (!next[id]) next[id] = status;
+      next[id] = status;
     }
     return next;
   })();
@@ -619,7 +617,9 @@ export function SessionList({
           </Section>
         </div>
 
-        {/* Settings at bottom — dropdown width tracks the live sidebar width */}
+        {/* Bottom: user identity row — Claude-style username + avatar icon
+            that opens the selection list (profile / settings / notifications /
+            what's-new / account). Falls back to Guest when signed out. */}
         <div className="px-2 pb-2 pt-1.5 border-t border-sidebar-border/40">
           <UserDropdown
             selectedStatus={dropdownUser.status}
@@ -647,26 +647,32 @@ export function SessionList({
                 whileHover="hover"
                 whileTap="tap"
                 variants={settingsRowMotion}
-                className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-sidebar-foreground/50 hover:bg-white/[0.03] hover:text-sidebar-foreground/75 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                title={
-                  updateAvailable
-                    ? `Update available: v${updateAvailable.version}`
-                    : "Open settings"
-                }
-                aria-label="Open settings"
+                className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/40 hover:bg-white/[0.03]"
+                title={dropdownUser.name}
+                aria-label={`Account menu — ${dropdownUser.name}`}
+                data-testid="user-menu-trigger"
               >
-                <motion.span
-                  className="inline-flex shrink-0 opacity-60"
-                  variants={settingsIconMotion}
-                >
-                  <Settings className="size-3.5" />
-                </motion.span>
-                <span className="flex-1">Settings</span>
+                <Avatar className="size-6 shrink-0 border border-white/20">
+                  {dropdownUser.avatar ? (
+                    <AvatarImage src={dropdownUser.avatar} alt={dropdownUser.name} />
+                  ) : null}
+                  <AvatarFallback className="text-[10px]">{dropdownUser.initials}</AvatarFallback>
+                </Avatar>
+                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-sidebar-foreground/80">
+                  {dropdownUser.name}
+                  {!signedIn && (
+                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground/60">Free</span>
+                  )}
+                </span>
                 {updateAvailable && (
-                  <span className="rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                  <span
+                    className="shrink-0 rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400"
+                    title={`Update available: v${updateAvailable.version}`}
+                  >
                     Update
                   </span>
                 )}
+                <ChevronUp className="size-3 shrink-0 text-muted-foreground/50" />
               </motion.button>
             }
           />

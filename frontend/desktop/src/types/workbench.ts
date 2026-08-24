@@ -435,38 +435,4 @@ export interface WorkbenchEventHandlers {
       receiptCount?: number;
     };
   }) => void;
-  /** Routing-evidence consult: a better model exists for this task type.
-   *  `applied` is true when auto-routing replaced the turn's model. */
-  onRoutingSuggestion?: (data: {
-    applied: boolean;
-    taskType: string;
-    model: string;
-    provider: string;
-    winRate: number;
-    gap?: number;
-    currentModel?: string;
-    reason?: string;
-  }) => void;
-  /** Emitted once per turn when auto-memory recall (`getRelevantMemories`)
-   *  prefetched rows into the system prompt. The chat thread renders a
-   *  collapsed "Recalled: {category} — {snippet}" card, same style as a
-   *  tool card. */
-  onRecalledMemories?: (data: {
-    items: Array<{ id: string; key: string; category: string; snippet: string }>;
-  }) => void;
-  /** Emitted when the harness changed long-term memory (remember /
-   *  update_memory / forget / preference capture) — the chat renders an
-   *  inline "August remembered…" notice. */
-  onMemoryUpdated?: (data: { action?: string; summary?: string }) => void;
-  /** Per-turn routing-evidence classification (ok / refusal / thinking_only /
-   *  tool_error / …) — feeds the trajectory UI, no dedicated surface. */
-  onEvidenceState?: (data: { state: string }) => void;
-  /** Capability auto-detect suggested a per-model tool surface. The composer
-   *  stack renders an Apply / Dismiss chip that persists via
-   *  POST /api/models/profile. */
-  onModelProfileSuggestion?: (data: {
-    model: string;
-    suggestedProfile?: { toolSurface?: string; reason?: string } | null;
-    message?: string;
-  }) => void;
 }

@@ -13,12 +13,10 @@ read by list_all/get so the model can load lessons as skills.
 from __future__ import annotations
 
 import re
-import shutil
-import time
 from pathlib import Path
 from typing import Optional
 
-from app.json_narrowing import as_int, as_str
+from app.json_narrowing import as_str
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'skills'
 
@@ -100,6 +98,7 @@ class SkillValidationError(ValueError):
     """Raised when a skill fails authoring-standards validation."""
 
 
+
 def _validateName(name: str) -> None:
     if not name:
         raise SkillValidationError('Skill name is required.')
@@ -119,6 +118,7 @@ def _validateDescription(description: str) -> None:
     found = [w for w in _MARKETINGWords if w in lowered]
     if found:
         raise SkillValidationError(f'Skill description contains marketing words: {", ".join(found)}.')
+
 
 
 def _parseSkill(path: Path) -> Optional[dict[str, object]]:
@@ -150,30 +150,6 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
         'updatedAt': stat.st_mtime,
     }
 
-
-def _renderSkillMd(frontmatter: dict[str, str], body: str) -> str:
-    lines = ['---']
-    for key in ('name', 'description', 'trigger', 'category', 'created_by'):
-        val = frontmatter.get(key)
-        if val:
-            lines.append(f'{key}: {val}')
-    lines.append('---')
-    lines.append('')
-    lines.append(body.strip())
-    return '\n'.join(lines) + '\n'
-
-
-def _skillMdPath(name: str, *, createRoots: bool = False) -> Optional[Path]:
-    """Resolve the SKILL.md path for an existing skill across roots."""
-    for root in _skillRoots():
-        md = root / name / 'SKILL.md'
-        if md.exists():
-            return md
-    return None
-
-
-def _agentSkillDir(name: str) -> Path:
-    return _agentSkillsDir() / name
 
 
 def list_all() -> list[dict[str, object]]:
@@ -303,45 +279,6 @@ def catalogue() -> list[dict[str, object]]:
     return out
 
 
-def catalogue_with_usage() -> list[dict[str, object]]:
-    """Catalogue entries enriched with curator usage telemetry + quality score.
-
-    Adds ``useCount`` / ``viewCount`` / ``state`` (from the SkillCurator
-    sidecar) and ``quality`` ({score, breakdown} from skills.quality) so the
-    dashboard and prompt builders can rank or annotate by real usage instead
-    of authorship recency. Best-effort: missing telemetry degrades to zeros.
-    """
-    from app.services.skills.curator import shared_curator
-    from app.services.skills.quality import score_skill
-
-    curator = shared_curator()
-    out: list[dict[str, object]] = []
-    for entry in catalogue():
-        name = as_str(entry.get('name'), '')
-        rec = curator.get_record(name)
-        entry['useCount'] = rec.useCount if rec else 0
-        entry['viewCount'] = rec.viewCount if rec else 0
-        entry['state'] = rec.state if rec else 'active'
-        try:
-            entry['quality'] = score_skill(
-                name,
-                as_str(entry.get('description'), ''),
-                as_str(skill_body(name), ''),
-                trigger=as_str(entry.get('trigger'), '') or None,
-                category=as_str(entry.get('category'), '') or None,
-                use_count=as_int(entry.get('useCount'), 0),
-                last_used_at=(
-                    time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(rec.lastUsedAt))
-                    if rec and rec.lastUsedAt
-                    else None
-                ),
-            )
-        except Exception:
-            pass
-        out.append(entry)
-    return out
-
-
 def skill_body(name: str) -> str | None:
     """Full instruction body for a skill, or None when not found."""
     sk = get(name)
@@ -436,6 +373,25 @@ def _kebab_name(name: str) -> str:
     return s[:64]
 
 
+# ── Authoring (create / patch / delete) — restored 0.17.0 ─────────────────
+
+
+def _renderSkillMd(frontmatter: dict[str, str], body: str) -> str:
+    lines = ['---']
+    for key in ('name', 'description', 'trigger', 'category', 'created_by'):
+        val = frontmatter.get(key)
+        if val:
+            lines.append(f'{key}: {val}')
+    lines.append('---')
+    lines.append('')
+    lines.append(body.strip())
+    return '\n'.join(lines) + '\n'
+
+
+def _agentSkillDir(name: str) -> Path:
+    return _agentSkillsDir() / name
+
+
 def _ensureAgentRoot() -> Path:
     root = _agentSkillsDir()
     root.mkdir(parents=True, exist_ok=True)
@@ -446,24 +402,17 @@ def _copyOnWrite(name: str) -> Path:
     """If a skill only exists in the bundled root, copy it to the agent root
     so it can be patched/extended without mutating built-ins. Returns the
     agent-root skill directory."""
-    agentDir = _agentSkillDir(name)
-    if agentDir.exists():
-        return agentDir
-    bundledMd = SKILLS_DIR / name / 'SKILL.md'
-    if not bundledMd.exists():
+    import shutil
+
+    agent_dir = _agentSkillDir(name)
+    if agent_dir.exists():
+        return agent_dir
+    bundled_md = SKILLS_DIR / name / 'SKILL.md'
+    if not bundled_md.exists():
         raise SkillValidationError(f"Skill '{name}' not found; cannot patch a non-existent skill.")
     _ensureAgentRoot()
-    bundledDir = bundledMd.parent
-    shutil.copytree(bundledDir, agentDir)
-    return agentDir
-
-
-def _safeJoin(skillDir: Path, relPath: str) -> Path:
-    """Join rel_path under skill_dir, refusing traversal escapes."""
-    target = (skillDir / relPath).resolve()
-    if not target.is_relative_to(skillDir.resolve()):
-        raise SkillValidationError(f"file_path '{relPath}' escapes the skill directory.")
-    return target
+    shutil.copytree(bundled_md.parent, agent_dir)
+    return agent_dir
 
 
 def createSkill(
@@ -473,7 +422,7 @@ def createSkill(
     *,
     trigger: str = '',
     category: str = 'uncategorized',
-    createdBy: str = 'agent',
+    created_by: str = 'agent',
 ) -> dict[str, object]:
     """Create a new agent-authored skill."""
     _validateName(name)
@@ -482,45 +431,20 @@ def createSkill(
         raise SkillValidationError('Skill body is required.')
     if get(name):
         raise SkillValidationError(f"Skill '{name}' already exists.")
-    agentDir = _ensureAgentRoot() / name
-    agentDir.mkdir(parents=True, exist_ok=False)
+    agent_dir = _ensureAgentRoot() / name
+    agent_dir.mkdir(parents=True, exist_ok=False)
     frontmatter = {
         'name': name,
         'description': description.strip(),
         'trigger': trigger.strip(),
         'category': category.strip() or 'uncategorized',
-        'created_by': createdBy,
+        'created_by': created_by,
     }
-    (agentDir / 'SKILL.md').write_text(_renderSkillMd(frontmatter, body), 'utf-8')
-    parsed = _parseSkill(agentDir / 'SKILL.md')
+    md = agent_dir / 'SKILL.md'
+    md.write_text(_renderSkillMd(frontmatter, body), 'utf-8')
+    parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
-    try:
-        from app.services.memory.markdown_export import export_skills_markdown
-
-        export_skills_markdown()
-    except Exception:
-        pass
     return parsed or {'name': name, 'description': description}
-
-
-def _snapshot_skill_history(agentDir: Path, md: Path, text: str) -> None:
-    """Snapshot the prior SKILL.md into ``<skill>/.history/`` before a patch.
-
-    Patches overwrite SKILL.md in place from three concurrent writers (model
-    skill_manage, UI PATCH, reflection loop) with no audit trail beyond the
-    patch counter. The last 10 prior versions are kept so a bad auto-patch is
-    recoverable; best-effort — history failure must never block a patch.
-    """
-    try:
-        historyDir = agentDir / '.history'
-        historyDir.mkdir(parents=True, exist_ok=True)
-        stamp = time.strftime('%Y%m%dT%H%M%S', time.gmtime())
-        (historyDir / f'SKILL.{stamp}.md').write_text(text, 'utf-8')
-        snaps = sorted(historyDir.glob('SKILL.*.md'))
-        for old in snaps[:-10]:
-            old.unlink(missing_ok=True)
-    except Exception:
-        pass
 
 
 def patchSkill(
@@ -537,10 +461,9 @@ def patchSkill(
         raise SkillValidationError(f"Skill '{name}' not found.")
     if description is not None:
         _validateDescription(description)
-    agentDir = _copyOnWrite(name)
-    md = agentDir / 'SKILL.md'
+    agent_dir = _copyOnWrite(name)
+    md = agent_dir / 'SKILL.md'
     text = md.read_text('utf-8')
-    _snapshot_skill_history(agentDir, md, text)
     m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
     if not m:
         raise SkillValidationError(f"Skill '{name}' has malformed frontmatter.")
@@ -549,7 +472,7 @@ def patchSkill(
         if ':' in line:
             key, __, val = line.partition(':')
             frontmatter[key.strip()] = val.strip()
-    currentBody = m.group(2).strip()
+    current_body = m.group(2).strip()
     if description is not None:
         frontmatter['description'] = description.strip()
     if trigger is not None:
@@ -557,58 +480,26 @@ def patchSkill(
     if category is not None:
         frontmatter['category'] = category.strip() or 'uncategorized'
     frontmatter.setdefault('created_by', 'agent')
-    newBody = currentBody if body is None else body.strip()
-    md.write_text(_renderSkillMd(frontmatter, newBody), 'utf-8')
+    new_body = current_body if body is None else body.strip()
+    md.write_text(_renderSkillMd(frontmatter, new_body), 'utf-8')
     parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
-    try:
-        from app.services.memory.markdown_export import export_skills_markdown
-
-        export_skills_markdown()
-    except Exception:
-        pass
     return parsed or {'name': name, 'description': frontmatter.get('description', '')}
-
-
-def writeSkillFile(name: str, filePath: str, content: str) -> dict[str, object]:
-    """Write a support file (scripts/ references/ templates/) into a skill dir."""
-    if not get(name):
-        raise SkillValidationError(f"Skill '{name}' not found.")
-    agentDir = _copyOnWrite(name)
-    target = _safeJoin(agentDir, filePath)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, 'utf-8')
-    return {'name': name, 'file': filePath, 'bytes': len(content)}
-
-
-def removeSkillFile(name: str, filePath: str) -> dict[str, object]:
-    """Remove a support file from a skill dir (SKILL.md itself is untouched)."""
-    if not get(name):
-        raise SkillValidationError(f"Skill '{name}' not found.")
-    agentDir = _copyOnWrite(name)
-    target = _safeJoin(agentDir, filePath)
-    if target.name == 'SKILL.md':
-        raise SkillValidationError('Use delete_skill to remove a skill, not remove_skill_file.')
-    if not target.exists():
-        raise SkillValidationError(f"File '{filePath}' not found in skill '{name}'.")
-    target.unlink()
-    return {'name': name, 'removed': filePath}
 
 
 def deleteSkill(name: str) -> dict[str, object]:
     """Delete an agent-authored skill. Refuses bundled skills."""
-    agentDir = _agentSkillDir(name)
-    if not agentDir.exists():
+    import shutil as _shutil
+
+    agent_dir = _agentSkillDir(name)
+    if not agent_dir.exists():
         bundled = SKILLS_DIR / name
         if bundled.exists():
-            raise SkillValidationError(f"Refusing to delete bundled skill '{name}'. Archive via the curator instead.")
+            raise SkillValidationError(
+                f"Refusing to delete bundled skill '{name}'."
+            )
         raise SkillValidationError(f"Skill '{name}' not found.")
-    shutil.rmtree(agentDir)
+    _shutil.rmtree(agent_dir)
     _bust_prompt_skills_cache()
-    try:
-        from app.services.memory.markdown_export import export_skills_markdown
+    return {'deleted': name}
 
-        export_skills_markdown()
-    except Exception:
-        pass
-    return {'name': name, 'deleted': True}

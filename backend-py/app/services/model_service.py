@@ -163,26 +163,9 @@ def _resolve_context_window(raw: object) -> int:
     return n if n > 0 else 128000
 
 
-_STATICModelLists: dict[str, list[dict[str, object]]] = {
-    'Anthropic': [
-        {'id': 'claude-sonnet-4-7'},
-        {'id': 'claude-sonnet-4-6'},
-        {'id': 'claude-opus-4-7'},
-        {'id': 'claude-opus-4-6'},
-        {'id': 'claude-haiku-4-5'},
-    ],
-    'OpenAI API': [
-        {'id': 'gpt-4o'},
-        {'id': 'gpt-4o-mini'},
-        {'id': 'o1'},
-        {'id': 'o3'},
-    ],
-    'DeepSeek': [
-        {'id': 'deepseek-v4'},
-        {'id': 'deepseek-v4-flash'},
-        {'id': 'deepseek-reasoner'},
-    ],
-}
+# No hardcoded model catalogs — models always come from the provider's
+# /models endpoint (or the user's own provider config).
+_STATICModelLists: dict[str, list[dict[str, object]]] = {}
 
 
 def _deriveModelsUrl(baseUrl: str) -> str | None:

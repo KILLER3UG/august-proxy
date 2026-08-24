@@ -1,31 +1,21 @@
 /* ── Combined model + effort menu ─────────────────────────────────────── */
-/* One pill trigger; primary popover with Effort / More models flyouts.   */
+/* One pill trigger; one popover with a single-click model list.          */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, Pin, RefreshCw, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, Pin, RefreshCw, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
-import { api } from '@/api/client';
-import {
-  chipTrigger,
-  menuFlyout,
-  menuFlyoutSwap,
-  menuItem,
-  menuItemHover,
-  menuItemStagger,
-  menuPanel,
-} from '@/lib/motion';
-import { useFlyoutHover } from '@/hooks/useFlyoutHover';
+import { chipTrigger, menuPanel, menuItem } from '@/lib/motion';
 import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import type { ModelItem } from '../model-display';
 import {
-  modelDisplayParts,
   formatContextWindow,
   getModelDisplayName,
   compareModelsRanked,
+  modelDisplayParts,
 } from '../model-display';
 import type { EffortLevel } from '../hooks/useChatSend';
 
@@ -40,9 +30,7 @@ const EFFORT_OPTIONS: {
   { value: 'max', label: 'Max', triggerLabel: 'Max' },
 ];
 
-type FlyoutKind = 'effort' | 'models';
-
-function shortModelName(model: ModelItem | null): string {
+export function shortModelName(model: ModelItem | null): string {
   if (!model) return 'Model';
   const name = modelDisplayParts(model.id || model.name || '').name || 'Model';
   // Keep chip label compact so long ids don't blow out the composer layout.
@@ -95,9 +83,7 @@ export function ModelEffortMenu({
   thinkingEnabled,
   onThinkingChange,
   openSignal,
-  promptHint,
 }: {
-  /** Full catalog (kept for call-site compatibility; flyout uses `visibleModels`). */
   models: ModelItem[];
   visibleModels: ModelItem[];
   loading?: boolean;
@@ -111,54 +97,26 @@ export function ModelEffortMenu({
   onThinkingChange: (v: boolean) => void;
   /** Incrementing counter — each change opens the menu (command palette). */
   openSignal?: number;
-  /** Composer draft — used to classify the task and surface routing
-   *  evidence ("best model for this kind of task", surpass #1). */
   promptHint?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  // External open requests (e.g. command palette "Switch model") bump the
-  // signal; re-opening the same menu must re-fire, hence the counter.
   useEffect(() => {
     if (openSignal) setOpen(true);
   }, [openSignal]);
 
-  // Routing-evidence hint: while the menu is open, fetch the best models
-  // for the task the draft describes (debounced).
-  interface RoutingSuggestion {
-    model: string;
-    wins: number;
-    total: number;
-    winRate: number;
-    avgTokens: number;
-  }
-  const [routingSuggestions, setRoutingSuggestions] = useState<RoutingSuggestion[]>([]);
-  const [routingTaskType, setRoutingTaskType] = useState('');
-  useEffect(() => {
-    if (!open || !promptHint?.trim()) {
-      setRoutingSuggestions([]);
-      return;
-    }
-    const timer = setTimeout(() => {
-      void api
-        .get<{ taskType: string; suggestions: RoutingSuggestion[] }>(
-          `/api/brain/routing/suggestions?prompt=${encodeURIComponent(promptHint.trim())}`,
-        )
-        .then((res) => {
-          setRoutingTaskType(res.taskType ?? '');
-          setRoutingSuggestions(res.suggestions ?? []);
-        })
-        .catch(() => setRoutingSuggestions([]));
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [open, promptHint]);
-
-  const suggestionFor = (modelId: string): RoutingSuggestion | undefined =>
-    routingSuggestions.find((s) => s.model === modelId);
+  const closeAll = useCallback(() => {
+    setOpen(false);
+    setSearchQuery('');
+  }, []);
 
   // Pin/unpin straight from the dropdown: resolve the provider entry behind
-  // the aggregated model (provider name → provider id), flip its `pinned`
-  // flag, then refresh the catalog so every list re-ranks.
+  // the aggregated model, flip its `pinned` flag, refresh the catalog.
   const queryClient = useQueryClient();
   const { data: providersList } = useQuery({
     queryKey: ['ws-providers'],
@@ -178,570 +136,65 @@ export function ModelEffortMenu({
     },
     [providersList, queryClient],
   );
-  const {
-    flyout,
-    setFlyout,
-    scheduleFlyoutOpen,
-    scheduleFlyoutClose,
-    keepFlyoutOpen,
-    toggleFlyout,
-    resetFlyout,
-    clearAllTimers,
-  } = useFlyoutHover<FlyoutKind>();
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState('');
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const primaryRef = useRef<HTMLDivElement>(null);
-  const flyoutRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const [primaryPos, setPrimaryPos] = useState<{
-    top: number;
-    left: number;
-    width: number;
-  } | null>(null);
-  const [flyoutPos, setFlyoutPos] = useState<{
-    top: number;
-    left: number;
-  } | null>(null);
 
-  const effortOpt =
-    EFFORT_OPTIONS.find((o) => o.value === effort) || EFFORT_OPTIONS[1];
-  // Effort applies to every model (API reasoning_effort and/or prompt hint).
-  const showEffort = true;
-
-  const closeAll = useCallback(() => {
-    clearAllTimers();
-    setOpen(false);
-    resetFlyout();
-    setSearchQuery('');
-    setExpandedProviders(new Set());
-  }, [clearAllTimers, resetFlyout]);
-
-  const computePrimaryPos = useCallback(() => {
-    const el = triggerRef.current;
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    const width = 280;
-    const estHeight = showEffort ? 220 : 180;
-    const top = Math.max(8, r.top - estHeight - 6);
-    let left = r.right - width;
-    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
-    return { top, left, width };
-  }, [showEffort]);
-
-  const refinePrimaryPos = useCallback(() => {
-    const el = triggerRef.current;
-    const panel = primaryRef.current;
-    if (!el || !panel) return;
-    const r = el.getBoundingClientRect();
-    const width = 280;
-    const panelHeight = panel.offsetHeight || 220;
-    const top = Math.max(8, r.top - panelHeight - 6);
-    let left = r.right - width;
-    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
-    setPrimaryPos({ top, left, width });
-  }, []);
-
-  const computeFlyoutPos = useCallback(() => {
-    const primary = primaryRef.current;
-    if (!primary) return null;
-    const r = primary.getBoundingClientRect();
-    const flyoutW = 300;
-    const gap = 6;
-    let left = r.right + gap;
-    if (left + flyoutW > window.innerWidth - 8) {
-      left = r.left - flyoutW - gap;
-    }
-    left = Math.max(8, left);
-    const top = Math.max(8, Math.min(r.top, window.innerHeight - 320));
-    return { top, left };
-  }, [flyout]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (primaryRef.current?.contains(target)) return;
-      if (flyoutRef.current?.contains(target)) return;
-      closeAll();
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open, closeAll]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (flyout) setFlyout(null);
-        else closeAll();
-      }
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [open, flyout, closeAll]);
-
-  useEffect(() => {
-    if (!open) resetFlyout();
-  }, [open, resetFlyout]);
-
+  // Position once on open, above the trigger, right-aligned.
   useEffect(() => {
     if (!open) {
-      setPrimaryPos(null);
-      setFlyoutPos(null);
+      setPos(null);
       return;
     }
-    const initial = computePrimaryPos();
-    if (initial) setPrimaryPos(initial);
-    requestAnimationFrame(() => refinePrimaryPos());
-    const onScroll = () => {
-      refinePrimaryPos();
-      if (flyout) {
-        const fp = computeFlyoutPos();
-        if (fp) setFlyoutPos(fp);
-      }
+    const el = triggerRef.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const width = 300;
+      const height = 420;
+      const top = Math.max(8, r.top - height - 8);
+      const left = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8));
+      setPos({ top, left });
+    }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') closeAll();
     };
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', onScroll);
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      closeAll();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', onScroll);
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
     };
-  }, [open, flyout, computePrimaryPos, refinePrimaryPos, computeFlyoutPos]);
+  }, [open, closeAll]);
 
-  // Close effort flyout if the selected model no longer supports it.
-  useEffect(() => {
-    if (!showEffort && flyout === 'effort') setFlyout(null);
-  }, [showEffort, flyout, setFlyout]);
-
-  useLayoutEffect(() => {
-    if (!open || !flyout) {
-      if (!flyout) setFlyoutPos(null);
-      return;
-    }
-    // Seed before paint so "More models" does not blink when Effort was never shown.
-    const seeded = computeFlyoutPos();
-    if (seeded) setFlyoutPos(seeded);
-    const raf = requestAnimationFrame(() => {
-      const fp = computeFlyoutPos();
-      if (fp) setFlyoutPos(fp);
-      if (flyout === 'models') {
-        setTimeout(() => searchRef.current?.focus(), 0);
-      }
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [open, flyout, computeFlyoutPos]);
-
-  const filtered = searchQuery.trim()
-    ? visibleModels.filter(
-        (m) =>
-          m.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          getModelDisplayName(m.id).toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.provider.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
-    : visibleModels;
-
-  const grouped = Object.entries(
-    filtered.reduce(
-      (acc, m) => {
-        if (!acc[m.provider]) acc[m.provider] = [];
-        acc[m.provider].push(m);
-        return acc;
-      },
-      {} as Record<string, ModelItem[]>,
-    ),
-  ).map(([provider, list]) => {
-    // Pinned first, then free, then name — same ranking as the settings lists.
-    const sorted = [...list].sort(compareModelsRanked);
-    const isSearching = searchQuery.trim().length > 0;
-    const isExpanded = expandedProviders.has(provider);
-    const visible = isSearching || isExpanded ? sorted : sorted.slice(0, 5);
-    const showCollapse = sorted.length > 5 && !isSearching;
-    return {
+  const grouped = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = q
+      ? visibleModels.filter(
+          (m) =>
+            m.id.toLowerCase().includes(q) ||
+            getModelDisplayName(m.id).toLowerCase().includes(q) ||
+            m.provider.toLowerCase().includes(q),
+        )
+      : visibleModels;
+    return Object.entries(
+      filtered.reduce(
+        (acc, m) => {
+          if (!acc[m.provider]) acc[m.provider] = [];
+          acc[m.provider].push(m);
+          return acc;
+        },
+        {} as Record<string, ModelItem[]>,
+      ),
+    ).map(([provider, list]) => ({
       provider,
-      models: sorted,
-      visible,
-      isExpanded,
-      total: sorted.length,
-      showCollapse,
-    };
-  });
+      models: [...list].sort(compareModelsRanked),
+    }));
+  }, [visibleModels, searchQuery]);
 
-  const primaryPanel = (
-    <AnimatePresence>
-      {open && primaryPos && (
-        <motion.div
-          ref={primaryRef}
-          {...menuPanel}
-          className="fixed z-50 bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-bottom"
-          style={{
-            top: primaryPos.top,
-            left: primaryPos.left,
-            width: primaryPos.width,
-          }}
-        >
-          <motion.div
-            variants={menuItemStagger}
-            initial="initial"
-            animate="animate"
-          >
-            <motion.button
-              type="button"
-              variants={menuItem}
-              {...menuItemHover}
-              className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 hover:bg-muted/40 transition"
-              onClick={() => setFlyout(null)}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-foreground truncate">
-                  {shortModelName(selected)}
-                </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                  {selected
-                    ? `${selected.provider} · ${formatContextWindow(selected.contextWindow)}`
-                    : 'Select a model'}
-                </div>
-              </div>
-              {selected && <Check className="size-4 text-primary shrink-0 mt-0.5" />}
-            </motion.button>
-
-            <div className="h-px bg-border/50 mx-2" />
-
-            {showEffort && (
-              <motion.button
-                type="button"
-                variants={menuItem}
-                {...menuItemHover}
-                onClick={() => toggleFlyout('effort')}
-                onMouseEnter={() => scheduleFlyoutOpen('effort')}
-                onMouseLeave={scheduleFlyoutClose}
-                className={cn(
-                  'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
-                  flyout === 'effort' && 'bg-muted/30',
-                )}
-              >
-                <span className="text-sm text-foreground">Effort</span>
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  {effortOpt.triggerLabel}
-                  <ChevronRight className="size-3.5 opacity-60" />
-                </span>
-              </motion.button>
-            )}
-
-            <motion.button
-              type="button"
-              variants={menuItem}
-              {...menuItemHover}
-              onClick={() => toggleFlyout('models')}
-              onMouseEnter={() => scheduleFlyoutOpen('models')}
-              onMouseLeave={scheduleFlyoutClose}
-              className={cn(
-                'w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/40 transition',
-                flyout === 'models' && 'bg-muted/30',
-              )}
-            >
-              <span className="text-sm text-foreground">More models</span>
-              <ChevronRight className="size-3.5 text-muted-foreground opacity-60" />
-            </motion.button>
-
-            {(onEditModels || onRefresh) && (
-              <>
-                <div className="h-px bg-border/50 mx-2" />
-                <motion.div variants={menuItem} className="px-2 py-1.5 flex items-center gap-2">
-                  {onEditModels && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onEditModels();
-                        closeAll();
-                      }}
-                      className="text-[11px] text-muted-foreground hover:text-foreground transition px-1.5 py-1 rounded-md hover:bg-muted/40"
-                    >
-                      Edit models
-                    </button>
-                  )}
-                  {onRefresh && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void onRefresh();
-                      }}
-                      disabled={loading}
-                      className={cn(
-                        'ml-auto p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 transition',
-                        loading && 'animate-spin',
-                      )}
-                      title="Refresh models"
-                    >
-                      <RefreshCw className="size-3" />
-                    </button>
-                  )}
-                </motion.div>
-              </>
-            )}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-
-  // Fixed width + min height avoids layout jump when opening Models cold
-  // (without Effort having been shown first) or swapping Effort ↔ Models.
-  const flyoutWidth = 300;
-  const flyoutMinHeight = 280;
-
-  const sideFlyout = (
-    <AnimatePresence>
-      {open && flyout && flyoutPos && (
-        <motion.div
-          ref={flyoutRef}
-          key="model-side-flyout"
-          initial={menuFlyout.initial}
-          animate={menuFlyout.animate}
-          exit={menuFlyout.exit}
-          transition={menuFlyout.transition}
-          onMouseEnter={keepFlyoutOpen}
-          onMouseLeave={scheduleFlyoutClose}
-          className="fixed z-50 bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden origin-left"
-          style={{
-            top: flyoutPos.top,
-            left: flyoutPos.left,
-            width: flyoutWidth,
-            minHeight: flyoutMinHeight,
-          }}
-        >
-          <AnimatePresence initial={false} mode="wait">
-              {flyout === 'effort' && showEffort ? (
-                <motion.div key="effort" {...menuFlyoutSwap}>
-                  <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
-                    Controls thinking depth — Low keeps reasoning short; High/Max
-                    allow longer analysis (slower, more tokens).
-                  </div>
-                  <div className="py-0.5">
-                    {EFFORT_OPTIONS.map((opt) => (
-                      <motion.button
-                        key={opt.value}
-                        type="button"
-                        {...menuItemHover}
-                        onClick={() => {
-                          onEffortChange(opt.value);
-                          setFlyout(null);
-                        }}
-                        className={cn(
-                          'w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition',
-                          effort === opt.value
-                            ? 'text-primary bg-primary/10 font-medium'
-                            : 'text-foreground/85 hover:bg-muted/40',
-                        )}
-                      >
-                        <span>{opt.label}</span>
-                        {effort === opt.value && (
-                          <Check className="size-3.5 shrink-0" />
-                        )}
-                      </motion.button>
-                    ))}
-                  </div>
-                  <div className="h-px bg-border/50 mx-2" />
-                  <div className="px-3 py-2.5 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-foreground">
-                        Thinking
-                      </div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">
-                        {thinkingEnabled
-                          ? 'Show extended reasoning for this turn'
-                          : 'Answer directly without extended reasoning'}
-                      </div>
-                    </div>
-                    <ThinkingSwitch
-                      checked={thinkingEnabled}
-                      onChange={onThinkingChange}
-                    />
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div key="models" {...menuFlyoutSwap}>
-                  <div className="px-2 pt-2 pb-1">
-                    <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
-                      <svg
-                        className="size-2.5 shrink-0 text-muted-foreground"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <circle cx="11" cy="11" r="8" />
-                        <path d="m21 21-4.35-4.35" />
-                      </svg>
-                      <input
-                        ref={searchRef}
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search…"
-                        className="bg-transparent text-sm outline-none w-full placeholder:text-muted-foreground/50 text-foreground py-0.5"
-                      />
-                    </div>
-                  </div>
-                  <div
-                    ref={listRef}
-                    className="max-h-[260px] overflow-y-auto py-0.5"
-                  >
-                    {loading && grouped.length === 0 ? (
-                      <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                        Loading models…
-                      </div>
-                    ) : grouped.length === 0 ? (
-                      <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                        {searchQuery.trim()
-                          ? `No results for "${searchQuery.trim()}"`
-                          : 'No models loaded'}
-                      </div>
-                    ) : (
-                      <>
-                        {routingSuggestions.length > 0 && !searchQuery.trim() ? (
-                          <div
-                            className="px-3 pt-2 pb-1 space-y-1 border-b border-border/60"
-                            data-testid="model-menu-routing-hint"
-                          >
-                            <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                              <Sparkles className="size-3 text-primary" />
-                              Best for “{routingTaskType || 'this task'}”
-                            </span>
-                            {routingSuggestions.slice(0, 2).map((s) => {
-                              const match = visibleModels.find((m) => m.id === s.model);
-                              return (
-                                <button
-                                  key={s.model}
-                                  type="button"
-                                  onClick={() => {
-                                    if (match) {
-                                      onSelect(match);
-                                      closeAll();
-                                    }
-                                  }}
-                                  className="w-full flex items-center gap-2 rounded-md bg-primary/10 px-2 py-1.5 text-left hover:bg-primary/20 transition"
-                                  data-testid={`routing-use-${s.model}`}
-                                >
-                                  <Sparkles className="size-3 text-primary shrink-0" />
-                                  <span className="text-xs font-medium truncate flex-1">
-                                    {s.model}
-                                  </span>
-                                  <span className="text-[10px] text-muted-foreground shrink-0">
-                                    {s.wins}/{s.total} wins · {s.avgTokens} tok avg
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                        {grouped.map(                        ({
-                          provider,
-                          visible,
-                          isExpanded,
-                          total,
-                          showCollapse,
-                        }) => (
-                          <div key={provider}>
-                            <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold sticky top-0 bg-popover/95 backdrop-blur">
-                              {provider}
-                            </div>
-                            {visible.map((m) => {
-                              const { name, tag } = modelDisplayParts(m.id);
-                              const isSelected = selected?.id === m.id;
-                              return (
-                                <motion.button
-                                  key={m.id}
-                                  type="button"
-                                  {...menuItemHover}
-                                  onClick={() => {
-                                    onSelect(m);
-                                    closeAll();
-                                  }}
-                                  className={cn(
-                                    'group w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition',
-                                    isSelected
-                                      ? 'text-primary bg-primary/10 font-medium'
-                                      : 'text-foreground/85 hover:bg-muted/40',
-                                  )}
-                                >
-                                  <span className="truncate flex-1">
-                                    {name}
-                                    {tag && (
-                                      <span className="ml-1.5 text-[10px] text-muted-foreground/50 font-normal">
-                                        {tag}
-                                      </span>
-                                    )}
-                                  </span>
-                                  {suggestionFor(m.id) ? (
-                                    <span
-                                      className="text-[10px] text-primary shrink-0 font-medium"
-                                      title={`${suggestionFor(m.id)!.wins}/${suggestionFor(m.id)!.total} wins · ${suggestionFor(m.id)!.avgTokens} tok avg for "${routingTaskType}"`}
-                                    >
-                                      {suggestionFor(m.id)!.wins}/{suggestionFor(m.id)!.total}
-                                    </span>
-                                  ) : null}
-                                  {/* Pin to top — visible on hover, always when pinned */}
-                                  <span
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleModelPin(m);
-                                    }}
-                                    aria-label={m.pinned ? `Unpin ${m.id}` : `Pin ${m.id} to top`}
-                                    title={m.pinned ? 'Unpin model' : 'Pin model to top'}
-                                    className={cn(
-                                      'shrink-0 rounded p-0.5 transition-opacity',
-                                      m.pinned
-                                        ? 'text-primary opacity-100'
-                                        : 'text-muted-foreground/40 hover:text-muted-foreground/80 opacity-0 group-hover:opacity-100',
-                                    )}
-                                  >
-                                    <Pin className="size-3" />
-                                  </span>
-                                  {isSelected && (
-                                    <Check className="size-3.5 shrink-0" />
-                                  )}
-                                </motion.button>
-                              );
-                            })}
-                            {showCollapse && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setExpandedProviders((prev) => {
-                                    const next = new Set(prev);
-                                    if (isExpanded) next.delete(provider);
-                                    else next.add(provider);
-                                    return next;
-                                  });
-                                }}
-                                className="w-full text-left px-3 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/30 transition"
-                              >
-                                {isExpanded
-                                  ? 'Show less'
-                                  : `Show ${total - 5} more`}
-                              </button>
-                            )}
-                          </div>
-                        ),
-                      )
-                      }
-                      </>
-                      )
-                    }
-                  </div>
-                </motion.div>
-              )}
-          </AnimatePresence>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
+  const effortOpt = EFFORT_OPTIONS.find((o) => o.value === effort) || EFFORT_OPTIONS[1];
 
   return (
     <>
@@ -749,46 +202,151 @@ export function ModelEffortMenu({
         ref={triggerRef}
         type="button"
         {...chipTrigger}
-        onClick={() => {
-          if (open) closeAll();
-          else setOpen(true);
-        }}
+        onClick={() => (open ? closeAll() : setOpen(true))}
         className={cn(
           'relative inline-flex items-center gap-1 text-xs outline-none cursor-pointer h-8 max-w-[220px]',
           'text-muted-foreground hover:text-foreground transition-colors duration-200',
           'bg-muted/40 hover:bg-muted/60 rounded-full px-2.5 py-1',
         )}
-        title={
-          selected
-            ? showEffort
-              ? `${getModelDisplayName(selected.id || selected.name || '')} · ${effortOpt.triggerLabel}`
-              : getModelDisplayName(selected.id || selected.name || '')
-            : 'Select model'
-        }
+        title={selected ? `${getModelDisplayName(selected.id || selected.name || '')} · ${effortOpt.triggerLabel}` : 'Select model'}
         aria-expanded={open}
         aria-haspopup="dialog"
       >
         <span className="min-w-0 truncate font-medium text-foreground">
           {shortModelName(selected)}
         </span>
-        {showEffort && (
-          <span className="text-muted-foreground shrink-0">
-            {effortOpt.triggerLabel}
-          </span>
-        )}
+        <span className="text-muted-foreground shrink-0">{effortOpt.triggerLabel}</span>
         <ChevronDown
-          className={cn(
-            'size-3 shrink-0 opacity-60 transition-transform duration-200',
-            open && 'rotate-180',
-          )}
+          className={cn('size-3 shrink-0 opacity-60 transition-transform duration-200', open && 'rotate-180')}
         />
       </motion.button>
       {typeof document !== 'undefined' &&
         createPortal(
-          <>
-            {primaryPanel}
-            {sideFlyout}
-          </>,
+          <AnimatePresence>
+            {open && pos && (
+              <motion.div
+                ref={panelRef}
+                {...menuPanel}
+                className="fixed z-50 bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden"
+                style={{ top: pos.top, left: pos.left, width: 300 }}
+              >
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40">
+                  <Search className="size-3.5 text-muted-foreground shrink-0" />
+                  <input
+                    ref={searchRef}
+                    autoFocus
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search models"
+                    className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
+                  />
+                  {onRefresh && (
+                    <button
+                      type="button"
+                      onClick={onRefresh}
+                      title="Refresh models"
+                      className="text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-[280px] overflow-y-auto py-1 chat-scroll">
+                  {loading && visibleModels.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">Loading models…</div>
+                  )}
+                  {!loading && grouped.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">No models found.</div>
+                  )}
+                  {grouped.map((g) => (
+                    <div key={g.provider}>
+                      <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                        {g.provider}
+                      </div>
+                      {g.models.map((m) => {
+                        const isSel = selected?.id === m.id && selected?.provider === m.provider;
+                        return (
+                          <div
+                            key={`${m.provider}/${m.id}`}
+                            {...menuItem}
+                            className="group flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted/50 cursor-pointer"
+                            onClick={() => {
+                              onSelect(m);
+                              closeAll();
+                            }}
+                          >
+                            <span className="min-w-0 flex-1 truncate text-foreground">
+                              {getModelDisplayName(m.id)}
+                              {m.contextWindow ? (
+                                <span className="ml-1.5 text-[10px] text-muted-foreground/70">
+                                  {formatContextWindow(m.contextWindow)}
+                                </span>
+                              ) : null}
+                            </span>
+                            <button
+                              type="button"
+                              title={m.pinned ? 'Unpin' : 'Pin'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleModelPin(m);
+                              }}
+                              className={cn(
+                                'shrink-0 cursor-pointer',
+                                m.pinned
+                                  ? 'text-primary'
+                                  : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground',
+                              )}
+                            >
+                              <Pin className="size-3" />
+                            </button>
+                            {isSel && <Check className="size-3.5 shrink-0 text-primary" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <div className="border-t border-border/40 px-3 py-2 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-muted-foreground">Effort</span>
+                    <div className="flex items-center gap-1">
+                      {EFFORT_OPTIONS.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          onClick={() => onEffortChange(o.value)}
+                          className={cn(
+                            'rounded-full px-2 py-0.5 text-[10px] cursor-pointer transition-colors',
+                            effort === o.value
+                              ? 'bg-primary/15 text-primary font-medium'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          {o.triggerLabel}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-muted-foreground">Extended thinking</span>
+                    <ThinkingSwitch checked={thinkingEnabled} onChange={onThinkingChange} />
+                  </div>
+                  {onEditModels && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeAll();
+                        onEditModels();
+                      }}
+                      className="w-full text-left text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      Manage models…
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
           document.body,
         )}
     </>

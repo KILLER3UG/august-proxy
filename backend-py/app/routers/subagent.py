@@ -19,7 +19,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.json_narrowing import as_str
+from app.json_narrowing import as_int, as_str
 from app.models.camel_base import CamelModel
 from app.services.subagent_orchestrator import SubagentOrchestrator
 from app.services.tools.spawn_subagents_tool import approveProposal, executeSpawnSubagents
@@ -208,13 +208,14 @@ async def getDelegationConfig(sessionId: Optional[str] = None):
     if not sess:
         return {'maxConcurrent': 3, 'maxIterations': 50, 'maxDepth': 1, 'worktreeIsolation': False}
     meta = sess.metadata if isinstance(sess.metadata, dict) else {}
-    delegation = meta.get('delegation') if isinstance(meta.get('delegation'), dict) else {}
+    delegation_raw = meta.get('delegation')
+    delegation: dict[str, object] = delegation_raw if isinstance(delegation_raw, dict) else {}
     # Migrate from old isolate flag
     worktree = bool(delegation.get('worktreeIsolation', meta.get('isolateSubagents', False)))
     return {
-        'maxConcurrent': int(delegation.get('maxConcurrent', 5) or 5),
-        'maxIterations': int(delegation.get('maxIterations', 50) or 50),
-        'maxDepth': int(delegation.get('maxDepth', 1) or 1),
+        'maxConcurrent': int(as_int(delegation.get('maxConcurrent', 5), 5) or 5),
+        'maxIterations': int(as_int(delegation.get('maxIterations', 50), 50) or 50),
+        'maxDepth': int(as_int(delegation.get('maxDepth', 1), 1) or 1),
         'worktreeIsolation': worktree,
     }
 
@@ -239,7 +240,8 @@ async def setDelegationConfig(request: Request, sessionId: Optional[str] = None)
     if not sess:
         raise HTTPException(status_code=404, detail='Session not found')
     meta = dict(sess.metadata) if isinstance(sess.metadata, dict) else {}
-    delegation = dict(meta.get('delegation', {})) if isinstance(meta.get('delegation'), dict) else {}
+    delegation_raw = meta.get('delegation', {})
+    delegation: dict[str, object] = dict(delegation_raw) if isinstance(delegation_raw, dict) else {}
     if 'maxConcurrent' in body:
         delegation['maxConcurrent'] = max(1, min(30, int(body['maxConcurrent'] or 3)))
     if 'maxIterations' in body:
@@ -584,34 +586,6 @@ async def scheduleRoutineApi(routineId: str, body: dict):
             str(body.get('schedule') or ''),
             body.get('paused') if 'paused' in body else None,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post('/workstreams/{name}/save-skill')
-async def saveSkillFromWorkstream(name: str, request: Request, body: dict | None = None):
-    from app.services.harness_ops import skill_from_episode
-    from app.services.skill_service import SkillValidationError
-
-    sid = request.headers.get('X-Session-Id', '') or as_str(getattr(_getSession(request), 'id', ''), '')
-    seq = (body or {}).get('seq')
-    try:
-        return skill_from_episode(sid, name, int(seq) if seq is not None else None)
-    except SkillValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.get('/workstreams/{name}/skill-preview')
-async def previewSkillFromWorkstream(name: str, request: Request, seq: Optional[int] = None, sessionId: Optional[str] = None):
-    from app.services.harness_ops import build_skill_payload_from_episode
-
-    sid = sessionId or request.headers.get('X-Session-Id', '') or as_str(getattr(_getSession(request), 'id', ''), '')
-    if not sid:
-        raise HTTPException(status_code=400, detail='sessionId is required')
-    try:
-        return build_skill_payload_from_episode(sid, name, seq)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

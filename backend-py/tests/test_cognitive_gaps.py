@@ -107,8 +107,8 @@ async def test_cognitive_boot_start_stop():
     status = await start_cognitive_services(None)
     assert status.get('started') is True
     services = status.get('services') or {}
-    assert 'backfill_workbench' in services
-    assert 'db_writer' in services
+    assert 'cron_scheduler' in services
+    assert 'daemon_manager' in services
     await stop_cognitive_services()
     after = get_boot_status()
     assert after.get('started') is False

@@ -135,10 +135,9 @@ def test_should_inject_august_reminder():
     assert should_inject_august_reminder(None) is True
     assert should_inject_august_reminder('') is True
     assert should_inject_august_reminder('plain system') is True
-    # Keyed on the BRAND, not the bare word — an unrelated "August" mention
-    # (project name, date) must not suppress the routing reminder.
-    assert should_inject_august_reminder('August is great') is True
-    assert should_inject_august_reminder('You are using August Proxy') is False
+    # De-branded reminder (0.17.0): injection is keyed on the reminder's own
+    # routing text, so unrelated gateway mentions don't matter either way.
+    assert should_inject_august_reminder('You are being routed through a multi-model AI gateway') is False
 
 
 def test_should_inject_reminder_message_detects_existing():
@@ -152,9 +151,9 @@ def test_should_inject_reminder_message_detects_existing():
     )
     assert (
         should_inject_reminder_message(
-            [{'role': 'user', 'content': 'Welcome to August Proxy gateway'}]
+            [{'role': 'user', 'content': 'Welcome to the gateway'}]
         )
-        is False
+        is True
     )
     assert (
         should_inject_reminder_message(
@@ -162,7 +161,7 @@ def test_should_inject_reminder_message_detects_existing():
                 {
                     'role': 'user',
                     'content': [
-                        {'type': 'text', 'text': 'Uses August tool suite here'},
+                        {'type': 'text', 'text': AUGUST_REMINDER},
                     ],
                 }
             ]
@@ -172,7 +171,7 @@ def test_should_inject_reminder_message_detects_existing():
     assert (
         should_inject_reminder_message(
             [{'role': 'user', 'content': 'hi'}],
-            existing_system=[{'type': 'text', 'text': 'August Proxy rules'}],
+            existing_system=[{'type': 'text', 'text': AUGUST_REMINDER}],
         )
         is False
     )
@@ -182,19 +181,18 @@ def test_build_anthropic_system_blocks_injects_reminder():
     enriched = build_anthropic_system_blocks('You are helpful.')
     assert len(enriched) >= 2
     assert enriched[0]['text'] == 'You are helpful.'
-    assert any('August' in str(b.get('text', '')) for b in enriched)
     assert any(AUGUST_REMINDER == b.get('text') for b in enriched)
 
 
 def test_build_anthropic_system_blocks_skips_when_already_present():
-    # Only an explicit BRAND mention suppresses the reminder — a bare
-    # "August" (project name, date) does not mean the model knows the proxy.
-    existing = 'You work in August already.'
+    # The reminder is only skipped when the system text already carries the
+    # routing notice itself — an unrelated brand mention does not suppress it.
+    existing = 'You work in a gateway already.'
     blocks = build_anthropic_system_blocks(existing)
     assert len(blocks) == 2
     assert blocks[0]['text'] == existing
     assert AUGUST_REMINDER == blocks[1]['text']
-    branded = 'You are using August Proxy as your gateway.'
+    branded = AUGUST_REMINDER
     blocks = build_anthropic_system_blocks(branded)
     assert len(blocks) == 1
     assert blocks[0]['text'] == branded

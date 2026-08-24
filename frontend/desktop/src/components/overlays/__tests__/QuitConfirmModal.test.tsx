@@ -81,7 +81,7 @@ describe('QuitConfirmModal', () => {
       listenHandlers[0]?.({});
     });
 
-    expect(screen.getByText('Quit August?')).toBeInTheDocument();
+    expect(screen.getByText('Quit app?')).toBeInTheDocument();
     expect(screen.queryByTestId('quit-active-sessions')).not.toBeInTheDocument();
   });
 

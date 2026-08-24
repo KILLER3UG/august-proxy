@@ -37,6 +37,7 @@ export function ProducedFilesRow({
     try {
       const attachment = await ChatAttachmentService.fromPath(path);
       if (attachment) {
+        // Claude-style: deliverable cards open in the RIGHT SIDEBAR panel.
         openRightDrawerFile(attachment);
       } else {
         await revealInFolder(path);
@@ -47,6 +48,17 @@ export function ProducedFilesRow({
     } finally {
       setBusyPath(null);
     }
+  };
+
+  const kindLabel = (path: string): string => {
+    const ext = path.replace(/\\/g, '/').split('.').pop()?.toUpperCase() ?? '';
+    if (!ext) return 'File';
+    if (ext === 'PPTX') return 'Presentation · PPTX';
+    if (ext === 'DOCX') return 'Document · DOCX';
+    if (ext === 'XLSX') return 'Spreadsheet · XLSX';
+    if (['PNG', 'JPG', 'JPEG', 'SVG', 'WEBP', 'GIF'].includes(ext)) return `Image · ${ext}`;
+    if (ext === 'PDF') return 'PDF';
+    return ext;
   };
 
   const showInFolder = async () => {
@@ -64,9 +76,9 @@ export function ProducedFilesRow({
 
   return (
     <div className={className} data-slot="produced-files-row">
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        <span className="mr-0.5 text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold">
-          Files touched
+      <div className="mt-2.5 flex flex-wrap items-stretch gap-2">
+        <span className="mr-0.5 self-center text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold">
+          Files created
         </span>
         {visible.map((path) => (
           <button
@@ -74,25 +86,34 @@ export function ProducedFilesRow({
             type="button"
             onClick={() => void openFile(path)}
             disabled={busyPath === path}
-            title={path}
-            className="group inline-flex max-w-52 items-center gap-1.5 rounded-md border border-border/60 bg-muted/25 px-1.5 py-0.5 text-[10.5px] text-foreground/75 transition-colors hover:border-primary/40 hover:text-foreground"
+            title={`Open in side panel — ${path}`}
+            className="group flex min-w-[180px] max-w-[260px] items-center gap-2.5 rounded-xl border border-border/60 bg-card/60 px-3 py-2 text-left transition hover:border-primary/40 hover:bg-card cursor-pointer"
           >
             {busyPath === path ? (
-              <Loader2 className="size-2.5 animate-spin text-muted-foreground/60" />
+              <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
             ) : (
-              <FileIcon name={path} size={11} className="shrink-0" />
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted/50">
+                <FileIcon name={path} size={15} />
+              </span>
             )}
-            <span className="truncate font-mono">{producedFileLabel(path)}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[12.5px] font-medium text-foreground">
+                {producedFileLabel(path)}
+              </span>
+              <span className="block truncate text-[10.5px] text-muted-foreground">
+                {kindLabel(path)}
+              </span>
+            </span>
           </button>
         ))}
         {overflow > 0 && (
-          <span className="px-0.5 text-[10px] text-muted-foreground/60">+{overflow} more</span>
+          <span className="self-center px-0.5 text-[10px] text-muted-foreground/60">+{overflow} more</span>
         )}
         <button
           type="button"
           onClick={() => void showInFolder()}
           disabled={!!busyPath}
-          className="ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground/70 transition-colors hover:bg-muted/40 hover:text-foreground"
+          className="ml-1 self-center inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground/70 transition-colors hover:bg-muted/40 hover:text-foreground"
         >
           {busyPath === files[0] ? (
             <Loader2 className="size-2.5 animate-spin" />

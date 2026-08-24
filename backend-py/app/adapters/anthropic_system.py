@@ -21,7 +21,7 @@ KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = {
     'claude-sonnet-4-6',
 }
 AUGUST_REMINDER = (
-    'You are being routed through August Proxy, a multi-model AI gateway. '
+    'You are being routed through a multi-model AI gateway. '
     'Use only the tools provided in this request; do not assume any other '
     'tool suite is available.'
 )
@@ -83,37 +83,37 @@ def should_inject_reminder_message(
     messages: list[dict[str, object]] | None,
     existing_system: list[dict[str, object]] | None = None,
 ) -> bool:
-    """Check if the AUGUST_REMINDER should be injected."""
+    """Check if the routing reminder should be injected as a message."""
     if not messages:
         return True
+    marker = 'routed through a multi-model AI gateway'
     for msg in messages:
         content = msg.get('content', '')
-        if isinstance(content, str) and ('August Proxy' in content or 'August tool suite' in content):
+        if isinstance(content, str) and marker in content:
             return False
         if isinstance(content, list):
             for block in content:
                 if isinstance(block, dict) and block.get('type') == 'text':
                     text = as_str(block.get('text', ''))
-                    if 'August Proxy' in text or 'August tool suite' in text:
+                    if marker in text:
                         return False
     if existing_system:
         for block in existing_system:
             text = as_str(block.get('text', '')) if isinstance(block, dict) else str(block)
-            if 'August Proxy' in text or 'August tool suite' in text:
+            if marker in text:
                 return False
     return True
 
 
 def should_inject_august_reminder(system_text: str | None) -> bool:
-    """Check if the August reminder should be added to system text.
+    """Check if the routing reminder should be added to system text.
 
-    Keyed on the BRAND ('August Proxy'), not the bare word 'August' — a
-    client prompt mentioning "August" for unrelated reasons (a project name,
-    a date) must not suppress the routing reminder.
+    Keyed on a stable fragment of the reminder itself — a client whose system
+    prompt already carries the routing notice must not get it twice.
     """
     if not system_text:
         return True
-    return 'August Proxy' not in system_text
+    return 'routed through a multi-model AI gateway' not in system_text
 
 
 def normalize_system_blocks(system: JsonValue) -> list[dict[str, object]]:

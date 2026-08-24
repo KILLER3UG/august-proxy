@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { compactWorkbenchSession } from '@/api/workbench';
 import {
   voiceCommandRegistry,
   type ChatMessageLite,
@@ -39,6 +40,8 @@ export interface UseChatVoiceCommandsOptions {
   attachments: FileAttachment[];
   /** Workspace path of the active sidebar session (for /init AUG.md). */
   workspacePath?: string | null;
+  /** Workbench session id (wb_…) for goal/compact endpoints. */
+  workbenchSessionId?: string | null;
   /** Latest send() from useChatSend — read via ref so the bus need not re-subscribe. */
   send: (textOverride?: string) => Promise<void>;
   setExamActive: Dispatch<SetStateAction<boolean>>;
@@ -59,6 +62,7 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
     clearAttachments,
     attachments,
     workspacePath,
+    workbenchSessionId,
     send,
     setExamActive,
     setExamSeed,
@@ -288,6 +292,45 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
           }, 0);
           break;
         }
+        case 'compact': {
+          const sid = workbenchSessionId || event.sessionId || sessionId || '';
+          if (!sid) {
+            toast.error('No active session to compact');
+            break;
+          }
+          compactWorkbenchSession(sid)
+            .then((res) => toast.success(res.message || 'Context compacted'))
+            .catch(() => toast.error('Could not compact context'));
+          setInput('');
+          break;
+        }
+        case 'goal': {
+          // Standing, verifiable objective (Claude Code / Codex / Hermes
+          // style): kept in the system prompt every turn until cleared.
+          const sid = workbenchSessionId || event.sessionId || sessionId || '';
+          if (!sid) {
+            toast.error('No active session');
+            break;
+          }
+          const args = (event.args ?? '').trim();
+          const action =
+            !args ? 'status' : args === 'clear' || args === 'off' ? 'clear' : 'set';
+          api
+            .post<{ goal?: string; active?: boolean }>('/api/workbench/goal', {
+              sessionId: sid,
+              action,
+              condition: action === 'set' ? args : undefined,
+            })
+            .then((res) => {
+              const current = String(res?.goal ?? '');
+              if (action === 'set') toast.success(`Goal set: ${args}`);
+              else if (action === 'clear') toast.success('Goal cleared');
+              else toast.info(current ? `Current goal: ${current}` : 'No goal set. Use /goal <condition>');
+            })
+            .catch(() => toast.error('Could not update goal'));
+          setInput('');
+          break;
+        }
       }
     });
     return unsubscribe;
@@ -295,6 +338,7 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
     sessionId,
     attachments,
     workspacePath,
+    workbenchSessionId,
     setMessages,
     setInput,
     clearAttachments,

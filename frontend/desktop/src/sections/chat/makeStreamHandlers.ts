@@ -40,13 +40,10 @@ import { playReceiveChime } from '@/lib/chat-chime';
 import { getOrInitSessionStreamState } from './stream/session-stream-store';
 import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
 import { buildCompactionNoticeMessage } from '@/sections/chat/message/CompactionNoticeCard';
-import { setSessionContextUsed } from './context-used-store';
-import { setMemorySuggestions } from './memory-suggestions-store';
 import { upsertQueuedMessage, removeQueuedMessage } from './queue-store';
 import { resolveUiSessionId, resolveWorkbenchSessionId } from './stream/session-id-map';
 import { advanceSessionSubscriberLastSeq } from './stream/session-subscriber';
 import { setSubagentProposal } from './subagent-proposals-store';
-import { setModelProfileSuggestion } from './model-profile-store';
 import { pushNotification } from '@/store/notifications';
 import { toast } from 'sonner';
 import { useArenaStore } from './arena/arena-store';
@@ -55,12 +52,6 @@ import {
   applySubagentEvent,
   makeSubagentEventHandlers,
 } from './stream/apply-subagent-event';
-import {
-  streamPerfContent,
-  streamPerfEnd,
-  streamPerfFlush,
-  streamPerfStart,
-} from '@/lib/stream-perf';
 
 export interface MakeStreamHandlersOptions {
   sessionId: string;
@@ -200,8 +191,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   setSubagentPrompts(new Map());
 
   // ---- update / scheduleUpdate (throttled flush to React state) ----
-  // streamPerf* marks when localStorage august_stream_perf=1
-  streamPerfStart(sessionId);
   let updateTimeout: number | null = null;
   let updateRaf: number | null = null;
   let lastFlushAt = 0;
@@ -225,7 +214,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     updateTimeout = null;
     updateRaf = null;
     lastFlushAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    streamPerfFlush(sessionId, update);
+    update();
   };
   const scheduleFlushOnFrame = () => {
     if (updateRaf !== null) return;
@@ -236,8 +225,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   };
   const scheduleUpdate = () => {
     if (updateTimeout !== null || updateRaf !== null) return;
-    // First content for TTFT: any scheduled UI update implies stream content arrived
-    streamPerfContent(sessionId);
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const delay = Math.max(0, streamUpdateIntervalMs - (now - lastFlushAt));
     // Align paint with the next frame so text + stick-to-bottom scroll land together.
@@ -265,7 +252,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     if (finished) return;
     finished = true;
     cancelPendingUpdate();
-    streamPerfEnd(sessionId);
     // Reconcile orphaned tools: when the stream ends (abort / crash / backend
     // error) while a tool is still running, its toolResult never arrives.
     // Mark those failed so the card stops spinning instead of loading forever.
@@ -521,19 +507,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
-    onRecalledMemories: ({ items }) => {
-      if (!items || items.length === 0) return;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'recalledMemories', memories: items });
-      scheduleUpdate();
-    },
-    onMemoryUpdated: ({ action, summary }) => {
-      // In-chat notice when August remembered / updated / forgot a memory.
-      streamBlocks = appendBlockEvent(streamBlocks, {
-        type: 'memoryUpdated',
-        summary: summary || `August ${action ?? 'updated'} its memory.`,
-      });
-      scheduleUpdate();
-    },
     onVerifierBlocked: ({ message, evidence }) => {
       // Opt-in verifier enforcement: final answer withheld until the model
       // passes update_state(phase='complete'). Rendered as an amber notice
@@ -545,37 +518,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       pushNotification('Verification required', message, 'verifier');
       scheduleUpdate();
-    },
-    onRoutingSuggestion: ({ applied, model, provider, winRate, taskType, currentModel }) => {
-      // Evidence-driven routing: when auto-routing applied, this turn is
-      // running on a different model than the user picked — say so once
-      // (a toast), so the reroute is never a silent surprise.
-      if (applied && model && currentModel && currentModel !== model) {
-        pushNotification(
-          'Auto-routed',
-          `This ${taskType || 'task'} was routed from ${currentModel} to ${model} (${Math.round(winRate * 100)}% win rate) — edit in the Reliability dashboard.`,
-          'routing',
-        );
-      }
-    },
-    onModelProfileSuggestion: ({ model, suggestedProfile, message }) => {
-      // Capability auto-detect found a better toolSurface from turn traces.
-      // Surface an Apply/Dismiss chip above the composer; Apply persists via
-      // POST /api/models/profile (same path the AUGUST_AUTO_PROFILE env
-      // opt-in uses). Only offer when there is something to change.
-      if (!model || !suggestedProfile?.toolSurface) return;
-      setModelProfileSuggestion(sessionId, {
-        model,
-        toolSurface: suggestedProfile.toolSurface,
-        reason: suggestedProfile.reason,
-        message,
-      });
-    },
-    onEvidenceState: () => {
-      // Consumed by the Trajectory drawer section (it reads the per-turn
-      // trace store, which records evidence_state per turn). Nothing inline
-      // renders per event — acknowledged so the event is not dropped as
-      // an unknown event.
     },
     onPlanProposed: ({ plan }) => {
       if (!isNonEmptyPlan(plan)) return;
@@ -801,16 +743,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onDone: (data) => {
       turnUsage = data?.usage;
       turnFallback = data?.usedFallback;
-      // Persist the per-turn context snapshot ("what August used") for the
-      // composer's context-used badge (backend A5 payload).
-      if (sessionId && data?.context) {
-        setSessionContextUsed(sessionId, data.context);
-      }
-      // Proactive memory suggestions ("August noticed…") — one-click save
-      // chips above the composer (backend F3 payload).
-      if (sessionId && Array.isArray(data?.memorySuggestions)) {
-        setMemorySuggestions(sessionId, data.memorySuggestions);
-      }
       // Notification center (C1): arena lane completions land in the bell.
       if (sessionId) {
         try {

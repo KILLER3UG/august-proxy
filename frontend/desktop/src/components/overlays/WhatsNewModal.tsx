@@ -32,6 +32,8 @@ export interface WhatsNewResponse {
   releases: WhatsNewRelease[];
   repoUrl: string;
   errors: string[];
+  /** Local CHANGELOG.md digest — present when GitHub yielded nothing. */
+  changelog?: WhatsNewRelease[];
 }
 
 interface Props {
@@ -50,11 +52,13 @@ export function WhatsNewModal({ open, onClose }: Props) {
   if (!open) return null;
 
   const data = query.data;
+  const releases = data?.releases.length ? data.releases : data?.changelog ?? [];
+  const releaseSource = data?.releases.length ? 'github' : 'changelog';
   const empty =
     !query.isLoading &&
     !query.isError &&
     (data?.commits.length ?? 0) === 0 &&
-    (data?.releases.length ?? 0) === 0;
+    releases.length === 0;
 
   return (
     <Backdrop onClose={onClose}>
@@ -111,13 +115,13 @@ export function WhatsNewModal({ open, onClose }: Props) {
             </p>
           )}
 
-          {(data?.releases.length ?? 0) > 0 && (
+          {(releases.length > 0) && (
             <section className="space-y-2">
               <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Releases
+                {releaseSource === 'changelog' ? 'Recent versions (from bundled changelog)' : 'Releases'}
               </h3>
               <ul className="space-y-2">
-                {data!.releases.map((rel) => (
+                {releases.map((rel) => (
                   <li
                     key={rel.tag}
                     className="rounded-xl border border-border/70 bg-muted/30 px-3 py-2.5"

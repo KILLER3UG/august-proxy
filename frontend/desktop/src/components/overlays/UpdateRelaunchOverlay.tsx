@@ -31,16 +31,16 @@ export function UpdateRelaunchOverlay() {
       ? `${targetVersion ? `v${targetVersion}` : 'Update'} is ready`
       : restarting
         ? targetVersion
-          ? `Installing August v${targetVersion}…`
-          : 'Installing August…'
+          ? `Installing v${targetVersion}…`
+          : 'Installing update…'
         : 'Preparing installer…';
 
   const subtitle = downloading
-    ? 'August is downloading the latest desktop build. You can keep working while this finishes.'
+    ? 'The latest desktop build is downloading. You can keep working while this finishes.'
     : ready
-      ? 'The update is downloaded and ready. Restart August when you’re ready to apply it.'
+      ? 'The update is downloaded and ready. Restart when you’re ready to apply it.'
       : restarting
-        ? 'August is closing so the update can apply. The installer will guide you through the final step, then August reopens.'
+        ? 'The app is closing so the update can apply. The installer will guide you through the final step, then it reopens.'
         : 'The setup window will appear in a moment.';
 
   return (

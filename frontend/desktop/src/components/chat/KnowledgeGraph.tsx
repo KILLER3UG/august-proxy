@@ -301,7 +301,7 @@ export function KnowledgeGraph({ className }: { className?: string }) {
               )}
               title={
                 mode === 'learned'
-                  ? 'Only what August learned on its own (reflections, auto-memory, corrections)'
+                  ? 'Only what was learned on its own (reflections, auto-memory, corrections)'
                   : mode === 'recent'
                     ? 'Entities touched in the last 7 days'
                     : 'Everything'
@@ -351,7 +351,7 @@ export function KnowledgeGraph({ className }: { className?: string }) {
             <Network className="size-8 opacity-40" />
             <p>No graph entities yet</p>
             <p className="text-xs text-muted-foreground/40 max-w-xs">
-              Entities and relations appear as August learns from conversations and tools. Seed data
+              Entities and relations appear as the assistant learns from conversations and tools. Seed data
               loads automatically when available.
             </p>
           </div>

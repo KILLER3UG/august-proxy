@@ -5,7 +5,7 @@ import { useState, useEffect, type Dispatch, type MutableRefObject, type SetStat
 import { Loader2, Mic, Send, ShieldCheck, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import { updateSessionModel } from '@/store/sessions';
-import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchVerifier, setWorkbenchAgentMode, compactWorkbenchSession } from '@/api/workbench';
+import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchAgentMode, compactWorkbenchSession } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage } from '@/types/chat';
 import {
@@ -23,6 +23,7 @@ import type { SessionUsageState } from '../hooks/useChatUsage';
 import type { EffortLevel } from '../hooks/useChatSend';
 import { ComposerActionsMenu } from './ComposerActionsMenu';
 import { ModelEffortMenu } from './ModelEffortMenu';
+import { BranchChip } from './BranchChip';
 import { SubagentSpawnModal } from './SubagentSpawnModal';
 import { CostCeilingChip } from './CostCeilingChip';
 import type { AnchorPos } from './useComposerPopovers';
@@ -30,7 +31,6 @@ import { cn } from '@/lib/utils';
 import { normalizeHarnessMode, type HarnessAgentMode } from '@/components/chat/HarnessModeChip';
 import { GalleryVertical } from 'lucide-react';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
-import { WorkspaceChip } from './WorkspaceChip';
 
 export function ComposerToolbar({
   sessionId,
@@ -227,46 +227,6 @@ export function ComposerToolbar({
     }
   };
 
-  const verifierEnforced = !!workbenchSession?.verifierEnforced;
-  const handleVerifierToggle = () => {
-    // No workbench session exists before the first send on a fresh chat —
-    // create one on demand so opt-in verification can cover turn 1. The
-    // session-ensure helper is the same one startChatStream uses.
-    if (!workbenchSession?.id) {
-      void ensureWorkbenchSession()
-        .then((session) => {
-          if (!session?.id) return;
-          applyVerifierToggle(session.id);
-        })
-        .catch((error) => {
-          console.warn('[ChatThread] Failed to create workbench session for verifier toggle:', error);
-        });
-      return;
-    }
-    applyVerifierToggle(workbenchSession.id);
-  };
-
-  const applyVerifierToggle = (sessionId: string) => {
-    const next = !verifierEnforced;
-    setWorkbenchSession((prev) => (prev ? { ...prev, verifierEnforced: next } : prev));
-    void setWorkbenchVerifier(sessionId, next)
-      .then((updated) => {
-        if (updated) setWorkbenchSession(updated);
-        if (next) {
-          // First-use explainer — the amber banner + withheld answer is jargon
-          // until you have seen it once.
-          toast('Verifier ON', {
-            description:
-              'August will withhold the final answer until a verification check passes. Watch for the amber banner.',
-          });
-        }
-      })
-      .catch((error) => {
-        console.warn('[ChatThread] Failed to persist verifier enforcement:', error);
-        setWorkbenchSession((prev) => (prev ? { ...prev, verifierEnforced: !next } : prev));
-      });
-  };
-
   // "Compact now" from the context-ring panel: force context compression and
   // swap in the returned session so the chat + right drawer see the result.
   const [compacting, setCompacting] = useState(false);
@@ -428,7 +388,6 @@ export function ComposerToolbar({
           {sandboxMode === 'danger-full-access' ? 'Full access' : sandboxMode === 'workspace-write' ? 'Workspace' : 'Read-only'}
         </span>
         <span className="inline-flex items-center gap-1">
-          <WorkspaceChip workspacePath={workspacePath} />
           <ContextRing
             pct={pct}
             estTokens={estTokens}
@@ -451,6 +410,8 @@ export function ComposerToolbar({
           />
           <span className="text-[10px] tabular-nums text-muted-foreground/60">{pct}%</span>
         </span>
+        {/* Git branch selector — current branch + click to switch (workspace chats). */}
+        <BranchChip workspacePath={workspacePath} />
         <WorkbenchModeSelector
           selectedMode={workbenchMode}
           onChange={handleModeChange}
@@ -529,30 +490,6 @@ export function ComposerToolbar({
             })();
           }}
         />
-        <button
-          type="button"
-          onClick={handleVerifierToggle}
-          disabled={!sessionId}
-          aria-pressed={verifierEnforced}
-          aria-label="Enforce verification before final answer"
-          title={
-            verifierEnforced
-              ? 'Verifier ON: final answer withheld until update_state(phase="complete") passes'
-              : 'Verifier OFF: allow answers without a passing verification run'
-          }
-          data-testid="verifier-toggle"
-          className={cn(
-            'ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 transition disabled:opacity-40',
-            verifierEnforced
-              ? 'text-warning hover:bg-muted'
-              : 'text-muted-foreground/70 hover:bg-muted hover:text-foreground',
-          )}
-        >
-          <ShieldCheck className="size-3.5" />
-          <span className={cn('text-[9px] font-bold uppercase tracking-wide', verifierEnforced ? '' : 'opacity-60')}>
-            {verifierEnforced ? 'Verify · On' : 'Verify'}
-          </span>
-        </button>
       </div>
       <SubagentSpawnModal
         sessionId={workbenchSession?.id}

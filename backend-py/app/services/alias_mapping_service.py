@@ -48,19 +48,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ALIAS = 'default'
 
-# Canonical Claude public model IDs — identity aliases that always work.
-# This ensures clients using official Anthropic model names don't fail
-# even without a user-defined alias.
-BUILTIN_PUBLIC_ALIASES: frozenset[str] = frozenset(
-    [
-        'claude-3-7-sonnet-20250219',
-        'claude-3-5-sonnet-20241022',
-        'claude-opus-4-7',
-        'claude-opus-4-6',
-        'claude-sonnet-4-6',
-        'claude-haiku-4-5',
-    ]
-)
+# No built-in identity aliases — only user-defined aliases exist, so no
+# vendor model id ever appears in the app unless the user adds it.
+BUILTIN_PUBLIC_ALIASES: frozenset[str] = frozenset()
 
 
 # ── Internal helpers ────────────────────────────────────────────────────

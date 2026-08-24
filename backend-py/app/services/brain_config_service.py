@@ -32,7 +32,7 @@ from typing import cast
 
 from app.config import settings
 from app.services import config_service
-from app.services.memory.brain_orchestrator import DEFAULT_FEATURES
+from app.services.cognitive_config import DEFAULT_FEATURES
 from app.services.memory_store import record_config_audit
 from app.services.workbench import workbench as workbenchSvc
 from app.type_aliases import BrainConfigDict

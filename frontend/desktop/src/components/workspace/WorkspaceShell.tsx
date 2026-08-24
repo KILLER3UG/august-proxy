@@ -7,6 +7,7 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowUpCircle,
   Activity,
   Boxes,
   Bot,
@@ -30,6 +31,7 @@ import {
   SETTINGS_CATEGORIES,
   railCanonicalId,
   getSection,
+  sectionsForCategory,
   type SettingsSection,
 } from '@/settings/settings-registry';
 
@@ -206,18 +208,49 @@ export function WorkspaceShell({
               {SETTINGS_CATEGORIES.map((cat) => {
                 const Icon = CATEGORY_ICONS[cat.id] ?? Globe;
                 const isActive = activeCategoryId === cat.id;
+                // Tree sub-nav: the active category expands its sections
+                // INLINE under the rail row (folder ▸ files pattern) — no
+                // separate pill tab strip inside the content pane.
+                const children = sectionsForCategory(cat.id).filter((s) => s.tier !== 'hidden');
                 return (
-                  <WorkspaceNavLink
-                    key={cat.id}
-                    icon={Icon}
-                    label={cat.label}
-                    active={!!isActive}
-                    onSelect={() => {
-                      if (isActive && active === cat.id) return;
-                      setQuery('');
-                      void navigate(`/settings/${cat.id}`);
-                    }}
-                  />
+                  <div key={cat.id}>
+                    <WorkspaceNavLink
+                      icon={Icon}
+                      label={cat.label}
+                      active={!!isActive}
+                      onSelect={() => {
+                        setQuery('');
+                        void navigate(`/settings/${cat.id}`);
+                      }}
+                    />
+                    {isActive && children.length > 0 && (
+                      <div className="ml-4 flex flex-col gap-px border-l border-sidebar-border/60 py-0.5 pl-1.5">
+                        {children.map((s) => {
+                          const childActive = active === s.id || railActive === s.id;
+                          return (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => {
+                                if (childActive && active === s.id) return;
+                                void navigate(`/settings/${s.id}`);
+                              }}
+                              data-testid={`settings-subnav-${s.id}`}
+                              aria-current={active === s.id ? 'page' : undefined}
+                              className={cn(
+                                'truncate rounded-md px-2 py-1 text-left text-[12px] transition-colors',
+                                active === s.id
+                                  ? 'bg-white/[0.07] font-medium text-foreground'
+                                  : 'text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground',
+                              )}
+                            >
+                              {s.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -257,12 +290,14 @@ function groupAllByCategory<T extends { category?: string }>(items: ReadonlyArra
 }
 
 /** Pinned identity footer at the bottom of the settings rail. Shows the
- *  active local account (initials avatar + name); click routes to the
- *  Accounts section. Hidden entirely when no account exists yet. */
+ *  active local account (initials avatar + name) and an Updates status row
+ *  (mirrors the chat-side user dropdown: version state visible at a glance,
+ *  click opens the Updates section). */
 function ProfileRailRow() {
   const navigate = useNavigate();
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
+  const { available: updateAvailable } = useAppUpdate();
   const account = accounts.find((a) => a.id === activeAccountId) ?? null;
   if (!account) return null;
   return (
@@ -286,6 +321,27 @@ function ProfileRailRow() {
           </span>
         </span>
         <Settings2 className="size-3.5 shrink-0 text-sidebar-foreground/40" aria-hidden="true" />
+      </button>
+      {/* Updates status row — same affordance as the model dropdown: current
+          state ("Up to date" / "Update available") rendered under the item. */}
+      <button
+        onClick={() => {
+          void navigate('/settings/app-updates');
+        }}
+        data-testid="rail-updates-row"
+        className="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition hover:bg-sidebar-accent/50"
+        aria-label="Open updates"
+      >
+        <ArrowUpCircle
+          className={cn(
+            'size-3.5 shrink-0',
+            updateAvailable ? 'text-amber-400' : 'text-sidebar-foreground/40',
+          )}
+          aria-hidden="true"
+        />
+        <span className="min-w-0 flex-1 truncate text-[11px] text-sidebar-foreground/60">
+          {updateAvailable ? `Update available · v${updateAvailable.version}` : 'Up to date'}
+        </span>
       </button>
     </div>
   );

@@ -272,13 +272,13 @@ def add_comment(path: str, slide: int, elementId: int, comment: str) -> dict[str
             cx, cy = _slide_size(zf)
             px = max(0, min(x, cx - 1))
             py = max(0, min(y, cy - 1))
-            # Comment author list (created once, id 0 = "August").
+            # Comment author list (created once, id 0 = "Assistant").
             author_root = etree.fromstring(  # noqa: S320 — self-constructed constant
                 f'<p:cmAuthorLst xmlns:p="{_NS["p"]}"/>'.encode('utf-8')
             )
             etree.SubElement(
                 author_root, f'{{{_NS["p"]}}}cmAuthor',
-                {'id': '0', 'name': 'August', 'initials': 'A', 'lastIdx': '0', 'clrIdx': '0'},
+                {'id': '0', 'name': 'Assistant', 'initials': 'A', 'lastIdx': '0', 'clrIdx': '0'},
             )
             # Per-slide comment list (append; idx continues from existing).
             comments_root = _ensure_comments_part(zf, slide, {})

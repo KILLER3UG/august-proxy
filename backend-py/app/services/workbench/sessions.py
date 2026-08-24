@@ -755,17 +755,6 @@ def notify_session_deleted(session_id: str) -> None:
         except Exception:
             pass
     try:
-        from app.services.brain_event_bus import emitBrainEvent
-
-        emitBrainEvent(
-            category='session',
-            layer='workbench',
-            summary=f'Session deleted: {session_id}',
-            meta={'action': 'deleted', 'sessionId': session_id},
-        )
-    except Exception:
-        pass
-    try:
         from app.services.realtime_bus import emit_realtime
 
         emit_realtime('session.deleted', sessionId=session_id)
@@ -853,12 +842,6 @@ def create_workbench_session(
             from app.services.cognitive_boot import attach_session_watcher
 
             attach_session_watcher(session_id, session.workspacePath)
-        except Exception:
-            pass
-        try:
-            from app.services.memory.cross_session_context import upsert_active_project
-
-            upsert_active_project(path=session.workspacePath, kind='workspace')
         except Exception:
             pass
     if task and str(task).startswith('Automation:'):
@@ -1172,7 +1155,7 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
     if not session:
         return None
     from app.providers.clients.base import estimateTokens
-    from app.services.memory.context_compressor import compressMessages
+    from app.services.workbench.context_compressor import compressMessages
 
     original = list(session.messages)
     original_tokens = estimateTokens(original)
@@ -1306,7 +1289,7 @@ def create_workbench_handoff(
 
     summary = ''
     try:
-        from app.services.memory.context_compressor import localSummarize
+        from app.services.workbench.context_compressor import localSummarize
 
         summary = localSummarize(source) if source else ''
     except Exception:

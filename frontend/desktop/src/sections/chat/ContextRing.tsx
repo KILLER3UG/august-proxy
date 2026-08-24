@@ -235,13 +235,15 @@ export function ContextRing({
           {promptCache && (
             <div className="mt-2 pt-2 border-t text-[11px] text-muted-foreground" style={{ borderColor: 'var(--dt-border)' }}>
               <div className="flex items-center justify-between">
-                <span className="font-medium" style={{ color: 'var(--dt-muted-foreground)' }}>Prompt cache</span>
+                <span className="font-medium" style={{ color: 'var(--dt-muted-foreground)' }}>Avg cache hit rate</span>
                 <span
                   className="font-mono tabular-nums"
                   style={{ color: cacheColor }}
                   title={cacheRate >= goalRate ? 'Goal met (96%)' : `${Math.abs(cacheDeltaPct)}% to 96% goal`}
                 >
-                  {Math.round(cacheRate * 100)}% hit <span className="opacity-60">/ 96% goal</span>{cacheDeltaPct !== 0 ? ` (${cacheDeltaPct > 0 ? `+${cacheDeltaPct}` : `${cacheDeltaPct}`}% )` : ' ✓'}
+                  {Math.round(cacheRate * 100)}%
+                  <span className="opacity-60"> / 96% goal</span>
+                  {cacheDeltaPct !== 0 ? ` (${cacheDeltaPct > 0 ? '+' : ''}${cacheDeltaPct}%)` : ''}
                 </span>
               </div>
               <div className="flex justify-between mt-0.5">

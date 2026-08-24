@@ -30,6 +30,8 @@ _ORACLE_READ = frozenset({
     'search',
     # Session state summary for handoff/compaction — read-only.
     'summarize_session',
+    # Harness self-inspection — read-only aggregation of runtime state.
+    'harness_introspect',
 })
 _ORACLE_WRITE = frozenset({
     'browser_click', 'browser_evaluate', 'browser_scroll', 'browser_select',
@@ -47,6 +49,9 @@ _ORACLE_WRITE = frozenset({
     'pptx_comment',
     # Unified-diff patch application — a file write.
     'apply_patch',
+    # Harness self-improvement: files proposals for human review (no direct
+    # application from the model — approval runs a deterministic applier).
+    'harness_propose',
 })
 _ORACLE_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',

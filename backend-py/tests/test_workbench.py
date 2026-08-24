@@ -138,7 +138,7 @@ class TestSystemPrompt:
     def testBuildPrompt(self):
         session = createWorkbenchSession(guardMode='full')
         prompt = buildSystemPrompt(session)
-        assert 'August Proxy' in prompt
+        assert 'August' in prompt
         assert len(prompt) > 50
 
     def testPromptWithGoal(self):

@@ -29,7 +29,8 @@ from typing import Optional
 
 from app.json_narrowing import as_dict, as_list, as_str
 
-_AUG_FILENAME = 'AUG.md'
+_AUG_FILENAME = 'AGENTS.md'
+_LEGACY_FILENAME = 'AUG.md'
 _FRONTMATTER_RE = re.compile(r'^---\s*\n(.*?)\n---\s*\n(.*)', re.DOTALL)
 _SKIP_DIRS = {
     '.git',
@@ -80,14 +81,17 @@ def _parseAug(text: str) -> dict[str, object]:
 
 
 def load(workspacePath: str | None) -> Optional[dict[str, object]]:
-    """Load and parse AUG.md for a workspace.
+    """Load and parse the workspace directive file (AGENTS.md, legacy AUG.md).
 
-    Returns ``None`` if the file does not exist. Otherwise returns
+    Returns ``None`` if neither file exists. Otherwise returns
     ``{path, body, frontmatter, updatedAt, exists: True}``.
     """
     path = _resolveAugPath(workspacePath)
     if not path.exists():
-        return None
+        legacy = path.with_name(_LEGACY_FILENAME)
+        if not legacy.exists():
+            return None
+        path = legacy
     try:
         text = path.read_text('utf-8')
     except Exception:

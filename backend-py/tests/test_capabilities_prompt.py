@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from app.services import tool_definitions as toolDefsModule
-from app.services.memory.capabilities_prompt import (
+from app.services.capabilities_prompt import (
     build_capabilities_block,
     classify_tool,
     format_skills_by_category,

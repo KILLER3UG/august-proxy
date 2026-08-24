@@ -101,7 +101,7 @@ export function QuitConfirmModal() {
           id="quit-confirm-title"
           className="text-[15px] font-semibold tracking-tight text-foreground"
         >
-          {hasActive ? 'Agent is still working' : 'Quit August?'}
+          {hasActive ? 'Agent is still working' : 'Quit app?'}
         </h2>
         <p className="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">
           {hasActive

@@ -259,43 +259,6 @@ export function dispatchWorkbenchEvent(
         ...p,
       });
       break;
-    case 'memoryUpdated':
-      // Harness changed long-term memory (remember / update / forget) — the
-      // chat renders an inline "August remembered…" notice.
-      handlers.onMemoryUpdated?.({
-        action: typeof p?.action === 'string' ? p.action : undefined,
-        summary: typeof p?.summary === 'string' ? p.summary : undefined,
-      });
-      break;
-    case 'evidenceState':
-      // Backend emits per-turn evidence-state snapshots (ok / refusal /
-      // thinking_only / tool_error / …). Consumed by the trajectory view
-      // and routing analytics; nothing renders inline per event.
-      handlers.onEvidenceState?.({
-        state: typeof p?.state === 'string' ? p.state : '',
-      });
-      break;
-    case 'modelProfileSuggestion':
-      // Capability auto-detect suggested a per-model tool surface. The
-      // composer stack renders an Apply / Dismiss chip (POST /api/models/profile).
-      handlers.onModelProfileSuggestion?.({
-        model: typeof p?.model === 'string' ? p.model : '',
-        suggestedProfile:
-          p?.suggestedProfile && typeof p.suggestedProfile === 'object'
-            ? {
-                toolSurface:
-                  typeof (p.suggestedProfile as Record<string, unknown>).toolSurface === 'string'
-                    ? ((p.suggestedProfile as Record<string, unknown>).toolSurface as string)
-                    : undefined,
-                reason:
-                  typeof (p.suggestedProfile as Record<string, unknown>).reason === 'string'
-                    ? ((p.suggestedProfile as Record<string, unknown>).reason as string)
-                    : undefined,
-              }
-            : undefined,
-        message: typeof p?.message === 'string' ? p.message : undefined,
-      });
-      break;
     case 'subagentToolCall':
       handlers.onSubagentToolCall?.({
         jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
@@ -367,18 +330,6 @@ export function dispatchWorkbenchEvent(
           | undefined,
       });
       break;
-    case 'routingSuggestion':
-      handlers.onRoutingSuggestion?.({
-        applied: p?.applied === true,
-        taskType: typeof p?.taskType === 'string' ? p.taskType : '',
-        model: typeof p?.model === 'string' ? p.model : '',
-        provider: typeof p?.provider === 'string' ? p.provider : '',
-        winRate: typeof p?.winRate === 'number' ? p.winRate : 0,
-        gap: typeof p?.gap === 'number' ? p.gap : undefined,
-        currentModel: typeof p?.currentModel === 'string' ? p.currentModel : undefined,
-        reason: typeof p?.reason === 'string' ? p.reason : undefined,
-      });
-      break;
     case 'recurringTask':
       handlers.onRecurringTask?.({
         message: typeof p?.message === 'string' ? p.message : '',
@@ -417,21 +368,6 @@ export function dispatchWorkbenchEvent(
           typeof p?.usedFallback === 'string' ? p.usedFallback : undefined,
         // Forwarded so the live context badge + memory-suggestion chips
         // actually arrive (audit finding: they were dropped here).
-        context: p?.context as
-          | {
-              profileSummaryUsed?: boolean;
-              heuristicsUsed?: number;
-              addedMemories?: number;
-              recalledMemories?: Array<{ key?: string; category?: string; snippet?: string }>;
-              currentContextUsed?: boolean;
-              activeProjects?: number;
-              coreFactsUsed?: boolean;
-              augDirectiveUsed?: boolean;
-            }
-          | undefined,
-        memorySuggestions: Array.isArray(p?.memorySuggestions)
-          ? (p.memorySuggestions as string[]).filter((s): s is string => typeof s === 'string')
-          : undefined,
       });
       break;
     }
@@ -474,17 +410,5 @@ export function dispatchWorkbenchEvent(
         });
       }
       break;
-    case 'recalledMemories': {
-      const items = Array.isArray(p?.items) ? (p.items as Record<string, unknown>[]) : [];
-      handlers.onRecalledMemories?.({
-        items: items.map((it) => ({
-          id: typeof it?.id === 'string' ? it.id : '',
-          key: typeof it?.key === 'string' ? it.key : '',
-          category: typeof it?.category === 'string' ? it.category : 'auto',
-          snippet: typeof it?.snippet === 'string' ? it.snippet : '',
-        })),
-      });
-      break;
-    }
   }
 }

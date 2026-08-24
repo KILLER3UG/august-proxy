@@ -109,7 +109,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       };
       const err = data?.error;
       if (typeof err === 'string') {
-        // August's own 404 fallback returns { error: 'Not found', path }
+        // The backend 404 fallback returns { error: 'Not found', path }
         // (string, not object). Surface it instead of bare res.statusText.
         message = err;
       } else if (err && typeof err === 'object') {

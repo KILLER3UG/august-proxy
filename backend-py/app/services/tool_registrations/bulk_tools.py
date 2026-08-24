@@ -110,13 +110,13 @@ async def _bulk_write_files(files: object = None) -> str:
 
 
 async def _bulk_delete_sessions(sessionIds: object = None, sessionId: str = '') -> str:
-    from app.services.tool_registrations.memory_tools import _deleteSessions
+    from app.services.tool_registrations.session_tools import _deleteSessions
 
     return await _deleteSessions(sessionIds=sessionIds, sessionId=sessionId)
 
 
 async def _bulk_rename_sessions(renames: object = None, items: object = None) -> str:
-    from app.services.tool_registrations.memory_tools import _renameSession
+    from app.services.tool_registrations.session_tools import _renameSession
 
     entries = coerce_object_list(renames if renames is not None else items)
     if not entries:

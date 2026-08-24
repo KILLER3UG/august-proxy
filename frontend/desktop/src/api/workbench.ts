@@ -179,7 +179,7 @@ export async function queueWorkbenchMessage(
   return workbenchClient.queueMessage(sessionId, text, attachments, kind);
 }
 
-/** Mid-run steer — redirect August without stopping the current turn. */
+/** Mid-run steer — redirect the run without stopping the current turn. */
 export async function steerWorkbenchMessage(
   sessionId: string,
   text: string,

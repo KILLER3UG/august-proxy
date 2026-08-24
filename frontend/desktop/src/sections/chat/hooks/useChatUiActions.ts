@@ -106,7 +106,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
 
       if (e.action === 'undo_last_turn') {
         if (streaming) {
-          toast.message('Stop August first, then undo.');
+          toast.message('Stop the current run first, then undo.');
           return;
         }
         const lastUserIdx = [...messages].map((m) => m.role).lastIndexOf('user');

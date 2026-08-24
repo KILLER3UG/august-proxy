@@ -276,18 +276,6 @@ export const WorkbenchUserMessageInjectedEventSchema = WorkbenchBaseSchema.exten
 });
 
 /** Auto-memory recall visibility — emitted once per turn right after
- *  buildSystemPrompt() prefetches relevant `auto_memories` rows. */
-export const WorkbenchRecalledMemoriesEventSchema = WorkbenchBaseSchema.extend({
-  type: z.literal('recalledMemories'),
-  items: z.array(
-    z.object({
-      id: z.string().optional(),
-      key: z.string().optional(),
-      category: z.string().optional(),
-      snippet: z.string().optional(),
-    }),
-  ),
-});
 
 /** Queued-message lifecycle events. The workbench emits snake_case names for
  *  queue/dequeue/reorder while the dispatcher expects camelCase — both
@@ -331,18 +319,6 @@ export const WorkbenchRecurringTaskEventSchema = WorkbenchBaseSchema.extend({
 });
 
 /** Routing-evidence consult (D1): a better model exists for the task type,
- *  or auto-routing replaced the turn's model. */
-export const WorkbenchRoutingSuggestionEventSchema = WorkbenchBaseSchema.extend({
-  type: z.literal('routingSuggestion'),
-  applied: z.boolean().optional(),
-  taskType: z.string().optional(),
-  model: z.string().optional(),
-  provider: z.string().optional(),
-  winRate: z.number().optional(),
-  gap: z.number().optional(),
-  currentModel: z.string().optional(),
-  reason: z.string().optional(),
-});
 
 /** Live context-meter event — emitted once per turn (low/medium pressure is
  *  a gauge only; the UI warns on high/critical). */
@@ -364,27 +340,10 @@ export const WorkbenchGuardModeChangedEventSchema = WorkbenchBaseSchema.extend({
 });
 
 /** Harness changed long-term memory (remember / update / forget). */
-export const WorkbenchMemoryUpdatedEventSchema = WorkbenchBaseSchema.extend({
-  type: z.literal('memoryUpdated'),
-  action: z.string().optional(),
-  summary: z.string().optional(),
-});
 
 /** Per-turn evidence-state snapshot for the verifier / routing-evidence
- *  loop (backend: `{'state': 'unseen' | …}`). No UI consumer yet. */
-export const WorkbenchEvidenceStateEventSchema = WorkbenchBaseSchema.extend({
-  type: z.literal('evidenceState'),
-  state: z.string().optional(),
-});
 
 /** Per-model capability profile suggestion (toolSurface, maxTools, …).
- *  No UI consumer yet — acknowledged so the stream dispatcher doesn't warn. */
-export const WorkbenchModelProfileSuggestionEventSchema = WorkbenchBaseSchema.extend({
-  type: z.literal('modelProfileSuggestion'),
-  model: z.string().optional(),
-  suggestedProfile: z.unknown().optional(),
-  message: z.string().optional(),
-});
 
 /** Transient upstream error inside a sub-agent — the worker backs off. */
 export const WorkbenchSubagentRetryEventSchema = WorkbenchBaseSchema.extend({
@@ -429,15 +388,10 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchSubagentProposedEventSchema,
   WorkbenchWarningEventSchema,
   WorkbenchUserMessageInjectedEventSchema,
-  WorkbenchRecalledMemoriesEventSchema,
   WorkbenchVerifierBlockedEventSchema,
   WorkbenchRecurringTaskEventSchema,
-  WorkbenchRoutingSuggestionEventSchema,
   WorkbenchContextPressureEventSchema,
   WorkbenchGuardModeChangedEventSchema,
-  WorkbenchMemoryUpdatedEventSchema,
-  WorkbenchEvidenceStateEventSchema,
-  WorkbenchModelProfileSuggestionEventSchema,
   WorkbenchSubagentRetryEventSchema,
   WorkbenchSubagentWarningEventSchema,
   WorkbenchUserMessageQueueEventSchema,

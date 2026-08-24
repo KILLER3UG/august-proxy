@@ -24,7 +24,7 @@ export function ComposerVoiceListening() {
         />
       </div>
       <span className="text-xs font-semibold tracking-wide text-primary animate-pulse">
-        August is listening…
+        Listening…
       </span>
     </div>
   );

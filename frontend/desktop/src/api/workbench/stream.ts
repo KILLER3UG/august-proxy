@@ -331,7 +331,6 @@ export async function streamWorkbenchReconnect(
             coreFactsUsed?: boolean;
             augDirectiveUsed?: boolean;
           };
-          memorySuggestions?: string[];
         }) => {
           terminalSeen = true;
           wrappedHandlers.onDone?.(data);

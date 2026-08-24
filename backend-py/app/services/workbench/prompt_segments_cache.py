@@ -126,7 +126,7 @@ def _build_skills_segments() -> tuple[str, str]:
     extra = ''
     try:
         from app.services import skill_service
-        from app.services.memory.capabilities_prompt import format_skill_index
+        from app.services.capabilities_prompt import format_skill_index
 
         cat = skill_service.catalogue()
         if not cat:

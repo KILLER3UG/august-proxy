@@ -61,8 +61,8 @@ describe('workspace-registry filter', () => {
   });
 
   it('getWorkspaceSection() returns the requested section', () => {
-    const s = getWorkspaceSection('memory-knowledge');
-    expect(s.id).toBe('memory-knowledge');
+    const s = getWorkspaceSection('model-providers');
+    expect(s.id).toBe('model-providers');
   });
 
   it('getWorkspaceSection() falls back to the first section for unknown ids', () => {

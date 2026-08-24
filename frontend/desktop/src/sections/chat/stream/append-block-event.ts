@@ -114,13 +114,13 @@ export function appendBlockEvent(
       blocks[targetIdx] = target;
     }
   } else if (event.type === 'memoryUpdated') {
-    // In-chat memory notice: August remembered/updated/forgot something —
+    // In-chat memory notice: a memory was remembered/updated/forgotten —
     // rendered as a subtle chip, capped so a long agent run doesn't stack
     // an unbounded list.
     const noticeBlock: MessageBlock = {
       id: `b_memory_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       type: 'memoryNotice',
-      content: event.summary || event.content || 'August updated its memory.',
+      content: event.summary || event.content || 'Memory updated.',
     };
     const memoryBlocks = blocks.filter((b) => b.type === 'memoryNotice');
     if (memoryBlocks.length >= 4) {

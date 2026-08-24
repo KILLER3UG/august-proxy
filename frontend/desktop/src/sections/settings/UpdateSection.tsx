@@ -47,7 +47,7 @@ export function UpdateSection() {
           <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5">
             <p className="text-sm font-medium text-foreground">Current Version</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              August Proxy v{currentVersion}
+              App version {currentVersion}
             </p>
             {!available && !checking && !installing && (
               <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
@@ -112,16 +112,16 @@ export function UpdateSection() {
                     {progress.phase === 'ready'
                       ? `${available?.version ?? 'Update'} is ready`
                       : progress.phase === 'restarting'
-                      ? 'Installing August…'
+                      ? 'Installing update…'
                       : progress.phase === 'installing'
                         ? 'Launching installer…'
                         : 'Downloading update…'}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {progress.phase === 'ready'
-                      ? 'The update is downloaded. Restart August when you’re ready to apply it.'
+                      ? 'The update is downloaded. Restart when you’re ready to apply it.'
                       : progress.phase === 'restarting'
-                      ? 'August is updating. The old version is removed automatically; you’ll see the install wizard, then August reopens.'
+                      ? 'Updating now. The old version is removed automatically; you’ll see the install wizard, then the app reopens.'
                       : progress.phase === 'installing'
                         ? 'The setup window will appear in a moment.'
                         : 'The installer opens after the download finishes.'}

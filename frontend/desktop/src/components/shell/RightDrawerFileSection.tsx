@@ -87,7 +87,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
               {file.status === 'error' ? 'This file could not be read' : 'Preview unavailable'}
             </div>
             <div className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
-              {file.error || 'The file is attached, but August does not have an inline viewer for this file type.'}
+              {file.error || 'The file is attached, but there is no inline viewer for this file type.'}
             </div>
           </div>
         )}

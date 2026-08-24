@@ -1,1 +1,0 @@
-- [User Role](user_role.md) — Works on August proxy at C:\Dev\august-proxy; focused on UI layout/sidebar/chat thread behavior.

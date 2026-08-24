@@ -6,10 +6,8 @@ import {
   LayoutDashboard,
   MessageSquare,
   Settings,
-  Brain,
   Mic,
   Bot,
-  Wrench,
   History,
   Kanban,
   type LucideIcon,
@@ -24,14 +22,8 @@ import { SectionBoundary } from '@/components/SectionBoundary';
 const SettingsPage = lazy(() =>
   import('@/sections/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 );
-const BrainDashboard = lazy(() =>
-  import('@/sections/brain/BrainDashboard').then((m) => ({ default: m.BrainDashboard })),
-);
 const AutomationsPage = lazy(() =>
   import('@/sections/automations/AutomationsPage').then((m) => ({ default: m.AutomationsPage })),
-);
-const SkillsPage = lazy(() =>
-  import('@/sections/skills/SkillsPage').then((m) => ({ default: m.SkillsPage })),
 );
 const LiveSurface = lazy(() =>
   import('@/sections/live/LiveSurface').then((m) => ({ default: m.LiveSurface })),
@@ -94,24 +86,10 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
   { path: '/', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThread, { sessionId: null }), nav: true },
   { path: '/c/:sessionId', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThreadWithParams) },
   {
-    path: '/brain',
-    label: 'Brain',
-    Icon: Brain,
-    element: React.createElement(LazySection, { name: 'Brain' }, React.createElement(BrainDashboard)),
-    nav: true,
-  },
-  {
     path: '/automations',
     label: 'Automations',
     Icon: Bot,
     element: React.createElement(LazySection, { name: 'Automations' }, React.createElement(AutomationsPage)),
-    nav: true,
-  },
-  {
-    path: '/skills',
-    label: 'Skills & Tools',
-    Icon: Wrench,
-    element: React.createElement(LazySection, { name: 'Skills' }, React.createElement(SkillsPage)),
     nav: true,
   },
   {
@@ -226,7 +204,7 @@ export function resolveRouteLabel(pathname: string) {
   return SECTION_ROUTES.find((route) => pathname === route.path)?.label
     ?? SECTION_ROUTES.find((route) => route.path !== '/' && pathname.startsWith(route.path))?.label
     ?? SETTINGS_ROUTES.find((route) => pathname === route.path || pathname.startsWith(route.path))?.label
-    ?? 'August';
+    ?? 'Assistant';
 }
 
 export const SECTION_PATH = (to: string) => to;

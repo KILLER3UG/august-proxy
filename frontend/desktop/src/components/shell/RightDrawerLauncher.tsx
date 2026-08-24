@@ -26,12 +26,12 @@ const SECTION_META: Record<
 > = {
   preview: {
     label: 'Preview',
-    hint: 'Live preview of what August is building',
+    hint: 'Live preview of what is being built',
     Icon: Play,
   },
   diff: {
     label: 'Diffs',
-    hint: 'Files August changed this session',
+    hint: 'Files changed this session',
     Icon: FileDiff,
   },
   terminal: {
@@ -51,7 +51,7 @@ const SECTION_META: Record<
   },
   browser: {
     label: 'Browser',
-    hint: 'Pages August opened for research',
+    hint: 'Pages opened for research',
     Icon: Globe,
   },
   notes: {

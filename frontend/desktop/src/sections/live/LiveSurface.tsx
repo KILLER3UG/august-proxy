@@ -115,7 +115,7 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
     >
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div className="text-sm font-medium">August Live</div>
+        <div className="text-sm font-medium">Live voice</div>
         <button
           type="button"
           aria-label="Close"

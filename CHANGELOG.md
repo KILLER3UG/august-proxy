@@ -1,5 +1,41 @@
 # August Proxy — Changelog
 
+## 0.17.0 (2026-08-24)
+
+**Self-improving harness v2 — the model can inspect and improve its own harness, safely**
+
+- `harness_introspect` tool rebuilt for the post-refactor architecture: read-only aggregation of the registered tool surface (health, bucket counts, >300ch descriptions, broken registrations), skills catalogue stats, **a flow map of the turn loop itself** (tool-round budget, phases, agent/guard modes, auto-compact thresholds), memory-store sizes, active brain-config knobs (secrets filtered), recent harness changes from the ledger, and open proposals.
+- `harness_propose` tool: files a structured improvement proposal (`problem / evidence / proposal / rollback / kind / expectedMetric / payload`). Proposals land as `data/harness_proposals/*.json`, emit a brain SSE event, and are **never applied by the model**. Duplicate guard refuses re-filing an open proposal with the same kind+problem.
+- Deterministic applier behind human approval (`POST /api/harness/proposals/{id}/decide`): `brain_config` patches via the existing `validatePatch`; `skill_create`/`skill_patch`/`skill_delete` through skill_service with copy-on-write for bundled skills and prompt-cache busting. Everything else (`tool_bucket`, `tool_description`, `flow_map`, `observation`) is recorded-only, apply refused as "human-only".
+- **Scheduled introspection loop**: every 6h (first pass at boot) mechanical findings are auto-filed as one deduped `observation` proposal — broken registrations, descriptions over 300ch. The loop eats its own dogfood without ever applying anything.
+- Every file/approve/reject/dismiss is journaled to `data/harness_proposals/ledger.jsonl` — the single source of "why did the harness change" after the curation-ledger removal.
+- New Settings section **Insights → Harness Improvements**: review queue with open/all filter, detail view (evidence, proposed change, rollback, expected metric, payload), approve-and-apply / reject / dismiss with decision notes.
+
+**Skills settings restored + Claude-style viewer**
+
+- Skills is its own settings tab again (Tools split into Tools · Skills). Card-grid catalogue with search; detail view renders SKILL.md as markdown with name, attribution ("by agent"/bundled), category badge, description see-more, and trigger panel. Create/edit forms with authoring-standard validation surfaced as toasts; delete with confirmation (bundled skills refused server-side).
+- Skill authoring REST routes restored (`POST/PATCH/DELETE /api/skills`) plus `createSkill`/`patchSkill`/`deleteSkill` in skill_service — both the UI and the harness applier share them.
+
+**Settings IA — tree sub-nav replaces pill tabs**
+
+- Clicking a hub in the left rail expands its sections inline beneath it (folder ▸ files pattern) instead of stacking pill tabs in the content pane. Deep links unchanged.
+- Rail bottom gains an Updates status row ("Up to date" / "Update available · vX.Y.Z") mirroring the model-dropdown affordance; click opens Updates.
+
+**Chat identity & composer polish**
+
+- Sidebar bottom is now a Claude-style user row (avatar + display name + Free tag when signed out) opening the account menu; What's New and Notifications fall back to a bundled CHANGELOG digest when GitHub yields nothing (rate limit/offline no longer render a silent blank).
+- Git branch selector chip lives in the composer footer on workspace chats — current branch shown, click to list/checkout others.
+- Context ring popover restores the **average cache hit rate** bar and cached/total input counts against the 96% goal.
+- Deliverable cards ("Files created") are Claude-style tiles with file-type labels (Presentation · PPTX etc.) that open the artifact in the right sidebar panel; pptx_* tool outputs now count as deliverables too.
+- Verifier "Run it for me" button removed from the blocked banner (Copy command remains); verifier tooltip helper deleted with it.
+
+**Fixes along the way**
+
+- mypy fully clean across backend (265 files) — delegation-config narrowing errors fixed at their root in subagent router + orchestrator instead of silencing.
+- `background_review_service` restored so `/api/config/background-review` and the Background & Reflection tab work again post-refactor.
+
+**Validation:** ruff ✓ · mypy 0 errors (was 19 baseline) · backend pytest 1233 passed / 0 failed ✓ · vitest 727/727 ✓ · tsc clean ✓ · build:web ✓ · version sync ✓ (7 sources @ 0.17.0)
+
 ## 0.16.9 (2026-08-23)
 
 **Folder picker returns + change toasts + Claude-style truncation + RAM/latency pass**

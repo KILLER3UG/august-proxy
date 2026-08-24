@@ -155,13 +155,7 @@ def _get_brain_config() -> dict[str, object]:
 
 
 def _record_tool_failure(info: dict[str, object]) -> None:
-    try:
-        from app.services.memory.tool_failure_memory import recordToolFailure
-
-        recordToolFailure(info)
-    except Exception as exc:
-        _bump_silent('tool_failure_record')
-        logger.debug('proxy tool_failure_record swallow: %s', exc)
+    return None
 
 
 def _validate_tool_arguments(

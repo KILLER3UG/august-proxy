@@ -110,16 +110,6 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning('Hook registration failed (non-fatal): %s', exc)
 
-    # One-time vector namespace migration (default → auto_memory).
-    try:
-        from app.services.memory.vector_db import migrate_default_namespace
-
-        migrated = migrate_default_namespace()
-        if migrated:
-            logger.info('Migrated %d vector entries to auto_memory namespace', migrated)
-    except Exception:
-        pass
-
     # Start background health monitor for configured providers.
     try:
         from app.services.health_monitor import health_monitor
@@ -190,14 +180,6 @@ async def lifespan(app: FastAPI):
         await start_cognitive_services(app)
     except Exception:
         logger.exception('Cognitive boot failed (continuing without background layers)')
-    # Loop-level golden evals: run the scripted suite every 6h so the
-    # reliability surface shows whether harness changes actually help.
-    try:
-        from app.services.harness_eval import scheduled_evals_loop
-
-        asyncio.create_task(scheduled_evals_loop())
-    except Exception:
-        logger.exception('Scheduled eval loop failed to start (continuing)')
     _gateway = None
     try:
         from app.services.gateway.runner import startGateway
@@ -207,33 +189,21 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     try:
-        from app.services.runtime_services import get_curator, get_orchestrator
+        from app.services.runtime_services import get_orchestrator
 
-        get_curator(app)
         get_orchestrator(app)
-        logger.info('Curator + subagent orchestrator ready')
+        logger.info('Subagent orchestrator ready')
     except Exception:
-        logger.exception('Runtime services (curator/orchestrator) failed to start')
-    # Automatic memory self-maintenance (0.16.6): scheduled LLM review with
-    # safe auto-apply — the user never clicks "Review what I remember".
+        logger.exception('Runtime services (orchestrator) failed to start')
+    # Harness self-improvement (0.17.0): scheduled off-hours introspection —
+    # auto-files observation proposals, never applies anything.
     try:
-        from app.services.memory.auto_review_loop import make_auto_review_task
+        from app.services.harness_self_improve import scheduled_introspection_loop
 
-        app.state.auto_review_task = make_auto_review_task()
-        logger.info('Automatic memory review loop started')
+        asyncio.create_task(scheduled_introspection_loop())
+        logger.info('Harness introspection loop started')
     except Exception:
-        logger.exception('Auto memory review loop failed to start (continuing)')
-    # Fresh-open full refresh (0.16.7): boot ALWAYS runs the complete pass —
-    # TTL prune + vector-mirror reconcile + skill curation + forced LLM
-    # review — so everything is up to date when the user starts chatting.
-    try:
-        from app.services.memory.auto_review_loop import make_boot_maintenance_task
-
-        app.state.boot_maintenance_task = await make_boot_maintenance_task()
-        logger.info('Boot maintenance pass scheduled')
-    except Exception:
-        logger.exception('Boot maintenance failed to start (continuing)')
-    # Schema/workbench blob columns are created by the earlier memory_store.init().
+        logger.exception('Harness introspection loop failed to start (continuing)')
     yield
     # Tear down the log-stream hub and root handler on shutdown.
     try:
@@ -342,27 +312,22 @@ from app.routers import audit as auditRoutes  # noqa: E402
 from app.routers import aug as augRoutes  # noqa: E402
 from app.routers import august as augustRoutes  # noqa: E402
 from app.routers import automations as automationsRoutes  # noqa: E402
-from app.routers import brain as brainRoutes  # noqa: E402
-from app.routers import brain_activity as brainActivityRoutes  # noqa: E402
 from app.routers import brain_config as brainConfigRoutes  # noqa: E402
-from app.routers import brain_dashboard as brainDashboardRoutes  # noqa: E402
 from app.routers import browser as browserRoutes  # noqa: E402
 from app.routers import calendar as calendarRoutes  # noqa: E402
 from app.routers import config as configRoutes  # noqa: E402
 from app.routers import cron as cronRoutes  # noqa: E402
-from app.routers import curator as curatorRoutes  # noqa: E402
 from app.routers import daemons as daemonsRoutes  # noqa: E402
 from app.routers import desktop_automation as desktopAutomationRoutes  # noqa: E402
 from app.routers import exam as examRoutes  # noqa: E402
 from app.routers import gateway as gatewayRoutes  # noqa: E402
 from app.routers import git as gitRoutes  # noqa: E402
-from app.routers import harness as harnessRoutes  # noqa: E402
 from app.routers import harness_mcp as harnessMcpRoutes  # noqa: E402
+from app.routers import harness_proposals as harnessProposalsRoutes  # noqa: E402
 from app.routers import hooks as hooksRoutes  # noqa: E402
 from app.routers import live as liveRoutes  # noqa: E402
 from app.routers import manage as manageRoutes  # noqa: E402
 from app.routers import mcp as mcpRoutes  # noqa: E402
-from app.routers import memory as memoryRoutes  # noqa: E402
 from app.routers import models as modelsRoutes  # noqa: E402
 from app.routers import monitor_feature_flow as monitorFeatureFlowRoutes  # noqa: E402
 from app.routers import monitoring as monitoringRoutes  # noqa: E402
@@ -379,25 +344,20 @@ from app.routers import skills as skillsRoutes  # noqa: E402
 from app.routers import subagent as subagentRoutes  # noqa: E402
 from app.routers import terminal as terminalRoutes  # noqa: E402
 from app.routers import terminal_routes as terminalWsRoutes  # noqa: E402
-from app.routers import usage as usageRoutes  # noqa: E402
 from app.routers import whats_new as whatsNewRoutes  # noqa: E402
 from app.routers import workbench as workbenchRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
 app.include_router(hooksRoutes.router)
-app.include_router(harnessRoutes.router)
 app.include_router(providersRoutes.router)
 app.include_router(privacyRoutes.router)
 app.include_router(skillsRoutes.router)
 app.include_router(cronRoutes.router)
-app.include_router(curatorRoutes.router)
 app.include_router(modelsRoutes.router)
 app.include_router(proxyRoutes.router)
 app.include_router(workbenchRoutes.router)
 app.include_router(sessionsRoutes.router)
-app.include_router(memoryRoutes.router)
 app.include_router(auditRoutes.router)
-app.include_router(usageRoutes.router)
 app.include_router(agentsRoutes.router)
 app.include_router(mcpRoutes.router)
 app.include_router(gitRoutes.router)
@@ -413,15 +373,13 @@ app.include_router(monitorFeatureFlowRoutes.router)
 app.include_router(augustRoutes.router)
 app.include_router(gatewayRoutes.router)
 app.include_router(augRoutes.router)
-app.include_router(brainDashboardRoutes.router)
-app.include_router(brainRoutes.router)
 app.include_router(brainConfigRoutes.router)
-app.include_router(brainActivityRoutes.router)
 app.include_router(examRoutes.router)
 app.include_router(liveRoutes.router)
 app.include_router(calendarRoutes.router)
 app.include_router(subagentRoutes.router)
 app.include_router(harnessMcpRoutes.router)
+app.include_router(harnessProposalsRoutes.router)
 app.include_router(recurringTasksRoutes.router)
 app.include_router(daemonsRoutes.router)
 app.include_router(serviceConnectionsRoutes.router)

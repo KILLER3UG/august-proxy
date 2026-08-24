@@ -27,13 +27,13 @@ interface TourStep {
 const STEPS: TourStep[] = [
   {
     icon: Sparkles,
-    title: 'Welcome to August',
+    title: 'Welcome',
     body: 'A harness that learns you — it remembers your preferences, tracks which models actually win your tasks, and runs arena comparisons and debates so you always pick the best answer.',
   },
   {
     icon: Bot,
     title: 'Connect a provider',
-    body: 'August is model-agnostic: Anthropic, OpenAI, DeepSeek, local Ollama — anything. One model is fine; routing roles are optional extras.',
+    body: 'Model-agnostic: Anthropic, OpenAI, DeepSeek, local Ollama — anything. One model is fine; routing roles are optional extras.',
     action: { label: 'Add a provider', to: '/settings/model-providers' },
   },
   {
@@ -44,7 +44,7 @@ const STEPS: TourStep[] = [
   },
   {
     icon: Gavel,
-    title: 'See what August knows',
+    title: 'See what it knows',
     body: 'The Brain → You tab shows your profile, learned rules, friction, and each model’s track record. Everything is editable — this is your harness.',
     action: { label: 'Open the Brain', to: '/brain?tab=you' },
   },
@@ -85,7 +85,7 @@ export function OnboardingTour() {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Welcome to August"
+      aria-label="Welcome"
       data-testid="onboarding-tour"
     >
       <div className="w-full max-w-md rounded-xl border border-border bg-popover p-5 shadow-xl space-y-4">

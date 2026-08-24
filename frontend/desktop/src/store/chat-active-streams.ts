@@ -4,14 +4,14 @@
  * backend generation is currently running, even if the user isn't viewing
  * that session.
  *
- * The poll interval is intentionally generous (15 s) — live chat.active /
- * chat.idle events update this store instantly; the poll is a safety net.
+ * The poll interval keeps background rows live without hammering the
+ * backend; realtime events still update this store instantly.
  */
 
 import { create } from 'zustand';
 import { api } from '@/api/client';
 
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 5_000;
 
 interface ActiveChatStreamsState {
   active: Record<string, 'streaming'>;

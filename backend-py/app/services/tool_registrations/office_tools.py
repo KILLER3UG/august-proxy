@@ -88,7 +88,7 @@ def register() -> None:
     tool_registry.register(
         'pptx_comment',
         'Add a comment to ONE element of a PowerPoint slide, anchored at that '
-        'element\'s position (author "August"). Guidance: use the element id '
+        'element\'s position. Guidance: use the element id '
         'from pptx_list_elements — the id is the drawing\'s stable cNvPr id, not '
         'a position. One comment per element per call; a new comment id is '
         'returned. Slide is 1-based. The file is modified in place (workspace-'

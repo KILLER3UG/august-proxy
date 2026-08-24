@@ -1,4 +1,4 @@
-/* ── Account — local + Google-linked August profiles ───────────────── */
+/* ── Account — local + Google-linked profiles ───────────────── */
 
 import { useMemo, useState } from 'react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
@@ -137,7 +137,7 @@ export function AccountSection() {
         <SettingsCard
           icon={UserRound}
           title="Sign in with Google"
-          description="Use your Gmail identity for August. This also connects Google Workspace tools when configured."
+          description="Use your Gmail identity. This also connects Google Workspace tools when configured."
           inert
         >
           <Button

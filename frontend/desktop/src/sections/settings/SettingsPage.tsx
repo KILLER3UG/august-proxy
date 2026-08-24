@@ -260,7 +260,6 @@ const FeatureFlowWrapper = lazySection(() => import('./FeatureFlowSection'), 'Fe
 const ExternalAccessWrapper = lazySection(() => import('./ExternalAccessSection'), 'ExternalAccessSection');
 const AppUpdatesWrapper = lazySection(() => import('./UpdateSection'), 'UpdateSection');
 const UsageWrapper = lazySection(() => import('@/sections/workspace/WorkspaceUsageSection'), 'WorkspaceUsageSection');
-const MemoryHubWrapper = lazySection(() => import('./MemoryHubSection'), 'MemoryHubSection');
 const RecurringTasksWrapper = lazySection(() => import('./RecurringTasksSection'), 'RecurringTasksSection');
 const InspectorWrapper = lazySection(() => import('@/sections/workspace/WorkspaceInspectorSection'), 'WorkspaceInspectorSection');
 const ModelsWrapper = lazySection(() => import('@/sections/workspace/WorkspaceModelsSection'), 'WorkspaceModelsSection');
@@ -269,25 +268,20 @@ const GeneralWrapper = lazySection(() => import('@/sections/workspace/WorkspaceG
 const ProfilePreferencesWrapper = lazySection(() => import('./ProfilePreferencesSection'), 'ProfilePreferencesSection');
 const SystemHealthWrapper = lazySection(() => import('./SystemHealthSection'), 'SystemHealthSection');
 const ToolsConnectionsWrapper = lazySection(() => import('./IntegrationsSection'), 'IntegrationsSection');
+const SkillsWrapper = lazySection(() => import('./SkillsSection'), 'SkillsSection');
+const HarnessImprovementsWrapper = lazySection(() => import('./HarnessImprovementsSection'), 'HarnessImprovementsSection');
 const ConversationsHistoryWrapper = lazySection(() => import('./ConversationsHistorySection'), 'ConversationsHistorySection');
 const AgentsAutomationWrapper = lazySection(() => import('./AgentsAutomationSection'), 'AgentsAutomationSection');
-const SkillsWrapper = lazySection(() => import('./SkillsSection'), 'SkillsSection');
 const ComputerUseWrapper = lazySection(() => import('./ComputerUseSection'), 'ComputerUseSection');
 const KanbanWrapper = lazySection(() => import('./KanbanSection'), 'KanbanSection');
 const AgentSandboxWrapper = lazySection(() => import('./AccessHubSection'), 'AccessHubSection');
 const PromptTemplatesWrapper = lazySection(() => import('./PromptTemplatesSection'), 'PromptTemplatesSection');
-const ReliabilityWrapper = lazySection(() => import('./ReliabilitySection'), 'ReliabilitySection');
 const PrivacyWrapper = lazySection(() => import('./PrivacySection'), 'PrivacySection');
 const HealthSimulatorWrapper = lazySection(() => import('./HealthSimulatorSection'), 'HealthSimulatorSection');
 const AISetupWizardWrapper = lazySection(() => import('./AISetupWizardSection'), 'AISetupWizardSection');
 
 const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   usage: UsageWrapper,
-  memory: MemoryHubWrapper,
-  'memory-knowledge': MemoryHubWrapper,
-  'recalled-memory': MemoryHubWrapper,
-  'added-memory': MemoryHubWrapper,
-  'project-memories': MemoryHubWrapper,
   'recurring-tasks': RecurringTasksWrapper,
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
@@ -296,6 +290,8 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'ui-designer': ProfilePreferencesWrapper,
   'system-health': SystemHealthWrapper,
   'tools-connections': ToolsConnectionsWrapper,
+  skills: SkillsWrapper,
+  'harness-improve': HarnessImprovementsWrapper,
   'conversations-history': ConversationsHistoryWrapper,
   'agents-automation': AgentsAutomationWrapper,
   'computer-access': ComputerAccessSettingsWrapper,
@@ -304,9 +300,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   observability: ObservabilitySectionWrapper,
   'backend-monitor': BackendMonitorWrapper,
   'feature-flow': FeatureFlowWrapper,
-  'skill-curator': SkillsWrapper,
-  'skills-authoring': SkillsWrapper,
-  skills: SkillsWrapper,
   'computer-use': ComputerUseWrapper,
   'api-access': ExternalAccessWrapper,
   'tool-grants': AgentSandboxWrapper,
@@ -315,7 +308,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'agent-sandbox': AgentSandboxWrapper,
   'app-updates': AppUpdatesWrapper,
   'prompt-templates': PromptTemplatesWrapper,
-  reliability: ReliabilityWrapper,
   'ai-setup': AISetupWizardWrapper,
   privacy: PrivacyWrapper,
   'health-simulator': HealthSimulatorWrapper,

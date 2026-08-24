@@ -10,7 +10,6 @@ export * from './api-client/preview';
 export * from './api-client/terminal';
 export * from './api-client/models';
 export * from './api-client/live';
-export * from './api-client/brain';
 export * from './api-client/manage';
 export * from './api-client/audit';
 export * from './api-client/host-agent';

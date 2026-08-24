@@ -43,9 +43,7 @@ const plusIconMotion = {
 };
 
 const DESTINATIONS = [
-  { path: "/brain", label: "Brain", testId: "sidebar-nav-brain", Icon: Brain },
   { path: "/automations", label: "Automations", testId: "sidebar-nav-automations", Icon: Bot },
-  { path: "/skills", label: "Skills & Tools", testId: "sidebar-nav-skills", Icon: Wrench },
   { path: "/runs", label: "Runs", testId: "sidebar-nav-runs", Icon: ListTodo },
   { path: "/board", label: "Board", testId: "sidebar-nav-board", Icon: Kanban },
   { path: "/history", label: "History", testId: "sidebar-nav-history", Icon: History },
@@ -63,7 +61,7 @@ export function SessionListNav({
     <div className="august-sidebar-nav pt-1.5 pb-1 px-2 flex flex-col gap-0.5">
       <div className="august-sidebar-brand flex items-center justify-between px-0.5 pb-2">
         <div className="flex items-center gap-2 px-1">
-          <span className="text-[15px] font-semibold tracking-[-0.02em] text-sidebar-foreground/90">August</span>
+          <span className="text-[15px] font-semibold tracking-[-0.02em] text-sidebar-foreground/90">Assistant</span>
         </div>
         <button
           type="button"

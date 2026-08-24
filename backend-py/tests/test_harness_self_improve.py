@@ -1,145 +1,163 @@
-"""Regression tests: harness self-improvement loop (introspect + propose + gate).
-
-The model can inspect its own harness and FILE proposals, but nothing applies
-without an explicit human decision; approval runs the deterministic applier;
-every decision lands in the curation ledger.
-"""
+"""Tests for the harness self-improvement loop (0.17.0 rebuild)."""
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
-from app.services.harness_self_improve import (
-    APPROVABLE_KINDS,
-    build_introspection,
-    decide_proposal,
-    format_introspection,
-    save_proposal,
-)
 
 
 @pytest.fixture()
-def proposals_dir(tmp_path, monkeypatch):
-    from app.config import settings
+def hsi(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Isolated harness_self_improve with a temp data dir."""
+    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path / 'data'))
+    from app.services import harness_self_improve as mod
 
-    monkeypatch.setattr(settings, 'dataDir', str(tmp_path), raising=False)
-    return tmp_path
-
-
-def _sample(kind: str = 'observation', **kw) -> dict[str, object]:
-    base: dict[str, object] = {
-        'problem': 'web_search descriptions exceed 300 chars and bloat every prompt',
-        'evidence': 'registry audit shows web_search at 254ch but remember at 717ch',
-        'proposal': 'Trim remember description to under 300 chars, move examples to docs',
-        'rollback': 'Re-add the trimmed text from git history',
-        'kind': kind,
-    }
-    base.update(kw)
-    return base
+    # Reset any cached settings-dependent paths.
+    yield mod
 
 
-def test_save_and_get_proposal_roundtrip(proposals_dir):
-    row = save_proposal(**_sample())  # type: ignore[arg-type]
-    assert row['status'] == 'open'
-    assert row['id'].startswith('prop_')
-    from app.services.harness_self_improve import get_proposal
-
-    again = get_proposal(row['id'])
-    assert again is not None
-    assert again['problem'] == row['problem']
-
-
-def test_proposal_requires_rollback(proposals_dir):
-    bad = _sample()
-    del bad['rollback']
-    with pytest.raises(TypeError, match='rollback'):
-        save_proposal(**bad)  # type: ignore[arg-type]
-
-
-def test_proposal_rejects_unknown_kind(proposals_dir):
-    with pytest.raises(ValueError, match='unknown kind'):
-        save_proposal(**_sample(kind='rewrite_the_core_loop'))  # type: ignore[arg-type]
-
-
-def test_decide_approve_runs_applier_for_brain_config(proposals_dir, monkeypatch):
-    applied: dict[str, object] = {}
-
-    def fake_apply(row):
-        applied['kind'] = row['kind']
-        return {'ok': True}
-
-    import app.services.harness_self_improve as hsi
-
-    monkeypatch.setattr(hsi, '_apply_approved', fake_apply)
-    row = save_proposal(**_sample(kind='brain_config'))  # type: ignore[arg-type]
-    out = decide_proposal(row['id'], 'approve', note='looks safe')
-    assert out['status'] == 'applied'
-    assert applied['kind'] == 'brain_config'
-    assert out['decisionNote'] == 'looks safe'
-
-
-def test_decide_reject_never_applies(proposals_dir, monkeypatch):
-    import app.services.harness_self_improve as hsi
-
-    def boom(_row):  # pragma: no cover — must never be called
-        raise AssertionError('applier ran on reject')
-
-    monkeypatch.setattr(hsi, '_apply_approved', boom)
-    row = save_proposal(**_sample())
-    out = decide_proposal(row['id'], 'reject')
-    assert out['status'] == 'rejected'
-
-
-def test_decide_twice_refused(proposals_dir):
-    row = save_proposal(**_sample())
-    decide_proposal(row['id'], 'dismiss')
-    with pytest.raises(ValueError, match='already'):
-        decide_proposal(row['id'], 'approve')
-
-
-def test_human_only_kinds_rejected_by_applier(proposals_dir):
-    row = save_proposal(
-        problem='loop stalls after 20 rounds',
-        evidence='stall telemetry in evals',
-        proposal='change the reflection window',
-        rollback='git revert',
+def test_proposal_roundtrip_and_ledger(hsi):
+    row = hsi.save_proposal(
+        problem='tool descriptions too long',
+        evidence='3 tools over 300ch',
+        proposal='trim them',
+        rollback='restore from git',
         kind='observation',
+        expected_metric='audit shows 0 over 300ch',
     )
-    out = decide_proposal(row['id'], 'approve')
-    assert out['status'] == 'apply_failed'
-    assert 'human-only' in str(out.get('applyResult', {}).get('error'))
+    assert row['status'] == 'open'
+    assert hsi.get_proposal(row['id']) is not None
+    listed = hsi.list_proposals(status='open')
+    assert any(p['id'] == row['id'] for p in listed)
+    ledger = hsi.read_ledger()
+    assert any(r.get('action') == 'file_proposal' for r in ledger)
 
 
-def test_approved_decision_lands_in_curation_ledger(proposals_dir, monkeypatch):
-    import app.services.harness_self_improve as hsi
+def test_proposal_validation_and_duplicate_guard(hsi):
+    with pytest.raises(ValueError):
+        hsi.save_proposal(problem='', evidence='e', proposal='p', rollback='r', kind='observation')
+    with pytest.raises(ValueError):
+        hsi.save_proposal(problem='p', evidence='e', proposal='p', rollback='', kind='observation')
+    with pytest.raises(ValueError):
+        hsi.save_proposal(problem='p', evidence='e', proposal='p', rollback='r', kind='bogus_kind')
+    hsi.save_proposal(problem='same problem here', evidence='e', proposal='x', rollback='r', kind='observation')
+    with pytest.raises(ValueError, match='already exists'):
+        hsi.save_proposal(
+            problem='same problem here ' + 'x' * 50,
+            evidence='different evidence',
+            proposal='y',
+            rollback='r',
+            kind='observation',
+        )
 
-    monkeypatch.setattr(hsi, '_apply_approved', lambda _r: {'ok': True})
-    row = save_proposal(**_sample(kind='skill_patch'))
-    decide_proposal(row['id'], 'approve')
-    from app.services.memory import curation_ledger
 
-    rows = curation_ledger.recent(limit=10)
-    assert any(r['action'] == 'approve_proposal' and r['actor'] == 'harness_self_improve' for r in rows)
+def test_decide_reject_records_status(hsi):
+    row = hsi.save_proposal(
+        problem='p', evidence='e', proposal='x', rollback='r', kind='observation'
+    )
+    decided = hsi.decide_proposal(row['id'], 'reject', note='not now')
+    assert decided['status'] == 'rejected'
+    assert decided['decisionNote'] == 'not now'
+    with pytest.raises(ValueError, match='already'):
+        hsi.decide_proposal(row['id'], 'approve')
 
 
-def test_introspection_reports_tools_and_open_proposals(proposals_dir):
-    # The registry is empty in a bare test process — boot the real
-    # registrations exactly like scripts/_audit_tool_registry does.
-    from app.services.tool_definitions import registerAll
+def test_skill_create_applier_is_visible_to_skill_service(hsi):
+    from app.services import skill_service
 
-    registerAll()
-    save_proposal(**_sample())
-    data = build_introspection()
-    assert data['tools']['total'] > 0
-    assert isinstance(data['tools']['buckets'], dict)
-    assert len(data['open_proposals']) == 1
-    text = format_introspection(data)
+    row = hsi.save_proposal(
+        problem='need a new skill',
+        evidence='missing coverage for X',
+        proposal='create it',
+        rollback='delete it',
+        kind='skill_create',
+        payload={
+            'name': 'harness-loop-test-skill',
+            'description': 'Created by the harness loop test.',
+            'body': '# Body\ndo things',
+            'trigger': 'when testing',
+        },
+    )
+    res = hsi.decide_proposal(row['id'], 'approve')
+    assert res['status'] == 'applied'
+    assert res['applyResult']['ok'] is True
+
+    skill = skill_service.get('harness-loop-test-skill')
+    assert skill is not None
+    assert skill.get('created_by') == 'harness-proposal'
+    assert 'do things' in str(skill.get('instructions'))
+
+
+def test_brain_config_requires_payload(hsi):
+    row = hsi.save_proposal(
+        problem='tweak loops', evidence='e', proposal='set 20 rounds',
+        rollback='reset', kind='brain_config', payload={},
+    )
+    res = hsi.decide_proposal(row['id'], 'approve')
+    assert res['status'] == 'apply_failed'
+    assert 'payload.patch' in res['applyResult']['error']
+
+
+def test_observation_kinds_never_apply(hsi):
+    row = hsi.save_proposal(
+        problem='flow map gap', evidence='e', proposal='document it',
+        rollback='n/a', kind='flow_map',
+    )
+    res = hsi.decide_proposal(row['id'], 'approve')
+    assert res['status'] == 'apply_failed'
+
+
+def test_introspection_includes_flow_map_and_registry(hsi):
+    from app.services import tool_registrations
+
+    tool_registrations.register_all()
+    data = hsi.build_introspection()
+    assert 'broken_registrations' in data['tools']
+    flow = data['flow_map']
+    assert flow['max_tool_rounds_per_turn'] >= 1
+    assert 'research' in flow['phases']
+    text = hsi.format_introspection(data)
     assert '<harness_introspection>' in text
-    assert 'harness_propose' in text
+    assert 'flow:' in text
 
 
-def test_introspection_hides_secrets_from_brain_config(proposals_dir):
-    data = build_introspection()
-    cfg = json.dumps(data.get('brain_config', {}))
-    assert 'apiKey' not in cfg
+def test_scheduled_pass_files_once_then_dedupes(hsi, monkeypatch: pytest.MonkeyPatch):
+    fake = {
+        'tools': {
+            'total': 5,
+            'buckets': {},
+            'descriptions_over_300ch': ['big(500ch)'],
+            'broken_registrations': ['ghost'],
+        },
+        'skills': {'total': 1, 'evolving': 0, 'descriptions_over_300ch': ['sk(400ch)']},
+    }
+    monkeypatch.setattr(hsi, 'build_introspection', lambda: fake)
+    assert hsi._run_scheduled_pass() == 1
+    assert hsi._run_scheduled_pass() == 0  # deduped against the open one
+    open_rows = hsi.list_proposals(status='open')
+    assert len(open_rows) == 1
+    assert open_rows[0]['kind'] == 'observation'
+
+
+def test_open_proposals_are_never_pruned(hsi, monkeypatch: pytest.MonkeyPatch):
+    ids: list[str] = []
+    for i in range(4):
+        row = hsi.save_proposal(
+            problem=f'problem {i}', evidence='e', proposal='x', rollback='r', kind='observation'
+        )
+        ids.append(row['id'])
+        # age the file so pruning order is deterministic
+        p = hsi._proposals_dir() / f"{row['id']}.json"
+        old = p.stat().st_mtime - (i + 1) * 100
+        import os
+
+        os.utime(p, (old, old))
+    # decide two → they become prunable; keep cap tiny via direct call
+    hsi.decide_proposal(ids[0], 'dismiss')
+    hsi.decide_proposal(ids[1], 'reject')
+    hsi._prune_old_proposals(keep=2)
+    remaining = {p['id'] for p in hsi.list_proposals()}
+    # The two OPEN proposals must survive even though they are oldest.
+    assert ids[2] in remaining and ids[3] in remaining

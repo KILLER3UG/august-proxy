@@ -15,8 +15,9 @@ def register_all() -> None:
         bulk_tools,
         desktop_tools,
         file_tools,
-        memory_tools,
+        harness_tools,
         office_tools,
+        session_tools,
         skill_tools,
         system_tools,
         web_tools,
@@ -27,11 +28,14 @@ def register_all() -> None:
     web_tools.register()
     desktop_tools.register()
     office_tools.register()
-    memory_tools.register()
+    session_tools.register()
     system_tools.register()
     agent_tools.register()
     skill_tools.register()
     bulk_tools.register()
+    # Harness self-inspection + proposals (read-only introspection; proposals
+    # are filed for human review — never applied by the model).
+    harness_tools.register()
     # Bridge tools (tool_search / tool_describe / tool_call) execute real
     # handlers — advertised when progressive disclosure activates.
     tool_bridges.register()

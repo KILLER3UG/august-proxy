@@ -20,18 +20,11 @@ from app.services.tool_registrations.file_tools import (  # noqa: F401
     _searchFiles,
     _writeFile,
 )
-from app.services.tool_registrations.memory_tools import (  # noqa: F401
-    _brainQuery,
-    _contextRead,
-    _factSearch,
-    _memorySearch,
-)
 
 # Re-export handlers imported by tests / external callers
 from app.services.tool_registrations.skill_tools import (  # noqa: F401
     _listSkills,
     _loadSkill,
-    _skillManage,
 )
 from app.services.tool_registrations.web_tools import (  # noqa: F401
     _webFetch,

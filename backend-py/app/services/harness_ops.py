@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -158,76 +157,6 @@ def search_harness(session_id: str, query: str, *, workspace: str = '') -> dict[
         if q in f"{spec.get('name')} {spec.get('workstream')}".lower():
             hits.append({'kind': 'specialist', **spec})
     return {'hits': hits[:40], 'query': query}
-
-
-def build_skill_payload_from_episode(session_id: str, workstream: str, seq: int | None = None) -> dict[str, Any]:
-    from app.services.workstreams import list_episodes
-
-    eps = list_episodes(session_id, workstream, limit=80)
-    if not eps:
-        raise ValueError('No episodes on this workstream')
-    ep = eps[-1]
-    if seq is not None:
-        hit = next((e for e in eps if int(e.get('seq') or 0) == int(seq)), None)
-        if hit:
-            ep = hit
-    slug = re.sub(r'[^a-z0-9]+', '-', workstream.lower()).strip('-')[:40] or 'lane'
-    name = f'lane-{slug}'
-    summary = as_str(ep.get('summary'), '').strip() or f'Workstream {workstream}'
-    nxt = as_str(ep.get('next'), '').strip()
-    arts = ep.get('artifacts') or []
-    skills = ep.get('skills') or []
-    desc = (summary[:57] + '…') if len(summary) > 58 else (summary or f'How to continue {workstream}')
-    body = '\n'.join(
-        [
-            f'# {workstream}',
-            '',
-            '## When to Use',
-            f'Continuing named workstream `{workstream}`.',
-            '',
-            '## Procedure',
-            summary,
-            f'Next: {nxt}' if nxt else '',
-            '',
-            '## Verification',
-            as_str(ep.get('unmet'), '') or 'Confirm acceptance from the last episode card.',
-            '',
-            '## Artifacts',
-            ', '.join(str(a) for a in arts[:12]) or '(none)',
-            '',
-            '## Related skills',
-            ', '.join(str(s) for s in skills[:8]) or '(none)',
-        ]
-    )
-    return {
-        'name': name,
-        'slug': slug,
-        'description': desc[:60],
-        'body': body,
-        'trigger': workstream,
-        'category': 'harness',
-        'createdBy': 'user',
-        'seq': int(ep.get('seq') or 0),
-    }
-
-
-def skill_from_episode(session_id: str, workstream: str, seq: int | None = None) -> dict[str, Any]:
-    from app.services.skill_service import SkillValidationError, createSkill
-
-    payload = build_skill_payload_from_episode(session_id, workstream, seq)
-    name = payload['name']
-    desc = payload['description']
-    body = payload['body']
-    trigger = payload['trigger']
-    category = payload['category']
-    created_by = payload['createdBy']
-    seq_num = payload['seq']
-    slug = payload['slug']
-    try:
-        return createSkill(name, desc, body, trigger=trigger, category=category, createdBy=created_by)
-    except SkillValidationError:
-        name = f'lane-{slug}-{seq_num}'
-        return createSkill(name, desc, body, trigger=trigger, category=category, createdBy=created_by)
 
 
 def set_routine_schedule(routine_id: str, schedule: str, paused: bool | None = None) -> dict[str, Any]:

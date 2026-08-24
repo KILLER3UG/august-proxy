@@ -29,7 +29,7 @@ describe('settings-registry audit', () => {
   });
 
   it('has 8 categories with no singleton columns', () => {
-    expect(SETTINGS_CATEGORIES).toHaveLength(8);
+    expect(SETTINGS_CATEGORIES).toHaveLength(7);
     const counts = SETTINGS_CATEGORIES.map((c) => ({
       id: c.id,
       count: sectionsForCategory(c.id).length,
@@ -125,8 +125,6 @@ describe('legacy alias resolution', () => {
     // resolveLegacyTab('skills') returns 'skills' (its own id).
     // Skills merge: the two old skill sections now resolve to the
     // unified `skills` section (id preserved in legacyAliases).
-    ['skill-curator',   'skills'],
-    ['skills-authoring','skills'],
     // observability aliases
     ['traffic-activity','observability'],
     ['overview',        'observability'],
@@ -154,10 +152,6 @@ describe('legacy alias resolution', () => {
     ['conversations',   'conversations-history'],
     ['chat-history',    'conversations-history'],
     ['session-history', 'conversations-history'],
-    // memory-knowledge aliases
-    ['memory',          'memory-knowledge'],
-    ['semantic-facts',  'memory-knowledge'],
-    ['vector-db',       'memory-knowledge'],
     // agents-automation aliases
     ['agents',          'agents-automation'],
     ['agent-permissions','agents-automation'],
