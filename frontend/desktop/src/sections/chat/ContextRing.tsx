@@ -151,8 +151,8 @@ export function ContextRing({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center cursor-pointer"
-        aria-label={`${clamped}% of context used. Click for breakdown.`}
+        className="inline-flex items-center gap-1 cursor-pointer"
+        aria-label={`${clamped}% of context used${cacheTotal > 0 ? `, ${Math.round(cacheRate * 100)}% avg cache hit` : ''}. Click for breakdown.`}
       >
         <svg width={size} height={size} className="-rotate-90 shrink-0">
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--dt-muted)" strokeWidth={stroke} />
@@ -168,6 +168,18 @@ export function ContextRing({
             style={{ transition: 'stroke-dasharray 0.3s ease, stroke 0.3s ease' }}
           />
         </svg>
+        {/* Average cache hit — always visible once the session has cached
+            input (the tooltip carries the full hit/total split). */}
+        {cacheTotal > 0 && (
+          <span
+            className="font-mono tabular-nums text-[10px] leading-none"
+            style={{ color: cacheColor }}
+            data-testid="context-cache-hit"
+            title="Average prompt-cache hit rate"
+          >
+            {Math.round(cacheRate * 100)}%
+          </span>
+        )}
       </button>
 
       {tooltipPos && createPortal(

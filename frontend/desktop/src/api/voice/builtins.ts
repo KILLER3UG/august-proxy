@@ -54,3 +54,19 @@ voiceCommandRegistry.register({
     voiceCommandEvents.emit({ type: 'goal', sessionId, args: args ?? '' });
   },
 });
+
+voiceCommandRegistry.register({
+  id: 'circuit',
+  triggers: ['circuit workbench', 'circuit mode', 'open circuit'],
+  slashCommand: '/circuit',
+  category: 'core',
+  description:
+    'Open (or "/circuit off") the circuit workbench — netlists, ngspice simulation, component search, and a 3D board panel in the sidebar',
+  // Posts /circuit straight to the workbench: the backend flips
+  // session.metadata.circuitMode and emits the `circuitMode` SSE event;
+  // makeStreamHandlers then pops the Circuit drawer panel. The model call
+  // is skipped for the command itself.
+  handler: ({ args }) => {
+    voiceCommandEvents.emit({ type: 'circuit', args: args ?? '' });
+  },
+});

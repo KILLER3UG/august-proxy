@@ -76,7 +76,6 @@ const JOB_META: Record<string, { title: string; hue: number; glyph: string }> = 
   result: { title: 'QA', hue: 90, glyph: 'Q' },
   plan: { title: 'Architect', hue: 230, glyph: 'A' },
   delegate: { title: 'Captain', hue: 300, glyph: 'P' },
-  verify: { title: 'Verifier', hue: 100, glyph: 'V' },
   inbound: { title: 'Reception', hue: 180, glyph: '↓' },
   workbench: { title: 'Builder', hue: 35, glyph: 'B' },
   outbound: { title: 'Dispatcher', hue: 330, glyph: '↑' },

@@ -1,5 +1,75 @@
 # August Proxy — Changelog
 
+## Unreleased (working tree)
+
+**Verifier enforcement removed** — the opt-in gate that withheld final answers
+until `update_state(phase='complete')` after a passing verification run is gone
+entirely (the "[VERIFIER STEER]" prompts no longer exist):
+
+- Backend: `_verifier_gated_emit`, `verifierEnforced` session flag, verifier
+  auto-run, receipts, force-release counters, benchmark extra-allowlist, and the
+  VERIFIER STEER/AUTO-RUN steer texts — all deleted. `update_state` keeps its
+  phase tracking; `run_command` still surfaces exit codes. The dormant
+  `verifier_gate_log` table stays (existing DBs keep working) but nothing
+  writes to it.
+- Frontend: verifier toggle UI, `verifierBlocked` banner handling, stream event
+  plumbing, notification/drawer references, and schemas removed.
+- Tests: `test_verifier_enforced_flag.py` / `test_verifier_gate_enforcement.py`
+  replaced by ungated-passthrough assertions in `test_workbench.py`.
+
+**Model picker rebuilt (OpenCode-style two-pane dropdown)** — clicking the
+model chip now shows a provider list on the left and, on hover/tap of a
+provider, its models on the right (active provider check-marked, context
+window per model). A **Free only** toggle (persisted in localStorage) filters
+both panes to free models; pin/unpin stays on every model row. Search flattens
+across providers with owner tags.
+
+**Working indicator speaks** — while August streams, the AUG wordmark is now
+backed by progressive sentences from live turn activity ("Reading src/app.py",
+"Running pytest -q …"): each finished step renders as its own line, newest at
+the bottom with animated ellipsis dots, older lines dimming away Claude-style.
+Idle state shows "Thinking…" with dots instead of a bare wordmark.
+
+**Reasoning renders Claude-style again** — settled thoughts were collapsing to
+a one-line summary because the collapse-thinking preference defaulted ON; it
+now defaults OFF so long reasoning uses the multi-line clamp + "Show more"
+(clock icon, fade) out of the box.
+
+**Artifact creation tools** (`create_pptx` / `render_chart` / `render_video` /
+`draw_circuit`) registered for real this round: python-pptx decks with bullets
++ speaker notes, matplotlib PNG charts (line/bar/pie/scatter/hist), MP4 video
+assembly via bundled ffmpeg (imageio), and schemdraw schematic rendering. All
+workspace-bound; JSON-string args tolerated.
+
+**Circuit workbench (/circuit)** — Proteus/KiCad-inspired circuit capability,
+gated behind the `/circuit` slash command:
+
+- `/circuit` flips `session.metadata.circuitMode`, emits a `circuitMode` SSE
+  event → the right drawer pops a dedicated **Circuit panel** (netlists,
+  schematics, 3D renders land there as clickable artifacts); `/circuit off`
+  closes it. While off, `circuit_*` tools are invisible to the model at both
+  catalog level and dispatch time.
+- Tools: netlist CRUD (`circuit_create/read/update/delete/list_netlists`,
+  workspace-bound .cir/.net/.ckt/.sp files), `circuit_simulate` (**ngspice**
+  batch engine — the same SPICE core Kicad's simulator uses; `.op/.dc/.tran/.ac`
+  decks run like physical bench measurements with parsed node measures),
+  `circuit_search_component` (offline datasheet library for classics — 7805,
+  NE555, 2N2222… — plus web datasheet links), `circuit_render_3d`
+  (KiCad-style mplot3d board preview PNG with footprint-style bodies).
+- ngspice missing → actionable install guidance instead of a dead error.
+- Research notes grounded against pfalstad/circuitjs1 (browser simulator,
+  active upstream), PySpice-org/PySpice (Python↔ngspice bindings — the natural
+  future upgrade path beyond raw batch runs), ahkab/ahkab (pure-Python SPICE).
+
+## Older
+
+**Avg cache hit rate now works for every provider shape** — the context ring's cache readout was silently reading 0% for most providers:
+
+- Anthropic-format streams: `message_start` (which carries input tokens + the `cache_read`/`cache_creation` split) was never consumed by the stream aggregator — only `message_delta` was read. The aggregator now merges both events field-by-field (`_absorb_usage`) instead of letting the later event clobber the earlier.
+- OpenAI-compatible gateways streaming the standard `usage.prompt_tokens_details.cached_tokens` (OpenAI, OpenRouter, most gateways): the field was dropped during stream aggregation, so every input token was booked as a cache miss and the ring pinned at 0%. Now preserved and honored.
+- Turn loop accepts the aggregated flat `cached_tokens` alongside DeepSeek-style `prompt_cache_hit/miss_tokens` and Anthropic's disjoint buckets (hit = `cache_read`; miss = plain input + cache writes).
+- Regression tests for all shapes in `tests/test_workbench.py::TestWorkbenchCacheSplitRecording`.
+
 ## 0.17.0 (2026-08-24)
 
 **Self-improving harness v2 — the model can inspect and improve its own harness, safely**
@@ -20,6 +90,20 @@
 
 - Clicking a hub in the left rail expands its sections inline beneath it (folder ▸ files pattern) instead of stacking pill tabs in the content pane. Deep links unchanged.
 - Rail bottom gains an Updates status row ("Up to date" / "Update available · vX.Y.Z") mirroring the model-dropdown affordance; click opens Updates.
+- Models hub expands to **8 direct tree children** (Models & Providers, All Models, Aliases, Fallback, Background & Reflection, Model Fleet, Live STT/TTS, Quotas) — each mounts its real component with its own page header; orphaned wrapper deleted; registry audit extended (50 checks, green).
+
+**Picker reference parity — anchoring, scrolling, effort list**
+
+- Model/effort dropdowns anchor by their **bottom edge** just above the composer chips (Zed/Cursor-style): height follows content, viewport-clamped with a min-height floor — short lists no longer launch deep into the transcript.
+- Both picker panes scroll internally again (`overflow-y-auto` had gone missing): tall provider/model lists scroll under a max-height cap instead of clipping; long model ids ellipsize inside the flyout.
+- Effort picker rebuilt as the reference's **vertical list** — Low/Medium/High/Max rows with ✓ on the active one (`menuitemradio`), Extended-thinking toggle as a divider-separated footer; provider rows bumped to roomy 13px metrics.
+
+**Viewer & drawer polish**
+
+- File/artifact viewer gains **⤢ fullscreen**: portaled full-window overlay sharing zoom state with the drawer canvas; Esc / ⤡ exits without closing the drawer underneath.
+- Workbench drawer header is now a **tab strip**: icon + label per open section, click to focus, ✕ closes just that tab, active underline; file-preview mode keeps its filename header.
+- Trajectory ledger restyled into compact **activity-log rows**: outcome icon (tone-tinted) → "Turn N" → meta (rounds · duration) → right-aligned tool/self-heal chips; live turns get a pulsing marker; prompt previews moved to hover tooltips.
+- Thinking-block manual expand/collapse **survives mid-turn streaming gaps** — only a genuine final-output block resets it (regression-tested, incl. a source-level guard against the old `!streaming` reset effect).
 
 **Chat identity & composer polish**
 
@@ -31,6 +115,7 @@
 
 **Fixes along the way**
 
+- Circuit tools classified for prompt buckets + policy parity (`circuit_create/update_netlist` + `render_3d` → write, `circuit_delete_netlist` → destructive, `circuit_simulate` → shell like `simulate_circuit`, lookups → read) and mirrored into the parity-test oracle (which had also drifted on `analyze_media`). Wire-format tests now skip `/circuit`-gated tools on the default surface and positively assert they appear when circuit mode is ON.
 - mypy fully clean across backend (265 files) — delegation-config narrowing errors fixed at their root in subagent router + orchestrator instead of silencing.
 - `background_review_service` restored so `/api/config/background-review` and the Background & Reflection tab work again post-refactor.
 

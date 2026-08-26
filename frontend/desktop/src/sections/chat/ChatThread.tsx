@@ -1326,9 +1326,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       selectedModel={selectedModel}
       setSelectedModel={setSelectedModel}
       userSelectedRef={userSelectedRef}
-      onRefreshModels={() => {
-        void handleRefreshModels();
-      }}
       onEditModels={() => setShowModelVisibility(true)}
       onArenaLaunch={launchArena}
       onDebateLaunch={launchDebate}

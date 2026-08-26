@@ -243,9 +243,6 @@ async def createSession(request: Request):
         workspacePath=body.get('workspacePath', '') or body.get('workspace_path', ''),
         sandboxMode=body.get('sandboxMode', '') or body.get('sandbox_mode', ''),
         sandboxNetwork=body.get('sandboxNetwork') if 'sandboxNetwork' in body else body.get('sandbox_network'),
-        verifierEnforced=body.get('verifierEnforced')
-        if 'verifierEnforced' in body
-        else body.get('verifier_enforced'),
     )
     return session.toDict()
 
@@ -287,9 +284,6 @@ async def createSessionDirect(request: Request):
         workspacePath=body.get('workspacePath', '') or body.get('workspace_path', ''),
         sandboxMode=body.get('sandboxMode', '') or body.get('sandbox_mode', ''),
         sandboxNetwork=body.get('sandboxNetwork') if 'sandboxNetwork' in body else body.get('sandbox_network'),
-        verifierEnforced=body.get('verifierEnforced')
-        if 'verifierEnforced' in body
-        else body.get('verifier_enforced'),
     )
     return session.toDict()
 
@@ -1639,73 +1633,6 @@ async def sessionContext(sessionId: str):
     return {'context': get_memory(f'session_context:{sessionId}')}
 
 
-@router.post('/sessions/{sessionId}/verify-run')
-async def verifyRun(sessionId: str, request: Request):
-    """Run the verifier's verification command for the user (B6).
-
-    Executes ``body.command`` (default: the session's stated
-    ``verification_command``) through the sandboxed tool executor, records
-    the output as a verifier receipt (same contract as the tool loop), and
-    steers the model to finish the gate — ``update_state(phase='complete')``
-    — with the fresh output in hand. One click from the amber banner.
-    """
-    from app.services.workbench.workbench import (
-        _executeTool,
-        enqueueUserMessage,
-        get_workbench_session,
-    )
-
-    body: dict = {}
-    try:
-        if request.headers.get('content-type', '').startswith('application/json'):
-            raw = await request.json()
-            if isinstance(raw, dict):
-                body = raw
-    except Exception:
-        body = {}
-    command = (body.get('command') or '').strip()
-    session = get_workbench_session(sessionId)
-    if not session:
-        raise HTTPException(status_code=404, detail='Session not found')
-    if not command:
-        state = getattr(session, '_execution_state', None) or {}
-        command = as_str(state.get('verification_command'), '').strip() if isinstance(state, dict) else ''
-    if not command:
-        return {
-            'status': 'error',
-            'error': 'No verification command on record — the model never stated one.',
-        }
-    try:
-        result = await _executeTool('run_command', {'command': command}, session)
-    except Exception as exc:
-        return {'status': 'error', 'error': f'Command execution failed: {exc}'}
-    output = as_str(result, '')[-3000:]
-    # Record as a verifier receipt so the gate can pass on this run.
-    try:
-        receipts = getattr(session, '_verification_receipts', None)
-        if receipts is None:
-            receipts = []
-            setattr(session, '_verification_receipts', receipts)
-        receipts.append({'name': 'run_command', 'content': output})
-        if len(receipts) > 12:
-            del receipts[: len(receipts) - 12]
-    except Exception:
-        pass
-    # Steer the model to finish the gate with the fresh output.
-    try:
-        enqueueUserMessage(
-            sessionId,
-            '[VERIFIER RUN] The verification command was run for you with this output:\n'
-            f'{output}\n'
-            "If the output shows the checks passed, call update_state(phase='complete') "
-            'to release the final answer.',
-            kind='steer',
-        )
-    except Exception:
-        pass
-    return {'status': 'ok', 'output': output}
-
-
 @router.post('/sessions/{sessionId}/branch')
 async def branchSession(sessionId: str, request: Request):
     """Fork a session into a new branch (optional upToIndex of source messages)."""
@@ -1877,40 +1804,6 @@ async def setGuardMode(request: Request):
             sessionId=sessionId,
             guardMode=session.guardMode,
             agentId=session.agentId,
-        )
-        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
-    except Exception:
-        pass
-    return session.toDict()
-
-
-@router.post('/verifier')
-async def setVerifierEnforced(request: Request):
-    """Toggle opt-in verifier enforcement on a workbench session.
-
-    When on, the final answer is withheld until the model calls
-    ``update_state(phase='complete')`` and the verifier gate passes.
-    """
-    from datetime import datetime, timezone
-
-    from app.services.workbench.sessions import save_sessions
-
-    body = await request.json()
-    sessionId = body.get('sessionId', '')
-    verifierEnforced = bool(body.get('verifierEnforced', False))
-    session = wb.getWorkbenchSession(sessionId)
-    if not session:
-        raise HTTPException(status_code=404, detail='Session not found')
-    session.verifierEnforced = verifierEnforced
-    session.updatedAt = datetime.now(timezone.utc).isoformat()
-    save_sessions()
-    try:
-        from app.services.realtime_bus import emit_invalidate, emit_realtime
-
-        emit_realtime(
-            'session.updated',
-            sessionId=sessionId,
-            verifierEnforced=session.verifierEnforced,
         )
         emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
     except Exception:

@@ -56,8 +56,8 @@ export interface ChatThreadComposerProps {
   stop: () => void;
   /** Optional: lets the composer toolbar append a synthetic handoff-notice card. */
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
-  /** Creates the backend workbench session on demand (used by the verifier
-   *  toggle on fresh chats where no session exists before the first send). */
+  /** Creates the backend workbench session on demand (before the first
+   *  send on a fresh chat). */
   ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   queuedMessages: QueuedUserMessage[];
   workbenchSession: WorkbenchSession | null;
@@ -84,7 +84,6 @@ export interface ChatThreadComposerProps {
   selectedModel: ModelItem | null;
   setSelectedModel: Dispatch<SetStateAction<ModelItem | null>>;
   userSelectedRef: MutableRefObject<string | null>;
-  onRefreshModels: () => void;
   onEditModels: () => void;
   /** Arena ("ask in parallel"): run the prompt on 2–3 models in forks. */
   onArenaLaunch?: (targets: ModelItem[], prompt: string) => void;
@@ -149,7 +148,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     selectedModel,
     setSelectedModel,
     userSelectedRef,
-    onRefreshModels,
     onEditModels,
     onArenaLaunch,
     onDebateLaunch,
@@ -487,7 +485,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}
           userSelectedRef={userSelectedRef}
-          onRefreshModels={onRefreshModels}
           onEditModels={onEditModels}
           effort={effort}
           setEffort={setEffort}

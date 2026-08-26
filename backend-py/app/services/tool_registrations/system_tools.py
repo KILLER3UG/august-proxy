@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import sys
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
@@ -131,8 +130,7 @@ async def _writeScratchpad(text: str) -> str:
         if not session:
             return 'Error: no active workbench session.'
         # Merge with the current execution state — rewriting from scratch
-        # silently drops keys like verification_command, breaking the
-        # verifier auto-run on the next turn.
+        # silently drops keys the model set on a previous update_state call.
         prevState = as_dict(getattr(session, '_execution_state', None), {})
         state: dict[str, object] = {
             'phase': as_str(prevState.get('phase'), 'research'),
@@ -187,228 +185,6 @@ async def _summarizeSession(include_scratchpad: bool = True) -> str:
         return f'Error summarizing session: {exc}'
 
 
-_EXIT_CODE_RE = re.compile(r'exit code:\s*(-?\d+)', re.IGNORECASE)
-# Order matters: explicit clean-run signals first, then failure markers, then
-# weak pass markers — so "2 failed, 10 passed" fails and "0 failed" passes.
-_STRONG_PASS_MARKERS = ('0 failed', '0 failures', 'no failures', 'all checks passed', 'build succeeded')
-_FAIL_MARKERS = ('failed', 'failure', 'traceback', 'error:', 'assertionerror')
-_WEAK_PASS_MARKERS = ('passed', '✓')
-
-
-def _normalizeCommand(cmd: str) -> str:
-    """Normalize a command for matching (whitespace + case insensitive)."""
-    return ' '.join((cmd or '').strip().lower().split())
-
-
-def _verificationVerdict(receipts: list[object], expected_command: str = '') -> tuple[str, str]:
-    """Judge this turn's command receipts for the verifier gate.
-
-    Returns (verdict, detail): 'pass' | 'fail' | 'unclear' | 'none'.
-    Most recent receipt wins on exit codes; unclear output falls through to
-    older receipts, and pure-unclear history is given the benefit of the
-    doubt (the gate must not strand tasks whose verification output is
-    unconventional).
-
-    When ``expected_command`` is set (the declared ``verification_command``),
-    receipts from OTHER commands are skipped — ``echo ok`` must not satisfy
-    the gate.
-    """
-    if not receipts:
-        return ('none', '')
-    matched_declared = False
-    saw_content = False
-    for receipt in reversed(receipts):
-        text = as_str(as_dict(receipt).get('content'), '').lower() if isinstance(receipt, dict) else ''
-        if not text:
-            continue
-        saw_content = True
-        if expected_command:
-            cmd = as_str(as_dict(receipt).get('command'), '') if isinstance(receipt, dict) else ''
-            if _normalizeCommand(cmd) != _normalizeCommand(expected_command):
-                continue
-            matched_declared = True
-        name = as_str(as_dict(receipt).get('name'), 'command') if isinstance(receipt, dict) else 'command'
-        codes = _EXIT_CODE_RE.findall(text)
-        if codes:
-            # The sandbox appends "Exit code: N" as the LAST line; take the
-            # final occurrence so a command's own stdout text ("exit code: 1")
-            # cannot flip the verdict.
-            code = int(codes[-1])
-            if code == 0:
-                return ('pass', f'{name} exited 0')
-            return ('fail', f'{name} exited {code}')
-        if any(marker in text for marker in _STRONG_PASS_MARKERS):
-            return ('pass', f'clean-run markers in {name} output')
-        if any(marker in text for marker in _FAIL_MARKERS):
-            return ('fail', f'failure markers in {name} output')
-        if any(marker in text for marker in _WEAK_PASS_MARKERS):
-            return ('pass', f'pass markers in {name} output')
-    if expected_command and not matched_declared:
-        # A verification command was DECLARED but no receipt came from it —
-        # the gate must not give the benefit of the doubt to other commands.
-        return ('none', 'no receipt from the declared verification command')
-    if not saw_content:
-        # Every receipt is empty — a command that produced nothing must not
-        # clear the gate (previously fell through to 'unclear' → pass).
-        return ('none', 'no usable command output recorded this turn')
-    return ('unclear', '')
-
-
-def _messageText(msg: dict[str, object], cap: int = 4000) -> str:
-    """Extract plain text from a session message (str or block list)."""
-    content = msg.get('content', '')
-    if isinstance(content, str):
-        return content[:cap]
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, dict) and as_str(block.get('type'), '') == 'text':
-                parts.append(as_str(block.get('text'), ''))
-        return '\n'.join(parts)[:cap]
-    return ''
-
-
-def _parseReviewVerdict(text: str) -> str:
-    """Extract PASS/FAIL from a reviewer reply.
-
-    Requires the FIRST token to be PASS or FAIL (case-insensitive) — the old
-    ``startswith('FAIL')`` accepted "It does not FAIL." as a pass and only
-    caught "FAILing test in test_foo" by luck.
-    """
-    stripped = (text or '').strip()
-    if not stripped:
-        return 'unclear'
-    first = stripped.split(None, 1)[0]
-    upper = first.upper()
-    if upper.startswith('PASS'):
-        return 'pass'
-    if upper.startswith('FAIL'):
-        return 'fail'
-    return 'unclear'
-
-
-async def _reviewerCritique(session: object) -> tuple[bool, str]:
-    """One-shot independent reviewer critique of the final answer.
-
-    Opt-in (``AUGUST_VERIFIER_REVIEWER=1``): after the deterministic gate
-    passes, a cheap review model may veto the completion if the answer does
-    not satisfy the goal. The reviewer judges against REAL evidence — the
-    verification command receipts recorded this turn — not just the answer
-    text. Any failure to run falls back to allowing — the deterministic gate
-    already passed. Memoized per turn so repeated
-    ``update_state(phase='complete')`` calls do not re-pay the call.
-    """
-    try:
-        if getattr(session, '_reviewer_checked', False):
-            return (True, '')
-        import os
-
-        if os.environ.get('AUGUST_VERIFIER_REVIEWER') != '1':
-            return (True, '')
-        from app.providers import resolver as providerResolver
-        from app.services.workbench.providers import make_review_llm_client
-
-        provider = providerResolver.resolve(as_str(getattr(session, 'provider', '') or ''))
-        reviewer = make_review_llm_client(provider, '')
-        if reviewer is None:
-            setattr(session, '_reviewer_checked', True)
-            return (True, '')
-        msgs = as_list(getattr(session, 'messages', None), [])
-        goal = ''
-        answer = ''
-        for m in reversed(msgs):
-            if not isinstance(m, dict):
-                continue
-            role = as_str(m.get('role'), '')
-            if role == 'assistant' and not answer:
-                answer = _messageText(m)
-            elif role == 'user' and not goal:
-                goal = _messageText(m, 2000)
-            if answer and goal:
-                break
-        if not answer:
-            setattr(session, '_reviewer_checked', True)
-            return (True, '')
-        # Evidence: the verification command receipts recorded this turn
-        # (name/command/content tail). Without them the reviewer could only
-        # judge the answer's prose — a plausible-sounding answer whose tests
-        # actually failed would pass.
-        receipts = as_list(getattr(session, '_verification_receipts', None), [])
-        receiptLines: list[str] = []
-        for r in receipts[-4:]:
-            if not isinstance(r, dict):
-                continue
-            cmd = as_str(r.get('command'), '')
-            content = as_str(r.get('content'), '')[:1200]
-            if cmd:
-                receiptLines.append(f'$ {cmd}\n{content}')
-            elif content:
-                receiptLines.append(content)
-        receiptText = ''
-        if receiptLines:
-            receiptText = '\n\nVERIFICATION COMMAND OUTPUT:\n' + '\n---\n'.join(receiptLines)
-            receiptText = receiptText[:5000]
-
-        systemPrompt = (
-            'You are a strict correctness reviewer for an AI coding agent. '
-            'The agent must satisfy the user goal and its verification '
-            '(tests/lint/build) must genuinely pass. '
-            'FAIL if: the answer does not address the goal, claims success while the '
-            'verification output shows failures, or leaves a stated blocker unresolved. '
-            'Reply with exactly PASS or FAIL as the first word, then one short line explaining why.'
-        )
-
-        async def _ask() -> str:
-            return (
-                await reviewer(
-                    [
-                        {'role': 'system', 'content': systemPrompt},
-                        {
-                            'role': 'user',
-                            'content': (
-                                f'GOAL:\n{goal}\n\nFINAL ANSWER:\n{answer}\n{receiptText}\n\n'
-                                'Does this answer satisfy the goal, with the verification passing? '
-                                'Reply with exactly PASS or FAIL as the first word, then one short line.'
-                            ),
-                        },
-                    ]
-                )
-                or ''
-            ).strip()[:300]
-
-        reviewText = await _ask()
-        verdict = _parseReviewVerdict(reviewText)
-        if verdict == 'unclear':
-            # The model ignored the exact-format instruction — re-prompt once
-            # with a stricter demand before falling back to allow.
-            retry = (
-                await reviewer(
-                    [
-                        {'role': 'system', 'content': systemPrompt},
-                        {
-                            'role': 'user',
-                            'content': (
-                                f'GOAL:\n{goal}\n\nFINAL ANSWER:\n{answer}\n{receiptText}\n\n'
-                                'Your previous reply did not start with PASS or FAIL. '
-                                'Reply with exactly one word — PASS or FAIL — then one short line.'
-                            ),
-                        },
-                    ]
-                )
-                or ''
-            ).strip()[:300]
-            retryVerdict = _parseReviewVerdict(retry)
-            if retryVerdict != 'unclear':
-                reviewText = retry
-                verdict = retryVerdict
-        setattr(session, '_reviewer_checked', True)
-        if verdict == 'fail':
-            return (False, reviewText)
-        return (True, reviewText)
-    except Exception:
-        return (True, '')
-
-
 async def _setAgentMode(mode: str = '') -> str:
     """Switch the session's agent mode.
 
@@ -436,7 +212,7 @@ async def _setAgentMode(mode: str = '') -> str:
 
 
 async def _updateState(
-    phase: str = '', step: int = 1, completed: str = '', blockers: str = '', verificationCommand: str = ''
+    phase: str = '', step: int = 1, completed: str = '', blockers: str = '', **_extra: object
 ) -> str:
     """Track execution state across a multi-step task.
 
@@ -444,6 +220,10 @@ async def _updateState(
     State is stored in the session and injected as <execution_state> in
     Tier 3 on every turn. Call this when you start, progress through, or
     complete a phase of work.
+
+    ``**_extra`` absorbs legacy/decorative args (``note``,
+    ``verificationCommand``) so a stale caller payload never TypeErrors
+    the dispatch.
     """
     from app.services.workbench.workbench import get_session, updateSessionState
 
@@ -454,78 +234,14 @@ async def _updateState(
         prevState = getattr(session, '_execution_state', None)
         currentPhase = as_str(as_dict(prevState).get('phase'), 'research') if prevState else 'research'
         targetPhase = (phase or currentPhase).strip().lower()
-        # Validate against the known phase set — a typo'd phase (e.g.
-        # `completed`) would otherwise skip the verifier gate below while
-        # leaving `phase != 'complete'`, stranding the final answer.
+        # Validate against the known phase set — a typo'd phase would
+        # otherwise silently corrupt the state the next turn reads.
         _VALID_PHASES = ('research', 'plan', 'implement', 'review', 'complete')
         if targetPhase not in _VALID_PHASES:
             return (
                 f'Error: unknown phase "{targetPhase}". Valid phases: {", ".join(_VALID_PHASES)}. '
                 'Use update_state to move research → plan → implement → review → complete.'
             )
-        # Verifier gate (enforced, not honor-system): entering review/complete
-        # requires a command run THIS turn whose output looks like a pass.
-        # Receipts are recorded by the workbench tool loop for command tools
-        # and cleared at turn start.
-        #
-        # Gate triggers:
-        #   • entering `review` from an earlier phase (research/plan/implement)
-        #   • entering `complete` from anything other than `complete` itself —
-        #     this closes the same-turn bypass where `review → complete` in one
-        #     turn skipped re-verification (the model could claim completion
-        #     without a fresh passing run).
-        # No-op updates within the same gated phase (e.g. `review → review` to
-        # bump step/blockers) are NOT re-gated.
-        entering_review = targetPhase == 'review' and currentPhase not in ('review', 'complete')
-        entering_complete = targetPhase == 'complete' and currentPhase != 'complete'
-        if entering_review or entering_complete:
-            # When a verification command was DECLARED, only receipts from that
-            # exact command satisfy the gate (`echo ok` cannot stand in for the
-            # declared test command).
-            declaredCmd = as_str(as_dict(prevState).get('verification_command'), '') if prevState else ''
-            verdict, detail = _verificationVerdict(
-                as_list(getattr(session, '_verification_receipts', None), []),
-                expected_command=declaredCmd,
-            )
-            # Enrich detail with expected command + last receipt exit code when available
-            _detail2 = detail
-            if declaredCmd and declaredCmd not in _detail2:
-                _detail2 = f"{detail} (expected: {declaredCmd})" if detail else f"expected: {declaredCmd}"
-            try:
-                _receipts = as_list(getattr(session, '_verification_receipts', None), [])
-                if _receipts:
-                    _last = _receipts[-1] if isinstance(_receipts[-1], dict) else {}
-                    _rc_txt = str(_last.get('content') or '')
-                    import re as _re2
-                    _m = _re2.search(r'exit code:\s*(-?\d+)', _rc_txt, _re2.I)
-                    if _m and _m.group(1) not in _detail2:
-                        _detail2 = f"{_detail2} [exit code: {_m.group(1)}]" if _detail2 else f"exit code: {_m.group(1)}"
-            except Exception:
-                pass
-            if verdict == 'none':
-                return (
-                    f'Verifier gate: no command was run this turn. Run the relevant test / lint / '
-                    f'build command first (via run_command), confirm it passes, then call '
-                    f'update_state again. ({_detail2})' if _detail2 else
-                    'Verifier gate: no command was run this turn. Run the relevant test / lint / '
-                    'build command first (via run_command), confirm it passes, then call '
-                    'update_state again.'
-                )
-            if verdict == 'fail':
-                return (
-                    f'Verifier gate: the verification run did not pass ({_detail2}). Fix the '
-                    'failures, re-run the command, then call update_state again.'
-                )
-            if targetPhase == 'complete' and verdict in ('pass', 'unclear'):
-                # Reviewer critique (opt-in, one-shot): an independent model may
-                # veto a completion whose answer does not satisfy the goal.
-                allow, reviewDetail = await _reviewerCritique(session)
-                if not allow:
-                    return (
-                        'Verifier gate: the reviewer model found problems with the answer '
-                        f'({reviewDetail}). Fix them, re-run verification, then call '
-                        "update_state(phase='complete') again."
-                    )
         completedList = [c.strip() for c in completed.split('\n') if c.strip()] if completed else []
         blockersList = [b.strip() for b in blockers.split('\n') if b.strip()] if blockers else []
         state: dict[str, object] = {
@@ -534,8 +250,6 @@ async def _updateState(
             'completed': completedList,
             'blockers': blockersList,
         }
-        if verificationCommand:
-            state['verification_command'] = verificationCommand
         ok = await updateSessionState(session, executionState=state)
         if not ok:
             return 'Error: state update timed out under concurrent writes — retry the call.'
@@ -584,10 +298,6 @@ def register() -> None:
                 },
                 'step': {'type': 'integer', 'description': 'Step number within the current phase.'},
                 'note': {'type': 'string', 'description': 'Short free-form note about progress.'},
-                'verificationCommand': {
-                    'type': 'string',
-                    'description': 'Command that verifies the work (required to pass the verifier gate on complete).',
-                },
             },
             'required': ['phase'],
         },

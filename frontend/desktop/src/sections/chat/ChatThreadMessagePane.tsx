@@ -264,16 +264,17 @@ export function ChatThreadMessagePane({
         </AnimatePresence>
       </div>
 
-      {/* AUG — anchored above the composer in a fixed-height slot with opacity transition to avoid layout reflow when streaming completes. */}
+      {/* AUG — anchored above the composer; the slot grows with the live
+          strip (phase chip + sentence stack) and fades when streaming ends. */}
       <div
         className={cn(
           'mx-auto w-full max-w-3xl px-4 shrink-0 transition-[height,opacity] duration-200',
-          streaming ? 'h-7 opacity-100 pointer-events-auto' : 'h-0 overflow-hidden opacity-0 pointer-events-none',
+          streaming ? 'h-auto opacity-100 pointer-events-auto' : 'h-0 overflow-hidden opacity-0 pointer-events-none',
         )}
         aria-hidden={!streaming}
       >
         <div className="pt-1" data-testid="aug-working-indicator">
-          <WorkingIndicator />
+          <WorkingIndicator sessionId={sessionId} />
         </div>
       </div>
 

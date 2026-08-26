@@ -1,7 +1,7 @@
 /* ── NotificationBell — unread badge + dropdown panel (C1) ────────────── */
 
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Bell, CheckCheck, Route, ShieldAlert, Swords, Trash2 } from 'lucide-react';
+import { AlertTriangle, Bell, CheckCheck, Route, Swords, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   useNotificationsStore,
@@ -12,7 +12,6 @@ import {
 
 const KIND_ICONS: Record<NonNullable<AppNotification['kind']>, typeof Bell> = {
   error: AlertTriangle,
-  verifier: ShieldAlert,
   arena: Swords,
   routing: Route,
   info: Bell,
@@ -99,7 +98,7 @@ export function NotificationBell() {
           </div>
           {items.length === 0 ? (
             <p className="px-1.5 py-4 text-center text-[11px] text-muted-foreground">
-              No notifications yet — failures, verifier gates, and arena lanes land here.
+              No notifications yet — failures and arena lanes land here.
             </p>
           ) : (
             <ul className="space-y-0.5">
@@ -117,7 +116,6 @@ export function NotificationBell() {
                       className={cn(
                         'size-3.5 shrink-0 mt-0.5',
                         n.kind === 'error' && 'text-rose-400',
-                        n.kind === 'verifier' && 'text-amber-400',
                         n.kind === 'arena' && 'text-primary',
                       )}
                     />

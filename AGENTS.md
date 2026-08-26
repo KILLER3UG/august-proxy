@@ -37,12 +37,12 @@ format and is honored by workbench chat, the Test button, Live/BTW, and the
 models reached via `/v1/chat/completions`). See `docs/TROUBLESHOOTING.md` and
 `docs/CONFIGURATION.md`.
 
-**Verifier enforcement is opt-in per session** (`verifierEnforced`, composer
-shield toggle / session creation). While on, the final answer is withheld
-until `update_state(phase='complete')` passes; a `verifierBlocked` SSE event
-drives the amber banner. Casual chat (flag off) is unaffected. `run_command`
-always surfaces the exit code (zero included) so the verifier gate judges
-receipts deterministically.
+**Verifier gate: REMOVED (2026-08-24).** The opt-in `verifierEnforced`
+final-answer gate, the `/api/workbench/verifier` endpoints, and the
+`AUGUST_VERIFIER_REVIEWER` critic were removed by user request — answers are
+never withheld. `update_state(phase=…)` survives purely as progress
+tracking, and `run_command` still surfaces exit codes (zero included) in
+results.
 
 **Harness budgets & self-correction (0.12.55)** — `MAX_MANAGED_TOOL_ROUNDS`
 defaults to 25 (brain-config `maxWorkbenchToolLoops` overrides); a turn whose
@@ -64,8 +64,7 @@ session: `chat` blocks tool calls (text only), `agent` is native tool calling
 (default), `code` executes a fenced ```python block through the existing
 sandboxed `run_command` with a workspace-bound tool API (`read_file`,
 `write_file`, `run_command`, `list_files` — see
-`app/services/workbench/code_runner.py`). The verifier gate can add an
-independent one-shot reviewer critique when `AUGUST_VERIFIER_REVIEWER=1`.
+`app/services/workbench/code_runner.py`).
 `/v1/responses` supports `stream: true` via upstream-native pass-through.
 Loop-level golden evals live in `tests/test_harness_evals.py` (scripted-model
 scenarios against the real loop); results feed `GET /api/brain/harness/evals`.

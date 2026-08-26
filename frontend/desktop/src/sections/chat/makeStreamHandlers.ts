@@ -45,6 +45,11 @@ import { resolveUiSessionId, resolveWorkbenchSessionId } from './stream/session-
 import { advanceSessionSubscriberLastSeq } from './stream/session-subscriber';
 import { setSubagentProposal } from './subagent-proposals-store';
 import { pushNotification } from '@/store/notifications';
+import { publishExecutionState } from '@/store/liveActivity';
+import {
+  addRightDrawerSection,
+  closeRightDrawerSection,
+} from '@/components/shell/RightDrawerState';
 import { toast } from 'sonner';
 import { useArenaStore } from './arena/arena-store';
 import { isDebateSession, debateTurnDone } from './debate/debate-store';
@@ -507,18 +512,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
-    onVerifierBlocked: ({ message, evidence }) => {
-      // Opt-in verifier enforcement: final answer withheld until the model
-      // passes update_state(phase='complete'). Rendered as an amber notice
-      // with the gate evidence (phase, blockers, verification command).
-      streamBlocks = appendBlockEvent(streamBlocks, {
-        type: 'verifierBlocked',
-        content: message,
-        verifierEvidence: evidence,
-      });
-      pushNotification('Verification required', message, 'verifier');
-      scheduleUpdate();
-    },
     onPlanProposed: ({ plan }) => {
       if (!isNonEmptyPlan(plan)) return;
       setWorkbenchSession((prev) => {
@@ -566,6 +559,12 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
           agentId: agentId ?? prev.agentId,
         };
       });
+      scheduleUpdate();
+    },
+    onExecutionState: ({ phase, step }) => {
+      // update_state transition — the inline working strip shows the
+      // phase/step chip while the turn streams.
+      publishExecutionState(resolveUiSessionId(sessionId), phase, step);
       scheduleUpdate();
     },
     onBrowserAction: (data) => {
@@ -738,6 +737,18 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // Recurring-task daemon (B7): due reminder → bell + toast.
       pushNotification('Reminder', message, 'info');
       toast.message('⏰ Reminder', { description: message });
+      scheduleUpdate();
+    },
+    onCircuitMode: ({ active, message }) => {
+      // /circuit gate ack: pop (or close) the Circuit panel in the right
+      // drawer and surface the notice inline as a system block.
+      if (active) {
+        addRightDrawerSection('circuit');
+      } else {
+        closeRightDrawerSection('circuit');
+      }
+      const info = `⚡ ${message || (active ? 'Circuit workbench opened.' : 'Circuit workbench closed.')}`;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: info, system: true });
       scheduleUpdate();
     },
     onDone: (data) => {

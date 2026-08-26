@@ -141,6 +141,22 @@ class TestSystemPrompt:
         assert 'August' in prompt
         assert len(prompt) > 50
 
+    def testIntakeManifest(self):
+        """The <intake> manifest enumerates the context so the model can
+        self-describe its intake (role, notes, workspace, session, date)."""
+        import re
+        from datetime import datetime
+
+        session = createWorkbenchSession(guardMode='full')
+        prompt = buildSystemPrompt(session)
+        assert '<intake>' in prompt and '</intake>' in prompt
+        assert 'Context manifest' in prompt
+        assert '- System prompt:' in prompt
+        assert '- Session state:' in prompt
+        # Today's date appears (ISO yyyy-mm-dd).
+        today = datetime.now().strftime('%Y-%m-%d')
+        assert f'- Date: {today}' in prompt
+
     def testPromptWithGoal(self):
         session = createWorkbenchSession()
         setWorkbenchGoal(session, 'Build feature')
@@ -674,3 +690,120 @@ class TestOpenaiWorkbenchThinkingToggle:
         assert len(recorded) == 1
         rec = recorded[0]
         assert rec['context_tokens'] == 4823
+
+
+class TestWorkbenchCacheSplitRecording:
+    """Avg cache hit rate (context ring): record_usage must receive the
+    universal cache split from every provider wire shape."""
+
+    @staticmethod
+    def _capture_record_usage(monkeypatch):
+        import app.services.memory_store as memoryStore
+
+        recorded: list[dict] = []
+
+        def fakeRecordUsage(
+            sessionId, model, inputTokens=0, outputTokens=0, contextTokens=0,
+            cacheHitTokens=0, cacheMissTokens=0,
+        ):
+            recorded.append(
+                {
+                    'cache_hit_tokens': cacheHitTokens,
+                    'cache_miss_tokens': cacheMissTokens,
+                    'input_tokens': inputTokens,
+                }
+            )
+            return 1
+
+        monkeypatch.setattr(memoryStore, 'record_usage', fakeRecordUsage)
+        return recorded
+
+    async def testAnthropicMessageStartCacheSplit(self, monkeypatch):
+        """Anthropic reports the cache split on message_start — the aggregator
+        must merge it with message_delta's output instead of dropping either."""
+        from app.services.workbench import workbench as wb
+        from app.services.workbench.workbench import createWorkbenchSession, sendWorkbenchMessageStream
+
+        session = createWorkbenchSession(provider='anthropic', guardMode='full')
+
+        class _FakeClient:
+            def resolveApiKey(self):
+                return 'test-key'
+
+            async def messages_stream(self, body):
+                yield {
+                    '_event_type': 'message_start',
+                    'message': {'usage': {'input_tokens': 9000, 'cache_read_input_tokens': 8000, 'cache_creation_input_tokens': 500}},
+                }
+                yield {'_event_type': 'content_block_start', 'content_block': {'type': 'text', 'text': ''}}
+                yield {'_event_type': 'content_block_delta', 'delta': {'type': 'text_delta', 'text': 'done'}}
+                yield {'_event_type': 'content_block_stop'}
+                # message_delta omits input_tokens entirely (Anthropic shape).
+                yield {'_event_type': 'message_delta', 'usage': {'output_tokens': 40}}
+
+        import app.providers.clients as clients
+
+        monkeypatch.setattr(clients, 'getClient', lambda provider: _FakeClient())
+        recorded = self._capture_record_usage(monkeypatch)
+        providerConfig = {
+            'name': 'anthropic',
+            'apiKey': 'test-key',
+            'modelProfiles': {'claude-3-5-sonnet-20241022': {'maxOutputTokens': 64000}},
+            'apiMode': 'anthropicMessages',
+        }
+        monkeypatch.setattr(
+            wb,
+            '_resolveChatLlm',
+            lambda **kwargs: (providerConfig, 'claude-3-5-sonnet-20241022'),
+        )
+        await sendWorkbenchMessageStream(sessionId=session.id, message='hi', provider='anthropic', emit=lambda e: None)
+        assert len(recorded) == 1
+        rec = recorded[0]
+        assert rec['input_tokens'] == 9000
+        assert rec['cache_hit_tokens'] == 8000
+        # Anthropic buckets are disjoint: uncached = plain input + cache write.
+        assert rec['cache_miss_tokens'] == 9500
+
+    async def testOpenaiPromptTokensDetailsCached(self, monkeypatch):
+        """OpenAI-standard gateways stream the split inside
+        usage.prompt_tokens_details.cached_tokens — it must reach
+        record_usage instead of every token being booked as a miss."""
+        from app.services.workbench import workbench as wb
+        from app.services.workbench.workbench import createWorkbenchSession, sendWorkbenchMessageStream
+
+        session = createWorkbenchSession(provider='kilo', guardMode='full')
+
+        class _FakeClient:
+            def resolveApiKey(self):
+                return 'test-key'
+
+            async def chat_completions_stream(self, body):
+                yield {
+                    'choices': [{'index': 0, 'delta': {'content': 'Hello world'}, 'finish_reason': 'stop'}],
+                    'usage': {
+                        'prompt_tokens': 5000,
+                        'completion_tokens': 25,
+                        'prompt_tokens_details': {'cached_tokens': 4800},
+                    },
+                }
+
+        import app.providers.clients as clients
+
+        monkeypatch.setattr(clients, 'getClient', lambda provider: _FakeClient())
+        recorded = self._capture_record_usage(monkeypatch)
+        providerConfig = {
+            'name': 'kilo',
+            'apiKey': 'test-key',
+            'modelProfiles': {'some-model': {'maxOutputTokens': 64000}},
+            'apiMode': 'openaiChat',
+        }
+        monkeypatch.setattr(
+            wb,
+            '_resolveChatLlm',
+            lambda **kwargs: (providerConfig, 'some-model'),
+        )
+        await sendWorkbenchMessageStream(sessionId=session.id, message='hi', provider='kilo', emit=lambda e: None)
+        assert len(recorded) == 1
+        rec = recorded[0]
+        assert rec['cache_hit_tokens'] == 4800
+        assert rec['cache_miss_tokens'] == 200

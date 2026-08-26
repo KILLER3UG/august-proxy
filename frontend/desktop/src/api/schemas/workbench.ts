@@ -112,7 +112,6 @@ export const WorkbenchSessionEventSchema = WorkbenchBaseSchema.extend({
   sandboxMode: z.string().optional(),
   sandboxNetwork: z.boolean().optional(),
   workspacePath: z.string().optional(),
-  verifierEnforced: z.boolean().optional(),
   costCeiling: z.number().optional(),
 });
 
@@ -304,18 +303,27 @@ export const WorkbenchLegacyFinalOutputEventSchema = WorkbenchBaseSchema.extend(
   content: z.string().optional(),
 });
 
-/** Opt-in verifier enforcement (session.verifierEnforced): emitted once per
- *  turn when the model tries to answer before update_state(phase='complete')
- *  passed the verifier gate — the final answer text is withheld. */
-export const WorkbenchVerifierBlockedEventSchema = WorkbenchBaseSchema.extend({
-  type: z.literal('verifierBlocked'),
-  message: z.string().optional(),
+/** update_state phase/step transition — feeds the inline working strip. */
+export const WorkbenchExecutionStateEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('executionState'),
+  phase: z.string().optional(),
+  step: z.number().optional(),
+  completed: z.array(z.string()).optional(),
+  blockers: z.array(z.string()).optional(),
 });
 
 /** Recurring-task daemon (B7): a due reminder fired at turn start. */
 export const WorkbenchRecurringTaskEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('recurringTask'),
   message: z.string().optional(),
+});
+
+/** /circuit workbench toggled for this session (panel open/close). */
+export const WorkbenchCircuitModeEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('circuitMode'),
+  active: z.boolean(),
+  message: z.string().optional(),
+  sessionId: z.string().optional(),
 });
 
 /** Routing-evidence consult (D1): a better model exists for the task type,
@@ -341,7 +349,7 @@ export const WorkbenchGuardModeChangedEventSchema = WorkbenchBaseSchema.extend({
 
 /** Harness changed long-term memory (remember / update / forget). */
 
-/** Per-turn evidence-state snapshot for the verifier / routing-evidence
+/** Per-turn evidence-state snapshot for the routing-evidence
 
 /** Per-model capability profile suggestion (toolSurface, maxTools, …).
 
@@ -388,8 +396,9 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchSubagentProposedEventSchema,
   WorkbenchWarningEventSchema,
   WorkbenchUserMessageInjectedEventSchema,
-  WorkbenchVerifierBlockedEventSchema,
+  WorkbenchExecutionStateEventSchema,
   WorkbenchRecurringTaskEventSchema,
+  WorkbenchCircuitModeEventSchema,
   WorkbenchContextPressureEventSchema,
   WorkbenchGuardModeChangedEventSchema,
   WorkbenchSubagentRetryEventSchema,

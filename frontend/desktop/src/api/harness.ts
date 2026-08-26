@@ -13,8 +13,8 @@ export interface HarnessTrace {
   task_type: string;
   model: string;
   provider: string;
-  /** Graded turn outcome: ok | verified | verifier_blocked | refusal |
-   *  thinking_only | tool_error | error | stalled | ... */
+  /** Graded turn outcome: ok | refusal | thinking_only | tool_error |
+   *  error | stalled | ... */
   outcome: string;
   rounds: number;
   tools_offered: number;

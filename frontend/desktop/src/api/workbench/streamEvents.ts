@@ -313,26 +313,24 @@ export function dispatchWorkbenchEvent(
         status: p?.status === 'error' ? 'error' : 'success',
       });
       break;
-    case 'verifierBlocked':
-      handlers.onVerifierBlocked?.({
-        message:
-          typeof p?.message === 'string'
-            ? p.message
-            : 'Verification required before the final answer is shown',
-        evidence: p?.evidence as
-          | {
-              currentPhase?: string;
-              verificationCommand?: string;
-              blockers?: string[];
-              completed?: string[];
-              receiptCount?: number;
-            }
-          | undefined,
+    case 'executionState':
+      handlers.onExecutionState?.({
+        phase: typeof p?.phase === 'string' ? p.phase : '',
+        step: typeof p?.step === 'number' ? p.step : 0,
+        completed: (p?.completed as string[] | undefined) ?? undefined,
+        blockers: (p?.blockers as string[] | undefined) ?? undefined,
       });
       break;
     case 'recurringTask':
       handlers.onRecurringTask?.({
         message: typeof p?.message === 'string' ? p.message : '',
+      });
+      break;
+    case 'circuitMode':
+      handlers.onCircuitMode?.({
+        active: p?.active === true,
+        message: typeof p?.message === 'string' ? p.message : undefined,
+        sessionId: typeof p?.sessionId === 'string' ? p.sessionId : undefined,
       });
       break;
     case 'contextPressure': {

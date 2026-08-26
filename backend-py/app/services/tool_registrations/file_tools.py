@@ -106,6 +106,54 @@ def _workspace() -> str:
     return str(getattr(session, 'workspacePath', '') or '')
 
 
+# ── Media guard: images/video/audio must go through vision/media tools ───
+# Text-reading a PNG/MP4/MP3 produces mojibake that wastes context and
+# teaches the model nothing — the correct surface is a dedicated analyzer
+# (vision_analyze / media analysis tools). Mirrors how the Hermes harness
+# refuses to read images with read_file.
+
+_MEDIA_EXTS = frozenset({
+    # images
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.tif', '.tiff',
+    '.svg', '.heic', '.heif', '.avif',
+    # video
+    '.mp4', '.mkv', '.avi', '.mov', '.webm', '.wmv', '.flv', '.m4v', '.mpg',
+    '.mpeg', '.ts', '.3gp',
+    # audio
+    '.mp3', '.wav', '.flac', '.ogg', '.oga', '.opus', '.m4a', '.aac', '.wma',
+    '.aiff', '.mid', '.midi',
+    # documents that need a parser, not a text read
+    '.pdf', '.docx', '.xlsx', '.pptx', '.epub',
+})
+
+
+def _is_media_file(path: str) -> bool:
+    return Path(path).suffix.lower() in _MEDIA_EXTS
+
+
+_MEDIA_REDIRECT = (
+    'Error: {path} is a {kind} file ({ext}) — binary content cannot be read '
+    'as text. Use the dedicated analysis tool instead: pass its path (or '
+    'URL) to analyze_media for description/vision, or run_command with a '
+    'media probe (ffprobe for duration/codecs, python zipfile for office '
+    'docs). read_file is for plain-text files only.'
+)
+
+
+def _media_kind(ext: str) -> str:
+    if ext == '.svg':
+        return 'vector-image'
+    if ext in ('.pdf', '.docx', '.xlsx', '.pptx', '.epub'):
+        return 'document'
+    if ext in ('.mp4', '.mkv', '.avi', '.mov', '.webm', '.wmv', '.flv',
+               '.m4v', '.mpg', '.mpeg', '.ts', '.3gp'):
+        return 'video'
+    if ext in ('.mp3', '.wav', '.flac', '.ogg', '.oga', '.opus', '.m4a',
+               '.aac', '.wma', '.aiff', '.mid', '.midi'):
+        return 'audio'
+    return 'image'
+
+
 async def _readFile(
     path: str,
     offset: int | None = None,
@@ -141,6 +189,12 @@ async def _readFile(
         return f'Error: File not found: {path}'
     if not filePath.is_file():
         return f'Error: Not a file: {path}'
+    # Media guard: images/video/audio/binary documents must be analyzed by
+    # the dedicated vision/media tools, not text-read. Check BEFORE any
+    # decode so a PNG read never dumps mojibake into context.
+    ext = filePath.suffix.lower()
+    if _is_media_file(str(filePath)):
+        return _MEDIA_REDIRECT.format(path=path, kind=_media_kind(ext), ext=ext)
     size = filePath.stat().st_size
     if size > _MAXFileSize and offset is None and limit is None and start_line is None and end_line is None:
         return f'Error: File too large ({size} bytes). Maximum: {_MAXFileSize} bytes. Use offset/limit to page it, e.g. read_file(path, offset=1, limit=200).'

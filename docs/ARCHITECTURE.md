@@ -175,8 +175,8 @@ desktop UI open the right-drawer `subagents` section.
 `chat` blocks tools, `agent` is native tool calling, `code` runs a fenced
 Python block through sandboxed `run_command`.
 
-**Verifier:** default chat is unaffected. Per-session `verifierEnforced`
-withholds `finalOutput` until `update_state(phase='complete')` passes.
+**Verifier:** REMOVED (2026-08-24) — the old per-session `verifierEnforced`
+gate that withheld `finalOutput` no longer exists; answers stream directly.
 
 ### Guard modes
 
@@ -189,7 +189,7 @@ withholds `finalOutput` until `update_state(phase='complete')` passes.
 Plan submission / approve / reject is never itself blocked as a “destructive”
 mutation of the plan gate.
 
-### Execution state & verifier gate
+### Execution state
 
 Alongside guard modes, the workbench tracks a multi-phase **execution state**
 per session via the `update_state` system tool (`tool_registrations/system_tools.py`):
@@ -204,10 +204,10 @@ per session via the `update_state` system tool (`tool_registrations/system_tools
 
 State is injected into the next turn's system prompt so the model resumes where
 it left off. Receipts (`run_command` / `bash` / `safe_python`) are judged on
-transitions into `review` / `complete`. Casual chat is unaffected unless
-`verifierEnforced` is on (then the final answer is withheld until `complete`
-passes; `verifierBlocked` SSE + amber banner). Receipts are cleared at the
-start of each turn.
+transitions into `review` / `complete`. Phase/step changes are emitted as
+`executionState` SSE events (the inline working strip shows the current
+phase). The former verifier gate / receipts machinery was removed
+(2026-08-24); answers are never withheld.
 
 ### Sub-agents
 

@@ -25,8 +25,18 @@ _PROMPT_READ = frozenset({
     'diagnose_proxy', 'fact_search', 'get_fallback', 'list_aliases',
     'list_directory', 'list_integrations', 'list_mcp_servers', 'memory_search',
     'pptx_list_elements',
+    # Media analysis — the sanctioned reader for images/video/audio/docs
+    # (read_file refuses binary media and redirects here).
+    'analyze_media',
+    # Circuit workbench lookups — read-only datasheet/board facts.
+    'list_boards', 'search_component', 'circuit_list_boards',
+    'circuit_search_component', 'circuit_read_netlist', 'circuit_list_netlists',
+    # Datasheet/model-card lookup — network read, no workspace mutation.
+    'circuit_integrate_component',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
     'web_fetch_many', 'web_search',
+    # Component datasheet/parts lookup — network read, no workspace mutation.
+    'search_component',
     # Unified cross-store search (memory/files/web) — read-only.
     'search',
     # Harness self-inspection — read-only aggregation of runtime state.
@@ -44,6 +54,10 @@ _PROMPT_WRITE = frozenset({
     'submit_plan', 'update_alias', 'update_heuristics', 'update_memory', 'update_state',
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad', 'edit_lines',
     'pptx_comment',
+    # Artifact creation — each writes a file into the workspace.
+    'create_pptx', 'render_chart', 'render_video', 'draw_circuit',
+    # Circuit workbench mutations — netlist files + rendered PNG output.
+    'circuit_create_netlist', 'circuit_update_netlist', 'circuit_render_3d',
     'remember',
     # Harness self-improvement: files proposals for human review (no direct
     # application from the model — approval runs a deterministic applier).
@@ -56,9 +70,11 @@ _PROMPT_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',
     'delete_folder', 'delete_session', 'delete_sessions', 'kill_daemon',
     'kill_daemons', 'forget',
+    # Circuit workbench: removes a netlist file from the workspace.
+    'circuit_delete_netlist',
 })
 
-_PROMPT_SHELL = frozenset({'run_command', 'run_commands'})
+_PROMPT_SHELL = frozenset({'run_command', 'run_commands', 'simulate_circuit', 'circuit_simulate'})
 
 _PROMPT_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
@@ -124,6 +140,9 @@ _SHELL_EXACT = frozenset({
     'run_command', 'bash', 'bashtool', 'shell', 'exec', 'execute', 'terminal',
     'install', 'uninstall', 'pip_install', 'npm_install', 'pnpm_add',
     'install_mcp_server',
+    # Spawns the ngspice binary on a model-authored netlist — same
+    # edit-mode gating as a shell command.
+    'simulate_circuit',
 })
 
 _SHELL_BULK_OPS = frozenset({'run_command', 'bash', 'shell', 'exec'})

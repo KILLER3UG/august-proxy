@@ -15,6 +15,7 @@ export type RightDrawerSectionId =
   | 'subagents'
   | 'trajectory'
   | 'artifacts'
+  | 'circuit'
   | 'file';
 
 export interface RightDrawerState {
@@ -38,6 +39,7 @@ const SECTION_ORDER: RightDrawerSectionId[] = [
   'subagents',
   'trajectory',
   'artifacts',
+  'circuit',
 ];
 
 const initialState: RightDrawerState = {

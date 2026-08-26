@@ -13,11 +13,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
-  FileText,
-  Hash,
-  Repeat,
   XCircle,
-  Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as harness from '@/api/harness';
@@ -28,21 +24,12 @@ const OUTCOME_META: Record<
   { label: string; tone: 'success' | 'warning' | 'destructive' | 'muted' }
 > = {
   ok: { label: 'ok', tone: 'success' },
-  verified: { label: 'verified', tone: 'success' },
-  verifier_blocked: { label: 'verifier blocked', tone: 'warning' },
   refusal: { label: 'refusal', tone: 'warning' },
   stalled: { label: 'stalled', tone: 'warning' },
   thinking_only: { label: 'thinking only', tone: 'muted' },
   tool_error: { label: 'tool error', tone: 'destructive' },
   error: { label: 'error', tone: 'destructive' },
 };
-
-const TONE_CLASSES = {
-  success: 'border-success/25 bg-success/5 text-success',
-  warning: 'border-warning/25 bg-warning/5 text-warning',
-  destructive: 'border-danger/25 bg-danger/5 text-danger',
-  muted: 'border-border bg-muted/30 text-muted-foreground',
-} as const;
 
 const OUTCOME_ICONS = {
   success: CheckCircle2,
@@ -56,13 +43,6 @@ function fmtDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
-}
-
-function fmtTokens(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '—';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
 }
 
 function outcomeMeta(outcome: string) {
@@ -98,6 +78,13 @@ const BADGE_KIND_CLASSES = {
   refusal: 'border-warning/25 bg-warning/5 text-warning',
   stall: 'border-info/25 bg-info/5 text-info',
   compact: 'border-border bg-muted/30 text-muted-foreground',
+} as const;
+
+const OUTCOME_TEXT_CLASSES = {
+  success: 'text-success',
+  warning: 'text-warning',
+  destructive: 'text-danger',
+  muted: 'text-muted-foreground',
 } as const;
 
 export function RightDrawerTrajectorySection({ sessionId }: { sessionId: string | null }) {
@@ -198,9 +185,11 @@ export function RightDrawerTrajectorySection({ sessionId }: { sessionId: string 
           const BadgeIcon = OUTCOME_ICONS[meta.tone];
           const badges = selfHealBadges(trace);
           const active = hoveredId === trace.id || focusedId === trace.id;
+          const live = !trace.outcome;
           return (
             <div
               key={trace.id}
+              data-testid={`trajectory-row-${trace.id}`}
               ref={(el) => {
                 if (el) rowRefs.current.set(trace.id, el);
                 else rowRefs.current.delete(trace.id);
@@ -208,84 +197,79 @@ export function RightDrawerTrajectorySection({ sessionId }: { sessionId: string 
               onMouseEnter={() => setHoveredId(trace.id)}
               onMouseLeave={() => setHoveredId((v) => (v === trace.id ? null : v))}
               className={cn(
-                'rounded-lg border border-border/50 bg-card/40 p-2 transition-colors duration-150',
-                active && 'border-primary/40 bg-primary/5',
+                'group rounded-md px-1.5 py-1 transition-colors duration-150 hover:bg-muted/40',
+                active && 'bg-primary/5',
               )}
+              title={trace.prompt_preview || undefined}
             >
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 font-mono text-[10px] tabular-nums text-muted-foreground/70">
-                  <Hash className="size-2.5" />
-                  {trace.turn_seq}
+              <div className="flex min-w-0 items-center gap-2 text-[11px] leading-5">
+                {/* Leading log glyph — outcome icon tinted by tone. */}
+                <BadgeIcon
+                  className={cn('size-3 shrink-0', OUTCOME_TEXT_CLASSES[meta.tone])}
+                />
+                {live && (
+                  <span
+                    data-testid="trajectory-live"
+                    aria-label="turn in progress"
+                    className="inline-block size-1.5 shrink-0 animate-pulse rounded-full bg-primary"
+                  />
+                )}
+                {/* Human label — "Turn 7", plus a word when the outcome isn't ok. */}
+                <span className={cn('shrink-0 font-medium', OUTCOME_TEXT_CLASSES[meta.tone])}>
+                  Turn {trace.turn_seq}
                 </span>
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded border px-1.5 py-px text-[10px] font-semibold',
-                    TONE_CLASSES[meta.tone],
-                  )}
-                >
-                  <BadgeIcon className="size-2.5" />
-                  {meta.label}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-right font-mono text-[10px] text-muted-foreground/70 tabular-nums">
-                  {trace.model || trace.provider || '—'}
-                </span>
-              </div>
-
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] tabular-nums text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <Zap className="size-2.5 text-muted-foreground/50" />
-                  {fmtTokens(trace.input_tokens)} in · {fmtTokens(trace.output_tokens)} out
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="size-2.5 text-muted-foreground/50" />
-                  {fmtDuration(trace.duration_ms)}
-                </span>
+                {meta.label !== 'ok' && meta.label !== 'turn' && (
+                  <span className="shrink-0 text-muted-foreground/80">· {meta.label}</span>
+                )}
+                {/* Trailing activity meta: rounds, then duration. */}
                 {trace.rounds > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    <Repeat className="size-2.5 text-muted-foreground/50" />
-                    {trace.rounds} round{trace.rounds === 1 ? '' : 's'}
+                  <span className="shrink-0 tabular-nums text-muted-foreground/70">
+                    · {trace.rounds} round{trace.rounds === 1 ? '' : 's'}
                   </span>
                 )}
+                <span className="shrink-0 tabular-nums text-muted-foreground/70">
+                  · {fmtDuration(trace.duration_ms)}
+                </span>
+                {/* Tool + self-heal chips, right-aligned, hidden when narrow. */}
+                {(trace.tool_calls?.length ?? 0) > 0 || badges.length > 0 ? (
+                  <span className="ml-auto flex min-w-0 items-center gap-1 overflow-hidden">
+                    {(trace.tool_calls ?? []).slice(0, 3).map((tool) => (
+                      <span
+                        key={tool}
+                        title={tool}
+                        className="hidden shrink-0 rounded border border-border/60 bg-muted/20 px-1 font-mono text-[9px] text-foreground/60 sm:inline"
+                      >
+                        {tool}
+                      </span>
+                    ))}
+                    {(trace.tool_calls?.length ?? 0) > 3 && (
+                      <span className="shrink-0 text-[9px] text-muted-foreground/60">
+                        +{(trace.tool_calls?.length ?? 0) - 3}
+                      </span>
+                    )}
+                    {badges.slice(0, 2).map((badge) => (
+                      <span
+                        key={badge.label}
+                        title={badge.label}
+                        className={cn(
+                          'hidden shrink-0 rounded border px-1 font-mono text-[9px] sm:inline',
+                          BADGE_KIND_CLASSES[badge.kind],
+                        )}
+                      >
+                        {badge.label}
+                      </span>
+                    ))}
+                    {badges.length > 2 && (
+                      <span className="shrink-0 text-[9px] text-muted-foreground/60">
+                        +{badges.length - 2}
+                      </span>
+                    )}
+                  </span>
+                ) : null}
               </div>
 
-              {trace.prompt_preview && (
-                <div className="mt-1 truncate text-[10px] italic leading-snug text-muted-foreground/60" title={trace.prompt_preview}>
-                  {trace.prompt_preview}
-                </div>
-              )}
-
-              {(trace.tool_calls && trace.tool_calls.length > 0) || badges.length > 0 ? (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {(trace.tool_calls ?? []).slice(0, 6).map((tool) => (
-                    <span
-                      key={tool}
-                      className="inline-flex items-center gap-1 rounded border border-border/60 bg-muted/20 px-1.5 py-px font-mono text-[9px] text-foreground/70"
-                    >
-                      <FileText className="size-2 text-muted-foreground/50" />
-                      {tool}
-                    </span>
-                  ))}
-                  {(trace.tool_calls?.length ?? 0) > 6 && (
-                    <span className="px-1 text-[9px] text-muted-foreground/60">
-                      +{(trace.tool_calls?.length ?? 0) - 6} more
-                    </span>
-                  )}
-                  {badges.map((badge) => (
-                    <span
-                      key={badge.label}
-                      className={cn(
-                        'rounded border px-1.5 py-px font-mono text-[9px]',
-                        BADGE_KIND_CLASSES[badge.kind],
-                      )}
-                    >
-                      {badge.label}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-
               {trace.error ? (
-                <div className="mt-1 truncate font-mono text-[9px] text-danger/80" title={trace.error}>
+                <div className="truncate pl-5 font-mono text-[9px] text-danger/80" title={trace.error}>
                   {trace.error}
                 </div>
               ) : null}

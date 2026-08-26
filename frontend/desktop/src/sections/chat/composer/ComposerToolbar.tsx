@@ -60,7 +60,6 @@ export function ComposerToolbar({
   selectedModel,
   setSelectedModel,
   userSelectedRef,
-  onRefreshModels,
   onEditModels,
   effort,
   setEffort,
@@ -89,9 +88,8 @@ export function ComposerToolbar({
   stop: () => void;
   /** Optional: lets the toolbar append a synthetic handoff-notice card. */
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
-  /** Creates the backend workbench session on demand — used by the verifier
-   *  toggle, which must work on a fresh chat BEFORE the first send creates
-   *  the session (otherwise opt-in verification can never cover turn 1). */
+  /** Creates the backend workbench session on demand — must run BEFORE the
+   *  first send creates the session (session-scoped settings on fresh chats). */
   ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   workbenchSession: WorkbenchSession | null;
   setWorkbenchSession: (
@@ -115,7 +113,6 @@ export function ComposerToolbar({
   selectedModel: ModelItem | null;
   setSelectedModel: Dispatch<SetStateAction<ModelItem | null>>;
   userSelectedRef: MutableRefObject<string | null>;
-  onRefreshModels: () => void;
   onEditModels: () => void;
   effort: EffortLevel;
   setEffort: Dispatch<SetStateAction<EffortLevel>>;
@@ -433,16 +430,12 @@ export function ComposerToolbar({
           visibleModels={visibleModels}
           loading={modelsLoading}
           selected={selectedModel}
-          onRefresh={() => {
-            void onRefreshModels();
-          }}
           onEditModels={onEditModels}
           effort={effort}
           onEffortChange={setEffort}
           thinkingEnabled={thinkingEnabled}
           onThinkingChange={setThinkingEnabled}
           openSignal={modelMenuOpenSignal}
-          promptHint={input}
           onSelect={(m) => {
             void (async () => {
               const prev = selectedModel;

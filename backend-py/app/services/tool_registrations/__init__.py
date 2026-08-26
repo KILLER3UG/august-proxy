@@ -12,10 +12,13 @@ def register_all() -> None:
     from app.services import integration_tools, provider_setup_tool, self_config_tools
     from app.services.tool_registrations import (
         agent_tools,
+        artifact_tools,
         bulk_tools,
+        circuit_tools,
         desktop_tools,
         file_tools,
         harness_tools,
+        media_tools,
         office_tools,
         session_tools,
         skill_tools,
@@ -28,6 +31,13 @@ def register_all() -> None:
     web_tools.register()
     desktop_tools.register()
     office_tools.register()
+    # Artifact creation: decks, charts, videos, circuit schematics.
+    artifact_tools.register()
+    # Circuit work: component search + ngspice simulation.
+    circuit_tools.register()
+    # Media analysis — the sanctioned reader for images/video/audio/docs
+    # (read_file's media guard redirects here).
+    media_tools.register()
     session_tools.register()
     system_tools.register()
     agent_tools.register()

@@ -102,11 +102,15 @@ export function SettingsPage() {
   const mappedRaw = rawSection ? (LEGACY_HUB_MAP[rawSection] ?? rawSection) : rawSection;
   const rawIsHub = isHubId(mappedRaw ?? null);
   const resolvedSectionId = mappedRaw && !rawIsHub ? resolveLegacyTab(mappedRaw) : null;
-  const activeId = rawIsHub ? mappedRaw! : mappedRaw ? resolvedSectionId! : landingSectionId;
-  const isHub = isHubId(activeId);
-  const active: SettingsSection | null = isHub
-    ? null
-    : (SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0]);
+  // Hub IA v2: a bare category id resolves to the category's first visible
+  // section — the left rail's tree shows all children, and there are no
+  // in-page pill tabs anymore.
+  const firstSectionOfCategory = (catId: string): string | null =>
+    sectionsForCategory(catId).find((s) => s.tier !== 'hidden')?.id ?? null;
+  const hubTargetId = rawIsHub ? firstSectionOfCategory(mappedRaw!) : null;
+  const activeId = hubTargetId ?? (mappedRaw && !rawIsHub ? resolvedSectionId : null) ?? landingSectionId;
+  const active: SettingsSection | null =
+    SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0];
   const prevSectionRef = useRef(activeId);
 
   // Normalize bare /settings → /settings/<default> so deep links and the
@@ -128,12 +132,13 @@ export function SettingsPage() {
       return;
     }
     // Rewrite legacy aliases in the URL (e.g. /settings/traffic → traffic-activity).
-    // For hubs, rawSection is the hub id itself — no rewrite.
-    if (!isHub && rawSection !== activeId) {
+    // Hub ids resolve to their first section — rewrite so the rail tree and
+    // URL always point at a real section.
+    if (rawSection !== activeId) {
       const qs = sectionQuery ? `?section=${encodeURIComponent(sectionQuery)}` : '';
       void navigate(`/settings/${activeId}${qs}`, { replace: true });
     }
-  }, [rawSection, activeId, isHub, navigate, searchParams, landingSectionId]);
+  }, [rawSection, activeId, navigate, searchParams, landingSectionId]);
 
   // Tab switch: remounted section queries may still be within the global
   // 5s staleTime. Invalidate only the settings-domain keys so the newly
@@ -163,64 +168,41 @@ export function SettingsPage() {
           transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
           className="h-full min-h-0"
         >
-          {isHub ? (
-            <CategoryHub categoryId={activeId} />
-          ) : (
+          <div className="min-h-0">
+            <SectionHeader active={active!} />
             <React.Suspense fallback={<SettingsSectionLoader />}>
               <SectionComponent active={active!} />
             </React.Suspense>
-          )}
+          </div>
         </motion.div>
       </AnimatePresence>
     </WorkspaceShell>
   );
 }
 
-function CategoryHub({ categoryId }: { categoryId: string }) {
-  const cat = SETTINGS_CATEGORIES.find((c) => c.id === categoryId);
-  const sections = sectionsForCategory(categoryId).filter((s) => s.tier !== 'hidden');
-  const [activeTab, setActiveTab] = React.useState<string>(() => sections[0]?.id ?? categoryId);
-  React.useEffect(() => {
-    if (sections.length > 0 && !sections.some((s) => s.id === activeTab)) {
-      setActiveTab(sections[0].id);
-    }
-  }, [categoryId, sections, activeTab]);
-  if (!cat) return null;
-  const activeSection = sections.find((s) => s.id === activeTab) ?? sections[0];
-  const ActiveComp = activeSection ? SECTION_COMPONENTS[activeSection.id] : null;
+/** Compact page header for sections that don't render their own h1
+ *  (the models tree children, previously titled by the removed wrapper).
+ *  Sections WITH their own h1 (SystemHealth) would double up — so this
+ *  header only renders when the section component is one of the known
+ *  header-less ones. */
+const HEADERLESS_SECTION_IDS = new Set([
+  'model-providers',
+  'model-catalog',
+  'model-aliases',
+  'model-fallback',
+  'model-reflection',
+  'model-fleet',
+  'model-live',
+  'model-quotas',
+  'account',
+]);
+
+function SectionHeader({ active }: { active: SettingsSection }) {
+  if (!HEADERLESS_SECTION_IDS.has(active.id)) return null;
   return (
-    <div className="min-h-0 max-w-5xl mx-auto px-6 py-6">
-      <div className="mb-4">
-        <h1 className="text-[22px] font-semibold tracking-tight text-foreground">{cat.label}</h1>
-        <p className="mt-1 text-[13px] text-muted-foreground">{cat.description}</p>
-      </div>
-      {sections.length > 1 && (
-        <div className="mb-6 flex gap-1.5 overflow-x-auto pb-1 scrollbar-none" role="tablist">
-          {sections.map((s) => {
-            const isActive = s.id === activeTab;
-            return (
-              <button
-                key={s.id}
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setActiveTab(s.id)}
-                className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition ${
-                  isActive
-                    ? 'bg-foreground text-background shadow-sm'
-                    : 'bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/40'
-                }`}
-              >
-                {s.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {activeSection && ActiveComp ? (
-        <React.Suspense fallback={<SettingsSectionLoader />}>
-          <ActiveComp active={activeSection} />
-        </React.Suspense>
-      ) : null}
+    <div className="mx-auto w-full max-w-5xl px-8 pt-6 pb-3">
+      <h1 className="text-[22px] font-semibold tracking-tight text-foreground">{active.label}</h1>
+      <p className="mt-1 text-[13px] text-muted-foreground max-w-xl">{active.description}</p>
     </div>
   );
 }
@@ -262,7 +244,38 @@ const AppUpdatesWrapper = lazySection(() => import('./UpdateSection'), 'UpdateSe
 const UsageWrapper = lazySection(() => import('@/sections/workspace/WorkspaceUsageSection'), 'WorkspaceUsageSection');
 const RecurringTasksWrapper = lazySection(() => import('./RecurringTasksSection'), 'RecurringTasksSection');
 const InspectorWrapper = lazySection(() => import('@/sections/workspace/WorkspaceInspectorSection'), 'WorkspaceInspectorSection');
-const ModelsWrapper = lazySection(() => import('@/sections/workspace/WorkspaceModelsSection'), 'WorkspaceModelsSection');
+const ModelProvidersWrapper = lazySection(
+  () => import('@/sections/workspace/models/ProvidersTab'),
+  'ProvidersTab',
+);
+const ModelCatalogWrapper = lazySection(
+  () => import('@/sections/workspace/models/AllModelsTab'),
+  'AllModelsTab',
+);
+const ModelAliasesWrapper = lazySection(
+  () => import('@/sections/workspace/models/AliasesTab'),
+  'AliasesTab',
+);
+const ModelFallbackWrapper = lazySection(
+  () => import('@/sections/workspace/models/FallbackTab'),
+  'FallbackTab',
+);
+const ModelReflectionWrapper = lazySection(
+  () => import('@/sections/workspace/models/BackgroundReflectionTab'),
+  'BackgroundReflectionTab',
+);
+const ModelFleetWrapper = lazySection(
+  () => import('@/sections/workspace/ModelFleetTab'),
+  'ModelFleetTab',
+);
+const ModelQuotasWrapper = lazySection(
+  () => import('@/sections/workspace/models/QuotasTab'),
+  'QuotasTab',
+);
+const ModelLiveWrapper = lazySection(
+  () => import('@/sections/workspace/LiveSettingsTab'),
+  'LiveSettingsTab',
+);
 const AccountWrapper = lazySection(() => import('./AccountSection'), 'AccountSection');
 const GeneralWrapper = lazySection(() => import('@/sections/workspace/WorkspaceGeneralSection'), 'WorkspaceGeneralSection');
 const ProfilePreferencesWrapper = lazySection(() => import('./ProfilePreferencesSection'), 'ProfilePreferencesSection');
@@ -284,7 +297,14 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   usage: UsageWrapper,
   'recurring-tasks': RecurringTasksWrapper,
   'conversation-inspector': InspectorWrapper,
-  'model-providers': ModelsWrapper,
+  'model-providers': ModelProvidersWrapper,
+  'model-catalog': ModelCatalogWrapper,
+  'model-aliases': ModelAliasesWrapper,
+  'model-fallback': ModelFallbackWrapper,
+  'model-reflection': ModelReflectionWrapper,
+  'model-fleet': ModelFleetWrapper,
+  'model-live': ModelLiveWrapper,
+  'model-quotas': ModelQuotasWrapper,
   account: AccountWrapper,
   'profile-preferences': ProfilePreferencesWrapper,
   'ui-designer': ProfilePreferencesWrapper,

@@ -57,6 +57,7 @@ export function ProducedFilesRow({
     if (ext === 'DOCX') return 'Document · DOCX';
     if (ext === 'XLSX') return 'Spreadsheet · XLSX';
     if (['PNG', 'JPG', 'JPEG', 'SVG', 'WEBP', 'GIF'].includes(ext)) return `Image · ${ext}`;
+    if (['MP4', 'MOV', 'WEBM', 'AVI', 'MKV'].includes(ext)) return `Video · ${ext}`;
     if (ext === 'PDF') return 'PDF';
     return ext;
   };

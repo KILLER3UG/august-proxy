@@ -38,7 +38,6 @@ DEFAULT_FEATURES: dict[str, bool] = {
     'daemons': True,
     'blackboard': True,
     'env_watcher': False,
-    'verifier_reflex': True,
     'skill_genesis': True,
     'vector_memory': True,
     'graph_memory': True,

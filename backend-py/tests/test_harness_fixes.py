@@ -331,26 +331,6 @@ def test_model_capability_profile_max_tools(isolatedData):
 # ── 12. Routing evidence records failures, not hardcoded wins ────────────
 
 
-def test_verifier_verdict_requires_declared_command():
-    from app.services.tool_registrations.system_tools import _verificationVerdict
-
-    echoReceipt = {'name': 'run_command', 'command': 'echo ok', 'content': 'Exit code: 0\nok'}
-    testReceipt = {
-        'name': 'run_command',
-        'command': 'pytest -q',
-        'content': 'Exit code: 0\n5 passed',
-    }
-    # Without a declared command, any passing receipt satisfies the gate.
-    verdict, _ = _verificationVerdict([echoReceipt])
-    assert verdict == 'pass'
-    # With a declared command, `echo ok` must NOT satisfy it.
-    verdict, _ = _verificationVerdict([echoReceipt], expected_command='pytest -q')
-    assert verdict == 'none'
-    # The declared command's own receipt passes.
-    verdict, _ = _verificationVerdict([echoReceipt, testReceipt], expected_command='pytest -q')
-    assert verdict == 'pass'
-
-
 def test_version_sync():
     """The 7 version files must agree (package.json, locks, Cargo)."""
     import json

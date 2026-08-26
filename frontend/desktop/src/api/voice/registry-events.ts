@@ -78,6 +78,10 @@ export type VoiceCommandEvent =
       type: 'goal';
       sessionId?: string;
       args: string;
+    }
+  | {
+      type: 'circuit';
+      args: string;
     };
 
 type Listener = (event: VoiceCommandEvent) => void;

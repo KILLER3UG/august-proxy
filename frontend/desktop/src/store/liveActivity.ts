@@ -17,9 +17,17 @@ export interface LiveActivityItem {
   at: number;
 }
 
+/** Latest update_state phase/step (executionState SSE event). */
+export interface ExecutionStateLive {
+  phase: string;
+  step: number;
+  at: number;
+}
+
 export interface SessionLiveActivity {
   headline: string;
   items: LiveActivityItem[];
+  execution?: ExecutionStateLive;
 }
 
 interface LiveActivityState {
@@ -44,9 +52,29 @@ export function publishLiveActivity(input: {
       [input.sessionId]: {
         headline: input.headline,
         items: input.items.slice(-MAX_ITEMS),
+        // The timeline rebuilds items every rAF — preserve the phase/step
+        // chip published by the executionState SSE handler.
+        execution: prev.bySession[input.sessionId]?.execution,
       },
     },
   }));
+}
+
+export function publishExecutionState(sessionId: string, phase: string, step: number): void {
+  if (!sessionId || !phase) return;
+  useLiveActivityStore.setState((prev) => {
+    const entry = prev.bySession[sessionId];
+    return {
+      bySession: {
+        ...prev.bySession,
+        [sessionId]: {
+          headline: entry?.headline ?? '',
+          items: entry?.items ?? [],
+          execution: { phase, step, at: Date.now() },
+        },
+      },
+    };
+  });
 }
 
 export function clearLiveActivity(sessionId?: string | null): void {

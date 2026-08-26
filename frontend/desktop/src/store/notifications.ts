@@ -1,6 +1,6 @@
 /**
  * Notifications center (C1) — a small bell fed by notable events from the
- * chat stream (turn failures, verifier gates, arena lane completions).
+ * chat stream (turn failures, arena lane completions).
  * Replaces scattered toasts for events you may want to revisit.
  */
 import { create } from 'zustand';
@@ -9,7 +9,7 @@ export interface AppNotification {
   id: string;
   title: string;
   body?: string;
-  kind?: 'error' | 'verifier' | 'arena' | 'routing' | 'info';
+  kind?: 'error' | 'arena' | 'routing' | 'info';
   at: number;
   seen: boolean;
 }

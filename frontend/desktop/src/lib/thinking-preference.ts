@@ -1,7 +1,8 @@
 /* ── Thinking collapse preference ─────────────────────────────────────── */
 /* When enabled, settled long thoughts render as a one-line summary with a  */
 /* "Show full reasoning" affordance (dsh-style think row) instead of the    */
-/* 9-line clamp. Persisted to localStorage; default on.                     */
+/* 9-line clamp. Persisted to localStorage; default OFF so reasoning        */
+/* renders Claude-style (multi-line clamp + "Show more") out of the box.    */
 
 const KEY = 'august.collapseThinking';
 
@@ -11,12 +12,12 @@ export function isCollapseThinkingEnabled(): boolean {
   if (cached === null && typeof window !== 'undefined') {
     try {
       const raw = window.localStorage.getItem(KEY);
-      cached = raw === null ? true : raw === '1';
+      cached = raw === '1';
     } catch {
-      cached = true;
+      cached = false;
     }
   }
-  return cached ?? true;
+  return cached ?? false;
 }
 
 export function setCollapseThinkingEnabled(value: boolean): void {

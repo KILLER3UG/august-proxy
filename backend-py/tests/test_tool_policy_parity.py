@@ -26,12 +26,21 @@ _ORACLE_READ = frozenset({
     'pptx_list_elements',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
     'web_fetch_many', 'web_search',
+    # Component datasheet/parts lookup — network read.
+    'search_component',
     # Unified cross-store search (memory/files/web) — read-only.
     'search',
     # Session state summary for handoff/compaction — read-only.
     'summarize_session',
     # Harness self-inspection — read-only aggregation of runtime state.
     'harness_introspect',
+    # Circuit workbench lookups — netlists, datasheet/board facts (read-only).
+    'circuit_list_boards', 'circuit_search_component', 'circuit_read_netlist',
+    'circuit_list_netlists',
+    # Datasheet/model-card lookup — network read, no workspace mutation.
+    'circuit_integrate_component',
+    # Media analysis — the sanctioned reader for images/video/audio/docs.
+    'analyze_media',
 })
 _ORACLE_WRITE = frozenset({
     'browser_click', 'browser_evaluate', 'browser_scroll', 'browser_select',
@@ -52,6 +61,10 @@ _ORACLE_WRITE = frozenset({
     # Harness self-improvement: files proposals for human review (no direct
     # application from the model — approval runs a deterministic applier).
     'harness_propose',
+    # Artifact creation — each writes a file into the workspace.
+    'create_pptx', 'render_chart', 'render_video', 'draw_circuit',
+    # Circuit workbench mutations — netlist files + rendered PNG output.
+    'circuit_create_netlist', 'circuit_update_netlist', 'circuit_render_3d',
 })
 _ORACLE_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',
@@ -59,8 +72,10 @@ _ORACLE_DESTRUCTIVE = frozenset({
     'kill_daemons',
     # Post-consolidation addition: model-driven memory delete.
     'forget',
+    # Circuit workbench: removes a netlist file from the workspace.
+    'circuit_delete_netlist',
 })
-_ORACLE_SHELL = frozenset({'run_command', 'run_commands'})
+_ORACLE_SHELL = frozenset({'run_command', 'run_commands', 'simulate_circuit', 'circuit_simulate'})
 _ORACLE_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
     'spawn_subagents', 'update_agent', 'set_agent_mode',
@@ -131,6 +146,8 @@ _ORACLE_SHELL_EXACT = frozenset({
     'run_command', 'bash', 'bashtool', 'shell', 'exec', 'execute', 'terminal',
     'install', 'uninstall', 'pip_install', 'npm_install', 'pnpm_add',
     'install_mcp_server',
+    # Spawns the ngspice binary — classified shell-side like run_command.
+    'simulate_circuit',
 })
 
 

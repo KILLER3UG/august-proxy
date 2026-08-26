@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
@@ -29,7 +29,6 @@ import {
 } from '@/store/liveActivity';
 import { getToolLabel } from '@/lib/tool-labels';
 import { resolveUiSessionId, resolveWorkbenchSessionId } from '../stream/session-id-map';
-import { toast } from 'sonner';
 import { api } from '@/api/client';
 
 type DisplayBlock = MessageBlock;
@@ -151,19 +150,24 @@ export function AssistantBlockTimeline({
     splitProcessAndFinal(displayBlocks);
 
   // Id-keyed expand overrides; missing key → default from status.
-  // Tools: running → open, else collapsed. Thoughts: open while generating,
-  // collapse once the final answer exists (unless the user overrode).
+  // Tools: running → open, else collapsed. Thoughts: collapsed+clamped by
+  // default; the user's explicit expand/collapse WINS until the final
+  // answer starts streaming (2026-08-25 fix: mid-turn streaming gaps must
+  // NOT wipe manual expansion — only a real final response closes it).
   const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>(
-
     {},
   );
 
-  // When the turn finishes, drop expand overrides so thoughts re-collapse.
+  // When the FINAL ANSWER starts generating, drop expand overrides so
+  // thoughts re-collapse (user requirement: thinking closes ONLY when the
+  // user closes it manually, or when the final response is generating).
+  // Partial-final turns (streaming flag flickers between tool rounds) do
+  // not reset anything — only a genuine final output block does.
   useEffect(() => {
-    if (!streaming && hasFinalOutput) {
+    if (hasFinalOutput) {
       setExpandOverrides({});
     }
-  }, [streaming, hasFinalOutput]);
+  }, [hasFinalOutput]);
 
   const toggleExpand = (id: string, next: boolean) => {
     setExpandOverrides((prev) => ({ ...prev, [id]: next }));
@@ -562,83 +566,6 @@ export function AssistantBlockTimeline({
                   </div>
                 )}
               </span>
-            </div>
-          ),
-        });
-        ti++;
-        continue;
-      }
-
-      if (block.type === 'verifierBlocked') {
-        // Opt-in verifier enforcement: final answer withheld until the model
-        // passes update_state(phase='complete'). Amber notice + gate evidence
-        // (phase, blockers, verification command) so the user sees WHY.
-        const ev = block.verifierEvidence;
-        tagged.push({
-          kind: 'block',
-          node: (
-            <div
-              key={block.id || `verifier_${ti}`}
-              role="alert"
-              data-testid="verifier-blocked-banner"
-              className="mx-3 my-1.5 flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-300"
-            >
-              <span className="shrink-0" aria-hidden="true">
-                ⚠
-              </span>
-              <div className="min-w-0 break-words">
-                {block.content || 'Verification required: the final answer was withheld.'}
-                {ev ? (
-                  <ul className="mt-1.5 space-y-0.5 text-[10px] text-amber-200/80">
-                    {ev.currentPhase ? (
-                      <li>
-                        <span className="font-medium">Current phase:</span> {ev.currentPhase}
-                      </li>
-                    ) : null}
-                    {ev.receiptCount === 0 ? (
-                      <li>
-                        <span className="font-medium">No verification command ran</span> this turn —
-                        run the test/lint/build command, confirm it passes, then call{' '}
-                        <code className="font-mono">update_state(phase=&quot;complete&quot;)</code>.
-                      </li>
-                    ) : (
-                      <li>
-                        <span className="font-medium">{ev.receiptCount} command receipt(s)</span>{' '}
-                        recorded this turn.
-                      </li>
-                    )}
-                    {ev.verificationCommand ? (
-                      <li>
-                        <span className="font-medium">Verification command:</span>{' '}
-                        <code className="font-mono">{ev.verificationCommand}</code>
-                      </li>
-                    ) : null}
-                    {ev.blockers && ev.blockers.length > 0 ? (
-                      <li>
-                        <span className="font-medium">Model-stated blockers:</span>{' '}
-                        {ev.blockers.join(' · ')}
-                      </li>
-                    ) : null}
-                    {ev.verificationCommand ? (
-                      <li className="flex items-center gap-1.5 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void navigator.clipboard
-                              ?.writeText(ev.verificationCommand ?? '')
-                              .catch(() => undefined);
-                            toast.success('Command copied');
-                          }}
-                          className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-200 hover:bg-amber-500/25"
-                          data-testid="verifier-copy-command"
-                        >
-                          Copy command
-                        </button>
-                      </li>
-                    ) : null}
-                  </ul>
-                ) : null}
-              </div>
             </div>
           ),
         });

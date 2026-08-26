@@ -12,6 +12,7 @@ import {
   TerminalSquare,
   Play,
   Check,
+  Cpu,
   Globe,
   StickyNote,
   Users,
@@ -74,6 +75,11 @@ const SECTION_META: Record<
     hint: 'Files, images, and links produced this session',
     Icon: GalleryVertical,
   },
+  circuit: {
+    label: 'Circuit',
+    hint: 'Circuit workbench — netlists, simulation, 3D board (/circuit)',
+    Icon: Cpu,
+  },
 };
 
 const OPTIONS: Array<Exclude<RightDrawerSectionId, 'file'>> = [
@@ -87,6 +93,7 @@ const OPTIONS: Array<Exclude<RightDrawerSectionId, 'file'>> = [
   'subagents',
   'trajectory',
   'artifacts',
+  'circuit',
 ];
 
 export function RightDrawerDropdown({

@@ -177,6 +177,22 @@ class TestUsageAndTopicsCharacterization:
         assert usage['latestContextTokens'] == 50
         assert isinstance(usage['events'], list) and len(usage['events']) == 2
 
+    def test_usage_cache_hit_rate_aggregates(self, brain):
+        # 800 hit + 200 miss on turn one, 0 hit + 100 miss on turn two
+        # → cumulative avg = 800 / 1100 ≈ 0.727, not a per-turn average.
+        ms.record_usage(
+            'u-cache', 'model-a', inputTokens=1000, outputTokens=5,
+            contextTokens=1000, cacheHitTokens=800, cacheMissTokens=200,
+        )
+        ms.record_usage(
+            'u-cache', 'model-a', inputTokens=100, outputTokens=5,
+            contextTokens=100, cacheHitTokens=0, cacheMissTokens=100,
+        )
+        usage = ms.get_usage('u-cache')
+        assert usage['cacheHitTokens'] == 800
+        assert usage['cacheMissTokens'] == 300
+        assert abs(usage['cacheHitRate'] - 0.727) <= 0.001
+
     def test_topic_index(self, brain):
         assert ms.index_session_topic('s1', 'debug') is True
         topic = ms.get_session_topic('s1')

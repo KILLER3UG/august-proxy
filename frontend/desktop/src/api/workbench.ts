@@ -21,7 +21,6 @@ export interface CreateWorkbenchSessionParams {
   workspacePath?: string;
   sandboxMode?: WorkbenchSandboxMode;
   sandboxNetwork?: boolean;
-  verifierEnforced?: boolean;
 }
 
 export async function setWorkbenchGuardMode(
@@ -57,15 +56,6 @@ export async function setWorkbenchSandboxMode(
   sandboxNetwork?: boolean,
 ): Promise<WorkbenchSession> {
   return workbenchClient.setSandboxMode(sessionId, sandboxMode, sandboxNetwork);
-}
-
-/** Toggle opt-in verifier enforcement: while on, the final answer is withheld
- *  until update_state(phase='complete') passes the verifier gate. */
-export async function setWorkbenchVerifier(
-  sessionId: string,
-  verifierEnforced: boolean,
-): Promise<WorkbenchSession> {
-  return workbenchClient.setVerifier(sessionId, verifierEnforced);
 }
 
 /** Set a per-session spend ceiling in USD (0 clears it). New turns are

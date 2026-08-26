@@ -56,10 +56,6 @@ class WorkbenchSession:
     # Codex-like sandbox axis (orthogonal to Plan/Ask/Full).
     sandboxMode: str = 'workspace-write'
     sandboxNetwork: bool = False
-    # Opt-in final-answer gate: while true, finalOutput text is withheld until
-    # update_state(phase='complete') passes the verifier gate (see the
-    # _verifier_gated_emit wrapper in the workbench chat loop).
-    verifierEnforced: bool = False
     # Optional per-session spend ceiling (USD). 0 = off. When the estimated
     # cumulative session cost reaches the ceiling, new turns are blocked with
     # a clear error until the user raises it or starts a new chat.
@@ -113,10 +109,6 @@ class WorkbenchSession:
     # buildSystemPrompt() call — surfaced to the frontend as a `recalledMemories`
     # SSE event (see workbench.chatTurn). Cleared/replaced every turn.
     _last_recalled_memories: list[dict[str, object]] | None = None
-    # Verifier gate receipts: tails of command tool outputs executed this turn.
-    # update_state requires a passing receipt before allowing review/complete
-    # (see system_tools._updateState). Cleared every turn in chatTurn.
-    _verification_receipts: list[dict[str, object]] | None = None
     # What the last buildSystemPrompt() call injected (profile, heuristics,
     # recalled memories, ...) — carried into the per-turn `done` event and the
     # chat context panel. Set/cleared every turn in buildSystemPrompt.
@@ -132,7 +124,6 @@ class WorkbenchSession:
             'guardMode': self.guardMode,
             'sandboxMode': self.sandboxMode,
             'sandboxNetwork': self.sandboxNetwork,
-            'verifierEnforced': self.verifierEnforced,
             'costCeiling': self.costCeiling,
             'createdAt': self.createdAt,
             'updatedAt': self.updatedAt,
@@ -184,7 +175,6 @@ class WorkbenchSession:
             guardMode=as_str(d.get('guardMode', 'full')),
             sandboxMode=as_str(d.get('sandboxMode', 'workspace-write') or 'workspace-write'),
             sandboxNetwork=as_bool(d.get('sandboxNetwork', False)),
-            verifierEnforced=as_bool(d.get('verifierEnforced', False)),
             costCeiling=as_float(d.get('costCeiling', 0.0)),
             createdAt=as_str(d.get('createdAt', '')),
             updatedAt=as_str(d.get('updatedAt', '')),
@@ -706,7 +696,6 @@ def _emit_session_status(session_id: str) -> None:
         'guardMode': session.guardMode,
         'sandboxMode': getattr(session, 'sandboxMode', 'workspace-write'),
         'sandboxNetwork': bool(getattr(session, 'sandboxNetwork', False)),
-        'verifierEnforced': bool(getattr(session, 'verifierEnforced', False)),
         'pendingMutations': len(session.pendingMutations) > 0,
     }
     for cb in _status_subscribers:
@@ -725,7 +714,6 @@ def _emit_session_status(session_id: str) -> None:
             guardMode=session.guardMode,
             sandboxMode=getattr(session, 'sandboxMode', 'workspace-write'),
             sandboxNetwork=bool(getattr(session, 'sandboxNetwork', False)),
-            verifierEnforced=bool(getattr(session, 'verifierEnforced', False)),
             pendingMutations=len(session.pendingMutations) > 0,
             plan=session.plan is not None,
             planApproved=session.planApproved,
@@ -796,7 +784,6 @@ def create_workbench_session(
     workspacePath: str = '',
     sandboxMode: str = '',
     sandboxNetwork: bool | None = None,
-    verifierEnforced: bool | None = None,
     headless: bool = False,
 ) -> WorkbenchSession:
     """Create a new workbench session.
@@ -824,7 +811,6 @@ def create_workbench_session(
         guardMode=normalizeGuardMode(guardMode or 'full'),
         sandboxMode=normalize_sandbox_mode(sandboxMode or DEFAULT_SANDBOX_MODE),
         sandboxNetwork=bool(sandboxNetwork) if sandboxNetwork is not None else False,
-        verifierEnforced=bool(verifierEnforced) if verifierEnforced is not None else False,
         workspacePath=str(workspacePath or ''),
         goal=goal,
         createdAt=now,

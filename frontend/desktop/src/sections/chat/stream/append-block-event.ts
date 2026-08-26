@@ -138,15 +138,6 @@ export function appendBlockEvent(
         memories: event.memories,
       });
     }
-  } else if (event.type === 'verifierBlocked') {
-    // Opt-in verifier enforcement: the model tried to answer before
-    // update_state(phase='complete') passed — the answer was withheld.
-    blocks.push({
-      id: `b_verifier_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      type: 'verifierBlocked',
-      content: event.content || 'Verification required: the final answer was withheld.',
-      verifierEvidence: event.verifierEvidence,
-    });
   } else if (event.type === 'error') {
     // Real failure banner — replace any prior error block for this turn
     // rather than stacking duplicates (retries can error more than once).

@@ -64,10 +64,6 @@ export interface WorkbenchSession {
   /** Codex-like sandbox axis (orthogonal to guardMode). */
   sandboxMode?: WorkbenchSandboxMode;
   sandboxNetwork?: boolean;
-  /** Opt-in verifier enforcement: while true, the final answer is withheld
-   *  until the model passes update_state(phase='complete') (see the
-   *  `verifierBlocked` SSE event). */
-  verifierEnforced?: boolean;
   /** Per-session spend ceiling in USD (0 = off). New turns are blocked once
    *  the estimated cumulative cost reaches the ceiling. */
   costCeiling?: number;
@@ -360,6 +356,13 @@ export interface WorkbenchEventHandlers {
   }) => void;
   /** Recurring-task daemon (B7): a due reminder fired at turn start. */
   onRecurringTask?: (data: { message: string }) => void;
+  /** /circuit workbench toggled — the desktop opens/closes the Circuit
+   *  panel in the right drawer and shows the ack notice. */
+  onCircuitMode?: (data: {
+    active: boolean;
+    message?: string;
+    sessionId?: string;
+  }) => void;
   /** A user message was queued for mid-response delivery. The chat
    *  thread updates its local queue pill and (when the queue holds
    *  nothing yet) adds the entry optimistically. */
@@ -422,17 +425,7 @@ export interface WorkbenchEventHandlers {
    *  merge guardMode/agentId into the workbench session so the composer
    *  chip flips without waiting for the REST refetch. */
   onGuardModeChanged?: (data: { guardMode: string; agentId?: string }) => void;
-  /** Opt-in verifier enforcement: the model answered before
-   *  update_state(phase='complete') passed — the final answer was withheld.
-   *  `evidence` explains what the verifier saw (phase, blockers, command). */
-  onVerifierBlocked?: (data: {
-    message: string;
-    evidence?: {
-      currentPhase?: string;
-      verificationCommand?: string;
-      blockers?: string[];
-      completed?: string[];
-      receiptCount?: number;
-    };
-  }) => void;
+  /** update_state phase/step transition — feeds the inline working strip
+   *  ("implement · step 3") while the turn streams. */
+  onExecutionState?: (data: { phase: string; step: number; completed?: string[]; blockers?: string[] }) => void;
 }

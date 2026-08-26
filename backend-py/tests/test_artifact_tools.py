@@ -1,0 +1,126 @@
+"""Artifact + circuit tool smoke tests (offline).
+
+``create_pptx`` / ``render_chart`` / ``render_video`` / ``draw_circuit``
+write real files; each test verifies the artifact is a valid file of the
+expected kind. ``simulate_circuit`` is exercised for its ngspice-missing
+guidance path (and the happy path when ngspice happens to be installed).
+``search_component`` is network-bound — only the input-validation path is
+tested here.
+"""
+
+from __future__ import annotations
+
+import pytest
+from app.services.tools import artifact_tools, circuit_tools
+
+
+def test_create_pptx_writes_deck(tmp_path):
+    out = tmp_path / 'deck.pptx'
+    result = artifact_tools.create_pptx(
+        str(out),
+        [
+            {'title': 'Deck', 'bullets': ['one', 'two'], 'notes': 'note'},
+            'Section title',
+        ],
+        workspace=str(tmp_path),
+    )
+    assert result['slideCount'] == 2
+    from pptx import Presentation
+
+    prs = Presentation(str(out))
+    assert len(prs.slides) == 2
+    assert prs.slides[0].shapes.title.text == 'Deck'
+
+
+def test_create_pptx_rejects_empty_and_bad_ext(tmp_path):
+    with pytest.raises(ValueError):
+        artifact_tools.create_pptx(str(tmp_path / 'deck.pptx'), [], workspace=str(tmp_path))
+    with pytest.raises(ValueError):
+        artifact_tools.create_pptx(str(tmp_path / 'deck.txt'), [{'title': 'x'}], workspace=str(tmp_path))
+
+
+def test_render_chart_png(tmp_path):
+    out = tmp_path / 'chart.png'
+    result = artifact_tools.render_chart(
+        str(out), 'line', [[1, 3, 2, 5]], title='t', workspace=str(tmp_path)
+    )
+    assert result['kind'] == 'line'
+    assert out.read_bytes()[:8] == b'\x89PNG\r\n\x1a\n'
+
+
+def test_render_video_mp4(tmp_path):
+    from PIL import Image
+
+    frames = []
+    for i in range(3):
+        p = tmp_path / f'f{i}.png'
+        Image.new('RGB', (64, 48), (i * 40, 0, 0)).save(p)
+        frames.append(str(p))
+    out = tmp_path / 'clip.mp4'
+    result = artifact_tools.render_video(
+        str(out), frames, fps=6, hold_last_ms=100, workspace=str(tmp_path)
+    )
+    assert result['frameCount'] == 3
+    assert out.stat().st_size > 0
+    # MP4 signature (ftyp box) in the first bytes.
+    assert out.read_bytes()[4:8] == b'ftyp'
+
+
+def test_draw_circuit_png(tmp_path):
+    out = tmp_path / 'sch.png'
+    result = artifact_tools.draw_circuit(
+        str(out),
+        [
+            {'type': 'battery', 'label': '9V', 'dir': 'right'},
+            {'type': 'resistor', 'label': '1k', 'dir': 'down'},
+            {'type': 'ground', 'dir': 'left'},
+        ],
+        workspace=str(tmp_path),
+    )
+    assert result['elementCount'] == 3
+    assert out.read_bytes()[:8] == b'\x89PNG\r\n\x1a\n'
+
+
+def test_draw_circuit_unknown_element(tmp_path):
+    with pytest.raises(ValueError, match='Unknown element type'):
+        artifact_tools.draw_circuit(
+            str(tmp_path / 'x.png'), [{'type': 'flux_capacitor'}], workspace=str(tmp_path)
+        )
+
+
+@pytest.mark.asyncio
+async def test_simulate_circuit_without_ngspice(monkeypatch, tmp_path):
+    monkeypatch.setattr(circuit_tools, 'resolve_ngspice', lambda: None)
+    result = await circuit_tools.simulate_circuit('V1 0 0 0\n.end', workspace=str(tmp_path))
+    assert result.get('installed') is False
+    assert 'ngspice' in result.get('error', '')
+
+
+@pytest.mark.asyncio
+async def test_simulate_circuit_happy_path(tmp_path):
+    exe = circuit_tools.resolve_ngspice()
+    if exe is None:
+        pytest.skip('ngspice not installed on this machine')
+    netlist = '\n'.join(
+        [
+            '* divider',
+            'V1 in 0 DC 10',
+            'R1 in out 1k',
+            'R2 out 0 1k',
+            '.control',
+            'op',
+            'print v(out)',
+            '.endc',
+            '.end',
+        ]
+    )
+    result = await circuit_tools.simulate_circuit(netlist, name='divider', workspace=str(tmp_path))
+    assert result['exitCode'] == 0
+    assert result['measures'], f'expected parsed measures, got: {result["logTail"][-400:]}'
+
+
+def test_search_component_requires_query():
+    import asyncio
+
+    result = asyncio.run(circuit_tools.search_component(''))
+    assert 'error' in result

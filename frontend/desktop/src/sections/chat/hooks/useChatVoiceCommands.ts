@@ -331,6 +331,25 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
           setInput('');
           break;
         }
+        case 'circuit': {
+          // /circuit — POST to the workbench; the backend flips the session
+          // gate and emits `circuitMode` (makeStreamHandlers pops the drawer
+          // panel from that event). No model call for the command itself.
+          const sid = workbenchSessionId || sessionId || '';
+          if (!sid) {
+            toast.error('No active session');
+            break;
+          }
+          const args = (event.args ?? '').trim();
+          api
+            .post<{ status?: string }>('/api/workbench/chat', {
+              sessionId: sid,
+              message: args ? `/circuit ${args}` : '/circuit',
+            })
+            .then(() => setInput(''))
+            .catch(() => toast.error('Could not toggle the circuit workbench'));
+          break;
+        }
       }
     });
     return unsubscribe;

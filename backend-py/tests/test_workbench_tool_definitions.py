@@ -33,6 +33,10 @@ def session() -> WorkbenchSession:
 # so "every registered tool is present" skips exactly these.
 FULL_MODE_BLOCKED = {'submit_plan', 'submitPlan', 'approve_plan', 'reject_plan'}
 PLAN_MODE_BLOCKED = {'enter_plan_mode', 'request_plan_mode'}
+# /circuit tools are visibility-gated per session (only present while the
+# session's circuit workbench is ON) — skipped in the default-surface tests
+# and covered positively by TestCircuitGateVisibility below.
+CIRCUIT_MODE_PREFIX = 'circuit_'
 
 
 class TestAnthropicFormat:
@@ -43,6 +47,8 @@ class TestAnthropicFormat:
             expected = reg['function']['name']
             if expected in FULL_MODE_BLOCKED:
                 continue  # session fixture runs in full mode
+            if expected.startswith(CIRCUIT_MODE_PREFIX):
+                continue  # gated behind /circuit mode; covered below
             assert expected in names, f'{expected} missing from anthropic tool list'
 
     def testAnthropicShape(self, session):
@@ -66,6 +72,8 @@ class TestOpenAIFormat:
             expected = reg['function']['name']
             if expected in FULL_MODE_BLOCKED:
                 continue  # session fixture runs in full mode
+            if expected.startswith(CIRCUIT_MODE_PREFIX):
+                continue  # gated behind /circuit mode; covered below
             assert expected in names
 
     def testOpenaiShape(self, session):
@@ -78,6 +86,36 @@ class TestOpenAIFormat:
     def testNoDuplicates(self, session):
         names = [t['function']['name'] for t in openaiToolDefinitions(session)]
         assert len(names) == len(set(names))
+
+
+class TestCircuitGateVisibility:
+    """Positive coverage for the /circuit visibility gate on both formats."""
+
+    def testCircuitToolsHiddenByDefaultAndShownInCircuitMode(self):
+        from app.services.tools.circuit_tools import is_circuit_mode
+
+        plain = WorkbenchSession(id='wb_plain')
+        gated = WorkbenchSession(id='wb_circ', metadata={'circuitMode': True})
+        assert not is_circuit_mode(plain)
+        assert is_circuit_mode(gated)
+
+        for defs in (toolDefinitions(plain), openaiToolDefinitions(plain)):
+            names = {
+                t.get('name') or t['function']['name'] for t in defs
+            }
+            assert not any(n.startswith(CIRCUIT_MODE_PREFIX) for n in names)
+
+        for defs in (toolDefinitions(gated), openaiToolDefinitions(gated)):
+            names = {
+                t.get('name') or t['function']['name'] for t in defs
+            }
+            expected = {
+                reg['function']['name']
+                for reg in tool_registry.listTools()
+                if reg['function']['name'].startswith(CIRCUIT_MODE_PREFIX)
+            }
+            missing = expected - names
+            assert not missing, f'circuit tools missing in circuit mode: {missing}'
 
 
 PASSTHROUGH_NAMES = {'mcp__workspace__bash', 'WebSearch', 'WebFetch'}

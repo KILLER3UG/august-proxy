@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { RecapCard } from '@/components/chat/RecapCard';
 import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
 import { ProducedFilesRow } from '@/components/chat/ProducedFilesRow';
+import { CircuitArtifactCard } from '@/components/chat/CircuitArtifactCard';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { GitDiffResult } from '@/api/git';
 import type { SubagentBlockState } from '../chat-stream-manager';
@@ -122,27 +122,14 @@ export function AssistantMessageContent({
         {!(isLast && streaming) && (
           <ProducedFilesRow blocks={message.blocks} />
         )}
-        {/* End-of-turn recap: instant template from tools/files; AI rewrite optional.
-            Hide while this message is still streaming so it appears with the settled answer. */}
+        {/* Claude-style circuit deliverable cards: one compact clickable chip
+            per schematic/3D/netlist/simulation output; content opens in the
+            right side panel, never inline in chat. */}
         {!(isLast && streaming) && (
-          <RecapCard
-            modelId={modelId}
-            input={{
-              blocks: message.blocks,
-              tools: message.tools,
-              changedFiles: message.changedFiles as {
-                files?: Array<{ path: string; added?: number; removed?: number; status?: string }>;
-              } | undefined,
-              finalText:
-                message.blocks
-                  ?.filter((b) => b.type === 'finalOutput' && b.content)
-                  .map((b) => b.content || '')
-                  .join('\n') ||
-                message.content ||
-                '',
-            }}
-          />
+          <CircuitArtifactCard blocks={message.blocks} />
         )}
+        {/* End-of-turn recap card removed by user request (2026-08-25):
+            the chat area stays clean — activity lives in the right panel. */}
         {/* Live generation-rate estimate while streaming (tilde = estimate). */}
         {isStreamingThis && liveRate && (
           <div

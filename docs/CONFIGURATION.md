@@ -147,9 +147,9 @@ Settings “run consolidation now” still applies immediately.
 Session `agent_mode` is `chat` | `agent` | `code` | `orchestrator` (persisted
 via workbench). Orchestrator mode uses Plan → Dispatch, named workstreams,
 and harness jobs (`/api/subagents/workstreams*`, `/api/harness/*`, MCP
-`harness_*` tools). Verifier hard-gate is **opt-in** per session
-(`verifierEnforced` / composer shield), not a global config flag.
-`AUGUST_VERIFIER_REVIEWER=1` adds an extra one-shot reviewer critique.
+`harness_*` tools). The per-session verifier hard-gate
+(`verifierEnforced` / composer shield) and the `AUGUST_VERIFIER_REVIEWER`
+critic were **removed** (2026-08-24) — answers are never withheld.
 
 ### `auxiliary.session_json_export`
 
@@ -371,7 +371,7 @@ process env.
 | `AUGUST_SQLITE_SYNC` | unset | Opt-in `NORMAL`/`FULL`/`OFF` |
 | `AUGUST_HOST_AGENT_URL` | unset | External host-agent URL |
 | `AUGUST_AUTO_ROUTE` | unset | `1` forces evidence-driven auto-routing on (equivalent to brain config `autoRoute: true`) |
-| `AUGUST_VERIFIER_REVIEWER` | unset | `1` adds a one-shot reviewer critique when the verifier gate is on |
+| `AUGUST_VERIFIER_REVIEWER` | removed | was: one-shot reviewer critique for the verifier gate (feature removed 2026-08-24) |
 
 ### Evidence-driven auto-routing
 

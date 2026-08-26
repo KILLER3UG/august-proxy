@@ -37,6 +37,28 @@ class AnthropicWorkbenchStreamAggregator:
         self.error_retry_after_ms: int | None = None
         self.stop_reason: str | None = None
 
+    def _absorb_usage(self, msg_usage: dict[str, object]) -> None:
+        """Merge a provider usage payload into the aggregate.
+
+        Anthropic splits its cumulative usage across two events: ``message_start``
+        carries input + the prompt-cache split, ``message_delta`` carries output
+        (and may omit input entirely). Merge field-by-field instead of
+        overwriting the whole dict so neither event clobbers the other.
+        """
+        for key in ('input_tokens', 'output_tokens'):
+            if msg_usage.get(key) is not None:
+                self.usage[key] = as_int(msg_usage.get(key), 0)
+        # Preserve Anthropic prompt-cache fields — the context ring
+        # reads cache_read/cache_creation for the hit-rate split.
+        if msg_usage.get('cache_read_input_tokens') is not None:
+            self.usage['cache_read_input_tokens'] = as_int(
+                msg_usage.get('cache_read_input_tokens'), 0
+            )
+        if msg_usage.get('cache_creation_input_tokens') is not None:
+            self.usage['cache_creation_input_tokens'] = as_int(
+                msg_usage.get('cache_creation_input_tokens'), 0
+            )
+
     def on_event(self, event: dict[str, object]) -> None:
         event_type = event.get('_event_type', '')
         # HTTP/stream failures from BaseProvider.streamSse use type='error'
@@ -128,21 +150,12 @@ class AnthropicWorkbenchStreamAggregator:
                 self.tool_uses.append(self.current_tool_block)
                 self.current_tool_block = None
                 self.current_tool_input_parts = []
+        elif event_type == 'message_start':
+            self._absorb_usage(as_dict(as_dict(event.get('message')).get('usage')))
         elif event_type == 'message_delta':
             msg_usage = as_dict(event.get('usage', {}))
             if msg_usage:
-                self.usage['input_tokens'] = as_int(msg_usage.get('input_tokens', 0))
-                self.usage['output_tokens'] = as_int(msg_usage.get('output_tokens', 0))
-                # Preserve Anthropic prompt-cache fields — the context ring
-                # reads cache_read/cache_creation for the hit-rate split.
-                if msg_usage.get('cache_read_input_tokens') is not None:
-                    self.usage['cache_read_input_tokens'] = as_int(
-                        msg_usage.get('cache_read_input_tokens'), 0
-                    )
-                if msg_usage.get('cache_creation_input_tokens') is not None:
-                    self.usage['cache_creation_input_tokens'] = as_int(
-                        msg_usage.get('cache_creation_input_tokens'), 0
-                    )
+                self._absorb_usage(msg_usage)
             delta = as_dict(event.get('delta', {}))
             stop = as_str(delta.get('stop_reason') or event.get('stop_reason'))
             if stop:

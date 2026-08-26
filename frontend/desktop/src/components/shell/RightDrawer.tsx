@@ -2,9 +2,26 @@
 
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Columns } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Activity,
+  ClipboardList,
+  Columns,
+  Cpu,
+  FileDiff,
+  GalleryVertical,
+  Globe,
+  ListTodo,
+  Play,
+  StickyNote,
+  TerminalSquare,
+  Users,
+  X,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import {
+  closeRightDrawerSection,
+  setActiveRightDrawerSection,
   useRightDrawerSections,
   type RightDrawerSectionId,
 } from './RightDrawerState';
@@ -19,6 +36,7 @@ import { RightDrawerFileSection } from './RightDrawerFileSection';
 import { RightDrawerSubagentsSection } from './RightDrawerSubagentsSection';
 import { RightDrawerTrajectorySection } from './RightDrawerTrajectorySection';
 import { RightDrawerArtifactsSection } from './RightDrawerArtifactsSection';
+import { RightDrawerCircuitSection } from './RightDrawerCircuitSection';
 import type { WorkbenchSession } from '@/types/workbench';
 import { useRightDrawer } from './RightDrawerState';
 import { getFileIcon } from '@/lib/file-icon';
@@ -66,7 +84,7 @@ export function RightDrawer({
   onClose: () => void;
 }) {
   const sections = useRightDrawerSections();
-  const filePreview = useRightDrawer().file;
+  const { file: filePreview, activeSection } = useRightDrawer();
   const showingFile = sections.length === 1 && sections[0] === 'file' && !!filePreview;
   const HeaderFileIcon = filePreview ? getFileIcon(filePreview.name).Icon : null;
   const isWide = sections.length >= 3;
@@ -171,21 +189,34 @@ export function RightDrawer({
             />
 
             <div className="august-right-drawer-header flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
-              <div className="flex min-w-0 items-center gap-2">
-                {showingFile && HeaderFileIcon ? (
-                  <HeaderFileIcon size={15} color={getFileIcon(filePreview.name).color} className="shrink-0" />
-                ) : (
-                  <Columns className="size-3 text-muted-foreground/60 shrink-0" />
-                )}
-                <span className="truncate text-sm font-semibold text-foreground">
-                  {showingFile ? filePreview.name : 'Workbench'}
-                </span>
-                {!showingFile && sections.length > 0 && (
-                  <span className="ml-1 inline-flex items-center justify-center rounded-md bg-white/5 px-1.5 py-0.5 text-xs font-semibold text-muted-foreground/80">
-                    {sections.length}
+              {showingFile ? (
+                <div className="flex min-w-0 items-center gap-2">
+                  {HeaderFileIcon && (
+                    <HeaderFileIcon size={15} color={getFileIcon(filePreview.name).color} className="shrink-0" />
+                  )}
+                  <span className="truncate text-sm font-semibold text-foreground">
+                    {filePreview.name}
                   </span>
-                )}
-              </div>
+                </div>
+              ) : sections.length > 0 ? (
+                /* Zed-style tab strip: one tab per open section, click to
+                   focus, ✕ to close. The whole-drawer close stays at right. */
+                <div
+                  role="tablist"
+                  aria-label="Workbench sections"
+                  data-testid="drawer-tab-strip"
+                  className="-mx-3 flex h-full min-w-0 items-stretch overflow-x-auto px-1"
+                >
+                  {sections.map((sectionId) => (
+                    <DrawerTab key={sectionId} sectionId={sectionId} active={sectionId === activeSection} />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex min-w-0 items-center gap-2">
+                  <Columns className="size-3 text-muted-foreground/60 shrink-0" />
+                  <span className="truncate text-sm font-semibold text-foreground">Workbench</span>
+                </div>
+              )}
 
               <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close Workbench sidebar">
                 <X className="size-3.5" />
@@ -230,6 +261,63 @@ export function RightDrawer({
         </motion.aside>
       )}
     </AnimatePresence>
+  );
+}
+
+/** Tab metadata mirrors RightDrawerLauncher's SECTION_META so the strip
+ *  shows the same icon + label the user used to open each section. */
+const TAB_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileDiff }> = {
+  preview: { label: 'Preview', Icon: Play },
+  diff: { label: 'Diffs', Icon: FileDiff },
+  terminal: { label: 'Terminal', Icon: TerminalSquare },
+  tasks: { label: 'Tasks', Icon: ListTodo },
+  plan: { label: 'Plan', Icon: ClipboardList },
+  browser: { label: 'Browser', Icon: Globe },
+  notes: { label: 'Notepad', Icon: StickyNote },
+  subagents: { label: 'Subagents', Icon: Users },
+  trajectory: { label: 'Trajectory', Icon: Activity },
+  artifacts: { label: 'Artifacts', Icon: GalleryVertical },
+  circuit: { label: 'Circuit', Icon: Cpu },
+  file: { label: 'File', Icon: FileDiff },
+};
+
+function DrawerTab({ sectionId, active }: { sectionId: RightDrawerSectionId; active: boolean }) {
+  const meta = TAB_META[sectionId];
+  if (!meta) return null;
+  const { label, Icon } = meta;
+  return (
+    <div
+      role="tab"
+      aria-selected={active}
+      data-testid={`drawer-tab-${sectionId}`}
+      onClick={() => setActiveRightDrawerSection(sectionId)}
+      className={cn(
+        'group relative flex min-w-0 cursor-pointer select-none items-center gap-1.5 px-2.5 pt-1',
+        active ? 'text-foreground' : 'text-muted-foreground/70 hover:text-foreground',
+      )}
+    >
+      <Icon className="size-3 shrink-0 opacity-80" />
+      <span className="truncate text-xs font-medium">{label}</span>
+      <button
+        type="button"
+        aria-label={`Close ${label} section`}
+        data-testid={`drawer-tab-close-${sectionId}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          closeRightDrawerSection(sectionId);
+        }}
+        className="ml-0.5 rounded p-0.5 opacity-40 transition hover:bg-muted/60 hover:opacity-100"
+      >
+        <X className="size-2.5" />
+      </button>
+      {/* Active underline, Zed/Cursor tab style. */}
+      <span
+        className={cn(
+          'absolute inset-x-1 bottom-0 h-[2px] rounded-full transition-opacity',
+          active ? 'bg-primary/80 opacity-100' : 'opacity-0',
+        )}
+      />
+    </div>
   );
 }
 
@@ -283,6 +371,8 @@ function renderSection(
       return <RightDrawerTrajectorySection sessionId={ctx.sessionId} />;
     case 'artifacts':
       return <RightDrawerArtifactsSection sessionId={ctx.sessionId} />;
+    case 'circuit':
+      return <RightDrawerCircuitSection sessionId={ctx.sessionId} />;
   }
 }
 

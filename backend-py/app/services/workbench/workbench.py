@@ -630,6 +630,11 @@ def buildSystemPrompt(
     inlined, workspace context (VCS + AUG.md), live session state and the
     tool protocol. Expensive pieces (git probe, skill bodies, capabilities
     block) are memoized so a turn never pays for them twice.
+
+    An <intake> manifest up top enumerates everything the context carries
+    (role, agent notes, workspace/git, session state, memory, skills, date,
+    tools) so the model can answer "what did you receive?" precisely
+    instead of guessing.
     """
     from app.services.harness_mode import is_benchmark_mode
     from app.services.workbench import prompt_segments_cache as _seg_cache
@@ -649,6 +654,7 @@ def buildSystemPrompt(
                 n = as_str(as_dict(t.get('function')).get('name'), '')
             if n:
                 tool_names.append(n)
+    offeredTools = set(tool_names)
 
     workspacePath = (
         str(session.workspacePath)
@@ -656,8 +662,9 @@ def buildSystemPrompt(
         else ''
     )
     vcsInfo = ''
+    whatsNew = ''
     if workspacePath:
-        vcsInfo, _whatsNew = _probe_workspace_git(workspacePath)
+        vcsInfo, whatsNew = _probe_workspace_git(workspacePath)
     augMdBody = ''
     if workspacePath:
         try:
@@ -683,6 +690,61 @@ def buildSystemPrompt(
         '- Never invent file contents or command output.\n'
         '</core>'
     ]
+    # Intake manifest: enumerate exactly what this context carries so the
+    # model can answer "what did you receive at the start?" precisely —
+    # the way strong assistants self-describe their intake.
+    from datetime import datetime as _dt
+
+    nowLabel = _dt.now().astimezone().strftime('%Y-%m-%d (%Z)')
+    skillNames: list[str] = []
+    try:
+        from app.services import skill_service as _skill_service
+
+        skillNames = sorted(
+            str(s.get('name') or '')
+            for s in _skill_service.catalogue()
+            if s.get('name')
+        )
+    except Exception:
+        logger.debug('prompt: skill catalogue failed', exc_info=True)
+    shownSkills = skillNames[:40]
+    skillsLine = ', '.join(shownSkills)
+    if len(skillNames) > len(shownSkills):
+        skillsLine += f' … +{len(skillNames) - len(shownSkills)} more (list_skills for all)'
+    memoryTools = sorted(
+        n for n in ('memory_search', 'read_blackboard', 'remember') if n in offeredTools
+    )
+    intake: list[str] = [
+        '<intake>',
+        'Context manifest — everything you received at the start of this conversation:',
+        '- System prompt: your role, operating rules, and tool protocol.',
+        (
+            f'- Agent notes: AUG.md project instructions ({len(augMdBody)} chars), included below.'
+            if augMdBody
+            else '- Agent notes: none found for this workspace.'
+        ),
+        (
+            f'- Workspace: {workspacePath}'
+            + (f' · git: {vcsInfo}' if vcsInfo else '')
+            + (' · recent commits listed in <workspace>.' if whatsNew else '.')
+            if workspacePath
+            else '- Workspace: none open (file tools bind to the system temp area).'
+        ),
+        '- Session state: goal, plan, execution phase, scratchpad, todos — in <session>.',
+    ]
+    if memoryTools:
+        intake.append(
+            '- Memory: durable memory is NOT auto-injected — pull it on demand via '
+            + ', '.join(memoryTools)
+            + '.'
+        )
+    if skillsLine and not is_benchmark:
+        intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
+    intake.append(f'- Date: {nowLabel} — treat as today.')
+    if tool_names:
+        intake.append(f'- Tools: {len(tool_names)} registered this turn (details in <capabilities>).')
+    intake.append('</intake>')
+    parts.append('\n'.join(intake))
     if not is_worker and not is_benchmark:
         guide = _harness_guide_text()
         if guide:
@@ -691,6 +753,8 @@ def buildSystemPrompt(
         ws = ['<workspace>', f'path: {workspacePath}']
         if vcsInfo:
             ws.append(f'vcs: {vcsInfo}')
+        if whatsNew:
+            ws.append(whatsNew)
         ws.append('</workspace>')
         parts.append('\n'.join(ws))
         if augMdBody:
@@ -712,11 +776,16 @@ def buildSystemPrompt(
     )
     if agentMode:
         sessionBlock.append(f'agentMode: {agentMode}')
-    if getattr(session, 'verifierEnforced', False):
-        sessionBlock.append(
-            'verifier: ON — the final answer is withheld until '
-            "update_state(phase='complete') passes verification."
-        )
+    # /circuit workbench hint: when active, tell the model which tools exist
+    # and how to use them (the catalog filter exposes circuit_* tools only
+    # in this mode — see toolDefinitions / openaiToolDefinitions).
+    try:
+        from app.services.tools.circuit_tools import CIRCUIT_HINT, is_circuit_mode
+
+        if is_circuit_mode(session):
+            sessionBlock.append(f'circuit: {CIRCUIT_HINT}')
+    except Exception:
+        pass
     execState = getattr(session, '_execution_state', None)
     if execState:
         sessionBlock.append(f'execution_state: {json.dumps(execState, default=str)}')
@@ -760,7 +829,6 @@ def buildSystemPrompt(
     # Conditional policy blocks: only when the matching tools are offered.
     # CLARIFY stays unconditional — submit_clarify is intercepted by the turn
     # loop, not registered, so the model only learns it from this block.
-    offeredTools = set(tool_names)
     parts.append(_seg_cache.CLARIFY_BLOCK)
     if offeredTools & {
         'bulk',
@@ -996,6 +1064,14 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         # Already in plan mode — the mode-switch tool has done its job.
         blocked_in_plan = {'enter_plan_mode', 'request_plan_mode'}
         tools = [t for t in tools if as_str(t.get('name')) not in blocked_in_plan]
+    # /circuit gate: circuit_* tools only exist while the session's circuit
+    # workbench is active (see tool_registrations.circuit_tools).
+    try:
+        from app.services.tool_registrations.circuit_tools import filter_circuit_tools
+
+        tools = filter_circuit_tools(tools, session)
+    except Exception:
+        pass
     return _finalize_session_tools(session, tools)
 
 
@@ -1153,6 +1229,18 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             return as_str(fn.get('name') or t.get('name'))
 
         tools = [t for t in tools if _tool_name_plan(t) not in blocked_in_plan]
+    # /circuit gate (OpenAI path): same visibility rule as toolDefinitions.
+    try:
+        from app.services.tools.circuit_tools import is_circuit_mode
+
+        def _circuit_gate_name(t: dict[str, object]) -> str:
+            fn = as_dict(t.get('function'))
+            return as_str(fn.get('name') or t.get('name'))
+
+        if session is None or not is_circuit_mode(session):
+            tools = [t for t in tools if not _circuit_gate_name(t).startswith('circuit_')]
+    except Exception:
+        pass
     return _finalize_session_tools(session, tools)
 
 
@@ -1656,80 +1744,6 @@ async def sendWorkbenchMessageStream(
             clear_current()
 
 
-def _verifier_gated_emit(session: object, emit):
-    """Wrap a turn's emit callback with the opt-in verifier final-answer gate.
-
-    When ``session.verifierEnforced`` is set, final-answer text (``finalOutput``
-    events) is withheld until ``update_state(phase='complete')`` passes the
-    verifier gate; a single ``verifierBlocked`` event is emitted instead so the
-    UI can explain why the answer is withheld. All other event types
-    (error/done/toolResult/thinking/…) pass through untouched, and the gate has
-    zero effect when the flag is off (the default — casual chat is unaffected).
-    """
-    if emit is None:
-        return None
-    if not getattr(session, 'verifierEnforced', False):
-        return emit
-    _fired = {'flag': False}
-
-    def _wrapped(evt: dict[str, object]) -> None:
-        etype = as_str(evt.get('type'), '')
-        if etype in ('finalOutput', 'final_output'):
-            forceRelease = bool(getattr(session, '_verifier_force_release_this_turn', False))
-            state = getattr(session, '_execution_state', None)
-            phase = as_str(as_dict(state, {}).get('phase'), '') if state else ''
-            if phase != 'complete' and not forceRelease:
-                if not _fired['flag']:
-                    _fired['flag'] = True
-                    # Live flags for the turn: the refusal re-prompt guard
-                    # reads _verifier_blocked; routing evidence reads
-                    # _verifier_blocked_this_turn (withheld ≠ win).
-                    setattr(session, '_verifier_blocked', True)
-                    setattr(session, '_verifier_blocked_this_turn', True)
-                    stateDict = as_dict(state, {}) if state else {}
-                    # Evidence for the UI banner: what the model claimed, what
-                    # it said blocks completion, and whether any verification
-                    # command ran this turn (receipts).
-                    receipts = as_list(getattr(session, '_verification_receipts', None), [])
-                    emit(
-                        {
-                            'type': 'verifierBlocked',
-                            'message': (
-                                'Verification required: the final answer is withheld until '
-                                "the model calls update_state(phase='complete') after a "
-                                'passing verification run.'
-                            ),
-                            'evidence': {
-                                'currentPhase': as_str(stateDict.get('phase'), 'research'),
-                                'verificationCommand': as_str(
-                                    stateDict.get('verification_command'), ''
-                                ),
-                                'blockers': as_list(stateDict.get('blockers'), [])[:5],
-                                'completed': as_list(stateDict.get('completed'), [])[:5],
-                                'receiptCount': len(receipts),
-                            },
-                        }
-                    )
-                return
-            if forceRelease:
-                emit(
-                    {
-                        'type': 'warning',
-                        'message': (
-                            'Verifier gate auto-released: the model ignored the verification '
-                            'steer twice — showing the answer without a passing verification run.'
-                        ),
-                    }
-                )
-                # Consume the one-shot release: it applies to the NEXT turn
-                # after two ignored steers, then resets (a fresh user turn
-                # must not inherit a stale release).
-                setattr(session, '_verifier_force_release', False)
-        emit(evt)
-
-    return _wrapped
-
-
 async def _sendWorkbenchMessageStreamImpl(
     sessionId: str,
     message: str,
@@ -1763,6 +1777,31 @@ async def _sendWorkbenchMessageStreamImpl(
     session.status = 'streaming'
     session.updatedAt = _now()
     _emitSessionStatus(sessionId)
+    # /circuit gate: when the user invokes the circuit workbench, flip the
+    # session flag and short-circuit the turn with an ack (the model is not
+    # called for the command itself; the NEXT user message works in circuit
+    # mode). Emits a `circuitMode` SSE event so the desktop pops the panel.
+    try:
+        from app.services.tool_registrations.circuit_tools import maybe_intercept_circuit
+
+        interception = maybe_intercept_circuit(session, message)
+    except Exception:
+        interception = None
+    if interception is not None:
+        notice = as_str(interception.get('notice'), '')
+        if emit:
+            emit(
+                {
+                    'type': 'circuitMode',
+                    'active': bool(interception.get('circuitMode')),
+                    'message': notice,
+                    'sessionId': sessionId,
+                }
+            )
+            emit({'type': 'done', 'sessionId': sessionId})
+        session.status = 'idle'
+        saveSessions()
+        return
     session.messages.append({'role': 'user', 'content': message})
     session.messageCount += 1
     # Title is generated after the first assistant reply (see schedule_auto_title
@@ -1840,25 +1879,10 @@ async def _sendWorkbenchMessageStreamImpl(
                     logger.debug('recurring-task subagent dispatch failed', exc_info=True)
     except Exception:
         logger.debug('recurring tasks check failed', exc_info=True)
-    # Turn-scoped verifier/self-heal state (audit sweep): everything below is
-    # reset here — at the TRUE turn start — instead of inside
-    # buildSystemPrompt, so a mid-turn prompt rebuild (enter_plan_mode) can't
-    # wipe verifier receipts, and stale flags/counters can't leak across turns.
-    setattr(session, '_verifier_blocked', False)
-    setattr(session, '_verifier_blocked_this_turn', False)
+    # Turn-scoped refusal/self-heal state (audit sweep): reset here — at the
+    # TRUE turn start — instead of inside buildSystemPrompt, so stale
+    # flags/counters can't leak across turns.
     setattr(session, '_refusal_count', 0)
-    setattr(session, '_verification_receipts', None)
-    # The force-release flag is set by the PREVIOUS turn's finally (A7, after
-    # two ignored verifier steers) — snapshot it for THIS turn only, then clear
-    # the raw flag so a later unrelated turn can never inherit a stale release.
-    setattr(
-        session, '_verifier_force_release_this_turn', bool(getattr(session, '_verifier_force_release', False))
-    )
-    setattr(session, '_verifier_force_release', False)
-    # Opt-in verifier enforcement: while session.verifierEnforced is set,
-    # finalOutput text is withheld until update_state(phase='complete') passes
-    # the verifier gate. Casual chat (flag off) is unaffected.
-    emit = _verifier_gated_emit(session, emit)
     if not resolvedProvider:
         if emit:
             emit(
@@ -2482,19 +2506,45 @@ async def _sendWorkbenchMessageStreamImpl(
             totalInputTokens += as_int(respUsage.get('input_tokens', 0))
             totalOutputTokens += as_int(respUsage.get('output_tokens', 0))
             finalContextTokens = as_int(respUsage.get('input_tokens', 0))
-            # Universal cache split: Anthropic reports
-            # cache_read/cache_creation_input_tokens (uncached input is the
-            # miss); OpenAI-compatible reports prompt_cache_hit/miss_tokens.
-            hitRaw = respUsage.get('cache_read_input_tokens')
-            if hitRaw is None:
-                hitRaw = respUsage.get('prompt_cache_hit_tokens')
-            missRaw = respUsage.get('prompt_cache_miss_tokens')
-            if missRaw is None:
-                missRaw = as_int(respUsage.get('input_tokens'), 0) + as_int(
-                    respUsage.get('cache_creation_input_tokens'), 0
+            # Universal cache split — three provider shapes:
+            #   • Anthropic: cache_read_input_tokens / cache_creation_input_tokens
+            #     (input_tokens excludes both; uncached = input + creation).
+            #   • DeepSeek: prompt_cache_hit/miss_tokens (disjoint sum).
+            #   • OpenAI-compatible (OpenAI/OpenRouter/gateways):
+            #     prompt_tokens_details.cached_tokens is a SUBSET of
+            #     input_tokens → uncached = input − cached.
+            inputNow = as_int(respUsage.get('input_tokens'), 0)
+            creationNow = as_int(respUsage.get('cache_creation_input_tokens'), 0)
+            hitNow: int | None = None
+            missNow: int | None = None
+            if respUsage.get('cache_read_input_tokens') is not None:
+                hitNow = as_int(respUsage.get('cache_read_input_tokens'), 0)
+                missNow = inputNow + creationNow
+            elif respUsage.get('prompt_cache_hit_tokens') is not None:
+                hitNow = as_int(respUsage.get('prompt_cache_hit_tokens'), 0)
+                missExplicit = respUsage.get('prompt_cache_miss_tokens')
+                missNow = (
+                    as_int(missExplicit, 0) if missExplicit is not None else max(0, inputNow - hitNow)
                 )
-            totalCacheHitTokens += as_int(hitRaw, 0)
-            totalCacheMissTokens += as_int(missRaw, 0)
+            elif respUsage.get('cached_tokens') is not None:
+                # Aggregated-stream shape: providers.py preserves the
+                # OpenAI-standard usage.prompt_tokens_details.cached_tokens
+                # as a flat ``cached_tokens`` so gateways that only report
+                # the details object still feed the cache split.
+                hitNow = as_int(respUsage.get('cached_tokens'), 0)
+                missNow = max(0, inputNow - hitNow)
+            else:
+                promptDetails = as_dict(respUsage.get('prompt_tokens_details'), {})
+                cachedRaw = promptDetails.get('cached_tokens')
+                if cachedRaw is not None:
+                    hitNow = as_int(cachedRaw, 0)
+                    missNow = max(0, inputNow - hitNow)
+            if hitNow is not None:
+                totalCacheHitTokens += hitNow
+                totalCacheMissTokens += as_int(missNow, 0)
+            else:
+                # Provider reports no cache fields — the input was uncached.
+                totalCacheMissTokens += inputNow
         if isAnthropic:
             assistantMsg: dict[str, object] = {'role': 'assistant', 'content': response.get('content', [])}
             contentBlocks = cast('list[dict[str, object]]', as_list(response.get('content', []), []))
@@ -2601,7 +2651,6 @@ async def _sendWorkbenchMessageStreamImpl(
                 textContent
                 and _isToolRefusal(textContent)
                 and getattr(session, 'agent_mode', '') != 'chat'
-                and not getattr(session, '_verifier_blocked', False)
             ):
                 refusalCount = as_int(getattr(session, '_refusal_count', 0), 0) + 1
                 setattr(session, '_refusal_count', refusalCount)
@@ -2679,7 +2728,6 @@ async def _sendWorkbenchMessageStreamImpl(
                 continue
             from app.services.harness_mode import (
                 BENCHMARK_ALLOWED_TOOLS,
-                BENCHMARK_VERIFIER_EXTRA,
                 PLANNER_ALLOWED_TOOLS,
                 benchmark_block_message,
                 is_benchmark_mode,
@@ -2706,8 +2754,6 @@ async def _sendWorkbenchMessageStreamImpl(
                 continue
             if is_benchmark_mode(session) and toolName:
                 allowed_bench = set(BENCHMARK_ALLOWED_TOOLS)
-                if getattr(session, 'verifierEnforced', False):
-                    allowed_bench |= BENCHMARK_VERIFIER_EXTRA
                 if toolName not in allowed_bench:
                     msg = benchmark_block_message(toolName)
                     if emit:
@@ -3200,26 +3246,11 @@ async def _sendWorkbenchMessageStreamImpl(
                         result = await _executeTool(toolName, toolInput, session, toolUseId)
                 else:
                     logger.debug('tool %s raised after dispatch; not re-running', toolName, exc_info=True)
-            # Verifier gate receipt: keep the tail of command output for this turn
-            # so update_state can require a real verification run before it allows
-            # a review/complete transition (see system_tools._updateState). The
-            # command itself is recorded so the gate can match the DECLARED
-            # verification_command instead of accepting any passing command.
+            # Exit-code surfacing: keep a lastCommand snapshot in session
+            # metadata (name/command/exit code) so the UI and subagent
+            # handoffs can show what ran most recently.
             if 'run_command' in toolName or toolName in ('bash', 'safe_python'):
                 try:
-                    receipts = getattr(session, '_verification_receipts', None)
-                    if receipts is None:
-                        receipts = []
-                        setattr(session, '_verification_receipts', receipts)
-                    receipts.append(
-                        {
-                            'name': toolName,
-                            'command': as_str(toolInput.get('command'), ''),
-                            'content': as_str(result, '')[-3000:],
-                        }
-                    )
-                    if len(receipts) > 12:
-                        del receipts[: len(receipts) - 12]
                     cmd = as_str(toolInput.get('command'), '')
                     out = as_str(result, '')
                     exit_m = re.search(r'exit code:\s*(-?\d+)', out, re.IGNORECASE)
@@ -3230,7 +3261,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         'exitCode': int(exit_m.group(1)) if exit_m else None,
                     }
                 except Exception:
-                    logger.debug('verifier receipt record failed', exc_info=True)
+                    logger.debug('last-command metadata record failed', exc_info=True)
             MAX_SSE_CONTENT = 100 * 1024
             contentTruncated = len(result) > MAX_SSE_CONTENT
             if contentTruncated:
@@ -3556,96 +3587,6 @@ async def _sendWorkbenchMessageStreamImpl(
                     logger.exception('workbench record_usage failed')
     finally:
         current_subprocess_cancel.reset(_cancel_token)
-        # Verifier auto-run (D3): when enforcement is on and the model ended
-        # without completing the gate, run the stated verification command
-        # once and steer the model to finish (phase='complete'). Only in
-        # `full` guard mode — in ask/edit modes run_command requires user
-        # approval, and auto-running it would bypass the approval gate
-        # (audit finding).
-        try:
-            _guard_mode = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
-            _verifier_runs = as_int(getattr(session, '_verifier_auto_run_count', 0), 0)
-            if (
-                _guard_mode == 'full'
-                and getattr(session, 'verifierEnforced', False)
-                and _verifier_runs < 2
-                and not _isCancelled()
-            ):
-                vstate = getattr(session, '_execution_state', None) or {}
-                vphase = as_str(vstate.get('phase'), '') if isinstance(vstate, dict) else ''
-                vcmd = as_str(vstate.get('verification_command'), '') if isinstance(vstate, dict) else ''
-                if vphase != 'complete' and vcmd:
-                    setattr(session, '_verifier_auto_run_count', _verifier_runs + 1)
-                    vresult = await _executeTool('run_command', {'command': vcmd}, session)
-                    vout = as_str(vresult, '')[-3000:]
-                    receipts = getattr(session, '_verification_receipts', None)
-                    if receipts is None:
-                        receipts = []
-                        setattr(session, '_verification_receipts', receipts)
-                    receipts.append({'name': 'run_command', 'command': vcmd, 'content': vout})
-                    if len(receipts) > 12:
-                        del receipts[: len(receipts) - 12]
-                    # Deterministic verdict (exit code is always surfaced by
-                    # run_command now); marker scan is the fallback only.
-                    exitMatch = re.search(r'exit code:\s*(-?\d+)', vout, re.IGNORECASE)
-                    verifierPassed: bool | None
-                    exitCodeStr = ''
-                    if exitMatch:
-                        exitCodeStr = exitMatch.group(1)
-                        verifierPassed = int(exitCodeStr) == 0
-                    else:
-                        verifierPassed = None
-                    if verifierPassed is True:
-                        steer = (
-                            '[VERIFIER AUTO-RUN] The verification command passed (exit code 0). '
-                            "Call update_state(phase='complete') to release the final answer."
-                        )
-                    else:
-                        verdictDetail = (
-                            f'failed with exit code {exitCodeStr}' if verifierPassed is False else 'did not produce a clear exit code'
-                        )
-                        steer = (
-                            '[VERIFIER AUTO-RUN] The verification command ran automatically and '
-                            f'{verdictDetail}:\n{vout}\n'
-                            'Fix the failures, re-run the command, and only then call '
-                            "update_state(phase='complete')."
-                        )
-                    enqueueUserMessage(sessionId, steer, kind='steer')
-                elif vphase != 'complete' and not vcmd:
-                    # A7: the model ended with a withheld answer and never
-                    # declared a verification command — steer it to declare +
-                    # run one, instead of stranding the answer under the amber
-                    # banner with no automatic recovery path. A second ignored
-                    # steer force-releases the answer next turn (L4, bounded).
-                    setattr(session, '_verifier_auto_run_count', _verifier_runs + 1)
-                    if _verifier_runs >= 1:
-                        setattr(session, '_verifier_force_release', True)
-                        if emit:
-                            emit(
-                                {
-                                    'type': 'warning',
-                                    'message': (
-                                        'Verifier gate: the model ignored the verification steer '
-                                        'twice — the next answer will be released without a '
-                                        'passing verification run.'
-                                    ),
-                                }
-                            )
-                    else:
-                        # Suggest a verification command inferred from the
-                        # task type (never auto-run — the model decides what
-                        # actually validates its work).
-                        suggestedCmd = ''
-                        steer = (
-                            '[VERIFIER STEER] The verifier gate requires a verification run before '
-                            "the final answer is released. Declare and run a verification command "
-                            f"(tests / lint / build{f' — suggested: {suggestedCmd}' if suggestedCmd else ''}) "
-                            "via run_command, confirm it passes, then call "
-                            "update_state(phase='complete', verificationCommand='<your command>')."
-                        )
-                        enqueueUserMessage(sessionId, steer, kind='steer')
-        except Exception:
-            logger.debug('verifier auto-run failed', exc_info=True)
         if emit:
             # Surface this turn's token usage so the UI can render a per-turn
             # chip (early-exit `done` events above carry no usage).
@@ -4859,12 +4800,11 @@ def get_session() -> WorkbenchSession | None:
 
     Used by the update_state tool to read/write execution state.
     Prefers the ``currentSessionId`` ContextVar (set by ``_executeTool`` for
-    the whole dispatch) so execution state / verifier receipts / scratchpad
-    land on the session whose turn is actually executing — with ≥2 open
-    chats, the max-``updatedAt`` heuristic resolved to the WRONG session
-    (verifier gate verdict stuck 'none', false stall hard-stops, the wrong
-    chat's agent mode rewired). Falls back to the most recently touched
-    session only for callers outside a tool dispatch.
+    the whole dispatch) so execution state / scratchpad land on the session
+    whose turn is actually executing — with ≥2 open chats, the
+    max-``updatedAt`` heuristic resolved to the WRONG session (false stall
+    hard-stops, the wrong chat's agent mode rewired). Falls back to the most
+    recently touched session only for callers outside a tool dispatch.
     """
     from app.services.workbench.context import currentSessionId
 
@@ -4898,9 +4838,34 @@ async def updateSessionState(session: WorkbenchSession, executionState: dict) ->
     try:
         await asyncio.wait_for(session._state_lock.acquire(), timeout=5.0)
         try:
+            prevState = getattr(session, '_execution_state', None)
             session._execution_state = executionState
             if hasattr(session, 'save') and callable(session.save):
                 session.save()
+            # Stream phase/step changes to the live UI (the inline working
+            # strip shows "implement · step 3"). Only on real transitions —
+            # same-phase step bumps would spam the stream otherwise.
+            prevPhase = as_str(as_dict(prevState).get('phase'), '') if prevState else ''
+            prevStep = as_int(as_dict(prevState).get('step'), 0) if prevState else 0
+            newPhase = as_str(executionState.get('phase'), '')
+            newStep = as_int(executionState.get('step'), 0)
+            if (newPhase and newPhase != prevPhase) or (newStep and newStep != prevStep):
+                try:
+                    from app.services.event_log import event_log
+
+                    event_log.append(
+                        session.id,
+                        'executionState',
+                        {
+                            'type': 'executionState',
+                            'phase': newPhase,
+                            'step': newStep,
+                            'completed': as_list(executionState.get('completed'), [])[:8],
+                            'blockers': as_list(executionState.get('blockers'), [])[:8],
+                        },
+                    )
+                except Exception:
+                    logger.debug('executionState emit failed', exc_info=True)
             return True
         finally:
             session._state_lock.release()

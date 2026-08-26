@@ -18,13 +18,14 @@ import { ChevronDown, Clock, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 
-/** Lines of prose visible before the clamp + fade kick in. */
-const CLAMP_LINES = 9;
+/** Lines of prose visible before the clamp + fade kick in (Claude-parity:
+ * a short paragraph window with a bottom fade, not the whole thought). */
+const CLAMP_LINES = 6;
 
 /** Rough char equivalent of CLAMP_LINES (~80 chars/line) — the overflow
  *  measurement can read 0/stale when a whole-turn burst arrives at once, so
  *  a long thought must also truncate by length alone. */
-const CLAMP_CHARS = 700;
+const CLAMP_CHARS = 480;
 
 export function ThoughtStep({
   content,

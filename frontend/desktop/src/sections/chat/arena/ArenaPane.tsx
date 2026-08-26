@@ -20,7 +20,6 @@ function LaneBlocks({ message }: { message: ChatMessage }) {
       b.type === 'finalOutput' && !!b.content?.trim(),
   );
   const errorBlock = blocks.find((b) => b.type === 'error');
-  const verifierBlock = blocks.find((b) => b.type === 'verifierBlocked');
 
   if (errorBlock) {
     return (
@@ -38,11 +37,6 @@ function LaneBlocks({ message }: { message: ChatMessage }) {
 
   return (
     <div className="space-y-2">
-      {verifierBlock ? (
-        <div className="rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
-          ⚠ {verifierBlock.content || 'Verification required — answer withheld.'}
-        </div>
-      ) : null}
       {thinking.length > 0 ? (
         <div className="rounded border border-border bg-muted/30">
           <button

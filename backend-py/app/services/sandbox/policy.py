@@ -139,8 +139,7 @@ class SandboxResult:
         if self.stderr:
             parts.append(f'STDERR:\n{self.stderr}')
         # Always surface the exit code when known (zero included) — the
-        # verifier gate judges receipts deterministically by exit code, and
-        # the model benefits from seeing it too.
+        # model (and the user) judge command success deterministically.
         if self.exit_code is not None:
             parts.append(f'Exit code: {self.exit_code}')
         body = '\n'.join(parts) if parts else '(no output)'

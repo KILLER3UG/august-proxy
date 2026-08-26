@@ -718,6 +718,14 @@ async def call_openai_workbench(
                         usage['prompt_cache_miss_tokens'] = as_int(
                             eventUsage.get('prompt_cache_miss_tokens'), 0
                         )
+                    # OpenAI-standard shape (OpenAI, OpenRouter, most gateways):
+                    # the cache split rides in usage.prompt_tokens_details.
+                    # cached_tokens — without this the turn loop sees no cache
+                    # fields and books every input token as a cache miss,
+                    # pinning the context ring's avg hit rate at a false 0%.
+                    promptDetails = as_dict(eventUsage.get('prompt_tokens_details'), {})
+                    if promptDetails.get('cached_tokens') is not None:
+                        usage['cached_tokens'] = as_int(promptDetails.get('cached_tokens'), 0)
                 choices = as_list(event.get('choices', []), [])
                 if not choices:
                     continue

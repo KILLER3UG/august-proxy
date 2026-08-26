@@ -81,7 +81,7 @@ export class SessionStreamController {
       const next =
         typeof session === 'function' ? session(prev.workbenchSession) : session;
       // Preserve the frontend-only planSubmittedLive flag across any
-      // backend-payload replacement (guard/sandbox/verifier toggles, undo,
+      // backend-payload replacement (guard/sandbox toggles, undo,
       // compact, session refresh). The backend never returns this flag;
       // without this merge every setWorkbenchSession(raw) call would wipe
       // it and silently dismiss a pending plan banner.
