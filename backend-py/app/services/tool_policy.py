@@ -58,6 +58,8 @@ _PROMPT_WRITE = frozenset({
     'create_pptx', 'render_chart', 'render_video', 'draw_circuit',
     # Circuit workbench mutations — netlist files + rendered PNG output.
     'circuit_create_netlist', 'circuit_update_netlist', 'circuit_render_3d',
+    # Interactive HTML artifacts — writes an .html file into the workspace.
+    'create_html_artifact',
     'remember',
     # Harness self-improvement: files proposals for human review (no direct
     # application from the model — approval runs a deterministic applier).

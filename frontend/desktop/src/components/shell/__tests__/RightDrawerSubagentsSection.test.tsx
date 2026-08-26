@@ -73,12 +73,61 @@ describe('RightDrawerSubagentsSection', () => {
     fireEvent.click(row);
 
     expect(await screen.findByTestId('right-drawer-subagent-view-goodall-1')).toBeInTheDocument();
-    expect(screen.getByText('Waiting for subagent output…')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for output…')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove subagent view' }));
     expect(screen.queryByTestId('right-drawer-subagent-view-goodall-1')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('right-drawer-subagent-goodall-1'));
     expect(screen.getByTestId('right-drawer-subagent-view-goodall-1')).toBeInTheDocument();
+  });
+
+  it('list is clutter-free: no harness bar, delegate button, goal card or debug panels', async () => {
+    renderSection();
+    await screen.findByTestId('right-drawer-subagent-goodall-1');
+    expect(screen.queryByText('Harness')).toBeNull();
+    expect(screen.queryByText('Delegate')).toBeNull();
+    expect(screen.queryByTitle('Harness config')).toBeNull();
+    expect(screen.queryByText(/Isolated context · fresh conversation/)).toBeNull();
+    expect(screen.queryByText('Full run (')).toBeNull();
+    expect(screen.queryByText('Workstreams')).toBeNull();
+  });
+
+  it('detail reads like chat: markdown result, no debug counters or raw dumps', async () => {
+    const { api } = await import('@/api/client');
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/runs')) {
+        return {
+          runs: [
+            {
+              task_id: 'goodall-1',
+              agent_id: 'goodall',
+              goal: 'Inspect the backend flow',
+              status: 'completed',
+              result_full: '**All clear.** The backend flow checks out.',
+            },
+          ],
+        };
+      }
+      if (url.includes('/transcript')) return { events: [] };
+      if (url.includes('/config')) {
+        return { maxConcurrent: 3, maxIterations: 25, maxDepth: 1, worktreeIsolation: false };
+      }
+      return { messages: [] };
+    });
+
+    renderSection();
+    fireEvent.click(await screen.findByTestId('right-drawer-subagent-goodall-1'));
+    const view = await screen.findByTestId('right-drawer-subagent-view-goodall-1');
+
+    // Result renders as chat-formatted markdown…
+    expect(view.querySelector('.chat-message-text')).toBeTruthy();
+    expect(view.textContent).toContain('The backend flow checks out.');
+    // …with none of the debug furniture.
+    expect(view.textContent).not.toContain('Live transcript ·');
+    expect(view.textContent).not.toContain('api calls');
+    expect(view.textContent).not.toContain('iters');
+    expect(view.textContent).not.toContain('Persisted final response');
+    expect(view.textContent).not.toContain('No final response recorded.');
   });
 });

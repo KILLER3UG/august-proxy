@@ -14,7 +14,8 @@ import { openShortcutsModal } from "@/store/shortcuts-modal";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
-import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
+import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, isDrawerPanelVisible, setActiveRightDrawerSection, toggleBottomTerminal, useRightDrawer } from "./RightDrawerState";
+import { BottomTerminalDock } from "./BottomTerminalDock";
 import { getDigest, getNeedsAttention } from "@/api/subagents";
 import { setNeedsAttention } from "@/components/sidebar/needs-handoff-store";
 import {
@@ -69,13 +70,20 @@ export function ChatLayout() {
   }, [showRightSidebar, rightDrawer.open, rightDrawer.sections.length]);
 
   // Keep layout flag in sync with drawer store (both open and close).
+  // Chooser-only state (zero tabs + chooserActive) still counts as visible,
+  // otherwise the ZCode "Open tab" view could never appear on screen.
   useEffect(() => {
-    if (rightDrawer.open && rightDrawer.sections.length > 0) {
+    const panelVisible = isDrawerPanelVisible(
+      rightDrawer.open,
+      rightDrawer.sections.length,
+      rightDrawer.chooserActive,
+    );
+    if (panelVisible) {
       if (!showRightSidebar) setShowRightSidebar(true);
-    } else if (showRightSidebar) {
+    } else if (!rightDrawer.open && showRightSidebar) {
       setShowRightSidebar(false);
     }
-  }, [rightDrawer.open, rightDrawer.sections.length, showRightSidebar]);
+  }, [rightDrawer.open, rightDrawer.sections.length, rightDrawer.chooserActive, showRightSidebar]);
 
   const openWorkbenchSidebar = (section: RightDrawerSectionId) => {
     addRightDrawerSection(section);
@@ -601,6 +609,12 @@ export function ChatLayout() {
               </>
             )}
           </div>
+
+          {/* JetBrains-style terminal strip docked under the whole main
+              column (chat + right panel). */}
+          {rightDrawer.bottomTerminal && !isSettings && (
+            <BottomTerminalDock onClose={() => toggleBottomTerminal(false)} />
+          )}
         </div>
       </div>
       <ConfirmDialog

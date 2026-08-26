@@ -63,6 +63,8 @@ _ORACLE_WRITE = frozenset({
     'harness_propose',
     # Artifact creation — each writes a file into the workspace.
     'create_pptx', 'render_chart', 'render_video', 'draw_circuit',
+    # Interactive HTML artifacts — writes an .html file into the workspace.
+    'create_html_artifact',
     # Circuit workbench mutations — netlist files + rendered PNG output.
     'circuit_create_netlist', 'circuit_update_netlist', 'circuit_render_3d',
 })

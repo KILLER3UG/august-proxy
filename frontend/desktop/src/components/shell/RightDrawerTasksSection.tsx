@@ -101,7 +101,7 @@ export function RightDrawerTasksSection({
   };
 
   return (
-    <div className="h-full space-y-3 drawer-section-text">
+    <div className="h-full space-y-3 drawer-section-text" data-testid="right-drawer-tasks-root">
       {/* Brand strip — same surface language as the PlanProposalBanner and
           the dropdown panels. Active = primary; no-todos = neutral. */}
       <div

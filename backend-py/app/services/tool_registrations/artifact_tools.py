@@ -76,6 +76,14 @@ async def _drawCircuit(path: str = '', elements=None, title: str = '') -> str:
         return _err(exc)
 
 
+async def _createHtmlArtifact(path: str = '', html: str = '', title: str = '') -> str:
+    try:
+        result = artifact_tools.create_html_artifact(path, html, title=title, workspace=_workspace())
+        return json.dumps(result)
+    except Exception as exc:
+        return _err(exc)
+
+
 _LIST_OF_OBJ = {
     'type': 'array',
     'items': {'type': 'object'},
@@ -161,5 +169,33 @@ def register() -> None:
                 'title': {'type': 'string'},
             },
             'required': ['path', 'elements'],
+        },
+    )
+    tool_registry.register(
+        'create_html_artifact',
+        'Create a SELF-CONTAINED interactive HTML visual/animation the user '
+        'can open right in the side panel — use this whenever a VISUAL or '
+        'INTERACTIVE explanation beats prose: how embeddings/vectors work, '
+        'attention mechanisms, VHDL/signal timing, physics simulations '
+        '(pendulum, waves, orbits), algorithm animations, interactive '
+        'diagrams. Author the COMPLETE document: all CSS and JavaScript '
+        'INLINE (no external files/CDNs), canvas/SVG for animation, '
+        'controls (sliders/buttons) encouraged, dark background works best. '
+        'The file renders LIVE in the right panel and in fullscreen.',
+        _createHtmlArtifact,
+        {
+            'type': 'object',
+            'properties': {
+                'path': {
+                    'type': 'string',
+                    'description': 'Output path, e.g. embeddings-explainer.html',
+                },
+                'html': {
+                    'type': 'string',
+                    'description': 'Complete HTML document with inline CSS/JS',
+                },
+                'title': {'type': 'string', 'description': 'Document title if missing from html'},
+            },
+            'required': ['path', 'html'],
         },
     )

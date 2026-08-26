@@ -90,4 +90,27 @@ describe('RightDrawerFileSection fullscreen preview', () => {
     const overlay = document.querySelector('[data-testid="file-preview-overlay"]');
     expect(overlay?.querySelector('img')).toBeTruthy();
   });
+
+  it('renders HTML documents LIVE with a preview/source toggle', () => {
+    setup({
+      name: 'embeddings-explainer.html',
+      size: '6 KB',
+      type: 'text',
+      content:
+        '<!doctype html><html><head><style>body{color:#fff}</style></head>' +
+        '<body><canvas id="c"></canvas><script>let x=1;</script></body></html>',
+    });
+    // Live iframe by default (sandboxed, scripts allowed)…
+    const live = document.querySelector(
+      '[data-testid="file-preview-html-live"] iframe[sandbox]',
+    );
+    expect(live).toBeTruthy();
+    // …with a Source toggle showing code instead.
+    fireEvent.click(document.querySelector('[data-testid="html-preview-tab-source"]')!);
+    expect(screen.getByText(/<!doctype html>/i)).toBeTruthy();
+    fireEvent.click(document.querySelector('[data-testid="html-preview-tab-render"]')!);
+    expect(
+      document.querySelector('[data-testid="file-preview-html-live"] iframe'),
+    ).toBeTruthy();
+  });
 });

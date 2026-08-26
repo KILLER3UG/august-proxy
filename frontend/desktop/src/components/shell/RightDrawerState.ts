@@ -25,6 +25,11 @@ export interface RightDrawerState {
   diff?: GitDiffResult;
   selectedDiffPath?: string;
   file?: FileAttachment;
+  /** ZCode-style "Open tab" card-grid chooser replaces the body while set. */
+  chooserActive?: boolean;
+  /** JetBrains-style terminal docked at the BOTTOM of the main column
+   *  instead of living as a right-panel tab. */
+  bottomTerminal?: boolean;
 }
 
 const MAX_SECTIONS = 4;
@@ -74,6 +79,8 @@ export function useRightDrawer(): RightDrawerState {
   const diff = useRightDrawerStore((s) => s.diff);
   const selectedDiffPath = useRightDrawerStore((s) => s.selectedDiffPath);
   const file = useRightDrawerStore((s) => s.file);
+  const chooserActive = useRightDrawerStore((s) => s.chooserActive);
+  const bottomTerminal = useRightDrawerStore((s) => s.bottomTerminal);
   return {
     open,
     sections,
@@ -81,6 +88,8 @@ export function useRightDrawer(): RightDrawerState {
     diff,
     selectedDiffPath,
     file,
+    chooserActive,
+    bottomTerminal,
   };
 }
 
@@ -128,6 +137,8 @@ export function closeRightDrawer() {
     sections: [],
     activeSection: undefined,
     file: undefined,
+    chooserActive: false,
+    bottomTerminal: false,
   });
 }
 
@@ -139,7 +150,45 @@ export function openRightDrawerFile(file: FileAttachment) {
     sections: ['file'],
     activeSection: 'file',
     file,
+    chooserActive: false,
   });
+}
+
+/** Open the drawer straight into the ZCode-style "Open tab" chooser. */
+export function openRightDrawerChooser() {
+  useRightDrawerStore.setState({
+    ...useRightDrawerStore.getState(),
+    open: true,
+    chooserActive: true,
+  });
+}
+
+/** Show/hide the chooser without touching open sections. */
+export function setRightDrawerChooser(active: boolean) {
+  useRightDrawerStore.setState({
+    ...useRightDrawerStore.getState(),
+    chooserActive: active,
+  });
+}
+
+/** Toggle the bottom-docked terminal strip. */
+export function toggleBottomTerminal(open?: boolean) {
+  const current = useRightDrawerStore.getState();
+  useRightDrawerStore.setState({
+    ...current,
+    bottomTerminal: open ?? !current.bottomTerminal,
+  });
+}
+
+/** Whether the layout shell should render the drawer panel. Chooser-only
+ *  state (zero tabs + chooserActive) counts as visible — otherwise the
+ *  ZCode "Open tab" view could never appear on screen. */
+export function isDrawerPanelVisible(
+  open: boolean,
+  sectionCount: number,
+  chooserActive?: boolean,
+): boolean {
+  return open && (sectionCount > 0 || !!chooserActive);
 }
 
 /**
@@ -160,6 +209,7 @@ function setSectionsOrClose(
     open: true,
     sections: nextSections,
     activeSection: activeSection ?? nextSections[nextSections.length - 1],
+    chooserActive: false,
   });
 }
 

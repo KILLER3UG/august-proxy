@@ -59,6 +59,7 @@ export function ProducedFilesRow({
     if (['PNG', 'JPG', 'JPEG', 'SVG', 'WEBP', 'GIF'].includes(ext)) return `Image · ${ext}`;
     if (['MP4', 'MOV', 'WEBM', 'AVI', 'MKV'].includes(ext)) return `Video · ${ext}`;
     if (ext === 'PDF') return 'PDF';
+    if (ext === 'HTML' || ext === 'HTM') return 'Interactive · HTML';
     return ext;
   };
 

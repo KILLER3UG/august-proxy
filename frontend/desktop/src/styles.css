@@ -1094,9 +1094,11 @@ input::placeholder {
   border-top: 0 !important;
   border-right: 0 !important;
   border-bottom: 0 !important;
-  border-left: 1px solid color-mix(in srgb, var(--dt-border) 92%, white) !important;
+  /* Blend into the chat area — same surface, separated by the hairline
+     divider only (ZCode-style continuous canvas). */
+  border-left: 1px solid color-mix(in srgb, var(--dt-border) 70%, transparent) !important;
   border-radius: 0;
-  background: color-mix(in srgb, var(--dt-elevated) 96%, white) !important;
+  background: var(--dt-background) !important;
   box-shadow: none;
 }
 
@@ -1113,8 +1115,10 @@ input::placeholder {
 
 .august-drawer-card {
   border-radius: 0.9rem;
-  border-color: color-mix(in srgb, var(--dt-border) 88%, transparent) !important;
-  background: color-mix(in srgb, var(--dt-card) 92%, black) !important;
+  /* Multi-section split only: a hairline separator on the shared surface,
+     no contrasting fill. */
+  border-color: color-mix(in srgb, var(--dt-border) 55%, transparent) !important;
+  background: transparent !important;
 }
 
 /* Update flow dialog — intentionally follows the desktop updater reference:

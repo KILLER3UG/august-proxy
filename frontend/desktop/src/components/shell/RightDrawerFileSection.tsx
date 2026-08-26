@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
+import { cn } from '@/lib/utils';
 import { closeRightDrawer } from './RightDrawerState';
 import type { FileAttachment } from '@/types/chat';
 
@@ -50,7 +51,13 @@ function PreviewCanvas({ file, zoom }: { file: FileAttachment; zoom: number }) {
   const imageSrc = file.dataUrl || file.previewUrl;
   const isImage = file.type === 'image' && !!imageSrc;
   const hasText = file.type === 'text' && typeof file.content === 'string';
-  const hasInlineSource = !isImage && !hasText && !!(file.dataUrl || file.previewUrl);
+  const isHtml =
+    hasText && /\.(html?|xhtml)$/i.test(file.name || '') &&
+    /<\/html|<!doctype html|<body/i.test(file.content ?? '');
+  const [showSource, setShowSource] = useState(false);
+  // Live HTML documents render in a sandboxed iframe (scripts allowed —
+  // these are the model's interactive explainers); "source" shows the code.
+  const liveSrcDoc = isHtml ? file.content ?? '' : '';
 
   return (
     <div
@@ -66,9 +73,48 @@ function PreviewCanvas({ file, zoom }: { file: FileAttachment; zoom: number }) {
             draggable={false}
           />
         </div>
+      ) : isHtml ? (
+        <div className="flex h-full min-h-full flex-col bg-background" data-testid="file-preview-html-live">
+          <div className="flex shrink-0 items-center gap-1 border-b border-border/50 px-2 py-1">
+            <button
+              type="button"
+              onClick={() => setShowSource(false)}
+              aria-pressed={!showSource}
+              data-testid="html-preview-tab-render"
+              className={cn(
+                'rounded px-2 py-0.5 text-[11px] transition',
+                !showSource ? 'bg-muted/60 text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSource(true)}
+              aria-pressed={showSource}
+              data-testid="html-preview-tab-source"
+              className={cn(
+                'rounded px-2 py-0.5 text-[11px] transition',
+                showSource ? 'bg-muted/60 text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              Source
+            </button>
+          </div>
+          {showSource ? (
+            <TextPreview content={file.content ?? ''} />
+          ) : (
+            <iframe
+              title={`Interactive preview of ${file.name}`}
+              sandbox="allow-scripts allow-pointer-lock"
+              srcDoc={liveSrcDoc}
+              className="min-h-[24rem] w-full flex-1 border-0 bg-white dark:bg-[#111]"
+            />
+          )}
+        </div>
       ) : hasText ? (
         <TextPreview content={file.content ?? ''} />
-      ) : hasInlineSource ? (
+      ) : !!(file.dataUrl || file.previewUrl) ? (
         <iframe
           src={file.dataUrl || file.previewUrl}
           title={`Preview of ${file.name}`}

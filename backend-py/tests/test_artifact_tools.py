@@ -39,6 +39,46 @@ def test_create_pptx_rejects_empty_and_bad_ext(tmp_path):
         artifact_tools.create_pptx(str(tmp_path / 'deck.txt'), [{'title': 'x'}], workspace=str(tmp_path))
 
 
+def test_create_html_artifact_writes_document(tmp_path):
+    out = tmp_path / 'explainer.html'
+    doc = (
+        '<!doctype html><html><head><style>body{background:#111}</style></head>'
+        '<body><canvas id="c"></canvas><script>const c=document.getElementById("c");</script></body></html>'
+    )
+    result = artifact_tools.create_html_artifact(str(out), doc, workspace=str(tmp_path))
+    assert result['bytes'] > 0
+    assert out.exists()
+    assert 'canvas' in out.read_text(encoding='utf-8')
+
+
+def test_create_html_artifact_adds_title_when_missing(tmp_path):
+    out = tmp_path / 't.html'
+    artifact_tools.create_html_artifact(
+        str(out), '<html><head></head><body>hi</body></html>',
+        title='Embeddings 101', workspace=str(tmp_path),
+    )
+    text = out.read_text(encoding='utf-8')
+    assert '<title>Embeddings 101</title>' in text
+
+
+def test_create_html_artifact_flags_external_refs(tmp_path):
+    out = tmp_path / 'ext.html'
+    result = artifact_tools.create_html_artifact(
+        str(out),
+        '<html><body><script src="https://cdn.example.com/x.js"></script></body></html>',
+        workspace=str(tmp_path),
+    )
+    assert result['externalRefs'], 'remote script should be flagged'
+
+
+def test_create_html_artifact_rejects_empty_and_bad_ext(tmp_path):
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        artifact_tools.create_html_artifact(str(tmp_path / 'a.html'), '', workspace=str(tmp_path))
+    with _pytest.raises(ValueError):
+        artifact_tools.create_html_artifact(str(tmp_path / 'a.txt'), '<p>x</p>', workspace=str(tmp_path))
+
+
 def test_render_chart_png(tmp_path):
     out = tmp_path / 'chart.png'
     result = artifact_tools.render_chart(

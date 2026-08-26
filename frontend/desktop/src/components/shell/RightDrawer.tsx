@@ -1,6 +1,6 @@
 /* ── RightDrawer ─ multi-section Workbench sidebar ────────────────── */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
@@ -12,6 +12,7 @@ import {
   Globe,
   ListTodo,
   Play,
+  Plus,
   StickyNote,
   TerminalSquare,
   Users,
@@ -20,8 +21,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
+  addRightDrawerSection,
   closeRightDrawerSection,
+  openRightDrawerChooser,
   setActiveRightDrawerSection,
+  setRightDrawerChooser,
+  toggleBottomTerminal,
   useRightDrawerSections,
   type RightDrawerSectionId,
 } from './RightDrawerState';
@@ -42,10 +47,9 @@ import { useRightDrawer } from './RightDrawerState';
 import { getFileIcon } from '@/lib/file-icon';
 import { PANEL_EASE, PANEL_MS } from '@/lib/motion';
 
-const DEFAULT_BASE_WIDTH = 320;   // 1-2 sections
-const DEFAULT_WIDE_WIDTH = 640;   // 3-4 sections — doubles so they don't squish
-const BASE_WIDTH_KEY = 'august-right-drawer-width-base';
-const WIDE_WIDTH_KEY = 'august-right-drawer-width-wide';
+const DEFAULT_BASE_WIDTH = 420;   // Zed-like breathing room for the single view
+// v2 keys: the old defaults pinned returning installs to cramped widths.
+const BASE_WIDTH_KEY = 'august-right-drawer-width-base-v2';
 const MIN_WIDTH = 200;
 // Leave at least 40% of the viewport for chat — at minimum window widths
 // the drawer previously swallowed the conversation (audit finding).
@@ -84,26 +88,31 @@ export function RightDrawer({
   onClose: () => void;
 }) {
   const sections = useRightDrawerSections();
-  const { file: filePreview, activeSection } = useRightDrawer();
+  const { file: filePreview, activeSection, chooserActive } = useRightDrawer();
   const showingFile = sections.length === 1 && sections[0] === 'file' && !!filePreview;
   const HeaderFileIcon = filePreview ? getFileIcon(filePreview.name).Icon : null;
-  const isWide = sections.length >= 3;
   const [baseWidth, setBaseWidth] = useState<number>(() => loadStoredWidth(BASE_WIDTH_KEY, DEFAULT_BASE_WIDTH));
-  const [wideWidth, setWideWidth] = useState<number>(() => loadStoredWidth(WIDE_WIDTH_KEY, DEFAULT_WIDE_WIDTH));
   const [isDragging, setIsDragging] = useState(false);
+  const ctx = { sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan };
 
-  const width = isWide ? wideWidth : baseWidth;
-  const setWidth = isWide ? setWideWidth : setBaseWidth;
+  // Single active view — one width, no wide/narrow split.
+  const width = baseWidth;
+  const setWidth = setBaseWidth;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(BASE_WIDTH_KEY, String(baseWidth));
   }, [baseWidth]);
 
+  // ZCode-style chooser: Escape backs out without changing open sections.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(WIDE_WIDTH_KEY, String(wideWidth));
-  }, [wideWidth]);
+    if (!chooserActive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRightDrawerChooser(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [chooserActive]);
 
   // Stop dragging if the component unmounts mid-drag.
   useEffect(() => {
@@ -123,7 +132,6 @@ export function RightDrawer({
     if (typeof window === 'undefined') return;
     const onResize = () => {
       setBaseWidth((w) => clampWidth(w));
-      setWideWidth((w) => clampWidth(w));
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -169,11 +177,11 @@ export function RightDrawer({
             duration: isDragging ? 0 : PANEL_MS,
             ease: PANEL_EASE,
           }}
-          className="august-right-drawer relative shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
+          className="august-right-drawer relative shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-background text-foreground"
           aria-label="Workbench sidebar"
         >
           {/* Inner shell keeps content at target width while the outer panel animates. */}
-          <div className="flex h-full min-h-0 flex-col" style={{ width }}>
+          <div className="flex h-full min-h-0 flex-col" style={{ width }} data-testid="drawer-inner">
             <div
               role="separator"
               aria-orientation="vertical"
@@ -188,7 +196,7 @@ export function RightDrawer({
               className={`absolute top-0 left-0 z-20 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? 'bg-primary/50' : 'bg-transparent'}`}
             />
 
-            <div className="august-right-drawer-header flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
+            <div className="august-right-drawer-header flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-transparent px-3">
               {showingFile ? (
                 <div className="flex min-w-0 items-center gap-2">
                   {HeaderFileIcon && (
@@ -210,6 +218,7 @@ export function RightDrawer({
                   {sections.map((sectionId) => (
                     <DrawerTab key={sectionId} sectionId={sectionId} active={sectionId === activeSection} />
                   ))}
+                  <DrawerAddSectionButton />
                 </div>
               ) : (
                 <div className="flex min-w-0 items-center gap-2">
@@ -223,39 +232,19 @@ export function RightDrawer({
               </Button>
             </div>
 
-            <div className={showingFile ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-hidden p-2'}>
+            <div className={showingFile ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-hidden px-2 pb-2 pt-1.5'}>
               {showingFile ? (
                 <RightDrawerFileSection file={filePreview} />
-              ) : sections.length === 1 && (
-                <DrawerSectionCard
-                  sectionId={sections[0]}
-                  ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
-                />
-              )}
-
-              {sections.length === 2 && (
-                <div className="flex h-full flex-col gap-2">
-                  {sections.map((sectionId) => (
-                    <DrawerSectionCard
-                      key={sectionId}
-                      sectionId={sectionId}
-                      ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
-                    />
-                  ))}
+              ) : chooserActive ? (
+                /* ZCode "Open tab": centered card grid replaces the body. */
+                <SectionChooser openSections={sections} />
+              ) : activeSection && sections.includes(activeSection) ? (
+                /* Zed-style single view: the ACTIVE tab fills the whole
+                   panel — switching tabs swaps content, nothing stacks. */
+                <div className="flex h-full min-h-0 flex-col">
+                  {renderSection(activeSection, ctx)}
                 </div>
-              )}
-
-              {sections.length >= 3 && (
-                <div className="flex h-full flex-col gap-2 overflow-y-auto">
-                  {sections.map((sectionId) => (
-                    <DrawerSectionCard
-                      key={sectionId}
-                      sectionId={sectionId}
-                      ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
-                    />
-                  ))}
-                </div>
-              )}
+              ) : null}
             </div>
           </div>
         </motion.aside>
@@ -280,6 +269,21 @@ const TAB_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileD
   circuit: { label: 'Circuit', Icon: Cpu },
   file: { label: 'File', Icon: FileDiff },
 };
+
+/** Menu order for the "+" picker (workbench-first, mirrors launcher). */
+const SECTION_ADD_ORDER: RightDrawerSectionId[] = [
+  'preview',
+  'diff',
+  'terminal',
+  'tasks',
+  'plan',
+  'browser',
+  'notes',
+  'subagents',
+  'trajectory',
+  'artifacts',
+  'circuit',
+];
 
 function DrawerTab({ sectionId, active }: { sectionId: RightDrawerSectionId; active: boolean }) {
   const meta = TAB_META[sectionId];
@@ -317,6 +321,80 @@ function DrawerTab({ sectionId, active }: { sectionId: RightDrawerSectionId; act
           active ? 'bg-primary/80 opacity-100' : 'opacity-0',
         )}
       />
+    </div>
+  );
+}
+
+function DrawerAddSectionButton() {
+  // ZCode-style: the + swaps the body to the full card-grid chooser instead
+  // of a small dropdown.
+  return (
+    <button
+      type="button"
+      aria-label="Open a section in the side pane"
+      title="Open section"
+      data-testid="drawer-tab-add"
+      onClick={() => openRightDrawerChooser()}
+      className="rounded p-1 text-muted-foreground/60 transition hover:bg-muted/50 hover:text-foreground"
+    >
+      <Plus className="size-3.5" />
+    </button>
+  );
+}
+
+/** ZCode "Open tab" view — centered heading over a wrap grid of section
+ *  cards (icon above label). Open sections carry a check; picking one
+ *  opens it and returns to the panel. */
+function SectionChooser({ openSections }: { openSections: RightDrawerSectionId[] }) {
+  const bottomTerminalOpen = useRightDrawer().bottomTerminal;
+  const pick = (id: RightDrawerSectionId) => {
+    if (id === 'terminal') {
+      // Terminal lives in the JetBrains-style BOTTOM dock now.
+      toggleBottomTerminal(true);
+      setRightDrawerChooser(false);
+      return;
+    }
+    addRightDrawerSection(id);
+    setRightDrawerChooser(false);
+  };
+  return (
+    <div
+      data-testid="drawer-section-chooser"
+      className="flex h-full min-h-0 flex-col items-center overflow-y-auto px-4 py-10 chat-scroll"
+    >
+      <h2 className="text-center text-xl font-semibold tracking-tight text-foreground">Open tab</h2>
+      <p className="mt-1 text-center text-[13px] text-muted-foreground">
+        Choose a tab to open in the side pane.
+      </p>
+      <div role="listbox" aria-label="Sections" className="mt-8 grid w-full max-w-[340px] grid-cols-2 gap-3">
+        {SECTION_ADD_ORDER.map((id) => {
+          const meta = TAB_META[id];
+          const isBottomTerminal = id === 'terminal';
+          const isOpen = openSections.includes(id) || (isBottomTerminal && bottomTerminalOpen);
+          const Icon = meta.Icon;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="option"
+              aria-selected={isOpen}
+              title={isBottomTerminal ? 'Dock a terminal at the bottom' : isOpen ? `${meta.label} is already open` : `Open ${meta.label}`}
+              onClick={() => pick(id)}
+              className={cn(
+                'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border px-4 py-6 transition',
+                isOpen
+                  ? 'border-primary/40 bg-primary/5 text-foreground'
+                  : 'border-border/60 bg-card/60 text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+              )}
+            >
+              <Icon className="size-6 shrink-0 opacity-80" />
+              <span className="text-[13px] font-medium">
+                {isBottomTerminal ? 'Terminal (bottom)' : meta.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -364,7 +442,6 @@ function renderSection(
         <RightDrawerSubagentsSection
           sessionId={ctx.sessionId}
           workbenchSessionId={ctx.workbenchSession?.id ?? null}
-          workspacePath={ctx.workspacePath}
         />
       );
     case 'trajectory':
@@ -391,7 +468,7 @@ function DrawerSectionCard({
   };
 }) {
   return (
-    <section className="august-drawer-card relative flex h-full min-h-0 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm">
+    <section className="august-drawer-card relative flex h-full min-h-0 overflow-hidden rounded-lg border border-border/50 shadow-sm">
       <div className="min-h-0 flex-1 overflow-y-auto">{renderSection(sectionId, ctx)}</div>
     </section>
   );

@@ -30,7 +30,7 @@ export function collectProducedFiles(blocks?: MessageBlock[] | null): string[] {
       typeof name === 'string' &&
       /^pptx_/i.test(name) &&
       extractFilename(block.tool.context) != null;
-    if (!isEdit && !isOfficeDeliverable) continue;
+    if (!isEdit && !isOfficeDeliverable && !/^create_html_artifact$/i.test(name)) continue;
     const path = extractFilename(block.tool.context);
     if (!path) continue;
     if (AUG_INTERNAL.test(path)) continue;

@@ -1,198 +1,54 @@
-/* ── RightDrawerLauncher ─ Workbench section dropdown ───────────── */
+/* ── RightDrawerLauncher ─ Workbench panel trigger ────────────────── */
+/* Clicking the panel icon opens the drawer straight into the ZCode-style */
+/* "Open tab" card-grid chooser (no dropdown list).                        */
 
-import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { PanelRight, PanelRightClose } from 'lucide-react';
 import {
-  PanelRight,
-  PanelRightClose,
-  FileDiff,
-  ListTodo,
-  ClipboardList,
-  TerminalSquare,
-  Play,
-  Check,
-  Cpu,
-  Globe,
-  StickyNote,
-  Users,
-  Activity,
-  GalleryVertical,
-} from 'lucide-react';
-import { useRightDrawer, type RightDrawerSectionId } from './RightDrawerState';
-
-const SECTION_META: Record<
-  Exclude<RightDrawerSectionId, 'file'>,
-  { label: string; hint?: string; Icon: typeof FileDiff }
-> = {
-  preview: {
-    label: 'Preview',
-    hint: 'Live preview of what is being built',
-    Icon: Play,
-  },
-  diff: {
-    label: 'Diffs',
-    hint: 'Files changed this session',
-    Icon: FileDiff,
-  },
-  terminal: {
-    label: 'Terminal',
-    hint: 'Real PowerShell/bash shell (or open Windows Terminal)',
-    Icon: TerminalSquare,
-  },
-  tasks: {
-    label: 'Tasks',
-    hint: 'Step-by-step todos for the current plan',
-    Icon: ListTodo,
-  },
-  plan: {
-    label: 'Plan',
-    hint: 'Proposed steps — accept or revise before edits',
-    Icon: ClipboardList,
-  },
-  browser: {
-    label: 'Browser',
-    hint: 'Pages opened for research',
-    Icon: Globe,
-  },
-  notes: {
-    label: 'Notepad',
-    hint: 'Scratch notes for this chat (autosaved)',
-    Icon: StickyNote,
-  },
-  subagents: {
-    label: 'Subagents',
-    hint: 'Live progress for delegated workers',
-    Icon: Users,
-  },
-  trajectory: {
-    label: 'Trajectory',
-    hint: 'Per-turn trace ledger with timing overview',
-    Icon: Activity,
-  },
-  artifacts: {
-    label: 'Artifacts',
-    hint: 'Files, images, and links produced this session',
-    Icon: GalleryVertical,
-  },
-  circuit: {
-    label: 'Circuit',
-    hint: 'Circuit workbench — netlists, simulation, 3D board (/circuit)',
-    Icon: Cpu,
-  },
-};
-
-const OPTIONS: Array<Exclude<RightDrawerSectionId, 'file'>> = [
-  'diff',
-  'terminal',
-  'plan',
-  'tasks',
-  'preview',
-  'browser',
-  'notes',
-  'subagents',
-  'trajectory',
-  'artifacts',
-  'circuit',
-];
+  closeRightDrawer,
+  openRightDrawerChooser,
+  useRightDrawer,
+  type RightDrawerSectionId,
+} from './RightDrawerState';
 
 export function RightDrawerDropdown({
   drawerOpen,
+  // Kept for call-site compatibility; the chooser replaced the dropdown.
   onSelect,
   workersBadge = 0,
 }: {
   drawerOpen: boolean;
-  onSelect: (section: RightDrawerSectionId) => void;
+  onSelect?: (section: RightDrawerSectionId) => void;
   workersBadge?: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  void onSelect;
   const state = useRightDrawer();
 
-  useEffect(() => {
-    const handler = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  // Checkmarks only appear when the drawer itself is expanded.
-  const showCheck = state.open;
-
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="relative size-11 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground/60 hover:text-foreground transition"
-        title={drawerOpen ? 'Workbench sections' : 'Open Workbench'}
-      >
-        {drawerOpen ? (
-          <PanelRightClose className="size-3.5" />
-        ) : (
-          <PanelRight className="size-3.5" />
-        )}
-        {workersBadge > 0 ? (
-          <span className="absolute right-1.5 top-1.5 min-w-3.5 rounded-full bg-warning px-1 text-[9px] font-semibold leading-4 text-warning-foreground">
-            {workersBadge > 9 ? '9+' : workersBadge}
-          </span>
-        ) : null}
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.97 }}
-            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute top-full mt-1.5 right-0 z-50 min-w-[220px] max-w-[280px] bg-popover rounded-lg shadow-2xl overflow-hidden origin-top-right"
-          >
-            <div className="max-h-[300px] overflow-y-auto py-0.5">
-              {OPTIONS.map((sectionId) => {
-                const meta = SECTION_META[sectionId];
-                const isOpen = showCheck && state.sections.includes(sectionId);
-                return (
-                  <button
-                    key={sectionId}
-                    type="button"
-                    title={meta.hint}
-                    onClick={() => {
-                      onSelect(sectionId);
-                      setOpen(false);
-                    }}
-                    className={cn(
-                      'w-full text-left px-3 py-2 text-sm transition-all duration-150 flex items-start gap-2 rounded-md mx-1',
-                      isOpen
-                        ? 'bg-primary/10 text-primary'
-                        : 'hover:bg-white/5 hover:text-foreground'
-                    )}
-                  >
-                    <meta.Icon className="size-4 text-muted-foreground/70 shrink-0 mt-0.5" />
-                    <span className="min-w-0 flex-1">
-                    <span className="block truncate font-sans font-semibold">
-                      {meta.label}
-                      {sectionId === 'subagents' && workersBadge > 0 ? (
-                        <span className="ml-1.5 tabular-nums text-warning">{workersBadge}</span>
-                      ) : null}
-                    </span>
-                      {meta.hint && (
-                        <span className="block text-[10px] leading-snug text-muted-foreground font-normal mt-0.5">
-                          {meta.hint}
-                        </span>
-                      )}
-                    </span>
-                    {isOpen && (
-                      <Check className="size-3.5 ml-auto text-primary shrink-0 mt-0.5" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <button
+      type="button"
+      onClick={() => {
+        if (state.open && state.chooserActive) {
+          // Second click on the icon while the chooser shows closes the panel.
+          closeRightDrawer();
+          return;
+        }
+        openRightDrawerChooser();
+      }}
+      className="relative size-11 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground/60 hover:text-foreground transition"
+      title={drawerOpen ? 'Workbench sections' : 'Open Workbench'}
+      aria-label={drawerOpen ? 'Workbench sections' : 'Open Workbench'}
+      data-testid="workbench-launcher"
+    >
+      {drawerOpen ? (
+        <PanelRightClose className="size-3.5" />
+      ) : (
+        <PanelRight className="size-3.5" />
+      )}
+      {workersBadge > 0 ? (
+        <span className="absolute right-1.5 top-1.5 min-w-3.5 rounded-full bg-warning px-1 text-[9px] font-semibold leading-4 text-warning-foreground">
+          {workersBadge > 9 ? '9+' : workersBadge}
+        </span>
+      ) : null}
+    </button>
   );
 }

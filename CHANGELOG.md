@@ -102,8 +102,24 @@ gated behind the `/circuit` slash command:
 
 - File/artifact viewer gains **⤢ fullscreen**: portaled full-window overlay sharing zoom state with the drawer canvas; Esc / ⤡ exits without closing the drawer underneath.
 - Workbench drawer header is now a **tab strip**: icon + label per open section, click to focus, ✕ closes just that tab, active underline; file-preview mode keeps its filename header.
+- **Single-view tabs** — the active tab fills the whole panel; switching tabs swaps content in place instead of stacking section cards (wide/narrow dual-width logic removed with them).
+- **ZCode-style "Open tab" chooser**: the titlebar panel icon opens the drawer straight into a centered card grid (icon-above-label cards, open ones marked); the strip's "+" opens the same view; Esc backs out. Terminal picks dock to the bottom strip instead of a side tab.
+- **Panel blends into the chat area**: drawer surface uses the app background token (was a lighter elevated fill) — one continuous canvas separated by a hairline divider.
 - Trajectory ledger restyled into compact **activity-log rows**: outcome icon (tone-tinted) → "Turn N" → meta (rounds · duration) → right-aligned tool/self-heal chips; live turns get a pulsing marker; prompt previews moved to hover tooltips.
 - Thinking-block manual expand/collapse **survives mid-turn streaming gaps** — only a genuine final-output block resets it (regression-tested, incl. a source-level guard against the old `!streaming` reset effect).
+
+**Subagents read like chat**
+
+- The drawer Subagents section is decluttered to workers + their words: roster rows (status glyph · task · status word), and each detail renders its result through the same markdown pipeline as the main chat. Harness config bar, Delegate button, goal cards, api-call/iteration counters, workstream IDs, raw event dumps and "Persisted final response" labels are all gone; steering input stays as a rounded message box.
+
+**Bottom terminal dock**
+
+- Terminal is now a JetBrains-style strip docked under the whole main column (chat + right panel): session tabs with close buttons, external-terminal / clear / new-tab / close actions, drag-to-resize height (persisted), auto-spawn on first open. Picking Terminal in the chooser docks it there instead of opening a side tab.
+
+**Interactive HTML artifacts (`create_html_artifact`)**
+
+- New tool lets the model author self-contained HTML visual/animation explainers (embeddings, attention, VHDL timing, physics sims…) directly into the workspace — inline CSS/JS only, external refs flagged.
+- The file viewer renders `.html` documents **live** in a sandboxed iframe with a Preview/Source toggle, in both the drawer view and fullscreen; `create_html_artifact` calls surface "Interactive · HTML" deliverable chips that open straight into the live view.
 
 **Chat identity & composer polish**
 

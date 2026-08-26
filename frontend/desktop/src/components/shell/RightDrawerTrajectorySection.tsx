@@ -160,7 +160,7 @@ export function RightDrawerTrajectorySection({ sessionId }: { sessionId: string 
       )}
 
       {/* Ledger */}
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-0.5">
         {query.isLoading && traces.length === 0 && (
           <div className="space-y-1.5">
             {[0, 1, 2].map((i) => (
@@ -197,12 +197,12 @@ export function RightDrawerTrajectorySection({ sessionId }: { sessionId: string 
               onMouseEnter={() => setHoveredId(trace.id)}
               onMouseLeave={() => setHoveredId((v) => (v === trace.id ? null : v))}
               className={cn(
-                'group rounded-md px-1.5 py-1 transition-colors duration-150 hover:bg-muted/40',
+                'group rounded-md px-3 py-1.5 transition-colors duration-150 hover:bg-muted/40',
                 active && 'bg-primary/5',
               )}
               title={trace.prompt_preview || undefined}
             >
-              <div className="flex min-w-0 items-center gap-2 text-[11px] leading-5">
+              <div className="flex min-w-0 items-center gap-2 text-[13px] leading-6">
                 {/* Leading log glyph — outcome icon tinted by tone. */}
                 <BadgeIcon
                   className={cn('size-3 shrink-0', OUTCOME_TEXT_CLASSES[meta.tone])}
@@ -237,7 +237,7 @@ export function RightDrawerTrajectorySection({ sessionId }: { sessionId: string 
                       <span
                         key={tool}
                         title={tool}
-                        className="hidden shrink-0 rounded border border-border/60 bg-muted/20 px-1 font-mono text-[9px] text-foreground/60 sm:inline"
+                        className="hidden shrink-0 rounded border border-border/60 bg-muted/20 px-1 font-mono text-[10px] text-foreground/60 sm:inline"
                       >
                         {tool}
                       </span>
@@ -269,7 +269,7 @@ export function RightDrawerTrajectorySection({ sessionId }: { sessionId: string 
               </div>
 
               {trace.error ? (
-                <div className="truncate pl-5 font-mono text-[9px] text-danger/80" title={trace.error}>
+                <div className="truncate pl-8 font-mono text-[10px] text-danger/80" title={trace.error}>
                   {trace.error}
                 </div>
               ) : null}

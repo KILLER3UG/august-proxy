@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from app.services.sandbox.paths import bind_path
@@ -347,3 +348,47 @@ def draw_circuit(path: str, elements: Any, title: str = '', workspace: str = '')
         d += elm.Label().label(title).at((0, -2))
     d.save(out, dpi=150)
     return {'path': out, 'elementCount': placed}
+
+
+# ── Interactive HTML artifacts ────────────────────────────────────────────
+
+
+def create_html_artifact(
+    path: str,
+    html: str,
+    title: str = '',
+    workspace: str = '',
+) -> dict[str, Any]:
+    """Write a SELF-CONTAINED interactive HTML explainer/animation.
+
+    The model authors the full document (inline CSS + JS, canvas/SVG
+    animations, step-through explainers — anything a browser can run
+    offline). August renders it live in the right-side panel viewer.
+    No network resources: everything inline so the artifact works forever.
+    """
+    out = _bind_write(path, workspace, ('.html', '.htm'))
+    if not isinstance(html, str) or not html.strip():
+        raise ValueError('html must be a non-empty document string.')
+
+    # Guard against accidental external dependence breaking the offline
+    # viewer: warn (not fail) when remote resources are referenced.
+    lowered = html.lower()
+    external = [
+        token
+        for token in ('http://', 'https://', '//cdn.', 'src="http')
+        if token in lowered
+    ]
+
+    doc = html
+    if title and '<title' not in lowered:
+        safe_title = title.replace('<', '&lt;').replace('>', '&gt;')
+        doc = doc.replace('<head>', f'<head>\n<title>{safe_title}</title>', 1) \
+            if '<head>' in lowered else f'<title>{safe_title}</title>\n{doc}'
+
+    bound = Path(out)
+    bound.write_text(doc, encoding='utf-8')
+    return {
+        'path': out,
+        'bytes': len(doc.encode('utf-8')),
+        'externalRefs': external,
+    }
