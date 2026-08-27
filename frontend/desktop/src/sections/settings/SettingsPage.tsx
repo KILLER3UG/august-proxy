@@ -54,6 +54,8 @@ function useLandingSectionId(): string {
 const SETTINGS_QUERY_DOMAINS = new Set([
   'audit',
   'brain-config',
+  'brain-store',
+  'brain-stores',
   'ci-conversations',
   'ci-details',
   'computer-apps',
@@ -290,6 +292,7 @@ const KanbanWrapper = lazySection(() => import('./KanbanSection'), 'KanbanSectio
 const AgentSandboxWrapper = lazySection(() => import('./AccessHubSection'), 'AccessHubSection');
 const PromptTemplatesWrapper = lazySection(() => import('./PromptTemplatesSection'), 'PromptTemplatesSection');
 const PrivacyWrapper = lazySection(() => import('./PrivacySection'), 'PrivacySection');
+const MemoryWrapper = lazySection(() => import('./MemorySection'), 'MemorySection');
 const HealthSimulatorWrapper = lazySection(() => import('./HealthSimulatorSection'), 'HealthSimulatorSection');
 const AISetupWizardWrapper = lazySection(() => import('./AISetupWizardSection'), 'AISetupWizardSection');
 
@@ -330,6 +333,10 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'prompt-templates': PromptTemplatesWrapper,
   'ai-setup': AISetupWizardWrapper,
   privacy: PrivacyWrapper,
+  'memory-knowledge': MemoryWrapper,
+  'memory-facts': MemoryWrapper,
+  'memory-timeline': MemoryWrapper,
+  'memory-sessions': MemoryWrapper,
   'health-simulator': HealthSimulatorWrapper,
 };
 

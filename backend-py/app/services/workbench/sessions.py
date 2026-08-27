@@ -1232,7 +1232,13 @@ def _handoff_tail_window(
 
 
 def _handoff_plain_truncate(messages: list[dict[str, object]], max_chars: int = 1200) -> str:
-    """Cheap non-LLM fallback used when ``localSummarize`` itself fails."""
+    """Cheap non-LLM fallback used when ``localSummarize`` itself fails.
+
+    Cuts at MESSAGE boundaries rather than mid-content, so JSON rows and
+    tool results never arrive sliced mid-line, and stamps the result as
+    compressed so the receiving model re-queries stores instead of
+    trusting stale inline data.
+    """
     parts: list[str] = []
     for msg in messages[-6:]:
         role = as_str(msg.get('role')) if isinstance(msg, dict) else ''
@@ -1240,9 +1246,18 @@ def _handoff_plain_truncate(messages: list[dict[str, object]], max_chars: int = 
         text = content if isinstance(content, str) else ''
         text = ' '.join(text.split())
         if text:
-            parts.append(f'[{role}] {text[:200]}')
+            if len(text) > 200:
+                text = text[:200] + '…'
+            parts.append(f'[{role}] {text}')
+    note = '(context compressed — re-query stores for exact data)'
     joined = '\n'.join(parts)
-    return joined[:max_chars]
+    while len(parts) > 1 and len(joined) + len(note) + 1 > max_chars:
+        parts.pop(0)
+        joined = '\n'.join(parts)
+    if len(joined) + len(note) + 1 > max_chars:
+        # A single remaining message still oversized — hard-cut and mark it.
+        joined = joined[:max(0, max_chars - len(note) - 2)] + '…'
+    return f'{joined}\n{note}' if joined else note
 
 
 def create_workbench_handoff(

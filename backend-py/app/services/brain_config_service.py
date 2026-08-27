@@ -49,6 +49,9 @@ boolKeys: tuple[str, ...] = (
     'reviewLearnedGuidelines',
     'autoRoute',
     'skillRelevanceMatch',
+    'modelMemoryWrites',
+    'memorySensitiveTopics',
+    'cameraAccess',
 )
 numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops', 'autoRouteMinSamples')
 floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap')
@@ -81,6 +84,15 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('autoRouteMinSamples', 'auto_route_min_samples', 3, 'num'),
     ('autoRouteMinWinRate', 'auto_route_min_win_rate', 0.6, 'float'),
     ('autoRouteWinGap', 'auto_route_win_gap', 0.15, 'float'),
+    # Memory write door: the `remember` tool is offered to the model only while
+    # this is on; sensitive-topic facts additionally need memorySensitiveTopics.
+    ('modelMemoryWrites', 'model_memory_writes', True, 'bool'),
+    ('memorySensitiveTopics', 'memory_sensitive_topics', False, 'bool'),
+    # Camera capture: the camera_snapshot / camera_list_devices tools are
+    # gated behind this; when off the tools return a policy error. Frames
+    # captured during a call are transient by default — never persisted to
+    # disk beyond the call lifetime, and never written to memory stores.
+    ('cameraAccess', 'camera_access', False, 'bool'),
 )
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}

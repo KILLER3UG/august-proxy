@@ -217,11 +217,9 @@ def register() -> None:
     )
     tool_registry.register(
         'circuit_simulate',
-        'Run an ngspice simulation — inline netlist text OR a workspace '
-        'netlist path. Supports .op (DC operating point), .dc sweep, .tran '
-        '(time domain), .ac (frequency). Returns parsed measures (node '
-        'voltages/currents), errors, and the log tail. Same SPICE engine '
-        'Kicad uses; behaves like physical bench measurements.',
+        'Run an ngspice simulation — inline netlist text OR a workspace netlist path. Supports .op (DC '
+        'operating point), .dc sweep, .tran (time domain), .ac (frequency). Returns parsed measures '
+        '(node voltages/currents), errors, and log tail. Same SPICE engine KiCad uses.',
         _simulate,
         {
             'type': 'object',
@@ -256,11 +254,9 @@ def register() -> None:
     )
     tool_registry.register(
         'circuit_integrate_component',
-        'Search-and-integrate a part or board: returns datasheet facts, '
-        'ready-to-paste SPICE model cards for classics (1N4148/1N4007/'
-        '2N2222/2N3904...), board specs for Arduino/ESP/Raspberry Pi, and '
-        'web datasheet links. Use this BEFORE designing with an unfamiliar '
-        'part so the netlist uses real electrical parameters.',
+        'Search-and-integrate a part or board: datasheet facts, ready-to-paste SPICE model cards for '
+        'classics (1N4148/1N4007/2N2222/2N3904...), board specs for Arduino/ESP/Raspberry Pi, and web '
+        'datasheet links. Use BEFORE designing with an unfamiliar part so netlists use real parameters.',
         _integrateComponent,
         {
             'type': 'object',

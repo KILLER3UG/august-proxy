@@ -135,6 +135,9 @@ class BrainConfigDict(TypedDict, total=False):
     autoRouteMinSamples: int
     autoRouteMinWinRate: float
     autoRouteWinGap: float
+    modelMemoryWrites: bool
+    memorySensitiveTopics: bool
+    cameraAccess: bool
 
 
 class ProviderConfigDict(TypedDict, total=False):

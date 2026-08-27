@@ -10,7 +10,7 @@ Tables (from app/services/memory_schema.py + migrations):
   facts, auto_memories, learned_heuristics, proposals, episodic_timeline,
   memory_store (system KV — never purged wholesale), sessions, messages,
   session_topics, usage_events, lifecycle (audit), config_audit,
-  brain_events, tool_guardrail_log, verifier_gate_log, consolidation_audit,
+  brain_events, tool_guardrail_log, consolidation_audit,
   friction_events, routing_evidence, subagent_runs
 """
 
@@ -59,7 +59,6 @@ _LOG_TABLES = [
     'config_audit',
     'brain_events',
     'tool_guardrail_log',
-    'verifier_gate_log',
     'consolidation_audit',
     'friction_events',
 ]

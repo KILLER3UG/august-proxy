@@ -301,16 +301,6 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS verifier_gate_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            detail TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        )
-        """
-    )
-    conn.execute(
-        """
         CREATE TABLE IF NOT EXISTS blackboard (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
@@ -415,6 +405,9 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     ensure_column(conn, 'auto_memories', 'expires_at', 'TEXT')
     ensure_column(conn, 'auto_memories', 'confidence', 'REAL DEFAULT 0.7')
     ensure_column(conn, 'auto_memories', 'ttl_days', 'INTEGER')
+    # facts.expires_at backs the `remember` tool's optional TTL and the boot
+    # sweep that purges expired model-written facts (memory-humanization batch).
+    ensure_column(conn, 'facts', 'expires_at', 'TEXT')
     # auto_memories.key must be UNIQUE: saveAutoMemory's check-then-insert was
     # non-transactional, so concurrent writers inserted twin rows under one
     # key (audit finding). Dedup any historical twins (keep the OLDEST row)
@@ -636,6 +629,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'auto_memories', 'expires_at', 'TEXT')
             ensure_column(conn, 'auto_memories', 'confidence', 'REAL DEFAULT 0.7')
             ensure_column(conn, 'auto_memories', 'ttl_days', 'INTEGER')
+            ensure_column(conn, 'facts', 'expires_at', 'TEXT')
             ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
             ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
             ensure_column(conn, 'learned_heuristics', 'confidence', 'REAL DEFAULT 0.5')

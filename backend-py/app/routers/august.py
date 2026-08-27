@@ -131,6 +131,7 @@ class ActionBody(CamelModel):
     config: dict[str, object] | None = None
     app: str | None = None
     policy: str | None = None
+    source: str | None = None
 
 
 @router.post('/settings/update')
@@ -350,16 +351,21 @@ async def manage_memory(body: ActionBody):
 
     action = (body.action or '').lower()
     key = body.key or ''
+    # Provenance for the facts store: the Memory UI add-box sends source='user';
+    # default to 'user' since this endpoint is the human-facing write door.
+    source = (body.source or 'user').strip() or 'user'
     if action in ('set', 'upsert') and key:
         before_fact = memory_store.get_fact(key)
         before = copy.deepcopy(before_fact) if before_fact else None
-        memory_store.save_fact(key, cast(JsonValue, body.value), category=body.category or 'general')
+        memory_store.save_fact(
+            key, cast(JsonValue, body.value), category=body.category or 'general', source=source
+        )
         try:
             record_rollback(
                 type='restore_memory_item',
                 target=key,
                 before=before,
-                after={'key': key, 'value': body.value, 'category': body.category or 'general'},
+                after={'key': key, 'value': body.value, 'category': body.category or 'general', 'source': source},
             )
         except Exception:
             pass
@@ -380,6 +386,97 @@ async def manage_memory(body: ActionBody):
             pass
         return {'ok': True, 'key': key}
     return {'ok': False}
+
+
+class MemoryImportBody(CamelModel):
+    """Bulk import payload — used by the Memory UI's "Import from another AI"
+    button. Each item is persisted through the same write door as the
+    single-entry ``/memory/manage`` endpoint, with a per-item ``source``
+    string (e.g. ``"imported:claude"``) preserved as provenance.
+    """
+
+    items: list[object] = []
+    defaultCategory: str | None = None
+    defaultSource: str | None = None
+
+
+@router.post('/memory/import')
+async def import_memory(body: MemoryImportBody):
+    """Bulk-import facts (from a parsed export of another AI's memory).
+
+    Each item is recorded through ``save_fact`` with a per-item source so
+    the Memory UI can highlight imported rows. Items that already exist
+    are overwritten (matching the single-entry manage_memory behavior);
+    the rollback store captures a snapshot before each overwrite.
+    """
+    import copy as _copy
+
+    from app.services import memory_store
+    from app.services.rollback_store import record_rollback
+
+    raw_items = body.items or []
+    default_category = (body.defaultCategory or 'general').strip() or 'general'
+    default_source = (body.defaultSource or 'imported').strip() or 'imported'
+    accepted = {'user', 'feedback', 'project', 'reference', 'general'}
+
+    results: list[dict[str, object]] = []
+    failed: list[dict[str, object]] = []
+    written = 0
+
+    for index, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            failed.append({'index': index, 'error': 'item is not an object'})
+            continue
+        key_raw = item.get('key') or item.get('factKey') or ''
+        if not isinstance(key_raw, str) or not key_raw.strip():
+            failed.append({'index': index, 'error': 'missing or empty "key"'})
+            continue
+        key = key_raw.strip()
+        value_raw = item.get('value')
+        if value_raw is None:
+            # Convenience: accept Claude's `{fact, details}` shape.
+            fact = item.get('fact')
+            details = item.get('details')
+            if isinstance(fact, str) and fact.strip():
+                value_raw = {'fact': fact.strip(), 'details': details if details is not None else ''}
+            else:
+                failed.append({'index': index, 'error': 'missing "value"'})
+                continue
+        cat_raw = item.get('category') or default_category
+        category = str(cat_raw).strip().lower() or default_category
+        if category not in accepted:
+            category = default_category if default_category in accepted else 'general'
+        src_raw = item.get('source') or default_source
+        source = str(src_raw).strip() or default_source
+        confidence_raw = item.get('confidence')
+        try:
+            confidence = float(confidence_raw) if isinstance(confidence_raw, (int, float, str)) else 0.7
+        except (TypeError, ValueError):
+            confidence = 0.7
+        confidence = max(0.0, min(1.0, confidence))
+
+        before_fact = memory_store.get_fact(key)
+        before = _copy.deepcopy(before_fact) if before_fact else None
+        try:
+            memory_store.save_fact(
+                key, cast(JsonValue, value_raw), category=category, source=source, confidence=confidence
+            )
+        except Exception as exc:  # noqa: BLE001 — surface to the caller
+            failed.append({'index': index, 'error': f'save_fact failed: {exc}'})
+            continue
+        try:
+            record_rollback(
+                type='restore_memory_item',
+                target=key,
+                before=before,
+                after={'key': key, 'value': value_raw, 'category': category, 'source': source},
+            )
+        except Exception:
+            pass
+        results.append({'index': index, 'key': key, 'category': category, 'source': source})
+        written += 1
+
+    return {'ok': True, 'count': written, 'total': len(raw_items), 'results': results, 'failed': failed}
 
 
 @router.post('/tools/manage')

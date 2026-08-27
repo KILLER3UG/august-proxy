@@ -67,6 +67,20 @@ WEB_BLOCK = (
     '</web_research>'
 )
 
+MEMORY_BLOCK = (
+    '<memory_policy>\n'
+    'Long-term memory (the `remember` tool).\n'
+    'Save only what should outlive this session and cannot be re-derived from the repo or the chat:\n'
+    '- User-stated preferences, decisions, and constraints (category "user" / "project").\n'
+    '- Feedback on how you should work (category "feedback").\n'
+    '- Pointers to external resources (category "reference").\n'
+    'Do NOT save task steps, code structure, or anything git / the codebase already records.\n'
+    "Update, don't duplicate: pass a stable `key` to revise an existing fact instead of saving a twin.\n"
+    'Sensitive topics (health specifics, ID numbers, minors, beliefs) are refused unless the user '
+    'enabled sensitive memory — do not retry a refused save.\n'
+    '</memory_policy>'
+)
+
 
 def enabled() -> bool:
     v = os.environ.get('AUGUST_P1_PROMPT_CACHE', '1').strip().lower()

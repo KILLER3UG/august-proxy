@@ -7,6 +7,10 @@ Mounts four routes under ``/api/brain``:
   PUT  /api/brain/config                — { ok, config, defaults }           (400 on bad patch)
   POST /api/brain/config/reset          — { ok, config, defaults }
   GET  /api/brain/config/from-session   — { source, config, defaults, sessionId, session }
+  GET  /api/brain/stores                — per-store counts for the Memory settings page
+  GET  /api/brain/stores/{name}         — paginated rows of one store (read-only browse)
+  DELETE /api/brain/stores/{name}/{id}  — delete one row (per-entry Delete in the UI)
+  PATCH  /api/brain/stores/{name}/{id}  — update whitelisted fields of one row
 
 The shared service is :mod:`app.services.brain_config_service`. Mutation
 endpoints record an audit row via ``memory_store.record_config_audit``.
@@ -68,3 +72,63 @@ async def getBrainConfigFromSession(sessionId: str = Query(..., min_length=1)):
             status_code=400, detail={'code': 'validation', 'message': 'sessionId query param is required'}
         )
     return brain_config_service.getBrainConfigFromSession(sessionId)
+
+
+@router.get('/stores')
+async def getBrainStores():
+    """Per-store row counts — the Memory settings page header chips."""
+    from app.services.memory_store.brain import brain_store_summary
+
+    return {'stores': brain_store_summary()}
+
+
+@router.get('/stores/{name}')
+async def getBrainStore(
+    name: str,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    query: str = Query('', max_length=200),
+):
+    """Read-only paginated browse of one brain store (Memory settings page)."""
+    from app.services.memory_store.brain import brain_browse
+
+    result = brain_browse(name, limit=limit, offset=offset, query=query)
+    if result.get('error') and not result.get('total') and 'not available' in str(result.get('error')):
+        raise HTTPException(status_code=404, detail=result['error'])
+    return result
+
+
+@router.delete('/stores/{name}/{row_id:path}')
+async def deleteBrainStoreRow(name: str, row_id: str):
+    """Delete one row from a brain store (per-entry Delete in the Memory UI).
+
+    ``row_id`` is the store's identifier column (``id`` for most stores, the
+    ``key`` for the KV memory store). Read-only/legacy stores return 403.
+    """
+    from app.services.memory_store.brain import brain_delete_row
+
+    result = brain_delete_row(name, row_id)
+    if result.get('status') == 403:
+        raise HTTPException(status_code=403, detail=result.get('error'))
+    if not result.get('ok'):
+        err = str(result.get('error') or 'delete failed')
+        raise HTTPException(status_code=404 if 'not found' in err else 400, detail=err)
+    return result
+
+
+@router.patch('/stores/{name}/{row_id:path}')
+async def updateBrainStoreRow(name: str, row_id: str, body: dict[str, object]):
+    """Update whitelisted fields of one brain-store row (Memory UI inline edit).
+
+    Only the store's whitelisted columns are applied; unknown fields are
+    ignored. Read-only/legacy stores return 403.
+    """
+    from app.services.memory_store.brain import brain_update_row
+
+    result = brain_update_row(name, row_id, body or {})
+    if result.get('status') == 403:
+        raise HTTPException(status_code=403, detail=result.get('error'))
+    if not result.get('ok'):
+        err = str(result.get('error') or 'update failed')
+        raise HTTPException(status_code=404 if 'not found' in err else 400, detail=err)
+    return result

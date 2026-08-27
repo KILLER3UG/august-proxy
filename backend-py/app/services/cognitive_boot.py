@@ -35,18 +35,6 @@ def get_cognitive_scheduler() -> Any:
     return _cognitive_scheduler
 
 
-def record_user_activity(session_id: str = '') -> None:
-    """Best-effort activity tick for the session timeline."""
-    if not session_id:
-        return
-    try:
-        from app.services.memory_store.rest import write_timeline_event
-
-        write_timeline_event(session_id, 'user activity', 'activity')
-    except Exception:
-        logger.debug('record_user_activity failed', exc_info=True)
-
-
 async def start_cognitive_services(app: object | None = None) -> dict[str, object]:
     """Start background runtime services. Idempotent."""
     if _status.get('started'):
@@ -82,6 +70,34 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
     except Exception as exc2:
         errors.append(f'daemon_manager: {exc2}')
         services['daemon_manager'] = {'ok': False, 'error': str(exc2)}
+
+    # Facts expiry sweep (B4): purge facts whose optional expires_at (set by the
+    # `remember` tool) has passed. Defensive — skips silently if the facts table
+    # or the expires_at column is not present yet on this install.
+    try:
+        from app.services.memory_conn import conn as _mem_conn
+
+        c = _mem_conn()
+        purged = 0
+        table = c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='facts'"
+        ).fetchone()
+        if table:
+            cols = {r['name'] for r in c.execute('PRAGMA table_info(facts)').fetchall()}
+            if 'expires_at' in cols:
+                cursor = c.execute(
+                    "DELETE FROM facts WHERE expires_at IS NOT NULL "
+                    "AND expires_at != '' AND expires_at <= datetime('now')"
+                )
+                c.commit()
+                purged = cursor.rowcount
+        if purged:
+            logger.info('Facts expiry sweep: purged %d expired facts', purged)
+        services['facts_expiry_sweep'] = {'ok': True, 'purged': purged}
+    except Exception as exc3:
+        logger.exception('facts expiry sweep failed')
+        errors.append(f'facts_expiry_sweep: {exc3}')
+        services['facts_expiry_sweep'] = {'ok': False, 'error': str(exc3)}
 
     _status['started'] = True
     _status['services'] = services

@@ -42,11 +42,13 @@ SUBAGENT_MODEL_TIMEOUT_S = 240
 # sub-agent must not mutate the agent registry or switch its own mode.
 SUBAGENT_BLOCKED_TOOLS = frozenset(
     {'spawn_subagent', 'spawn_subagents', 'create_agent', 'set_agent_mode',
-     'interrupt_subagent', 'send_subagent_message'}
+     'interrupt_subagent', 'send_subagent_message',
+     # Sub-agents do not write durable memory — only the main model does.
+     'remember'}
 )
 
 # Capability tiers for subagents — main model picks per-launch.
-SUBAGENT_CAPABILITY_READ_ONLY = {'read_file', 'read_files', 'list_directory', 'search_files', 'brain_query', 'memory_search', 'fact_search', 'web_search', 'web_fetch', 'web_fetch_many', 'read_blackboard', 'describe_environment', 'diagnose_proxy', 'context_read', 'list_agents', 'list_skills', 'load_skill', 'load_skills'}
+SUBAGENT_CAPABILITY_READ_ONLY = {'read_file', 'read_files', 'list_directory', 'search_files', 'brain_query', 'web_search', 'web_fetch', 'web_fetch_many', 'read_blackboard', 'describe_environment', 'diagnose_proxy', 'list_agents', 'list_skills', 'load_skill', 'load_skills'}
 SUBAGENT_CAPABILITY_FULL = None  # None means inherit all allowed (no extra filter)
 
 

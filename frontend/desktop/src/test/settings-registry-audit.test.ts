@@ -29,7 +29,7 @@ describe('settings-registry audit', () => {
   });
 
   it('has 8 categories with no singleton columns', () => {
-    expect(SETTINGS_CATEGORIES).toHaveLength(7);
+    expect(SETTINGS_CATEGORIES).toHaveLength(8);
     const counts = SETTINGS_CATEGORIES.map((c) => ({
       id: c.id,
       count: sectionsForCategory(c.id).length,

@@ -149,6 +149,44 @@ def test_convergence_ladder_options_injection():
     assert circuit_tools._apply_options(deck, {}) is deck
 
 
+def test_measure_regex_parses_node_voltages():
+    # ngspice .op prints v(node)/i(vsrc) — parentheses must parse, not just
+    # bare .measure names.
+    line_v = circuit_tools._MEASURE_RE.match('v(out) =  5.000000e+00')
+    assert line_v and line_v.group(1) == 'v(out)' and float(line_v.group(2)) == 5.0
+    line_i = circuit_tools._MEASURE_RE.match('i(v1) = -1.234567e-03')
+    assert line_i and line_i.group(1) == 'i(v1)'
+    line_m = circuit_tools._MEASURE_RE.match('vout_max = 4.98e+00')
+    assert line_m and line_m.group(1) == 'vout_max'
+
+
+def test_convergence_ladder_always_scans_soa():
+    # SOA checking (.options warn=1) rides every rung — a design that
+    # converges on pass 1 still gets its over-stress scan.
+    assert all(rung.get('warn') == '1' for rung in circuit_tools._CONVERGENCE_LADDER)
+
+
+def test_read_netlist_valueless_nodes(tmp_path):
+    ws = str(tmp_path)
+    circuit_tools.create_netlist('bare.cir', 'V1 in 0 DC 9\nR1 in 0', workspace=ws)
+    read = circuit_tools.read_netlist('bare.cir', workspace=ws)
+    r1 = next(c for c in read['components'] if c['name'] == 'R1')
+    assert r1['nodes'] == ['in', '0']
+    assert r1['value'] == ''
+
+
+def test_list_netlists_empty_without_workspace():
+    # No workspace bound → empty result, never a temp-dir walk.
+    assert circuit_tools.list_netlists('') == {'netlists': [], 'count': 0}
+
+
+def test_ngspice_env_override(monkeypatch):
+    import sys
+
+    monkeypatch.setenv('AUGUST_NGSPICE_EXE', sys.executable)
+    assert circuit_tools._resolve_ngspice_sync() == sys.executable
+
+
 # ── Board brain + search→integrate ────────────────────────────────────────
 
 

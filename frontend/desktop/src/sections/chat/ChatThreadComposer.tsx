@@ -50,6 +50,8 @@ export interface ChatThreadComposerProps {
   removeAttachment: (index: number) => void;
   handleComposerPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
+  /** Push a fresh File (e.g. camera capture) into the attachment pipeline. */
+  attachFiles?: (files: FileList | File[]) => Promise<void> | void;
   messages: ChatMessage[];
   streaming: boolean;
   send: (textOverride?: string) => Promise<void>;
@@ -123,6 +125,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     removeAttachment,
     handleComposerPaste,
     handleFileUpload,
+    attachFiles,
     messages,
     streaming,
     send,
@@ -286,6 +289,17 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     sessionId,
     workbenchSessionId: workbenchSession?.id,
   });
+
+  // Camera capture popover — anchors over the composer actions menu slot.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const handleCameraCapture = useCallback(
+    (file: File) => {
+      if (!attachFiles) return;
+      void attachFiles([file]);
+      setCameraOpen(false);
+    },
+    [attachFiles],
+  );
 
   // Command palette "Switch model" → bump the counter so the model menu
   // opens (ModelEffortMenu re-fires on each increment).
@@ -508,6 +522,14 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
             startVoiceInput();
             popovers.setShowComposerActionsDropdown(false);
           }}
+          onCamera={attachFiles ? () => {
+            popovers.setShowComposerActionsDropdown(false);
+            setCameraOpen((value) => !value);
+          } : undefined}
+          cameraOpen={cameraOpen}
+          cameraPos={popovers.composerActionsPos}
+          onCameraClose={() => setCameraOpen(false)}
+          onCameraCapture={handleCameraCapture}
           onAskParallel={() => setArenaOpen(true)}
           onStartDebate={() => setDebateOpen(true)}
         />

@@ -58,11 +58,9 @@ def register() -> None:
     )
     tool_registry.register(
         'harness_propose',
-        'File a structured harness-improvement proposal for human review. '
-        'Args: problem, evidence, proposal, rollback, kind '
-        '(brain_config|skill_create|skill_patch|skill_delete|tool_bucket|'
-        'tool_description|flow_map|observation), expectedMetric?, payload?. '
-        'Nothing is applied by you — approval runs one deterministic applier.',
+        'File a harness-improvement proposal for human review. Args: problem, evidence, proposal, '
+        'rollback, kind (brain_config|skill_create|skill_patch|skill_delete|tool_bucket|tool_description|'
+        'flow_map|observation), expectedMetric?, payload?. You apply nothing — approval runs a deterministic applier.',
         _propose,
         {
             'type': 'object',

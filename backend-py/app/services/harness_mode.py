@@ -16,6 +16,8 @@ MUTATING_TOOLS = frozenset(
         'apply_patch',
         'run_command',
         'run_commands',
+        # Memory write door — a durable fact write counts as a mutation.
+        'remember',
     }
 )
 
@@ -30,8 +32,6 @@ PLANNER_ALLOWED_TOOLS = frozenset(
         'read_blackboard',
         'write_blackboard',
         'brain_query',
-        'memory_search',
-        'fact_search',
         'read_file',
         'read_files',
         'list_directory',
@@ -44,7 +44,6 @@ PLANNER_ALLOWED_TOOLS = frozenset(
         'load_skill',
         'load_skills',
         'describe_environment',
-        'context_read',
     }
 )
 

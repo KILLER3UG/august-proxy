@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -382,8 +383,18 @@ def create_html_artifact(
     doc = html
     if title and '<title' not in lowered:
         safe_title = title.replace('<', '&lt;').replace('>', '&gt;')
-        doc = doc.replace('<head>', f'<head>\n<title>{safe_title}</title>', 1) \
-            if '<head>' in lowered else f'<title>{safe_title}</title>\n{doc}'
+        if '<head>' in lowered:
+            # Case-insensitive: models sometimes emit <HEAD>; a lambda
+            # replacement keeps re from interpreting escapes in the title.
+            doc = re.sub(
+                r'<head>',
+                lambda m: f'{m.group(0)}\n<title>{safe_title}</title>',
+                doc,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        else:
+            doc = f'<title>{safe_title}</title>\n{doc}'
 
     bound = Path(out)
     bound.write_text(doc, encoding='utf-8')

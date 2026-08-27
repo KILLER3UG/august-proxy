@@ -148,3 +148,35 @@ async def test_chat_prefers_persisted_handoff_when_no_client_summary(client, mon
     assert 'model-a' in str(captured.get('handoff_summary') or '')
     # Consumed — a second turn without a client summary must not resend it.
     assert wb_sessions.take_session_handoff(sid) is None
+
+
+# ── Plain-truncation fallback (non-LLM path) ──────────────────────────────
+
+
+def test_plain_truncate_never_cuts_mid_message():
+    # A JSON-ish payload must survive as whole messages — the old hard
+    # slice cut mid-row and handed models unparseable context.
+    msgs = [
+        {'role': 'user', 'content': 'first message'},
+        {'role': 'assistant', 'content': '{"sessions": [{"id": "s1", "title": "a long title here"}]}'},
+    ]
+    out = wb_sessions._handoff_plain_truncate(msgs, max_chars=200)
+    assert 'context compressed' in out
+    # The JSON message is either whole or dropped — never sliced mid-row.
+    if '{"sessions"' in out:
+        assert '"title"' in out or out.count('{') == out.count('}')
+
+
+def test_plain_truncate_drops_oldest_to_fit_budget():
+    msgs = [{'role': 'user', 'content': f'message number {i} ' + 'x' * 80} for i in range(6)]
+    out = wb_sessions._handoff_plain_truncate(msgs, max_chars=300)
+    assert len(out) <= 300
+    assert 'message number 5' in out  # newest survives
+    assert 'context compressed' in out
+
+
+def test_plain_truncate_marks_single_oversized_message():
+    msgs = [{'role': 'user', 'content': 'y' * 5000}]
+    out = wb_sessions._handoff_plain_truncate(msgs, max_chars=400)
+    assert len(out) <= 400
+    assert out.endswith('(context compressed — re-query stores for exact data)')

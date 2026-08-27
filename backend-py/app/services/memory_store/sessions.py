@@ -250,7 +250,6 @@ _SESSION_CHILD_TABLES: tuple[str, ...] = (
     'execution_state',
     'scratchpad',
     'tool_guardrail_log',
-    'verifier_gate_log',
     'blackboard',
 )
 

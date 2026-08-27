@@ -232,7 +232,8 @@ def format_introspection(data: dict[str, Any]) -> str:
     stores = as_dict(data.get('memory_stores'))
     if stores:
         lines.append(
-            f"memory stores: memoryStore={stores.get('memoryStore')} facts={stores.get('facts')} sessions={stores.get('sessions')}"
+            f"memory stores (brain SQLite): {stores.get('memoryStore')} memory rows · "
+            f"{stores.get('facts')} facts · {stores.get('sessions')} sessions"
         )
     open_props = as_list(data.get('open_proposals'), [])
     if open_props:

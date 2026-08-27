@@ -16,7 +16,7 @@ MUTATING_NAME_PATTERN = re.compile(
     re.IGNORECASE,
 )
 SAFE_NAME_PATTERN = re.compile(
-    '^(read|list|search|fetch|get|describe|diagnose|status|recall|view|find|show|check|inspect|lookup|resolve|ping|health|info|memory_search|fact_search|context_read|list_skills)',
+    '^(read|list|search|fetch|get|describe|diagnose|status|recall|view|find|show|check|inspect|lookup|resolve|ping|health|info|list_skills)',
     re.IGNORECASE,
 )
 

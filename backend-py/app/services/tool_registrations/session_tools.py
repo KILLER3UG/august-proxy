@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 from app.json_narrowing import as_int
 from app.services import tool_registry
@@ -69,6 +70,104 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
         return result
     except Exception as exc:
         return f'{{"error": "brain_query: {exc}"}}'
+
+
+# Sensitive-topic denylist for the `remember` write door. Keyword/regex scan —
+# deliberately conservative; a hit refuses the write unless the user turned on
+# memorySensitiveTopics. Covers health specifics, ID numbers, minors, beliefs.
+_SENSITIVE_MEMORY_RE = re.compile(
+    r'\b('
+    r'diagnos\w*|cancer|tumor|hiv\b|diabet\w*|medication|prescription|dosage|'
+    r'antidepressant|psychotherap\w*|mental illness|'
+    r'social security|ssn\b|passport|credit card|bank account|routing number|tax id|'
+    r'religio\w*|political party|political affiliation|'
+    r'(?:son|daughter|child|kid)(?:\'s)? (?:name|age|school|medical)'
+    r')\b'
+    r'|\b\d{3}-\d{2}-\d{4}\b',  # SSN-like pattern
+    re.IGNORECASE,
+)
+
+
+def _isSensitiveMemory(*texts: str) -> bool:
+    blob = ' '.join(str(t) for t in texts if t)
+    return bool(_SENSITIVE_MEMORY_RE.search(blob))
+
+
+def _deriveFactKey(text: str) -> str:
+    """Stable fallback key from the fact text (identical text → same key, so a
+    repeated save updates rather than duplicates). Models should pass `key`
+    explicitly when updating a known fact."""
+    slug = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')[:48]
+    return f'model:{slug or "note"}'
+
+
+async def _remember(
+    fact: str,
+    key: str = '',
+    category: str = 'general',
+    details: str = '',
+    expires_at: str = '',
+    **_extra: object,
+) -> str:
+    """Single model write door into durable memory (facts store).
+
+    Gated by the ``modelMemoryWrites`` toggle and a sensitive-topic denylist
+    (unless ``memorySensitiveTopics`` is on). Writes via ``save_fact`` with
+    ``source='model'`` (INSERT OR REPLACE = update-over-duplicate) and records
+    a rollback entry so the write is undoable.
+    """
+    import json as _json
+
+    from app.services import brain_config_service, memory_store
+    from app.type_aliases import JsonValue
+
+    text = str(fact or '').strip()
+    if not text:
+        return _json.dumps({'ok': False, 'error': 'fact is required'})
+    try:
+        cfg = brain_config_service.getRuntimeConfig()
+    except Exception:
+        cfg = {}
+    if not bool(cfg.get('modelMemoryWrites', True)):
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': 'model memory writes are disabled by the user. Do not retry; '
+                "tell the user you can't save memories while this setting is off.",
+            }
+        )
+    if not bool(cfg.get('memorySensitiveTopics', False)) and _isSensitiveMemory(text, details):
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': 'refused: this looks like a sensitive topic (health, ID numbers, minors, '
+                'beliefs) and sensitive memory is disabled. Do not retry.',
+            }
+        )
+    cat = (category or 'general').strip().lower()
+    if cat not in ('user', 'feedback', 'project', 'reference', 'general'):
+        cat = 'general'
+    factKey = (key or '').strip() or _deriveFactKey(text)
+    detailsText = str(details or '').strip()
+    value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
+    exp = (expires_at or '').strip() or None
+    before = memory_store.get_fact(factKey)
+    try:
+        memory_store.save_fact(factKey, value, category=cat, source='model', confidence=0.7, expires_at=exp)
+    except Exception as exc:
+        return _json.dumps({'ok': False, 'error': f'remember failed: {exc}'})
+    try:
+        from app.services.rollback_store import record_rollback
+
+        record_rollback(
+            type='restore_memory_item',
+            target=factKey,
+            before=before,
+            after={'key': factKey, 'value': value, 'category': cat, 'source': 'model'},
+        )
+    except Exception:
+        pass
+    return _json.dumps({'ok': True, 'key': factKey, 'category': cat, 'updated': before is not None})
 
 
 def _purge_session_everywhere(sessionId: str) -> dict[str, object]:
@@ -211,11 +310,9 @@ def register() -> None:
     """Register session-management and search tools."""
     tool_registry.register(
         'rename_session',
-        'Rename a chat session in the sidebar when the user asks. '
-        'Session titles are generated automatically after the first reply — '
-        'do NOT call this just to invent a title for a new chat. '
-        'Use a short 3–8 word title. Pass sessionId when known; for the current chat '
-        '(see <session> in the system prompt) you may omit it.',
+        'Rename a chat session in the sidebar when the user asks. Titles auto-generate after the first '
+        'reply — do NOT call this just to title a new chat. Use a short 3–8 word title. Pass sessionId '
+        'when known; for the current chat (see <session> in the system prompt) you may omit it.',
         _renameSession,
         {
             'type': 'object',
@@ -234,11 +331,9 @@ def register() -> None:
     )
     tool_registry.register(
         'delete_session',
-        'Delete a single chat session by its session ID (e.g. wb_20260715_143052_a1b2c3). '
-        'The current chat id is in the <session> system-prompt block. '
-        'For multiple sessions use delete_sessions (bulk) instead of calling this repeatedly. '
-        'Use brain_query(store=sessions) to list first. '
-        'IMPORTANT: Confirm with the user before deleting.',
+        'Delete a single chat session by ID (e.g. wb_20260715_143052_a1b2c3; the current chat id is in '
+        'the <session> block). For multiple, use delete_sessions instead of repeating this. Use '
+        'brain_query(store=sessions) to list first. IMPORTANT: confirm with the user before deleting.',
         _deleteSession,
         {
             'type': 'object',
@@ -248,10 +343,9 @@ def register() -> None:
     )
     tool_registry.register(
         'delete_sessions',
-        'Bulk-delete multiple chat sessions in one call. Pass sessionIds as an array of IDs '
-        '(e.g. from brain_query(store=sessions)). Prefer this over many delete_session calls. '
-        'IMPORTANT: List the exact sessions to the user and wait for explicit confirmation '
-        'before calling. Never bulk-delete without confirmation.',
+        'Bulk-delete multiple chat sessions in one call. Pass sessionIds as an array (e.g. from '
+        'brain_query(store=sessions)); prefer over many delete_session calls. IMPORTANT: list the exact '
+        'sessions to the user and wait for explicit confirmation — never bulk-delete without it.',
         _deleteSessions,
         {
             'type': 'object',
@@ -311,11 +405,38 @@ def register() -> None:
         },
     )
     tool_registry.register(
+        'remember',
+        'Save one durable fact to long-term memory (the only model write door). Use for user-stated '
+        'preferences, project constraints, and feedback that must outlive this session. Pass a stable '
+        'key to update an existing fact rather than duplicate. Sensitive topics are refused unless enabled.',
+        _remember,
+        {
+            'type': 'object',
+            'properties': {
+                'fact': {'type': 'string', 'description': 'The fact to remember (one concise statement).'},
+                'key': {
+                    'type': 'string',
+                    'description': 'Optional stable key; pass it to update an existing fact instead of creating a new one.',
+                },
+                'category': {
+                    'type': 'string',
+                    'enum': ['user', 'feedback', 'project', 'reference', 'general'],
+                    'description': 'Memory category. Default general.',
+                },
+                'details': {'type': 'string', 'description': 'Optional extra context stored alongside the fact.'},
+                'expires_at': {
+                    'type': 'string',
+                    'description': 'Optional ISO-8601 expiry (e.g. 2026-12-31T00:00:00Z); purged after this.',
+                },
+            },
+            'required': ['fact'],
+        },
+    )
+    tool_registry.register(
         'delete_folder',
-        'Delete all sessions in a folder by folder ID. All messages in those sessions are also deleted. '
-        'Use brain_query(store=sessions) to list sessions and their folderId values first. '
-        'IMPORTANT: Before calling this tool, list the folder contents, present to the user exactly which '
-        'folder and sessions you intend to delete, and wait for explicit user confirmation before proceeding.',
+        'Delete all sessions in a folder by folder ID (their messages are deleted too). Use '
+        'brain_query(store=sessions) to list sessions and folderId values first. IMPORTANT: present the '
+        'exact folder and sessions to the user and wait for explicit confirmation before calling.',
         _deleteFolder,
         {
             'type': 'object',

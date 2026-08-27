@@ -24,12 +24,9 @@ def register() -> None:
     """Register media analysis tools."""
     tool_registry.register(
         'analyze_media',
-        'Analyze an image, video, audio file, or document — the ONLY way to '
-        'see media content (read_file refuses binary files). Images are '
-        'described by a vision model using the session provider; video '
-        'returns ffprobe metadata + a frame description; audio returns '
-        'duration/codec info with a transcription path; URLs work directly. '
-        'Pass question to focus the analysis.',
+        'Analyze an image, video, audio file, or document — the ONLY way to see media content (read_file '
+        'refuses binaries). Images go to a vision model; video returns ffprobe metadata + frame '
+        'description; audio returns duration/codec + transcription path; URLs work directly.',
         _analyzeMedia,
         {
             'type': 'object',

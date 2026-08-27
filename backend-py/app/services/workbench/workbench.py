@@ -297,28 +297,6 @@ def _setAssistantText(
         assistantMsg['content'] = text
 
 
-def _memoryChangeNotice(
-    toolName: str, toolInput: dict[str, object], result: object
-) -> str:
-    """Friendly one-liner for a memory tool result (in-chat notice)."""
-    text = as_str(result, '')
-    try:
-        if toolName == 'remember':
-            content = as_str(toolInput.get('content'), '')
-            return f'Remembered: {content[:140]}' if content else 'Saved a memory.'
-        if toolName == 'update_memory':
-            content = as_str(toolInput.get('content'), '')
-            return f'Updated a memory: {content[:140]}' if content else 'Updated a memory.'
-        if toolName == 'forget':
-            mid = as_int(toolInput.get('memoryId'), 0)
-            return f'Forgot a memory (id {mid}).' if mid else 'Forgot a memory.'
-        if toolName == 'update_heuristics':
-            return 'Updated a learned rule.'
-    except Exception:
-        pass
-    return text[:140]
-
-
 def _modelRetryPolicy() -> dict[str, int]:
     """Retry policy with optional config.json overrides (workbench.retry)."""
     policy = {'maxRetries': 10, 'baseDelayMs': 1000, 'maxDelayMs': 30000}
@@ -712,7 +690,7 @@ def buildSystemPrompt(
     if len(skillNames) > len(shownSkills):
         skillsLine += f' … +{len(skillNames) - len(shownSkills)} more (list_skills for all)'
     memoryTools = sorted(
-        n for n in ('memory_search', 'read_blackboard', 'remember') if n in offeredTools
+        n for n in ('brain_query', 'read_blackboard') if n in offeredTools
     )
     intake: list[str] = [
         '<intake>',
@@ -733,11 +711,26 @@ def buildSystemPrompt(
         '- Session state: goal, plan, execution phase, scratchpad, todos — in <session>.',
     ]
     if memoryTools:
-        intake.append(
-            '- Memory: durable memory is NOT auto-injected — pull it on demand via '
-            + ', '.join(memoryTools)
-            + '.'
+        storeHint = (
+            'stores: facts=user-stated facts, memory=kv notes, timeline=episodic, '
+            'sessions=past chats, autoMemories=legacy captures, heuristics=legacy rules (read-only).'
         )
+        memParts = [
+            '- Memory: durable memory is pull-on-demand via ' + ', '.join(memoryTools) + '. ' + storeHint
+        ]
+        # Boot index (B3): name-only list of the most recent facts/events so the
+        # model pulls relevant memory by name instead of blind-scanning tables.
+        try:
+            from app.services.memory_store import brain_index_snippet as _brain_index
+
+            memIdx = _brain_index().strip()
+        except Exception:
+            memIdx = ''
+        if memIdx:
+            memParts.append('  Memory index (names only — brain_query to read one):')
+            for ln in memIdx.splitlines():
+                memParts.append('  ' + ln)
+        intake.append('\n'.join(memParts))
     if skillsLine and not is_benchmark:
         intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
     intake.append(f'- Date: {nowLabel} — treat as today.')
@@ -843,6 +836,17 @@ def buildSystemPrompt(
         parts.append(_seg_cache.BULK_BLOCK)
     if offeredTools & {'web_search', 'web_fetch'}:
         parts.append(_seg_cache.WEB_BLOCK)
+    # Memory write-door guidance only when the tool is actually offered and the
+    # user has model memory writes enabled (the handler double-checks the toggle).
+    if 'remember' in offeredTools:
+        try:
+            from app.services import brain_config_service as _bc
+
+            memWritesOn = bool(_bc.getRuntimeConfig().get('modelMemoryWrites', True))
+        except Exception:
+            memWritesOn = True
+        if memWritesOn:
+            parts.append(_seg_cache.MEMORY_BLOCK)
     return '\n\n'.join(p for p in parts if p)
 
 
@@ -3299,16 +3303,6 @@ async def _sendWorkbenchMessageStreamImpl(
                             integrationSetup = isu
                     except Exception:
                         integrationSetup = None
-                # In-chat memory notice: when the model changed long-term
-                # memory, tell the user what August now remembers/forgot.
-                _MEMORY_TOOLS = ('remember', 'update_memory', 'forget', 'update_heuristics')
-                if toolName in _MEMORY_TOOLS:
-                    try:
-                        notice = _memoryChangeNotice(toolName, toolInput, result)
-                        if notice:
-                            emit({'type': 'memoryUpdated', 'action': toolName, 'summary': notice})
-                    except Exception:
-                        logger.debug('memory notice emit failed', exc_info=True)
                 tool_duration_ms = int(max(0.0, (time.perf_counter() - t0) * 1000))
                 emit(
                     {
@@ -3554,13 +3548,6 @@ async def _sendWorkbenchMessageStreamImpl(
                         )
             except Exception:
                 logger.debug('session summary failed', exc_info=True)
-            # Record activity so cognitive idle consolidation timer resets.
-            try:
-                from app.services.cognitive_boot import record_user_activity
-
-                record_user_activity(session.id)
-            except Exception:
-                pass
             _emitSessionStatus(sessionId)
             if totalInputTokens > 0 or totalOutputTokens > 0:
                 try:
@@ -4692,12 +4679,8 @@ def listProxyCapabilities() -> dict[str, object]:
             'delete_file',
             'create_file',
             'run_command',
-            'save_memory',
-            'save_fact',
-            'update_heuristics',
             'update_state',
             'write_scratchpad',
-            'delete_memory',
             'delete_session',
             'delete_sessions',
             'delete_folder',
@@ -4708,8 +4691,6 @@ def listProxyCapabilities() -> dict[str, object]:
             'submit_plan',
             'approve_plan',
             'reject_plan',
-            # load_skill is read-only knowledge load — not mutating
-            'skill_manage',
             'spawn_subagents',
             'spawn_daemon',
             'kill_daemon',
@@ -4717,6 +4698,7 @@ def listProxyCapabilities() -> dict[str, object]:
             'send_subagent_message',
             'write_blackboard',
             'clear_blackboard',
+            'remember',
         }
     )
     allTools = regListTools()
@@ -4737,18 +4719,9 @@ def listProxyCapabilities() -> dict[str, object]:
             group = 'file'
         elif name in ('run_command',):
             group = 'shell'
-        elif name in (
-            'memory_search',
-            'fact_search',
-            'context_read',
-            'brain_query',
-            'save_memory',
-            'delete_memory',
-            'save_fact',
-            'update_heuristics',
-        ):
+        elif name in ('brain_query', 'remember'):
             group = 'memory'
-        elif name in ('load_skill', 'load_skills', 'list_skills', 'skill_manage'):
+        elif name in ('load_skill', 'load_skills', 'list_skills'):
             group = 'skill'
         elif name in ('web_fetch', 'web_search'):
             group = 'web'

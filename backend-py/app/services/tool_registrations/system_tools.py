@@ -334,23 +334,17 @@ def register() -> None:
     )
     tool_registry.register(
         'enter_plan_mode',
-        'Switch this session into Plan mode before a non-trivial multi-step change '
-        '(multiple files, architectural decisions, risky or destructive operations). '
-        'In Plan mode you investigate with read-only tools and write your plan as '
-        'markdown to this session\'s plan file under .aug/plans/ (the exact path is '
-        'returned by this tool) — the only file you may write — then present it with '
-        'submit_plan for user approval. Do NOT call this for simple, clearly-scoped '
-        'requests; just do the work. No effect if already in Plan mode.',
+        'Enter Plan mode before a non-trivial multi-step change (multiple files, architecture, risky or '
+        'destructive ops). Investigate read-only, write the plan to the session plan file this tool '
+        'returns (.aug/plans/), then present it via submit_plan. Skip for simple, clearly-scoped requests.',
         _enterPlanModeFallback,
         {'type': 'object', 'properties': {}, 'required': []},
     )
     tool_registry.register(
         'submit_plan',
-        'Submit your plan for user approval. First write the plan as clean markdown '
-        'to this session\'s plan file (.aug/plans/<sessionId>.md — the exact path is '
-        'returned by enter_plan_mode; it is the only file writable in Plan mode and '
-        'is private to this session), then call this tool; the file is shown to the '
-        'user exactly as written.',
+        'Submit your plan for user approval. First write it as clean markdown to this session\'s plan file '
+        '(.aug/plans/<sessionId>.md — the exact path comes from enter_plan_mode; it is the only file '
+        'writable in Plan mode), then call this tool; the file is shown to the user exactly as written.',
         _submitPlanFallback,
         {
             'type': 'object',

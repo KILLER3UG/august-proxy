@@ -155,11 +155,9 @@ def register() -> None:
     )
     tool_registry.register(
         'draw_circuit',
-        'Draw an electrical schematic PNG (schemdraw). Elements are drawn '
-        'left-to-right as a connected chain: {"type": "battery"|"resistor"|'
-        '"capacitor"|"led"|"ground"|"switch"|"opamp"|"line"|..., "label": '
-        '"10V", "dir": "right|left|up|down"}. End with a ground element to '
-        'close the loop. Covers PSU/divider/driver-style series circuits.',
+        'Draw an electrical schematic PNG (schemdraw). Elements form a left-to-right connected chain: '
+        '{"type": "battery"|"resistor"|"capacitor"|"led"|"ground"|"switch"|"opamp"|..., "label": "10V", '
+        '"dir": "right|left|up|down"}. End with ground to close the loop. For PSU/divider/driver circuits.',
         _drawCircuit,
         {
             'type': 'object',
@@ -173,15 +171,10 @@ def register() -> None:
     )
     tool_registry.register(
         'create_html_artifact',
-        'Create a SELF-CONTAINED interactive HTML visual/animation the user '
-        'can open right in the side panel — use this whenever a VISUAL or '
-        'INTERACTIVE explanation beats prose: how embeddings/vectors work, '
-        'attention mechanisms, VHDL/signal timing, physics simulations '
-        '(pendulum, waves, orbits), algorithm animations, interactive '
-        'diagrams. Author the COMPLETE document: all CSS and JavaScript '
-        'INLINE (no external files/CDNs), canvas/SVG for animation, '
-        'controls (sliders/buttons) encouraged, dark background works best. '
-        'The file renders LIVE in the right panel and in fullscreen.',
+        'Create a self-contained interactive HTML visual/animation opened in '
+        'the side panel — use when a VISUAL beats prose: embeddings, attention, '
+        'signal timing, physics sims, algorithm animations. ALL CSS/JS inline '
+        '(no CDNs), canvas/SVG animation, controls encouraged, dark-friendly.',
         _createHtmlArtifact,
         {
             'type': 'object',

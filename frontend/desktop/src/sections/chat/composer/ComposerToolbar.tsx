@@ -22,6 +22,7 @@ import type { ModelItem } from '../model-display';
 import type { SessionUsageState } from '../hooks/useChatUsage';
 import type { EffortLevel } from '../hooks/useChatSend';
 import { ComposerActionsMenu } from './ComposerActionsMenu';
+import { CameraPopover } from './CameraPopover';
 import { ModelEffortMenu } from './ModelEffortMenu';
 import { BranchChip } from './BranchChip';
 import { SubagentSpawnModal } from './SubagentSpawnModal';
@@ -73,6 +74,11 @@ export function ComposerToolbar({
   onAttach,
   onMention,
   onVoice,
+  onCamera,
+  cameraOpen,
+  cameraPos,
+  onCameraClose,
+  onCameraCapture,
   sendKind = 'send',
   onAskParallel,
   onStartDebate,
@@ -127,6 +133,16 @@ export function ComposerToolbar({
   onAttach: () => void;
   onMention: () => void;
   onVoice: () => void;
+  /** Open the camera capture popover. When omitted, no camera item is shown. */
+  onCamera?: () => void;
+  /** True while the camera popover is open. */
+  cameraOpen?: boolean;
+  /** Anchor position for the camera popover (re-uses the actions menu slot). */
+  cameraPos?: AnchorPos | null;
+  /** Close the camera popover. */
+  onCameraClose?: () => void;
+  /** Forward a captured webcam frame to the composer attachment pipeline. */
+  onCameraCapture?: (file: File) => void;
   sendKind?: 'steer' | 'continue' | 'dispatch' | 'send';
   onAskParallel?: () => void;
   onStartDebate?: () => void;
@@ -254,6 +270,7 @@ export function ComposerToolbar({
           onAttach={onAttach}
           onMention={onMention}
           onVoice={onVoice}
+          onCamera={onCamera}
           onSpawn={() => {
             onToggleActions();
             setSpawnOpen(true);
@@ -287,6 +304,14 @@ export function ComposerToolbar({
             </div>
           }
         />
+        {onCamera && onCameraCapture && (
+          <CameraPopover
+            open={!!cameraOpen}
+            pos={cameraPos ?? null}
+            onClose={() => onCameraClose?.()}
+            onCapture={(file) => onCameraCapture(file)}
+          />
+        )}
       </div>
 
       <div className="flex items-center gap-1 shrink-0">

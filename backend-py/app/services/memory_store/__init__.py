@@ -13,7 +13,14 @@ from __future__ import annotations
 from app.services.memory_conn import close
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
-from app.services.memory_store.brain import brain_query
+from app.services.memory_store.brain import (
+    brain_browse,
+    brain_delete_row,
+    brain_index_snippet,
+    brain_query,
+    brain_store_summary,
+    brain_update_row,
+)
 from app.services.memory_store.kv import (
     _fts_match_query,
     delete_memory,
@@ -114,6 +121,11 @@ __all__ = [
     'vacuum',
     'get_stats',
     'brain_query',
+    'brain_browse',
+    'brain_store_summary',
+    'brain_index_snippet',
+    'brain_delete_row',
+    'brain_update_row',
     'write_timeline_event',
     'timeline_sweep',
     '_conn',

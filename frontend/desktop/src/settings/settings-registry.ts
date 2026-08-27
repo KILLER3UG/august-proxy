@@ -2,11 +2,8 @@
 /* Drives the left rail, global search, route resolution, and the
  * parallel chat-side workspace panel.
  *
- * 5 categories, 32 sections (18 basic, 13 advanced, 1 hidden — Agent Board).
- * Sections are tagged `tier: 'basic' | 'advanced'` so the rail can show
- * a short beginner list by default and reveal advanced surfaces behind
- * a "Show advanced" toggle (persisted to localStorage by
- * `useSettingsAdvancedPreference`).
+ * 8 category hubs, 39 sections. Hubs are the rail; each hub stacks its
+ * related sections as inner tabs (see `docs/settings-audit.md`).
  *
  * See `docs/settings-audit.md` for the rationale + section movement
  * history.
@@ -37,7 +34,9 @@ import {
   FolderLock,
   GitBranch,
   Globe,
+  History,
   Kanban,
+  Lightbulb,
   LineChart,
   MessagesSquare,
   Monitor,
@@ -62,6 +61,7 @@ import {
   AudioLines,
   Coins,
   Route,
+  ScrollText,
   Users,
 } from 'lucide-react';
 
@@ -118,6 +118,11 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     id: 'models',
     label: 'Models',
     description: 'Providers, catalog, and quotas.',
+  },
+  {
+    id: 'memory',
+    label: 'Memory',
+    description: 'What August remembers — and the data it holds on this device.',
   },
   {
     id: 'automations',
@@ -237,6 +242,44 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // Note: 'delete' is owned by skills; 'history' by conversations-history.
     // This section is reached via its own vocabulary.
     keywords: ['privacy', 'data', 'export', 'retention', 'purge', 'wipe', 'cleanup', 'clear data', 'erase'],
+  },
+  {
+    id: 'memory-knowledge',
+    label: 'Memories',
+    description: 'Auto-captured memories and key-value notes August has learned.',
+    icon: Network,
+    category: 'memory',
+    tier: 'basic',
+    keywords: ['memory', 'memories', 'stored', 'remembers', 'remembered', 'recall', 'brain', 'auto-memory'],
+    legacyAliases: ['memory', 'vector-db', 'recalled-memory', 'auto-memories', 'project-memories'],
+  },
+  {
+    id: 'memory-facts',
+    label: 'Facts & Rules',
+    description: 'Structured facts August extracted and behavioral rules it learned.',
+    icon: Lightbulb,
+    category: 'memory',
+    tier: 'basic',
+    keywords: ['facts', 'heuristics', 'rules', 'learned', 'semantic', 'knowledge'],
+    legacyAliases: ['semantic-facts'],
+  },
+  {
+    id: 'memory-timeline',
+    label: 'Timeline',
+    description: 'Episodic record of what August did, plus inter-agent blackboard notes.',
+    icon: History,
+    category: 'memory',
+    tier: 'basic',
+    keywords: ['timeline', 'episodic', 'episodes', 'blackboard'],
+  },
+  {
+    id: 'memory-sessions',
+    label: 'Sessions',
+    description: 'Raw conversation sessions, chat messages, and exam records as stored.',
+    icon: ScrollText,
+    category: 'memory',
+    tier: 'basic',
+    keywords: ['sessions', 'messages', 'exam', 'attempts', 'stored conversations'],
   },
 
   /* ── Intelligence ────────────────────────────────────────────── */

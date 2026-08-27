@@ -49,11 +49,21 @@ async def handleToolSearch(query: str, limit: int = 5) -> str:
     results = searchTools(catalog, query, k=limit)
     if not results:
         return 'No matching tools found.'
-    byName = {_toolDefName(t): t for t in allTools if _toolDefName(t)}
+    # Same unwrap as buildToolCatalog: listTools() yields OpenAI-wrapped defs.
+    byName: dict[str, dict[str, object]] = {}
+    for t in allTools:
+        if isinstance(t, dict):
+            fn = t.get('function')
+            src = fn if isinstance(fn, dict) else t
+            n = src.get('name')
+            if isinstance(n, str) and n:
+                byName[n] = src
     lines = [f'Tool search results for: {query}']
     for name in results:
-        t = byName.get(name)
-        desc = t.get('description', '') if isinstance(t, dict) else ''
+        if not name:
+            continue
+        hit = byName.get(name)
+        desc = str(hit.get('description', '')) if isinstance(hit, dict) else ''
         if desc:
             lines.append(f'  {name}: {desc}')
         else:
@@ -61,10 +71,33 @@ async def handleToolSearch(query: str, limit: int = 5) -> str:
     return '\n'.join(lines)
 
 
+# Tools intercepted by the managed turn loop BEFORE registry dispatch
+# (like submit_plan). They exist for the model but not in tool_registry —
+# teach tool_describe about them so probing doesn't read as "ghost tool".
+_LOOP_INTERCEPTED_TOOLS: dict[str, str] = {
+    'submit_clarify': (
+        'Ask the user a clarifying question (intercepted by the harness before '
+        'dispatch — no registry entry). Args: {question: str (1-2 sentences), '
+        'choices?: string[] (up to 5 short options), questions?: [{question, '
+        'choices?, multiSelect?}], multiSelect?: bool}.'
+    ),
+    'ask_clarify': (
+        'Alias of submit_clarify (intercepted by the harness before dispatch).'
+    ),
+}
+
+
 async def handleToolDescribe(name: str) -> str:
-    """Return the full JSON schema for one deferred tool."""
+    """Return the full JSON schema for one deferred tool.
+
+    Loop-intercepted tools (``submit_clarify`` etc.) have no registry entry —
+    they are handled by the managed turn before dispatch — so describe them
+    from ``_LOOP_INTERCEPTED_TOOLS`` instead of answering "not found".
+    """
     from app.services.tool_registry import getTool
 
+    if name in _LOOP_INTERCEPTED_TOOLS:
+        return f'Tool: {name}\nDescription: {_LOOP_INTERCEPTED_TOOLS[name]}'
     tool = getTool(name)
     if not tool:
         return f"Tool '{name}' not found."

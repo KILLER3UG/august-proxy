@@ -244,11 +244,6 @@ def get_features() -> dict[str, bool]:
     return {k: bool(features.get(k, DEFAULT_FEATURES.get(k, False))) for k in DEFAULT_FEATURES}
 
 
-def get_consolidation_interval_s() -> float:
-    tree = get_cognitive()
-    return max(60.0, as_float(tree.get('consolidation_interval_s'), 86400.0))
-
-
 def update_cognitive(patch: dict[str, object]) -> dict[str, object]:
     """Partial update of the cognitive tree only (no legacy dual-write)."""
     ensure_defaults()

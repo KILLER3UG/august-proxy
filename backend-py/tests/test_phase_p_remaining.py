@@ -15,7 +15,7 @@ from app.services.workbench.parallel_tools import PARALLEL_SAFE_TOOLS, is_parall
 
 def test_parallel_safe_allowlist():
     assert is_parallel_safe('list_skills')
-    assert is_parallel_safe('memory_search')
+    assert is_parallel_safe('brain_query')
     assert not is_parallel_safe('write_file')
     assert not is_parallel_safe('run_command')
     assert 'read_file' in PARALLEL_SAFE_TOOLS
@@ -79,7 +79,7 @@ async def test_parallel_tools_gather_runs(isolatedData):
         await asyncio.sleep(0.02)
         return name
 
-    names = ['list_skills', 'memory_search']
+    names = ['list_skills', 'brain_query']
     assert all(is_parallel_safe(n) for n in names)
     t0 = asyncio.get_event_loop().time()
     out = await asyncio.gather(*[fake(n) for n in names])
@@ -107,7 +107,7 @@ async def test_chat_stages_parallel_vs_serial():
 
     pending = [
         ('list_skills', {}, 'a'),
-        ('memory_search', {}, 'b'),
+        ('brain_query', {}, 'b'),
     ]
     max_concurrent = 0
     out = await run_regular_tools_stage(pending, run_one)

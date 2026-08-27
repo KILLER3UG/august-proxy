@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Paperclip, Mic, AtSign, Plus, Bot, Swords, Gavel } from 'lucide-react';
+import { Paperclip, Mic, AtSign, Plus, Bot, Swords, Gavel, Camera } from 'lucide-react';
 import { ToolBtn } from '../ComposerControls';
 import type { AnchorPos } from './useComposerPopovers';
 
@@ -15,6 +15,7 @@ export function ComposerActionsMenu({
   onAttach,
   onMention,
   onVoice,
+  onCamera,
   onSpawn,
   onAskParallel,
   onStartDebate,
@@ -27,6 +28,8 @@ export function ComposerActionsMenu({
   onAttach: () => void;
   onMention: () => void;
   onVoice: () => void;
+  /** Open the camera capture popover (browser webcam). */
+  onCamera?: () => void;
   /** Open the sub-agent spawn launcher (bound to the active session). */
   onSpawn?: () => void;
   onAskParallel?: () => void;
@@ -80,6 +83,17 @@ export function ComposerActionsMenu({
               <span>Voice input</span>
               <Mic className="size-3.5 text-muted-foreground" />
             </button>
+            {onCamera && (
+              <button
+                type="button"
+                onClick={onCamera}
+                className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
+                data-testid="composer-camera-open"
+              >
+                <span>Camera capture</span>
+                <Camera className="size-3.5 text-muted-foreground" />
+              </button>
+            )}
             {onSpawn && (
               <button
                 type="button"

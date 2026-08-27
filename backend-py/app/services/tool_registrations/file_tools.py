@@ -761,12 +761,9 @@ def register() -> None:
     """Register file and shell tools."""
     tool_registry.register(
         'read_file',
-        'Read a file from the filesystem. Path must be absolute (or relative to workspace). '
-        'Optional offset/limit (1-based start line + line count) page large files. '
-        'Prefer this over shell head/cat/tail. Max ~10 MB. Sandboxed to the session workspace when set. '
-        'The result is prefixed with the file\'s sha256 ("[sha256 …]") — echo it back as the '
-        'fileHash argument of a later write_file so the harness rejects edits to files that '
-        'changed since you read them.',
+        'Read a file (absolute or workspace-relative path). Optional offset/limit (1-based start + line count) '
+        'page large files; prefer over shell head/cat/tail. The result header carries the file\'s sha256 — '
+        'echo it as fileHash to write_file/edit_lines so edits to changed files are rejected.',
         _readFile,
         {
             'type': 'object',
@@ -813,11 +810,9 @@ def register() -> None:
     )
     tool_registry.register(
         'edit_lines',
-        'Precision line edits: replace specific lines of a file, each verified by a per-line anchor '
-        '(the current line content) AND the fileHash from the last read_file result. '
-        'Prefer this over write_file for small surgical changes — a stale hash or a mismatched '
-        'anchor rejects the edit without writing, so concurrent changes can never corrupt the file. '
-        'Line numbers refer to the numbered read_file paged output (1-based).',
+        'Precision line edits: replace specific lines, each verified by a per-line anchor (current text) AND '
+        'the fileHash from the last read_file. Prefer over write_file for surgical changes — a stale hash or '
+        'mismatched anchor rejects the edit without writing. Line numbers are 1-based read_file output lines.',
         _editLines,
         {
             'type': 'object',
@@ -884,12 +879,9 @@ def register() -> None:
     tool_registry.register(
         'run_command',
         'Run a non-interactive shell command in the session sandbox (workspace-write by default, network off). '
-        'Stdin is closed — never use pagers, REPLs, password prompts, or commands that wait for input. '
-        'Prefer flags like --yes / -y / --non-interactive; GIT_PAGER=cat is already applied. '
-        'On Windows, prefer PowerShell/cmd (or use read_file instead of head/cat/tail). '
-        'Common Unix head/tail/cat/ls are auto-translated when possible. '
+        'Stdin is closed — no pagers/REPLs/prompts; prefer --yes flags. '
         f'Default timeout {_DEFAULTCommandTimeout}s (max {_MAXCommandTimeout}s); optional timeout_s. '
-        'Use network:true for curl/gh/pip without toggling the session.',
+        'network:true enables curl/gh/pip for this command only.',
         _runCommand,
         {
             'type': 'object',

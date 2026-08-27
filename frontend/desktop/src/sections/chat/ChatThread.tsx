@@ -1301,6 +1301,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       removeAttachment={removeAttachment}
       handleComposerPaste={handleComposerPaste}
       handleFileUpload={handleFileUpload}
+      attachFiles={attachFiles}
       messages={messages}
       streaming={streaming}
       send={send}

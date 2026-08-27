@@ -20,14 +20,18 @@ from app.json_narrowing import as_str
 
 _PROMPT_READ = frozenset({
     'brain_query', 'browser_get_content', 'browser_open', 'browser_screenshot',
-    'browser_wait', 'context_read', 'describe_environment', 'desktop_list_windows',
+    'browser_wait', 'describe_environment', 'desktop_list_windows',
     'desktop_mouse_position', 'desktop_screen_size', 'desktop_screenshot',
-    'diagnose_proxy', 'fact_search', 'get_fallback', 'list_aliases',
-    'list_directory', 'list_integrations', 'list_mcp_servers', 'memory_search',
+    'diagnose_proxy', 'get_fallback', 'list_aliases',
+    'list_directory', 'list_integrations', 'list_mcp_servers',
     'pptx_list_elements',
     # Media analysis — the sanctioned reader for images/video/audio/docs
     # (read_file refuses binary media and redirects here).
     'analyze_media',
+    # Camera capture — read-only image acquisition; frames are transient
+    # (the tool deletes the raw file before returning, and the result is a
+    # vision description, not the bytes).
+    'camera_list_devices', 'camera_snapshot',
     # Circuit workbench lookups — read-only datasheet/board facts.
     'list_boards', 'search_component', 'circuit_list_boards',
     'circuit_search_component', 'circuit_read_netlist', 'circuit_list_netlists',
@@ -51,16 +55,17 @@ _PROMPT_WRITE = frozenset({
     'desktop_open_url', 'desktop_press_key', 'desktop_type', 'rename_session',
     'rename_sessions', 'setup_provider', 'connect_github', 'connect_google',
     'connect_slack', 'install_mcp_server', 'customize_ui', 'enter_plan_mode',
-    'submit_plan', 'update_alias', 'update_heuristics', 'update_memory', 'update_state',
+    'submit_plan', 'update_alias', 'update_state',
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad', 'edit_lines',
     'pptx_comment',
+    # Memory write door — saves a durable fact (gated by modelMemoryWrites).
+    'remember',
     # Artifact creation — each writes a file into the workspace.
     'create_pptx', 'render_chart', 'render_video', 'draw_circuit',
     # Circuit workbench mutations — netlist files + rendered PNG output.
     'circuit_create_netlist', 'circuit_update_netlist', 'circuit_render_3d',
     # Interactive HTML artifacts — writes an .html file into the workspace.
     'create_html_artifact',
-    'remember',
     # Harness self-improvement: files proposals for human review (no direct
     # application from the model — approval runs a deterministic applier).
     'harness_propose',
@@ -71,7 +76,7 @@ _PROMPT_WRITE = frozenset({
 _PROMPT_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',
     'delete_folder', 'delete_session', 'delete_sessions', 'kill_daemon',
-    'kill_daemons', 'forget',
+    'kill_daemons',
     # Circuit workbench: removes a netlist file from the workspace.
     'circuit_delete_netlist',
 })
@@ -84,7 +89,7 @@ _PROMPT_AGENT = frozenset({
             'list_workstreams', 'send_subagent_message', 'interrupt_subagent',
 })
 
-_PROMPT_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills', 'skill_manage'})
+_PROMPT_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills'})
 
 _PROMPT_BRIDGE = frozenset({'tool_call', 'tool_describe', 'tool_search'})
 
@@ -114,6 +119,9 @@ _PLAN_BLOCKED_EXACT = frozenset({
     # Integration tools (explicit list added in the security fix).
     'connect_github', 'connect_slack', 'connect_google', 'install_mcp_server',
     'disconnect_integration',
+    # Circuit netlist CRUD — workspace file writes/edits behind the
+    # /circuit workbench gate (still plan-mode mutations).
+    'circuit_create_netlist', 'circuit_update_netlist',
 })
 
 _PLAN_BLOCKED_BULK_PLURALS = frozenset({
@@ -143,8 +151,9 @@ _SHELL_EXACT = frozenset({
     'install', 'uninstall', 'pip_install', 'npm_install', 'pnpm_add',
     'install_mcp_server',
     # Spawns the ngspice binary on a model-authored netlist — same
-    # edit-mode gating as a shell command.
-    'simulate_circuit',
+    # edit-mode gating as a shell command. Both names: the registered
+    # circuit_* tool and the legacy unprefixed alias.
+    'simulate_circuit', 'circuit_simulate',
 })
 
 _SHELL_BULK_OPS = frozenset({'run_command', 'bash', 'shell', 'exec'})

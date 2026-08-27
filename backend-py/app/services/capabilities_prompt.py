@@ -50,20 +50,19 @@ _TOOL_READ: frozenset[str] = frozenset(
         'browser_open',
         'browser_screenshot',
         'browser_wait',
-        'context_read',
+        'camera_list_devices',
+        'camera_snapshot',
         'describe_environment',
         'desktop_list_windows',
         'desktop_mouse_position',
         'desktop_screen_size',
         'desktop_screenshot',
         'diagnose_proxy',
-        'fact_search',
         'get_fallback',
         'list_aliases',
         'list_directory',
         'list_integrations',
         'list_mcp_servers',
-        'memory_search',
         'pptx_list_elements',
         'read_blackboard',
         'read_file',
@@ -100,7 +99,6 @@ _TOOL_WRITE: frozenset[str] = frozenset(
         'enter_plan_mode',
         'submit_plan',
         'update_alias',
-        'update_heuristics',
         'update_state',
         'write_blackboard',
         'write_file',
@@ -108,6 +106,8 @@ _TOOL_WRITE: frozenset[str] = frozenset(
         'write_scratchpad',
         'edit_lines',
         'pptx_comment',
+        # Memory write door — saves a durable fact (gated by modelMemoryWrites).
+        'remember',
     }
 )
 
@@ -143,7 +143,6 @@ _TOOL_SKILL: frozenset[str] = frozenset(
         'list_skills',
         'load_skill',
         'load_skills',
-        'skill_manage',
     }
 )
 

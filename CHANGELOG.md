@@ -2,6 +2,66 @@
 
 ## Unreleased (working tree)
 
+**Memory becomes human-readable + gets a model write door; camera capture** —
+the memory-audit follow-through, per the 8-screenshot ruling:
+
+- **Memory UI rewritten** (`MemorySection`): the raw SQLite table browser is
+  now titled **entry cards** (facts grouped under You / Feedback / Projects /
+  References / General headers), with a **detail view** (Markdown body,
+  provenance line, Delete with confirm, inline edit over a per-store field
+  whitelist), a Claude-style **add-box** on Memories/Facts, and per-entry +
+  per-store **Markdown export** with frontmatter. `heuristics` and
+  `autoMemories` render as read-only **Legacy** stores. An Import dialog
+  accepts Markdown/JSON memory exports from other AIs.
+- **`remember` tool — the single model write door** into the facts store:
+  gated by the new `modelMemoryWrites` toggle, with a sensitive-topic denylist
+  (health specifics, ID numbers, minors, beliefs) that refuses unless
+  `memorySensitiveTopics` is enabled; writes carry `source='model'`, update
+  over duplicate keys, and record a rollback entry. Sub-agents cannot write
+  memory. A `<memory_policy>` block joins the system prompt when the tool is
+  offered.
+- **Recall actually happens**: intake injects a boot **memory index** (top-15
+  fact keys + last-5 timeline events, ~250-token cap) plus a store-description
+  clause, turning blind table pulls into relevance-based `brain_query` pulls.
+  Facts gain an optional `expires_at` TTL purged by a boot sweep.
+- **Per-entry endpoints**: `DELETE`/`PATCH /api/brain/stores/{store}/{id}`
+  with per-store field whitelists (heuristics = 403 read-only legacy); the
+  add-box reuses `/api/memory/manage` with `source='user'`.
+- **Camera**: composer **Camera capture** popover (live preview, manual
+  capture, frame → attachment pipeline) plus `camera_snapshot` /
+  `camera_list_devices` model tools through the sanctioned `analyze_media`
+  vision path. Both are gated by the new `cameraAccess` toggle (Settings →
+  Computer Access, **off by default**); tool frames are transient — the raw
+  file is deleted before the call returns and nothing reaches memory stores.
+
+**Tool discovery fixed + memory hygiene (2026-08-26 audit batch)** — the
+model-reported "dead tool surface" findings, root-caused and repaired:
+
+- `tool_search` was silently dead: `handleToolSearch` fed OpenAI-wrapped tool
+  defs into `buildToolCatalog()`, which reads top-level `name`/`description` —
+  every entry cataloged as empty, BM25 ranked nothing, fallback returned blank
+  strings. Both now unwrap both shapes (`{"name",…}` and
+  `{"type":"function","function":{…}}`); search returns real names +
+  descriptions (regression suite: `test_tool_search_retrieval.py`).
+- `tool_describe('submit_clarify')` no longer answers "not found": loop-
+  intercepted tools (`submit_clarify`, `ask_clarify`) are documented from a
+  bridge table instead of the registry.
+- `create_html_artifact` description trimmed 569 → ~300 chars.
+- Ghost memory tools struck from all surfaces (`memory_search`, `fact_search`,
+  `save_fact`, `save_memory`, `delete_memory`,
+  `update_heuristics` were referenced by capabilities prompt, harness-mode
+  allowlists, parallel-tools, subagent capability sets, managed-tool policy,
+  and the intake manifest — but never registered). Only real doors remain:
+  `brain_query`, the blackboard tools — and the new `remember` write door
+  (above), which is now genuinely registered.
+- Memory hygiene migration `023_memory_hygiene_purge.sql`: purged orphaned
+  `auto_memories` (writer deleted in 4f1bfdb1), 194 dead `session_context:*`
+  snapshots (incl. golden-eval pollution), `harness_eval:*`,
+  `heuristic_trail:*`, `current_context`, timeline `'user activity'`
+  heartbeats (writer no-op'd), and the stale "Verifier gate" learned rule.
+  Alive machine state (`boot_maintenance_state`, `cognitive:*last_run`,
+  `agent_jobs`, routing decisions) kept. KV store: 210 → 8 rows.
+
 **Verifier enforcement removed** — the opt-in gate that withheld final answers
 until `update_state(phase='complete')` after a passing verification run is gone
 entirely (the "[VERIFIER STEER]" prompts no longer exist):
@@ -10,8 +70,9 @@ entirely (the "[VERIFIER STEER]" prompts no longer exist):
   auto-run, receipts, force-release counters, benchmark extra-allowlist, and the
   VERIFIER STEER/AUTO-RUN steer texts — all deleted. `update_state` keeps its
   phase tracking; `run_command` still surfaces exit codes. The dormant
-  `verifier_gate_log` table stays (existing DBs keep working) but nothing
-  writes to it.
+  `verifier_gate_log` table is dropped by migration
+  `024_drop_verifier_gate_log.sql` on existing installs (nothing writes to it
+  since the gate removal).
 - Frontend: verifier toggle UI, `verifierBlocked` banner handling, stream event
   plumbing, notification/drawer references, and schemas removed.
 - Tests: `test_verifier_enforced_flag.py` / `test_verifier_gate_enforcement.py`

@@ -13,6 +13,7 @@ import { revealInFolder } from '@/lib/tauri-shell';
 import { openExternal } from '@/lib/tauri-shell';
 import { collectArtifacts, type ArtifactKind, type SessionArtifact } from '@/lib/artifacts';
 import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
+import { timeAgo } from '@/lib/utils';
 
 function kindIcon(kind: ArtifactKind) {
   switch (kind) {
@@ -189,14 +190,4 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
       </div>
     </div>
   );
-}
-
-function timeAgo(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const s = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return d.toLocaleDateString();
 }

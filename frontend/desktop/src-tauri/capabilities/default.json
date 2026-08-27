@@ -14,7 +14,9 @@
     "core:window:allow-is-maximized",
     "core:window:allow-start-dragging",
     "core:webview:default",
+    "core:webview:allow-internal-toggle-devtools",
     "clipboard-manager:default",
+
     "process:default",
     "shell:default",
     "updater:default",

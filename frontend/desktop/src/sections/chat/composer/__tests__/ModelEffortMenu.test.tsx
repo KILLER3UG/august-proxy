@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ModelEffortMenu, chipModelLabel } from '../ModelEffortMenu';
+import { providersApi } from '@/api/providers';
 import type { ModelItem } from '../../model-display';
 
 const MODELS: ModelItem[] = [
@@ -92,6 +93,44 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     expect(document.querySelector('[data-testid="manage-models"]')).toBeTruthy();
   });
 
+  it('Refresh button sits at the top of the provider pane and triggers refreshAllModels', async () => {
+    // Spy on the real providersApi so we can assert the mutation fires
+    // without a network round-trip.
+    const refreshSpy = vi
+      .spyOn(providersApi, 'refreshAllModels')
+      .mockResolvedValue({ refreshed: 0, failed: 0, added: 0, removed: 0 });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ModelEffortMenu
+          models={MODELS}
+          visibleModels={MODELS}
+          loading={false}
+          selected={MODELS[2]}
+          onSelect={() => {}}
+          onEditModels={() => {}}
+          effort="medium"
+          onEffortChange={() => {}}
+          thinkingEnabled={false}
+          onThinkingChange={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(document.querySelector('[data-testid="model-chip"]')!);
+    const btn = document.querySelector('[data-testid="refresh-all-providers"]') as HTMLElement;
+    expect(btn).toBeTruthy();
+    expect(btn.title).toMatch(/Re-fetch/);
+    fireEvent.click(btn);
+    // The mutation is async; flush the microtask queue.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    refreshSpy.mockRestore();
+  });
+
   it('no free-only toggle and no search field — the calm reference layout', () => {
     setup();
     openModelsPane();
@@ -136,6 +175,63 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     });
     // Pane stays open; selection is the parent's concern.
     expect(document.querySelector('[data-testid="effort-menu"]')).toBeTruthy();
+  });
+
+  it('clicking an effort option actually invokes onEffortChange (regression: outside-click was eating clicks)', () => {
+    const onEffortChange = vi.fn();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ModelEffortMenu
+          models={MODELS}
+          visibleModels={MODELS}
+          loading={false}
+          selected={MODELS[2]}
+          onSelect={() => {}}
+          onEditModels={() => {}}
+          effort="medium"
+          onEffortChange={onEffortChange}
+          thinkingEnabled={false}
+          onThinkingChange={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(document.querySelector('[data-testid="effort-chip"]')!);
+    fireEvent.click(document.querySelector('[data-testid="effort-option-High"]')!);
+    expect(onEffortChange).toHaveBeenCalledWith('high');
+  });
+
+  it('clicking a model row in the flyout actually invokes onSelect (regression: outside-click was eating flyout clicks)', () => {
+    const onSelect = vi.fn();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ModelEffortMenu
+          models={MODELS}
+          visibleModels={MODELS}
+          loading={false}
+          selected={MODELS[2]}
+          onSelect={onSelect}
+          onEditModels={() => {}}
+          effort="medium"
+          onEffortChange={() => {}}
+          thinkingEnabled={false}
+          onThinkingChange={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(document.querySelector('[data-testid="model-chip"]')!);
+    // Default flyout shows selected provider's models (KiloCode).
+    const row = screen.getByText('ox-alpha-free').closest('[data-testid="model-option"]') as HTMLElement;
+    expect(row).toBeTruthy();
+    fireEvent.click(row);
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ox-alpha-free', provider: 'KiloCode' }),
+    );
   });
 
   it('effort options render as a vertical reference-style list with a check on the active row', () => {

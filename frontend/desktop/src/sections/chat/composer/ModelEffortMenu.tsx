@@ -9,9 +9,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronRight, Gauge, Pin } from 'lucide-react';
+import { Check, ChevronRight, Gauge, Pin, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { chipTrigger, menuPanel, menuItem } from '@/lib/motion';
 import { providersApi } from '@/api/providers';
@@ -162,6 +163,12 @@ export function ModelEffortMenu({
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const effortChipRef = useRef<HTMLButtonElement>(null);
   const modelsPanelRef = useRef<HTMLDivElement>(null);
+  // The effort panel and the models flyout live OUTSIDE modelsPanelRef in the
+  // portal — without their own refs, mousedown on a row inside them would
+  // hit the outside-click handler and close the menu before the click could
+  // land, making options silently fail to switch.
+  const effortPanelRef = useRef<HTMLDivElement>(null);
+  const flyoutRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (openSignal) setPane('models');
@@ -194,6 +201,32 @@ export function ModelEffortMenu({
     },
     [providersList, queryClient],
   );
+
+  // Refresh all providers: re-fetches every enabled provider's /models
+  // endpoint, then invalidates the client catalog so this dropdown, the
+  // settings tabs, and the chat composer all show the new list. Gated on
+  // the dropdown being open so it never fires in the background.
+  const refreshAll = useMutation({
+    mutationFn: () => providersApi.refreshAllModels(),
+    onSuccess: async (res) => {
+      const added = res.added ?? 0;
+      const refreshed = res.refreshed ?? 0;
+      const failed = res.failed ?? 0;
+      if (refreshed > 0) {
+        toast.success(
+          `Refreshed models${added ? ` (+${added} new)` : ''} across ${refreshed} provider${refreshed === 1 ? '' : 's'}`,
+        );
+      } else if (failed > 0) {
+        toast.error(`Refresh failed for ${failed} provider${failed === 1 ? '' : 's'}`);
+      } else {
+        toast.message('No changes to model catalog');
+      }
+      await refreshProviderCatalog(queryClient);
+    },
+    onError: (e: unknown) => {
+      toast.error(e instanceof Error ? e.message : 'Refresh failed');
+    },
+  });
 
   // Provider-grouped catalog, ranked like everywhere else (pinned → free →
   // name). Insertion order of the reduce preserves global rank for the
@@ -263,6 +296,8 @@ export function ModelEffortMenu({
       if (modelChipRef.current?.contains(target)) return;
       if (effortChipRef.current?.contains(target)) return;
       if (modelsPanelRef.current?.contains(target)) return;
+      if (effortPanelRef.current?.contains(target)) return;
+      if (flyoutRef.current?.contains(target)) return;
       closeAll();
     };
     document.addEventListener('mousedown', onDown);
@@ -432,6 +467,30 @@ export function ModelEffortMenu({
                 }}
                 data-testid="model-effort-menu"
               >
+                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/40 px-2 py-1.5">
+                  <span className="pl-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                    Provider
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      // Keep the dropdown open so the user sees the spinner
+                      // and the updated list after the network call lands.
+                      e.stopPropagation();
+                      if (!refreshAll.isPending) refreshAll.mutate();
+                    }}
+                    disabled={refreshAll.isPending}
+                    title="Re-fetch every provider's /models endpoint and update the list"
+                    data-testid="refresh-all-providers"
+                    aria-label="Refresh provider models"
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground transition disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      className={cn('size-3', refreshAll.isPending && 'animate-spin')}
+                    />
+                    {refreshAll.isPending ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                </div>
                 <div
                   data-testid="models-panel-list"
                   className="py-1 overflow-y-auto min-h-0 flex-1 chat-scroll"
@@ -494,6 +553,7 @@ export function ModelEffortMenu({
             )}
             {modelsOpen && flyoutPos && activeGroup && (
               <motion.div
+                ref={flyoutRef}
                 {...menuPanel}
                 className="fixed z-50 bg-popover border border-border/60 rounded-xl shadow-2xl overflow-y-auto py-1 chat-scroll"
                 style={{ top: flyoutPos.top, left: flyoutPos.left, width: FLYOUT_W, maxHeight: FLYOUT_H }}
@@ -508,6 +568,7 @@ export function ModelEffortMenu({
             )}
             {effortOpen && effortPos && (
               <motion.div
+                ref={effortPanelRef}
                 {...menuPanel}
                 className="fixed z-50 flex flex-col bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden"
                 style={{

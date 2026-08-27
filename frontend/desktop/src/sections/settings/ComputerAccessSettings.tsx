@@ -22,6 +22,7 @@ import {
   putSecurity,
   getHostAgentHealth,
 } from '@/api/api-client';
+import { getBrainConfig, saveBrainConfig } from '@/api/workbench';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { SettingsSelect } from '@/components/settings/SettingsSelect';
 
@@ -108,6 +109,16 @@ export function ComputerAccessSettings() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['computer-roots'] }),
   });
 
+  const cameraAccessQuery = useQuery({
+    queryKey: ['brain-config'],
+    queryFn: getBrainConfig,
+  });
+  const cameraAccess = !!cameraAccessQuery.data?.config?.cameraAccess;
+  const cameraToggleMutation = useMutation({
+    mutationFn: (next: boolean) => saveBrainConfig({ cameraAccess: next }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['brain-config'] }),
+  });
+
   function addRoot() {
     if (!newRoot.trim()) return;
     const next = Array.from(new Set([...roots, newRoot.trim()]));
@@ -179,6 +190,25 @@ export function ComputerAccessSettings() {
             >
               <Eye className="size-3.5" /> View observation gallery →
             </Link>
+          </div>
+          <div className="flex items-start justify-between gap-4 border-t border-white/[0.06] pt-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Allow camera capture</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Lets August use your webcam on its own through the
+                {' '}<code className="font-mono">camera_snapshot</code> model
+                tool. The composer's Camera capture button is manual and asks
+                the OS for permission separately. Frames are transient — the
+                raw image is deleted right after the vision model describes
+                it, and nothing is saved to disk or memory stores. Off by
+                default.
+              </p>
+            </div>
+            <SettingsToggle
+              checked={cameraAccess}
+              onCheckedChange={(v) => cameraToggleMutation.mutate(v)}
+              label={cameraAccess ? 'enabled' : 'disabled'}
+            />
           </div>
         </div>
       </section>

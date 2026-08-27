@@ -13,13 +13,19 @@ from app.type_aliases import FactDict, JsonValue, ProposalDict
 
 
 def save_fact(
-    factKey: str, factValue: JsonValue, category: str = 'general', source: str = '', confidence: float = 1.0
+    factKey: str,
+    factValue: JsonValue,
+    category: str = 'general',
+    source: str = '',
+    confidence: float = 1.0,
+    expires_at: str | None = None,
 ) -> None:
-    """Save a structured fact."""
+    """Save a structured fact. ``expires_at`` (ISO-8601 TEXT) is optional; the
+    cognitive boot sweep purges facts whose expiry has passed."""
     conn = _conn()
     conn.execute(
-        "INSERT OR REPLACE INTO facts (fact_key, fact_value, category, source, confidence, updated_at)\n           VALUES (?, ?, ?, ?, ?, datetime('now'))",
-        (factKey, _json(factValue), category, source, confidence),
+        "INSERT OR REPLACE INTO facts (fact_key, fact_value, category, source, confidence, expires_at, updated_at)\n           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+        (factKey, _json(factValue), category, source, confidence, expires_at),
     )
     conn.commit()
 

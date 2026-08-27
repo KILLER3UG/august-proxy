@@ -69,7 +69,10 @@ CIRCUIT_HINT = (
     'circuit_integrate_component (search a part/board → datasheet facts + '
     'ready-to-paste SPICE model cards — call it BEFORE designing with an '
     'unfamiliar part). SPICE units are strict: M = milli, Meg = mega '
-    '(1M ohm is a milliohm!), node 0 is ground. Fix every lint warning and '
+    '(1M ohm is a milliohm!), node 0 is ground. For .tran/.ac decks add '
+    '.measure statements (or .control meas blocks) — those numbers come '
+    'back parsed as measures; .op also returns every node voltage '
+    'v(node)/source current i(vsrc). Fix every lint warning and '
     'check soaWarnings before calling a design bench-ready. When a design '
     'uses a dev board, respect its logic level (ESP/Pi = 3.3V, UNO = 5V) '
     'and flag level-shifting needs in your answer.'
@@ -110,7 +113,10 @@ _NETLIST_EXT = ('.cir', '.net', '.ckt', '.sp')
 
 
 def _resolve_ngspice_sync() -> str | None:
-    """Locate an ngspice executable (PATH first, then common install dirs)."""
+    """Locate an ngspice executable (env override, PATH, common install dirs)."""
+    env_exe = os.environ.get('AUGUST_NGSPICE_EXE', '').strip()
+    if env_exe and os.path.isfile(env_exe):
+        return env_exe
     exe = shutil.which('ngspice')
     if exe:
         return exe
@@ -159,25 +165,33 @@ def read_netlist(path: str, workspace: str = '') -> dict[str, object]:
         raise ValueError(f'File not found: {path}')
     content = src.read_text(encoding='utf-8', errors='replace')
     components = []
+    # Minimum node count per device-class letter (same table lint uses);
+    # nodes are the tokens after the refdes up to that count, anything
+    # beyond is the value field.
+    min_nodes = {'R': 2, 'C': 2, 'L': 2, 'D': 2, 'V': 2, 'I': 2,
+                 'Q': 3, 'J': 3, 'M': 3, 'B': 4}
     for raw in content.splitlines():
         line = raw.strip()
         if not line or line.startswith('*') or line.startswith('.'):
             continue
         parts = line.split()
         if len(parts) >= 2:
+            need = min_nodes.get(parts[0][0].upper(), 2)
+            nodes = parts[1:1 + need]
+            value = parts[1 + need] if len(parts) > 1 + need else ''
             components.append(
                 {
                     'name': parts[0],
                     'type': parts[0][0].upper(),
-                    'nodes': parts[1:-1] if len(parts) > 2 else [],
-                    'value': parts[-1] if len(parts) >= 3 else '',
+                    'nodes': nodes,
+                    'value': value,
                 }
             )
     return {'path': str(src), 'components': components, 'content': content}
 
 
 def update_netlist(path: str, find: str, replace: str, workspace: str = '') -> dict[str, object]:
-    src = _bind(path, workspace, for_write=False)
+    src = _bind(path, workspace, for_write=True)
     if not src.exists():
         raise ValueError(f'File not found: {path}')
     content = src.read_text(encoding='utf-8', errors='replace')
@@ -199,7 +213,11 @@ def delete_netlist(path: str, workspace: str = '') -> dict[str, object]:
 
 
 def list_netlists(workspace: str = '') -> dict[str, object]:
-    ws = _bind('.', workspace, for_write=False) if workspace else Path(tempfile.gettempdir())
+    if not workspace:
+        # No workspace bound: scanning the shared temp dir is slow and
+        # surfaces other processes' decks — report empty instead.
+        return {'netlists': [], 'count': 0}
+    ws = _bind('.', workspace, for_write=False)
     root = ws if ws.is_dir() else ws.parent
     found = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -215,7 +233,10 @@ def list_netlists(workspace: str = '') -> dict[str, object]:
 
 # ── Simulation ────────────────────────────────────────────────────────────
 
-_MEASURE_RE = re.compile(r'^\s*(\w+)\s*=\s*([-+0-9.eE]+)\s*$')
+# ngspice prints measures as ``name = value`` and operating-point results
+# as ``v(node) = value`` / ``i(vsrc) = value`` — the capture must allow
+# parentheses, dots and # (e.g. ``v(1)``, ``i(v1)#branch``).
+_MEASURE_RE = re.compile(r'^\s*([\w][\w().#\-]*)\s*=\s*([-+0-9.eE]+)\s*$')
 
 # SPICE scale factors (ngspice manual Table 2.1): M = MILLI, Meg = MEGA.
 # This asymmetry is the single most common "worked in sim, fried on the
@@ -321,12 +342,15 @@ def lint_netlist(text: str) -> list[str]:
     return warnings
 
 
+# warn=1 rides every rung: ngspice only emits SOA over-stress lines when
+# the warn option is on, and a design that converges on the first rung
+# still deserves its safe-operating-area scan.
 _CONVERGENCE_LADDER: tuple[dict[str, object], ...] = (
-    {},  # pass 1: defaults
-    {'gmin': '1e-10'},                      # gentler gmin
-    {'gmin': '1e-9', 'abstol': '1e-9'},     # looser absolute tolerance
-    {'gmin': '1e-9', 'abstol': '1e-9', 'itl1': '400'},   # more DC iterations
-    {'gmin': '1e-9', 'abstol': '1e-9', 'itl1': '400',
+    {'warn': '1'},                                   # pass 1: defaults + SOA
+    {'warn': '1', 'gmin': '1e-10'},                  # gentler gmin
+    {'warn': '1', 'gmin': '1e-9', 'abstol': '1e-9'},     # looser absolute tolerance
+    {'warn': '1', 'gmin': '1e-9', 'abstol': '1e-9', 'itl1': '400'},   # more DC iterations
+    {'warn': '1', 'gmin': '1e-9', 'abstol': '1e-9', 'itl1': '400',
      'rshunt': '1e9'},                       # last resort: leak to ground
 )
 
@@ -478,9 +502,9 @@ async def simulate_circuit(
             ln for ln in log.splitlines()
             if re.search(r"\berror\b|\bcouldn't|failed|unknown", ln, re.I)
         ]
-        # SOA warnings from ngspice (.options warn=1 on later rungs): these
-        # are the "will survive the bench" signals — device voltage /
-        # current / power beyond model limits.
+        # SOA warnings from ngspice (.options warn=1 rides every ladder
+        # rung): these are the "will survive the bench" signals — device
+        # voltage / current / power beyond model limits.
         soa = [
             ln.strip() for ln in log.splitlines()
             if re.search(r'soa|safe operating|exceeds|too (high|large)', ln, re.I)

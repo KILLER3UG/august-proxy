@@ -26,6 +26,19 @@ export function formatTimeAgo(iso: string | number | Date): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+/** Human relative time for memory entries: "just now", "5m ago", "3h ago",
+ *  then a locale date once older than a day. Returns '' for invalid input. */
+export function timeAgo(iso: string | number | Date | null | undefined): string {
+  if (iso === null || iso === undefined || iso === '') return '';
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const s = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return d.toLocaleDateString();
+}
+
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = ms / 1000;

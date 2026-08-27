@@ -436,6 +436,9 @@ export interface BrainConfig {
   reviewLearnedGuidelines: boolean;
   maxAgentDepth: number;
   maxWorkbenchToolLoops: number;
+  // Camera access for the camera_snapshot / camera_list_devices model tools.
+  // Off by default — frames captured during a call are transient regardless.
+  cameraAccess?: boolean;
 }
 
 export type BrainConfigSource = 'persisted' | 'session' | 'fallback';

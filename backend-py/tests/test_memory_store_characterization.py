@@ -214,3 +214,49 @@ class TestStatsAndTimelineCharacterization:
     def test_timeline_write(self, brain):
         tid = ms.write_timeline_event('s1', 'did something', category='general')
         assert tid > 0
+
+
+class TestBrainQueryPagination:
+    """A result set that exactly fills the limit must report its total —
+    silent limit-fills made models miss rows (session-experience finding)."""
+
+    def test_limit_fill_reports_total(self, brain):
+        import json as _json
+
+        for i in range(5):
+            ms.save_fact(f'page_{i}', f'value_{i}', category='paging')
+        out = _json.loads(ms.brain_query('facts', filters={'category': 'paging'}, limit=3))
+        assert isinstance(out, dict) and 'rows' in out
+        assert len(out['rows']) == 3
+        assert out['total'] == 5
+        assert 'raise limit' in out['note']
+
+    def test_under_limit_returns_bare_array(self, brain):
+        import json as _json
+
+        ms.save_fact('solo_fact', 'only', category='lonely')
+        out = _json.loads(ms.brain_query('facts', filters={'category': 'lonely'}, limit=10))
+        assert isinstance(out, list) and len(out) == 1
+
+
+class TestBrainBrowse:
+    """UI-facing paginated browse behind the settings Memory page."""
+
+    def test_browse_paginates_and_searches(self, brain):
+        for i in range(7):
+            ms.save_fact(f'browse_{i}', f'content_{i}', category='browsing')
+        page1 = ms.brain_browse('facts', limit=4, offset=0, query='browse_')
+        assert page1['total'] == 7
+        assert len(page1['rows']) == 4
+        page2 = ms.brain_browse('facts', limit=4, offset=4, query='browse_')
+        assert len(page2['rows']) == 3
+
+    def test_browse_unknown_store_errors(self, brain):
+        out = ms.brain_browse('nope_store')
+        assert 'error' in out and out['rows'] == []
+
+    def test_store_summary_counts(self, brain):
+        ms.save_fact('sum_fact', 'v', category='summary')
+        summary = ms.brain_store_summary()
+        names = {s['name']: s['count'] for s in summary}
+        assert 'facts' in names and names['facts'] >= 1

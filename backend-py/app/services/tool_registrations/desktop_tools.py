@@ -82,3 +82,56 @@ def register() -> None:
             'required': ['url'],
         },
     )
+
+    async def _cameraListDevices(**kwargs: object) -> dict[str, object]:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        cfg = getRuntimeConfig()
+        if not bool(cfg.get('cameraAccess')):
+            return {
+                'error': 'Camera access is disabled. Enable it in Settings → Computer Access → Camera to use the camera tools.',
+            }
+        return _desktop.listCameraDevices()
+
+    async def _cameraSnapshot(
+        device: str = '',
+        question: str = '',
+        **kwargs: object,
+    ) -> dict[str, object]:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        cfg = getRuntimeConfig()
+        if not bool(cfg.get('cameraAccess')):
+            return {
+                'error': 'Camera access is disabled. Enable it in Settings → Computer Access → Camera to use the camera tools.',
+            }
+        return await _desktop.captureCameraFrame(device=device, question=question)
+
+    tool_registry.register(
+        'camera_list_devices',
+        'List available webcam devices on this machine. Returns {devices:[{name,kind}]}. '
+        'Gated by the Camera toggle in Settings → Computer Access (off by default).',
+        cast(tool_registry.ToolHandler, _cameraListDevices),
+        {'type': 'object', 'properties': {}, 'required': []},
+    )
+    tool_registry.register(
+        'camera_snapshot',
+        'Grab one webcam frame, describe it via the vision model, and discard the raw frame '
+        'immediately. Frames are TRANSIENT — never persisted to disk, memory stores, or the '
+        'observation gallery. Pass device=<name> from camera_list_devices (omit = first device).',
+        cast(tool_registry.ToolHandler, _cameraSnapshot),
+        {
+            'type': 'object',
+            'properties': {
+                'device': {
+                    'type': 'string',
+                    'description': 'DirectShow device name (from camera_list_devices). Empty = first device.',
+                },
+                'question': {
+                    'type': 'string',
+                    'description': 'What to look for / ask the vision model about the frame.',
+                },
+            },
+            'required': [],
+        },
+    )

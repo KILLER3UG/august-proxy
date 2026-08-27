@@ -19,10 +19,10 @@ from app.services import tool_policy
 # Old classify_tool frozensets (from capabilities_prompt.py pre-consolidation).
 _ORACLE_READ = frozenset({
     'brain_query', 'browser_get_content', 'browser_open', 'browser_screenshot',
-    'browser_wait', 'context_read', 'describe_environment', 'desktop_list_windows',
+    'browser_wait', 'describe_environment', 'desktop_list_windows',
     'desktop_mouse_position', 'desktop_screen_size', 'desktop_screenshot',
-    'diagnose_proxy', 'fact_search', 'get_fallback', 'list_aliases',
-    'list_directory', 'list_integrations', 'list_mcp_servers', 'memory_search',
+    'diagnose_proxy', 'get_fallback', 'list_aliases',
+    'list_directory', 'list_integrations', 'list_mcp_servers',
     'pptx_list_elements',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
     'web_fetch_many', 'web_search',
@@ -41,6 +41,10 @@ _ORACLE_READ = frozenset({
     'circuit_integrate_component',
     # Media analysis — the sanctioned reader for images/video/audio/docs.
     'analyze_media',
+    # Camera capture — read-only image acquisition; frames are transient
+    # (the tool deletes the raw file before returning, and the result is a
+    # vision description, not the bytes).
+    'camera_list_devices', 'camera_snapshot',
 })
 _ORACLE_WRITE = frozenset({
     'browser_click', 'browser_evaluate', 'browser_scroll', 'browser_select',
@@ -48,7 +52,7 @@ _ORACLE_WRITE = frozenset({
     'desktop_open_url', 'desktop_press_key', 'desktop_type', 'rename_session',
     'rename_sessions', 'setup_provider', 'connect_github', 'connect_google',
     'connect_slack', 'install_mcp_server', 'customize_ui', 'enter_plan_mode',
-    'submit_plan', 'update_alias', 'update_heuristics', 'update_memory', 'update_state',
+    'submit_plan', 'update_alias', 'update_state',
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad',
     # Post-consolidation addition: model-driven memory write.
     'remember',
@@ -72,8 +76,6 @@ _ORACLE_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',
     'delete_folder', 'delete_session', 'delete_sessions', 'kill_daemon',
     'kill_daemons',
-    # Post-consolidation addition: model-driven memory delete.
-    'forget',
     # Circuit workbench: removes a netlist file from the workspace.
     'circuit_delete_netlist',
 })
@@ -83,7 +85,7 @@ _ORACLE_AGENT = frozenset({
     'spawn_subagents', 'update_agent', 'set_agent_mode',
     'list_workstreams', 'send_subagent_message', 'interrupt_subagent',
 })
-_ORACLE_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills', 'skill_manage'})
+_ORACLE_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills'})
 _ORACLE_BRIDGE = frozenset({'tool_call', 'tool_describe', 'tool_search'})
 _ORACLE_BUCKETS = {
     'tool_read': _ORACLE_READ, 'tool_write': _ORACLE_WRITE,
@@ -140,16 +142,21 @@ def _oracle_plan_blocked(name: str, args: dict | None = None) -> bool:
         return op in mutating_ops or any(m in op for m in ('write', 'delete', 'rename', 'kill'))
     if n in {'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons'}:
         return True
+    # Circuit netlist CRUD — workspace file writes/edits.
+    if n in {'circuit_create_netlist', 'circuit_update_netlist'}:
+        return True
     return any(marker in n for marker in _ORACLE_PLAN_MARKERS)
 
 
-# Old isShellMutationTool (from workbench.py pre-consolidation).
+# Old isShellMutationTool (from workbench.py pre-consolidation), plus the
+# registered circuit_simulate tool — it spawns the ngspice binary and gets
+# the same edit-mode gating as its legacy simulate_circuit alias.
 _ORACLE_SHELL_EXACT = frozenset({
     'run_command', 'bash', 'bashtool', 'shell', 'exec', 'execute', 'terminal',
     'install', 'uninstall', 'pip_install', 'npm_install', 'pnpm_add',
     'install_mcp_server',
     # Spawns the ngspice binary — classified shell-side like run_command.
-    'simulate_circuit',
+    'simulate_circuit', 'circuit_simulate',
 })
 
 

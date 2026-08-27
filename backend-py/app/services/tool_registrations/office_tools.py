@@ -68,12 +68,9 @@ def register() -> None:
     """Register the PPTX element tools."""
     tool_registry.register(
         'pptx_list_elements',
-        'Inspect a PowerPoint (.pptx) file: list every slide with its elements. '
-        'Each element reports an integer id (use it with pptx_comment), a name, '
-        'a type (title/text/picture/table/chart/connector/group...), its visible '
-        'text, and its position. Guidance: call this FIRST to choose targets — '
-        'element ids are stable within the file; pass slide to inspect one slide; '
-        'the path is relative to the workspace.',
+        'Inspect a PowerPoint (.pptx) file: list every slide with its elements. Each element reports an '
+        'integer id (use with pptx_comment), name, type (title/text/picture/table/chart/...), visible '
+        'text, and position. Call this FIRST to pick targets — ids are stable within the file.',
         _listElements,
         {
             'type': 'object',
@@ -87,12 +84,9 @@ def register() -> None:
     )
     tool_registry.register(
         'pptx_comment',
-        'Add a comment to ONE element of a PowerPoint slide, anchored at that '
-        'element\'s position. Guidance: use the element id '
-        'from pptx_list_elements — the id is the drawing\'s stable cNvPr id, not '
-        'a position. One comment per element per call; a new comment id is '
-        'returned. Slide is 1-based. The file is modified in place (workspace-'
-        'bound; editing requires workspace write access).',
+        'Add a comment to ONE element of a PowerPoint slide, anchored at the element\'s position. Use the '
+        'element id from pptx_list_elements (the drawing\'s stable cNvPr id, not a position). One comment '
+        'per call; returns the new comment id. Slide is 1-based; the file is modified in place (workspace-bound).',
         _addComment,
         {
             'type': 'object',

@@ -265,7 +265,9 @@ def register() -> None:
     """Register daemon, blackboard, and subagent tools."""
     tool_registry.register(
         'spawn_daemon',
-        'Spawn a background daemon (subconscious agent). Daemons run on the Cerebellum model (fast, cheap) with a restricted read-only tool set. Use for polling, monitoring, and watching CI. Results appear in <subconscious_updates> on subsequent turns. Max 10 daemons per session (20 per workspace). Use persistWorkspace for cross-session watchers (RSS/GitHub/CI) that survive the session.',
+        'Spawn a background daemon (subconscious agent) on the Cerebellum model with a read-only tool set. '
+        'Use for polling, monitoring, watching CI. Results appear in <subconscious_updates> on later turns. '
+        'Max 10 per session (20 per workspace). persistWorkspace makes watchers survive the session.',
         _spawnDaemon,
         {
             'type': 'object',
@@ -354,13 +356,9 @@ def register() -> None:
     tool_registry.register(
         'spawn_subagents',
         (
-            'Spawn one or more sub-agents in parallel for independent work items — '
-            'ONE tool for both single and batch dispatch: pass a single work item to '
-            'spawn one sub-agent. Defaults to background=true so each completion is '
-            'delivered individually as it finishes; set background=false to block until '
-            'all complete. Each work item may carry effort (low/medium/high/max), a '
-            'model override, and an optional yieldSchema (the sub-agent returns a JSON '
-            'object matching it).'
+            'Spawn one or more sub-agents in parallel for independent work items (single or batch in one '
+            'call). Default background=true delivers completions as they finish; background=false blocks. '
+            'Each item may set effort (low/medium/high/max), a model override, and yieldSchema for a JSON result.'
         ),
         _spawnSubagents,
         {

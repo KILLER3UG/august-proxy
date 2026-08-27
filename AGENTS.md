@@ -37,12 +37,12 @@ format and is honored by workbench chat, the Test button, Live/BTW, and the
 models reached via `/v1/chat/completions`). See `docs/TROUBLESHOOTING.md` and
 `docs/CONFIGURATION.md`.
 
-**Verifier gate: REMOVED (2026-08-24).** The opt-in `verifierEnforced`
-final-answer gate, the `/api/workbench/verifier` endpoints, and the
-`AUGUST_VERIFIER_REVIEWER` critic were removed by user request — answers are
-never withheld. `update_state(phase=…)` survives purely as progress
-tracking, and `run_command` still surfaces exit codes (zero included) in
-results.
+**No verifier gate exists (removed 2026-08-24).** There is no final-answer
+review step, no verifier skill, and nothing that withholds answers — the
+opt-in `verifierEnforced` gate, the `/api/workbench/verifier` endpoints, and
+the `AUGUST_VERIFIER_REVIEWER` critic were removed by user request.
+`update_state(phase=…)` exists purely as progress tracking, and
+`run_command` still surfaces exit codes (zero included) in results.
 
 **Harness budgets & self-correction (0.12.55)** — `MAX_MANAGED_TOOL_ROUNDS`
 defaults to 25 (brain-config `maxWorkbenchToolLoops` overrides); a turn whose

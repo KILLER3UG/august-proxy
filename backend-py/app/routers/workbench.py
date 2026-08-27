@@ -927,14 +927,36 @@ async def respondMutation(request: Request):
                 )
         else:
             result_snip = (exec_result or as_str(result.get('toolResult'), ''))[:6000]
-            msg = (
-                f'The user **accepted** the pending tool `{tool_name}` '
-                f'(scope={result.get("scope")}). '
-                'It was executed with the approved arguments — do **not** re-run it '
-                'unless further changes are needed.\n\n'
-                f'Tool result:\n```\n{result_snip}\n```\n\n'
-                'Continue the task with this result.'
+            # A failed execution must not arrive wrapped in "executed, do not
+            # re-run" wording — the model would treat the error text as a
+            # success receipt and never retry (session-experience finding).
+            # Failure is judged by the authoritative `executed` flag (plus the
+            # sandbox's explicit 'failed after approval' marker), never by the
+            # result text merely starting with "Error" — legitimate results
+            # (log excerpts, grep hits) would false-positive.
+            failed = (
+                result.get('executed') is False
+                or 'failed after approval' in result_snip
             )
+            if failed:
+                msg = (
+                    f'The user **accepted** the pending tool `{tool_name}` '
+                    f'(scope={result.get("scope")}), but the execution **failed** '
+                    '— the change did **not** land. It was attempted once with '
+                    'the approved arguments.\n\n'
+                    f'Tool result:\n```\n{result_snip}\n```\n\n'
+                    'Diagnose the failure; you may retry with corrected '
+                    'arguments or take a different approach.'
+                )
+            else:
+                msg = (
+                    f'The user **accepted** the pending tool `{tool_name}` '
+                    f'(scope={result.get("scope")}). '
+                    'It was executed with the approved arguments — do **not** re-run it '
+                    'unless further changes are needed.\n\n'
+                    f'Tool result:\n```\n{result_snip}\n```\n\n'
+                    'Continue the task with this result.'
+                )
         cancel_event = asyncio.Event()
         _cancelled[session_id] = cancel_event
         seq = event_log.event_log.append(

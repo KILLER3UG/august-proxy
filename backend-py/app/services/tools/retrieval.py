@@ -100,12 +100,23 @@ def buildToolCatalog(tool_defs: list[dict[str, object]]) -> list[CatalogEntry]:
 
     Each entry's search text includes: tool name (underscores→words), description,
     parameter names, and optional keywords.
+
+    Accepts BOTH shapes — raw ``{"name","description","input_schema"}`` and
+    OpenAI-wrapped ``{"type":"function","function":{...}}`` (what
+    ``tool_registry.listTools()`` returns). The wrapped shape previously
+    cataloged as empty entries, silently killing ``tool_search``.
     """
     catalog: list[CatalogEntry] = []
     for tool in tool_defs:
-        name = str(tool.get('name', '') or '') if isinstance(tool, dict) else str(tool)
-        desc = str(tool.get('description', '') or '') if isinstance(tool, dict) else ''
-        params = tool.get('input_schema', tool.get('parameters', {}))
+        if not isinstance(tool, dict):
+            name, desc, params = str(tool), '', {}
+        else:
+            fn = tool.get('function')
+            src = fn if isinstance(fn, dict) else tool
+            name = str(src.get('name', '') or '')
+            desc = str(src.get('description', '') or '')
+            schema = src.get('parameters', src.get('input_schema', {}))
+            params = schema if isinstance(schema, dict) else {}
         paramNames = list(params.get('properties', {}).keys()) if isinstance(params, dict) else []
         searchParts = [name.replace('_', ' '), desc]
         searchParts.extend((p.replace('_', ' ') for p in paramNames))

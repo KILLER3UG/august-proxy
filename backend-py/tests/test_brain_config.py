@@ -37,6 +37,11 @@ _ALLCamelKeys = {
     'autoRouteMinSamples',
     'autoRouteMinWinRate',
     'autoRouteWinGap',
+    # Memory write door + sensitive-topic toggle (Workstream B).
+    'modelMemoryWrites',
+    'memorySensitiveTopics',
+    # Camera capture access toggle (Workstream D).
+    'cameraAccess',
 }
 
 
