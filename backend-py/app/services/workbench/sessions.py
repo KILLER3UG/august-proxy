@@ -84,6 +84,10 @@ class WorkbenchSession:
     pendingMutations: list[dict[str, object]] = field(default_factory=list)
     mutationLog: list[dict[str, object]] = field(default_factory=list)
     status: str = 'idle'
+    # T18 durability: True while a turn is between barrier flushes (model
+    # dispatch → turn end). Persisted so crash recovery can detect an
+    # orphaned open turn and close it with a synthetic interrupted marker.
+    turnOpen: bool = False
     metadata: dict[str, object] = field(default_factory=dict)
     totalInputTokens: int = 0
     totalOutputTokens: int = 0
@@ -113,6 +117,10 @@ class WorkbenchSession:
     # recalled memories, ...) — carried into the per-turn `done` event and the
     # chat context panel. Set/cleared every turn in buildSystemPrompt.
     _last_context_snapshot: dict[str, object] | None = None
+    # M3: (fact_key, title) pairs injected into THIS turn's user message by
+    # the BM25 memory pass — the turn-end usage scan credits any the assistant
+    # echoed back. Set at injection, cleared at the turn-end scan.
+    _injected_facts: list[tuple[str, str]] = field(default_factory=list)
 
     def toDict(self) -> dict[str, object]:
         return {
@@ -141,6 +149,7 @@ class WorkbenchSession:
             'pendingMutations': self.pendingMutations,
             'mutationLog': self.mutationLog,
             'status': self.status,
+            'turnOpen': self.turnOpen,
             'metadata': self.metadata,
             # Agent mode + turn counter survive restarts (set_agent_mode is a
             # session-level behavior switch; a restart must not silently
@@ -166,6 +175,28 @@ class WorkbenchSession:
 
     @staticmethod
     def fromDict(d: dict[str, object]) -> WorkbenchSession:
+        messages = cast('list[dict[str, object]]', as_list(d.get('messages', [])))
+        status = as_str(d.get('status', 'idle'))
+        turnOpen = as_bool(d.get('turnOpen', False))
+        if turnOpen:
+            # T18 crash recovery: this blob was persisted at a durability
+            # barrier mid-turn and the turn never closed (crash/restart).
+            # Never truncate — close the orphaned turn with a synthetic
+            # interrupted marker so replay stays balanced.
+            messages = list(messages)
+            messages.append(
+                {
+                    'role': 'user',
+                    'content': (
+                        '[interrupted] The previous turn was interrupted before it '
+                        'completed (session recovered mid-turn). Work may be partially '
+                        'done — verify state before continuing.'
+                    ),
+                    'interrupted': True,
+                }
+            )
+            turnOpen = False
+            status = 'idle'
         return WorkbenchSession(
             id=as_str(d.get('id', '')),
             title=as_str(d.get('title', 'New Session')),
@@ -189,10 +220,11 @@ class WorkbenchSession:
             planApproved=as_bool(d.get('planApproved', False)),
             clarify=_optional_dict(d.get('clarify')),
             todos=cast('list[dict[str, object]]', as_list(d.get('todos'))),
-            messages=cast('list[dict[str, object]]', as_list(d.get('messages', []))),
+            messages=messages,
             pendingMutations=cast('list[dict[str, object]]', as_list(d.get('pendingMutations', []))),
             mutationLog=cast('list[dict[str, object]]', as_list(d.get('mutationLog', []))),
-            status=as_str(d.get('status', 'idle')),
+            status=status,
+            turnOpen=turnOpen,
             metadata=as_dict(d.get('metadata', {})),
             agent_mode=as_str(d.get('agentMode', '')),
             headless=as_bool(d.get('headless', False)),
@@ -242,9 +274,14 @@ def _new_session_id(prefix: str = 'wb') -> str:
 
 
 def _default_session_title() -> str:
-    """Default title stamped with UTC date/time until the first user message."""
-    stamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')
-    return f'Chat {stamp} UTC'
+    """Creation title: a neutral ``New chat`` placeholder (M7 item 4).
+
+    Timestamps-as-names are gone — the first user message renames this
+    immediately (snippet title) and the LLM titler upgrades it after the
+    first reply. The old date-stamped format is still recognized by
+    ``is_placeholder_title`` so pre-existing sessions keep auto-titling.
+    """
+    return 'New chat'
 
 
 _PLACEHOLDER_CHAT_TITLE = re.compile(

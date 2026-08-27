@@ -151,7 +151,14 @@ async def _llm_title(
     provider: dict[str, object] | None,
     model: str,
 ) -> str:
-    """Ask the provider for a short title. Returns '' on any failure."""
+    """Ask the provider for a short title. Returns '' on any failure.
+
+    M7 item 2: this reuses the turn's already-resolved ``provider`` dict and
+    does NOT re-gate on ``resolveApiKey()`` — keyless gateways (local
+    OpenAI-compatible hosts with no API key) answered '' at the old key check
+    and titling silently never ran. The client built from the provider dict is
+    the same one the turn used, so its auth is already proven.
+    """
     if not provider or not model:
         return ''
     try:
@@ -159,9 +166,6 @@ async def _llm_title(
 
         client = getClient(provider)
         if not client:
-            return ''
-        api_key = client.resolveApiKey()
-        if not api_key:
             return ''
 
         # generate() reads model from client.config
@@ -231,6 +235,33 @@ async def _llm_title(
     return ''
 
 
+def _resolve_title_target(
+    provider: dict[str, object] | None, model: str
+) -> tuple[dict[str, object] | None, str]:
+    """M7 item 3: route titling to the brain-config ``titleModel`` when set.
+
+    Falls back to the turn's own model/provider when the field is empty or
+    the configured model cannot be resolved to a provider.
+    """
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        titleModel = str(getRuntimeConfig().get('titleModel', '') or '').strip()
+    except Exception:
+        titleModel = ''
+    if not titleModel:
+        return provider, model
+    try:
+        from app.providers import resolver as providerResolver
+
+        titleProvider = providerResolver.resolve(titleModel)
+        if titleProvider:
+            return titleProvider, titleModel
+    except Exception:
+        logger.debug('titleModel provider resolve failed for %r', titleModel, exc_info=True)
+    return provider, model
+
+
 async def generate_session_title(
     user_message: str,
     assistant_response: str,
@@ -295,11 +326,14 @@ async def maybe_auto_title_after_turn(
     if not soft_title:
         return None
 
+    # M7 item 3: honor the optional brain-config titleModel override.
+    _titleProvider, _titleModel = _resolve_title_target(provider, model)
+
     title = await generate_session_title(
         user_text,
         assistant_text,
-        provider=provider,
-        model=model,
+        provider=_titleProvider,
+        model=_titleModel,
     )
     if not title:
         return None
@@ -343,7 +377,9 @@ def schedule_auto_title_after_turn(
                 model=model,
             )
         except Exception:
-            logger.debug('auto-title task failed for %s', session_id, exc_info=True)
+            # M7 item 5: warning (not debug) so silent titling breakage is
+            # visible in the logs instead of disappearing.
+            logger.warning('auto-title task failed for %s', session_id, exc_info=True)
 
     try:
         loop = asyncio.get_running_loop()
@@ -353,4 +389,4 @@ def schedule_auto_title_after_turn(
         try:
             asyncio.run(_run())
         except Exception:
-            logger.debug('auto-title inline failed for %s', session_id, exc_info=True)
+            logger.warning('auto-title inline failed for %s', session_id, exc_info=True)

@@ -326,6 +326,13 @@ export function dispatchWorkbenchEvent(
         message: typeof p?.message === 'string' ? p.message : '',
       });
       break;
+    case 'memoryUpdated':
+      handlers.onMemoryUpdated?.({
+        summary: typeof p?.summary === 'string' ? p.summary : undefined,
+        content: typeof p?.content === 'string' ? p.content : undefined,
+        key: typeof p?.key === 'string' ? p.key : undefined,
+      });
+      break;
     case 'circuitMode':
       handlers.onCircuitMode?.({
         active: p?.active === true,

@@ -1,8 +1,8 @@
 /* ── RightDrawerNotesSection ─ per-session scratch notepad ────────── */
 /* Autosaved to localStorage; a lightweight place to keep plans,      */
 /* snippets, and scratch thoughts beside the chat. A "promote" action  */
-/* saves the note into the memory store so the model can find it via   */
-/* brain_query(store=memory) in any future session.                    */
+/* saves the note into the facts store so the model can find it via    */
+/* brain_query(store=facts) in any future session.                     */
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -40,8 +40,8 @@ export function RightDrawerNotesSection({ sessionId }: { sessionId: string | nul
 
   const words = value.trim() ? value.trim().split(/\s+/).length : 0;
 
-  /** Promote the current note into the memory store under a searchable
-   *  `note:` key — brain_query(store=memory) finds it in any future session. */
+  /** Promote the current note into the facts store under a searchable
+   *  `note:` key — brain_query(store=facts) finds it in any future session. */
   const promote = async () => {
     const text = value.trim();
     if (!text) {
@@ -51,8 +51,14 @@ export function RightDrawerNotesSection({ sessionId }: { sessionId: string | nul
     setPromoting(true);
     try {
       const key = `note:${(sessionId ?? 'default').slice(0, 24)}:${Date.now()}`;
-      await api.post('/api/memory/kv', { key, value: text });
-      toast.success('Promoted to memory — the model can find it via brain_query(store=memory)');
+      await api.post('/api/august/memory/manage', {
+        action: 'set',
+        key,
+        value: text,
+        category: 'notes',
+        source: 'user',
+      });
+      toast.success('Promoted to memory — the model can find it via brain_query(store=facts)');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Promote failed');
     } finally {
@@ -81,7 +87,7 @@ export function RightDrawerNotesSection({ sessionId }: { sessionId: string | nul
             type="button"
             onClick={() => void promote()}
             disabled={promoting || !value.trim()}
-            title="Save this note into memory — searchable via brain_query(store=memory) in any session"
+            title="Save this note into memory — searchable via brain_query(store=facts) in any session"
             className="inline-flex items-center gap-1 rounded border border-border/60 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary/40 hover:text-primary disabled:opacity-40"
             data-testid="promote-note-to-memory"
           >

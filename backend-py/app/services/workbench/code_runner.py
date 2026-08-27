@@ -115,6 +115,118 @@ def list_files(path='.'):
     p = _bind(path)
     return '\\n'.join(str(x.relative_to(p)) for x in sorted(p.rglob('*'))[:200])
 
+
+# ---- T13 tool bridge -----------------------------------------------------
+# call_tool reaches the FULL managed tool surface by bridging back into the
+# running backend over localhost with a short-lived one-shot token. The
+# parent re-applies the same guard/approval gates, so code mode cannot
+# bypass the permission axes.
+_BRIDGE_URL = {bridge_url!r}
+_BRIDGE_TOKEN = {bridge_token!r}
+_KERNEL_DIR = Path({kernel_dir!r}) if {kernel_dir!r} else None
+
+
+def call_tool(name, **args):
+    if not _BRIDGE_URL or not _BRIDGE_TOKEN:
+        raise RuntimeError('tool bridge not available for this code run')
+    import json as _json
+    import urllib.request as _urlreq
+    payload = _json.dumps({{'token': _BRIDGE_TOKEN, 'tool': name, 'args': args}}).encode('utf-8')
+    req = _urlreq.Request(
+        _BRIDGE_URL, data=payload,
+        headers={{'Content-Type': 'application/json'}}, method='POST',
+    )
+    try:
+        with _urlreq.urlopen(req, timeout=300) as _resp:
+            body = _resp.read().decode('utf-8', errors='replace')
+    except Exception as _bridge_err:
+        raise RuntimeError(f'tool bridge call failed: {{_bridge_err}}')
+    try:
+        data = _json.loads(body)
+    except Exception:
+        return body
+    if isinstance(data, dict):
+        if 'error' in data and 'result' not in data:
+            raise RuntimeError(f'tool bridge error: {{data["error"]}}')
+        if 'result' in data:
+            return data['result']
+    return body
+
+'''
+
+
+# ---- T13 persistent kernel variables ------------------------------------
+# RESTORE runs before the model's block: previously persisted variables are
+# loaded back into the module namespace so state survives across turns.
+_RESTORE_HEAD = '''
+# August kernel: restore persistent variables from the previous code run.
+if _KERNEL_DIR is not None and _KERNEL_DIR.is_dir():
+    import pickle as _pickle
+    for _vf in sorted(_KERNEL_DIR.glob('var_*.pkl')):
+        _vname = _vf.stem[len('var_'):]
+        try:
+            globals()[_vname] = _pickle.loads(_vf.read_bytes())
+        except Exception as _restore_err:
+            print(f'[kernel] could not restore {{_vname}}: {{_restore_err}}')
+'''
+
+
+# SNAPSHOT runs after the block: every user variable is pickled independently
+# (per-variable + total caps); unpicklable/oversized are skipped and reported,
+# never fatal. Deleted variables are pruned from the persisted state.
+_SNAPSHOT_TAIL = '''
+# August kernel: snapshot persistent variables for the next code run.
+if _KERNEL_DIR is not None:
+    import json as _kjson
+    import pickle as _pickle
+    import types as _types
+    _PER_VAR_CAP = {per_var_cap}
+    _TOTAL_CAP = {total_cap}
+    try:
+        _KERNEL_DIR.mkdir(parents=True, exist_ok=True)
+        _present = set()
+        _saved = []
+        _skipped = []
+        _total = 0
+        for _vname in list(globals()):
+            if _vname.startswith('_'):
+                continue
+            _vval = globals()[_vname]
+            if isinstance(_vval, _types.ModuleType) or callable(_vval):
+                continue
+            _present.add(_vname)
+            try:
+                _blob = _pickle.dumps(_vval)
+            except Exception:
+                _skipped.append(_vname + ': unpicklable')
+                continue
+            if len(_blob) > _PER_VAR_CAP:
+                _skipped.append(_vname + ': exceeds per-variable cap (' + str(len(_blob)) + ' bytes)')
+                continue
+            if _total + len(_blob) > _TOTAL_CAP:
+                _skipped.append(_vname + ': total cap reached')
+                continue
+            try:
+                (_KERNEL_DIR / ('var_' + _vname + '.pkl')).write_bytes(_blob)
+                _total += len(_blob)
+                _saved.append(_vname)
+            except Exception as _werr:
+                _skipped.append(_vname + ': write failed (' + str(_werr) + ')')
+        for _vf in _KERNEL_DIR.glob('var_*.pkl'):
+            _old = _vf.stem[len('var_'):]
+            if _old not in _present:
+                try:
+                    _vf.unlink()
+                except Exception:
+                    pass
+        (_KERNEL_DIR / '_report.json').write_text(_kjson.dumps(
+            {{'saved': _saved, 'skipped': _skipped, 'totalBytes': _total}}
+        ), encoding='utf-8')
+        if _saved or _skipped:
+            print('[kernel] persisted ' + str(len(_saved)) + ' variable(s)'
+                  + (', skipped ' + str(len(_skipped)) if _skipped else ''))
+    except Exception as _snap_err:
+        print(f'[kernel] snapshot failed (non-fatal): {{_snap_err}}')
 '''
 
 
@@ -224,15 +336,27 @@ except Exception:
 '''
 
 
-def build_runner_source(user_block: str, workspace_path: str, sandbox_mode: str = '') -> str:
+def build_runner_source(
+    user_block: str,
+    workspace_path: str,
+    sandbox_mode: str = '',
+    bridge_url: str = '',
+    bridge_token: str = '',
+    kernel_dir: str = '',
+) -> str:
     """Guard (rendered from the live hardline module) + preamble + user block
     + the result-capture tail (honors the "assign to `result`" contract).
 
     ``sandbox_mode`` (read-only / workspace-write / full) is rendered into the
     preamble so the embedded tool API enforces the same mutation rules as the
     typed tools — a read-only session cannot write through code mode.
+
+    T13: ``bridge_url`` / ``bridge_token`` wire the ``call_tool`` bridge to the
+    running backend; ``kernel_dir`` enables persistent variables (restored
+    before the block, snapshotted after).
     """
     from app.services.sandbox import hardline as _hardline
+    from app.services.workbench.kernel import PER_VARIABLE_CAP_BYTES, TOTAL_CAP_BYTES
 
     guard = (
         _GUARD_TEMPLATE.replace('__WRITE_PATTERN__', repr(_hardline._PROTECTED_WRITE_PATTERN.pattern))
@@ -249,9 +373,19 @@ def build_runner_source(user_block: str, workspace_path: str, sandbox_mode: str 
     return (
         guard
         + '\n\n'
-        + _PREAMBLE.format(workspace=workspace_path or '', sandbox_read_only=sandbox_read_only)
+        + _PREAMBLE.format(
+            workspace=workspace_path or '',
+            sandbox_read_only=sandbox_read_only,
+            bridge_url=bridge_url or '',
+            bridge_token=bridge_token or '',
+            kernel_dir=kernel_dir or '',
+        )
+        + '\n\n'
+        + _RESTORE_HEAD.format()
         + '\n\n'
         + user_block
+        + '\n\n'
+        + _SNAPSHOT_TAIL.format(per_var_cap=PER_VARIABLE_CAP_BYTES, total_cap=TOTAL_CAP_BYTES)
         + _RESULT_CAPTURE_TAIL
     )
 
@@ -282,7 +416,7 @@ def format_result(result: str) -> str:
     return result
 
 
-def runner_command(path: str) -> str:
+def runner_command(path: str, interpreter: str = '') -> str:
     """Shell command that executes a code-run script.
 
     ``python -I`` = isolated mode: no user site-packages, no sys.path
@@ -291,5 +425,13 @@ def runner_command(path: str) -> str:
     preamble. Code mode is NOT a security boundary: the model's block runs
     with the user's OS privileges inside the workspace, exactly like any
     command the user would approve.
+
+    ``interpreter`` (T13) overrides the default ``python`` — the caller passes
+    the pre-seeded kernel venv's interpreter when one is provisioned, so cells
+    can rely on the common packages without a per-run install.
     """
-    return f'python -I -u "{path}"'
+    exe = (interpreter or '').strip() or 'python'
+    # Quote the interpreter only if it carries spaces (a venv path rarely does,
+    # but a Windows Program Files path would).
+    exe_token = f'"{exe}"' if ' ' in exe else exe
+    return f'{exe_token} -I -u "{path}"'

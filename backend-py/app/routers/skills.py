@@ -78,16 +78,20 @@ async def createSkill(body: SkillCreate):
 
 @router.patch('/{name}')
 async def patchSkill(name: str, body: SkillPatch):
-    """Patch an existing skill (copy-on-write for bundled skills)."""
+    """Patch an existing skill (copy-on-write for bundled skills).
+
+    M6 item 4: one file write per request — the disabled flip and any
+    content fields are applied in a single ``patchSkill`` call.
+    """
     try:
-        if body.disabled is not None:
-            skill_service.setEnabled(name, enabled=not body.disabled)
+        enabled = None if body.disabled is None else (not body.disabled)
         return skill_service.patchSkill(
             name,
             body=body.body,
             description=body.description,
             trigger=body.trigger,
             category=body.category,
+            enabled=enabled,
         )
     except SkillValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -13,13 +13,15 @@ export function makeSessionId(prefix = 'sess'): string {
   return `${prefix}_${stamp}_${rand}`;
 }
 
-/** Default title stamped with local date/time until the first user message. */
-export function defaultSessionTitle(when: Date = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const stamp =
-    `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ` +
-    `${pad(when.getHours())}:${pad(when.getMinutes())}`;
-  return `Chat ${stamp}`;
+/**
+ * Creation title: a neutral "New chat" placeholder (M7 item 4). Timestamps as
+ * names are gone — the first user message renames this immediately (snippet
+ * title) and the LLM titler upgrades it after the first reply. The old
+ * date-stamped format is still matched by isPlaceholderTitle so existing
+ * sessions keep auto-titling.
+ */
+export function defaultSessionTitle(): string {
+  return 'New chat';
 }
 
 /** True when the title is still a default/empty placeholder. */
@@ -30,6 +32,27 @@ export function isPlaceholderTitle(title: string | null | undefined): boolean {
   // Date-stamped defaults: "Chat 2026-07-15 14:30" / "Chat 2026-07-15 14:30 UTC"
   if (/^chat\s+\d{4}-\d{2}-\d{2}/i.test(t)) return true;
   return false;
+}
+
+/**
+ * Immediate sidebar title from the first real user message (plan §5.2).
+ * Client mirror of the backend's `derive_title_from_message` — the snippet
+ * title shows at send time; the backend LLM titler treats it as a soft
+ * fallback and refines it after the first reply when the provider allows.
+ * Returns '' for slash commands or too-short text (no title derived).
+ */
+export function deriveSnippetTitle(text: string, maxLen = 48): string {
+  let cleaned = (text || '').replace(/\r\n/g, '\n').trim();
+  if (!cleaned) return '';
+  // Strip accidental role-prefixed dumps ("user: …").
+  cleaned = cleaned.replace(/^(user|assistant|system)\s*:\s*/i, '');
+  let first = cleaned.split('\n', 1)[0].trim();
+  first = first.split(/\s+(?:user|assistant|system)\s*:\s*/i)[0].trim();
+  first = first.replace(/\s+/g, ' ').trim();
+  if (/^\/[a-zA-Z]/.test(first)) return '';
+  if (first.length < 2) return '';
+  if (first.length > maxLen) first = first.slice(0, maxLen).trimEnd() + '…';
+  return first;
 }
 
 /** Prefer a real title over a placeholder when merging local + backend. */
@@ -149,23 +172,6 @@ export function sessionIsEmpty(s: Session): boolean {
     }
   }
   return true;
-}
-
-/** Fallback sidebar title from the first user message (truncated, not a raw dump).
- *  Prefer the backend LLM title generated after the first assistant reply. */
-export function deriveSessionTitleFromMessage(text: string): string | null {
-  let cleaned = (text || '').replace(/\r\n/g, '\n').trim();
-  if (!cleaned) return null;
-  // Drop accidental role-prefixed transcript dumps saved as a single "user" blob.
-  cleaned = cleaned.replace(/^(user|assistant|system)\s*:\s*/i, '');
-  // Prefer the first meaningful line / sentence.
-  const firstChunk = cleaned.split(/\n+/)[0] || cleaned;
-  cleaned = firstChunk.replace(/\s+/g, ' ').trim();
-  // If it still looks like a multi-turn transcript, take text before the next role marker.
-  cleaned = cleaned.split(/\s+(?:user|assistant|system)\s*:\s*/i)[0]?.trim() || cleaned;
-  if (cleaned.length < 2) return null;
-  if (cleaned.length > 48) cleaned = `${cleaned.slice(0, 48).trim()}…`;
-  return cleaned;
 }
 
 /**

@@ -138,6 +138,10 @@ class BrainConfigDict(TypedDict, total=False):
     modelMemoryWrites: bool
     memorySensitiveTopics: bool
     cameraAccess: bool
+    skillRelevanceMatch: bool
+    consolidationIntervalHours: int
+    consolidationModelSummarize: bool
+    titleModel: str
 
 
 class ProviderConfigDict(TypedDict, total=False):

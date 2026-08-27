@@ -151,7 +151,7 @@ def _introspect_flow(out: dict[str, Any]) -> None:
         'auto-compact at high pressure → final answer'
     )
     flow['phases'] = ['research', 'plan', 'implement', 'review', 'complete']
-    flow['agent_modes'] = ['chat', 'agent', 'code', 'orchestrator', 'benchmark']
+    flow['agent_modes'] = ['chat', 'agent', 'code', 'orchestrator']
     flow['guard_modes'] = ['ask', 'edit', 'plan', 'full']
     flow['auto_compact'] = 'high(≥80%) pressure after 2 turns, or <8000 tokens headroom'
     out['flow_map'] = flow

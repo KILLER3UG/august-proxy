@@ -357,8 +357,11 @@ async def manage_memory(body: ActionBody):
     if action in ('set', 'upsert') and key:
         before_fact = memory_store.get_fact(key)
         before = copy.deepcopy(before_fact) if before_fact else None
+        value_text = body.value if isinstance(body.value, str) else ''
+        fact_title = (body.title or '').strip() or memory_store.derive_fact_title(value_text)
         memory_store.save_fact(
-            key, cast(JsonValue, body.value), category=body.category or 'general', source=source
+            key, cast(JsonValue, body.value), category=body.category or 'general',
+            source=source, title=fact_title, kind=(body.kind or '').strip().lower(),
         )
         try:
             record_rollback(
@@ -457,9 +460,21 @@ async def import_memory(body: MemoryImportBody):
 
         before_fact = memory_store.get_fact(key)
         before = _copy.deepcopy(before_fact) if before_fact else None
+        title_raw = item.get('title')
+        if isinstance(title_raw, str) and title_raw.strip():
+            fact_title = title_raw.strip()
+        elif isinstance(value_raw, str):
+            fact_title = memory_store.derive_fact_title(value_raw)
+        elif isinstance(value_raw, dict) and isinstance(value_raw.get('fact'), str):
+            fact_title = memory_store.derive_fact_title(str(value_raw.get('fact')))
+        else:
+            fact_title = ''
+        kind_raw = item.get('kind')
+        fact_kind = str(kind_raw).strip().lower() if isinstance(kind_raw, str) else ''
         try:
             memory_store.save_fact(
-                key, cast(JsonValue, value_raw), category=category, source=source, confidence=confidence
+                key, cast(JsonValue, value_raw), category=category, source=source,
+                confidence=confidence, title=fact_title, kind=fact_kind,
             )
         except Exception as exc:  # noqa: BLE001 — surface to the caller
             failed.append({'index': index, 'error': f'save_fact failed: {exc}'})

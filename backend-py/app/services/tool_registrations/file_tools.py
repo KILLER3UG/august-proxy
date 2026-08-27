@@ -309,6 +309,87 @@ async def _writeFile(path: str, content: str, **_extra: object) -> str:
         return f'Error writing file: {exc}'
 
 
+def _lineEq(a: str, b: str, wsTolerant: bool) -> bool:
+    if wsTolerant:
+        return a.strip() == b.strip() and bool(a.strip())
+    return a == b
+
+
+def _matchBlock(
+    lines: list[str], start: int, oldLines: list[str], wsTolerant: bool
+) -> int | None:
+    """Match an old-text block against file lines starting at ``start``.
+
+    Blank-line tolerant: blank file lines between anchors are skipped.
+    Elided-lines tolerant: an old line that is ``...`` or ``…`` skips one or
+    more file lines. Returns the end index (exclusive) or None.
+    """
+    i = start
+    j = 0
+    skippedBlank = 0
+    while j < len(oldLines):
+        ol = oldLines[j]
+        if ol.strip() in ('...', '…'):
+            if i >= len(lines):
+                return None
+            i += 1  # elision consumes at least one line
+            nextOld = oldLines[j + 1] if j + 1 < len(oldLines) else None
+            while i < len(lines) and nextOld is not None and not _lineEq(lines[i], nextOld, wsTolerant):
+                i += 1
+            j += 1
+            skippedBlank = 0
+            continue
+        if i >= len(lines):
+            return None
+        if not _lineEq(lines[i], ol, wsTolerant):
+            # Blank-line tolerance: stray blank lines in the file don't break
+            # the block (bounded so a wrong anchor can't scan forever).
+            if lines[i].strip() == '' and skippedBlank < 3:
+                i += 1
+                skippedBlank += 1
+                continue
+            return None
+        i += 1
+        j += 1
+        skippedBlank = 0
+    return i
+
+
+def _resolveAnchor(
+    lines: list[str], idx: int, oldText: str
+) -> tuple[int, int, str] | None:
+    """T4 fuzzy edit ladder (plan §9.4): exact → leading-whitespace →
+    blank-line/elided block → nearby drift, before rejecting.
+
+    The hash anchor already proved the file is exactly what the model read,
+    so fuzzy tolerance is about transcription drift, not staleness.
+    Returns (startIdx, endIdxExclusive, level) or None.
+    """
+    if oldText == lines[idx]:
+        return idx, idx + 1, 'exact'
+    if '\n' in oldText:
+        oldLines = oldText.splitlines()
+        end = _matchBlock(lines, idx, oldLines, wsTolerant=False)
+        if end is not None:
+            return idx, end, 'block'
+        end = _matchBlock(lines, idx, oldLines, wsTolerant=True)
+        if end is not None:
+            return idx, end, 'block-fuzzy'
+    if oldText.lstrip() and oldText.lstrip() == lines[idx].lstrip():
+        return idx, idx + 1, 'leading-ws'
+    if oldText.strip() and oldText.strip() == lines[idx].strip():
+        return idx, idx + 1, 'ws'
+    # Drift: the model's line number is off by a few lines (edits above
+    # shifted it). Search ±3 for the anchor.
+    lo, hi = max(0, idx - 3), min(len(lines), idx + 4)
+    for jdx in range(lo, hi):
+        if jdx == idx:
+            continue
+        if oldText == lines[jdx] or (oldText.lstrip() and oldText.lstrip() == lines[jdx].lstrip()):
+            return jdx, jdx + 1, 'drift'
+    return None
+
+
 async def _editLines(
     path: str,
     fileHash: str,
@@ -363,6 +444,7 @@ async def _editLines(
         return 'Error: changes must be a non-empty array of {line, old, new}.'
     # Apply from the bottom up so earlier line numbers stay valid.
     applied = 0
+    fuzzyNotes: list[str] = []
     for change in sorted(changes, key=lambda c: as_int(c.get('line'), 0), reverse=True):
         if not isinstance(change, dict):
             return 'Error: each change must be an object {line, old, new}.'
@@ -372,14 +454,19 @@ async def _editLines(
         if lineNo < 1 or lineNo > len(lines):
             return f"Error: line {lineNo} is out of range (file has {len(lines)} lines)."
         idx = lineNo - 1
-        if oldText != lines[idx]:
+        match = _resolveAnchor(lines, idx, oldText)
+        if match is None:
             return (
                 f"Error: anchor mismatch on line {lineNo}.\n"
                 f'Expected: {oldText!r}\n'
                 f'Actual:   {lines[idx]!r}\n'
                 'Re-read the file and retry with the current content.'
             )
-        lines[idx] = newText
+        startIdx, endIdx, level = match
+        newLines = newText.splitlines() if newText else []
+        lines[startIdx:endIdx] = newLines
+        if level != 'exact':
+            fuzzyNotes.append(f'line {lineNo} matched via {level}')
         applied += 1
     try:
         # write_bytes (not write_text): text mode would translate \n → \r\n on
@@ -394,7 +481,14 @@ async def _editLines(
         filePath.write_bytes(joined.encode('utf-8'))
     except OSError as exc:
         return f'Error writing file: {exc}'
-    return f'Applied {applied} edit{"" if applied == 1 else "s"} to {path}.'
+    result = f'Applied {applied} edit{"" if applied == 1 else "s"} to {path}.'
+    if fuzzyNotes:
+        result += (
+            '\nNote: fuzzy anchor matching was used ('
+            + '; '.join(fuzzyNotes)
+            + '). Re-read the file to confirm the result.'
+        )
+    return result
 
 
 async def _listDirectory(path: str) -> str:
@@ -900,6 +994,15 @@ def register() -> None:
                 'network': {
                     'type': 'boolean',
                     'description': 'Enable network for this command only (curl/gh/pip). Default follows session sandboxNetwork.',
+                },
+                'requires_approval': {
+                    'type': 'boolean',
+                    'description': (
+                        'Set true when the command is destructive (recursive delete, force push, '
+                        'disk/system operations) or touches paths outside the workspace — the '
+                        'harness will ask the user before running it. Advisory: it can only '
+                        'request approval, never bypass a denial.'
+                    ),
                 },
             },
             'required': ['command'],

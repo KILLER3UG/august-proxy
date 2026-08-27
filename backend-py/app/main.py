@@ -172,8 +172,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(refreshMcpTools())
     except Exception:
         pass
-    # Cognitive layers: workbench→brain backfill, db_writer, consolidation,
-    # cron scheduler, daemon manager.
+    # Cognitive layers: cron scheduler, daemon manager, facts-expiry sweep.
     try:
         from app.services.cognitive_boot import start_cognitive_services
 
@@ -224,16 +223,6 @@ async def lifespan(app: FastAPI):
         from app.services.runtime_services import shutdown_runtime_services
 
         await shutdown_runtime_services()
-    except Exception:
-        pass
-    # Stop the automatic memory-review loop.
-    try:
-        _auto_task = getattr(app.state, 'auto_review_task', None)
-        if _auto_task is not None:
-            _auto_task.cancel()
-        _boot_task = getattr(app.state, 'boot_maintenance_task', None)
-        if _boot_task is not None:
-            _boot_task.cancel()
     except Exception:
         pass
     # Flush debounced workbench session saves — the daemon timer dies with
@@ -315,6 +304,7 @@ from app.routers import automations as automationsRoutes  # noqa: E402
 from app.routers import brain_config as brainConfigRoutes  # noqa: E402
 from app.routers import browser as browserRoutes  # noqa: E402
 from app.routers import calendar as calendarRoutes  # noqa: E402
+from app.routers import code_review as codeReviewRoutes  # noqa: E402
 from app.routers import config as configRoutes  # noqa: E402
 from app.routers import cron as cronRoutes  # noqa: E402
 from app.routers import daemons as daemonsRoutes  # noqa: E402
@@ -337,6 +327,7 @@ from app.routers import providers as providersRoutes  # noqa: E402
 from app.routers import proxy as proxyRoutes  # noqa: E402
 from app.routers import realtime as realtimeRoutes  # noqa: E402
 from app.routers import recurring_tasks as recurringTasksRoutes  # noqa: E402
+from app.routers import refine_store as refineStoreRoutes  # noqa: E402
 from app.routers import security as securityRoutes  # noqa: E402
 from app.routers import service_connections as serviceConnectionsRoutes  # noqa: E402
 from app.routers import sessions as sessionsRoutes  # noqa: E402
@@ -380,6 +371,8 @@ app.include_router(calendarRoutes.router)
 app.include_router(subagentRoutes.router)
 app.include_router(harnessMcpRoutes.router)
 app.include_router(harnessProposalsRoutes.router)
+app.include_router(refineStoreRoutes.router)
+app.include_router(codeReviewRoutes.router)
 app.include_router(recurringTasksRoutes.router)
 app.include_router(daemonsRoutes.router)
 app.include_router(serviceConnectionsRoutes.router)

@@ -2,33 +2,28 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileText, RefreshCw, ArrowRight, Check, Undo2, Loader2 } from 'lucide-react';
+import { FileText, RefreshCw, ArrowRight, Check, Undo2, Loader2, SearchCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { gitApi } from '@/api/git';
-import {
-  listWorkbenchCheckpoints,
-  restoreWorkbenchCheckpoint,
-} from '@/api/workbench';
+import { codeReviewApi, type CodeReviewResult } from '@/api/codeReview';
 import { DiffView } from '@/components/chat/DiffView';
 import { FileIcon } from '@/components/ui/FileIcon';
 import {
   useRightDrawer,
   closeRightDrawerSection,
   clearRightDrawerDiff,
+  setRightDrawerDiff,
 } from './RightDrawerState';
-import { resolveWorkbenchSessionId } from '@/sections/chat/stream/session-id-map';
-import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
-import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ReviewFindingsPanel } from './ReviewFindingsPanel';
+import { useRevertAllChanges } from '@/lib/git-revert';
 
 export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null }) {
   const qc = useQueryClient();
   const drawer = useRightDrawer();
   const storedDiff = drawer.diff;
-  const [reverting, setReverting] = useState(false);
-  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
   const query = useQuery({
     queryKey: ['git', 'diff', sessionId],
@@ -42,8 +37,40 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
   const added = diff?.added ?? files.reduce((sum, file) => sum + file.added, 0);
   const removed = diff?.removed ?? files.reduce((sum, file) => sum + file.removed, 0);
 
+  // Shared with the chat ChangesCard Undo button (plan §4.5): checkpoint
+  // restore with a `git restore -- .` fallback, confirm dialog included.
+  const { revertAll, reverting, confirmDialog } = useRevertAllChanges(
+    sessionId,
+    files.length,
+    () => clearRightDrawerDiff(),
+  );
+
   const refreshDiff = () => {
     void qc.invalidateQueries({ queryKey: ['git', 'diff', sessionId] });
+  };
+
+  /* Part 10 R-A — advisory code review of this changeset. The UI already
+     holds the diff, so it ships it along; grounding runs server-side
+     against the workspace. Advisory only: failures surface as notices. */
+  const [review, setReview] = useState<CodeReviewResult | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+
+  const handleRunReview = async () => {
+    if (reviewing || !diff) return;
+    setReviewing(true);
+    try {
+      const diffText = files.map((file) => file.diff || '').filter(Boolean).join('\n');
+      const result = await codeReviewApi.run({
+        sessionId: sessionId || undefined,
+        workspace: diff.workspace || undefined,
+        diffText,
+      });
+      setReview(result);
+    } catch (err) {
+      toast.error(`Review failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setReviewing(false);
+    }
   };
 
   /** Keep every change: nothing to do on disk — dismiss the review pane. */
@@ -51,49 +78,6 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
     clearRightDrawerDiff();
     closeRightDrawerSection('diff');
     toast.success('Changes kept');
-  };
-
-  /** Revert every change: restore the latest save point (falls back to
-   *  `git restore .` for tracked files when no save point exists). */
-  const handleRevertAll = () => {
-    if (!sessionId || files.length === 0 || reverting) return;
-    const wbId = resolveWorkbenchSessionId(sessionId);
-    void (async () => {
-      setReverting(true);
-      try {
-        const list = await listWorkbenchCheckpoints(wbId).catch(() => []);
-        const latest = list[0];
-        if (latest?.id) {
-          const ok = await confirm({
-            title: 'Revert changes?',
-            message: `Revert all ${files.length} changed file${files.length === 1 ? '' : 's'} back to the last save point?`,
-            confirmLabel: 'Revert',
-            variant: 'destructive',
-          });
-          if (!ok) return;
-          const res = await restoreWorkbenchCheckpoint(wbId, latest.id);
-          toast.success(res.message || 'Reverted to last save point');
-        } else {
-          const ok = await confirm({
-            title: 'Discard changes?',
-            message: `No save point found. Discard changes to ${files.length} tracked file${files.length === 1 ? '' : 's'} with git restore?`,
-            confirmLabel: 'Discard',
-            variant: 'destructive',
-          });
-          if (!ok) return;
-          await gitApi.command(['restore', '--', '.'], sessionId);
-          toast.success('Working tree restored');
-        }
-        clearRightDrawerDiff();
-        refreshDiff();
-      } catch (err) {
-        toast.error(
-          `Revert failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      } finally {
-        setReverting(false);
-      }
-    })();
   };
 
   return (
@@ -125,6 +109,21 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
               <Button
                 variant="outline"
                 size="sm"
+                disabled={reviewing}
+                onClick={() => void handleRunReview()}
+                data-testid="diff-review-button"
+                title="Run an advisory code review of this changeset"
+              >
+                {reviewing ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <SearchCheck className="size-3" />
+                )}
+                Review
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleKeepAll}
                 title="Keep all changes and close the review"
               >
@@ -135,7 +134,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
                 variant="outline"
                 size="sm"
                 disabled={!sessionId || reverting}
-                onClick={handleRevertAll}
+                onClick={revertAll}
                 className="text-danger hover:text-danger"
                 title="Revert all changes to the last save point"
               >
@@ -150,6 +149,16 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
           )}
         </div>
       </div>
+
+      {review && (
+        <ReviewFindingsPanel
+          result={review}
+          onSelectFile={(path) => {
+            if (diff) setRightDrawerDiff(diff, path);
+          }}
+          onDismiss={() => setReview(null)}
+        />
+      )}
 
       {!diff && query.isLoading && (
         <div className="rounded-lg border border-border/50 bg-card/60 p-4 text-center text-muted-foreground">
@@ -219,16 +228,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
           refreshDiff();
         }} />
       )}
-      <ConfirmDialog
-        open={confirmState.open}
-        title={confirmState.title}
-        message={confirmState.message}
-        confirmLabel={confirmState.confirmLabel}
-        cancelLabel={confirmState.cancelLabel}
-        variant={confirmState.variant}
-        onConfirm={handleConfirm}
-        onCancel={handleCancel}
-      />
+      {confirmDialog}
     </div>
   );
 }

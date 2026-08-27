@@ -17,25 +17,21 @@ _BRAINStores: dict[str, dict[str, object]] = {
         'search_cols': ['key', 'value'],
         'label': 'key-value memory store',
     },
-    'autoMemories': {
-        'table': 'auto_memories',
-        'fts': 'auto_memories_fts',
-        'columns': 'id, key, content, category, importance, created_at',
-        'search_cols': ['key', 'content'],
-        'label': 'auto-captured memories',
-    },
     'heuristics': {
         'table': 'learned_heuristics',
         'fts': None,
         'columns': 'id, rule, source, category, created_at, updated_at',
         'search_cols': ['rule', 'source'],
-        'label': 'legacy learned rules (read-only — no live writer)',
+        'label': 'legacy learned rules (no live writer — deletable)',
     },
     'facts': {
         'table': 'facts',
         'fts': None,
-        'columns': 'id, fact_key, fact_value, category, source, confidence, expires_at, created_at, updated_at',
-        'search_cols': ['fact_key', 'fact_value'],
+        'columns': (
+            'id, fact_key, fact_value, title, kind, category, source, confidence, '
+            'use_count, last_used_at, status, expires_at, created_at, updated_at'
+        ),
+        'search_cols': ['fact_key', 'fact_value', 'title'],
         'label': 'structured semantic facts',
     },
     'sessions': {
@@ -84,8 +80,6 @@ _BRAINStores: dict[str, dict[str, object]] = {
 
 # Snake_case / alternate names → canonical store key (models often use SQL names).
 _STORE_ALIASES: dict[str, str] = {
-    'auto_memories': 'autoMemories',
-    'auto-memories': 'autoMemories',
     'exam_attempts': 'examAttempts',
     'exam-attempts': 'examAttempts',
     'learned_heuristics': 'heuristics',
@@ -108,11 +102,6 @@ def _resolve_store(store: str) -> str:
     if snake in _BRAINStores:
         return snake
     return store
-
-
-def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
-    """Graph store removed with the memory system."""
-    return json.dumps({'error': "store 'graph' not available in this build"})
 
 
 def _brain_query_daemons(query: str, filters: dict | None, limit: int) -> str:
@@ -172,18 +161,16 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
     Unknown or not-yet-shipped stores return a structured error string
     rather than raising — keeps the tool stable across phases.
 
-    Accepts canonical wire names (``autoMemories``) and common aliases
-    (``auto_memories``, SQL-ish names).
+    Accepts canonical wire names (``examAttempts``) and common aliases
+    (``exam_attempts``, SQL-ish names).
     """
     _TOKENCeiling = 2000
     conn = _conn()
-    if store in ('graph',):
-        return _brain_query_graph(query, filters, limit)
     if store in ('daemons',):
         return _brain_query_daemons(query, filters, limit)
     store = _resolve_store(store)
     if store not in _BRAINStores:
-        available = sorted(set(list(_BRAINStores.keys()) + list(_STORE_ALIASES.keys()) + ['graph', 'daemons']))
+        available = sorted(set(list(_BRAINStores.keys()) + list(_STORE_ALIASES.keys()) + ['daemons']))
         return json.dumps(
             {'error': f"store '{store}' not available in this build", 'available': available}
         )
@@ -297,12 +284,21 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
 
 
 def brain_store_summary() -> list[dict[str, object]]:
-    """Per-store counts for the settings Memory page (read-only)."""
+    """Per-store counts for the settings Memory page (read-only).
+
+    Stores whose table no longer exists (e.g. learned_heuristics after the
+    empty-legacy drop) are omitted rather than shown with a phantom zero.
+    """
     conn = _conn()
     out: list[dict[str, object]] = []
     for name, info in _BRAINStores.items():
         table = as_str(info['table'])
         try:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (table,)
+            ).fetchone()
+            if exists is None:
+                continue
             row = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()
             count = int(row[0]) if row else 0
         except Exception:
@@ -371,14 +367,16 @@ def brain_index_snippet() -> str:
     lines: list[str] = []
     try:
         factRows = conn.execute(
-            "SELECT fact_key, category FROM facts "
+            "SELECT fact_key, title, category FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR expires_at > datetime('now')) "
+            "AND (status IS NULL OR status = 'active') "
             "ORDER BY updated_at DESC LIMIT 15"
         ).fetchall()
         if factRows:
             lines.append('Facts:')
             for r in factRows:
-                lines.append(f"  {r['fact_key']} ({r['category'] or 'general'})")
+                label = str(r['title'] or '').strip() or str(r['fact_key'])
+                lines.append(f"  {label} ({r['category'] or 'general'})")
     except Exception:
         pass
     try:
@@ -401,13 +399,14 @@ def brain_index_snippet() -> str:
 
 # Per-store writable field whitelists for brain_update_row (B5). Stores absent
 # here are not inline-editable from the settings UI; heuristics is a legacy
-# read-only store (no live writer) and rejects both edit and delete.
+# store with no live writer — rows are deletable (see _ROW_DELETABLE) but not
+# editable ("read-only legacy" means no writer, not undeletable; plan §3.3).
 _ROW_EDIT_FIELDS: dict[str, frozenset[str]] = {
-    'facts': frozenset({'fact_value', 'category', 'confidence', 'expires_at'}),
+    'facts': frozenset({'fact_value', 'title', 'kind', 'category', 'confidence', 'expires_at'}),
     'memory': frozenset({'value'}),
     'timeline': frozenset({'event_summary', 'category'}),
 }
-_ROW_DELETABLE: frozenset[str] = frozenset({'facts', 'memory', 'timeline', 'autoMemories'})
+_ROW_DELETABLE: frozenset[str] = frozenset({'facts', 'memory', 'timeline', 'heuristics'})
 
 
 def _store_id_column(store: str) -> str:
@@ -434,13 +433,11 @@ def _record_row_rollback(store: str, target: str, before: object, after: object)
 def brain_delete_row(store: str, row_id: object) -> dict[str, object]:
     """Delete one row from a brain store for the settings UI (B5).
 
-    FTS-safe: memory_store/auto_memories carry AFTER DELETE sync triggers;
-    facts/timeline have no FTS table. heuristics is read-only legacy.
+    FTS-safe: memory_store carries AFTER DELETE sync triggers;
+    facts/timeline/heuristics have no FTS table.
     """
     conn = _conn()
     resolved = _resolve_store(store)
-    if resolved == 'heuristics':
-        return {'ok': False, 'status': 403, 'error': "store 'heuristics' is read-only legacy"}
     if resolved not in _ROW_DELETABLE or resolved not in _BRAINStores:
         return {'ok': False, 'error': f"store '{store}' does not support per-entry delete"}
     info = _BRAINStores[resolved]

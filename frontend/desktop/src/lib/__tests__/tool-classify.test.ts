@@ -39,10 +39,19 @@ describe('classifyTool', () => {
     expect(classifyTool('workbench_run_command')).toBe('run');
   });
 
+  it('classifies memory-write tools (plan §4.3)', () => {
+    expect(classifyTool('remember')).toBe('memoryWrite');
+    expect(classifyTool('august__remember')).toBe('memoryWrite');
+    expect(classifyTool('save_fact')).toBe('memoryWrite');
+    expect(classifyTool('memory_write')).toBe('memoryWrite');
+    expect(classifyTool('forget')).toBe('memoryWrite');
+    expect(classifyTool('forget_fact')).toBe('memoryWrite');
+    expect(classifyTool('update_fact')).toBe('memoryWrite');
+  });
+
   it('defaults unknown tools to tool', () => {
     expect(classifyTool('august__spawn_subagent')).toBe('tool');
     expect(classifyTool('setup_provider')).toBe('tool');
-    expect(classifyTool('remember')).toBe('tool');
     expect(classifyTool('weird_custom_thing')).toBe('tool');
   });
 });

@@ -1,12 +1,15 @@
 """
 ToolCallTracker — loop and failure guardrails for tool calls (Phase 6).
 
-Port of backend/services/security/tool-guardrails.js.
-
-Tracks:
-- Identical tool-call sequences: warn at 3 identical calls, block at 6
-- Same-tool failure patterns: warn at 4 failures on the same tool, block at 8
-- Reset tracker state when the model produces a text response (not just tool calls)
+Port of backend/services/security/tool-guardrails.js, reworked by T16(a)
+(plan §9.4, audit 2026-08-27): the identical-call doom-loop rule is now
+advisory within a run — reminders at cumulative counts 3/5/8 carrying a
+preview of the repeated args, never blocking, reset on any new user
+message — plus a nudge/break for loops that repeat ACROSS turns (a call
+re-issued after a user-message boundary that was already issued before
+it: warn on the first re-issue, block on the second). Alternating
+ping-pong detection and same-tool failure counts still block — those are
+distinct failure classes the advisory rule does not cover.
 """
 
 from __future__ import annotations
@@ -27,15 +30,22 @@ class ToolCallTracker:
 
     def __init__(self) -> None:
         self._callSequence: list[tuple[str, str, float]] = []
+        self._runTotals: dict[tuple[str, str], int] = defaultdict(int)
+        self._priorTurnCalls: set[tuple[str, str]] = set()
+        self._crossTurnStrikes: dict[tuple[str, str], int] = defaultdict(int)
         self._failureCount: defaultdict[str, int] = defaultdict(int)
         self._lastTextResponse: float = time.monotonic()
 
-    WARN_IDENTICAL = 3
-    BLOCK_IDENTICAL = 6
+    # Within-run identical-call reminders: advisory only, never blocking.
+    ADVISORY_COUNTS = (3, 5, 8)
+    ARG_PREVIEW_CHARS = 500
     WARN_ALTERNATING = 8
     BLOCK_ALTERNATING = 10
     WARN_FAILURE = 4
     BLOCK_FAILURE = 8
+    # Bound the cross-turn memory so a very long session cannot grow it
+    # without limit; losing old history is acceptable.
+    _PRIOR_TURN_CAP = 2000
 
     def check(self, toolName: str, arguments: dict[str, object]) -> tuple[str, str]:
         """Check a tool call against the guardrails.
@@ -46,38 +56,59 @@ class ToolCallTracker:
             ("block", "msg") — call is blocked
         """
         argsHash = self._hashArgs(arguments)
+        key = (toolName, argsHash)
         now = time.monotonic()
         self._callSequence.append((toolName, argsHash, now))
         if len(self._callSequence) > 50:
             self._callSequence = self._callSequence[-50:]
-        identicalCount = 0
-        for name, ah, __ in reversed(self._callSequence):
-            if name == toolName and ah == argsHash:
-                identicalCount += 1
-            else:
-                break
-        if identicalCount >= self.BLOCK_IDENTICAL:
+
+        # Cross-turn loop (T16a): the same (tool, args) re-issued after a
+        # user-message boundary already ran before it — the previous
+        # attempt(s) did not advance the task. Nudge once, then break.
+        if key in self._priorTurnCalls:
+            self._crossTurnStrikes[key] += 1
+            if self._crossTurnStrikes[key] >= 2:
+                return (
+                    'block',
+                    f"Blocked: '{toolName}' with identical arguments keeps repeating across "
+                    'turns. The previous attempts did not advance the task — take a '
+                    'different approach or report the blocker instead of retrying.',
+                )
             return (
-                'block',
-                f"Blocked: '{toolName}' called with identical arguments {identicalCount} times. Try a different approach.",
+                'warn',
+                f"Warning: '{toolName}' with these exact arguments was already issued in a "
+                'previous turn. If it failed then, retrying unchanged will fail again — '
+                'change the approach or the arguments.',
             )
-        if identicalCount >= self.WARN_IDENTICAL:
-            return ('warn', f"Warning: '{toolName}' called with identical arguments {identicalCount} times in a row.")
+
+        # Within-run identical-call reminders (T16a): advisory at 3/5/8,
+        # never blocking; counters reset on any new user message.
+        self._runTotals[key] += 1
+        count = self._runTotals[key]
+        if count in self.ADVISORY_COUNTS:
+            preview = argsHash[: self.ARG_PREVIEW_CHARS]
+            return (
+                'warn',
+                f"Warning: '{toolName}' called with identical arguments {count} times this "
+                f'run (args: {preview}). Repeating the same call rarely changes the '
+                'outcome — check the result you already got, then try a different step.',
+            )
+
         # Alternating ping-pong (OpenHands stuck-detector pattern): the
-        # identical-call detector only catches CONTIGUOUS repeats — a model
+        # identical-call detector only catches repeats of ONE call — a model
         # oscillating read_file(a)/read_file(b)/read_file(a) never trips it.
         altRun, toneA, toneB = self._alternating_run()
         if altRun >= self.BLOCK_ALTERNATING:
             return (
                 'block',
-                f"Blocked: alternating between the same two calls {altRun} times in a row "
-                f"({toneA} ↔ {toneB}). Try a different approach.",
+                f'Blocked: alternating between the same two calls {altRun} times in a row '
+                f'({toneA} ↔ {toneB}). Try a different approach.',
             )
         if altRun >= self.WARN_ALTERNATING:
             return (
                 'warn',
-                f"Warning: alternating between the same two calls {altRun} times in a row "
-                f"({toneA} ↔ {toneB}).",
+                f'Warning: alternating between the same two calls {altRun} times in a row '
+                f'({toneA} ↔ {toneB}).',
             )
         failCount = self._failureCount.get(toolName, 0)
         if failCount >= self.BLOCK_FAILURE:
@@ -119,13 +150,30 @@ class ToolCallTracker:
         """Record a tool failure (call returned an error)."""
         self._failureCount[toolName] += 1
 
+    def _handOffTurnHistory(self) -> None:
+        """Calls seen so far become prior-turn history for cross-turn
+        detection, then the within-run counters reset."""
+        self._priorTurnCalls.update(self._runTotals.keys())
+        if len(self._priorTurnCalls) > self._PRIOR_TURN_CAP:
+            self._priorTurnCalls.clear()
+            self._crossTurnStrikes.clear()
+        self._runTotals.clear()
+        self._callSequence.clear()
+
+    def record_user_message(self) -> None:
+        """A new user message arrived: within-run reminders reset (T16a),
+        but the turn's calls stay known so a loop repeating across the
+        boundary gets nudged, then broken."""
+        self._handOffTurnHistory()
+
     def record_text_response(self) -> None:
         """Record that the model produced a text response (not a tool call).
 
-        Resets the call sequence tracker — the model is back to reasoning
-        mode, not stuck in a loop.
+        Resets the within-run trackers — the model is back to reasoning
+        mode, not stuck in a loop — after handing the turn's calls to the
+        cross-turn history.
         """
-        self._callSequence.clear()
+        self._handOffTurnHistory()
         self._failureCount.clear()
         self._lastTextResponse = time.monotonic()
 
@@ -134,6 +182,10 @@ class ToolCallTracker:
         return {
             'sequence_length': len(self._callSequence),
             'failure_counts': dict(self._failureCount),
+            'prior_turn_calls': len(self._priorTurnCalls),
+            'cross_turn_strikes': dict(
+                (f'{name}:{ah[:40]}', n) for (name, ah), n in self._crossTurnStrikes.items()
+            ),
             'last_text_response_ago': time.monotonic() - self._lastTextResponse,
         }
 

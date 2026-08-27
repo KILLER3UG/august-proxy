@@ -1,7 +1,7 @@
 /**
  * Derive the files a turn "touched" from its tool-call blocks — the
- * light-weight deliverables row (dsh-style) that complements the git-based
- * ChangedFilesCard. Pure so it is unit-testable.
+ * row source for the unified ChangesCard (plan §4.5). Pure so it is
+ * unit-testable.
  *
  * A file counts when an edit-classified tool call carries a file path in
  * its args. Internal `.aug/` bookkeeping paths are excluded.

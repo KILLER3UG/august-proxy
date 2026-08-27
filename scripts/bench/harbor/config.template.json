@@ -1,0 +1,25 @@
+{
+  "$comment": "Harbor installed-agent adapter — generated config shape (B0, plan §9.5). The board writes this file; run.sh consumes the equivalent env vars.",
+  "agent": {
+    "name": "august",
+    "version": "0.17.x",
+    "install": "scripts/bench/harbor/install.sh",
+    "run": "scripts/bench/harbor/run.sh"
+  },
+  "defaults": {
+    "maxTurns": 50,
+    "timeoutS": 1800,
+    "sandboxMode": "workspace-write",
+    "networkAllowlist": []
+  },
+  "model": {
+    "id": "",
+    "provider": ""
+  },
+  "artifacts": {
+    "events": "results/<runId>.events.jsonl",
+    "trajectory": "results/<runId>.trajectory.json",
+    "sessionExport": "results/<runId>.session.json"
+  },
+  "exitCodes": { "0": "ok", "1": "error", "42": "input", "53": "turn-limit" }
+}

@@ -31,11 +31,27 @@ from app.json_narrowing import as_bool, as_dict, as_float, as_int, as_list, as_s
 from app.services.tool_policy import is_mutating, is_shell_mutation
 from app.services.workbench import providers as _providers_mod
 from app.services.workbench import sessions as _sessions_mod
+from app.services.workbench.durability import BARRIER_MODEL_DISPATCH as _BARRIER_MODEL_DISPATCH
+from app.services.workbench.durability import BARRIER_STEP_BOUNDARY as _BARRIER_STEP_BOUNDARY
+from app.services.workbench.durability import BARRIER_TOOL_SIDE_EFFECT as _BARRIER_TOOL_SIDE_EFFECT
+from app.services.workbench.durability import flush_session_barrier as _flushSessionBarrier
+from app.services.workbench.edit_verification import EDIT_TOOLS as _EDIT_VERIFY_TOOLS
+from app.services.workbench.edit_verification import verify_after_edit as _verifyAfterEdit
 from app.services.workbench.effort import (
     effort_to_openai_reasoning_effort,
     effort_to_prompt_instruction,
     effort_to_thinking_budget,
     resolve_effective_effort,
+)
+from app.services.workbench.permissions import COMMAND_TOOLS as _COMMAND_TOOLS
+from app.services.workbench.permissions import ApprovalPolicy as _ApprovalPolicy
+from app.services.workbench.read_before_edit import GATED_EDIT_TOOLS as _GATED_EDIT_TOOLS
+from app.services.workbench.read_before_edit import check_read_before_edit as _readBeforeEditGate
+from app.services.workbench.read_before_edit import (
+    observe_after_mutation as _observeMutatedFile,
+)
+from app.services.workbench.read_before_edit import (
+    observe_from_read_result as _observeReadFile,
 )
 from app.services.workbench.sessions import (
     WorkbenchSession,
@@ -196,12 +212,31 @@ _MODEL_RETRY_MARKERS = (
     'empty response',
 )
 
+# T16(d) (plan §9.4): deterministic 400s — the request itself is malformed
+# (orphaned tool-use id, broken message structure). Retrying re-sends the
+# identical request forever (a documented field incident); these are
+# fatal-or-repair, never transient. Checked before the marker scan so a
+# message that happens to contain "timeout" still fails fast.
+_DETERMINISTIC_400_MARKERS = (
+    'tool_use_id',
+    'tool use id',
+    'tool_call_id',
+    'orphan',
+    'no tool call',
+    'messages must alternate',
+    'unexpected role',
+    'invalid role',
+    'unrecognized role',
+)
+
 
 def _isRetryableModelError(response: dict[str, object]) -> bool:
     """True when a failed model sub-call is worth retrying (429/5xx/network).
 
     Quota/billing failures are never retried: 402, or any message carrying a
-    quota marker, even on a 429 status.
+    quota marker, even on a 429 status. Deterministic 400s (orphaned
+    tool-use id, malformed message structure) are never retried either —
+    the identical request would fail identically (T16d).
     """
     if not response.get('error'):
         return False
@@ -211,9 +246,112 @@ def _isRetryableModelError(response: dict[str, object]) -> bool:
     msg = as_str(response.get('error')).lower()
     if any((m in msg for m in _QUOTA_MARKERS)):
         return False
+    if isinstance(status, int) and status == 400 and any(
+        (m in msg for m in _DETERMINISTIC_400_MARKERS)
+    ):
+        return False
     if isinstance(status, int) and status in _MODEL_RETRY_STATUSES:
         return True
     return any((marker in msg for marker in _MODEL_RETRY_MARKERS))
+
+
+def _truncateToolOutput(text: str, cap: int) -> tuple[str, bool]:
+    """JSON-aware tool-output truncation with the T16(c) overrun guard.
+
+    Prefers a newline/JSON-boundary cut so the fragment stays parseable.
+    Single-line overrun guard (a documented field incident: one line longer
+    than the byte budget made the truncation routine return empty): when the
+    boundary cut would leave almost nothing, fall back to the hard cut — a
+    mid-token fragment beats no content, and the caller's marker always
+    states how many bytes were omitted. Returns ``(trimmed, truncated)``.
+    """
+    if len(text) <= cap:
+        return text, False
+    cut = text[:cap]
+    boundary = max(cut.rfind('\n'), cut.rfind('\r'))
+    if boundary <= cap // 2:
+        for ch in (',', '}'):
+            idx = cut.rfind(ch)
+            if idx > cap // 2:
+                boundary = idx
+                break
+    trimmed = cut[:boundary] if boundary > 0 else cut
+    if len(trimmed) < min(64, max(1, cap // 16)):
+        trimmed = cut
+    return trimmed, True
+
+
+# ── Output-cap discipline, stage B: spill (plan §9.3 #3) ──
+# A fresh tool result larger than the threshold is stored verbatim in a
+# session-scoped file and replaced inline by a head/tail preview that fits
+# the 30 KB / 2000-line model-facing budget. Stage B runs on FRESH results
+# only; historical results are pruned at compaction time (stage A, #2).
+_SPILL_THRESHOLD_CHARS = 50 * 1024
+_SPILL_HEAD_CHARS = 15 * 1024
+_SPILL_TAIL_CHARS = 15 * 1024
+_SPILL_HEAD_LINES = 1000
+_SPILL_TAIL_LINES = 1000
+SPILL_FILE_DIR = '.aug/spill'
+
+
+def spill_file_relpath(sessionId: str, seq: int, toolName: str) -> str:
+    """Workspace-relative spill path for one session's Nth spilled result."""
+    safe = re.sub(r'[^A-Za-z0-9_.-]', '_', as_str(sessionId or '').strip()) or 'session'
+    safeTool = re.sub(r'[^A-Za-z0-9_.-]', '_', as_str(toolName or '').strip()) or 'tool'
+    return f'{SPILL_FILE_DIR}/{safe}/{seq:04d}-{safeTool}.txt'
+
+
+def _splitSpillPreview(text: str) -> tuple[str, str, int]:
+    """Head/tail preview within the char+line budgets (stage B).
+
+    Works in code points and never splits a surrogate pair: a dangling high
+    surrogate at the head cut (or low surrogate at the tail cut) is dropped.
+    Returns ``(head, tail, omittedChars)``.
+    """
+    head = text[:_SPILL_HEAD_CHARS]
+    headLines = head.split('\n')
+    if len(headLines) > _SPILL_HEAD_LINES:
+        head = '\n'.join(headLines[:_SPILL_HEAD_LINES])
+    tail = text[-_SPILL_TAIL_CHARS:]
+    tailLines = tail.split('\n')
+    if len(tailLines) > _SPILL_TAIL_LINES:
+        tail = '\n'.join(tailLines[-_SPILL_TAIL_LINES:])
+    if head and '\ud800' <= head[-1] <= '\udbff':
+        head = head[:-1]
+    if tail and '\udc00' <= tail[0] <= '\udfff':
+        tail = tail[1:]
+    omitted = len(text) - len(head) - len(tail)
+    return head, tail, omitted
+
+
+def _spillToolResult(session: WorkbenchSession, toolName: str, result: str) -> str | None:
+    """Stage B: spill an oversized fresh result to a session-scoped file.
+
+    Returns the inline replacement (head/tail preview + one notice line with
+    the omitted byte count, the storage locator, and a retrieval hint), or
+    None when spilling is not possible (no workspace, write failure) so the
+    caller falls through to ordinary truncation.
+    """
+    workspace = as_str(getattr(session, 'workspacePath', None) or '').strip()
+    if not workspace:
+        return None
+    try:
+        seq = int(getattr(session, '_spillSeq', 0) or 0) + 1
+        relPath = spill_file_relpath(as_str(getattr(session, 'id', '') or ''), seq, toolName)
+        absPath = os.path.normpath(os.path.join(workspace, *relPath.split('/')))
+        os.makedirs(os.path.dirname(absPath), exist_ok=True)
+        with open(absPath, 'w', encoding='utf-8', errors='replace', newline='') as f:
+            f.write(result)
+        session._spillSeq = seq  # type: ignore[attr-defined]
+    except OSError:
+        logger.debug('tool-result spill failed session=%s tool=%s', getattr(session, 'id', ''), toolName, exc_info=True)
+        return None
+    head, tail, omitted = _splitSpillPreview(result)
+    notice = (
+        f'[... {omitted} characters omitted — full output stored at {relPath}. '
+        'Retrieve it with read_file on that path, or delegate scanning it to an explore subagent.]'
+    )
+    return f'{head}\n{notice}\n{tail}'
 
 
 # Auto-recall probe verbs: messages that reach into the past should trigger
@@ -331,6 +469,46 @@ def _isContextOverflowError(response: dict[str, object]) -> bool:
     """True when the failure is a context-window overflow (promotable)."""
     msg = as_str(response.get('error')).lower()
     return any((marker in msg for marker in _CONTEXT_OVERFLOW_MARKERS))
+
+
+async def _reactiveContextReduction(
+    messages: list[dict[str, object]], contextWindow: int, session: WorkbenchSession
+) -> list[dict[str, object]] | None:
+    """Reactive prune-then-compact (§9.3 #2) for a context-overflow error.
+
+    Runs the same reduction as pre-turn (projection prune, then summarize
+    with the token-budgeted verbatim tail) and returns the reduced list only
+    when the surface actually advanced (token count dropped). None means the
+    caller should fall through to context promotion / the fallback chain.
+    The reduced transcript gets the plan-state block re-injected (T7
+    mid-turn policy) so orientation survives the rewrite.
+    """
+    from app.providers.clients.base import estimateTokens
+    from app.services.workbench.context_compressor import compressMessages, pruneToolOutputs
+
+    before = estimateTokens(messages)
+    try:
+        reduced = pruneToolOutputs(messages)
+        threshold = max(4096, int(contextWindow * 0.55)) if contextWindow else before - 1
+        reduced = await compressMessages(
+            reduced,
+            threshold=threshold,
+            head_count=4,
+            tail_count=6,
+            contextWindow=contextWindow or None,
+            goalHint=as_str(getattr(session, 'goal', '') or ''),
+            schema=True,
+            pin_predicates=[_is_update_state_transition, _is_failing_receipt],
+        )
+        reduced = _injectPlanState(reduced, session)
+    except Exception:
+        logger.debug('reactive context reduction failed', exc_info=True)
+        return None
+    after = estimateTokens(reduced)
+    if after >= before:
+        return None
+    logger.info('workbench reactive context reduction: %d→%d tokens', before, after)
+    return reduced
 
 
 def _chatFallbackChain() -> list[str]:
@@ -582,6 +760,30 @@ _harness_guide_cache: dict[str, str] = {}
 _caps_block_cache: dict[str, str] = {}
 
 
+def clear_skill_prompt_caches() -> None:
+    """Single entry point that clears every skill-derived prompt cache
+    (M6 item 2): the ``<capabilities>`` block memo, the inlined harness
+    guide, the prompt-segments cache and the Tier 1/2 prompt cache. Called
+    by ``skill_service._bust_prompt_skills_cache`` on any skill mutation —
+    previously each layer was busted separately and some were missed, so a
+    disabled skill kept leaking into prompts until restart.
+    """
+    _harness_guide_cache.clear()
+    _caps_block_cache.clear()
+    try:
+        from app.services.workbench import prompt_segments_cache
+
+        prompt_segments_cache.clear()
+    except Exception:
+        pass
+    try:
+        from app.services.workbench.prompt_cache import getCache
+
+        getCache().clear()
+    except Exception:
+        pass
+
+
 def _harness_guide_text() -> str:
     """Inlined bodies of the two built-in harness skills (memoized)."""
     if 'text' not in _harness_guide_cache:
@@ -614,13 +816,11 @@ def buildSystemPrompt(
     tools) so the model can answer "what did you receive?" precisely
     instead of guessing.
     """
-    from app.services.harness_mode import is_benchmark_mode
     from app.services.workbench import prompt_segments_cache as _seg_cache
 
     session._last_recalled_memories = None
     session._last_context_snapshot = None
     is_worker = int(getattr(session, 'subagent_depth', 0) or 0) > 0
-    is_benchmark = is_benchmark_mode(session)
 
     if tools is None:
         tools = toolDefinitions(session)
@@ -648,11 +848,13 @@ def buildSystemPrompt(
         try:
             from app.services import aug_directive_service
 
-            loaded = aug_directive_service.load(workspacePath)
+            # T6: layered load — global → git-root→cwd walk, override wins,
+            # 32 KiB cap (least-specific layers dropped first).
+            loaded = aug_directive_service.load_layered(workspacePath)
             if loaded and loaded.get('body'):
                 augMdBody = as_str(loaded.get('body', ''))
         except Exception:
-            logger.debug('prompt: AUG.md load failed', exc_info=True)
+            logger.debug('prompt: AGENTS.md layered load failed', exc_info=True)
 
     # Identity = the model the user actually picked, not a product persona.
     modelName = _modelDisplayName(as_str(getattr(session, 'model', ''), ''))
@@ -668,6 +870,31 @@ def buildSystemPrompt(
         '- Never invent file contents or command output.\n'
         '</core>'
     ]
+    # §9.3 #5: the model's OWN pre-completion checklist — a self-check
+    # against the original instruction, never a critic gate (verifier gate
+    # removed 2026-08-24; nothing withholds the answer).
+    if offeredTools:
+        parts.append(
+            '<completion_checklist>\n'
+            'Before declaring work complete, check it yourself:\n'
+            '1. Re-read the original instruction — every asked item is done, or you say what is not.\n'
+            '2. Verification actually ran (tests/build/lint for the change) and you report its real result — failures included.\n'
+            '3. No placeholders, stubs, or leftover TODOs in the files you changed.\n'
+            '4. Error paths and edge cases of the change are considered.\n'
+            '5. Your final message states the outcome with evidence (commands, exit codes, test counts).\n'
+            'This is your own checklist — no other gate stands between you and your answer.\n'
+            '</completion_checklist>'
+        )
+    # §9.3 #6: per-model-family prompt variant (short framing block keyed by
+    # the model id family; unknown families get nothing).
+    try:
+        from app.services.workbench.prompt_variants import family_prompt_variant
+
+        familyVariant = family_prompt_variant(as_str(getattr(session, 'model', ''), ''))
+        if familyVariant:
+            parts.append(familyVariant)
+    except Exception:
+        logger.debug('prompt: family variant lookup failed', exc_info=True)
     # Intake manifest: enumerate exactly what this context carries so the
     # model can answer "what did you receive at the start?" precisely —
     # the way strong assistants self-describe their intake.
@@ -704,7 +931,9 @@ def buildSystemPrompt(
         (
             f'- Workspace: {workspacePath}'
             + (f' · git: {vcsInfo}' if vcsInfo else '')
-            + (' · recent commits listed in <workspace>.' if whatsNew else '.')
+            + ' · file map'
+            + (' + recent commits' if whatsNew else '')
+            + ' in <workspace>.'
             if workspacePath
             else '- Workspace: none open (file tools bind to the system temp area).'
         ),
@@ -712,8 +941,8 @@ def buildSystemPrompt(
     ]
     if memoryTools:
         storeHint = (
-            'stores: facts=user-stated facts, memory=kv notes, timeline=episodic, '
-            'sessions=past chats, autoMemories=legacy captures, heuristics=legacy rules (read-only).'
+            'stores: facts=durable memory (titled entries), memory=kv notes, timeline=episodic, '
+            'sessions=past chats, heuristics=legacy rules (deletable, no writer).'
         )
         memParts = [
             '- Memory: durable memory is pull-on-demand via ' + ', '.join(memoryTools) + '. ' + storeHint
@@ -731,14 +960,14 @@ def buildSystemPrompt(
             for ln in memIdx.splitlines():
                 memParts.append('  ' + ln)
         intake.append('\n'.join(memParts))
-    if skillsLine and not is_benchmark:
+    if skillsLine:
         intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
     intake.append(f'- Date: {nowLabel} — treat as today.')
     if tool_names:
         intake.append(f'- Tools: {len(tool_names)} registered this turn (details in <capabilities>).')
     intake.append('</intake>')
     parts.append('\n'.join(intake))
-    if not is_worker and not is_benchmark:
+    if not is_worker:
         guide = _harness_guide_text()
         if guide:
             parts.append(f'<harness_guide>\n{guide}\n</harness_guide>')
@@ -748,6 +977,18 @@ def buildSystemPrompt(
             ws.append(f'vcs: {vcsInfo}')
         if whatsNew:
             ws.append(whatsNew)
+        # Environment bootstrapping (§9.3 #4 + T10 step 1): the workdir
+        # file map rides in the first prompt so the model navigates by map
+        # instead of spending 2–5 exploration turns guessing paths.
+        try:
+            from app.services.workbench.code_map import build_code_map
+
+            codeMap = build_code_map(workspacePath)
+            if codeMap:
+                ws.append('map: |')
+                ws.extend('  ' + ln for ln in codeMap.splitlines())
+        except Exception:
+            logger.debug('prompt: code map build failed', exc_info=True)
         ws.append('</workspace>')
         parts.append('\n'.join(ws))
         if augMdBody:
@@ -805,7 +1046,7 @@ def buildSystemPrompt(
                 parts.append(f'<agent>\n{agentContext}\n</agent>')
         except Exception:
             logger.debug('prompt: agent context failed', exc_info=True)
-    if not is_benchmark and tool_names:
+    if tool_names:
         capsKey = '\n'.join(sorted(tool_names))
         caps = _caps_block_cache.get(capsKey)
         if caps is None:
@@ -847,6 +1088,16 @@ def buildSystemPrompt(
             memWritesOn = True
         if memWritesOn:
             parts.append(_seg_cache.MEMORY_BLOCK)
+    # T15 versioned refine store: active prompt-note/memory entries ride along
+    # as ADDITIONAL context — the immutable base system prompt is never edited.
+    try:
+        from app.services.refine_store import render_refinements_block
+
+        refinements = render_refinements_block(session.id)
+        if refinements:
+            parts.append(refinements)
+    except Exception:
+        logger.debug('prompt: refine store block failed', exc_info=True)
     return '\n\n'.join(p for p in parts if p)
 
 
@@ -930,6 +1181,135 @@ def _is_failing_receipt(msg: dict[str, object]) -> bool:
     if 'failed' in lower or 'error:' in lower:
         return True
     return bool(re.search(r'exit code:\s*[1-9]\d*', lower))
+
+
+def _planStateBlock(session: WorkbenchSession) -> str:
+    """Compact plan/todo state block for re-injection (T7, ~50–150 tokens).
+
+    Plan/todo state lives on the session, outside the transcript, so it
+    survives compaction by construction. Pre-turn it is carried by the
+    <session> block in the system prompt (pre-turn defer); mid-turn the
+    system text was built at turn start and goes stale the moment
+    update_state / submit_todos / submit_plan run — so their receipts
+    re-inject this block, and a post-compaction transcript gets it back
+    via ``_injectPlanState``.
+    """
+    lines: list[str] = []
+    goal = as_str(getattr(session, 'goal', '') or '').strip()
+    if goal:
+        lines.append(f'goal: {" ".join(goal.split())[:300]}')
+    plan = getattr(session, 'plan', None)
+    if isinstance(plan, dict) and plan:
+        status = 'approved' if getattr(session, 'planApproved', False) else 'pending'
+        md = as_str(plan.get('markdown') or '').strip()
+        if md:
+            first = next((ln.strip() for ln in md.splitlines() if ln.strip()), '')
+            first = first.lstrip('#').strip()
+            path = as_str(plan.get('planPath') or '')
+            line = f'plan: {status}'
+            if first:
+                line += f' — {first[:120]}'
+            if path:
+                line += f' ({path})'
+            lines.append(line)
+        else:
+            steps = plan.get('steps') or plan.get('plan') or []
+            if isinstance(steps, list) and steps:
+                doneCount = 0
+                current = ''
+                for st in steps:
+                    if isinstance(st, dict):
+                        text = as_str(st.get('text') or st.get('title') or st.get('content') or '')
+                        isDone = bool(st.get('done')) or as_str(st.get('status') or '').lower() in (
+                            'done',
+                            'completed',
+                            'complete',
+                        )
+                    else:
+                        text, isDone = str(st), False
+                    if isDone:
+                        doneCount += 1
+                    elif not current:
+                        current = text
+                line = f'plan: {status} — {doneCount}/{len(steps)} steps done'
+                if current:
+                    line += f', current: {" ".join(current.split())[:120]}'
+                lines.append(line)
+    execState = getattr(session, '_execution_state', None)
+    if isinstance(execState, dict) and execState:
+        phase = as_str(execState.get('phase') or '')
+        if phase:
+            seg = f'execution: phase={phase}'
+            step = execState.get('step')
+            if step:
+                seg += f' step={step}'
+            completed = execState.get('completed') or []
+            blockers = execState.get('blockers') or []
+            if isinstance(completed, list) and completed:
+                seg += f' completed={len(completed)}'
+            if isinstance(blockers, list) and blockers:
+                seg += f' blockers={len(blockers)}'
+            lines.append(seg)
+    todos = getattr(session, 'todos', None)
+    if isinstance(todos, list) and todos:
+        doneCount = 0
+        nextText = ''
+        for t in todos:
+            if isinstance(t, dict):
+                isDone = bool(t.get('done')) or as_str(t.get('status') or '').lower() in (
+                    'done',
+                    'completed',
+                    'complete',
+                )
+                text = as_str(t.get('content') or t.get('text') or t.get('title') or '')
+            else:
+                isDone, text = False, str(t)
+            if isDone:
+                doneCount += 1
+            elif not nextText:
+                nextText = text
+        seg = f'todos: {doneCount}/{len(todos)} done'
+        if nextText:
+            seg += f' — next: {" ".join(nextText.split())[:120]}'
+        lines.append(seg)
+    if not lines:
+        return ''
+    return '<plan_state>\n' + '\n'.join(lines) + '\n</plan_state>'
+
+
+def _injectPlanState(
+    messages: list[dict[str, object]], session: WorkbenchSession
+) -> list[dict[str, object]]:
+    """Re-inject the plan-state block into a compacted transcript (T7).
+
+    Mid-turn re-injection policy (Q15: always inject): the block is inserted
+    right after the compressed-summary message — i.e. above the preserved
+    tail and the last user message — so the model re-orientates before the
+    recent rounds. Without a summary (no compaction marker found) it goes
+    above the last user message. User role: a mid-transcript ``system``
+    message breaks the Anthropic wire format. Pre-turn needs no transcript
+    copy — the system prompt's <session> block is rebuilt every turn.
+    """
+    from app.services.workbench.context_compressor import _isSummaryMessage
+
+    block = _planStateBlock(session)
+    if not block:
+        return messages
+    out = list(messages)
+    insertAt = -1
+    for i, m in enumerate(out):
+        if _isSummaryMessage(m):
+            insertAt = i + 1
+            break
+    if insertAt < 0:
+        for i in range(len(out) - 1, -1, -1):
+            if out[i].get('role') == 'user':
+                insertAt = i
+                break
+    if insertAt < 0:
+        insertAt = len(out)
+    out.insert(insertAt, {'role': 'user', 'content': block})
+    return out
 
 
 # ── Auto-applied capability profiles (A5, opt-in AUGUST_AUTO_PROFILE=1) ──
@@ -1137,16 +1517,12 @@ def _finalize_session_tools(
 ) -> list[dict[str, object]]:
     tools = _applyModelCapabilityProfile(session, tools)
     from app.services.harness_mode import (
-        filter_benchmark_tools,
         filter_planner_tools,
-        is_benchmark_mode,
         is_orchestrator_mode,
     )
 
     if is_orchestrator_mode(session):
         return filter_planner_tools(tools)
-    if is_benchmark_mode(session):
-        return filter_benchmark_tools(session, tools)
     return tools
 
 
@@ -1639,7 +2015,14 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
     writes it under ``<workspace>/.aug/code_runs/`` and runs it through the
     existing sandboxed ``run_command`` machinery (same policy / approvals as
     any shell command). Returns None when the text has no fenced block.
+
+    T13: cells in the same session run strictly sequentially (a per-session
+    lock); the child gets a one-shot tool-bridge token + a kernel dir for
+    persistent variables, and uses the pre-seeded venv interpreter if one is
+    provisioned for the workspace.
     """
+    from app.services.workbench import kernel as _kernel
+
     try:
         from app.services.workbench.code_runner import (
             build_runner_source,
@@ -1653,23 +2036,43 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
         if block is None:
             return None
         ws = as_str(getattr(session, 'workspacePath', '') or '')
-        _run_dir, path = runner_path(ws, session.id, toolRound)
-        with open(path, 'w', encoding='utf-8') as f:
-            # The session's sandbox mode is rendered into the runner preamble
-            # (read-only denies write_file/run_command inside the child).
-            f.write(
-                build_runner_source(
-                    block,
-                    ws,
-                    sandbox_mode=as_str(getattr(session, 'sandboxMode', '') or ''),
+        # Strictly sequential: cells in one session never interleave.
+        lock = _kernel.session_kernel_lock(session.id)
+        async with lock:
+            _run_dir, path = runner_path(ws, session.id, toolRound)
+            kernel_directory = _kernel.kernel_dir(ws, session.id)
+            bridge_token = _kernel.issue_bridge_token(session.id)
+            bridge_url = ''
+            try:
+                from app.config import settings as _settings
+
+                bridge_url = f'http://127.0.0.1:{int(getattr(_settings, "port", 8085))}/api/workbench/code-bridge'
+            except Exception:
+                bridge_url = ''
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    # The session's sandbox mode is rendered into the runner
+                    # preamble (read-only denies write_file/run_command inside
+                    # the child); bridge + kernel dir wire T13.
+                    f.write(
+                        build_runner_source(
+                            block,
+                            ws,
+                            sandbox_mode=as_str(getattr(session, 'sandboxMode', '') or ''),
+                            bridge_url=bridge_url,
+                            bridge_token=bridge_token,
+                            kernel_dir=kernel_directory,
+                        )
+                    )
+                interpreter = _kernel.venv_python(ws) or ''
+                result = await _executeTool(
+                    'run_command',
+                    {'command': runner_command(path, interpreter), 'timeout': _CODE_RUN_TIMEOUT_S},
+                    session,
                 )
-            )
-        result = await _executeTool(
-            'run_command',
-            {'command': runner_command(path), 'timeout': _CODE_RUN_TIMEOUT_S},
-            session,
-        )
-        return format_result(result)
+                return format_result(result)
+            finally:
+                _kernel.revoke_bridge_token(bridge_token)
     except Exception as exc:
         logger.debug('code-mode run failed', exc_info=True)
         return f'Error running code block: {exc}'
@@ -1808,8 +2211,32 @@ async def _sendWorkbenchMessageStreamImpl(
         return
     session.messages.append({'role': 'user', 'content': message})
     session.messageCount += 1
-    # Title is generated after the first assistant reply (see schedule_auto_title
-    # below) — do not stamp the raw first user message into the sidebar.
+    # T16(a): a new user message resets within-run loop reminders; the past
+    # turn's calls stay known so cross-turn repeats get nudged, then broken.
+    try:
+        tracker = getattr(session, '_tool_tracker', None)
+        if tracker is not None:
+            tracker.record_user_message()
+    except Exception:
+        logger.debug('tool tracker user-message reset failed', exc_info=True)
+    # M7 item 1: immediate snippet title — the FIRST user message renames the
+    # 'New chat' placeholder synchronously instead of waiting for turn end.
+    # Slash commands derive no snippet, so they keep the placeholder until
+    # the LLM titler runs (schedule_auto_title_after_turn below), which may
+    # also upgrade a snippet title once the first assistant reply lands.
+    try:
+        from app.services.workbench.sessions import (
+            derive_title_from_message,
+            is_placeholder_title,
+            rename_workbench_session,
+        )
+
+        if is_placeholder_title(getattr(session, 'title', None)):
+            _snippetTitle = derive_title_from_message(message)
+            if _snippetTitle:
+                rename_workbench_session(sessionId, _snippetTitle)
+    except Exception:
+        logger.warning('immediate snippet title failed for %s', sessionId, exc_info=True)
     effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
     # Persist so later turns / BTW inherit the composer effort selection.
     session.metadata['effort'] = effectiveEffort
@@ -2019,13 +2446,6 @@ async def _sendWorkbenchMessageStreamImpl(
                 'steer. Switch set_agent_mode(mode="agent") to act in this session.\n'
                 '</agent_mode>'
             )
-        elif agentMode == 'benchmark':
-            text = (
-                f'{text}\n\n<agent_mode>\n'
-                'You are in BENCHMARK MODE: minimal tool surface for raw capability evaluation. '
-                'Use run_command and edit_lines to solve the task. No extra scaffolding.\n'
-                '</agent_mode>'
-            )
         return text
 
     with _trace.span('prompt_build'):
@@ -2058,9 +2478,19 @@ async def _sendWorkbenchMessageStreamImpl(
     # D8: which model actually answered when a fallback/promotion switch
     # happened — surfaced in the done event as usedFallback.
     chainUsedAt: str | None = None
+    # Context window is also needed by the reactive overflow reduction inside
+    # the tool loop — resolve it once here (0 = unknown → reduction skips).
+    contextWindow = 0
     try:
         from app.providers.clients.base import estimateTokens
-        from app.services.workbench.context_compressor import compressMessages, isFeatureEnabled
+        from app.services.workbench.context_compressor import (
+            acquireCompactionLock,
+            compressMessages,
+            isFeatureEnabled,
+            noteCompactionPhase,
+            pruneToolOutputs,
+            releaseCompactionLock,
+        )
 
         if isFeatureEnabled():
             contextWindow = _resolveModelContextWindow(resolvedModel, resolvedProvider)
@@ -2081,72 +2511,118 @@ async def _sendWorkbenchMessageStreamImpl(
             # Compress toward ~55% of the real window so the next turn has headroom.
             threshold = max(4096, int(contextWindow * 0.55))
             currentMessages = list(session.messages)
+            # Tier (a) projection prune (§9.3 #2): old tool outputs are blanked
+            # in the model-facing projection only — session.messages stays
+            # untouched unless compaction below persists the reduced list.
+            currentMessages = pruneToolOutputs(currentMessages)
             if _shouldAutoCompact(attentionPressure, turnsSinceCompaction, remainingTokens):
-                try:
-                    from app.services.transcript_archive import archive_messages
-
-                    archive_messages(sessionId, currentMessages, reason='auto-compact')
-                except Exception:
-                    logger.debug('transcript archive failed', exc_info=True)
-                summarizer = None
-                try:
-                    from app.services.cognitive_config import get_features
-                    from app.services.workbench.providers import make_compactor_llm_client
-
-                    if get_features().get('llm_compactor', False):
-                        summarizer = make_compactor_llm_client(resolvedProvider, resolvedModel)
-                except Exception:
-                    summarizer = None
-                compressed = await compressMessages(
-                    currentMessages,
-                    threshold=threshold,
-                    head_count=4,
-                    tail_count=6,
-                    summarizer=summarizer,
-                    # Landmark pins (P4): the latest update_state transition
-                    # and failing verification receipts survive the middle
-                    # summary verbatim — a summary can drop the only mention
-                    # of a phase/step or an error string the model still needs.
-                    pin_predicates=[_is_update_state_transition, _is_failing_receipt],
-                )
-                compressedTokens = estimateTokens(compressed)
-                if compressedTokens < originalTokens:
-                    compressedCount = len(currentMessages) - len(compressed)
-                    currentMessages = compressed
-                    # Persist so later turns / reload don't re-send the bloated history.
-                    session.messages = list(compressed)
-                    session.messageCount = len(session.messages)
-                    session._last_compaction_turn = currentTurn
+                if not acquireCompactionLock(session):
+                    logger.info('workbench auto-compact skipped — compaction lock held session=%s', sessionId)
+                else:
                     try:
-                        saveSessions()
+                        from app.services.transcript_archive import archive_messages
+
+                        archive_messages(sessionId, currentMessages, reason='auto-compact')
                     except Exception:
-                        logger.exception('workbench save_sessions failed after auto-compact')
-                    if emit:
-                        emit(
-                            {
-                                'type': 'compaction',
-                                'originalTokens': originalTokens,
-                                'compressedTokens': compressedTokens,
-                                'compressedCount': compressedCount,
-                                'headCount': 4,
-                                'tailCount': 6,
-                                'threshold': threshold,
-                                'contextWindow': contextWindow,
-                                'underThreshold': False,
-                            }
-                        )
-                    logger.info(
-                        'workbench auto-compact session=%s tokens=%d→%d ratio=%.2f window=%d',
-                        sessionId,
-                        originalTokens,
-                        compressedTokens,
-                        ratio,
-                        contextWindow,
+                        logger.debug('transcript archive failed', exc_info=True)
+                    summarizer = None
+                    try:
+                        from app.services.cognitive_config import get_features
+                        from app.services.workbench.providers import make_compactor_llm_client
+
+                        if get_features().get('llm_compactor', False):
+                            summarizer = make_compactor_llm_client(resolvedProvider, resolvedModel)
+                    except Exception:
+                        summarizer = None
+                    noteCompactionPhase(session, 'summary')
+                    compressed = await compressMessages(
+                        currentMessages,
+                        threshold=threshold,
+                        head_count=4,
+                        tail_count=6,
+                        summarizer=summarizer,
+                        # Landmark pins (P4): the latest update_state transition
+                        # and failing verification receipts survive the middle
+                        # summary verbatim — a summary can drop the only mention
+                        # of a phase/step or an error string the model still needs.
+                        pin_predicates=[_is_update_state_transition, _is_failing_receipt],
+                        # Prune-then-compact (§9.3 #2): token-budgeted verbatim
+                        # tail (retain 0.16 × window) + fixed markdown schema
+                        # carrying the file ledger across compactions.
+                        contextWindow=contextWindow or None,
+                        goalHint=as_str(getattr(session, 'goal', '') or ''),
+                        schema=summarizer is None,
                     )
+                    compressedTokens = estimateTokens(compressed)
+                    if compressedTokens < originalTokens:
+                        compressedCount = len(currentMessages) - len(compressed)
+                        currentMessages = compressed
+                        # Persist so later turns / reload don't re-send the bloated history.
+                        session.messages = list(compressed)
+                        session.messageCount = len(session.messages)
+                        session._last_compaction_turn = currentTurn
+                        try:
+                            saveSessions()
+                        except Exception:
+                            logger.exception('workbench save_sessions failed after auto-compact')
+                        if emit:
+                            emit(
+                                {
+                                    'type': 'compaction',
+                                    'originalTokens': originalTokens,
+                                    'compressedTokens': compressedTokens,
+                                    'compressedCount': compressedCount,
+                                    'headCount': 4,
+                                    'tailCount': 6,
+                                    'threshold': threshold,
+                                    'contextWindow': contextWindow,
+                                    'underThreshold': False,
+                                }
+                            )
+                        logger.info(
+                            'workbench auto-compact session=%s tokens=%d→%d ratio=%.2f window=%d',
+                            sessionId,
+                            originalTokens,
+                            compressedTokens,
+                            ratio,
+                            contextWindow,
+                        )
+                    releaseCompactionLock(session)
         else:
             currentMessages = list(session.messages)
     except Exception:
         currentMessages = list(session.messages)
+    # M3 memory injection (plan §3.4) + Tier-3 <relevant_skills> (M6 item 6):
+    # BM25-retrieve the facts and skill descriptions relevant to the current
+    # user message and append them to it — the tail of the turn context.
+    # Working-copy only (never persisted, never in the system prompt) so the
+    # provider prefix cache stays stable (Q14).
+    try:
+        from app.services.capabilities_prompt import build_relevant_skills_block
+        from app.services.memory_store.fact_retrieval import build_memory_block
+
+        _lastUserIdx = next(
+            (
+                i
+                for i in range(len(currentMessages) - 1, -1, -1)
+                if isinstance(currentMessages[i], dict) and currentMessages[i].get('role') == 'user'
+            ),
+            None,
+        )
+        if _lastUserIdx is not None:
+            _userMsg = currentMessages[_lastUserIdx]
+            _userText = as_str(_userMsg.get('content'), '')
+            _memoryBlock, _injectedFacts = build_memory_block(_userText)
+            _skillsBlock = build_relevant_skills_block(_userText)
+            _tailBlocks = '\n\n'.join(b for b in (_memoryBlock, _skillsBlock) if b)
+            if _tailBlocks:
+                _patched = dict(_userMsg)
+                _patched['content'] = f'{_userText}\n\n{_tailBlocks}'
+                currentMessages[_lastUserIdx] = _patched
+            if _memoryBlock:
+                session._injected_facts = _injectedFacts
+    except Exception:
+        logger.debug('M3 memory injection failed', exc_info=True)
     # Context pressure event (context UX): one emit per turn so the UI can
     # show a live server-accurate meter / "compact now" affordance. Cheap —
     # token estimation is cached-ish and this is one SSE event per turn.
@@ -2203,6 +2679,9 @@ async def _sendWorkbenchMessageStreamImpl(
     # still runs (to flush usage/evidence), and routing evidence must record
     # ok=False for error turns, not a hardcoded win.
     turnError: str | None = None
+    # M5 turn telemetry: wall-clock start of this turn (finally block writes
+    # one structured turn_outcomes row with it).
+    _turnStartMs = int(time.time() * 1000)
     managedToolLoopCap = _managedToolLoopCap()
     # Trace-store bookkeeping: tool names dispatched this turn + self-heal
     # counters (recorded with the turn trace for replay/drift analysis).
@@ -2242,8 +2721,25 @@ async def _sendWorkbenchMessageStreamImpl(
                 return
         except Exception:
             logger.debug('cost ceiling check failed', exc_info=True)
+    # §9.3 #7: baseline shadow-git snapshot at turn start — revert targets
+    # need the state from BEFORE the turn's first mutation. Best-effort:
+    # no git or no workspace silently skips; never blocks the turn.
+    if getattr(session, 'workspacePath', ''):
+        try:
+            from app.services.workbench import shadow_git as _shadow_git
+
+            _shadow_git.commit_snapshot(
+                session.id, session.workspacePath, f'turn {session.turnCount + 1} start'
+            )
+        except Exception:
+            logger.debug('shadow-git turn baseline failed', exc_info=True)
     while True:
         toolRound += 1
+        mutationsBeforeRound = getattr(session, 'mutationCount', 0)
+        # Reactive prune-then-compact (§9.3 #2) may shrink the surface once
+        # per round on a context-overflow error; the flag keeps it from
+        # ping-ponging against a surface that refuses to shrink.
+        overflowReducedThisRound = False
         if managedToolLoopCap > 0 and toolRound > managedToolLoopCap:
             msg = (
                 f'Tool loop exceeded maxWorkbenchToolLoops ({managedToolLoopCap}); '
@@ -2308,6 +2804,12 @@ async def _sendWorkbenchMessageStreamImpl(
             if queued:
                 logger.debug('workbench round %d: injecting %d queued user message(s)', toolRound, len(queued))
                 currentMessages.append(_formatQueuedMessagesAsUserTurn(queued))
+                try:
+                    tracker = getattr(session, '_tool_tracker', None)
+                    if tracker is not None:
+                        tracker.record_user_message()
+                except Exception:
+                    logger.debug('tool tracker user-message reset failed', exc_info=True)
         logger.debug(
             'workbench round %d start (model=%s, in=%d, out=%d)',
             toolRound,
@@ -2355,6 +2857,21 @@ async def _sendWorkbenchMessageStreamImpl(
                         }
                     )
             response: dict[str, object] = {}
+            # T18 barrier 1: durable flush before the model request is
+            # dispatched — fail-closed: a flush failure aborts the turn
+            # rather than letting trajectory state silently diverge.
+            flushOk, flushErr = _flushSessionBarrier(
+                session, _BARRIER_MODEL_DISPATCH, currentMessages
+            )
+            if not flushOk:
+                msg = f'Session durability flush failed before model dispatch: {flushErr}'
+                logger.error('workbench %s', msg)
+                if emit:
+                    emit(
+                        {'type': 'error', 'message': msg, 'code': 'durability_flush_failed'}
+                    )
+                turnError = turnError or msg
+                break
             for retryAttempt in range(retryPolicy['maxRetries'] + 1):
                 _llmT0 = time.monotonic()
                 # Stream text live: per-delta finalOutput/thinking events go
@@ -2413,6 +2930,42 @@ async def _sendWorkbenchMessageStreamImpl(
                 # instead of killing the turn — up to maxRetries, then surface the
                 # error as before.
                 if not _isRetryableModelError(response):
+                    # Reactive prune-then-compact (§9.3 #2): a context
+                    # overflow is deterministic for THIS surface, but a
+                    # reduced surface is a different request — shrink once
+                    # per round and retry only if the token count actually
+                    # dropped ("the surface advanced"). Otherwise fall
+                    # through to context promotion / the fallback chain.
+                    if (
+                        _isContextOverflowError(response)
+                        and not overflowReducedThisRound
+                        and not _isCancelled()
+                        and retryAttempt < retryPolicy['maxRetries']
+                    ):
+                        overflowReducedThisRound = True
+                        reduced = await _reactiveContextReduction(currentMessages, contextWindow, session)
+                        if reduced is not None:
+                            from app.providers.clients.base import estimateTokens as _estTok
+
+                            beforeTokens = _estTok(currentMessages)
+                            currentMessages = reduced
+                            afterTokens = _estTok(currentMessages)
+                            logger.warning(
+                                'workbench context overflow — reduced surface %d→%d tokens, retrying',
+                                beforeTokens,
+                                afterTokens,
+                            )
+                            if emit:
+                                emit(
+                                    {
+                                        'type': 'warning',
+                                        'message': (
+                                            f'Context overflow — reduced context {beforeTokens}→{afterTokens} '
+                                            'tokens and retrying.'
+                                        ),
+                                    }
+                                )
+                            continue
                     break
                 if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():
                     break
@@ -2697,6 +3250,12 @@ async def _sendWorkbenchMessageStreamImpl(
             if queued:
                 logger.debug('workbench mid-response: injecting %d queued user message(s) after text turn', len(queued))
                 currentMessages.append(_formatQueuedMessagesAsUserTurn(queued))
+                try:
+                    tracker = getattr(session, '_tool_tracker', None)
+                    if tracker is not None:
+                        tracker.record_user_message()
+                except Exception:
+                    logger.debug('tool tracker user-message reset failed', exc_info=True)
                 continue
             break
         toolResults: list[dict[str, object]] = []
@@ -2704,7 +3263,54 @@ async def _sendWorkbenchMessageStreamImpl(
         clarifySubmittedThisRound = False
         pending_regular: list[tuple[str, dict[str, object], str]] = []
         invalidThisRound = 0
+        # T2 length-stop fail-all (plan §9.4): a generation that stopped on
+        # the output token limit may carry half-parsed tool-call arguments —
+        # executing them runs truncated commands/paths. Fail every call in
+        # the batch unexecuted with a self-heal message; the model retries
+        # with a smaller step. The thinking-only truncation case is handled
+        # above; this is the tool-carrying complement.
+        lengthStopReason = as_str(response.get('stop_reason') or response.get('finish_reason'))
+        lengthStopFailAll = bool(toolUses) and lengthStopReason in ('max_tokens', 'length')
+        if lengthStopFailAll:
+            for tu in toolUses:
+                tuName = as_str(tu.get('name', ''))
+                tuId = as_str(tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}'))
+                if tuName:
+                    calledTools.add(tuName)
+                failMsg = (
+                    f"[Validation Error] '{tuName or 'tool call'}' was NOT executed: this "
+                    'generation stopped on the output token limit '
+                    f'(stop_reason={lengthStopReason}), so its tool-call arguments may be '
+                    'truncated. Do NOT stop — retry now with a smaller step: fewer tool '
+                    'calls per message and shorter arguments.'
+                )
+                toolResults.append({'tool_use_id': tuId, 'role': 'tool', 'content': failMsg})
+                if emit:
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': tuId,
+                            'name': tuName,
+                            'content': failMsg,
+                            'status': 'error',
+                            'durationMs': 0,
+                            'startedAtMs': int(time.time() * 1000),
+                            'blocked': True,
+                        }
+                    )
+            if emit:
+                emit(
+                    {
+                        'type': 'warning',
+                        'message': (
+                            f'Truncated generation (stop_reason={lengthStopReason}) — '
+                            f'{len(toolUses)} tool call(s) failed unexecuted.'
+                        ),
+                    }
+                )
         for tu in toolUses:
+            if lengthStopFailAll:
+                break
             if _isCancelled():
                 break
             toolName = as_str(tu.get('name', ''))
@@ -2731,10 +3337,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
                 continue
             from app.services.harness_mode import (
-                BENCHMARK_ALLOWED_TOOLS,
                 PLANNER_ALLOWED_TOOLS,
-                benchmark_block_message,
-                is_benchmark_mode,
                 is_orchestrator_mode,
                 planner_block_message,
             )
@@ -2756,25 +3359,6 @@ async def _sendWorkbenchMessageStreamImpl(
                     )
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
                 continue
-            if is_benchmark_mode(session) and toolName:
-                allowed_bench = set(BENCHMARK_ALLOWED_TOOLS)
-                if toolName not in allowed_bench:
-                    msg = benchmark_block_message(toolName)
-                    if emit:
-                        emit(
-                            {
-                                'type': 'toolResult',
-                                'id': toolUseId,
-                                'name': toolName,
-                                'content': msg,
-                                'status': 'done',
-                                'durationMs': 0,
-                                'startedAtMs': int(time.time() * 1000),
-                                'blocked': True,
-                            }
-                        )
-                    toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
-                    continue
             # Tool-call recovery (surpass): malformed JSON arguments must never
             # execute as an empty dict — the model would silently do the wrong
             # thing. The OpenAI path marks failures `_invalid_json`; the
@@ -2785,7 +3369,7 @@ async def _sendWorkbenchMessageStreamImpl(
             if invalidRaw:
                 parseFailures += 1
                 invalidThisRound += 1
-                if parseFailures >= 3 and emit and not is_benchmark_mode(session):
+                if parseFailures >= 3 and emit:
                     emit(
                         {
                             'type': 'warning',
@@ -2874,6 +3458,11 @@ async def _sendWorkbenchMessageStreamImpl(
                     toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
                     continue
                 submitPlan(session, planPayload)
+                # T7: re-inject the fresh state so this turn's later rounds see it.
+                receipt = 'Plan submitted. Awaiting user approval.'
+                stateBlock = _planStateBlock(session)
+                if stateBlock:
+                    receipt = receipt + '\n\n' + stateBlock
                 if emit:
                     emit({'type': 'planProposed', 'plan': session.plan})
                     emit(
@@ -2881,12 +3470,12 @@ async def _sendWorkbenchMessageStreamImpl(
                             'type': 'toolResult',
                             'id': toolUseId,
                             'name': toolName,
-                            'content': 'Plan submitted. Awaiting user approval.',
+                            'content': receipt,
                             'status': 'done',
                         }
                     )
                 toolResults.append(
-                    {'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Plan submitted. Awaiting user approval.'}
+                    {'tool_use_id': toolUseId, 'role': 'tool', 'content': receipt}
                 )
                 planSubmittedThisRound = True
                 continue
@@ -2918,6 +3507,11 @@ async def _sendWorkbenchMessageStreamImpl(
                     todosPayload = [todosPayload] if todosPayload else []
                 title = as_str(toolInput.get('title'), '')
                 submitTodos(session, cast('list[dict[str, object]]', todosPayload), title=title)
+                # T7: re-inject the fresh state so this turn's later rounds see it.
+                receipt = 'Todo list saved.'
+                stateBlock = _planStateBlock(session)
+                if stateBlock:
+                    receipt = receipt + '\n\n' + stateBlock
                 if emit:
                     emit({'type': 'todosUpdated', 'todos': session.todos})
                     emit(
@@ -2925,11 +3519,11 @@ async def _sendWorkbenchMessageStreamImpl(
                             'type': 'toolResult',
                             'id': toolUseId,
                             'name': toolName,
-                            'content': 'Todo list saved.',
+                            'content': receipt,
                             'status': 'done',
                         }
                     )
-                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Todo list saved.'})
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': receipt})
                 continue
             if toolName in ('update_todos', 'updateTodos'):
                 todosPayload = toolInput.get('todos') or toolInput.get('items') or toolInput
@@ -2937,6 +3531,11 @@ async def _sendWorkbenchMessageStreamImpl(
                     todosPayload = [todosPayload] if todosPayload else []
                 title = as_str(toolInput.get('title'), '')
                 updateTodos(session, cast('list[dict[str, object]]', todosPayload), title=title)
+                # T7: re-inject the fresh state so this turn's later rounds see it.
+                receipt = 'Todo list updated.'
+                stateBlock = _planStateBlock(session)
+                if stateBlock:
+                    receipt = receipt + '\n\n' + stateBlock
                 if emit:
                     emit({'type': 'todosUpdated', 'todos': session.todos})
                     emit(
@@ -2944,11 +3543,11 @@ async def _sendWorkbenchMessageStreamImpl(
                             'type': 'toolResult',
                             'id': toolUseId,
                             'name': toolName,
-                            'content': 'Todo list updated.',
+                            'content': receipt,
                             'status': 'done',
                         }
                     )
-                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Todo list updated.'})
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': receipt})
                 continue
             blockedReason = _checkToolGuard(session, toolName, toolInput)
             if blockedReason:
@@ -2967,6 +3566,28 @@ async def _sendWorkbenchMessageStreamImpl(
                         }
                     )
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': f'[Blocked] {blockedReason}'})
+                continue
+            # T5 approval axis (axis 2): independent of guard mode. Inert unless
+            # the user enabled an approval policy; when active it may deny, ask
+            # (queue an ApprovalBanner pending mutation), or let the command
+            # through to the real sandbox (axis 1, still ground truth).
+            approvalReceipt = _resolveCommandApproval(session, toolName, toolInput)
+            if approvalReceipt:
+                if emit:
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': approvalReceipt,
+                            'error': approvalReceipt,
+                            'status': 'blocked',
+                            'durationMs': 0,
+                            'startedAtMs': int(time.time() * 1000),
+                            'blocked': True,
+                        }
+                    )
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': approvalReceipt})
                 continue
             pending_regular.append((toolName, toolInput, toolUseId))
         # A user Stop mid-round leaves the round's tool calls without results —
@@ -2990,6 +3611,50 @@ async def _sendWorkbenchMessageStreamImpl(
                         'startedAtMs': tool_started_at,
                     }
                 )
+            # T17 read-before-edit gate: an edit on a file this session never
+            # observed (or observed at a now-stale version) fails fast with a
+            # distinct error code + remedy — before anything executes.
+            gateError = _readBeforeEditGate(session, toolName, toolInput)
+            if gateError:
+                if emit:
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': gateError,
+                            'status': 'error',
+                            'durationMs': 0,
+                            'startedAtMs': tool_started_at,
+                        }
+                    )
+                return {'tool_use_id': toolUseId, 'role': 'tool', 'content': gateError}
+            # T18 barrier 2: durable flush before a top-level tool body can
+            # side-effect — fail-closed: the tool is skipped when the flush
+            # fails. Nested calls (subagents, code runner) flush their own
+            # sessions and reuse this outer checkpoint.
+            flushOk, flushErr = _flushSessionBarrier(
+                session, _BARRIER_TOOL_SIDE_EFFECT, currentMessages
+            )
+            if not flushOk:
+                errMsg = (
+                    f'Error: durability flush failed before {toolName} ({flushErr}) — '
+                    'tool skipped to protect session integrity.'
+                )
+                logger.error('workbench %s', errMsg)
+                if emit:
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': errMsg,
+                            'status': 'error',
+                            'durationMs': 0,
+                            'startedAtMs': tool_started_at,
+                        }
+                    )
+                return {'tool_use_id': toolUseId, 'role': 'tool', 'content': errMsg}
             # Filesystem save point before mutating tools (W4 isolation)
             try:
                 if isPlanModeBlocked(toolName, toolInput):
@@ -3250,6 +3915,46 @@ async def _sendWorkbenchMessageStreamImpl(
                         result = await _executeTool(toolName, toolInput, session, toolUseId)
                 else:
                     logger.debug('tool %s raised after dispatch; not re-running', toolName, exc_info=True)
+            # T7: update_state changed plan/execution state mid-turn — the
+            # <session> block in the system text was built at turn start, so
+            # re-inject the compact state block on the receipt to keep later
+            # rounds of this same turn oriented.
+            if toolName == 'update_state' and isinstance(result, str) and result.startswith('State updated'):
+                stateBlock = _planStateBlock(session)
+                if stateBlock:
+                    result = result + '\n\n' + stateBlock
+            # T17: record what this session just observed — a successful read
+            # shows the model that file version; a successful mutation moves
+            # the file to its new version so follow-up edits pass the gate.
+            if isinstance(result, str):
+                if toolName == 'read_file':
+                    _observeReadFile(session, toolName, toolInput, result)
+                elif toolName in _GATED_EDIT_TOOLS and not result.startswith('Error:'):
+                    _observeMutatedFile(session, toolName, toolInput)
+                    # Mutation log: the regular loop executes mutations
+                    # directly (the approval path records its own), so the
+                    # count/log must be kept here too — the per-step
+                    # shadow-git snapshot below keys off this counter.
+                    try:
+                        recordMutation(session, toolName, toolInput, result)
+                    except Exception:
+                        logger.debug('mutation record failed', exc_info=True)
+            # T1/T14 post-mutation hook: after a successful edit, run the
+            # workspace lint/test gate and append the outcome to the receipt
+            # so the model sees failures immediately (bounded fix loop; the
+            # worktree-dedup gate skips re-runs when nothing changed).
+            if (
+                toolName in _EDIT_VERIFY_TOOLS
+                and isinstance(result, str)
+                and not result.startswith('Error:')
+            ):
+                try:
+                    verifyBlock = await _verifyAfterEdit(session, toolName, toolInput)
+                except Exception:
+                    logger.debug('post-edit verification hook failed', exc_info=True)
+                    verifyBlock = ''
+                if verifyBlock:
+                    result = result + '\n\n' + verifyBlock
             # Exit-code surfacing: keep a lastCommand snapshot in session
             # metadata (name/command/exit code) so the UI and subagent
             # handoffs can show what ran most recently.
@@ -3267,21 +3972,14 @@ async def _sendWorkbenchMessageStreamImpl(
                 except Exception:
                     logger.debug('last-command metadata record failed', exc_info=True)
             MAX_SSE_CONTENT = 100 * 1024
-            contentTruncated = len(result) > MAX_SSE_CONTENT
+            sseTrimmed, contentTruncated = _truncateToolOutput(result, MAX_SSE_CONTENT)
             if contentTruncated:
-                # JSON-aware truncation: cut at a newline or a JSON boundary
-                # (last ',' or '}') so the model receives a parseable fragment
-                # instead of a token cut mid-string.
-                cut = result[:MAX_SSE_CONTENT]
-                boundary = max(cut.rfind('\n'), cut.rfind('\r'))
-                if boundary <= MAX_SSE_CONTENT // 2:
-                    for ch in (',', '}'):
-                        idx = cut.rfind(ch)
-                        if idx > MAX_SSE_CONTENT // 2:
-                            boundary = idx
-                            break
-                sseContent = cut[:boundary] if boundary > 0 else cut
-                sseContent += '\n\n[... Tool result truncated at 100 KB — full length: {} bytes]'.format(len(result))
+                sseContent = (
+                    sseTrimmed
+                    + '\n\n[... Tool result truncated at 100 KB — full length: {} bytes]'.format(
+                        len(result)
+                    )
+                )
             else:
                 sseContent = result
             if emit:
@@ -3344,27 +4042,43 @@ async def _sendWorkbenchMessageStreamImpl(
                                 'status': 'success',
                             }
                         )
+                # Plan §4.3: activate the dormant memoryUpdated path — a
+                # successful `remember` renders as a subtle in-chat chip.
+                if toolName == 'remember':
+                    try:
+                        parsedMem = json.loads(result)
+                    except Exception:
+                        parsedMem = None
+                    if isinstance(parsedMem, dict) and parsedMem.get('ok') is True:
+                        label = as_str(toolInput.get('title') or '', '') or as_str(
+                            toolInput.get('fact') or '', ''
+                        )[:60]
+                        verb = 'Updated memory' if parsedMem.get('updated') else 'Remembered'
+                        emit(
+                            {
+                                'type': 'memoryUpdated',
+                                'summary': (f'{verb}: {label}'.strip() if label else 'Memory updated'),
+                                'key': as_str(parsedMem.get('key'), ''),
+                            }
+                        )
             # Truncate what the model sees next turn — SSE already truncates for the UI.
             # The cap is per-model when the capability profile sets one.
             historyContent = result
+            # Stage B first (fixed order, §9.3 #3): an oversized FRESH result
+            # spills to a session file and is replaced by a head/tail preview
+            # inside the 30 KB / 2000-line budget; the ordinary cap then
+            # applies to whatever stage B left (or to smaller results).
+            if isinstance(historyContent, str) and len(historyContent) > _SPILL_THRESHOLD_CHARS:
+                spilled = _spillToolResult(session, toolName, historyContent)
+                if spilled is not None:
+                    historyContent = spilled
             resultCap = _toolResultCap(session)
-            if len(historyContent) > resultCap:
-                # JSON-aware cut (same boundary logic as the SSE copy above):
-                # a mid-token cut would hand the model a broken JSON payload
-                # on the next round (audit finding).
-                cut = historyContent[:resultCap]
-                boundary = max(cut.rfind('\n'), cut.rfind('\r'))
-                if boundary <= resultCap // 2:
-                    for ch in (',', '}'):
-                        idx = cut.rfind(ch)
-                        if idx > resultCap // 2:
-                            boundary = idx
-                            break
-                trimmed = cut[:boundary] if boundary > 0 else cut
+            historyTrimmed, historyTruncated = _truncateToolOutput(historyContent, resultCap)
+            if historyTruncated:
                 historyContent = (
-                    trimmed
+                    historyTrimmed
                     + f'\n\n[... Tool result truncated at {resultCap // 1024} KB '
-                    f'— full length: {len(result)} bytes]'
+                    + f'— full length: {len(result)} bytes]'
                 )
             return {'tool_use_id': toolUseId, 'role': 'tool', 'content': historyContent}
 
@@ -3460,6 +4174,36 @@ async def _sendWorkbenchMessageStreamImpl(
             assistantMsg.pop('tool_calls', None)
         currentMessages.append(assistantMsg)
         currentMessages.extend(toolResults)
+        # T18 barrier 3: durable flush at the step boundary — the completed
+        # round (assistant message + tool results) is now replay-safe.
+        # Fail-closed: abort the loop rather than keep mutating state that
+        # is no longer durably recorded.
+        flushOk, flushErr = _flushSessionBarrier(
+            session, _BARRIER_STEP_BOUNDARY, currentMessages
+        )
+        if not flushOk:
+            msg = f'Session durability flush failed at step boundary: {flushErr}'
+            logger.error('workbench %s', msg)
+            if emit:
+                emit({'type': 'error', 'message': msg, 'code': 'durability_flush_failed'})
+            turnError = turnError or msg
+            break
+        # §9.3 #7: per-step shadow-git snapshot — a round that ran mutating
+        # tools commits the workspace state (rollback substrate + ChangesCard
+        # diff source). Best-effort: a snapshot failure never breaks the turn.
+        if getattr(session, 'mutationCount', 0) > mutationsBeforeRound and getattr(
+            session, 'workspacePath', ''
+        ):
+            try:
+                from app.services.workbench import shadow_git as _shadow_git
+
+                _shadow_git.commit_snapshot(
+                    session.id,
+                    session.workspacePath,
+                    f'step {toolRound}: {session.mutationCount - mutationsBeforeRound} mutation(s)',
+                )
+            except Exception:
+                logger.debug('shadow-git step snapshot failed', exc_info=True)
         if planSubmittedThisRound:
             break
         if clarifySubmittedThisRound:
@@ -3475,9 +4219,77 @@ async def _sendWorkbenchMessageStreamImpl(
         )
     except Exception:
         logger.debug('STOP hook failed (non-fatal)', exc_info=True)
+    # M3 usage feedback + M5 turn telemetry (plan §3.4/§3.6). Runs after the
+    # loop on every completed turn (error turns included — turnError is final
+    # here); best-effort, never breaks the persist path below.
+    try:
+        from app.services import turn_outcomes
+        from app.services.memory_store import touch_fact_usage
+
+        # Usage feedback: an injected fact the assistant echoed back (title or
+        # key quoted in the reply) earns a use_count bump — the retrieval
+        # boost signal. Only facts injected THIS turn are eligible.
+        injectedFacts = getattr(session, '_injected_facts', None) or []
+        if injectedFacts:
+            session._injected_facts = []
+            lastAssistantText = ''
+            for m in reversed(currentMessages):
+                if isinstance(m, dict) and m.get('role') == 'assistant':
+                    contentVal = m.get('content', '')
+                    if isinstance(contentVal, str):
+                        lastAssistantText = contentVal
+                    elif isinstance(contentVal, list):
+                        lastAssistantText = ' '.join(
+                            str(b.get('text', ''))
+                            for b in contentVal
+                            if isinstance(b, dict) and b.get('type') == 'text'
+                        )
+                    break
+            replyLower = lastAssistantText.lower()
+            if replyLower:
+                usedKeys = [
+                    key
+                    for key, title in injectedFacts
+                    if key and (key.lower() in replyLower or (len(title) >= 8 and title.lower() in replyLower))
+                ]
+                if usedKeys:
+                    touch_fact_usage(usedKeys)
+        # Telemetry: one structured row per turn, no model calls, never
+        # injected into prompts (diagnostics for Observability only).
+        _telemetryProvider = (
+            as_str(resolvedProvider.get('name') or resolvedProvider.get('id'), '')
+            if isinstance(resolvedProvider, dict)
+            else ''
+        )
+        turn_outcomes.record_turn_outcome(
+            model=resolvedModel or '',
+            provider=_telemetryProvider,
+            task_type=as_str(getattr(session, 'agent_mode', '') or 'agent'),
+            ok=turnError is None,
+            error_class=turn_outcomes.classify_error(turnError or ''),
+            duration_ms=max(0, int(time.time() * 1000) - _turnStartMs),
+            session_id=sessionId,
+        )
+        if turnError is not None:
+            # Rare promoted-lesson path (Q2): repeated failures of one
+            # signature may yield ONE reviewed, deduplicated lesson fact.
+            # Fire-and-forget — the review call must not delay the done event.
+            asyncio.create_task(
+                turn_outcomes.maybe_promote_failure_lesson(
+                    model=resolvedModel or '',
+                    provider=_telemetryProvider,
+                    error_class=turn_outcomes.classify_error(turnError),
+                    sample_error=turnError,
+                )
+            )
+    except Exception:
+        logger.debug('turn telemetry failed (non-fatal)', exc_info=True)
     try:
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
         session.messages = list(currentMessages)
+        # T18: close the turn — the persist below records turnOpen=False so a
+        # later load does not mistake this session for an orphaned open turn.
+        session.turnOpen = False
         # Persist per-turn usage on the last assistant message: the SSE done
         # event is volatile, so without this the usage chip vanished after a
         # restart (fresh load from the session blob) — audit fix.
@@ -3867,6 +4679,15 @@ def _mutation_grant_key(toolName: str, args: dict[str, object] | None) -> str:
             return f'{toolName}:{unsandboxed_grant_key(as_str(args.get("command")))}'
         except Exception:
             return f'{toolName}:sandbox:unsandboxed:*'
+    # T5: command grants are keyed by the EXACT command text (fingerprinted)
+    # so a one-shot approval covers exactly the asked action — the old
+    # 'run_command:*' fallback would have approved every later command.
+    if toolName in _COMMAND_TOOLS:
+        cmd = as_str(args.get('command'), '').strip()
+        if cmd:
+            from app.services.sandbox.runner import command_fingerprint
+
+            return f'{toolName}:cmd:{command_fingerprint(cmd)}'
     bulk_paths = _bulk_paths_from_args(args)
     if bulk_paths:
         # Grant is scoped to this exact set of targets (sorted for stability).
@@ -4037,6 +4858,37 @@ def revoke_always_grant(workspace_path: str, key: str) -> dict[str, object]:
         return {'ok': False, 'error': str(exc)}
 
 
+def get_approval_policy_config() -> dict[str, object]:
+    """The durable T5 approval policy (axis 2) for the Settings UI."""
+    from app.services.workbench.permissions import policy_from_dict
+
+    try:
+        from app.services.config_service import getConfig
+
+        cfg = getConfig() or {}
+        raw = cfg.get('approvalPolicy')
+    except Exception:
+        raw = None
+    return policy_from_dict(as_dict(raw) if raw is not None else None).to_dict()
+
+
+def set_approval_policy_config(raw: dict[str, object] | None) -> dict[str, object]:
+    """Validate + persist the durable T5 approval policy. Returns normalized form."""
+    from app.services.workbench.permissions import policy_from_dict
+
+    policy = policy_from_dict(as_dict(raw) if raw is not None else None)
+    normalized = policy.to_dict()
+    try:
+        from app.services.config_service import getConfig, saveConfig
+
+        cfg = getConfig() or {}
+        cfg['approvalPolicy'] = normalized
+        saveConfig(cfg)
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
+    return {'ok': True, 'policy': normalized}
+
+
 def has_tool_grant(session: WorkbenchSession, toolName: str, args: dict[str, object] | None) -> bool:
     """True if once/session/always grant covers this tool call (consumes once grants)."""
     key = _mutation_grant_key(toolName, args)
@@ -4080,6 +4932,103 @@ def add_tool_grant(
     _set_tool_grants(session, grants)
     if scope_n == 'always' and session.workspacePath:
         _save_always_grant(session.workspacePath, key)
+
+
+def _loadApprovalPolicy(session: WorkbenchSession) -> _ApprovalPolicy:
+    """Load the T5 approval policy: session metadata overrides global config."""
+    from app.services.workbench.permissions import policy_from_dict
+
+    meta = as_dict(session.metadata) if session.metadata else {}
+    if meta.get('approvalPolicy') is not None:
+        return policy_from_dict(as_dict(meta.get('approvalPolicy')))
+    try:
+        from app.services.config_service import getConfig
+
+        cfg = getConfig() or {}
+        if cfg.get('approvalPolicy') is not None:
+            return policy_from_dict(as_dict(cfg.get('approvalPolicy')))
+    except Exception:
+        logger.debug('approval policy config load failed', exc_info=True)
+    return policy_from_dict(None)
+
+
+def _approval_never_ask(policy: _ApprovalPolicy) -> bool:
+    """Never-ask stance: headless/unattended runs must never hang on a prompt."""
+    if policy.never_ask:
+        return True
+    if os.environ.get('AUGUST_HEADLESS', '').strip().lower() in ('1', 'true', 'yes'):
+        return True
+    try:
+        from app.services.tool_registry import isDaemonContext
+
+        if isDaemonContext():
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _resolveCommandApproval(
+    session: WorkbenchSession, toolName: str, args: dict[str, object]
+) -> str | None:
+    """T5 approval axis (axis 2) for command tools.
+
+    Returns None to proceed, or a receipt string to return to the model
+    INSTEAD of executing. The real sandbox (axis 1) stays ground truth and
+    still runs for anything approved — this layer only decides whether the
+    user must be asked first, per the durable approval policy.
+    """
+    if toolName not in _COMMAND_TOOLS:
+        return None
+    command = as_str(args.get('command'), '').strip()
+    if not command:
+        return None
+    policy = _loadApprovalPolicy(session)
+    if not policy.enabled:
+        return None
+    from app.services.workbench.permissions import decide as _perm_decide
+    from app.services.workbench.permissions import unattended_denial as _perm_unattended
+
+    requires = as_bool(args.get('requires_approval'))
+    decision = _perm_decide(
+        command, session.workspacePath or '', policy, requires_approval=requires
+    )
+    if decision.action == 'allow':
+        return None
+    if decision.action == 'deny':
+        return decision.feedback
+    # action == 'ask'
+    if _approval_never_ask(policy):
+        return _perm_unattended(command, decision)
+    # A prior one-shot/session/always grant covers exactly this command.
+    if has_tool_grant(session, toolName, args):
+        return None
+    key = _mutation_grant_key(toolName, args)
+    for pm in session.pendingMutations:
+        if not isinstance(pm, dict):
+            continue
+        if as_str(pm.get('toolName')) == toolName and _mutation_grant_key(
+            toolName, as_dict(pm.get('args'))
+        ) == key:
+            return (
+                f"Tool '{toolName}' is already waiting for the user's approval ({decision.reason}). "
+                'Do not retry until the user approves or rejects it.'
+            )
+    mutation = createPendingMutation(session, toolName, dict(args))
+    preview = _mutation_preview(toolName, args)
+    if mutation is not None:
+        mutation['preview'] = preview
+        mutation['grantKey'] = key
+        mutation['kind'] = 'approval_axis'
+        mutation['approvalReason'] = decision.reason
+        saveSessions()
+        _emitSessionStatus(session.id)
+    return (
+        f"Command requires approval: {decision.reason}. "
+        'A permission prompt was shown to the user (Accept / Reject, with once / this chat / always). '
+        'Do not retry. If the user accepts, the command will run with the proposed arguments '
+        'and you will receive the result automatically.'
+    )
 
 
 def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, object]) -> str | None:

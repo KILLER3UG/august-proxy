@@ -52,15 +52,23 @@ boolKeys: tuple[str, ...] = (
     'modelMemoryWrites',
     'memorySensitiveTopics',
     'cameraAccess',
+    'consolidationModelSummarize',
 )
-numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops', 'autoRouteMinSamples')
+numKeys: tuple[str, ...] = (
+    'maxAgentDepth',
+    'maxWorkbenchToolLoops',
+    'autoRouteMinSamples',
+    'consolidationIntervalHours',
+)
 floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap')
-allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys + floatKeys)
+strKeys: tuple[str, ...] = ('titleModel',)
+allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys + floatKeys + strKeys)
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
 minSamplesRange = (1, 20)
 minWinRateRange = (0.05, 1.0)
 winGapRange = (0.0, 0.9)
+consolidationIntervalRange = (1, 168)
 fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'),
     ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'),
@@ -93,6 +101,14 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # captured during a call are transient by default — never persisted to
     # disk beyond the call lifetime, and never written to memory stores.
     ('cameraAccess', 'camera_access', False, 'bool'),
+    # M4 consolidation v2 (plan §3.5): one scheduled job; cadence in hours,
+    # and the Q5 model-assisted merge summarization flag (default off — each
+    # merge costs one cheap-model call).
+    ('consolidationIntervalHours', 'consolidation_interval_hours', 24, 'num'),
+    ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),
+    # M7 item 3: optional cheap model for session titling. Empty string =
+    # fall back to the turn's own model (existing behavior).
+    ('titleModel', 'title_model', '', 'str'),
 )
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}
@@ -184,6 +200,11 @@ def validatePatch(patch: object) -> tuple[bool, str]:
         if kind == 'bool':
             if not isinstance(value, bool):
                 return (False, f'{key!r} must be a boolean (got {type(value).__name__})')
+        elif kind == 'str':
+            if not isinstance(value, str):
+                return (False, f'{key!r} must be a string (got {type(value).__name__})')
+            if len(value) > 120:
+                return (False, f'{key!r} must be at most 120 chars (got {len(value)})')
         elif kind == 'float':
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return (False, f'{key!r} must be a number (got {type(value).__name__})')
@@ -197,6 +218,8 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = maxAgentDepthRange
             elif key == 'autoRouteMinSamples':
                 lo, hi = minSamplesRange
+            elif key == 'consolidationIntervalHours':
+                lo, hi = consolidationIntervalRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:

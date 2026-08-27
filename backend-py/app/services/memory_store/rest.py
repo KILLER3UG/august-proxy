@@ -1,7 +1,6 @@
 """Facts, proposals, lifecycle, topics, usage, timeline, stats."""
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import cast
 
@@ -11,6 +10,22 @@ from app.services.memory_conn import db_path as _db_path
 from app.services.memory_store.wire import _json, _row_as_wire
 from app.type_aliases import FactDict, JsonValue, ProposalDict
 
+_FACT_KINDS = frozenset({'fact', 'lesson', 'preference', 'skill-note'})
+
+
+def derive_fact_title(text: str) -> str:
+    """Short human label for a fact (readability ruling 2026-08-26: titled
+    entries, not raw blobs). First sentence/clause, capped at 60 chars."""
+    cleaned = ' '.join((text or '').split())
+    for sep in ('. ', '! ', '? ', '; ', ' — ', ': '):
+        at = cleaned.find(sep)
+        if 8 <= at <= 80:
+            cleaned = cleaned[:at]
+            break
+    if len(cleaned) > 60:
+        cleaned = cleaned[:60].rstrip() + '…'
+    return cleaned
+
 
 def save_fact(
     factKey: str,
@@ -19,15 +34,77 @@ def save_fact(
     source: str = '',
     confidence: float = 1.0,
     expires_at: str | None = None,
+    title: str = '',
+    kind: str = '',
 ) -> None:
     """Save a structured fact. ``expires_at`` (ISO-8601 TEXT) is optional; the
-    cognitive boot sweep purges facts whose expiry has passed."""
+    cognitive boot sweep purges facts whose expiry has passed.
+
+    Upsert over the unique ``fact_key``: an update keeps the row id,
+    ``created_at`` and usage counters, and only overwrites ``title``/``kind``
+    when the caller actually supplies them (plan §3.3 — facts are titled,
+    typed entries)."""
     conn = _conn()
+    # '' = unspecified: fresh inserts default to 'fact', updates keep the
+    # existing kind (a remember-without-kind must not downgrade a lesson).
+    kindParam = kind if kind in _FACT_KINDS else ''
     conn.execute(
-        "INSERT OR REPLACE INTO facts (fact_key, fact_value, category, source, confidence, expires_at, updated_at)\n           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
-        (factKey, _json(factValue), category, source, confidence, expires_at),
+        """
+        INSERT INTO facts (fact_key, fact_value, title, kind, category, source, confidence, expires_at, updated_at)
+        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(fact_key) DO UPDATE SET
+            fact_value = excluded.fact_value,
+            title = CASE WHEN excluded.title != '' THEN excluded.title ELSE facts.title END,
+            kind = CASE WHEN excluded.kind != '' THEN excluded.kind ELSE facts.kind END,
+            category = excluded.category,
+            source = excluded.source,
+            confidence = excluded.confidence,
+            expires_at = excluded.expires_at,
+            updated_at = datetime('now')
+        """,
+        (factKey, _json(factValue), (title or '').strip(), kindParam, category, source, confidence, expires_at),
     )
     conn.commit()
+    try:
+        from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+        invalidate_fact_index()
+    except Exception:
+        pass
+
+
+def touch_fact_usage(factKeys: list[str]) -> int:
+    """Increment ``use_count`` / ``last_used_at`` for referenced facts.
+
+    M3 usage feedback: an injected fact the model quotes (or updates via
+    ``remember``) is marked as used; BM25 retrieval gives a small rank boost
+    to high-use entries. Returns the number of rows touched.
+    """
+    if not factKeys:
+        return 0
+    conn = _conn()
+    touched = 0
+    for key in factKeys:
+        key = (key or '').strip()
+        if not key:
+            continue
+        cur = conn.execute(
+            "UPDATE facts SET use_count = COALESCE(use_count, 0) + 1, "
+            "last_used_at = datetime('now') WHERE fact_key = ?",
+            (key,),
+        )
+        touched += max(0, int(cur.rowcount))
+    if touched:
+        conn.commit()
+        try:
+            from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+            # use_count feeds the BM25 usage boost — the cached index must
+            # rebuild or touches never affect ranking.
+            invalidate_fact_index()
+        except Exception:
+            pass
+    return touched
 
 
 def get_fact(factKey: str) -> FactDict | None:
@@ -75,6 +152,13 @@ def delete_fact(factKey: str) -> bool:
     conn = _conn()
     cursor = conn.execute('DELETE FROM facts WHERE fact_key = ?', (factKey,))
     conn.commit()
+    if cursor.rowcount > 0:
+        try:
+            from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+            invalidate_fact_index()
+        except Exception:
+            pass
     return cursor.rowcount > 0
 
 
@@ -393,13 +477,6 @@ def get_usage(sessionId: str) -> dict[str, object]:
     }
 
 
-def vacuum() -> None:
-    """Vacuum the database to reclaim space."""
-    conn = _conn()
-    conn.execute('VACUUM')
-    conn.commit()
-
-
 def get_stats() -> dict[str, object]:
     """Get database statistics.
 
@@ -440,58 +517,3 @@ def write_timeline_event(sessionId: str | None, eventSummary: str, category: str
     )
     conn.commit()
     return as_int(cur.lastrowid)
-
-
-def timeline_sweep() -> int:
-    """v2: Hourly sweep. For sessions with no timeline entry, generate one.
-
-    Returns the number of new entries created.
-    """
-    conn = _conn()
-    rows = conn.execute(
-        '\n        SELECT s.id FROM sessions s\n        LEFT JOIN episodic_timeline t ON t.session_id = s.id\n        WHERE t.id IS NULL\n        LIMIT 20\n    '
-    ).fetchall()
-    if not rows:
-        return 0
-    count = 0
-    for r in rows:
-        sid = r['id']
-        msgs = conn.execute(
-            'SELECT role, content FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 10', (sid,)
-        ).fetchall()
-        if not msgs:
-            continue
-        try:
-            from app.providers import resolver as providerResolver
-            from app.providers.clients import getClient
-            from app.services.workbench import model_fleet
-
-            model = model_fleet.getModelForRole('hippocampus')
-            if not model:
-                continue
-            provider = providerResolver.resolve(model)
-            if not provider:
-                continue
-            client = getClient(provider)
-            if client and hasattr(client, 'generate'):
-                transcript = '\n'.join((f'{m["role"]}: {m["content"][:200]}' for m in msgs))
-                prompt = f'Summarize this session in one line (under 100 words):\n\n{transcript}'
-                try:
-                    loop = asyncio.get_event_loop()
-                    summary = loop.run_until_complete(client.generate(prompt))
-                except Exception:
-                    summary = None
-            else:
-                summary = None
-        except Exception:
-            summary = None
-        if not summary:
-            last = msgs[0]
-            content = last['content']
-            if isinstance(content, str):
-                summary = content[:200]
-            else:
-                summary = '(session ended)'
-        write_timeline_event(sid, summary.strip()[:500], 'sweep')
-        count += 1
-    return count

@@ -1,19 +1,24 @@
 /* ── Memory — human-readable browse of what August stores ────────────── */
-/* Renders the brain SQLite stores as titled entry cards (not a raw table),
- * grouped by category for facts, with a detail view (Markdown body, delete,
- * inline edit over whitelisted fields), a Claude-style add-box, the two
- * model-memory toggles, and per-entry / per-store Markdown export.
+/* Memories + Facts tabs render one flat chronological list across kinds
+ * (plan §5.1): kind chip · title · relative date · ⋯, filter chips above
+ * (not tabs), no cards/meters, and a one-line health footer fed by the
+ * consolidation log. Timeline/Sessions stay raw-but-readable card grids.
  *
- * The Memory hub splits the stores into four sub-tabs; the active section id
- * picks the store scope. Counts come from /api/brain/stores, rows from
- * /api/brain/stores/{name}. Writes go to /api/memory/manage (add-box) and
- * /api/brain/stores/{name}/{id} (edit/delete). Heuristics + auto-memories are
- * legacy read-only stores — they render with a Legacy badge and no mutations. */
+ * Detail view (Markdown body, delete, inline edit over whitelisted fields),
+ * the Claude-style add-box, the two model-memory toggles, and per-entry /
+ * per-store Markdown export are shared by both modes.
+ *
+ * Counts come from /api/brain/stores, rows from /api/brain/stores/{name}.
+ * Writes go to /api/august/memory/manage (add-box) and
+ * /api/brain/stores/{name}/{id} (edit/delete). Heuristics + auto-memories
+ * are legacy read-only stores — they render with a Legacy badge and no
+ * mutations. The footer's raw-state lookup (§5.5) is the only surface where
+ * internal_state machine state is ever visible. */
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Brain, ChevronLeft, ChevronRight, Download, FileUp, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Brain, ChevronLeft, ChevronRight, Download, FileUp, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
@@ -72,6 +77,9 @@ const SCOPES: Record<string, { title: string; blurb: string; stores: string[] }>
   },
 };
 
+/** Tabs rendered as one flat chronological list across kinds (§5.1). */
+const UNIFIED_TABS = new Set(['memory-knowledge', 'memory-facts']);
+
 /** Per-store rendering + mutation metadata. `idField` is the row identifier
  *  (the KV memory store keys by `key`; everything else by `id`). `editable`
  *  mirrors the backend field whitelist in memory_store/brain.py; `deletable`
@@ -89,7 +97,6 @@ interface StoreMeta {
   readOnly?: boolean;
   editable?: string[];
   deletable?: boolean;
-  groupByCategory?: boolean;
 }
 
 function str(v: unknown): string {
@@ -133,7 +140,6 @@ const STORE_META: Record<string, StoreMeta> = {
     updated: (r) => str(r.updated_at),
     editable: ['fact_value', 'category', 'confidence', 'expires_at'],
     deletable: true,
-    groupByCategory: true,
   },
   memory: {
     idField: 'key',
@@ -203,17 +209,51 @@ const STORE_META: Record<string, StoreMeta> = {
   },
 };
 
-/** Claude-style category headers for grouped facts. */
-const CATEGORY_LABELS: Record<string, string> = {
-  user: 'You',
-  feedback: 'Feedback',
-  project: 'Projects',
-  reference: 'References',
-  general: 'General',
+/* ── §5.1 flat-list kinds ──────────────────────────────────────────── */
+
+type EntryKind = 'fact' | 'lesson' | 'pref' | 'note';
+
+const KIND_META: Record<EntryKind, { label: string; className: string }> = {
+  fact: { label: 'fact', className: 'border-sky-500/30 bg-sky-500/10 text-sky-400' },
+  lesson: { label: 'lesson', className: 'border-amber-500/30 bg-amber-500/10 text-amber-400' },
+  pref: { label: 'pref', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' },
+  note: { label: 'note', className: 'border-border/60 bg-muted/30 text-muted-foreground' },
 };
-const CATEGORY_ORDER = ['user', 'feedback', 'project', 'reference', 'general'];
+
+const KIND_ORDER: EntryKind[] = ['fact', 'lesson', 'pref', 'note'];
+
+/** Kind chip for a row: heuristics are lessons, user-category facts are
+ *  prefs, everything in the KV/legacy note stores is a note. */
+function deriveKind(store: string, r: Row): EntryKind {
+  if (store === 'heuristics') return 'lesson';
+  if (store === 'facts') return str(r.category).toLowerCase() === 'user' ? 'pref' : 'fact';
+  return 'note';
+}
+
+function hasExpiry(r: Row): boolean {
+  return str(r.expires_at).trim() !== '';
+}
+
+function sortTime(r: Row, meta: StoreMeta | undefined): number {
+  const t = Date.parse(meta?.updated?.(r) ?? '');
+  return Number.isFinite(t) ? t : 0;
+}
+
+interface FlatEntry {
+  store: string;
+  row: Row;
+  id: string;
+  kind: EntryKind;
+  title: string;
+  summary: string;
+  updated: string;
+  expiring: boolean;
+  legacy: boolean;
+}
 
 const PAGE_SIZE = 25;
+const UNIFIED_FETCH = 200;
+const UNIFIED_RENDER = 50;
 const LONG_TEXT_FIELDS = new Set(['fact_value', 'value', 'event_summary', 'rule']);
 
 function slugify(text: string): string {
@@ -260,6 +300,7 @@ function entryToMarkdown(store: string, r: Row, meta: StoreMeta): string {
 
 export function MemorySection({ active }: { active: { id: string } }) {
   const scope = SCOPES[active.id];
+  const unified = UNIFIED_TABS.has(active.id);
   const qc = useQueryClient();
   const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
@@ -272,6 +313,8 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const [offset, setOffset] = useState(0);
   const [addText, setAddText] = useState('');
   const [importOpen, setImportOpen] = useState(false);
+  const [kindFilter, setKindFilter] = useState<'all' | EntryKind | 'expiring'>('all');
+  const [unifiedShown, setUnifiedShown] = useState(UNIFIED_RENDER);
   const query = search.trim();
 
   // Switching sub-tabs resets the browse state to that scope's first store.
@@ -282,6 +325,8 @@ export function MemorySection({ active }: { active: { id: string } }) {
     setEditing(false);
     setOffset(0);
     setSearch('');
+    setKindFilter('all');
+    setUnifiedShown(UNIFIED_RENDER);
   }, [active.id, scope]);
 
   const storesQ = useQuery<{ stores: StoreInfo[] }>({
@@ -292,6 +337,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
     queryKey: ['brain-config'],
     queryFn: () => api.get<BrainConfigResponse>('/api/brain/config'),
   });
+  // Non-unified tabs page one store at a time.
   const pageQ = useQuery<StorePage>({
     queryKey: ['brain-store', activeStore, offset, query],
     queryFn: () =>
@@ -299,6 +345,28 @@ export function MemorySection({ active }: { active: { id: string } }) {
         `/api/brain/stores/${encodeURIComponent(activeStore)}` +
           `?limit=${PAGE_SIZE}&offset=${offset}&query=${encodeURIComponent(query)}`,
       ),
+    enabled: !unified,
+  });
+  // Unified tabs fetch both scope stores and merge client-side (§5.1).
+  const unifiedStoreA = unified ? scope.stores[0] : '';
+  const unifiedStoreB = unified ? (scope.stores[1] ?? '') : '';
+  const unifiedQa = useQuery<StorePage>({
+    queryKey: ['brain-store', unifiedStoreA, 0, query, UNIFIED_FETCH],
+    queryFn: () =>
+      api.get<StorePage>(
+        `/api/brain/stores/${encodeURIComponent(unifiedStoreA)}` +
+          `?limit=${UNIFIED_FETCH}&offset=0&query=${encodeURIComponent(query)}`,
+      ),
+    enabled: unified && !!unifiedStoreA,
+  });
+  const unifiedQb = useQuery<StorePage>({
+    queryKey: ['brain-store', unifiedStoreB, 0, query, UNIFIED_FETCH],
+    queryFn: () =>
+      api.get<StorePage>(
+        `/api/brain/stores/${encodeURIComponent(unifiedStoreB)}` +
+          `?limit=${UNIFIED_FETCH}&offset=0&query=${encodeURIComponent(query)}`,
+      ),
+    enabled: unified && !!unifiedStoreB,
   });
 
   const invalidate = () => {
@@ -312,7 +380,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
     onError: (e: Error) => toast.error(e.message || 'Could not update setting'),
   });
   const addMut = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.post('/api/memory/manage', body),
+    // The manage route lives on the august router (/api/august prefix) —
+    // posting to /api/memory/manage 404s (plan §5.1 step zero).
+    mutationFn: (body: Record<string, unknown>) => api.post('/api/august/memory/manage', body),
     onSuccess: () => {
       invalidate();
       setAddText('');
@@ -345,6 +415,15 @@ export function MemorySection({ active }: { active: { id: string } }) {
     },
     onError: (e: Error) => toast.error(e.message || 'Update failed'),
   });
+  const consolidateMut = useMutation({
+    mutationFn: () => api.post<{ ok: boolean; summary?: Record<string, unknown> }>('/api/brain/consolidation/run', {}),
+    onSuccess: () => {
+      invalidate();
+      void qc.invalidateQueries({ queryKey: ['consolidation-log'] });
+      toast.success('Consolidation pass complete');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Consolidation failed'),
+  });
 
   const meta = STORE_META[activeStore];
   const stores = useMemo(() => {
@@ -355,6 +434,62 @@ export function MemorySection({ active }: { active: { id: string } }) {
       .sort((a, b) => scope.stores.indexOf(a.name) - scope.stores.indexOf(b.name));
   }, [storesQ.data, scope]);
 
+  /* §5.1: merge both scope stores into one flat chronological list. */
+  const flatEntries = useMemo<FlatEntry[]>(() => {
+    if (!unified || !scope) return [];
+    const pages: Array<[string, StorePage | undefined]> = [
+      [unifiedStoreA, unifiedQa.data],
+      [unifiedStoreB, unifiedQb.data],
+    ];
+    const out: FlatEntry[] = [];
+    for (const [store, page] of pages) {
+      if (!store) continue;
+      const m = STORE_META[store];
+      for (const row of page?.rows ?? []) {
+        // Facts read human-first in the flat list: the fact text, not the
+        // slug-like fact_key, is the row title (key stays the detail header).
+        const baseTitle = m?.title(row) || '(untitled)';
+        const title =
+          store === 'facts' ? parseFactValue(row.fact_value).summary || baseTitle : baseTitle;
+        out.push({
+          store,
+          row,
+          id: str(row[m?.idField ?? 'id']),
+          kind: deriveKind(store, row),
+          title,
+          summary: m?.summary(row) ?? '',
+          updated: m?.updated?.(row) ?? '',
+          expiring: hasExpiry(row),
+          legacy: !!m?.legacy,
+        });
+      }
+    }
+    out.sort((a, b) => sortTime(b.row, STORE_META[b.store]) - sortTime(a.row, STORE_META[a.store]));
+    return out;
+  }, [unified, scope, unifiedStoreA, unifiedStoreB, unifiedQa.data, unifiedQb.data]);
+
+  const kindCounts = useMemo(() => {
+    const counts: Record<'all' | EntryKind | 'expiring', number> = {
+      all: flatEntries.length,
+      fact: 0,
+      lesson: 0,
+      pref: 0,
+      note: 0,
+      expiring: 0,
+    };
+    for (const e of flatEntries) {
+      counts[e.kind] += 1;
+      if (e.expiring) counts.expiring += 1;
+    }
+    return counts;
+  }, [flatEntries]);
+
+  const filteredEntries = useMemo(() => {
+    if (kindFilter === 'all') return flatEntries;
+    if (kindFilter === 'expiring') return flatEntries.filter((e) => e.expiring);
+    return flatEntries.filter((e) => e.kind === kindFilter);
+  }, [flatEntries, kindFilter]);
+
   const rows = pageQ.data?.rows ?? [];
   const total = pageQ.data?.total ?? 0;
   const from = total === 0 ? 0 : offset + 1;
@@ -362,27 +497,8 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const title = scope?.title ?? 'Memory';
   const showAddBox = active.id === 'memory-knowledge' || active.id === 'memory-facts';
 
-  // Group facts under category headers; other stores render flat.
-  const groups = useMemo(() => {
-    if (!meta?.groupByCategory) return null;
-    const byCat = new Map<string, Row[]>();
-    for (const r of rows) {
-      const cat = (meta.category?.(r) || 'general').toLowerCase();
-      const list = byCat.get(cat) ?? [];
-      list.push(r);
-      byCat.set(cat, list);
-    }
-    const ordered: Array<{ cat: string; label: string; rows: Row[] }> = [];
-    for (const cat of CATEGORY_ORDER) {
-      if (byCat.has(cat)) ordered.push({ cat, label: CATEGORY_LABELS[cat] ?? cat, rows: byCat.get(cat)! });
-    }
-    for (const [cat, list] of byCat) {
-      if (!CATEGORY_ORDER.includes(cat)) ordered.push({ cat, label: CATEGORY_LABELS[cat] ?? cat, rows: list });
-    }
-    return ordered;
-  }, [rows, meta]);
-
-  const openDetail = (r: Row) => {
+  const openDetail = (r: Row, store?: string) => {
+    if (store) setActiveStore(store);
     setSelected(r);
     setEditing(false);
     setMode('detail');
@@ -406,26 +522,40 @@ export function MemorySection({ active }: { active: { id: string } }) {
     editMut.mutate({ store: activeStore, id, patch });
   };
 
-  const requestDelete = () => {
-    if (!selected || !meta) return;
-    const id = str(selected[meta.idField]);
-    const name = meta.title(selected) || id;
+  const requestDelete = (rowOverride?: Row, storeOverride?: string) => {
+    const row = rowOverride ?? selected;
+    const store = storeOverride ?? activeStore;
+    const m = STORE_META[store];
+    if (!row || !m) return;
+    const id = str(row[m.idField]);
+    const name = m.title(row) || id;
     void confirm({
       title: 'Delete this entry?',
-      message: `“${name}” will be removed from ${activeStore}. This cannot be undone from here.`,
+      message: `“${name}” will be removed from ${store}. This cannot be undone from here.`,
       confirmLabel: 'Delete',
       variant: 'destructive',
     }).then((ok) => {
-      if (ok) deleteMut.mutate({ store: activeStore, id });
+      if (ok) deleteMut.mutate({ store, id });
     });
   };
 
-  const exportEntry = () => {
-    if (!selected || !meta) return;
-    downloadMarkdown(`${slugify(meta.title(selected))}.md`, entryToMarkdown(activeStore, selected, meta));
+  const exportEntry = (rowOverride?: Row, storeOverride?: string) => {
+    const row = rowOverride ?? selected;
+    const store = storeOverride ?? activeStore;
+    const m = STORE_META[store];
+    if (!row || !m) return;
+    downloadMarkdown(`${slugify(m.title(row))}.md`, entryToMarkdown(store, row, m));
   };
 
   const exportStore = () => {
+    if (unified) {
+      if (flatEntries.length === 0) return;
+      const body = flatEntries
+        .map((e) => entryToMarkdown(e.store, e.row, STORE_META[e.store]))
+        .join('\n\n---\n\n');
+      downloadMarkdown(`${scope?.title ?? 'memory'}-export.md`.toLowerCase().replace(/\s+/g, '-'), body);
+      return;
+    }
     if (!meta || rows.length === 0) return;
     const body = rows.map((r) => entryToMarkdown(activeStore, r, meta)).join('\n\n---\n\n');
     downloadMarkdown(`${activeStore}-export.md`, body);
@@ -438,6 +568,8 @@ export function MemorySection({ active }: { active: { id: string } }) {
   };
 
   const cfg = configQ.data?.config;
+  const unifiedLoading = unified && (unifiedQa.isLoading || (!!unifiedStoreB && unifiedQb.isLoading));
+  const unifiedError = unified && ((unifiedQa.isError && unifiedQa.error) || (unifiedQb.isError && unifiedQb.error));
 
   return (
     <div className="px-8 py-6 max-w-4xl space-y-5">
@@ -475,31 +607,33 @@ export function MemorySection({ active }: { active: { id: string } }) {
         <PageLoader label="Loading memory stores…" variant="card" className="py-10" />
       ) : (
         <>
-          {/* Store chips */}
-          <div className="flex flex-wrap gap-2">
-            {stores.map((s) => (
-              <button
-                key={s.name}
-                type="button"
-                onClick={() => {
-                  setActiveStore(s.name);
-                  setOffset(0);
-                  setMode('list');
-                  setSelected(null);
-                }}
-                title={s.label}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition',
-                  s.name === activeStore
-                    ? 'border-primary/50 bg-primary/10 text-foreground'
-                    : 'border-border/60 bg-card/60 text-muted-foreground hover:border-primary/30 hover:text-foreground',
-                )}
-              >
-                <span className="font-medium">{s.name}</span>
-                <span className="rounded bg-muted/60 px-1 text-[10px] tabular-nums">{s.count}</span>
-              </button>
-            ))}
-          </div>
+          {/* Store chips — raw tabs only; the unified list uses kind chips. */}
+          {!unified && (
+            <div className="flex flex-wrap gap-2">
+              {stores.map((s) => (
+                <button
+                  key={s.name}
+                  type="button"
+                  onClick={() => {
+                    setActiveStore(s.name);
+                    setOffset(0);
+                    setMode('list');
+                    setSelected(null);
+                  }}
+                  title={s.label}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition',
+                    s.name === activeStore
+                      ? 'border-primary/50 bg-primary/10 text-foreground'
+                      : 'border-border/60 bg-card/60 text-muted-foreground hover:border-primary/30 hover:text-foreground',
+                  )}
+                >
+                  <span className="font-medium">{s.name}</span>
+                  <span className="rounded bg-muted/60 px-1 text-[10px] tabular-nums">{s.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Search + refresh + export-store */}
           <div className="flex items-center gap-2">
@@ -510,9 +644,11 @@ export function MemorySection({ active }: { active: { id: string } }) {
                 onChange={(e) => {
                   setSearch(e.target.value);
                   setOffset(0);
+                  setUnifiedShown(UNIFIED_RENDER);
                 }}
-                placeholder={`Search ${activeStore}…`}
+                placeholder="Search memory…"
                 className="w-full rounded-lg border border-border/60 bg-card/60 py-1.5 pl-8 pr-3 text-xs text-foreground outline-none transition focus:border-primary/40"
+                data-testid="memory-search-input"
               />
             </div>
             <button
@@ -520,17 +656,19 @@ export function MemorySection({ active }: { active: { id: string } }) {
               onClick={() => {
                 void storesQ.refetch();
                 void pageQ.refetch();
+                void unifiedQa.refetch();
+                void unifiedQb.refetch();
               }}
               title="Refresh"
               className="rounded-lg border border-border/60 bg-card/60 p-1.5 text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
             >
-              <RefreshCw className={cn('size-3.5', pageQ.isFetching && 'animate-spin')} />
+              <RefreshCw className={cn('size-3.5', (pageQ.isFetching || unifiedQa.isFetching || unifiedQb.isFetching) && 'animate-spin')} />
             </button>
             <button
               type="button"
               onClick={exportStore}
-              disabled={rows.length === 0}
-              title="Export this store as Markdown"
+              disabled={unified ? flatEntries.length === 0 : rows.length === 0}
+              title="Export as Markdown"
               className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
             >
               <Download className="size-3.5" /> Export
@@ -545,6 +683,31 @@ export function MemorySection({ active }: { active: { id: string } }) {
               <FileUp className="size-3.5" /> Import
             </button>
           </div>
+
+          {/* Add-box (Memories + Facts tabs) */}
+          {showAddBox && (
+            <div className="flex items-center gap-2">
+              <input
+                value={addText}
+                onChange={(e) => setAddText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addMemory();
+                }}
+                placeholder="Add a memory, e.g. “My plant is named Gerald”"
+                className="flex-1 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs text-foreground outline-none transition focus:border-primary/40"
+                data-testid="memory-add-input"
+              />
+              <button
+                type="button"
+                onClick={addMemory}
+                disabled={addMut.isPending || !addText.trim()}
+                className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+                data-testid="memory-add-button"
+              >
+                <Plus className="size-3.5" /> Add
+              </button>
+            </div>
+          )}
 
           {mode === 'detail' && selected && meta ? (
             <DetailView
@@ -563,12 +726,95 @@ export function MemorySection({ active }: { active: { id: string } }) {
               onStartEdit={startEdit}
               onSaveEdit={saveEdit}
               onCancelEdit={() => setEditing(false)}
-              onDelete={requestDelete}
-              onExport={exportEntry}
+              onDelete={() => requestDelete()}
+              onExport={() => exportEntry()}
             />
+          ) : unified ? (
+            <>
+              {/* §5.1 filter chips — above the list, not tabs. */}
+              <div className="flex flex-wrap items-center gap-1.5" data-testid="memory-kind-chips">
+                <KindChip
+                  label="all"
+                  count={kindCounts.all}
+                  active={kindFilter === 'all'}
+                  onClick={() => setKindFilter('all')}
+                />
+                {KIND_ORDER.filter((k) => kindCounts[k] > 0).map((k) => (
+                  <KindChip
+                    key={k}
+                    label={KIND_META[k].label}
+                    count={kindCounts[k]}
+                    active={kindFilter === k}
+                    onClick={() => setKindFilter(k)}
+                  />
+                ))}
+                {kindCounts.expiring > 0 && (
+                  <KindChip
+                    label="expiring"
+                    count={kindCounts.expiring}
+                    active={kindFilter === 'expiring'}
+                    onClick={() => setKindFilter('expiring')}
+                  />
+                )}
+              </div>
+
+              {unifiedLoading ? (
+                <PageLoader label="Loading entries…" variant="card" className="py-8" />
+              ) : unifiedError ? (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-center text-xs text-destructive">
+                  Could not load memory: {(unifiedError as Error | null)?.message ?? 'unknown error'}
+                </div>
+              ) : filteredEntries.length === 0 ? (
+                <p className="rounded-xl border border-white/[0.06] bg-card/60 px-4 py-6 text-center text-xs text-muted-foreground">
+                  {query
+                    ? `No entries match “${query}”.`
+                    : kindFilter !== 'all'
+                      ? `No ${kindFilter} entries.`
+                      : 'Nothing stored here yet.'}
+                </p>
+              ) : (
+                <div className="divide-y divide-white/[0.04]" data-testid="memory-flat-list">
+                  {filteredEntries.slice(0, unifiedShown).map((e) => (
+                    <FlatEntryRow
+                      key={`${e.store}:${e.id}`}
+                      entry={e}
+                      onView={() => openDetail(e.row, e.store)}
+                      onEdit={() => {
+                        openDetail(e.row, e.store);
+                        const m = STORE_META[e.store];
+                        if (m?.editable) {
+                          const draft: Record<string, string> = {};
+                          for (const f of m.editable) draft[f] = str(e.row[f]);
+                          setEditDraft(draft);
+                          setEditing(true);
+                        }
+                      }}
+                      onDelete={() => requestDelete(e.row, e.store)}
+                      onExport={() => exportEntry(e.row, e.store)}
+                    />
+                  ))}
+                  {filteredEntries.length > unifiedShown && (
+                    <button
+                      type="button"
+                      onClick={() => setUnifiedShown((n) => n + UNIFIED_RENDER)}
+                      className="w-full py-2 text-center text-[11px] text-muted-foreground transition hover:text-foreground"
+                      data-testid="memory-show-more"
+                    >
+                      +{filteredEntries.length - unifiedShown} more
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* §5.1 health footer — the §3.5 audit surface. */}
+              <HealthFooter
+                consolidating={consolidateMut.isPending}
+                onRunNow={() => consolidateMut.mutate()}
+              />
+            </>
           ) : (
             <>
-              {/* Entry list */}
+              {/* Entry list (raw-but-readable tabs: Timeline, Sessions) */}
               <div className="space-y-4">
                 {pageQ.isLoading ? (
                   <PageLoader label="Loading entries…" variant="card" className="py-8" />
@@ -585,19 +831,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
                         ? `Nothing stored in ${activeStore}. This is a legacy store — no new entries are written here.`
                         : `Nothing stored in ${activeStore} yet.`}
                   </p>
-                ) : groups ? (
-                  groups.map((g) => (
-                    <div key={g.cat}>
-                      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        {g.label}
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        {g.rows.map((r, i) => (
-                          <EntryCard key={`${g.cat}-${i}`} row={r} meta={meta} onOpen={() => openDetail(r)} />
-                        ))}
-                      </div>
-                    </div>
-                  ))
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {rows.map((r, i) => (
@@ -606,31 +839,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
                   </div>
                 )}
               </div>
-
-              {/* Add-box (Memories + Facts tabs) */}
-              {showAddBox && (
-                <div className="flex items-center gap-2">
-                  <input
-                    value={addText}
-                    onChange={(e) => setAddText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') addMemory();
-                    }}
-                    placeholder="Add a memory, e.g. “My plant is named Gerald”"
-                    className="flex-1 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs text-foreground outline-none transition focus:border-primary/40"
-                    data-testid="memory-add-input"
-                  />
-                  <button
-                    type="button"
-                    onClick={addMemory}
-                    disabled={addMut.isPending || !addText.trim()}
-                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
-                    data-testid="memory-add-button"
-                  >
-                    <Plus className="size-3.5" /> Add
-                  </button>
-                </div>
-              )}
 
               {/* Pagination */}
               {total > PAGE_SIZE && (
@@ -665,6 +873,10 @@ export function MemorySection({ active }: { active: { id: string } }) {
         </>
       )}
 
+      {/* §5.5 raw state lookup — the only surface where internal_state
+          machine state is ever visible. */}
+      <RawStateLookup />
+
       <ConfirmDialog
         open={confirmState.open}
         title={confirmState.title}
@@ -681,13 +893,355 @@ export function MemorySection({ active }: { active: { id: string } }) {
         onImported={() => {
           void storesQ.refetch();
           void pageQ.refetch();
+          void unifiedQa.refetch();
+          void unifiedQb.refetch();
         }}
       />
     </div>
   );
 }
 
-/* ── Entry card ─────────────────────────────────────────────────────── */
+/* ── §5.1 kind chip ────────────────────────────────────────────────── */
+
+function KindChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10.5px] transition',
+        active
+          ? 'border-primary/50 bg-primary/10 text-foreground'
+          : 'border-border/60 bg-card/40 text-muted-foreground hover:border-primary/30 hover:text-foreground',
+      )}
+      data-testid={`memory-kind-chip-${label}`}
+    >
+      {label}
+      <span className="tabular-nums text-[9.5px] opacity-70">{count}</span>
+    </button>
+  );
+}
+
+/* ── §5.1 flat row: kind chip · "title" · relative date · ⋯ ─────────── */
+
+function FlatEntryRow({
+  entry,
+  onView,
+  onEdit,
+  onDelete,
+  onExport,
+}: {
+  entry: FlatEntry;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onExport: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const meta = STORE_META[entry.store];
+  const canEdit = !!meta?.editable && !meta?.readOnly;
+  const canDelete = !!meta?.deletable && !meta?.readOnly;
+  const kind = KIND_META[entry.kind];
+
+  return (
+    <div
+      className="group relative flex items-center gap-2.5 py-2"
+      data-testid="memory-flat-row"
+      data-kind={entry.kind}
+    >
+      <span
+        className={cn(
+          'w-14 shrink-0 rounded-md border px-1 py-0.5 text-center text-[9px] font-medium uppercase tracking-wide',
+          kind.className,
+        )}
+        data-testid="memory-kind-label"
+      >
+        {kind.label}
+      </span>
+      <button
+        type="button"
+        onClick={onView}
+        className="min-w-0 flex-1 text-left"
+        title={entry.summary || entry.title}
+      >
+        <span className="block truncate text-[12.5px] text-foreground/90">
+          “{entry.title}”
+        </span>
+      </button>
+      {entry.legacy && (
+        <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-amber-400">
+          legacy
+        </span>
+      )}
+      {entry.expiring && (
+        <span
+          className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-warning"
+          title={`Expires: ${str(entry.row.expires_at)}`}
+        >
+          expiring
+        </span>
+      )}
+      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
+        {timeAgo(entry.updated)}
+      </span>
+      <div className="relative shrink-0">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          className="rounded p-0.5 text-muted-foreground/40 transition hover:bg-white/[0.05] hover:text-foreground"
+          aria-label="Entry actions"
+          aria-expanded={menuOpen}
+          data-testid="memory-row-menu"
+        >
+          <MoreHorizontal className="size-3.5" />
+        </button>
+        {menuOpen && (
+          <RowMenu
+            canEdit={canEdit}
+            canDelete={canDelete}
+            onView={() => {
+              setMenuOpen(false);
+              onView();
+            }}
+            onEdit={() => {
+              setMenuOpen(false);
+              onEdit();
+            }}
+            onDelete={() => {
+              setMenuOpen(false);
+              onDelete();
+            }}
+            onExport={() => {
+              setMenuOpen(false);
+              onExport();
+            }}
+            onClose={() => setMenuOpen(false)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RowMenu({
+  canEdit,
+  canDelete,
+  onView,
+  onEdit,
+  onDelete,
+  onExport,
+  onClose,
+}: {
+  canEdit: boolean;
+  canDelete: boolean;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onExport: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const el = e.target instanceof Element ? e.target : null;
+      if (!el?.closest('[data-slot="memory-row-menu-pop"]')) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  const item =
+    'w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-foreground/90 transition';
+
+  return (
+    <div
+      role="menu"
+      data-slot="memory-row-menu-pop"
+      className="absolute right-0 top-6 z-50 w-32 rounded-md border border-border/50 bg-popover py-1 text-xs shadow-2xl"
+    >
+      <button type="button" role="menuitem" onClick={onView} className={item}>
+        View
+      </button>
+      {canEdit && (
+        <button type="button" role="menuitem" onClick={onEdit} className={item}>
+          <Pencil className="size-3 text-muted-foreground" /> Edit
+        </button>
+      )}
+      <button type="button" role="menuitem" onClick={onExport} className={item}>
+        <Download className="size-3 text-muted-foreground" /> Export
+      </button>
+      {canDelete && (
+        <>
+          <div className="my-1 h-px bg-border/40" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={onDelete}
+            className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-destructive transition"
+          >
+            <Trash2 className="size-3" /> Delete
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ── §5.1 health footer (the §3.5 audit surface) ───────────────────── */
+
+interface ConsolidationLogResponse {
+  entries: Array<{ createdAt: string; eventType: string; detail: Record<string, unknown> }>;
+}
+
+function HealthFooter({
+  consolidating,
+  onRunNow,
+}: {
+  consolidating: boolean;
+  onRunNow: () => void;
+}) {
+  const logQ = useQuery<ConsolidationLogResponse>({
+    queryKey: ['consolidation-log'],
+    queryFn: () => api.get<ConsolidationLogResponse>('/api/brain/consolidation/log?limit=50'),
+  });
+
+  const lastPass = useMemo(() => {
+    for (const e of logQ.data?.entries ?? []) {
+      if (e.eventType === 'consolidation') return e;
+    }
+    return null;
+  }, [logQ.data]);
+
+  const expired = Number(lastPass?.detail?.expired ?? 0);
+  const merged = Number(lastPass?.detail?.merged ?? 0);
+
+  return (
+    <div
+      className="flex items-center gap-2 border-t border-white/[0.06] pt-2.5 text-[10.5px] text-muted-foreground/70"
+      data-testid="memory-health-footer"
+    >
+      {lastPass ? (
+        <span className="tabular-nums">
+          expired · {expired} · duplicates merged · {merged}
+        </span>
+      ) : (
+        <span>no consolidation pass yet</span>
+      )}
+      <span className="ml-auto">
+        {lastPass ? `last consolidation ${timeAgo(lastPass.createdAt)}` : ''}
+      </span>
+      <button
+        type="button"
+        onClick={onRunNow}
+        disabled={consolidating}
+        className="rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
+        title="Run one consolidation pass now (expire, merge duplicates, supersede contradictions)"
+        data-testid="memory-consolidate-now"
+      >
+        {consolidating ? 'Running…' : 'Run now'}
+      </button>
+    </div>
+  );
+}
+
+/* ── §5.5 raw state lookup ─────────────────────────────────────────── */
+
+interface StateLookupResponse {
+  key: string;
+  found: boolean;
+  source: 'internal_state' | 'memory_store' | null;
+  value: unknown;
+  updatedAt: string | null;
+}
+
+function RawStateLookup() {
+  const [input, setInput] = useState('');
+  const [submitted, setSubmitted] = useState('');
+
+  const lookupQ = useQuery<StateLookupResponse>({
+    queryKey: ['state-lookup', submitted],
+    queryFn: () =>
+      api.get<StateLookupResponse>(
+        `/api/brain/state-lookup?key=${encodeURIComponent(submitted)}`,
+      ),
+    enabled: !!submitted,
+    retry: false,
+  });
+
+  const submit = () => {
+    const key = input.trim();
+    setSubmitted(key);
+  };
+
+  return (
+    <div className="space-y-2 border-t border-white/[0.06] pt-4" data-testid="raw-state-lookup">
+      <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+        Raw state lookup
+      </div>
+      <p className="text-[11px] text-muted-foreground/70">
+        Type a key to inspect the raw <code className="font-mono">internal_state</code> /{' '}
+        <code className="font-mono">memory_store</code> row. Machine state (
+        <code className="font-mono">cognitive:*</code> and friends) is only ever visible here —
+        never in Memory itself.
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+          placeholder="e.g. cognitive:boot_maintenance_state"
+          className="flex-1 max-w-sm rounded-lg border border-border/60 bg-card/60 px-3 py-1.5 font-mono text-[11px] text-foreground outline-none transition focus:border-primary/40"
+          data-testid="raw-state-key-input"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!input.trim() || lookupQ.isFetching}
+          className="rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
+          data-testid="raw-state-lookup-button"
+        >
+          {lookupQ.isFetching ? 'Looking up…' : 'Look up'}
+        </button>
+      </div>
+      {submitted && lookupQ.data && (
+        <pre
+          className="max-h-64 overflow-auto rounded-lg border border-white/[0.06] bg-black/20 p-3 font-mono text-[10.5px] leading-relaxed text-foreground/80"
+          data-testid="raw-state-result"
+        >
+          {lookupQ.data.found
+            ? `-- ${lookupQ.data.source} · updated ${lookupQ.data.updatedAt ?? '?'}\n` +
+              JSON.stringify(lookupQ.data.value, null, 2)
+            : `no row for key ${JSON.stringify(lookupQ.data.key)}`}
+        </pre>
+      )}
+      {submitted && lookupQ.isError && (
+        <p className="text-[11px] text-destructive" data-testid="raw-state-error">
+          Lookup failed: {(lookupQ.error as Error | null)?.message ?? 'unknown error'}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ── Entry card (raw-but-readable tabs) ────────────────────────────── */
 
 function EntryCard({ row, meta, onOpen }: { row: Row; meta: StoreMeta; onOpen: () => void }) {
   const title = meta.title(row) || '(untitled)';

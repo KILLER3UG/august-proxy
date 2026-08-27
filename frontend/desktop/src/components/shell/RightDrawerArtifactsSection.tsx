@@ -1,7 +1,7 @@
 /* ── RightDrawerArtifactsSection ─ session gallery ──────────────── */
 /* Hermes “Artifacts” + DeepSeek produced-files row, lifted to a drawer   */
 /* section that is searchable and grouped by kind. Reuses                   */
-/* collectArtifacts so it stays in sync with the inline ProducedFilesRow.  */
+/* collectArtifacts so it stays in sync with the inline ChangesCard.      */
 
 import { useEffect, useMemo, useState } from 'react';
 import { Search, ExternalLink, Image as ImageIcon, FileText, Link2, Clock } from 'lucide-react';

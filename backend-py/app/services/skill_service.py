@@ -129,15 +129,13 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
     m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
     if not m:
         return None
-    frontmatter = {}
-    for line in m.group(1).split('\n'):
-        if ':' in line:
-            key, __, val = line.partition(':')
-            frontmatter[key.strip()] = val.strip()
+    frontmatter = _parse_frontmatter_block(m.group(1))
     body = m.group(2).strip()
     if not body:
         return None
     stat = path.stat()
+    known = ('name', 'description', 'trigger', 'category', 'disabled', 'created_by')
+    meta = {k: v for k, v in frontmatter.items() if k not in known}
     return {
         'name': frontmatter.get('name', path.parent.name),
         'description': frontmatter.get('description', ''),
@@ -145,15 +143,40 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
         'category': frontmatter.get('category', 'uncategorized'),
         'enabled': frontmatter.get('disabled', 'false').lower() != 'true',
         'created_by': frontmatter.get('created_by', ''),
+        # M6 item 3: unrecognized frontmatter keys round-trip instead of
+        # being silently dropped on the next patch/setEnabled write.
+        'meta': meta,
         'instructions': body,
         'path': str(path),
         'updatedAt': stat.st_mtime,
     }
 
 
+def _parse_frontmatter_block(block: str) -> dict[str, str]:
+    """Parse ``key: value`` frontmatter lines, preserving insertion order."""
+    frontmatter: dict[str, str] = {}
+    for line in block.split('\n'):
+        if ':' in line:
+            key, __, val = line.partition(':')
+            frontmatter[key.strip()] = val.strip()
+    return frontmatter
+
+
+def isEnabled(name: str) -> bool:
+    """The single enabled-check predicate (M6 item 1). Unknown skills are
+    treated as not-loadable (False)."""
+    skill = get(name)
+    return bool(skill and skill.get('enabled'))
+
+
 
 def list_all() -> list[dict[str, object]]:
-    """Discover all skills from both the agent and bundled roots."""
+    """Discover all skills from both the agent and bundled roots.
+
+    M6 item 5: entries whose names fail the authoring-name rule are skipped
+    and logged at discovery — invalid folders (e.g. leftover ``pending-*``
+    approval staging dirs) never reach any catalogue, prompt, or UI list.
+    """
     global _flat_migrate_done
     if not _flat_migrate_done:
         _flat_migrate_done = True
@@ -175,9 +198,19 @@ def list_all() -> list[dict[str, object]]:
             parsed = _parseSkill(md)
             if not parsed:
                 continue
-            if as_str(parsed['name'], '') in seen:
+            name = as_str(parsed['name'], '')
+            try:
+                _validateName(name)
+            except SkillValidationError as exc:
+                import logging
+
+                logging.getLogger('august.skills').warning(
+                    'skipping skill with invalid name %r (%s): %s', name, md, exc
+                )
                 continue
-            seen.add(as_str(parsed['name'], ''))
+            if name in seen:
+                continue
+            seen.add(name)
             skills.append(parsed)
     return skills
 
@@ -213,7 +246,11 @@ def get(name: str) -> Optional[dict[str, object]]:
 
 
 def load_bodies(names: list[str], *, max_chars: int = 24000) -> str:
-    """Concatenate SKILL.md bodies for worker preload (progressive disclosure skip)."""
+    """Concatenate SKILL.md bodies for worker preload (progressive disclosure skip).
+
+    Disabled skills are never inlined (M6 item 1 — ``<harness_guide>`` skips
+    disabled harness skills); a marker keeps the omission visible.
+    """
     parts: list[str] = []
     used = 0
     for raw in names:
@@ -223,6 +260,9 @@ def load_bodies(names: list[str], *, max_chars: int = 24000) -> str:
         skill = get(name)
         if not skill:
             parts.append(f'## skill:{name}\n(not found)')
+            continue
+        if not skill.get('enabled'):
+            parts.append(f'## skill:{name}\n(disabled — enable it in Settings → Skills)')
             continue
         body = str(skill.get('instructions') or skill.get('body') or skill.get('content') or '')
         chunk = f'## skill:{name}\n{body}'.strip()
@@ -235,7 +275,7 @@ def load_bodies(names: list[str], *, max_chars: int = 24000) -> str:
 
 
 def catalogue() -> list[dict[str, object]]:
-    """Compact metadata for every discoverable skill — the skill catalogue.
+    """Compact metadata for every usable skill — the skill catalogue.
 
     Following the Claude-Code progressive-disclosure pattern: only this
     lightweight metadata (name + description + optional trigger) is placed
@@ -243,10 +283,13 @@ def catalogue() -> list[dict[str, object]]:
     SKILL.md body is loaded on demand via the ``load_skill`` tool when the
     model decides a skill is relevant.
 
-    All discoverable skills are surfaced (not just ``enabled`` ones) —
-    discovery is the standard. Returns entries sorted by name for stable
-    prompt output. Includes ``created_by`` so evolving/agent-authored skills
-    can be labeled in the prompt.
+    M6 item 1: disabled skills are filtered OUT — the catalogue feeds the
+    prompt surfaces (``<capabilities>``, ``<intake>``, harness guide), and a
+    disabled skill must not be offered there. The Settings UI lists disabled
+    skills via ``/api/skills`` (``search(enabledOnly=False)``) instead.
+    Entries carry ``enabled`` (always True post-filter) so consumers never
+    need a second predicate. Sorted by name for stable prompt output;
+    ``created_by`` labels evolving/agent-authored skills.
 
     Latency pass 0.16.8: results are memoized against the skill roots'
     mtimes (a cold build parses ~84 SKILL.md files ≈ 0.5s and this used to
@@ -269,8 +312,10 @@ def catalogue() -> list[dict[str, object]]:
             'trigger': s.get('trigger', ''),
             'category': s.get('category', 'uncategorized'),
             'created_by': s.get('created_by', ''),
+            'enabled': True,
         }
         for s in list_all()
+        if s.get('enabled')
     ]
     out = sorted(entries, key=lambda e: as_str(e.get('name'), ''))
     if key is not None:
@@ -286,27 +331,36 @@ def skill_body(name: str) -> str | None:
 
 
 def _bust_prompt_skills_cache() -> None:
-    """Global bust of skills-related prompt caches.
+    """Global bust of ALL skills-related prompt caches (M6 item 2).
 
-    Clears the catalogue memo, the prompt-segments cache, and the Tier 1/2
-    prompt cache so newly created/patched evolving skills appear in the next
-    turn's ``<capabilities>`` block instead of waiting out any TTL.
+    One call clears every layer: the catalogue memo here, plus the
+    workbench-side ``_caps_block_cache``, ``_harness_guide_cache``, the
+    prompt-segments cache and the Tier 1/2 prompt cache — collapsed into a
+    single entry point so a mutation can never leak a stale ``<capabilities>``
+    block (the audit found setEnabled busted only some layers).
     """
     global _cat_cache, _cat_cache_key
     _cat_cache = None
     _cat_cache_key = None
     try:
-        from app.services.workbench import prompt_segments_cache
+        from app.services.workbench.workbench import clear_skill_prompt_caches
 
-        prompt_segments_cache.clear()
+        clear_skill_prompt_caches()
     except Exception:
-        pass
-    try:
-        from app.services.workbench.prompt_cache import getCache
+        # Workbench not importable (unit-test context) — fall back to the
+        # segment/prompt caches directly.
+        try:
+            from app.services.workbench import prompt_segments_cache
 
-        getCache().clear()
-    except Exception:
-        pass
+            prompt_segments_cache.clear()
+        except Exception:
+            pass
+        try:
+            from app.services.workbench.prompt_cache import getCache
+
+            getCache().clear()
+        except Exception:
+            pass
 
 
 def migrate_flat_skills(*, bundled_root: Path | None = None, agent_root: Path | None = None) -> list[str]:
@@ -377,10 +431,17 @@ def _kebab_name(name: str) -> str:
 
 
 def _renderSkillMd(frontmatter: dict[str, str], body: str) -> str:
+    """Render SKILL.md. Known keys keep a stable canonical order; any other
+    keys round-trip after them (M6 item 3 — unknown frontmatter survives)."""
     lines = ['---']
+    written: set[str] = set()
     for key in ('name', 'description', 'trigger', 'category', 'created_by', 'disabled'):
         val = frontmatter.get(key)
         if val:
+            lines.append(f'{key}: {val}')
+            written.add(key)
+    for key, val in frontmatter.items():
+        if key not in written and val:
             lines.append(f'{key}: {val}')
     lines.append('---')
     lines.append('')
@@ -454,8 +515,14 @@ def patchSkill(
     description: Optional[str] = None,
     trigger: Optional[str] = None,
     category: Optional[str] = None,
+    enabled: Optional[bool] = None,
 ) -> dict[str, object]:
-    """Patch an existing skill (copy-on-write for bundled skills)."""
+    """Patch an existing skill (copy-on-write for bundled skills).
+
+    M6 item 4: the enabled/disabled flip is handled HERE so a PATCH that
+    changes both ``disabled`` and content fields performs exactly one file
+    write (the router previously called setEnabled + patchSkill = 2 writes).
+    """
     existing = get(name)
     if not existing:
         raise SkillValidationError(f"Skill '{name}' not found.")
@@ -467,11 +534,7 @@ def patchSkill(
     m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
     if not m:
         raise SkillValidationError(f"Skill '{name}' has malformed frontmatter.")
-    frontmatter: dict[str, str] = {}
-    for line in m.group(1).split('\n'):
-        if ':' in line:
-            key, __, val = line.partition(':')
-            frontmatter[key.strip()] = val.strip()
+    frontmatter = _parse_frontmatter_block(m.group(1))
     current_body = m.group(2).strip()
     if description is not None:
         frontmatter['description'] = description.strip()
@@ -479,6 +542,11 @@ def patchSkill(
         frontmatter['trigger'] = trigger.strip()
     if category is not None:
         frontmatter['category'] = category.strip() or 'uncategorized'
+    if enabled is not None:
+        if enabled:
+            frontmatter.pop('disabled', None)
+        else:
+            frontmatter['disabled'] = 'true'
     frontmatter.setdefault('created_by', 'agent')
     new_body = current_body if body is None else body.strip()
     md.write_text(_renderSkillMd(frontmatter, new_body), 'utf-8')
@@ -507,27 +575,10 @@ def deleteSkill(name: str) -> dict[str, object]:
 def setEnabled(name: str, *, enabled: bool) -> dict[str, object]:
     """Enable/disable a skill by flipping frontmatter ``disabled``.
 
-    Disabled skills stay discoverable in the catalogue (with
+    Disabled skills stay discoverable via ``list_all``/``/api/skills`` (with
     ``enabled: false``) so the settings UI can show them, but are excluded
-    from prompt injection. Copy-on-write for bundled skills.
+    from the catalogue and every prompt surface (M6 item 1). Thin wrapper
+    over ``patchSkill`` so both paths share one single-write implementation.
     """
-    agent_dir = _copyOnWrite(name)
-    md = agent_dir / 'SKILL.md'
-    text = md.read_text('utf-8')
-    m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
-    if not m:
-        raise SkillValidationError(f"Skill '{name}' has malformed frontmatter.")
-    frontmatter: dict[str, str] = {}
-    for line in m.group(1).split('\n'):
-        if ':' in line:
-            key, __, val = line.partition(':')
-            frontmatter[key.strip()] = val.strip()
-    if enabled:
-        frontmatter.pop('disabled', None)
-    else:
-        frontmatter['disabled'] = 'true'
-    md.write_text(_renderSkillMd(frontmatter, m.group(2).strip()), 'utf-8')
-    parsed = _parseSkill(md)
-    _bust_prompt_skills_cache()
-    return parsed or {'name': name, 'enabled': enabled}
+    return patchSkill(name, enabled=enabled)
 

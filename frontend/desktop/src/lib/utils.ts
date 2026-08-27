@@ -26,8 +26,9 @@ export function formatTimeAgo(iso: string | number | Date): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/** Human relative time for memory entries: "just now", "5m ago", "3h ago",
- *  then a locale date once older than a day. Returns '' for invalid input. */
+/** Human relative time: "just now", "5m ago", "3h ago", "3d ago" within a
+ *  week, then a compact absolute date ("Aug 24"; year added when not the
+ *  current one) — plan §5.2 list style. Returns '' for invalid input. */
 export function timeAgo(iso: string | number | Date | null | undefined): string {
   if (iso === null || iso === undefined || iso === '') return '';
   const d = iso instanceof Date ? iso : new Date(iso);
@@ -36,7 +37,26 @@ export function timeAgo(iso: string | number | Date | null | undefined): string 
   if (s < 60) return 'just now';
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return d.toLocaleDateString();
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`;
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() === new Date().getFullYear()
+      ? { month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', year: 'numeric' };
+  return d.toLocaleDateString('en-US', opts);
+}
+
+/** Full absolute timestamp for hover tooltips paired with timeAgo(). */
+export function absoluteDate(iso: string | number | Date | null | undefined): string {
+  if (iso === null || iso === undefined || iso === '') return '';
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 export function formatDuration(ms: number): string {

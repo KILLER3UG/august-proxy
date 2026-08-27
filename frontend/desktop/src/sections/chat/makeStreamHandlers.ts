@@ -33,6 +33,7 @@ import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
 import { classifyTool } from '@/lib/tool-classify';
+import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { friendlyError } from '@/lib/error-copy';
 import { pathBasename } from '@/lib/tool-labels';
 import { pushBrowserAction } from '@/lib/browser-store';
@@ -483,12 +484,23 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         providerSetup: providerSetupResult ?? t.providerSetup,
         integrationSetup: integrationSetupResult ?? t.integrationSetup,
       } : t);
+      // Minimal-output transcript (plan §4.2): a failed command's inline
+      // error is the structured digest (pytest-style last line) when the
+      // output carries one, else the first error line — never a raw head
+      // dump. Full output stays in `summary`/toolResults for the drawer.
+      const blockFailed =
+        toolFailed && parsedResult?.type !== 'mutation_pending_confirmation';
+      const blockErrorText = blockFailed
+        ? (isCommandResult
+            ? (commandErrorOneLiner(resultText) ?? resultText.slice(0, 240))
+            : resultText.slice(0, 240))
+        : '';
       streamBlocks = appendBlockEvent(streamBlocks, {
         type: 'toolResult',
         id,
-        status: toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
+        status: blockFailed ? 'error' : 'done',
         summary: summaryText,
-        error: toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText.slice(0, 240) : '',
+        error: blockErrorText,
         duration: toolResults.find(t => t.id === id)?.duration,
         searchHits,
         providerSetup: providerSetupResult,
@@ -563,8 +575,15 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onExecutionState: ({ phase, step }) => {
       // update_state transition — the inline working strip shows the
-      // phase/step chip while the turn streams.
+      // phase/step chip while the turn streams, and the block stream keeps
+      // a persisted phase marker so the plan tree (plan §4.1) regroups
+      // identically on replay.
       publishExecutionState(resolveUiSessionId(sessionId), phase, step);
+      streamBlocks = appendBlockEvent(streamBlocks, {
+        type: 'executionState',
+        phase,
+        step,
+      });
       scheduleUpdate();
     },
     onBrowserAction: (data) => {
@@ -737,6 +756,16 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // Recurring-task daemon (B7): due reminder → bell + toast.
       pushNotification('Reminder', message, 'info');
       toast.message('⏰ Reminder', { description: message });
+      scheduleUpdate();
+    },
+    onMemoryUpdated: ({ summary, content }) => {
+      // Plan §4.3: a successful memory write renders as a subtle chip —
+      // the reducer caps stacked notices (append-block-event.ts).
+      streamBlocks = appendBlockEvent(streamBlocks, {
+        type: 'memoryUpdated',
+        summary,
+        content,
+      });
       scheduleUpdate();
     },
     onCircuitMode: ({ active, message }) => {

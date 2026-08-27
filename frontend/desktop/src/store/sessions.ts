@@ -28,7 +28,7 @@ export type { Session, SessionStatus, Folder } from './sessions/types';
 export {
   defaultSessionTitle,
   dedupeSessions,
-  deriveSessionTitleFromMessage,
+  deriveSnippetTitle,
   isPlaceholderTitle,
   preferSessionRow,
   preferSessionTitle,

@@ -107,14 +107,18 @@ async def _remember(
     category: str = 'general',
     details: str = '',
     expires_at: str = '',
+    title: str = '',
+    kind: str = '',
     **_extra: object,
 ) -> str:
     """Single model write door into durable memory (facts store).
 
     Gated by the ``modelMemoryWrites`` toggle and a sensitive-topic denylist
     (unless ``memorySensitiveTopics`` is on). Writes via ``save_fact`` with
-    ``source='model'`` (INSERT OR REPLACE = update-over-duplicate) and records
-    a rollback entry so the write is undoable.
+    ``source='model'`` (upsert over the key = update-over-duplicate) and
+    records a rollback entry so the write is undoable. Every entry gets a
+    short human ``title`` (derived from the text when not supplied) and a
+    ``kind`` (fact | lesson | preference | skill-note).
     """
     import json as _json
 
@@ -148,14 +152,24 @@ async def _remember(
     if cat not in ('user', 'feedback', 'project', 'reference', 'general'):
         cat = 'general'
     factKey = (key or '').strip() or _deriveFactKey(text)
+    factTitle = (title or '').strip() or memory_store.derive_fact_title(text)
+    factKind = (kind or '').strip().lower()
     detailsText = str(details or '').strip()
     value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
     exp = (expires_at or '').strip() or None
     before = memory_store.get_fact(factKey)
     try:
-        memory_store.save_fact(factKey, value, category=cat, source='model', confidence=0.7, expires_at=exp)
+        memory_store.save_fact(
+            factKey, value, category=cat, source='model', confidence=0.7,
+            expires_at=exp, title=factTitle, kind=factKind,
+        )
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'remember failed: {exc}'})
+    try:
+        # M3 usage feedback: a fact the model writes/updates counts as used.
+        memory_store.touch_fact_usage([factKey])
+    except Exception:
+        pass
     try:
         from app.services.rollback_store import record_rollback
 
@@ -414,6 +428,16 @@ def register() -> None:
             'type': 'object',
             'properties': {
                 'fact': {'type': 'string', 'description': 'The fact to remember (one concise statement).'},
+                'title': {
+                    'type': 'string',
+                    'description': 'Optional short human label (≤60 chars) shown in the Memory UI. '
+                    'Derived from the fact text when omitted.',
+                },
+                'kind': {
+                    'type': 'string',
+                    'enum': ['fact', 'lesson', 'preference', 'skill-note'],
+                    'description': 'Entry type. Default fact.',
+                },
                 'key': {
                     'type': 'string',
                     'description': 'Optional stable key; pass it to update an existing fact instead of creating a new one.',

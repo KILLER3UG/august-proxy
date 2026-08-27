@@ -84,4 +84,18 @@ describe('previously-undispatched backend events', () => {
     );
   });
 
+  it('memoryUpdated dispatches onMemoryUpdated with summary + key', () => {
+    const onMemoryUpdated = vi.fn();
+    dispatchWorkbenchEvent(
+      'memoryUpdated',
+      { summary: 'Remembered: User prefers dark mode', key: 'user:dark-mode' },
+      { onMemoryUpdated },
+    );
+    expect(onMemoryUpdated).toHaveBeenCalledWith({
+      summary: 'Remembered: User prefers dark mode',
+      content: undefined,
+      key: 'user:dark-mode',
+    });
+  });
+
 });

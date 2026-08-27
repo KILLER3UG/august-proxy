@@ -385,9 +385,10 @@ describe('AssistantBlockTimeline process UI', () => {
 
     expandActivitySummary();
     const toggle = screen.getByRole('button', { name: /Wrote|Writing|Write/i });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(toggle);
+    // Plan §4.1: edit rows with a diff are expanded by default.
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     rerender(
       <MemoryRouter initialEntries={['/session/sess_test']}>
@@ -411,9 +412,10 @@ describe('AssistantBlockTimeline process UI', () => {
     );
 
     expandActivitySummary();
+    // The user's collapse must survive the context update (no re-expand).
     expect(screen.getByRole('button', { name: /Wrote|Writing|Write/i })).toHaveAttribute(
       'aria-expanded',
-      'true',
+      'false',
     );
   });
 
@@ -432,5 +434,216 @@ describe('AssistantBlockTimeline process UI', () => {
     expect(document.querySelector('.process-tool-panel')).toBeNull();
     // Truncated file body must not appear in the timeline.
     expect(screen.queryByText(/def main/)).not.toBeInTheDocument();
+  });
+});
+
+describe('minimal-output transcript (plan §4.1/§4.3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('memory write renders as a rail row with the saved entry text', () => {
+    renderTimeline([
+      makeToolBlock('tool_mem', 'remember', 'done', {
+        context: JSON.stringify({
+          fact: 'User prefers dark mode',
+          title: 'Dark mode preference',
+        }),
+        summary: JSON.stringify({
+          ok: true,
+          key: 'pref:dark-mode',
+          category: 'preference',
+        }),
+      }),
+    ]);
+
+    expandActivitySummary();
+    const row = document.querySelector('[data-slot="memory-rail-row"]');
+    expect(row).toBeTruthy();
+    expect(row!.textContent).toContain('Saved memory');
+    expect(row!.textContent).toContain('Dark mode preference');
+    // Expanded by default — the saved entry text is the point of the row.
+    expect(row!.textContent).toContain('User prefers dark mode');
+    expect(row!.textContent).toContain('pref:dark-mode');
+  });
+
+  it('failed command shows one red line inline; full output behind the click', () => {
+    const output = [
+      'collected 2 items',
+      '',
+      'test_a.py::test_ok PASSED',
+      'test_a.py::test_bad FAILED',
+      '',
+      'AssertionError: expected 200, got 500',
+      '= 1 failed, 1 passed in 0.42s =',
+      'Exit code: 1',
+    ].join('\n');
+    renderTimeline([
+      {
+        id: 'block_cmd_fail',
+        type: 'command',
+        tool: {
+          id: 'cmd_fail',
+          name: 'run_command',
+          status: 'error',
+          context: JSON.stringify({ command: 'python -m pytest -x' }),
+          summary: output,
+          error: output,
+        },
+      },
+    ]);
+
+    expandActivitySummary();
+    // One red line on the row itself — the structured pytest digest.
+    const inlineErr = screen.getByTestId('tool-error-line');
+    expect(inlineErr.textContent).toContain('1 failed, 1 passed');
+    // Full output stays behind the click until the row is expanded.
+    expect(document.querySelector('[data-testid="command-output-pane"]')).toBeNull();
+    const toggle = screen.getByRole('button', { name: /Ran/i });
+    fireEvent.click(toggle);
+    const pane = document.querySelector('[data-testid="command-output-pane"]');
+    expect(pane).toBeTruthy();
+    expect(pane!.querySelector('[data-testid="command-full-output"]')).toBeNull();
+    fireEvent.click(pane!.querySelector('[data-testid="command-output-toggle"]')!);
+    expect(
+      pane!.querySelector('[data-testid="command-full-output"]')!.textContent,
+    ).toContain('AssertionError');
+  });
+
+  it('successful command rows are header-only (no chevron, no pane)', () => {
+    renderTimeline([
+      {
+        id: 'block_cmd_ok',
+        type: 'command',
+        tool: {
+          id: 'cmd_ok',
+          name: 'run_command',
+          status: 'done',
+          context: JSON.stringify({ command: 'ls -la' }),
+          summary: 'total 8\ndrwxr-xr-x 2 user user 4096 .',
+        },
+      },
+    ]);
+
+    expandActivitySummary();
+    const toggle = screen.getByRole('button', { name: /Ran: ls -la/i });
+    expect(toggle).toBeDisabled();
+    expect(document.querySelector('[data-testid="command-output-pane"]')).toBeNull();
+    // Raw output never streams into the transcript on success.
+    expect(screen.queryByText(/drwxr-xr-x/)).not.toBeInTheDocument();
+  });
+
+  it('consecutive reads of the same file collapse into one ×N row', () => {
+    renderTimeline([
+      makeToolBlock('r1', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'consolidation.py' }),
+        summary: 'a',
+        duration: 200,
+      }),
+      makeToolBlock('r2', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'consolidation.py' }),
+        summary: 'b',
+        duration: 300,
+      }),
+      makeToolBlock('r3', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'consolidation.py' }),
+        summary: 'c',
+        duration: 900,
+      }),
+    ]);
+
+    expandActivitySummary();
+    expect(screen.getByText(/Read consolidation\.py ×3/)).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="tool-step-row"]').length).toBe(1);
+    // Summed duration crosses 1s, so it shows.
+    expect(screen.getByTestId('tool-read-duration').textContent).toBe('1.4s');
+  });
+
+  it('groups tool rows under update_state phase markers (plan tree)', () => {
+    renderTimeline([
+      { id: 'ph1', type: 'phase', content: 'Investigate', step: 1 },
+      makeToolBlock('t1', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'a.py' }),
+      }),
+      { id: 'ph2', type: 'phase', content: 'Fix', step: 2 },
+      makeToolBlock('t2', 'write_file', 'done', {
+        context: JSON.stringify({ path: 'a.py', content: 'new' }),
+        summary: 'Wrote a.py',
+      }),
+      { id: 'f1', type: 'finalOutput', content: 'Done.' },
+    ]);
+
+    expandActivitySummary();
+    const heads = screen.getAllByTestId('plan-phase-head');
+    expect(heads).toHaveLength(2);
+    expect(heads[0].textContent).toContain('Investigate');
+    expect(heads[0].textContent).toContain('step 1');
+    expect(heads[1].textContent).toContain('Fix');
+    // Settled turn — finished subtrees auto-collapse.
+    heads.forEach((h) => expect(h).toHaveAttribute('aria-expanded', 'false'));
+    // Expanding a group reveals its rows.
+    fireEvent.click(heads[0]);
+    expect(heads[0]).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(/Read a\.py/)).toBeInTheDocument();
+  });
+
+  it('highlights and expands the active phase group while streaming', () => {
+    renderTimeline(
+      [
+        { id: 'ph1', type: 'phase', content: 'Investigate', step: 1 },
+        makeToolBlock('t1', 'read_file', 'done', {
+          context: JSON.stringify({ path: 'a.py' }),
+        }),
+        { id: 'ph2', type: 'phase', content: 'Fix', step: 2 },
+        makeToolBlock('t2', 'read_file', 'running', {
+          context: JSON.stringify({ path: 'b.py' }),
+        }),
+      ],
+      { streaming: true, isLast: true },
+    );
+
+    expandActivitySummary();
+    const groups = document.querySelectorAll('[data-slot="plan-phase-group"]');
+    expect(groups.length).toBe(2);
+    expect(groups[0]).toHaveAttribute('data-active', 'false');
+    expect(groups[1]).toHaveAttribute('data-active', 'true');
+    expect(
+      groups[0].querySelector('[data-testid="plan-phase-head"]'),
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      groups[1].querySelector('[data-testid="plan-phase-head"]'),
+    ).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('renders flat when the model emitted no phases (graceful fallback)', () => {
+    renderTimeline([
+      makeToolBlock('t1', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'a.py' }),
+      }),
+    ]);
+
+    expandActivitySummary();
+    expect(document.querySelector('[data-slot="plan-phase-group"]')).toBeNull();
+    expect(document.querySelector('[data-slot="tool-step-row"]')).toBeTruthy();
+  });
+
+  it('update_state calls are represented by the phase marker, not a duplicate row', () => {
+    renderTimeline([
+      makeToolBlock('us1', 'update_state', 'done', {
+        context: JSON.stringify({ phase: 'Fix', step: 2 }),
+      }),
+      { id: 'ph1', type: 'phase', content: 'Fix', step: 2 },
+      makeToolBlock('t1', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'a.py' }),
+      }),
+    ]);
+
+    expandActivitySummary();
+    // The transition renders once — as the phase head, never as an edit row.
+    expect(document.querySelectorAll('[data-slot="edit-rail-row"]').length).toBe(0);
+    expect(screen.getAllByTestId('plan-phase-head').length).toBe(1);
   });
 });

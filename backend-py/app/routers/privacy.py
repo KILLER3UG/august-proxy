@@ -8,7 +8,8 @@ opt-in and returns the number of rows it removed.
 
 Tables (from app/services/memory_schema.py + migrations):
   facts, auto_memories, learned_heuristics, proposals, episodic_timeline,
-  memory_store (system KV — never purged wholesale), sessions, messages,
+  memory_store (system KV — memory purge keeps only live agent keys),
+  sessions, messages,
   session_topics, usage_events, lifecycle (audit), config_audit,
   brain_events, tool_guardrail_log, consolidation_audit,
   friction_events, routing_evidence, subagent_runs
@@ -52,6 +53,10 @@ _MEMORY_TABLES = [
     'proposals',
     'episodic_timeline',
 ]
+
+# memory_store KV keys that survive the memory purge — the only keys with a
+# live writer (agent registry). Everything else in the KV is residue.
+_KV_KEEP_KEYS = ('agent_registry', 'agent_jobs')
 
 # Tables cleared by the "clear activity logs" action (telemetry/audit).
 _LOG_TABLES = [
@@ -164,10 +169,20 @@ def _delete_rows(conn, tables: list[str]) -> dict[str, int]:
 @router.post('/purge-memories')
 async def purgeMemories():
     """Erase the agent's memory of you: facts, auto-memories, heuristics,
-    proposals, and the episodic timeline. System KV (config, eval results)
-    is intentionally left alone."""
+    proposals, the episodic timeline, and memory-adjacent KV residue.
+    The KV purge keeps only the live agent registry/jobs keys."""
     conn = memory_store._conn()  # noqa: SLF001
     deleted = _delete_rows(conn, _MEMORY_TABLES)
+    try:
+        placeholders = ','.join('?' * len(_KV_KEEP_KEYS))
+        cur = conn.execute(
+            f'DELETE FROM memory_store WHERE key NOT IN ({placeholders})',
+            _KV_KEEP_KEYS,
+        )
+        deleted['memoryStoreKv'] = max(0, int(cur.rowcount))
+        conn.commit()
+    except Exception:
+        deleted['memoryStoreKv'] = 0
     try:
         # FTS shadow tables (auto_memories_fts) are trigger-maintained; a
         # straight DELETE already cleans them, but reindex is cheap insurance.

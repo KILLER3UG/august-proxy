@@ -348,10 +348,16 @@ export const WorkbenchGuardModeChangedEventSchema = WorkbenchBaseSchema.extend({
 });
 
 /** Harness changed long-term memory (remember / update / forget). */
+export const WorkbenchMemoryUpdatedEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('memoryUpdated'),
+  summary: z.string().optional(),
+  content: z.string().optional(),
+  key: z.string().optional(),
+});
 
-/** Per-turn evidence-state snapshot for the routing-evidence
+/** Per-turn evidence-state snapshot for the routing-evidence store. */
 
-/** Per-model capability profile suggestion (toolSurface, maxTools, …).
+/** Per-model capability profile suggestion (toolSurface, maxTools, …). */
 
 /** Transient upstream error inside a sub-agent — the worker backs off. */
 export const WorkbenchSubagentRetryEventSchema = WorkbenchBaseSchema.extend({
@@ -403,6 +409,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchGuardModeChangedEventSchema,
   WorkbenchSubagentRetryEventSchema,
   WorkbenchSubagentWarningEventSchema,
+  WorkbenchMemoryUpdatedEventSchema,
   WorkbenchUserMessageQueueEventSchema,
   WorkbenchLegacyFinalOutputEventSchema,
   WorkbenchMiscLifecycleEventSchema,

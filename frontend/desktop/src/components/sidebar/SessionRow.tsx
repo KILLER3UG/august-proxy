@@ -12,7 +12,7 @@ import {
   Trash2,
   Archive,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, timeAgo, absoluteDate } from "@/lib/utils";
 import { sessionRow, hoverScale } from "@/lib/motion";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import { useNeedsAttention } from "./needs-handoff-store";
@@ -327,6 +327,16 @@ export function SessionRow({
               className="w-full"
             />
           </div>
+          {/* Plan §5.2: relative date in the list, absolute on hover. */}
+          {session.startedAt && (
+            <span
+              className="shrink-0 text-[9.5px] tabular-nums text-sidebar-foreground/30 transition-colors group-hover:text-sidebar-foreground/55"
+              title={absoluteDate(session.startedAt)}
+              data-testid="session-row-date"
+            >
+              {timeAgo(session.startedAt)}
+            </span>
+          )}
           {needsHandoff > 0 && (
             <span
               className="inline-block size-1.5 rounded-full bg-warning shrink-0"

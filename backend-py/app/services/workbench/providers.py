@@ -472,6 +472,10 @@ async def call_anthropic_workbench(
     apply_prompt_caching(body)
     if thinking_budget > 0:
         body['thinking'] = {'type': 'enabled', 'budget_tokens': thinking_budget}
+        # §9.3 #6: temperature=1 when effort/thinking is set — Anthropic
+        # requires it with extended thinking, and it is the documented
+        # pairing for reasoning effort across families.
+        body['temperature'] = 1
     agg = AnthropicWorkbenchStreamAggregator(emit=emit)
     # Poll the workbench cancel signal during chunk iteration so Stop terminates promptly.
     from app.lib.async_subprocess import current_subprocess_cancel
@@ -646,6 +650,9 @@ async def call_openai_workbench(
             reasoning = cap_reasoning_effort(reasoning, as_str(_model_entry.get('maxReasoningEffort')) or None)
         if reasoning and provider_accepts_reasoning_effort(provider, model, model_entry=_model_entry):
             body['reasoning_effort'] = reasoning
+            # §9.3 #6: temperature=1 when effort is set — the documented
+            # pairing for reasoning models.
+            body['temperature'] = 1
 
     # Poll the workbench cancel signal during chunk iteration so Stop terminates promptly.
     from app.lib.async_subprocess import current_subprocess_cancel

@@ -112,3 +112,75 @@ describe('appendBlockEvent toolResult statuses', () => {
     expect(blocks[0].tool?.error).toBe('');
   });
 });
+
+describe('appendBlockEvent executionState (plan-tree markers)', () => {
+  it('appends a phase block for a new phase', () => {
+    const blocks = appendBlockEvent([], {
+      type: 'executionState',
+      phase: 'Investigate',
+      step: 1,
+    });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('phase');
+    expect(blocks[0].content).toBe('Investigate');
+    expect(blocks[0].step).toBe(1);
+  });
+
+  it('patches the step in place when the same phase repeats', () => {
+    let blocks = appendBlockEvent([], {
+      type: 'executionState',
+      phase: 'Fix',
+      step: 1,
+    });
+    blocks = appendBlockEvent(blocks, {
+      type: 'executionState',
+      phase: 'Fix',
+      step: 2,
+    });
+    expect(blocks.filter((b) => b.type === 'phase')).toHaveLength(1);
+    expect(blocks[0].step).toBe(2);
+  });
+
+  it('starts a new phase block when the phase changes', () => {
+    let blocks = appendBlockEvent([], {
+      type: 'executionState',
+      phase: 'Investigate',
+      step: 1,
+    });
+    blocks = appendBlockEvent(blocks, {
+      type: 'executionState',
+      phase: 'Fix',
+      step: 2,
+    });
+    expect(blocks.filter((b) => b.type === 'phase')).toHaveLength(2);
+    expect(blocks[1].content).toBe('Fix');
+  });
+
+  it('ignores empty phases', () => {
+    const blocks = appendBlockEvent([], { type: 'executionState', phase: '  ' });
+    expect(blocks).toHaveLength(0);
+  });
+});
+
+describe('appendBlockEvent memoryUpdated', () => {
+  it('appends a memoryNotice block with the summary', () => {
+    const blocks = appendBlockEvent([], {
+      type: 'memoryUpdated',
+      summary: 'Remembered: User prefers dark mode',
+    });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('memoryNotice');
+    expect(blocks[0].content).toBe('Remembered: User prefers dark mode');
+  });
+
+  it('caps stacked notices so a long run cannot pile them up', () => {
+    let blocks = appendBlockEvent([], { type: 'thinking', content: 'work' });
+    for (let i = 0; i < 6; i++) {
+      blocks = appendBlockEvent(blocks, { type: 'memoryUpdated', summary: `fact ${i}` });
+    }
+    const notices = blocks.filter((b) => b.type === 'memoryNotice');
+    expect(notices.length).toBeLessThanOrEqual(4);
+    // The newest notice is always present (it replaces the oldest slot).
+    expect(notices.map((n) => n.content)).toContain('fact 5');
+  });
+});

@@ -162,6 +162,7 @@ export function EditRailRow({
                 oldContent={diffData.oldContent}
                 newContent={diffData.newContent}
                 filename={fullPath ?? undefined}
+                maxLines={100}
               />
             ) : null}
             {/* Approval / error only — diff + context are suppressed so the

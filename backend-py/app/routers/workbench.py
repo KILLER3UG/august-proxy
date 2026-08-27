@@ -1138,6 +1138,48 @@ async def revoke_tool_grant(request: Request):
     return result
 
 
+@router.get('/approval-policy')
+async def get_approval_policy():
+    """T5 approval axis (axis 2) config — durable allow/deny prefix rules,
+    per-category auto-approve, and the never-ask stance. Inert until enabled;
+    the real sandbox (axis 1) stays ground truth either way."""
+    return wb.get_approval_policy_config()
+
+
+@router.put('/approval-policy')
+async def set_approval_policy(request: Request):
+    """Validate + persist the T5 approval policy. Body: the policy dict."""
+    body = await request.json()
+    result = wb.set_approval_policy_config(body if isinstance(body, dict) else {})
+    if not result.get('ok'):
+        raise HTTPException(status_code=500, detail=str(result.get('error') or 'Save failed'))
+    return result
+
+
+@router.post('/code-bridge')
+async def code_bridge_call(request: Request):
+    """T13 tool bridge: a code-mode child process calls back with a one-shot
+    token to run a managed tool. The token maps to exactly one session; the
+    call goes through the same guard/approval gates as the typed loop, so
+    code mode cannot bypass the permission axes. Body: {token, tool, args}."""
+    from app.services.workbench import kernel as kernel_mod
+
+    body = await request.json()
+    token = str(body.get('token') or '')
+    tool_name = str(body.get('tool') or '')
+    args = body.get('args')
+    if not isinstance(args, dict):
+        args = {}
+    session_id = kernel_mod.resolve_bridge_token(token)
+    if not session_id:
+        raise HTTPException(status_code=401, detail='invalid or expired code-bridge token')
+    session = wb.getWorkbenchSession(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail='session not found for code-bridge token')
+    result = await kernel_mod.bridge_call(session, tool_name, dict(args))
+    return {'result': result}
+
+
 # ── Restricted Python cell sandbox ──────────────────────────────────────
 # Code-level policy shared by the caller-side fast check and the subprocess
 # runner (single source of truth; the runner embeds these via placeholder
@@ -1643,18 +1685,6 @@ async def truncateSession(sessionId: str, request: Request):
     return result
 
 
-@router.get('/sessions/{sessionId}/context')
-async def sessionContext(sessionId: str):
-    """Last-turn context snapshot — what memory/context the harness injected.
-
-    ``None`` when the session has no recorded snapshot yet (e.g. pre-upgrade
-    sessions or turns before the snapshot feature shipped).
-    """
-    from app.services.memory_store import get_memory
-
-    return {'context': get_memory(f'session_context:{sessionId}')}
-
-
 @router.post('/sessions/{sessionId}/branch')
 async def branchSession(sessionId: str, request: Request):
     """Fork a session into a new branch (optional upToIndex of source messages)."""
@@ -1845,8 +1875,8 @@ async def setAgentModeApi(request: Request):
     raw = as_str(body.get('agentMode') or body.get('agent_mode'), '').strip().lower()
     if raw == 'planner':
         raw = 'orchestrator'
-    if raw not in ('chat', 'agent', 'code', 'orchestrator', 'benchmark'):
-        raise HTTPException(status_code=400, detail='agentMode must be chat, agent, code, orchestrator, or benchmark')
+    if raw not in ('chat', 'agent', 'code', 'orchestrator'):
+        raise HTTPException(status_code=400, detail='agentMode must be chat, agent, code, or orchestrator')
     session = wb.getWorkbenchSession(sessionId)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')

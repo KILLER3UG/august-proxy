@@ -42,6 +42,11 @@ _ALLCamelKeys = {
     'memorySensitiveTopics',
     # Camera capture access toggle (Workstream D).
     'cameraAccess',
+    # M4 consolidation v2 cadence + model-summarize toggle (plan §3.5).
+    'consolidationIntervalHours',
+    'consolidationModelSummarize',
+    # M7 titling target override (plan §3.7).
+    'titleModel',
 }
 
 
@@ -174,3 +179,60 @@ async def testFromSessionRequiresSessionId(client):
     """Missing sessionId → 400 (FastAPI's Query(..., min_length=1) enforces it)."""
     resp = await client.get('/api/brain/config/from-session')
     assert resp.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def testStateLookupReturnsInternalStateRow(client, isolatedData):
+    """§5.5: a key in internal_state comes back verbatim with its source."""
+    from app.services.memory_store.kv import set_internal_state
+
+    set_internal_state('cognitive:boot', {'phase': 'done', 'step': 3})
+    resp = await client.get('/api/brain/state-lookup', params={'key': 'cognitive:boot'})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body['found'] is True
+    assert body['source'] == 'internal_state'
+    assert body['value'] == {'phase': 'done', 'step': 3}
+    assert body['updatedAt']
+
+
+@pytest.mark.asyncio
+async def testStateLookupFallsBackToMemoryStore(client, isolatedData):
+    """§5.5: keys absent from internal_state resolve against memory_store."""
+    from app.services.memory_store.kv import save_internal
+
+    save_internal('user:plant', 'My plant is named Gerald')
+    resp = await client.get('/api/brain/state-lookup', params={'key': 'user:plant'})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body['found'] is True
+    assert body['source'] == 'memory_store'
+    assert body['value'] == 'My plant is named Gerald'
+
+
+@pytest.mark.asyncio
+async def testStateLookupPrefersInternalStateOnCollision(client, isolatedData):
+    """§5.5: machine state wins when the same key exists in both tables."""
+    from app.services.memory_store.kv import save_internal, set_internal_state
+
+    save_internal('dup:key', 'memory-store-value')
+    set_internal_state('dup:key', 'internal-state-value')
+    resp = await client.get('/api/brain/state-lookup', params={'key': 'dup:key'})
+    body = resp.json()
+    assert body['found'] is True
+    assert body['source'] == 'internal_state'
+    assert body['value'] == 'internal-state-value'
+
+
+@pytest.mark.asyncio
+async def testStateLookupMissingKeyReportsNotFound(client, isolatedData):
+    resp = await client.get('/api/brain/state-lookup', params={'key': 'nope:not-here'})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == {'key': 'nope:not-here', 'found': False, 'source': None, 'value': None, 'updatedAt': None}
+
+
+@pytest.mark.asyncio
+async def testStateLookupRejectsBlankKey(client):
+    resp = await client.get('/api/brain/state-lookup', params={'key': '   '})
+    assert resp.status_code == 400

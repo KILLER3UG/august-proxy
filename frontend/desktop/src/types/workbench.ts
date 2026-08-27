@@ -356,6 +356,13 @@ export interface WorkbenchEventHandlers {
   }) => void;
   /** Recurring-task daemon (B7): a due reminder fired at turn start. */
   onRecurringTask?: (data: { message: string }) => void;
+  /** Harness changed long-term memory (remember / update / forget). The
+   *  transcript renders a subtle chip; the data layer stores nothing. */
+  onMemoryUpdated?: (data: {
+    summary?: string;
+    content?: string;
+    key?: string;
+  }) => void;
   /** /circuit workbench toggled — the desktop opens/closes the Circuit
    *  panel in the right drawer and shows the ack notice. */
   onCircuitMode?: (data: {

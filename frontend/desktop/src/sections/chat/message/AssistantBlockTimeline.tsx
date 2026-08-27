@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   ToolCallItemBody,
   extractAgentId,
   extractCommand,
+  extractDiffData,
   extractFilename,
 } from '@/components/chat/ToolCallItem';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
@@ -12,6 +14,7 @@ import { ThoughtStep } from '@/components/chat/ThoughtStep';
 import { isCollapseThinkingEnabled } from '@/lib/thinking-preference';
 import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { EditRailRow } from '@/components/chat/EditRailRow';
+import { MemoryEditRow } from '@/components/chat/MemoryEditRow';
 import { RailDoneRow } from '@/components/chat/RailDoneRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
@@ -95,6 +98,63 @@ function splitProcessAndFinal(blocks: DisplayBlock[]): {
   };
 }
 
+/** Plan §4.1 plan-tree group: one `update_state` phase and the tool rows
+ *  that ran under it. Finished subtrees auto-collapse (expanded defaults
+ *  come from the parent); the active group stays open and highlighted. */
+function PlanPhaseGroup({
+  phase,
+  step,
+  active,
+  expanded,
+  onToggle,
+  children,
+}: {
+  phase: string;
+  step?: number;
+  active: boolean;
+  expanded: boolean;
+  onToggle: (next: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn('plan-phase-group my-0.5', active && 'plan-phase-group--active')}
+      data-slot="plan-phase-group"
+      data-active={active ? 'true' : 'false'}
+    >
+      <button
+        type="button"
+        onClick={() => onToggle(!expanded)}
+        aria-expanded={expanded}
+        className="flex w-full min-w-0 items-center gap-1.5 rounded-xs px-1 py-0.5 text-left text-[12px] font-medium text-foreground/75 hover:bg-accent hover:text-foreground"
+        data-testid="plan-phase-head"
+      >
+        <ChevronDown
+          className={cn(
+            'size-3 shrink-0 transition-transform',
+            !expanded && '-rotate-90',
+          )}
+          aria-hidden
+        />
+        <span className="min-w-0 flex-1 truncate" title={phase}>
+          {phase}
+          {typeof step === 'number' ? (
+            <span className="ml-1 font-normal text-muted-foreground/70">
+              · step {step}
+            </span>
+          ) : null}
+        </span>
+        {active ? (
+          <span className="shrink-0 text-[10px] italic text-muted-foreground/70">
+            working…
+          </span>
+        ) : null}
+      </button>
+      {expanded ? <div className="plan-phase-body pl-4">{children}</div> : null}
+    </div>
+  );
+}
+
 export type SubagentPromptEntry = {
   content: string;
   systemPrompt: string;
@@ -173,11 +233,24 @@ export function AssistantBlockTimeline({
     setExpandOverrides((prev) => ({ ...prev, [id]: next }));
   };
 
-  const isToolExpanded = (toolId: string, status: string | undefined) => {
+  const isToolExpanded = (
+    toolId: string,
+    status: string | undefined,
+    tool?: MessageBlock['tool'],
+  ) => {
     if (toolId in expandOverrides) return expandOverrides[toolId];
     // Open while running; once complete the block keeps whatever state the
     // user left it in (ToolStepRow never force-collapses on completion).
-    return status === 'running';
+    if (status === 'running') return true;
+    // Plan §4.1: edit diffs, search hits, and memory writes are
+    // expanded-by-default rows (capped bodies, still collapsible).
+    if (tool) {
+      const bucket = classifyTool(tool.name);
+      if (bucket === 'edit' && extractDiffData(tool)) return true;
+      if (tool.searchHits && tool.searchHits.length > 0) return true;
+      if (bucket === 'memoryWrite') return true;
+    }
+    return false;
   };
 
   const isThoughtExpanded = (thoughtId: string) => {
@@ -349,7 +422,11 @@ export function AssistantBlockTimeline({
     });
   }, [livePacked, liveSessionKey, liveDetail, liveItems, processSummary, isLast, streaming]);
 
-  const renderProcessBlocks = (blocks: DisplayBlock[]) => {
+  const renderFlatProcess = (
+    blocks: DisplayBlock[],
+    withDoneMarker = true,
+    keyPrefix = 'flat',
+  ) => {
     // Each rendered node is tagged rail (threaded onto the left line:
     // thinking, file edits, the terminal Done marker) or block (everything
     // else). Consecutive rail nodes are grouped into one segment so the line
@@ -420,6 +497,19 @@ export function AssistantBlockTimeline({
           continue;
         }
 
+        // update_state bookkeeping is represented by the phase marker
+        // itself (plan §4.1 plan tree) — a duplicate "Edited state" rail
+        // row is exactly the noise the minimal transcript removes.
+        // Failures still render so the user sees them.
+        if (
+          !isCommand &&
+          normalizeToolName(tool.name) === 'update_state' &&
+          tool.status !== 'error'
+        ) {
+          ti++;
+          continue;
+        }
+
         const toolId = tool.id || block.id || `tool_${ti}`;
         const promptEntries =
           tool.id && subagentPrompts
@@ -432,7 +522,7 @@ export function AssistantBlockTimeline({
           extractAgentId(tool.context) ??
           undefined;
         const filename = !isCommand ? extractFilename(tool.context) : null;
-        const expanded = isToolExpanded(toolId, tool.status);
+        const expanded = isToolExpanded(toolId, tool.status, tool);
 
         // Web-search results render as their own specialized Task block
         // (query trigger + scroll-capped hit list) instead of a generic row.
@@ -465,12 +555,65 @@ export function AssistantBlockTimeline({
           continue;
         }
 
+        // Memory writes render as rail rows (brain glyph · entry title),
+        // expanded by default to show the saved entry text (plan §4.1).
+        if (!isCommand && classifyTool(tool.name) === 'memoryWrite') {
+          tagged.push({
+            kind: 'rail',
+            node: <MemoryEditRow key={toolId} tool={tool} expanded={expanded} />,
+          });
+          ti++;
+          continue;
+        }
+
         const label = getToolLabel(tool.name, {
           agentId: agentId ?? undefined,
           filename: filename ?? undefined,
           command: isCommand ? extractCommand(tool.context) ?? undefined : undefined,
           status: tool.status,
         });
+
+        // Consecutive reads of the same file collapse into one row:
+        // `read consolidation.py ×4` (plan §4.1). Errored reads stay
+        // individual so the failure stays visible.
+        if (
+          !isCommand &&
+          classifyTool(tool.name) === 'view' &&
+          tool.status !== 'error' &&
+          filename
+        ) {
+          let count = 1;
+          let totalDuration = typeof tool.duration === 'number' ? tool.duration : 0;
+          let tj = ti + 1;
+          while (tj < blocks.length) {
+            const nb = blocks[tj];
+            if (nb.type !== 'toolCall' || !nb.tool) break;
+            const nt = nb.tool;
+            if (nt.status === 'error' || classifyTool(nt.name) !== 'view') break;
+            if (extractFilename(nt.context) !== filename) break;
+            count += 1;
+            if (typeof nt.duration === 'number') totalDuration += nt.duration;
+            tj += 1;
+          }
+          if (count > 1) {
+            tagged.push({
+              kind: 'block',
+              node: (
+                <ToolStepRow
+                  key={toolId}
+                  tool={{ ...tool, duration: totalDuration }}
+                  label={`${label} ×${count}`}
+                  isCommand={false}
+                  expanded={false}
+                  onToggle={(next) => toggleExpand(toolId, next)}
+                />
+              ),
+            });
+            ti = tj;
+            continue;
+          }
+        }
+
         tagged.push({
           kind: 'block',
           node: (
@@ -507,6 +650,29 @@ export function AssistantBlockTimeline({
                 hideProgress
               />
             </ToolStepRow>
+          ),
+        });
+        ti++;
+        continue;
+      }
+
+      if (block.type === 'memoryNotice') {
+        // Plan §4.1: a memory write renders as one subtle chip — entry title
+        // only, no raw payload in the transcript.
+        tagged.push({
+          kind: 'block',
+          node: (
+            <div
+              key={block.id || `memory_${ti}`}
+              data-testid="memory-notice-chip"
+              className="mx-3 my-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-sky-500/25 bg-sky-500/8 px-2.5 py-1 text-[11px] text-sky-300/90"
+              title={block.content || undefined}
+            >
+              <span aria-hidden="true" className="opacity-70">
+                🧠
+              </span>
+              <span className="truncate">{block.content || 'Memory updated'}</span>
+            </div>
           ),
         });
         ti++;
@@ -580,7 +746,7 @@ export function AssistantBlockTimeline({
     // Terminal rail marker once the turn settles. Gated off while the last
     // turn streams so it never flickers in the gap between steps.
     const hasRail = tagged.some((t) => t.kind === 'rail');
-    if (hasRail && (!isLast || !streaming) && !anyToolRunning) {
+    if (withDoneMarker && hasRail && (!isLast || !streaming) && !anyToolRunning) {
       tagged.push({
         kind: 'rail',
         node: <RailDoneRow key="rail-done" errored={errorsCount > 0} />,
@@ -595,7 +761,7 @@ export function AssistantBlockTimeline({
     const flushRail = () => {
       if (railBuf.length === 0) return;
       out.push(
-        <div key={`rail-seg-${segSeq}`} className="process-rail-segment">
+        <div key={`rail-seg-${keyPrefix}-${segSeq}`} className="process-rail-segment">
           {railBuf}
         </div>,
       );
@@ -611,6 +777,66 @@ export function AssistantBlockTimeline({
       }
     }
     flushRail();
+    return out;
+  };
+
+  /**
+   * Plan §4.1 plan tree: `update_state` phase markers group the rows that
+   * follow them — indent under the current step, highlight the active one,
+   * auto-collapse finished subtrees. Flat fallback when the model emitted
+   * no phases; the tree is never required for correctness (§4.2.7).
+   */
+  const renderProcessBlocks = (blocks: DisplayBlock[]) => {
+    const phaseIdx: number[] = [];
+    blocks.forEach((b, i) => {
+      if (b.type === 'phase' && b.content && b.content.trim()) phaseIdx.push(i);
+    });
+    if (phaseIdx.length === 0) return renderFlatProcess(blocks, true, 'flat');
+
+    const out: ReactNode[] = [];
+    if (phaseIdx[0] > 0) {
+      out.push(...renderFlatProcess(blocks.slice(0, phaseIdx[0]), false, 'pre'));
+    }
+    phaseIdx.forEach((start, gi) => {
+      const end = gi + 1 < phaseIdx.length ? phaseIdx[gi + 1] : blocks.length;
+      const phaseBlock = blocks[start];
+      const phaseKey = phaseBlock.id || `phase_${start}`;
+      // Active = the newest group while the turn still streams; finished
+      // subtrees auto-collapse once the answer starts.
+      const active = gi === phaseIdx.length - 1 && !!streaming && !hasFinalOutput;
+      const expanded =
+        phaseKey in expandOverrides ? expandOverrides[phaseKey] : active;
+      out.push(
+        <PlanPhaseGroup
+          key={phaseKey}
+          phase={(phaseBlock.content || '').trim()}
+          step={phaseBlock.step}
+          active={active}
+          expanded={expanded}
+          onToggle={(next) => toggleExpand(phaseKey, next)}
+        >
+          {renderFlatProcess(blocks.slice(start + 1, end), false, `ph${gi}`)}
+        </PlanPhaseGroup>,
+      );
+    });
+
+    // Terminal Done marker after the last group once the turn settles.
+    const settled = !isLast || !streaming;
+    const hasRailContent = blocks.some(
+      (b) =>
+        b.type === 'thinking' ||
+        (b.type === 'toolCall' &&
+          !!b.tool &&
+          (classifyTool(b.tool.name) === 'edit' ||
+            classifyTool(b.tool.name) === 'memoryWrite')),
+    );
+    if (settled && !anyToolRunning && hasRailContent) {
+      out.push(
+        <div key="rail-done-wrap" className="process-rail-segment">
+          <RailDoneRow errored={errorsCount > 0} />
+        </div>,
+      );
+    }
     return out;
   };
 

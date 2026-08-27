@@ -14,6 +14,11 @@ async def _loadSkill(name: str) -> str:
         skill = skill_service.get(name)
         if not skill:
             return f"Error: Skill '{name}' not found."
+        if not skill.get('enabled'):
+            return (
+                f"Skill '{name}' is disabled. It cannot be loaded — "
+                'enable it in Settings → Skills first.'
+            )
         return f'# {skill["name"]}\n\n{as_str(skill.get("description"), "")}\n\n{as_str(skill.get("instructions"), "")}'
     except Exception as exc:
         return f"Error loading skill '{name}': {exc}"
@@ -25,9 +30,10 @@ async def _listSkills(query: str = '') -> str:
 
     try:
         if query:
+            # search() defaults to enabledOnly=True.
             skills = skill_service.search(query)
         else:
-            skills = skill_service.list_all()
+            skills = [s for s in skill_service.list_all() if s.get('enabled')]
         if not skills:
             return 'No skills found.' if not query else f"No skills matching '{query}'."
         lines = [f'Available skills ({len(skills)}):\n']

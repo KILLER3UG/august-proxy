@@ -123,3 +123,96 @@ describe('ToolStepRow — Task block', () => {
     expect(onToggle).toHaveBeenCalledWith(true);
   });
 });
+
+describe('ToolStepRow — minimal-output policy (plan §4.1)', () => {
+  it('settled read rows are header-only: no chevron, toggle disabled', () => {
+    const tool = makeTool({
+      name: 'read_file',
+      status: 'done',
+      context: JSON.stringify({ path: 'a.py' }),
+      summary: 'x'.repeat(300),
+    });
+    render(
+      <ToolStepRow tool={tool} label="Read a.py" expanded={false} onToggle={() => {}}>
+        <div>should never render</div>
+      </ToolStepRow>,
+    );
+    const toggle = screen.getByRole('button');
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('should never render')).toBeNull();
+  });
+
+  it('successful command rows are header-only', () => {
+    const tool = makeTool({
+      name: 'run_command',
+      status: 'done',
+      context: JSON.stringify({ command: 'ls' }),
+      summary: 'file.txt',
+    });
+    render(
+      <ToolStepRow
+        tool={tool}
+        label="Ran: ls"
+        isCommand
+        expanded={false}
+        onToggle={() => {}}
+      >
+        <div>output body</div>
+      </ToolStepRow>,
+    );
+    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.queryByText('output body')).toBeNull();
+  });
+
+  it('failed command rows show one inline error line and stay expandable', () => {
+    const tool = makeTool({
+      name: 'run_command',
+      status: 'error',
+      context: JSON.stringify({ command: 'python -m pytest' }),
+      error: 'AssertionError: expected 200, got 500',
+    });
+    render(
+      <ToolStepRow
+        tool={tool}
+        label="Ran: python -m pytest"
+        isCommand
+        expanded={false}
+        onToggle={() => {}}
+      >
+        <div>full output</div>
+      </ToolStepRow>,
+    );
+    const errLine = screen.getByTestId('tool-error-line');
+    expect(errLine.textContent).toBe('AssertionError: expected 200, got 500');
+    const toggle = screen.getByRole('button');
+    expect(toggle).not.toBeDisabled();
+    fireEvent.click(toggle);
+    expect(screen.getByText('full output')).toBeInTheDocument();
+  });
+
+  it('read duration shows only above 1s', () => {
+    const fast = makeTool({
+      name: 'read_file',
+      status: 'done',
+      context: JSON.stringify({ path: 'a.py' }),
+      duration: 400,
+    });
+    const { unmount } = render(
+      <ToolStepRow tool={fast} label="Read a.py" expanded={false} onToggle={() => {}} />,
+    );
+    expect(screen.queryByTestId('tool-read-duration')).toBeNull();
+    unmount();
+
+    const slow = makeTool({
+      name: 'read_file',
+      status: 'done',
+      context: JSON.stringify({ path: 'big.py' }),
+      duration: 1400,
+    });
+    render(
+      <ToolStepRow tool={slow} label="Read big.py" expanded={false} onToggle={() => {}} />,
+    );
+    expect(screen.getByTestId('tool-read-duration').textContent).toBe('1.4s');
+  });
+});

@@ -99,6 +99,20 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
         errors.append(f'facts_expiry_sweep: {exc3}')
         services['facts_expiry_sweep'] = {'ok': False, 'error': str(exc3)}
 
+    # M4 consolidation v2 (plan §3.5): the one scheduled memory-maintenance
+    # job. Cadence comes from brain-config consolidationIntervalHours; state
+    # lives in internal_state. First pass runs when overdue (boot included).
+    try:
+        from app.services.memory_store.consolidation import consolidation_loop
+
+        t = asyncio.create_task(consolidation_loop(), name='consolidation')
+        _tasks.append(t)
+        services['consolidation'] = {'ok': True}
+    except Exception as exc4:
+        logger.exception('consolidation loop start failed')
+        errors.append(f'consolidation: {exc4}')
+        services['consolidation'] = {'ok': False, 'error': str(exc4)}
+
     _status['started'] = True
     _status['services'] = services
     _status['errors'] = errors

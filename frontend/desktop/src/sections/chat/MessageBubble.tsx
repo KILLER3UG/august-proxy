@@ -311,6 +311,7 @@ export function MessageBubble({
           isLast={isLast}
           streaming={streaming}
           modelId={modelId}
+          sessionId={sessionId}
           displayBlocks={displayBlocks}
           showPendingThinking={!!showPendingThinking}
           showRaw={showRaw}

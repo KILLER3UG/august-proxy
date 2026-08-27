@@ -445,3 +445,89 @@ def build_capabilities_block(
 def skills_tools_allowed(allowed_tool_names: Iterable[str]) -> bool:
     allowed = set(allowed_tool_names)
     return bool(allowed & {'load_skill', 'load_skills', 'list_skills'})
+
+
+# Tier-3 per-turn skill relevance (M6 item 6): top-3 descriptions, ~150 tokens.
+_RELEVANT_SKILLS_TOP_K = 3
+_RELEVANT_SKILLS_CHAR_CAP = 600
+_RELEVANT_SKILLS_MIN_QUERY = 8
+
+
+def skill_relevance_enabled() -> bool:
+    """Gate for the Tier-3 ``<relevant_skills>`` pass: brain-config
+    ``skillRelevanceMatch`` (default on), with ``AUGUST_SKILL_RELEVANCE=0``
+    as the hard env override."""
+    import os
+
+    if os.environ.get('AUGUST_SKILL_RELEVANCE', '') == '0':
+        return False
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        return bool(getRuntimeConfig().get('skillRelevanceMatch', True))
+    except Exception:
+        return True
+
+
+def build_relevant_skills_block(query: str) -> str:
+    """Render the per-turn ``<relevant_skills>`` block (M6 item 6).
+
+    The Tier-1 ``<skills>`` index is name-only and cacheable; this block
+    carries the descriptions of the top-3 skills relevant to the CURRENT
+    user message, BM25-scored over name+description+trigger with the same
+    pure-Python retrieval used for tools. Appended at the tail of the turn
+    context by the workbench (never the system prompt) so the provider
+    prefix cache stays stable (Q14). Empty string when gated off, the query
+    is too short, or nothing scores above zero.
+    """
+    q = (query or '').strip()
+    if len(q) < _RELEVANT_SKILLS_MIN_QUERY or not skill_relevance_enabled():
+        return ''
+    try:
+        from app.services import skill_service
+        from app.services.tools.retrieval import BM25, _tokenize
+
+        catalogue = skill_service.catalogue()
+        if not catalogue:
+            return ''
+        queryTokens = _tokenize(q)
+        if not queryTokens:
+            return ''
+        corpus: list[list[str]] = []
+        entries: list[dict[str, object]] = []
+        for s in catalogue:
+            name = as_str(s.get('name'), '')
+            text = f"{name.replace('-', ' ').replace('.', ' ')} {as_str(s.get('description'), '')} {as_str(s.get('trigger'), '')}"
+            tokens = _tokenize(text)
+            if not tokens:
+                continue
+            corpus.append(tokens)
+            entries.append(s)
+        if not corpus:
+            return ''
+        bm25 = BM25(corpus)
+        scored: list[tuple[float, dict[str, object]]] = []
+        for i, s in enumerate(entries):
+            score = bm25.score(queryTokens, i)
+            if score > 0:
+                scored.append((score, s))
+        if not scored:
+            return ''
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        lines: list[str] = ['<relevant_skills>']
+        budget = _RELEVANT_SKILLS_CHAR_CAP
+        for _score, s in scored[:_RELEVANT_SKILLS_TOP_K]:
+            name = as_str(s.get('name'), '')
+            desc = as_str(s.get('description'), '')
+            line = f'- {name}: {desc}' if desc else f'- {name}'
+            if budget - len(line) < 0:
+                break
+            budget -= len(line)
+            lines.append(line)
+        if len(lines) == 1:
+            return ''
+        lines.append('Load one with load_skill(name) if it fits the request.')
+        lines.append('</relevant_skills>')
+        return '\n'.join(lines)
+    except Exception:
+        return ''

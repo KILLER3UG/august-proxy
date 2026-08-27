@@ -63,11 +63,15 @@ export interface MessageBlock {
     | 'finalOutput'
     | 'recalledMemories'
     | 'memoryNotice'
+    | 'phase'
     | 'error';
   content?: string;
   /** For type === 'error': the raw upstream error text, kept for the
    *  expandable details — content holds the friendly copy. */
   rawContent?: string;
+  /** For type === 'phase' (update_state plan-tree marker, plan §4.1):
+   *  the phase label lives in `content`; `step` is the model's step counter. */
+  step?: number;
   tool?: MessageBlockToolCall;
   /** Set on toolCall blocks whose context represents a revised plan
    *  (august__submit_plan with isRevisedPlan=true). */
@@ -292,10 +296,15 @@ export interface AppendBlockEvent {
     | 'toolResult'
     | 'recalledMemories'
     | 'memoryUpdated'
+    | 'executionState'
     | 'error';
   content?: string;
   /** For type === 'error': raw upstream text (friendly copy goes in content). */
   rawContent?: string;
+  /** For type === 'executionState': update_state phase label + step counter
+   *  (plan §4.1 plan-tree markers). */
+  phase?: string;
+  step?: number;
   name?: string;
   id?: string;
   context?: string;

@@ -298,12 +298,11 @@ snake_case parameters; routers may keep camelCase path params to match URLs.
 2. Register with `daemon_manager` and gate behind cognitive / config flags.
 3. Respect session/daemon caps and backoff (load-tested — do not raise caps
    without a new contention check).
-4. Writes go through `db_writer` / `memory_store` — no ad-hoc SQLite writers on
+4. Writes go through `memory_store` — no ad-hoc SQLite writers on
    new paths without review.
 5. Unit test registration + one tick in isolation.
 
-Note: `db_writer` is **FIFO** with age-based low drop; high priority does not
-jump the queue. Prefer direct `memory_store` transactions for user-facing SoT.
+Note: prefer direct `memory_store` transactions for user-facing SoT.
 
 ---
 
@@ -339,8 +338,7 @@ jump the queue. Prefer direct `memory_store` transactions for user-facing SoT.
 - **Logs:** `GET /api/logs/recent`, `WS /api/logs/stream`
 - **Feature flow:** `GET /api/monitor/events` (+ stream)
 - **Brain:** `GET /api/brain/status`, `/diagnostics`, `/events/stream`
-- **Perf:** `GET /api/perf/recent` with `AUGUST_PERF_TIMING=1`;
-  `GET /api/perf/db-writer`
+- **Perf:** `GET /api/perf/recent` with `AUGUST_PERF_TIMING=1`
 - **Frontend stream marks:** `localStorage.august_stream_perf=1`
 - **Stale workbench state:** sessions live in SQLite; optional delete of
   `data/workbench-sessions.json` only affects JSON export. Resetting brain wipes

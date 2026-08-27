@@ -248,12 +248,13 @@ export function ToolCallItemBody({
     parts.push(<SearchResultsList key="search" hits={tool.searchHits} />);
   }
 
-  // View/read tools: no truncated content preview — path is on the row label.
-  // Commands: output lives in CommandOutputPane. Edit tools use DiffView.
+  // Minimal-output rule (plan §4.1): raw tool output never streams into the
+  // transcript. The one exception is memory writes — the saved entry text is
+  // the point of the row, so it stays expanded (edit-class exception).
+  // View/read: path is on the row label. Commands: CommandOutputPane. Edits: DiffView.
   if (
     !isSubagent &&
-    !isView &&
-    !isCommand &&
+    bucket === 'memoryWrite' &&
     tool.summary &&
     !tool.searchHits &&
     !tool.providerSetup &&

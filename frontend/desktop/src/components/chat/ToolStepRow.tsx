@@ -21,6 +21,7 @@ import { ToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { extractDiffData, extractFilename } from '@/components/chat/tool/extractors';
 import { classifyTool } from '@/lib/tool-classify';
+import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { formatToolContext } from '@/lib/tool-context-format';
 import { pathBasename } from '@/lib/tool-labels';
 import { diffStats } from '@/components/chat/DiffView';
@@ -182,9 +183,24 @@ export function ToolStepRow({
     tool.pendingApproval ||
     (!isView && hasChildren)
   );
+  // Minimal-output policy (plan §4.1): settled read rows and successful
+  // command rows are header-only — no chevron, nothing to expand into.
+  // Failures always stay inspectable (full output behind the click).
+  const minimalLocked =
+    !running && ((isView && !errored) || (isCommand && !errored));
   // View tools stay header-only while empty (no blank "Running…" panel).
-  const canExpand = hasExpandableContent || (running && !isView);
+  const canExpand =
+    !minimalLocked && (hasExpandableContent || (running && !isView));
   const showEmptyFallback = !hasTaskRows && !hasChildren;
+  // Failed commands surface exactly one red line inline — the structured
+  // digest when the output carries one, else the first error line.
+  const commandErrorLine =
+    isCommand && errored
+      ? commandErrorOneLiner(tool.error || tool.summary)
+      : null;
+  // Reads show a duration only when slow enough to be worth noting (>1s).
+  const showReadDuration =
+    isView && !running && typeof tool.duration === 'number' && tool.duration > 1000;
 
   return (
     <div
@@ -235,6 +251,23 @@ export function ToolStepRow({
             >
               {label}
             </span>
+            {showReadDuration && (
+              <span
+                className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60"
+                data-testid="tool-read-duration"
+              >
+                {(tool.duration! / 1000).toFixed(1)}s
+              </span>
+            )}
+            {commandErrorLine && (
+              <span
+                className="min-w-0 truncate font-mono text-[10.5px] text-rose-400"
+                title={commandErrorLine}
+                data-testid="tool-error-line"
+              >
+                {commandErrorLine}
+              </span>
+            )}
             {canExpand && (
               <ChevronDown
                 className="process-tool-chevron group-data-[state=open]:rotate-180"

@@ -11,6 +11,10 @@ Mounts four routes under ``/api/brain``:
   GET  /api/brain/stores/{name}         — paginated rows of one store (read-only browse)
   DELETE /api/brain/stores/{name}/{id}  — delete one row (per-entry Delete in the UI)
   PATCH  /api/brain/stores/{name}/{id}  — update whitelisted fields of one row
+  GET  /api/brain/consolidation/log     — M4 consolidation + M5 lesson-promotion log
+  POST /api/brain/consolidation/run     — trigger one consolidation pass now
+  GET  /api/brain/turn-outcomes         — M5 per-model error-rate telemetry
+  GET  /api/brain/state-lookup          — §5.5 raw internal_state/memory_store row by key
 
 The shared service is :mod:`app.services.brain_config_service`. Mutation
 endpoints record an audit row via ``memory_store.record_config_audit``.
@@ -132,3 +136,87 @@ async def updateBrainStoreRow(name: str, row_id: str, body: dict[str, object]):
         err = str(result.get('error') or 'update failed')
         raise HTTPException(status_code=404 if 'not found' in err else 400, detail=err)
     return result
+
+
+@router.get('/consolidation/log')
+async def getConsolidationLog(limit: int = Query(50, ge=1, le=200)):
+    """M4 consolidation log (plan §3.5): one lifecycle row per pass plus the
+    M5 lesson-promotion decisions. This is the analysis surface that replaced
+    the deleted diagnostics endpoints."""
+    import json as _json
+
+    from app.services.memory_conn import conn as _mem_conn
+
+    rows = _mem_conn().execute(
+        "SELECT created_at, event_type, detail FROM lifecycle "
+        "WHERE event_type IN ('consolidation', 'lesson_promoted', 'lesson_promotion_skipped') "
+        'ORDER BY created_at DESC LIMIT ?',
+        (limit,),
+    ).fetchall()
+    entries: list[dict[str, object]] = []
+    for r in rows:
+        detail: object = {}
+        try:
+            detail = _json.loads(r['detail']) if r['detail'] else {}
+        except (ValueError, TypeError):
+            detail = {'raw': r['detail']}
+        entries.append({'createdAt': r['created_at'], 'eventType': r['event_type'], 'detail': detail})
+    return {'entries': entries}
+
+
+@router.post('/consolidation/run')
+async def postConsolidationRun():
+    """Trigger one consolidation pass now (Settings → Memory → "Run now")."""
+    import asyncio
+
+    from app.services.memory_store.consolidation import run_consolidation
+
+    summary = await asyncio.to_thread(run_consolidation)
+    return {'ok': not summary.get('error'), 'summary': summary}
+
+
+@router.get('/turn-outcomes')
+async def getTurnOutcomes(days: int = Query(7, ge=1, le=30)):
+    """M5 telemetry (plan §3.6): per-model/provider error rates for the
+    Observability hub. Diagnostics only — never injected into prompts and
+    never shown in the Memory UI."""
+    from app.services.turn_outcomes import error_rate_by_model
+
+    return {'days': days, 'models': error_rate_by_model(days=days)}
+
+
+@router.get('/state-lookup')
+async def getStateLookup(key: str = Query(..., min_length=1)):
+    """Raw state lookup (plan §5.5): type a key, get the raw
+    ``internal_state`` or ``memory_store`` row verbatim. This is the only
+    surface where ``cognitive:*``-style machine state is ever visible —
+    never quarantined into Memory, never rendered by default. Read-only;
+    ``internal_state`` is checked first (machine state wins)."""
+    import json as _json
+
+    from app.services.memory_conn import conn as _mem_conn
+
+    k = key.strip()
+    if not k:
+        raise HTTPException(
+            status_code=400, detail={'code': 'validation', 'message': 'key query param is required'}
+        )
+    conn = _mem_conn()
+    for table in ('internal_state', 'memory_store'):
+        row = conn.execute(
+            f'SELECT value, updated_at FROM {table} WHERE key = ?', (k,)
+        ).fetchone()
+        if row:
+            value: object
+            try:
+                value = _json.loads(row['value'])
+            except (ValueError, TypeError):
+                value = row['value']
+            return {
+                'key': k,
+                'found': True,
+                'source': table,
+                'value': value,
+                'updatedAt': row['updated_at'],
+            }
+    return {'key': k, 'found': False, 'source': None, 'value': None, 'updatedAt': None}

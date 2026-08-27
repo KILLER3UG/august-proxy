@@ -211,7 +211,15 @@ def ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) 
     session-snapshot thread and the main loop during startup) can both see
     the column missing and both ALTER — the loser gets "duplicate column
     name", which is harmless and must not abort schema setup.
+
+    No-op when the table itself is absent (e.g. learned_heuristics after the
+    empty-legacy-table drop): the table's creator owns its columns then.
     """
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (table,)
+    ).fetchone()
+    if exists is None:
+        return
     cols = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})').fetchall()}
     if column not in cols:
         try:
@@ -408,6 +416,13 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     # facts.expires_at backs the `remember` tool's optional TTL and the boot
     # sweep that purges expired model-written facts (memory-humanization batch).
     ensure_column(conn, 'facts', 'expires_at', 'TEXT')
+    # Knowledge-base redesign (plan 2026-08-27 §3.3): facts is the one durable
+    # memory store — titled, typed, usage-tracked, supersede-aware.
+    ensure_column(conn, 'facts', 'title', "TEXT DEFAULT ''")
+    ensure_column(conn, 'facts', 'kind', "TEXT DEFAULT 'fact'")
+    ensure_column(conn, 'facts', 'use_count', 'INTEGER DEFAULT 0')
+    ensure_column(conn, 'facts', 'last_used_at', 'TEXT')
+    ensure_column(conn, 'facts', 'status', "TEXT DEFAULT 'active'")
     # auto_memories.key must be UNIQUE: saveAutoMemory's check-then-insert was
     # non-transactional, so concurrent writers inserted twin rows under one
     # key (audit finding). Dedup any historical twins (keep the OLDEST row)
@@ -432,76 +447,15 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     conn.execute(
         'CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at)'
     )
-    create_vector_graph_tables(conn)
-
-
-def create_vector_graph_tables(conn: sqlite3.Connection) -> None:
-    """Vector embeddings + knowledge graph — SQLite SoT (replaces JSON files)."""
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS vector_entries (
-            id TEXT PRIMARY KEY,
-            text TEXT NOT NULL,
-            embedding TEXT NOT NULL,
-            metadata TEXT DEFAULT '{}',
-            namespace TEXT DEFAULT 'default',
-            created_at TEXT DEFAULT (datetime('now'))
-        )
-        """
-    )
-    conn.execute(
-        'CREATE INDEX IF NOT EXISTS idx_vector_namespace ON vector_entries(namespace)'
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS graph_entities (
-            name_key TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            entity_type TEXT DEFAULT 'general',
-            metadata TEXT DEFAULT '{}',
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS graph_relations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_key TEXT NOT NULL,
-            target_key TEXT NOT NULL,
-            relation_type TEXT NOT NULL,
-            metadata TEXT DEFAULT '{}',
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now')),
-            UNIQUE(source_key, target_key, relation_type)
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS graph_observations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            entity_key TEXT NOT NULL,
-            content TEXT NOT NULL,
-            metadata TEXT DEFAULT '{}',
-            created_at TEXT DEFAULT (datetime('now'))
-        )
-        """
-    )
-    conn.execute(
-        'CREATE INDEX IF NOT EXISTS idx_graph_rel_source ON graph_relations(source_key)'
-    )
-    conn.execute(
-        'CREATE INDEX IF NOT EXISTS idx_graph_obs_entity ON graph_observations(entity_key)'
-    )
-    conn.commit()
 
 
 # Bump when DDL / indexes change in a way that requires re-running create_*.
 # user_version is set after a successful ensure_schema so warm boots can skip
 # the heavy CREATE IF NOT EXISTS + migration probe when already current.
-_SCHEMA_USER_VERSION = 9
+# v10: vector/graph tables removed (025_memory_state_separation drops them).
+# v11: knowledge-base redesign — internal_state + turn_outcomes tables (026),
+#      facts title/kind/use_count/last_used_at/status columns.
+_SCHEMA_USER_VERSION = 11
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
@@ -576,6 +530,29 @@ def _run_migrations_safe(conn: sqlite3.Connection) -> None:
         logging.warning('Migration runner failed (non-fatal): %s', exc)
 
 
+def _drop_empty_legacy_heuristics(conn: sqlite3.Connection) -> None:
+    """Drop learned_heuristics once it holds no rows (plan §3.3 M2).
+
+    025 purged the immutable turn-lessons; any remaining rows are deletable
+    from the Memory UI. Once the store drains empty there is no writer and
+    no reader left, so the table goes away for good. Best-effort: a locked
+    table simply survives until the next boot.
+    """
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='learned_heuristics' LIMIT 1"
+        ).fetchone()
+        if exists is None:
+            return
+        row = conn.execute('SELECT COUNT(*) AS c FROM learned_heuristics').fetchone()
+        if row is not None and int(row['c']) == 0:
+            conn.execute('DROP TABLE learned_heuristics')
+            conn.commit()
+            logging.info('Dropped empty legacy table learned_heuristics')
+    except Exception as exc:
+        logging.debug('learned_heuristics drop skipped: %s', exc)
+
+
 def repair_fts_sync(conn: sqlite3.Connection) -> None:
     """Rebuild any FTS index whose docsize count diverges from its base table.
 
@@ -630,13 +607,18 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'auto_memories', 'confidence', 'REAL DEFAULT 0.7')
             ensure_column(conn, 'auto_memories', 'ttl_days', 'INTEGER')
             ensure_column(conn, 'facts', 'expires_at', 'TEXT')
+            ensure_column(conn, 'facts', 'title', "TEXT DEFAULT ''")
+            ensure_column(conn, 'facts', 'kind', "TEXT DEFAULT 'fact'")
+            ensure_column(conn, 'facts', 'use_count', 'INTEGER DEFAULT 0')
+            ensure_column(conn, 'facts', 'last_used_at', 'TEXT')
+            ensure_column(conn, 'facts', 'status', "TEXT DEFAULT 'active'")
             ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
             ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
             ensure_column(conn, 'learned_heuristics', 'confidence', 'REAL DEFAULT 0.5')
-            create_vector_graph_tables(conn)
             _ensure_messages_fts(conn)
             repair_fts_sync(conn)
             _run_migrations_safe(conn)
+            _drop_empty_legacy_heuristics(conn)
             conn.commit()
             return
     migrate_camel_to_snake(conn)
@@ -645,5 +627,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     _ensure_messages_fts(conn)
     repair_fts_sync(conn)
     _run_migrations_safe(conn)
+    _drop_empty_legacy_heuristics(conn)
     conn.execute(f'PRAGMA user_version={_SCHEMA_USER_VERSION}')
     conn.commit()

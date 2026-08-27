@@ -23,12 +23,11 @@ from app.services.memory_store.brain import (
 )
 from app.services.memory_store.kv import (
     _fts_match_query,
-    delete_memory,
+    get_internal_state,
     get_memory,
     init,
-    list_memory,
-    save_memory,
-    search_memory,
+    save_internal,
+    set_internal_state,
 )
 from app.services.memory_store.messages import (
     count_messages,
@@ -40,6 +39,7 @@ from app.services.memory_store.messages import (
 from app.services.memory_store.rest import (
     decide_proposal,
     delete_fact,
+    derive_fact_title,
     get_fact,
     get_proposal,
     get_session_topic,
@@ -60,8 +60,7 @@ from app.services.memory_store.rest import (
     save_proposal,
     search_facts,
     search_sessions_by_topic,
-    timeline_sweep,
-    vacuum,
+    touch_fact_usage,
     write_timeline_event,
 )
 from app.services.memory_store.sessions import (
@@ -79,16 +78,17 @@ from app.services.memory_store.wire import _row_as_wire, _session_field
 __all__ = [
     'close',
     'init',
-    'save_memory',
+    'save_internal',
     'get_memory',
-    'delete_memory',
-    'list_memory',
-    'search_memory',
+    'set_internal_state',
+    'get_internal_state',
     'save_fact',
     'get_fact',
+    'derive_fact_title',
     'search_facts',
     'list_facts',
     'delete_fact',
+    'touch_fact_usage',
     'save_proposal',
     'get_proposal',
     'list_proposals',
@@ -118,7 +118,6 @@ __all__ = [
     'resolve_sot_session_id',
     'list_usage',
     'get_usage',
-    'vacuum',
     'get_stats',
     'brain_query',
     'brain_browse',
@@ -127,7 +126,6 @@ __all__ = [
     'brain_delete_row',
     'brain_update_row',
     'write_timeline_event',
-    'timeline_sweep',
     '_conn',
     '_db_path',
     '_row_as_wire',

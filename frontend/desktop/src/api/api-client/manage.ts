@@ -86,31 +86,6 @@ export function deleteManageAlias(alias: string): Promise<unknown> {
   return api.delete(`/api/manage/aliases/${encodeURIComponent(alias)}`);
 }
 
-// Memory facts (uses /api/memory/facts router)
-export interface MemoryFact {
-  key: string;
-  value: unknown;
-  category?: string;
-}
-
-export function listManageMemory(category?: string): Promise<MemoryFact[]> {
-  return api
-    .get<{ facts: MemoryFact[] }>(
-      `/api/memory/facts${category ? `?category=${encodeURIComponent(category)}` : ''}`,
-    )
-    .then((r) => r.facts ?? []);
-}
-export function createManageMemoryFact(body: {
-  key: string;
-  value: unknown;
-  category?: string;
-}): Promise<unknown> {
-  return api.post('/api/memory/facts', body);
-}
-export function deleteManageMemoryFact(key: string): Promise<unknown> {
-  return api.delete(`/api/memory/facts/${encodeURIComponent(key)}`);
-}
-
 // Settings (uses /api/manage/settings router)
 export function updateManageSettings(
   updates: Record<string, unknown>,

@@ -1,13 +1,20 @@
 /**
- * Beginner-friendly live / final shell output for run_command tools.
- * Strips sandbox metadata + ANSI, applies \r progress-bar updates, auto-scrolls.
- * Styled to match the chat area's process panels (theme tokens, soft card)
- * rather than a raw terminal look.
+ * Minimal-output command pane (plan §4.1/§4.2):
+ *   success → command line + green pill, nothing else;
+ *   failure → command line + red pill + ONE red error line (structured
+ *             digest when the output carries one), full stdout/stderr
+ *             behind the click;
+ *   running → command line + running pill, no raw stream into the
+ *             transcript (full output lives in the drawer/trajectory).
+ *
+ * Still exports the ANSI/sandbox/exit-code cleaners so the drawer and the
+ * unit tests keep using one code path.
  */
 
-import { useEffect, useRef } from 'react';
-import { Loader2, TerminalSquare } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, Loader2, TerminalSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { extractCommand } from './extractors';
 
 // Strips ANSI escape sequences (CSI + OSC) from terminal output — the
@@ -72,26 +79,31 @@ export function CommandOutputPane({
   status: string;
 }) {
   const scrollRef = useRef<HTMLPreElement>(null);
+  // Full output is opt-in on failure — start collapsed.
+  const [showOutput, setShowOutput] = useState(false);
   const command = extractCommand(context) || toolName.replace(/^@/, '');
   const running = status === 'running';
   const source = running
     ? (preview || '')
     : (summary || preview || '');
   const { body, exitCode, failed } = formatCommandOutputForDisplay(source);
-  const showBody = body.length > 0;
+  const isError = !running && (failed || status === 'error');
+  const errorLine = isError ? commandErrorOneLiner(body) : null;
+  const hasOutput = body.length > 0;
+  const showFull = isError && hasOutput && showOutput;
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !running) return;
-    el.scrollTop = el.scrollHeight;
-  }, [body, running]);
+    if (!el || !showFull) return;
+    el.scrollTop = 0;
+  }, [showFull, body]);
 
   let statusLabel = 'Done';
   let statusClass = 'bg-emerald-500/10 text-emerald-400';
   if (running) {
     statusLabel = 'Running';
     statusClass = 'bg-sky-500/10 text-sky-400';
-  } else if (failed || status === 'error') {
+  } else if (isError) {
     statusLabel = exitCode !== null ? `Failed · exit ${exitCode}` : 'Failed';
     statusClass = 'bg-rose-500/10 text-rose-400';
   }
@@ -100,6 +112,7 @@ export function CommandOutputPane({
     <div
       className="mt-1.5 w-full max-w-2xl overflow-hidden rounded-md border border-[hsl(var(--border)/0.55)] bg-[hsl(var(--foreground)/0.035)]"
       data-testid="command-output-pane"
+      data-status={running ? 'running' : isError ? 'error' : 'done'}
     >
       <div className="flex items-center gap-2 border-b border-[hsl(var(--border)/0.4)] px-3 py-1.5">
         <TerminalSquare className="size-3 shrink-0 text-muted-foreground" />
@@ -114,28 +127,47 @@ export function CommandOutputPane({
             'inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium',
             statusClass,
           )}
+          data-testid="command-status-pill"
         >
           {running && <Loader2 className="size-2.5 animate-spin" />}
           {statusLabel}
         </span>
+        {isError && hasOutput && (
+          <button
+            type="button"
+            onClick={() => setShowOutput((v) => !v)}
+            className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-px text-[10px] text-muted-foreground hover:text-foreground"
+            aria-expanded={showOutput}
+            data-testid="command-output-toggle"
+          >
+            output
+            <ChevronDown
+              className={cn('size-3 transition-transform', showOutput && 'rotate-180')}
+              aria-hidden
+            />
+          </button>
+        )}
       </div>
-      {showBody ? (
+      {isError && errorLine && (
+        <div
+          className="truncate border-b border-[hsl(var(--border)/0.4)] px-3 py-1 font-mono text-[11px] text-rose-400"
+          title={errorLine}
+          data-testid="command-error-line"
+        >
+          {errorLine}
+        </div>
+      )}
+      {showFull && (
         <pre
           ref={scrollRef}
           className="tool-result-scroll bg-code-block text-code-block m-0 max-h-56 overflow-y-auto overscroll-contain px-3 py-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words"
+          data-testid="command-full-output"
           onWheel={(e) => {
             if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
           }}
         >
           {body}
-          {running && (
-            <span className="inline-block w-1.5 h-3 align-middle bg-[hsl(var(--foreground)/0.35)] ml-0.5 animate-pulse" />
-          )}
         </pre>
-      ) : (
-        <div className="px-3 py-2 text-[11px] text-muted-foreground italic">
-          {running ? 'Waiting for output…' : 'No output.'}
-        </div>
       )}
     </div>
   );

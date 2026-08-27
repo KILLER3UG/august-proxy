@@ -112,6 +112,124 @@ def exists(workspacePath: str | None) -> bool:
     return _resolveAugPath(workspacePath).exists()
 
 
+# ── T6 layered loading (plan §9.4) ───────────────────────────────────────
+# global → git-root→cwd walk; AGENTS.override.md wins at each level; the
+# combined body is capped at 32 KiB, dropping the least-specific layers
+# first so the workspace's own instructions survive.
+
+_LAYERED_CAP_BYTES = 32 * 1024
+_OVERRIDE_FILENAME = 'AGENTS.override.md'
+_MAX_WALK_DEPTH = 40
+
+
+def _find_git_root(start: Path) -> Optional[Path]:
+    """Nearest ancestor of ``start`` (inclusive) that contains a .git entry."""
+    cur = start
+    for _ in range(_MAX_WALK_DEPTH):
+        if (cur / '.git').exists():
+            return cur
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
+def _directive_file(directory: Path) -> Optional[Path]:
+    """The directive file for one directory level; the override wins."""
+    override = directory / _OVERRIDE_FILENAME
+    if override.is_file():
+        return override
+    primary = directory / _AUG_FILENAME
+    if primary.is_file():
+        return primary
+    legacy = directory / _LEGACY_FILENAME
+    if legacy.is_file():
+        return legacy
+    return None
+
+
+def load_layered(workspacePath: str | None) -> Optional[dict[str, object]]:
+    """Layered directive load: global → git-root→cwd walk (T6).
+
+    Layers, least-specific first:
+      1. global — ``<dataDir>/AGENTS.md`` (user-wide directives)
+      2. each directory from the git root (or the workspace itself when not
+         in a repo) down to the workspace
+
+    At each level ``AGENTS.override.md`` replaces the regular file. Bodies
+    are concatenated least-specific first with a blank line between; when
+    the total exceeds 32 KiB the least-specific layers are dropped first,
+    then a hard cut with a marker. Returns ``{body, layers, truncated,
+    exists}`` or ``None`` when no layer exists.
+    """
+    layers: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def _addLayer(path: Path, scope: str) -> None:
+        key = str(path)
+        if key in seen:
+            return
+        seen.add(key)
+        try:
+            text = path.read_text('utf-8')
+        except Exception:
+            return
+        body = str(_parseAug(text).get('body') or '').strip()
+        if body:
+            layers.append({'path': key, 'scope': scope, 'body': body})
+
+    try:
+        from app.lib.paths import dataPath
+
+        globalPath = dataPath(_AUG_FILENAME)
+        if globalPath.is_file():
+            _addLayer(globalPath, 'global')
+    except Exception:
+        pass
+
+    if workspacePath:
+        ws = Path(workspacePath)
+        if ws.is_dir():
+            wsResolved = ws.resolve()
+            top = _find_git_root(wsResolved) or wsResolved
+            chain: list[Path] = []
+            cur = wsResolved
+            while True:
+                chain.append(cur)
+                if cur == top or cur.parent == cur:
+                    break
+                cur = cur.parent
+            for directory in reversed(chain):
+                found = _directive_file(directory)
+                if found is not None:
+                    scope = 'workspace' if directory == wsResolved else 'tree'
+                    _addLayer(found, scope)
+
+    if not layers:
+        return None
+
+    def _bytes(layer: dict[str, str]) -> int:
+        return len(layer['body'].encode('utf-8'))
+
+    truncated = False
+    total = sum(_bytes(layer) for layer in layers)
+    while total > _LAYERED_CAP_BYTES and len(layers) > 1:
+        total -= _bytes(layers.pop(0))
+        truncated = True
+    combined = '\n\n'.join(layer['body'] for layer in layers)
+    if len(combined.encode('utf-8')) > _LAYERED_CAP_BYTES:
+        combined = combined.encode('utf-8')[:_LAYERED_CAP_BYTES].decode('utf-8', errors='ignore')
+        combined += '\n\n[... directive truncated at 32 KiB]'
+        truncated = True
+    return {
+        'body': combined,
+        'layers': [{'path': layer['path'], 'scope': layer['scope']} for layer in layers],
+        'truncated': truncated,
+        'exists': True,
+    }
+
+
+
 def write(
     workspacePath: str | None, content: str, *, frontmatter: Optional[dict[str, str]] = None
 ) -> dict[str, object]:

@@ -169,7 +169,7 @@ All anchors verified against the working tree 2026-08-28.
 | HTML artifacts | `artifact_tools.py:357` | sandboxed iframe (`allow-scripts`, no `allow-same-origin`) |
 | Policy gates | `tool_policy.py:36-39` (read-only), `:64-66` (write), `:81` (delete), `:84` (`_SHELL_EXACT`), `:123-124` (plan-mode block), `:155-156` (circuit-mode gate) | parity oracle in `test_tool_policy_parity.py` |
 | Frontend | `CircuitArtifactCard.tsx` (155 ln), `RightDrawerCircuitSection.tsx` (151 ln), `lib/artifacts.ts` (168 ln) | card + drawer panel; **no three.js/uPlot/viewer deps in `package.json`** |
-| Skill | `backend-py/skills/circuit-sim/SKILL.md` | accurate post-2026-08-26 rewrite |
+| Skill | `skills/circuit-sim/SKILL.md` | accurate post-2026-08-26 rewrite (moved from orphaned `backend-py/skills/` on 2026-08-27) |
 
 **Environment fact:** ngspice is **not installed** on the user's machine — `circuit_simulate` currently degrades to install guidance. Quartus 18.1 **is** installed (the user's course tool).
 

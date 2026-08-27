@@ -135,3 +135,90 @@ def test_is_fallback_title_matches_derived_snippet():
     derived = derive_title_from_message(user)
     assert _is_fallback_title(derived, user)
     assert not _is_fallback_title('Checkout flake investigation', user)
+
+
+# ── M7 (plan §3.8) ─────────────────────────────────────────────────────────
+
+
+def test_default_title_is_new_chat_not_timestamp():
+    """Item 4: creation title is a neutral placeholder, not a timestamp."""
+    from app.services.workbench.sessions import (
+        _default_session_title,
+        is_placeholder_title,
+    )
+
+    title = _default_session_title()
+    assert title == 'New chat'
+    assert is_placeholder_title(title)
+
+
+def test_placeholder_title_recognizes_legacy_and_new_formats():
+    from app.services.workbench.sessions import is_placeholder_title
+
+    # Legacy date-stamped defaults still count as placeholders.
+    assert is_placeholder_title('Chat 2026-07-15 14:30')
+    assert is_placeholder_title('Chat 2026-07-15 14:30 UTC')
+    assert is_placeholder_title('New chat')
+    assert is_placeholder_title('')
+    assert is_placeholder_title(None)
+    # Real titles do not.
+    assert not is_placeholder_title('Fix checkout flake')
+    assert not is_placeholder_title('Chat about the deployment pipeline')
+
+
+def test_derive_title_skips_slash_commands_and_short():
+    from app.services.workbench.sessions import derive_title_from_message
+
+    assert derive_title_from_message('/circuit build a divider') == ''
+    assert derive_title_from_message('a') == ''
+    assert derive_title_from_message('Refactor the auth middleware please') == (
+        'Refactor the auth middleware please'
+    )
+
+
+def test_resolve_title_target_falls_back_without_config():
+    """Item 3: empty titleModel → the turn's own provider/model is kept."""
+    from app.services.workbench.title_generator import _resolve_title_target
+
+    provider = {'id': 'p', 'defaultModel': 'm'}
+    out_provider, out_model = _resolve_title_target(provider, 'turn-model')
+    assert out_provider is provider
+    assert out_model == 'turn-model'
+
+
+def test_llm_title_no_api_key_gate(monkeypatch):
+    """Item 2: a keyless gateway (resolveApiKey → '') must still title."""
+    from app.services.workbench import title_generator
+
+    class _FakeResp:
+        is_error = False
+        body_json = {
+            'choices': [{'message': {'content': 'Keyless Gateway Title'}}]
+        }
+
+    class _FakeClient:
+        config: dict = {}
+
+        def resolveApiKey(self):
+            return ''  # keyless gateway
+
+        async def generate(self, prompt, system=''):
+            return 'Keyless Gateway Title'
+
+        async def chat_completions(self, body):
+            return _FakeResp()
+
+    monkeypatch.setattr(
+        'app.providers.clients.getClient', lambda provider: _FakeClient()
+    )
+    import asyncio
+
+    title = asyncio.run(
+        title_generator._llm_title(
+            'How do I reset my password?',
+            'Go to settings and click reset.',
+            provider={'id': 'local'},
+            model='local-model',
+        )
+    )
+    assert title == 'Keyless Gateway Title'

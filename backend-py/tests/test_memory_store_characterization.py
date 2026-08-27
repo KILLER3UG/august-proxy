@@ -21,38 +21,11 @@ def brain(isolatedData):
 
 class TestMemoryKvCharacterization:
     def test_save_get_roundtrip_dict(self, brain):
-        ms.save_memory('char_key', {'hello': 'world', 'n': 1})
+        ms.save_internal('char_key', {'hello': 'world', 'n': 1})
         assert ms.get_memory('char_key') == {'hello': 'world', 'n': 1}
 
     def test_get_missing_returns_none(self, brain):
         assert ms.get_memory('does_not_exist') is None
-
-    def test_delete_returns_bool_and_removes(self, brain):
-        ms.save_memory('del_me', 'value')
-        assert ms.delete_memory('del_me') is True
-        assert ms.get_memory('del_me') is None
-        assert ms.delete_memory('del_me') is False
-
-    def test_list_memory_pattern_and_camel_keys(self, brain):
-        ms.save_memory('a_1', 'v1')
-        ms.save_memory('a_2', 'v2')
-        ms.save_memory('b_1', 'v3')
-        entries = ms.list_memory('a_%')
-        assert len(entries) == 2
-        # Current shape uses camelCase updatedAt (not updated_at).
-        assert all('updatedAt' in e for e in entries)
-        assert {e['key'] for e in entries} == {'a_1', 'a_2'}
-
-    def test_search_memory_finds_by_key_or_value(self, brain):
-        ms.save_memory('hello_world', {'msg': 'Hello there'})
-        results = ms.search_memory('hello')
-        assert len(results) >= 1
-        assert any(r.get('key') == 'hello_world' for r in results)
-
-    def test_search_empty_query_returns_empty(self, brain):
-        ms.save_memory('x', 'y')
-        assert ms.search_memory('') == []
-        assert ms.search_memory('   ') == []
 
 
 class TestFactsCharacterization:
@@ -205,7 +178,7 @@ class TestUsageAndTopicsCharacterization:
 
 class TestStatsAndTimelineCharacterization:
     def test_get_stats_keys(self, brain):
-        ms.save_memory('k', 'v')
+        ms.save_internal('k', 'v')
         stats = ms.get_stats()
         assert isinstance(stats, dict)
         # At least one of the expected counters is present and non-negative.

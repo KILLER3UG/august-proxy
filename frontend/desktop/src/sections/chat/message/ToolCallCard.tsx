@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -33,8 +32,9 @@ export function ToolBlock({
 }
 
 /**
- * Legacy role:'tool' message card — expandable args/result with optional
- * file-read progress under the disclosure header.
+ * Legacy role:'tool' message card — minimal-output policy (plan §4.3):
+ * invocation row + status pill only; no verbatim args/result dump. The
+ * full output lives in the drawer/trajectory.
  */
 export function ToolCallCard({
   tool,
@@ -45,8 +45,6 @@ export function ToolCallCard({
   timestamp: string;
   progress?: ReadonlyArray<{ path: string; status: 'reading' | 'read' }>;
 }) {
-  const [open, setOpen] = useState(false);
-  const hasBody = !!(tool.args || tool.result);
   const toolNameForIcon = tool.name.replace(/^@/, '');
   const isCommand = toolNameForIcon === 'run_command' || tool.name.startsWith('@run_command');
   // Try to extract a filename hint from the args JSON for a brand-aware file icon.
@@ -62,10 +60,7 @@ export function ToolCallCard({
   }
   return (
     <div className="text-sm text-muted-foreground w-full py-0.5" data-slot="tool-block">
-      <DisclosureRow
-        onToggle={hasBody ? () => setOpen(!open) : undefined}
-        open={open}
-      >
+      <DisclosureRow open={false}>
         <span className="flex min-w-0 items-center gap-2">
           {legacyFilename ? (
             <NewFileIcon name={legacyFilename} size={14} className="shrink-0" />
@@ -144,20 +139,6 @@ export function ToolCallCard({
           </div>
         );
       })()}
-      {open && hasBody && (
-        <div className="mt-0.5 w-full min-w-0 max-w-full overflow-x-hidden wrap-anywhere pb-1">
-          {tool.args && (
-            <pre className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-muted-foreground/70 break-words leading-relaxed chat-rail ml-2.5 max-h-52 overflow-y-auto overscroll-contain">
-              {tool.args}
-            </pre>
-          )}
-          {tool.result && (
-            <div className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-foreground/80 break-words leading-relaxed chat-rail ml-2.5 max-h-52 overflow-y-auto overscroll-contain min-h-0">
-              {tool.result}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

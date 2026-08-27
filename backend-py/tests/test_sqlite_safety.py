@@ -52,7 +52,7 @@ def test_memory_store_uses_busy_timeout(temp_brain):
 
 def test_direct_write_succeeds(temp_brain):
     """A write through the memoryStore helper commits and is readable back."""
-    memoryStore.save_memory('safety_test_key', {'v': 1, 'nested': [1, 2, 3]})
+    memoryStore.save_internal('safety_test_key', {'v': 1, 'nested': [1, 2, 3]})
     value = memoryStore.get_memory('safety_test_key')
     assert value == {'v': 1, 'nested': [1, 2, 3]}
     # And it survives a fresh read on a brand-new connection to the same file.
@@ -75,7 +75,8 @@ _EXPECTED_SNAKE_TABLES = (
     'session_topics',
     'usage_events',
     'config_audit',
-    'learned_heuristics',
+    # learned_heuristics is created then dropped while empty (plan §3.3 M2)
+    # — a fresh DB must NOT retain it; asserted below instead.
     'auto_memories',
     'episodic_timeline',
     'exam_questions',
@@ -124,6 +125,8 @@ def test_snake_case_tables_after_init(isolatedData):
     # Legacy camelCase tables must not remain
     for camel in ('memoryStore', 'sessionTopics', 'usageEvents', 'configAudit'):
         assert camel not in tables
+    # Empty legacy heuristics table is dropped at init (plan §3.3 M2).
+    assert 'learned_heuristics' not in tables
 
 
 def test_schema_migration_camel_to_snake(monkeypatch, tmp_path):

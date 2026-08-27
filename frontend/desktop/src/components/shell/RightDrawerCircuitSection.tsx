@@ -1,7 +1,7 @@
 /* ── RightDrawerCircuitSection ─ /circuit workbench panel ─────────────── */
 /* Shows the session's circuit artifacts (netlists, schematics, 3D board  *
  * renders) pulled from the turn's tool-call blocks — the same derived-   *
- * files pattern ProducedFilesRow uses, lifted into a dedicated drawer    *
+ * files pattern the ChangesCard uses, lifted into a dedicated drawer     *
  * section. Images open in the file viewer; netlists reveal in folder.    */
 
 import { useMemo } from 'react';

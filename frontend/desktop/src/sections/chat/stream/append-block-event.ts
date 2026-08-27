@@ -130,6 +130,26 @@ export function appendBlockEvent(
     } else {
       blocks.push(noticeBlock);
     }
+  } else if (event.type === 'executionState') {
+    // Plan §4.1 plan-tree marker: each update_state phase starts a new
+    // group; step updates within the same phase patch the marker in place
+    // so the tree head reads the latest step without stacking duplicates.
+    const phase = (event.phase || '').trim();
+    if (!phase) return blocks;
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === 'phase' && last.content === phase) {
+      blocks[blocks.length - 1] = {
+        ...last,
+        ...(typeof event.step === 'number' ? { step: event.step } : {}),
+      };
+    } else {
+      blocks.push({
+        id: `b_phase_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: 'phase',
+        content: phase,
+        ...(typeof event.step === 'number' ? { step: event.step } : {}),
+      });
+    }
   } else if (event.type === 'recalledMemories') {
     if (event.memories && event.memories.length > 0) {
       blocks.push({

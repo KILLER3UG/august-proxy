@@ -20,15 +20,12 @@ from app.services.model_fleet_service import ROLES as FLEET_ROLES
 from app.services.model_fleet_service import invalidate_cache as invalidate_fleet
 
 DEFAULT_BOOT: dict[str, bool] = {
-    'db_writer': True,
     'cron_scheduler': True,
     'consolidation': True,
-    'backfill_workbench': True,
     'environment_watcher': False,
 }
 
 DEFAULT_FEATURES: dict[str, bool] = {
-    'heuristics': True,
     'execution_state': True,
     'scratchpad': True,
     'tool_guardrails': True,
@@ -38,11 +35,7 @@ DEFAULT_FEATURES: dict[str, bool] = {
     'daemons': True,
     'blackboard': True,
     'env_watcher': False,
-    'skill_genesis': True,
-    'vector_memory': True,
-    'graph_memory': True,
     'llm_compactor': False,
-    'diff_learning': True,
 }
 
 DEFAULT_ORCHESTRATOR: dict[str, object] = {}
@@ -155,8 +148,6 @@ def ensure_defaults() -> dict[str, object]:
         ('cron_scheduler', 'cron_scheduler'),
         ('sleep_cycle', 'consolidation'),
         ('consolidation', 'consolidation'),
-        ('db_writer', 'db_writer'),
-        ('backfill_workbench', 'backfill_workbench'),
         ('environment_watcher', 'environment_watcher'),
         ('env_watcher', 'environment_watcher'),
     ):
@@ -230,12 +221,6 @@ def ensure_defaults() -> dict[str, object]:
         config_service.saveConfig(cfg)
         invalidate_fleet()
     return get_cognitive()
-
-
-def get_boot_layers() -> dict[str, bool]:
-    tree = get_cognitive()
-    boot = as_dict(tree.get('boot'), {})
-    return {k: bool(boot.get(k, DEFAULT_BOOT.get(k, False))) for k in DEFAULT_BOOT}
 
 
 def get_features() -> dict[str, bool]:

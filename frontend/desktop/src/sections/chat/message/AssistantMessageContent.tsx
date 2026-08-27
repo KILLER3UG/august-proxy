@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
-import { ProducedFilesRow } from '@/components/chat/ProducedFilesRow';
+import { ChangesCard } from '@/components/chat/ChangesCard';
 import { CircuitArtifactCard } from '@/components/chat/CircuitArtifactCard';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { GitDiffResult } from '@/api/git';
@@ -21,6 +20,7 @@ export function AssistantMessageContent({
   isLast,
   streaming,
   modelId,
+  sessionId,
   displayBlocks,
   showPendingThinking,
   showRaw,
@@ -44,6 +44,8 @@ export function AssistantMessageContent({
   isLast?: boolean;
   streaming?: boolean;
   modelId?: string | null;
+  /** Owning session id — Undo target for the ChangesCard. */
+  sessionId?: string | null;
   displayBlocks: DisplayBlock[];
   showPendingThinking: boolean;
   showRaw: boolean;
@@ -110,18 +112,15 @@ export function AssistantMessageContent({
             onSwitchModel={onReanswer}
           />
         )}
-        {(() => {
-          const cf = message.changedFiles as { files?: unknown[] } | undefined;
-          return cf && Array.isArray(cf.files) && cf.files.length > 0
-            ? <ChangedFilesCard changes={message.changedFiles as GitDiffResult} />
-            : null;
-        })()}
-        {/* Light "Files touched" chips — derived from the turn's edit tool
-            calls, always available (unlike the git-based diff card above).
-            Hidden while streaming so it appears with the settled answer. */}
-        {!(isLast && streaming) && (
-          <ProducedFilesRow blocks={message.blocks} />
-        )}
+        {/* Unified ZCode-style changes card (plan §4.5): aggregate
+            `X files changed +N −M [Undo]` header with type-aware per-file
+            rows. Visible as soon as the first edit block lands — files
+            arrive in real time; totals settle when the git diff lands. */}
+        <ChangesCard
+          blocks={message.blocks}
+          changedFiles={message.changedFiles as GitDiffResult | null}
+          sessionId={sessionId}
+        />
         {/* Claude-style circuit deliverable cards: one compact clickable chip
             per schematic/3D/netlist/simulation output; content opens in the
             right side panel, never inline in chat. */}

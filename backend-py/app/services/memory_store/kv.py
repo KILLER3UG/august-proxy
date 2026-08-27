@@ -3,13 +3,11 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
-from typing import cast
 
 from app.services.memory_conn import conn as _conn
 from app.services.memory_schema import ensure_schema
-from app.services.memory_store.wire import _json, _row_as_wire
-from app.type_aliases import JsonValue, MemoryEntryDict
+from app.services.memory_store.wire import _json
+from app.type_aliases import JsonValue
 
 
 def init() -> None:
@@ -17,8 +15,13 @@ def init() -> None:
     ensure_schema(_conn())
 
 
-def save_memory(key: str, value: JsonValue) -> None:
-    """Save a key-value pair to memory."""
+def save_internal(key: str, value: JsonValue) -> None:
+    """Save a key-value pair to the internal KV store.
+
+    Renamed from ``save_memory`` (plan §3.3 M2): the KV store is machine
+    state / registry data, not user-visible memory. Durable memory goes
+    through the facts store (``save_fact``); this name makes misuse obvious.
+    """
     conn = _conn()
     conn.execute(
         "INSERT OR REPLACE INTO memory_store (key, value, updated_at) VALUES (?, ?, datetime('now'))",
@@ -39,31 +42,32 @@ def get_memory(key: str) -> JsonValue | None:
     return None
 
 
-def delete_memory(key: str) -> bool:
-    """Delete a memory key. Returns True if it existed."""
+def set_internal_state(key: str, value: JsonValue) -> None:
+    """Write machine state to ``internal_state`` (plan §3.2 M1).
+
+    Maintenance/cron/daemon bookkeeping lives here — never in the
+    user-visible ``memory_store`` KV and never in facts. Not exposed to
+    the Brain stores UI; only reachable via the Settings raw-state lookup.
+    """
     conn = _conn()
-    cursor = conn.execute('DELETE FROM memory_store WHERE key = ?', (key,))
+    conn.execute(
+        "INSERT INTO internal_state (key, value, updated_at) VALUES (?, ?, datetime('now')) "
+        'ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
+        (key, _json(value)),
+    )
     conn.commit()
-    return cursor.rowcount > 0
 
 
-def list_memory(pattern: str = '%') -> list[MemoryEntryDict]:
-    """List memory entries with optional key pattern matching."""
+def get_internal_state(key: str) -> JsonValue | None:
+    """Read a row from ``internal_state`` (None when absent)."""
     conn = _conn()
-    rows = conn.execute(
-        'SELECT key, value, updated_at FROM memory_store WHERE key LIKE ? ORDER BY updated_at DESC',
-        (pattern,),
-    ).fetchall()
-    results: list[MemoryEntryDict] = []
-    for r in rows:
+    row = conn.execute('SELECT value FROM internal_state WHERE key = ?', (key,)).fetchone()
+    if row:
         try:
-            val = json.loads(r['value'])
+            return json.loads(row['value'])
         except (json.JSONDecodeError, TypeError):
-            val = r['value']
-        wire = _row_as_wire(r)
-        wire['value'] = val
-        results.append(cast(MemoryEntryDict, wire))
-    return results
+            return row['value']
+    return None
 
 
 def _fts_match_query(query: str) -> str:
@@ -79,55 +83,5 @@ def _fts_match_query(query: str) -> str:
         return ''
     # Quote tokens so punctuation does not break MATCH parsing.
     return ' OR '.join(f'"{t.replace(chr(34), "")}"*' for t in tokens if t.replace('"', ''))
-
-
-def search_memory(query: str, *, limit: int = 20, value_max_chars: int | None = 4000) -> list[MemoryEntryDict]:
-    """Full-text search across memory keys and values.
-
-    Uses the FTS5 table (columns ``key``, ``value``) via table-level MATCH —
-    not a nonexistent ``content`` column. Falls back to LIKE only if FTS fails.
-    Large ``value`` blobs are truncated for search results when ``value_max_chars``
-    is set (pass ``None`` for full values).
-    """
-    if not query or not query.strip():
-        return []
-    conn = _conn()
-    lim = max(1, min(int(limit), 100))
-    try:
-        ftsQuery = _fts_match_query(query)
-        if not ftsQuery:
-            return []
-        # Table-level MATCH (correct for fts5 key,value content=memory_store).
-        rows = conn.execute(
-            'SELECT key, value FROM memory_store_fts WHERE memory_store_fts MATCH ? '
-            'ORDER BY rank LIMIT ?',
-            (ftsQuery, lim),
-        ).fetchall()
-        results: list[MemoryEntryDict] = []
-        for r in rows:
-            try:
-                val = json.loads(r['value'])
-            except (json.JSONDecodeError, TypeError):
-                val = r['value']
-            if value_max_chars is not None and isinstance(val, str) and len(val) > value_max_chars:
-                val = val[:value_max_chars] + '…'
-            results.append(cast(MemoryEntryDict, {'key': r['key'], 'value': val}))
-        return results
-    except sqlite3.OperationalError:
-        # Escape LIKE wildcards so `100%` / `my_note` don't over-match.
-        escaped = query.strip().replace('%', r'\%').replace('_', r'\_')
-        likeQuery = f'%{escaped}%'
-        rows = conn.execute(
-            "SELECT key, value FROM memory_store WHERE key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\' LIMIT ?",
-            (likeQuery, likeQuery, lim),
-        ).fetchall()
-        results = []
-        for r in rows:
-            try:
-                val = json.loads(r['value'])
-            except (json.JSONDecodeError, TypeError):
-                val = r['value']
-            results.append(cast(MemoryEntryDict, {'key': r['key'], 'value': val}))
-        return results
 
 

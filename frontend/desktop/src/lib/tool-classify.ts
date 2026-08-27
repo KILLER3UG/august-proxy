@@ -2,13 +2,14 @@
  * Classify tool names into activity buckets for the chat ToolSummary header.
  *
  * Buckets:
- *   view  — reads, greps, lists, web fetch/search
- *   edit  — writes, patches, deletes, creates
- *   run   — shell / terminal commands
- *   tool  — everything else (subagents, memory, config, …)
+ *   view        — reads, greps, lists, web fetch/search
+ *   edit        — writes, patches, deletes, creates
+ *   run         — shell / terminal commands
+ *   memoryWrite — durable memory writes (remember / forget / save_fact)
+ *   tool        — everything else (subagents, config, …)
  */
 
-export type ToolBucket = 'view' | 'edit' | 'run' | 'tool';
+export type ToolBucket = 'view' | 'edit' | 'run' | 'memoryWrite' | 'tool';
 
 /** Strip workbench / august / @ / namespace prefixes for matching. */
 export function normalizeToolName(name: string): string {
@@ -33,6 +34,15 @@ export function isSubagentToolName(name?: string): boolean {
   if (!name) return false;
   return SUBAGENT_CANONICAL.has(normalizeToolName(name));
 }
+
+const MEMORY_WRITE_NAMES = new Set([
+  'remember',
+  'memory_write',
+  'forget',
+  'forget_fact',
+  'save_fact',
+  'update_fact',
+]);
 
 const VIEW_NAMES = new Set([
   'read_file',
@@ -113,6 +123,8 @@ const RUN_NAMES = new Set([
 export function classifyTool(name: string): ToolBucket {
   const n = normalizeToolName(name);
   if (!n) return 'tool';
+
+  if (MEMORY_WRITE_NAMES.has(n)) return 'memoryWrite';
 
   if (RUN_NAMES.has(n) || n.includes('run_command') || n === 'bash' || n.endsWith('_bash')) {
     return 'run';

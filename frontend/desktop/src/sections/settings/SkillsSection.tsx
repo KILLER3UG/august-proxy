@@ -223,7 +223,12 @@ export function SkillsSection() {
               <Button variant="outline" onClick={startEdit}>
                 <Pencil className="size-3.5" /> Edit
               </Button>
-              {selected.createdBy && selected.createdBy !== 'builtin' && (
+              {/* M6 item 7: deletable only when authored (non-bundled) origin.
+                  Bundled skills carry an empty createdBy; also treat explicit
+                  'builtin'/'bundled' markers as non-deletable. */}
+              {selected.createdBy &&
+                selected.createdBy !== 'builtin' &&
+                selected.createdBy !== 'bundled' && (
                 <Button
                   variant="outline"
                   className="border-destructive/40 text-destructive hover:bg-destructive/10"
