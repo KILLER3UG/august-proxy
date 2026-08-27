@@ -24,7 +24,8 @@ The only live memory write doors today: the gated `remember` tool (→ `facts`),
 2. **§3 Knowledge-base redesign** — separate machine state from memory; make `facts` the one durable, typed, human-readable store; add retrieval that actually injects relevant memory into prompts; a minimal consolidation job; turn outcomes as telemetry instead of "lessons"; skill-system hygiene fixes; session titling that works.
 3. **§4 Minimal-output transcript** — the invocation-only rendering spec, formalized, with corrections (§4.2) where the spec contradicts itself or the codebase.
 4. **§5 UI/UX proposals** — flat memory list, session titles, failure lines, visual budget.
-5. **§4.5 Unified Changes card** — ZCode-style single `ChangesCard` ("X files changed +N −M" + Undo) replacing `ChangedFilesCard` and `ProducedFilesRow`.
+5. **§4.5 Unified Changes card (rev. 2)** — ZCode-style single `ChangesCard` ("X files changed +N −M" + Undo) with type-aware rows (code → Review + Open; documents → big badge + kind label + Open), replacing `ChangedFilesCard` and `ProducedFilesRow`.
+6. **Part 9 — OpenCode adoption & benchmark-top strategy** — what to steal from OpenCode (`anomalyco/opencode`) **and the wider field** (Hermes, Terminus 2, pi, Codex CLI, Gemini CLI, Aider, Cline/Roo — source-level survey §9.4, ranked adoptions T1–T12), plus a phased path (B0–B5, §9.5) to put **August itself** at the top of the Coding Agent Index. Per your ruling the existing `benchmark` agentMode is model-evaluation (measures the model by *stripping August out*) and useless → deleted in §2.2; the competition entry is the full, self-improving harness running headlessly. Biggest documented score levers: post-edit verification loop (+36 pp, Aider polyglot) and per-model edit format (3× laziness reduction) — both are gaps in August today.
 
 ---
 
@@ -201,6 +202,7 @@ Companion code changes:
 | Ghost task cancellation | `main.py:229-238` |
 | Cognitive config ghosts | `cognitive_config.py`: `consolidation`/`backfill_workbench`/`db_writer` boot flags, `consolidation_interval_s`, feature flags `vector_memory`/`graph_memory`/`heuristics`/`diff_learning`/`skill_genesis`, `get_boot_layers()` |
 | Orphan endpoint | `routers/workbench.py:1646-1655` (session-context) |
+| **Model-eval `benchmark` agent mode** (per user direction 2026-08-27: "just for models and even useless") | Backend: `harness_mode.py:88-109` (`BENCHMARK_ALLOWED_TOOLS`, `is_benchmark_mode`, `filter_benchmark_tools`, `benchmark_block_message`); `routers/workbench.py:1848-1849` (drop `'benchmark'` from the agentMode tuple + error text); `workbench.py:617-623,734,741,808,1140-1149,2022,2736-2762,2788` (all `is_benchmark` branches). Frontend: `HarnessModeChip.tsx:3,8`, `WorkbenchModeSelector.tsx:119` (drop the Benchmark option). **Not replaced by anything here** — the harness-competition headless entry (§9.3 #1) runs the *full* `agent` harness, which is the opposite design |
 | Stale snapshot | `backend-py/build/` — delete the whole directory (contains every deleted module; constant grep-confusion source) |
 | Orphan data files | `data/august_graph_memory.json`, `data/memory.md`, root `NUL` file |
 
@@ -251,7 +253,7 @@ Today: top-15 fact names + 5 timeline summaries, ~250 tokens, keyword-blind (`br
 
 Proposed:
 - Reuse the existing pure-Python BM25 (`app/services/tools/retrieval.py`) — index `facts` (title+body) at boot and on write.
-- Each turn, retrieve top-k (k=5) facts relevant to the **current user message**; inject as `<memory>` block (~400-token cap) with title + body, not just names. Keep the existing `brain_index_snippet` as fallback when the message is empty/short.
+- Each turn, retrieve top-k (k=5) facts relevant to the **current user message**; inject as `<memory>` block (~400-token cap) with title + body, not just names. Keep the existing `brain_index_snippet` as fallback when the message is empty/short. **Cache policy (T12):** the `<memory>` block must be appended at the *tail* of the turn context (with/after the user message), never inserted into the system prompt or mid-history — mid-session system-prompt mutation breaks the provider prefix cache every turn (Hermes/pi pattern; §8 Q14).
 - **Usage feedback loop:** when an injected fact is referenced (model quotes its title/key, or `remember` updates it), increment `use_count`/`last_used_at`. BM25 rank gets a small `use_count` boost. This is the cheapest real "learns what's useful" signal available without embeddings.
 - No embeddings/vector store — the vector tables are dead for a reason; BM25 over a few hundred facts is exact enough. Revisit only if the store outgrows ~2k entries.
 
@@ -364,61 +366,92 @@ Data layer unchanged — `toolResult` SSE keeps full `content` (≤100 KB), clie
 - New: memory-write row renders entry; failed command shows one error line + expandable full output; read grouping `×N`; reloaded session renders minimal style.
 - Keep `append-block-event` summary-merge tests (data layer unchanged).
 
-### 4.5 Unified Changes card (ZCode-style)
+### 4.5 Unified Changes card (ZCode-style, rev. 2 — type-aware rows)
 
-Replace `ChangedFilesCard` and `ProducedFilesRow` with a single `ChangesCard` matching the ZCode reference: one collapsed row — `X files changed  +N −M  [Undo]` — expandable to per-file rows with Review + Open buttons. Always visible when any edit tool ran in the turn, **including during streaming** (files arrive in real time; drop the `ProducedFilesRow` streaming guard).
+Replace `ChangedFilesCard` and `ProducedFilesRow` with one unified `ChangesCard` matching the ZCode reference screenshots: a collapsed aggregate row — `X files changed  +N −M  [Undo]` — expanding to **type-aware per-file rows**:
+
+- **Code files** (`.py`, `.ts`, `.json`, …) → small `FileIcon` + filename + per-file `+N −M` chip + **Review** + **Open**. Review appears only when diff data exists for the path.
+- **Document files** (`.md`, `.txt`, `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.html`, images, video) → **big 56×56 square letter badge** (e.g. `M↓`, `PDF`) + filename + kind label (`Document · MD`, `Image · PNG`) + single **Open ▾** (no Review).
+
+Always visible when any edit tool ran in the turn, **including during streaming** (files arrive in real time; drop the `ProducedFilesRow` streaming guard).
 
 **Relation to §4.1:** the card is the turn-level aggregate + undo affordance; the per-file edit rows in the timeline stay the in-flow detail. To avoid double-diff noise, the card's per-file inline diff defaults to collapsed (`expandedFiles` starts empty). This supersedes the original Phase-1 note that said to keep both cards.
 
 **Files to change:**
 
-- **NEW** `frontend/desktop/src/components/chat/ChangesCard.tsx`
-- **DELETE** `frontend/desktop/src/components/chat/ChangedFilesCard.tsx` and `ProducedFilesRow.tsx` — verified: only `AssistantMessageContent.tsx:2-3,116,123` imports them; remaining mentions are comments only (`lib/produced-files.ts:4`, `RightDrawerArtifactsSection.tsx:4`, `RightDrawerCircuitSection.tsx:4` — update those comments)
-- **EDIT** `frontend/desktop/src/sections/chat/message/AssistantMessageContent.tsx:113-124` → single `<ChangesCard blocks={message.blocks} changedFiles={message.changedFiles as GitDiffResult | null} />`; keep `CircuitArtifactCard` (:128-130) untouched
-- **NEW** `frontend/desktop/src/lib/git-revert.ts` — extract the revert-all flow into `useRevertAllChanges(sessionId)` shared by the card and the drawer
-- **NEW** `frontend/desktop/src/components/chat/__tests__/ChangesCard.test.tsx`
+- **NEW** `frontend/desktop/src/lib/file-kind.ts` — `classifyFileKind(path) → { kind, label, badgeText, badgeTone }` (`code | document | image | video | pdf`), lifted from the `kindLabel` block at `ProducedFilesRow.tsx:53-64`; plus `openFileInDrawer(path)` extracted from `ProducedFilesRow.openFile` (`:34-51`).
+- **NEW** `frontend/desktop/src/components/chat/DocumentBadge.tsx` — 56×56 rounded square badge, two-letter glyph, tone keyed off kind. No badge/kind helper exists anywhere in the tree today (verified) — greenfield.
+- **NEW** `frontend/desktop/src/components/chat/ChangesCard.tsx` — the unified card.
+- **NEW** `frontend/desktop/src/lib/git-revert.ts` — `useRevertAllChanges(sessionId, fileCount)` extracted from `components/shell/RightDrawerDiffSection.tsx:56-97` so the card's Undo and the drawer's Revert-all share one code path.
+- **DELETE** `frontend/desktop/src/components/chat/ChangedFilesCard.tsx` and `ProducedFilesRow.tsx` — verified: only `AssistantMessageContent.tsx:2-3,116,123` imports them; remaining mentions are comments only (`lib/produced-files.ts:4`, `RightDrawerArtifactsSection.tsx:4`, `RightDrawerCircuitSection.tsx:4` — update those comments).
+- **EDIT** `frontend/desktop/src/sections/chat/message/AssistantMessageContent.tsx:113-124` → single `<ChangesCard blocks={message.blocks} changedFiles={message.changedFiles as GitDiffResult | null} />`; drop the streaming guard; keep `CircuitArtifactCard` (:128-130) untouched.
+- **EDIT** `frontend/desktop/src/components/shell/RightDrawerDiffSection.tsx` — `handleRevertAll` (:58) becomes a call into the hook; **Keep all** (:50, :128) and **Refresh** (:118-121) buttons stay.
+- **NEW** `frontend/desktop/src/components/chat/__tests__/ChangesCard.test.tsx`.
 
-**Component design:**
+**Component design (`ChangesCard`):**
 
-Props: `blocks?: MessageBlock[] | null` (always available; powers the file list via `collectProducedFiles`), `changedFiles?: GitDiffResult | null` (optional; enriches with +/- counts and diff text), optional `onReview`, `className`.
+Props: `blocks?: MessageBlock[] | null` (always available; powers the file list via `collectProducedFiles`), `changedFiles?: GitDiffResult | null` (optional; enriches with +/- counts and diff text), optional `onReview`/`onOpen` overrides, `className`.
 
-State: `expanded: boolean` (default `true` if ≤3 files, else `false`); `expandedFiles: Set<string>` (default empty).
+State: `expanded: boolean` (default `true` if ≤3 paths, else `false`); `expandedFiles: Set<string>` (default empty); `reverting: boolean`.
 
 ```text
-Collapsed:  [chevron]  X files changed   +N added  -M removed          [Undo]
-Expanded:   [icon] path/to/file.py       +12  -3      [Review] [Open]
-                   ↳ collapsible inline diff (only when diff text available)
+Aggregate header (always visible):
+[chevron]  X files changed   +N added  -M removed                    [Undo]
+
+Code row (kind === 'code' AND path in changedFiles.files):
+[icon] path/to/file.py                 +12  -3     [Review]  [Open]
+        ↳ collapsible inline DiffView (only when expandedFiles.has(path))
+
+Document row (kind !== 'code' OR no diff data):
+[M↓]  path/to/file.md
+      Document · MD                                        [Open ▾]
 ```
 
-- Header click toggles `expanded`; Undo is a real `<button>` with `stopPropagation`.
-- Per file: `+N −M` chips only when the path has a `changedFiles.files` hit; inline `<DiffView diff={file.diff} maxLines={32} />` only when `expandedFiles.has(path)` and diff text exists; `+N more` overflow cap = 8.
+- Header click toggles `expanded`; Undo is a real `<button>` with `stopPropagation`, disabled while `reverting` (spinner replaces the `Undo2` icon).
+- Totals computed only from `changedFiles.files`; omit totals rather than zero them when no file has diff data.
+- Per file: `+N −M` chips only on a `changedFiles.files` map hit; inline `<DiffView diff={file.diff} maxLines={32} />` only for code rows when `expandedFiles.has(path)`; cap 8 rows then `+N more`.
 - **Review** → `setRightDrawerDiff(changedFiles, path)` + `openRightDrawer('diff')`.
-- **Open** → `ChatAttachmentService.fromPath(path)` → `openRightDrawerFile(attachment)`, `revealInFolder` fallback.
-- **Undo** → `useConfirmDialog` (destructive) → `resolveWorkbenchSessionId` → `listWorkbenchCheckpoints(wbId)` → checkpoint exists: `restoreWorkbenchCheckpoint(wbId, latest.id)`; else `gitApi.command(['restore', '--', '.'], sessionId)` → toast + `invalidateQueries(['git','diff',sessionId])`.
-- Data merging: paths always from `collectProducedFiles(blocks)`; `changedFiles` builds a `path → GitDiffFile` lookup map; render nothing when both are empty.
+- **Open** → `openFileInDrawer(path)` (`ChatAttachmentService.fromPath` → `openRightDrawerFile`, `revealInFolder` fallback). Document rows: row click and the Open button are the same action.
+- **"Open ▾" chevron is a visual affordance only** (matches the reference) — it is not a dropdown; keep a plain `Button variant="outline" size="sm"` with `ChevronDown` so it doesn't imply a menu.
+- **Undo** → `useConfirmDialog` (destructive) → hook below.
+- Data merging: paths always from `collectProducedFiles(blocks)`; `changedFiles` builds a `Map<path, GitDiffFile>`; each row merges the map hit with `classifyFileKind(path)`; render `null` when both inputs are empty.
+
+**`useRevertAllChanges(sessionId, fileCount)`** (extracted from `RightDrawerDiffSection.handleRevertAll`):
+
+1. Noop when `!sessionId`, `fileCount === 0`, or already reverting.
+2. `resolveWorkbenchSessionId(sessionId)` → `listWorkbenchCheckpoints(wbId).catch(() => [])`.
+3. Checkpoint exists → confirm "Revert all N changed file(s) back to the last save point?" → `restoreWorkbenchCheckpoint(wbId, latest.id)`.
+4. None → confirm "No save point found. Discard changes to N tracked file(s) with git restore?" (wording notes untracked files are not removed) → `gitApi.command(['restore', '--', '.'], sessionId)`.
+5. Toast success/failure; `invalidateQueries(['git', 'diff', sessionId])`.
 
 **Verified reuse points (2026-08-27, all confirmed in tree):**
 
 | Piece | Location |
 |---|---|
 | `collectProducedFiles` | `lib/produced-files.ts:17` |
+| `producedFileLabel` | `lib/produced-files.ts:46` |
+| `kindLabel` source block | `ProducedFilesRow.tsx:53-64` |
+| Open flow source | `ProducedFilesRow.tsx:34-51` (`fromPath` :38, `openRightDrawerFile` :41, `revealInFolder` fallback :43) |
 | Review flow | `ChangedFilesCard.tsx:81-84` |
-| Open flow | `ProducedFilesRow.tsx:34-51` (`fromPath` :38, `openRightDrawerFile` :41, `revealInFolder` fallback :43) |
-| Revert-all logic | `components/shell/RightDrawerDiffSection.tsx:58-97` (`resolveWorkbenchSessionId` :60, `listWorkbenchCheckpoints` :64, `restoreWorkbenchCheckpoint` :74, `gitApi.command(['restore','--','.'])` :84) — **path correction:** the file lives in `components/shell/`, not `sections/drawer/` as drafted |
+| Revert-all logic | `components/shell/RightDrawerDiffSection.tsx:56-97` (`reverting` state :30, `resolveWorkbenchSessionId` :60, `listWorkbenchCheckpoints` :64, confirm :68, `restoreWorkbenchCheckpoint` :74, `gitApi.command(['restore','--','.'])` :84) — file lives in `components/shell/`, not `sections/drawer/` |
+| Keep all / Refresh (stay) | `RightDrawerDiffSection.tsx:50,128` / `:118-121` |
 | `useConfirmDialog` | `hooks/useConfirmDialog.ts:25` |
 | `DiffView` + `maxLines` | `components/chat/DiffView.tsx:132,168` (default 40) |
+| `GitDiffFile` / `GitDiffResult` | `api/git.ts:12,24` |
 
 **Caveats:**
 
-1. The `git restore -- .` fallback **does not remove untracked new files** — only the checkpoint path undoes file creation. Inherited from the existing drawer behavior; the confirm dialog text should distinguish "restore checkpoint" vs "discard tracked changes".
-2. "Undo disabled when no changes AND no checkpoints" needs an async checkpoint probe — keep the button enabled whenever paths/changedFiles are non-empty and resolve checkpoint availability on click (the existing flow already catches an empty list).
-3. Streaming visibility: the card appears as soon as the first edit block lands; totals settle when `changedFiles` arrives post-turn.
+1. The `git restore -- .` fallback **does not remove untracked new files** — only the checkpoint path undoes file creation. Rev.-2 confirm wording already encodes this ("tracked file(s)"); keep it.
+2. Undo enablement: keep the button enabled whenever paths/changedFiles are non-empty; resolve checkpoint availability on click (the flow already catches an empty list). No async disabled-probe.
+3. Streaming: the card appears as soon as the first edit block lands; totals settle when `changedFiles` arrives post-turn.
+4. **Kind-mapping gap:** the existing `kindLabel` returns the raw extension for `.md`/`.txt` (no Document entry) — the new `file-kind.ts` must add text/document kinds so the row reads `Document · MD` as in the reference screenshot.
+5. Badge glyph for `.md` shows `M↓` in the reference — keep the down-arrow glyph convention (download/document metaphor) consistent across document kinds.
 
-**Tests** (`ChangesCard.test.tsx`): renders nothing when both inputs empty; collapsed header with count + totals; expands to per-file rows; Review calls `setRightDrawerDiff` + `openRightDrawer('diff')` (mock stores); Open calls `openRightDrawerFile` after `fromPath` resolves (mock `ChatAttachmentService`); Undo confirms + `restoreWorkbenchCheckpoint` when a checkpoint exists, falls back to `gitApi.command` when none; per-file +/- and inline diff only when path is in `changedFiles.files`; `+N more` above cap.
+**Tests** (`ChangesCard.test.tsx`): renders `null` when both inputs empty; header with count + totals from edit-tool blocks; expands to one row per file; code row (`.py`) shows Review + Open; document row (`.md`) shows badge + kind label + single Open (no Review); per-file `+N −M` only when path is in `changedFiles.files`; inline diff toggle for code rows; Undo confirms + `restoreWorkbenchCheckpoint` when a checkpoint exists, falls back to `gitApi.command(['restore','--','.'])` when none; `+N more` above cap 8.
 
-**Validation:** `cd frontend/desktop && npx tsc --noEmit` clean; `npx vitest run` green; manual in `npm run dev:desktop` — turn that writes files shows the card collapsed, expands, Review opens drawer diff, Open opens file viewer, Undo reverts with confirm.
+**Validation:** `cd frontend/desktop && npx tsc --noEmit` clean; `npx vitest run` green + zero remaining `ChangedFilesCard`/`ProducedFilesRow` references; manual in `npm run dev:desktop` — a turn that writes code **and** a `.md` file shows the collapsed `X files changed +N −M` row with Undo, expanding to a code row (Review/Open) and a document row (big badge, `Document · MD`, Open only).
 
-**Out of scope:** right-click context menu (Reveal/VS Code/Copy paths), composer "Changes +N −M" chip, per-file undo.
+**Out of scope (deferred):** right-click context menu (Reveal in Explorer / VS Code / Cursor / Copy paths), composer "Changes +N −M" chip, per-file undo, regenerate-file action.
 
 ---
 
@@ -510,7 +543,7 @@ npm run test:frontend   # + tsc; eslint has pre-existing errors at HEAD — comp
 2. Transcript: read/command/search/edit/memory rows per §4.1 table; failed command shows one red error line; `×N` read grouping; reloaded session identical; `/verbose` toggles raw output.
 3. Sessions: new chat shows `New chat` → snippet title on first send → model title when provider supports it; no `Chat … UTC` ever.
 4. Skills: disabled skill absent from `<intake>`, `<capabilities>`, `list_skills`, `load_skill`; toggle no longer drops unknown frontmatter; catalogue fresh after edit (no restart).
-5. Changes card (§4.5): a file-writing turn shows the unified card (collapsed, correct totals once the diff lands); Review opens the drawer diff at that file; Open opens the file viewer; Undo restores via checkpoint (or `git restore` fallback) after confirm; card visible during streaming; `ChangedFilesCard`/`ProducedFilesRow` gone with zero dangling imports.
+5. Changes card (§4.5): a file-writing turn shows the unified card (collapsed, correct totals once the diff lands); code rows show Review + Open with per-file `+N −M`; document rows (e.g. `.md`) show the big badge + `Document · MD` label + Open only (no Review); Review opens the drawer diff at that file; Open opens the file viewer; Undo restores via checkpoint (or `git restore` fallback) after confirm; card visible during streaming; `ChangedFilesCard`/`ProducedFilesRow` gone with zero dangling imports.
 
 ---
 
@@ -524,6 +557,149 @@ npm run test:frontend   # + tsc; eslint has pre-existing errors at HEAD — comp
 6. **`exams`/`blackboard` stores** — keep (semi-live, surfaced in Memory Sessions tab), audit-and-drop, or revive as a real feature later?
 7. **Consolidation model calls (§3.5)** — allow optional cheap-model summarization of merges (default off), or keep consolidation purely deterministic?
 8. **`brain_events` (609 rows)** — confirm no harness consumer I may have missed, then drop with 025?
+9. **OpenCode target confirmation (§9.0)** — "orcacode" doesn't exist; confirm OpenCode (`anomalyco/opencode`) was the intended project (vs `stablyai/orca` or another).
+10. **Completion verification checklist (§9.3 #5)** — confirm the framing: the model's own pre-completion self-check (allowed) vs. anything resembling a critic gate that withholds the final answer (forbidden by the 2026-08-24 ruling).
+11. **Benchmark order (§9.5)** — confirm B1-first (private harnessbench loop before any public board), or go straight to DeepSWE/Pier for an early public row?
+12. **Headless runner shape (§9.3 #1)** — CLI entry wrapping the *same* FastAPI workbench loop in full `agent` mode (recommendation: yes — the contestant is August itself, so the run must use the real harness), vs. a separate minimal runner. The old model-eval `benchmark` agentMode is deleted either way (§2.2).
+13. **Post-edit verification loop scope (T1)** — lint-only after edits (tree-sitter AST errors + configured linter), or lint **+ test command** (auto-detect pytest/npm test, or per-workspace config)? Both are opt-in per workspace; the fix loop is bounded (default 3 iterations). This is the biggest documented score lever (+36 pp) but adds a dependency (tree-sitter) and wall-clock per edit.
+14. **Memory injection vs prompt cache (T12 vs M3)** — M3 retrieval results either (a) frozen snapshot at session start (Hermes-style, best cache hit-rate, stale mid-session), (b) append-only context message per turn (fresh, cache-friendly prefix), or (c) system-prompt injection per turn (freshest, breaks the prefix cache every turn). Recommendation: (b).
+15. **Plan/todo re-injection (T7)** — confirm the compact per-turn state block (phase/step + todo list) is always injected (cost: ~50–150 tokens/turn, cache-stable if appended after the mutable boundary), or only in `code`/orchestrator modes.
+
+---
+
+## Part 9 — OpenCode adoption & benchmark-top strategy
+
+### 9.0 Name resolution & goal clarification
+
+**"orcacode" is not a real project.** GitHub/npm/PyPI checked 2026-08-27: the npm name is a squat (`0.0.2-reserve`), and the GitHub matches are hobby repos (a 1-star Python TUI toy, a personal Electron console, a closed-source app's release artifacts). This part targets **OpenCode** — `github.com/anomalyco/opencode` (formerly `sst/opencode`), ~202k stars, MIT, TypeScript/Bun, "the open source AI coding agent" — the obvious intended target. Near-match noted: `stablyai/orca` (54.9k stars) is an *orchestrating IDE* that runs other agents (Claude Code/Codex fleets via worktrees), not a harness to learn from. If a different project was meant, this part re-runs against it.
+
+**The goal: August itself tops the Coding Agent Index.** The index ranks **harness+model lines** — the harness is the contestant as much as the model. Two consequences:
+
+1. **The existing `benchmark` agent mode is NOT this.** It's a *model-evaluation* surface (`harness_mode.py:88`: `BENCHMARK_ALLOWED_TOOLS = {'run_command', 'edit_lines'}`, skills/capabilities stripped — "raw capability evaluation") that measures the model by *removing* August. For harness competition the opposite is required: the **full, optimized August harness** running headlessly. Per user direction the model-eval mode is useless → **removed in §2.2**; the headless entry built below runs the normal `agent` mode with all harness features.
+2. The ~9-point same-model harness delta (§9.1) is the prize: every lever in this part exists to make *August's* line outrank Claude Code/Codex/Opencode lines on identical models.
+
+### 9.1 The benchmark landscape (what "top spots" means)
+
+**Coding Agent Index = Artificial Analysis Coding Agent Index** (https://artificialanalysis.ai/agents/coding-agents, methodology v1.4):
+- Composite = average of pass@1 on **DeepSWE** (113 long-horizon SE tasks), **Terminal-Bench 2.1** (89 agentic terminal tasks), **SWE-Atlas-QnA** (124 repo Q&A tasks); 3 attempts/task; reward-hacked attempts scored 0 (an agent judge reviews every passing trajectory).
+- Current top: Claude Code–Opus 5 (xhigh) **0.681**; Codex–GPT-5.6 Sol (max) 0.651; Opencode–Gemini 3.7 Flash (high) 0.596.
+- **Harness delta, model fixed (Opus 4.7):** Claude Code (max) **0.516** · Opencode (medium) **0.513** · Cursor CLI 0.467 · Claude Code (medium) 0.424 → **harness + settings move the index up to ~9 points on an identical model** — comparable to a model-tier change.
+- **Reasoning effort is the single biggest visible lever:** Codex GPT-5.6 none→max +21.7 pts; Opus 5 low→xhigh +8.7 pts.
+- AA runs everything themselves — inclusion requires them to run August headlessly in their infra (contact-based, no self-serve).
+
+**"Harness bench" — two real candidates:**
+- **`ya5h-P/harnessbench`** (coding-specific): ≥2 harness CLIs pointed at the *same* OpenAI-compatible endpoint, 200 tasks (133 orchestration-heavy: find 1 function in 320 files, rename across 28 call sites, mine a 150k-line log). Scoring: Correctness 35% / Reliability 25% / Efficiency 20% / Capability 20%, hidden execution-grounded graders, runaway token cap. Adding August = **one adapter file** (`invoke` + `metrics`). Leaderboard is essentially empty → **the cheapest available "top spot"** and a good private regression harness.
+- **`reacher-z/HarnessBench`** (harness-eval.com): fixes the model, varies the harness, but on 153 *web/browser* tasks — methodology reference only, not the coding target.
+
+**Adjacent boards:** Terminal-Bench 2.1 (de-facto harness leaderboard; same-model harness deltas 3–8 pts; community submissions currently maintainer-run via Harbor). Verified target numbers (TB 2.1 submission files, 445 trials each): **Claude Code + Fable 5 (xhigh) 83.8%** ($553, 1 reward-hack disqualification) vs **Terminus 2 + Fable 5 (high) 80.4%** ($439, 0 hacks) — the maximalist harness buys ~3.4 pts at +26% cost, which validates running August's *full* harness, not a thin one. **DeepSWE is self-serve via Pier** (`pier run -p deep-swe/tasks --agent …`) — the fastest way onto a public board; current public top (benchget mirror, 2026-08-20): **mini-swe-agent + opus-5 (max) 73.6%** pass@1 (113 tasks × 4 runs, $10.43 median). SWE-bench Verified; Aider polyglot.
+
+**Entry requirements August must meet:** headless/CLI mode (prompt-in/result-out), Docker/cloud sandbox compatibility, k-attempt runs (TB needs ≥5/task), budget/timeout controls that can't be gamed, network allowlisting, full trajectory logging (`trajectory.json` — the reward-hack judge reads it), reasoning-effort pass-through.
+
+### 9.2 What winning harnesses actually do (measured levers)
+
+- **AHE — Agentic Harness Engineering** (arXiv:2604.25850): automated evaluate→analyze→improve loop over harness components; **+7.3 pp on Terminal-Bench 2 in 10 iterations**, #3 on TB 2.0 at 84.7%. Ablation: **gains localize to tools, middleware, and long-term memory — not the system prompt.** Evolved harness transfers to other models with **12% fewer tokens**. → August already has the seeds of this loop: `harness_self_improve.py`, routing evidence, golden evals (`tests/test_harness_evals.py`, `/api/brain/harness/evals`). Extending it into a trajectory-driven evolution loop is the highest-ceiling move.
+- **KIRA** (KRAFTON, 75.7% TB 2.0 Opus 4.6), seven cheap fixes: (1) native tool calling — *August has this*; (2) **30 KB cap on terminal output**; (3) marker-based command-completion polling; (4) **smart completion verification** — double-confirmation checklist incl. original instruction + multi-perspective QA; (5) prompt caching; (6) auto-summarize-and-retry on context overflow; (7) temperature=1 when reasoning effort is set.
+- **Stanford IRIS meta-harness** (76.4% TB 2.0): **environment bootstrapping** — workdir snapshot/file listing/tools in the initial prompt — **saves 2–5 early exploration turns**.
+- **mini-SWE-agent** (~100 lines, bash-only) **beats Claude Code and Codex harnesses on DeepSWE**: with strong 2026 models, exotic scaffolding can be *negative*; simplicity + fast starts + clean trajectories win. → Lesson for August is **not** "ship a neutered profile" (that was the deleted model-eval `benchmark` mode's mistake): it's that every harness element — skills injection, memory blocks, capability prompts — must *earn its turns* on real trajectories, and dead weight gets cut. The competition entry is the full harness, kept lean; a minimal arm stays useful only as an A/B ablation baseline (§9.5 B3), never as the entry itself.
+- **Anthropic context engineering**: context rot is real; recommended levers = compaction (keep architectural decisions/unresolved bugs), **tool-result clearing (safest light compaction)**, structured note-taking, sub-agents for parallel exploration.
+- **Anti-pattern, quantified:** reward hacking. Cursor CLI lost **9.0%** of TB 2.1 attempts to hacks (zeroed). AA/TB zero any attempt that edits tests, reads `solution/`, or fetches answers. → August needs explicit **benchmark-integrity guardrails** in the sandbox policy (never touch graders/tests/solution dirs) — both for scoring and for honesty.
+
+**Added 2026-08-27 from the wider-harness survey (sources in §9.4):**
+
+- **Verify-and-retry after edits is the single biggest documented score lever.** Aider polyglot: gpt-5 (high) **52.0% pass@1 → 88.0% pass@2** once a lint/test fix-retry pass exists (+36 pp). Reflexion: 80% → 91% on HumanEval. SWE-agent's ACI paper is built on "edit tool rejects bad edits and tells the model why". → August has **no post-edit verification at all** today (no linter, no test hook) — this is the largest open gap vs. the field.
+- **Edit format is a per-model hyperparameter, quantified.** Aider: unified diffs took GPT-4 Turbo from 20% → 61% (3× less lazy); code wrapped in JSON tool calls scores *worse* than plain markdown text. → August's hash-anchored `edit_lines` self-heal is the right family; per-model format selection is a B3 experiment.
+- **Parallel tool calls are the biggest *latency* lever** (Anthropic: up to 90% time cut on parallelizable work; multi-agent +90.2% on breadth-first research evals) — but Cognition's counterweight holds for *coding*: conflicting implicit decisions poison results, so keep file mutations single-threaded and parallelize reads/exploration only. August already defaults to read-only parallel tools — correct posture, keep it.
+- **Context loss is a named failure class** (TB 2.0 paper Appendix C). Terminus 2's Q&A handoff (self-summary → fresh model asks ≥5 questions → answers → context reset) is the cheapest measured attack on it (§9.4, T3).
+- **Truncated generations must never execute.** pi fails *all* tool calls in a message when `stopReason == "length"` ("may carry truncated arguments"). August today only special-cases thinking-only truncation (`workbench.py:2637`); a truncated tool-call batch still executes — a real gap (§9.4, T2).
+- **Prompt cache is money on long runs.** Hermes freezes MEMORY.md/USER.md into the system prompt once at session start (mid-session writes hit disk but not the prefix); pi makes cache stability part of its extension contract (structured prompt inputs, additive tool activation). → Direct constraint on Part 3 M3 retrieval injection (§8 Q14).
+- **Zero-context-cost scripting**: Hermes `execute_code` runs Python that calls tools via RPC — N tool turns collapse into one whose intermediates never enter the parent context. August's `code` mode is the same pattern family (CodeAct: up to +20% success across 17 LLMs) but its sandbox API (`read_file/write_file/run_command/list_files`) doesn't reach the full tool surface yet.
+- **Autonomy horizons double ~every 7 months** (METR). Design for resume/checkpoints/retry — long runs will keep getting longer; shadow-git checkpoints (§9.3 #7) are the rollback substrate.
+
+### 9.3 What to adopt from OpenCode (ranked: benchmark impact × fit)
+
+OpenCode architecture highlights (from the deep dive): `runLoop` with automatic overflow→compaction; **prune-then-compact** context strategy (protect last 40k tokens of tool outputs, blank older ones in-projection as `[Old tool result content cleared]`, keep verbatim tail under a token budget); per-model-family system prompts (`anthropic.txt`/`gpt.txt`/`beast.txt`…) with prompt-cache "context epochs"; **shadow-git snapshots** (separate git dir, per-step commits, per-message diffs, revert/**unrevert**); resumable/background subagents (`task_id`, result injection); permission system (bash arity patterns, `.env` gating, external-directory asks from tree-sitter-parsed commands, **doom-loop breaker**, reject-with-feedback); truncation-to-file with **delegate-to-explore-subagent hints**; post-edit **formatter + LSP diagnostics** fed back to the model; skills incl. `.claude/skills`/`.agents/skills` compat + remote indexes; plan-mode as a permission-shaped agent with persistent plan files.
+
+**P0 — directly moves benchmark scores:**
+
+| # | Adoption | August today | Evidence | Notes |
+|---|---|---|---|---|
+| 1 | **Headless competition runner** — `august-bench` CLI entry that runs the **full `agent`-mode harness** (all tools, skills, memory, guardrails — the product itself is the contestant): task-in/result-out, auto-approve inside sandbox, budget/turn caps, network allowlist, `trajectory.json` logging, k-run scripting | No CLI entry; workbench is API/UI-driven. The old `benchmark` agentMode was the *opposite* (model-eval: 2 tools, harness stripped) and is deleted in §2.2 | Entry requirement for *every* board; AA scores **harness+model lines**, so the run must use August's real harness, not a neutered one | The gate for everything else |
+| 2 | **Prune-then-compact context** (two-tier: blank old tool outputs in projection with protected window; then compaction with verbatim tail under token budget) | `context_compressor.py`, single strategy | Anthropic (tool-result clearing = safest compaction); KIRA #6; OpenCode's design is the reference | Non-destructive: only the model-facing projection changes |
+| 3 | **Output-cap discipline**: 30 KB / 2000-line tool-output cap, spill-to-file + "delegate to explore subagent" hint | In-memory truncation only (`max_tool_result_chars`) | KIRA's 30 KB cap is a measured winning fix; OpenCode truncation design | Pairs with §4 minimal transcript (rendering) — this is the model-side half |
+| 4 | **Environment bootstrapping**: workdir tree + file listing + tool manifest in first prompt | `<intake>` has store hints + memory index, no file listing | IRIS: saves 2–5 exploration turns/task | Cheap; direct per-task turn savings |
+| 5 | **Completion verification checklist** (model self-check against original instruction + multi-perspective QA before declaring done) | Reflection nudges on stalled phases only | KIRA #4 | ⚠️ Must be framed as the *model's own* pre-completion checklist, NOT a critic gate — the verifier gate was removed by user ruling (2026-08-24) and this must not resurrect answer-withholding (§8 Q10) |
+| 6 | **Per-model-family prompt variants + effort policy**: prompt files per family; reasoning-effort pass-through; temperature=1 when effort set | Single system prompt | AA: effort moves index +8.7…+32.9 pts; KIRA #7; OpenCode ships per-family prompts | August's per-model capability profiles are the natural mount point |
+| 7 | **Shadow-git snapshots** replacing file-copy checkpoints (per-step commits, per-message diffs, revert/unrevert) | `checkpoint_service.py`: file copies, 2 MiB/file cap, no diffs, no redo | Reliability component (25% of harnessbench); powers §4.5 ChangesCard totals + drawer diff | OpenCode's alternates trick avoids re-hashing big repos |
+
+**P1 — harness quality (AHE localized the gains here: tools, middleware, memory):**
+
+| # | Adoption | August today | Notes |
+|---|---|---|---|
+| 8 | **Post-edit formatter + LSP diagnostics** fed into the tool result (automatic edit-verify loop) | None — no LSP anywhere (verified) | Also an experimental `lsp` tool (definitions/references/hover) behind a flag |
+| 9 | **Skills compat**: discover `.claude/skills` + `.agents/skills` (cross-tool portable), optional remote skill indexes | Bundled + data dir only | Free ecosystem leverage; pairs with §3.7 skill hygiene |
+| 10 | **Permission UX upgrades**: bash arity patterns (allow/deny by meaningful command prefix), external-directory asks derived from parsed commands, reject-with-feedback to model | `tool_guardrails.py` (failure counts, contiguous-identical), sandbox policy | Extend existing guardrails with the byte-identical ×3 doom-loop rule; August's real sandbox stays the differentiator — do NOT regress to advisory-only |
+| 11 | **Resumable/background subagents**: `task_id` resume, `background: true` with result injection as synthetic message; truncation hints that delegate to explore subagents | Subagents with compaction/retry/`yieldSchema`; no resume/background | Truncation→delegation loop is a context-hygiene flywheel |
+| 12 | **Plan-mode agent**: permission-shaped agent (edits denied except plan files), persistent plan file, switch-back reminder | `chat/agent/code` modes + `update_state` phases | Also feeds §4.3 plan-tree rendering |
+| 13 | **Long-term memory** (= Part 3 of this plan) | Being redesigned | AHE: memory is one of the three gain-localizing components — the KB redesign is a *benchmark lever*, not just UX |
+
+**P2 — parity/ecosystem (low priority):** prompt-cache "context epochs" discipline (August already has cache-stability work at `workbench.py:1027`); session sharing; ACP support; GitHub Action; `references` (named extra repos in prompt); question-tool parity.
+
+**Do NOT copy:** advisory-only permissions (OpenCode issue #2242 — no real sandboxing; August's sandbox policy is a genuine differentiator), Bun long-lived-server memory patterns (their #20695 memory megathread), the 30-package Effect-TS monorepo complexity, and their PR-auto-close-by-reactions policy.
+
+### 9.4 Wider harness survey & adoptions (Hermes, Terminus 2, pi, Codex, Gemini CLI, Aider, Cline/Roo)
+
+Source-level survey conducted 2026-08-27 (repos cloned/read; citations in the Appendix). Per-harness highlights, then the ranked adoption list.
+
+**Hermes** (`NousResearch/hermes-agent`, ~237k stars, MIT, Python; successor to OpenClaw). Maximalist production loop. Headless `-z/--yolo --cli` is exactly what HarnessBench/Harbor invoke. **Tiered compaction**: mechanical tool-output prune pre-pass (`[Old tool output cleared…]`) → aux cheap-model middle summary (budget = 20% of compressed content, 2k floor / 10k ceiling) → token-budgeted verbatim tail (10k–25k tokens, last 6 tool rounds) → mechanical **Anchor Index** + verbatim user messages for recovery. Reference-only summary headings so old plans don't re-trigger as instructions; `[SKILL_PRUNED: name]` markers. **Memory = frozen snapshot** in the system prompt at session start — mid-session writes hit disk but never the prefix cache. 40+ tools in toggleable toolsets; two zero-context multipliers: `execute_code` (Python calling tools via RPC — N turns collapse to one) and `delegation` (fresh-context subagents, parent sees only call + summary). Smart approval via aux-LLM; **YOLO env var frozen at import time** to block in-process prompt-injection escalation. Skills: autonomous `skill_manage`, `/learn`, and an idle **Curator** (archive-never-delete, never touches the main prompt cache). Weaknesses: monolithic (483 KB loop file), no published numbers, `-z` stdout strips tool calls (adapters parse its `state.db`), micro-compaction breaks prompt caching (admitted in their docs).
+
+**Terminus 2** (Laude Institute; lives in `terminal-bench-1` + Harbor, no standalone repo). Mono-tool tmux keystrokes, harness runs *outside* the container, plain-text JSON/XML actions (any model), autonomy-first. Signature mechanics: 10 KB observation truncation keeping **first half + last half**; proactive handoff when free tokens < 8k; the **Q&A handoff** (self-summary → fresh-context model asks ≥5 questions → outgoing agent answers → context reset); **double-confirmation completion**; **salvage-parse** of truncated outputs; parser errors fed back verbatim as the next prompt. Numbers: TB 2.0 — T2+Opus 4.5 **57.8%** beat Claude Code+Opus 4.5 (52.1%) on **3.9M vs 256.9M input tokens**; TB 2.1 — 80.4% vs CC 83.8% (§9.1). Successor: Headlong (<10k-line Bash microharness).
+
+**pi** (`earendil-works/pi`, ex-`badlogic/pi-mono`, ~98k stars, MIT, TS). Minimal 4-tool default (read/write/edit/bash), 796-line loop. **`stopReason == "length"` → fail every tool call in the message unexecuted.** Compaction: keep ~20k most recent tokens, iterative prior-summary passes anchored on `firstKeptEntryId`, previously-kept messages re-included in the next summary. Extension model: 33 typed events with per-event veto vocabularies, guards fail closed / observers fail open, **prompt-cache stability as an explicit API contract** (structured prompt inputs, additive deferred tool loading). Skills: agentskills.io standard, consumes `.claude/skills`/`.agents/skills` directly. No sandbox by design (container or Gondolin micro-VM tool routing). Headless `pi -p --mode json` JSONL is the HarnessBench reference adapter. Weaknesses: **zero timeouts** in the extension pipeline (hang-class failures shipped twice), O(N²)-redundant `message_update` stream (both bench frameworks filter it out-of-process).
+
+**Codex CLI** (`openai/codex`). **Two-axis safety: sandbox mode (OS-enforced capability) × approval policy (when to ask)**; Auto = workspace-write + on-request; MCP destructive annotations always require approval; per-subprocess network allowlist proxy. **Layered AGENTS.md** (global → git-root→cwd walk, `AGENTS.override.md` wins, 32 KiB cap). Compaction as first-class subsystem (token threshold + scope, Pre/PostCompact hooks, **InitialContextInjection policy**: mid-turn re-injects initial context above last user message, pre-turn defers). `apply_patch` = one formal-grammar patch tool through a parse→validate→safety-gate→apply pipeline. Headless `codex exec --json` (typed JSONL events, per-turn token usage incl. cached), `--output-schema`, `--output-last-message`. Hooks can rewrite tool input (`updatedInput`).
+
+**Gemini CLI** (`google-gemini/gemini-cli`). Approval spectrum (default/auto_edit/plan/yolo) + TOML policy engine (`commandPrefix`/`commandRegex`). **Plan mode with per-phase model routing** (Pro plans, Flash implements); `enter_plan_mode` tool. **Shadow-git checkpoints** with restore that *re-proposes the original tool call*. Compression at 0.5 context usage. Headless `-p --output-format jsonl` with **typed exit codes: 0 ok / 1 error / 42 input error / 53 turn-limit exceeded**. `write_todos` enforces exactly one in_progress.
+
+**Aider** (`Aider-AI/aider`). **Repo map**: tree-sitter symbol tags + personalized PageRank (personalized by chat-mentioned files/identifiers) under a token budget (default 1k, ×8 when no files in chat, disk-cached). SEARCH/REPLACE with **fuzzy fallback ladder** (exact → leading-whitespace-insensitive → blank-line-tolerant → elided-lines) + targeted self-heal message on failure. Quantified edit formats: udiff 3× less lazy (20%→61%); code-in-JSON worse than plain markdown. Architect/editor two-model split (85% SOTA at publication). **Lint-and-test auto-fix loop** with AST-contextualized error reports (error shown inside its containing function — models mishandle bare line numbers). Polyglot methodology: pass@1 vs pass@2 + well-formed-edit %.
+
+**Cline / Roo Code**. Cline: Plan/Act split with per-mode models; **shadow-workspace checkpoints default-on** — commit after every tool use incl. untracked, three-way restore (Files / Task / Both), explicitly credited with enabling aggressive auto-approve ("cost of a mistake ~zero"); per-category auto-approval toggles + **model-flagged `requires_approval`** per command; cache-cheap auto-compact. Roo: custom modes as data (`roleDefinition` + tool/file groups + `whenToUse`), Boomerang delegation (only the completion summary comes back up; orchestrator deliberately tool-starved to prevent context poisoning), **todo state re-injected into per-turn environment details** so it survives compaction.
+
+**Ranked adoptions (new — not already in §9.3):**
+
+| # | Adoption | Source | August today | Notes |
+|---|---|---|---|---|
+| T1 | **Post-edit verification loop**: after `edit_lines`/`write_file` success, run configured lint + optional test command; report errors **in AST context** (inside containing function, not bare line numbers); bounded fix loop (default 3 iterations) feeding self-heal messages | Aider (+36 pp pass1→pass2), Reflexion, SWE-agent ACI | **None** — no linter/test hook anywhere (verified) | The single biggest documented score lever. Mount: post-mutation hook in the workbench loop. Config: per-workspace `lintCmd`/`testCmd` + auto-detect (ruff/eslint/pytest heuristics). Tree-sitter AST-error detection needs a new dep (none today — verified) |
+| T2 | **Length-stop fail-all**: if `stop_reason ∈ {max_tokens, length}` and the message carries tool calls, fail them all unexecuted with a self-heal message | pi | Only thinking-only truncation handled (`workbench.py:2637`); truncated tool-call batches still execute | Tiny change, prevents executing half-parsed arguments |
+| T3 | **Q&A handoff compaction**: self-summary → fresh-context model asks ≥5 questions → answers → context reset | Terminus 2 | `context_compressor.py` single strategy | The compaction v2 path once §9.3 #2 prune-then-compact is exhausted; directly attacks the TB paper's "Context Loss" failure class |
+| T4 | **Fuzzy edit fallback ladder** (exact → whitespace-insensitive → blank-line-tolerant) before rejecting; **per-model edit format** as a B3 experiment (udiff arm for lazy models) | Aider | Hash-anchor reject + re-read (`workbench.py:3684-3700`), `edit_lines` (`tool_registrations/file_tools.py:812`) | Keep hash anchors as the staleness gate; the ladder is about *match tolerance*, not staleness |
+| T5 | **Two-axis permissions**: split sandbox capability tier × approval policy; per-category auto-approve; model-flagged `requires_approval` on commands; MCP destructive annotations always ask | Codex, Cline | Real sandbox policy (single axis) | Formalizes what the UI can expose; the real sandbox stays ground truth — model flags are advisory on top |
+| T6 | **Layered AGENTS.md**: global → git-root→cwd walk, `AGENTS.override.md`, 32 KiB cap | Codex | Loads workspace AGENTS.md | Cheap; helps benchmark tasks with nested instruction files |
+| T7 | **Externally-persisted plan/todo state + per-turn re-injection** (compact state block each turn; survives compaction; explicit initial-context re-injection policy) | Roo REMINDERS, Codex InitialContextInjection | `update_state` phases exist but aren't re-injected; compaction can lose plan state | Also feeds §4.3 plan-tree rendering; plan/todo must live outside the transcript |
+| T8 | **Salvage-parse of truncated outputs** + **double-confirmation completion** (first "done" → show state + ask; second consecutive assertion ends) | Terminus 2 | Parser-error self-heal exists; no salvage, no double-confirm | Double-confirm costs one extra model call → **bench runs only**, never interactive product mode |
+| T9 | **Headless protocol conventions**: JSONL typed event stream, `--output-schema` final answer, typed exit codes (0 ok / 1 error / 42 input / 53 turn-limit) | Codex exec, Gemini headless | No CLI entry | Folds into the B0 spec; Harbor/Pier adapters consume exactly this shape |
+| T10 | **Repo map upgrade path**: step 1 re-wire orphaned `code_map.py` into environment bootstrapping (§9.3 #4) as-is; step 2 (B3 experiment) tree-sitter tags + personalized PageRank, 1k-token budget ×8, disk cache | Aider | `code_map.py` orphaned (verified: nothing imports it); no tree-sitter dep | Step 1 is a half-day win; step 2 only if B1 trajectories show orientation failures |
+| T11 | **Skill Curator**: idle-triggered aux-model review of agent-created skills — lifecycle transitions, consolidate/patch, **archive-never-delete**, never touches the main prompt cache | Hermes | §3.6 M6 hygiene fixes planned | Extends M6; the archive-not-delete invariant matches the §2 philosophy |
+| T12 | **Prompt-cache-sacred memory injection**: retrieved memory enters as append-only context or a session-start snapshot — never mutates the mid-session system prompt | Hermes, pi | M3 (§3.4) currently says "retrieve + inject" without a cache policy | Design constraint on M3 → §8 Q14 |
+
+**Corroborations for §9.3 rows** (same conclusion, extra evidence): #2 prune-then-compact — Hermes tiering + pi's `firstKeptEntryId` anchoring; #3 output caps — Terminus 10 KB head+tail, Anthropic's 25k-token tool-response cap and `concise|detailed` `response_format` (~⅓ tokens); #5 completion checklist — Terminus double-confirmation is exactly this; #7 shadow-git — Gemini (restore re-proposes the tool call) and Cline (default-on, three-way restore) both ship it and credit it with enabling aggressive autonomy; #12 plan mode — Gemini per-phase model routing, Cline plan/act, Aider architect/editor.
+
+**Do NOT copy from this set:** Hermes' monolithic scale and micro-compaction (breaks cache, their own docs admit it can cost more than it saves); Terminus' keystroke mono-tool as a product surface (slow edits — keep it only as the B3 ablation arm); pi's zero-timeout extension pipeline and O(N²) stream shape; Cline's model-flagged approval as the *only* gate (advisory, not a boundary); Roo's tool-starved orchestrator as a straitjacket (borrow the context-poisoning insight only).
+
+### 9.5 Benchmark entry roadmap
+
+**Framing (user ruling 2026-08-27):** the contestant is **August itself**. The existing `benchmark` agentMode evaluated *models* by stripping August out — the inverse of what a Coding Agent Index entry needs — and is deleted (§2.2). Everything below runs the full, improving harness headlessly.
+
+- **B0 — Gate:** headless `august-bench` CLI wrapping the **real workbench loop in `agent` mode** (§9.3 #1), with the protocol conventions from T9: JSONL typed events, `--output-schema`, typed exit codes (0/1/42/53), budget caps, sandbox auto-approve, network allowlist, complete honest `trajectory.json` (ATIF-compatible — Pier's augmented ATIF v1.7 is the strictest target: one step per API turn, no fabricated assistant text, peak context tokens, summarization count). Also ship the two adapter shapes: a **Harbor installed-agent adapter** (install script + generated config + run command + session export) and a **Pier air-gapped spec** (install script + network allowlist honored at sandbox setup). Nothing else is measurable without B0.
+- **B1 — Private loop:** write the **ya5h-P/harnessbench adapter** (one file: `invoke` + `metrics`) and run it against August's own proxy endpoint. Leaderboard is nearly empty → realistic first top spot; more importantly it becomes the in-house optimization loop for everything below. Note from the survey: harnessbench parses harness state out-of-band when stdout is lossy (Hermes `state.db`, pi JSONL compaction) — August's JSONL stream should be lossless by design so the adapter stays trivial.
+- **B2 — First public row:** self-serve **DeepSWE via Pier** with the full harness. Target to beat: mini-swe-agent + opus-5 (max) at 73.6% (current public top).
+- **B3 — Levers, measured:** one at a time, A/B'd against the B1 loop (AHE's methodology: evaluate→analyze→improve, 1 component per iteration). Order by measured evidence: **T1 verification loop (+36 pp documented)** → **T4 edit-format ladder/per-model format (3× laziness reduction)** → prune-then-compact (§9.3 #2) + T3 Q&A handoff → 30 KB caps + steering truncation footers (§9.3 #3) → environment bootstrapping + T10 repo map → completion checklist (§9.3 #5, bench-only T8 double-confirm) → prompt variants/effort policy (§9.3 #6) → shadow-git (§9.3 #7). Keep one **minimal ablation arm** (bash-only, no skills/memory) purely to prove each harness element adds score — if an element loses to the ablation on a board, it gets cut or fixed (mini-SWE-agent lesson).
+- **B4 — Automated harness evolution:** extend `harness_self_improve.py` + golden evals + routing evidence into an AHE-style loop over tool descriptions/implementations, middleware, and memory — the components where gains actually localize. Include the Anthropic-documented **tool-description rewriting agent** (a tool-testing agent that rewrites descriptions from failure transcripts cut downstream task time 40%). This is the "August improves itself" engine the ruling asks for: the B1 loop scores, B4 proposes+tests harness mutations, humans approve merges.
+- **B5 — Inclusion:** approach Artificial Analysis and the Terminal-Bench/Harbor maintainers once August runs headlessly in a container with default settings.
+- **Integrity (non-negotiable):** benchmark-integrity guardrails in sandbox policy — never modify tests/graders, never read `solution/`, never fetch answers; trajectory logging must be complete and honest. Reward-hacked attempts are zeroed and named.
+
+### 9.6 August advantages to keep exploiting
+
+Real sandbox policy (vs OpenCode's and pi's advisory-only stance, and Cline's model-flagged approvals), multi-format provider gateways with per-model `apiFormat` (OpenCode users are still begging for model auto-discovery #6231 and failover #7602), verifier-free loop control, desktop-first product shape with one harness powering UI + proxy + workbench. Patterns the field validated that August *already* has: native tool calling, a CodeAct-style `code` mode (CodeAct: up to +20% success), read-only parallel tool execution (Anthropic's latency lever, with Cognition's single-threaded-mutations caution respected), subagents with compaction/retry/`yieldSchema`. The headless entry runs this same harness — no separate neutered profile — so every advantage above carries directly into the benchmark line.
 
 ---
 
@@ -544,3 +720,21 @@ npm run test:frontend   # + tsc; eslint has pre-existing errors at HEAD — comp
 | Disabled skills still injected | `workbench.py:676-695,734,805-820,580-597`; `skill_tools.py:9-19,30` |
 | `<relevant_skills>` promised but unimplemented | `capabilities_prompt.py:344,357-358,417`; no `build_relevant_skills_block` anywhere |
 | Orphan tables reader counts | grep of `backend-py/app`: curation_ledger 0, session_traces 0, harness_trends 0, routing_evidence 2, execution_state 8, scratchpad 8, exams 4 |
+| "orcacode" nonexistent; OpenCode target | GitHub/npm/PyPI search 2026-08-27; https://github.com/anomalyco/opencode (~202k stars, MIT, v1.18.23) |
+| Coding Agent Index methodology + standings | https://artificialanalysis.ai/agents/coding-agents · https://artificialanalysis.ai/methodology/coding-agents-benchmarking (v1.4: DeepSWE + TB 2.1 + SWE-Atlas-QnA; harness delta ~9 pts at fixed Opus 4.7) |
+| Harness bench candidates | https://github.com/ya5h-P/harnessbench (coding, 200 tasks, one-file adapter) · https://github.com/reacher-z/HarnessBench (web tasks) |
+| Terminal-Bench 2.1 / DeepSWE / SWE-bench | https://www.tbench.ai/leaderboard/terminal-bench/2.1 · https://deepswe.datacurve.ai/ (self-serve via Pier) · https://www.swebench.com/ |
+| Measured harness levers | AHE arXiv:2604.25850 (+7.3 pp TB2; gains in tools/middleware/memory) · https://github.com/krafton-ai/KIRA (30 KB cap, completion checklist) · https://github.com/stanford-iris-lab/meta-harness-tbench2-artifact (env bootstrapping, −2…5 turns) · https://github.com/SWE-agent/mini-swe-agent (simplicity beats product harnesses on DeepSWE) · https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents |
+| August gap checks for adoptions | no LSP/formatter (grep empty); checkpoints = file copies (`checkpoint_service.py:1-24`, 2 MiB cap); no `.claude/skills` discovery; single system prompt; guardrails at `tool_guardrails.py:8,67` |
+| Model-eval benchmark mode scope (deletion) | `harness_mode.py:88-109`; `routers/workbench.py:1848-1849`; `workbench.py:617-623,734,741,808,1140-1149,2022,2736-2762,2788`; `HarnessModeChip.tsx:3,8`; `WorkbenchModeSelector.tsx:119` |
+| August length-stop gap (T2) | `workbench.py:2637` handles thinking-only truncation; no fail-all rule for truncated tool-call batches |
+| August hash-anchored edits (T4 mount) | `workbench.py:3684-3700` (fileHash mismatch → reject + re-read); `edit_lines` at `tool_registrations/file_tools.py:812` |
+| Hermes architecture | https://github.com/NousResearch/hermes-agent (~237k stars, MIT; tiered compaction constants in `agent/context_compressor.py`; frozen-snapshot memory `tools/memory_tool.py`; `execute_code`/`delegation` tools; Curator `agent/curator.py`; import-frozen YOLO var `tools/approval.py`; micro-compaction tradeoff `docs/micro-compaction.md`) |
+| Terminus 2 architecture + numbers | `harbor-framework/terminal-bench-1` `terminal_bench/agents/terminus_2/terminus_2.py` + `harbor-framework/harbor` maintained copy; TB 2.1 submissions `2026-06-05-…-terminus-2.json` (80.4%, $438.64, 0 hacks) & `2026-06-07-…-claude-code.json` (83.8%, 1 hack DQ); arXiv 2601.11868 (TB 2.0 table: T2+Opus 4.5 57.8% vs CC 52.1%; 3.9M vs 256.9M input tokens; Context Loss failure class App. C) |
+| pi architecture | https://github.com/earendil-works/pi (~98k stars, MIT; `agent-loop.ts` length-stop rule; `docs/compaction.md` firstKeptEntryId; `docs/extensions.md` + Hermes RFC `docs/rfcs/2026-07-plugin-architecture-lessons-pi-opencode.md`; `docs/skills.md`, `docs/security.md`) |
+| Codex CLI patterns | learn.chatgpt.com docs: `agent-approvals-security` (sandbox×approval), `agent-configuration/agents-md` (layered, 32 KiB), `non-interactive-mode` (exec --json/--output-schema), `config-file/config-reference` (compaction, hooks); `codex-rs/core/src/compact.rs`, `apply-patch/src/parser.rs` |
+| Gemini CLI patterns | google-gemini/gemini-cli docs: `plan-mode` (per-phase routing), `checkpointing` (shadow git + re-proposed call), `headless` (exit codes 42/53), `settings`, `policy-engine` |
+| Aider evidence | aider.chat/docs/repomap + `aider/repomap.py` (PageRank); `aider/coders/editblock_coder.py` (fuzzy ladder); `website/docs/unified-diffs.md` (20%→61%); `_posts/2024-08-14-code-in-JSON.md`; `_posts/2024-05-22-linting.md`; `_posts/2024-09-26-architect.md`; `docs/leaderboards/` (gpt-5 52.0%→88.0% pass1→pass2) |
+| Cline/Roo patterns | cline docs: `plan-and-act`, `checkpoints` (default-on shadow workspace, 3-way restore), `auto-approve` (category toggles + model-flagged requires_approval), `auto-compact`; roocodeinc.github.io: `custom-modes`, `boomerang-tasks`, `context-poisoning`, `intelligent-context-condensing`, `task-todo-list` |
+| Harness-engineering writeups | arXiv 2405.15793 (SWE-agent ACI), 2407.01489 (Agentless 32% SWE-Lite $0.70), 2402.01030 (CodeAct +20%), 2303.11366 (Reflexion 80%→91%); metr.org 50%-horizon (doubles ~7 mo); cognition.com/blog/dont-build-multi-agents; anthropic.com/engineering: built-multi-agent-research-system (+90.2%, −90% time, tool-description agent −40%), writing-tools-for-agents (25k cap, concise/detailed) |
+| Harbor/Pier adapter mechanics | harbor `src/harbor/agents/installed/` (~35 adapters incl. hermes.py, pi.py); datacurve-ai/pier (air-gapped install specs + network allowlists, augmented ATIF v1.7, `pier critique run`); benchget/deepswe mirror (top: mini-swe-agent + opus-5 max 73.6%, 2026-08-20) |
