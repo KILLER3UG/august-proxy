@@ -98,3 +98,51 @@ describe('CommandOutputPane — minimal output (plan §4.1)', () => {
     expect(screen.queryByTestId('command-error-line')).toBeNull();
   });
 });
+
+describe('CommandOutputPane — /verbose (plan §4.2)', () => {
+  it('verbose renders full output inline on success — no toggle needed', () => {
+    render(
+      <CommandOutputPane
+        toolName="run_command"
+        context={JSON.stringify({ command: 'ls -la' })}
+        summary={'file.txt\nother.txt\nExit code: 0'}
+        status="done"
+        verbose
+      />,
+    );
+    const full = screen.getByTestId('command-full-output');
+    expect(full.textContent).toContain('file.txt');
+    expect(full.textContent).toContain('other.txt');
+    // The opt-in toggle is pointless when output is already shown.
+    expect(screen.queryByTestId('command-output-toggle')).toBeNull();
+  });
+
+  it('verbose shows full output on failure without the click', () => {
+    render(
+      <CommandOutputPane
+        toolName="run_command"
+        context={JSON.stringify({ command: 'python -m pytest -x' })}
+        summary={'boom\nExit code: 1'}
+        status="error"
+        verbose
+      />,
+    );
+    expect(screen.getByTestId('command-full-output').textContent).toContain('boom');
+    expect(screen.queryByTestId('command-output-toggle')).toBeNull();
+  });
+
+  it('verbose streams the live preview of a running command', () => {
+    render(
+      <CommandOutputPane
+        toolName="run_command"
+        context={JSON.stringify({ command: 'npm test' })}
+        preview={'partial output…'}
+        status="running"
+        verbose
+      />,
+    );
+    expect(screen.getByTestId('command-full-output').textContent).toContain(
+      'partial output',
+    );
+  });
+});

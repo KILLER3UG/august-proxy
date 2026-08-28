@@ -71,16 +71,20 @@ export function CommandOutputPane({
   preview,
   summary,
   status,
+  verbose = false,
 }: {
   toolName: string;
   context?: string;
   preview?: string;
   summary?: string;
   status: string;
+  /** /verbose (plan §4.2): full output renders inline without the click,
+   *  for successes and live runs too — debug depth for the session. */
+  verbose?: boolean;
 }) {
   const scrollRef = useRef<HTMLPreElement>(null);
-  // Full output is opt-in on failure — start collapsed.
-  const [showOutput, setShowOutput] = useState(false);
+  // Full output is opt-in on failure — start collapsed (verbose forces it open).
+  const [showOutput, setShowOutput] = useState(verbose);
   const command = extractCommand(context) || toolName.replace(/^@/, '');
   const running = status === 'running';
   const source = running
@@ -90,7 +94,7 @@ export function CommandOutputPane({
   const isError = !running && (failed || status === 'error');
   const errorLine = isError ? commandErrorOneLiner(body) : null;
   const hasOutput = body.length > 0;
-  const showFull = isError && hasOutput && showOutput;
+  const showFull = hasOutput && (verbose || (isError && showOutput));
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -132,7 +136,7 @@ export function CommandOutputPane({
           {running && <Loader2 className="size-2.5 animate-spin" />}
           {statusLabel}
         </span>
-        {isError && hasOutput && (
+        {isError && hasOutput && !verbose && (
           <button
             type="button"
             onClick={() => setShowOutput((v) => !v)}

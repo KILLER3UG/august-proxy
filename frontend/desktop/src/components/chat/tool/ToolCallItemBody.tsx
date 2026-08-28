@@ -113,6 +113,7 @@ export function ToolCallItemBody({
   hideProgress = false,
   hideDiff = false,
   hideContext = false,
+  verbose = false,
 }: {
   tool: ToolEntry;
   progress?: ReadonlyArray<ProgressEntry>;
@@ -124,6 +125,9 @@ export function ToolCallItemBody({
   /** Suppress the formatted "context" section (the row header already names the
    *  file, so the args summary would be redundant). */
   hideContext?: boolean;
+  /** /verbose (plan §4.2): raw tool output renders inline for every bucket,
+   *  not just memory writes. */
+  verbose?: boolean;
   /** Reserved for callers that need subagent labeling in nested chrome. */
   agentIdOverride?: string;
 }) {
@@ -149,6 +153,7 @@ export function ToolCallItemBody({
         preview={tool.preview}
         summary={tool.summary || tool.error}
         status={tool.status}
+        verbose={verbose}
       />,
     );
   } else if (
@@ -251,10 +256,13 @@ export function ToolCallItemBody({
   // Minimal-output rule (plan §4.1): raw tool output never streams into the
   // transcript. The one exception is memory writes — the saved entry text is
   // the point of the row, so it stays expanded (edit-class exception).
+  // /verbose (plan §4.2) lifts the rule for every bucket: raw results render
+  // inline until the session's verbose flag is turned off.
   // View/read: path is on the row label. Commands: CommandOutputPane. Edits: DiffView.
   if (
     !isSubagent &&
-    bucket === 'memoryWrite' &&
+    !isCommand &&
+    (verbose || bucket === 'memoryWrite') &&
     tool.summary &&
     !tool.searchHits &&
     !tool.providerSetup &&

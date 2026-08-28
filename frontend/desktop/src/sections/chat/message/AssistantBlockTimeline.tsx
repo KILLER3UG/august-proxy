@@ -31,6 +31,7 @@ import {
   type LiveActivityKind,
 } from '@/store/liveActivity';
 import { getToolLabel } from '@/lib/tool-labels';
+import { useVerboseMode } from '@/lib/verbose-mode';
 import { resolveUiSessionId, resolveWorkbenchSessionId } from '../stream/session-id-map';
 import { api } from '@/api/client';
 
@@ -180,6 +181,7 @@ export function AssistantBlockTimeline({
   subagentPrompts,
   subagentBlocks,
   modelId,
+  sessionId,
   onRetryTurn,
   onSwitchModel,
 }: {
@@ -195,6 +197,8 @@ export function AssistantBlockTimeline({
   subagentBlocks?: Map<string, SubagentBlockState>;
   /** Parent session model id — shown as muted tag on subagent launch rows. */
   modelId?: string | null;
+  /** Chat session id — keys the per-session /verbose flag (plan §4.2). */
+  sessionId?: string | null;
   /** Rendered on error blocks: re-run the turn from the last user prompt. */
   onRetryTurn?: () => void;
   /** Rendered on error blocks: open the "answer with another model" picker. */
@@ -202,6 +206,9 @@ export function AssistantBlockTimeline({
 }) {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const liveSessionKey = resolveUiSessionId(routeSessionId || message.id);
+  // /verbose (plan §4.2 item 4): raw tool output renders inline for this
+  // session until turned off. Rendering policy only — data layer unchanged.
+  const verbose = useVerboseMode(sessionId);
   // Kept in the public props for message-pane compatibility; subagent
   // progress no longer renders an inline model label.
   void modelId;
@@ -605,8 +612,15 @@ export function AssistantBlockTimeline({
                   label={`${label} ×${count}`}
                   isCommand={false}
                   expanded={false}
+                  verbose={verbose}
                   onToggle={(next) => toggleExpand(toolId, next)}
-                />
+                >
+                  <ToolCallItemBody
+                    tool={tool}
+                    hideProgress
+                    verbose={verbose}
+                  />
+                </ToolStepRow>
               ),
             });
             ti = tj;
@@ -623,6 +637,7 @@ export function AssistantBlockTimeline({
               label={label}
               isCommand={isCommand}
               expanded={expanded}
+              verbose={verbose}
               onToggle={(next) => toggleExpand(toolId, next)}
               progress={tool.id ? toolProgress?.get(tool.id) : undefined}
               afterRow={
@@ -648,6 +663,7 @@ export function AssistantBlockTimeline({
                 tool={tool}
                 progress={tool.id ? toolProgress?.get(tool.id) : undefined}
                 hideProgress
+                verbose={verbose}
               />
             </ToolStepRow>
           ),

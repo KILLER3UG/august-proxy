@@ -216,3 +216,54 @@ describe('ToolStepRow — minimal-output policy (plan §4.1)', () => {
     expect(screen.getByTestId('tool-read-duration').textContent).toBe('1.4s');
   });
 });
+
+describe('ToolStepRow — /verbose lifts the minimal lock (plan §4.2)', () => {
+  it('verbose makes settled read rows expandable into their raw output', () => {
+    const tool = makeTool({
+      name: 'read_file',
+      status: 'done',
+      context: JSON.stringify({ path: 'a.py' }),
+      summary: 'x'.repeat(300),
+    });
+    render(
+      <ToolStepRow
+        tool={tool}
+        label="Read a.py"
+        expanded={false}
+        verbose
+        onToggle={() => {}}
+      >
+        <div>raw file content</div>
+      </ToolStepRow>,
+    );
+    const toggle = screen.getByRole('button');
+    expect(toggle).not.toBeDisabled();
+    fireEvent.click(toggle);
+    expect(screen.getByText('raw file content')).toBeInTheDocument();
+  });
+
+  it('verbose makes successful command rows expandable', () => {
+    const tool = makeTool({
+      name: 'run_command',
+      status: 'done',
+      context: JSON.stringify({ command: 'ls' }),
+      summary: 'file.txt',
+    });
+    render(
+      <ToolStepRow
+        tool={tool}
+        label="Ran: ls"
+        isCommand
+        expanded={false}
+        verbose
+        onToggle={() => {}}
+      >
+        <div>output body</div>
+      </ToolStepRow>,
+    );
+    const toggle = screen.getByRole('button');
+    expect(toggle).not.toBeDisabled();
+    fireEvent.click(toggle);
+    expect(screen.getByText('output body')).toBeInTheDocument();
+  });
+});

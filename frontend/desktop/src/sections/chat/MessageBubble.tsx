@@ -17,6 +17,7 @@ import { CompactionNoticeCard } from './message/CompactionNoticeCard';
 import { UserMessageBubble } from './message/UserMessageBubble';
 import { AssistantMessageContent } from './message/AssistantMessageContent';
 import { ChatAttachmentService } from './services/ChatAttachmentService';
+import { useVerboseMode } from '@/lib/verbose-mode';
 
 export { ReasoningBlock } from './message/ReasoningBlock';
 export { ToolCallCard, ToolBlock } from './message/ToolCallCard';
@@ -90,6 +91,8 @@ export function MessageBubble({
   // Hooks must run on every render path, so compute these BEFORE the early
   // returns below (rules-of-hooks).
   const isUser = message.role === 'user';
+  // /verbose (plan §4.2): per-session raw-output toggle, read reactively.
+  const verbose = useVerboseMode(sessionId);
   const displayBlocks = useMemo(() => {
     if (isUser) return [];
     return getDisplayBlocks(message.blocks, message.thinking, message.tools, message.content);
@@ -118,6 +121,7 @@ export function MessageBubble({
         tool={message.tool!}
         timestamp={message.timestamp}
         progress={toolProgress?.get(toolKey)}
+        verbose={verbose}
       />
     );
   }

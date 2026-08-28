@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import {
   ToolCallItem as ToolCallItemComp,
 } from '@/components/chat/ToolCallItem';
+import { FormattedResultSection } from '@/components/chat/tool/sections';
 import { ToolIcon as NewToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
@@ -34,16 +35,19 @@ export function ToolBlock({
 /**
  * Legacy role:'tool' message card — minimal-output policy (plan §4.3):
  * invocation row + status pill only; no verbatim args/result dump. The
- * full output lives in the drawer/trajectory.
+ * full output lives in the drawer/trajectory. /verbose (plan §4.2) lifts
+ * the rule and renders the raw result inline.
  */
 export function ToolCallCard({
   tool,
   timestamp: _timestamp,
   progress,
+  verbose = false,
 }: {
   tool: NonNullable<ChatMessage['tool']>;
   timestamp: string;
   progress?: ReadonlyArray<{ path: string; status: 'reading' | 'read' }>;
+  verbose?: boolean;
 }) {
   const toolNameForIcon = tool.name.replace(/^@/, '');
   const isCommand = toolNameForIcon === 'run_command' || tool.name.startsWith('@run_command');
@@ -106,6 +110,9 @@ export function ToolCallCard({
           )}
         </span>
       </DisclosureRow>
+      {verbose && typeof tool.result === 'string' && tool.result.trim() && (
+        <FormattedResultSection toolName={tool.name} raw={tool.result} />
+      )}
       {(() => {
         const visible = progress ? visibleProgress(progress) : [];
         const total = progress?.length ?? 0;

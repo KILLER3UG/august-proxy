@@ -130,6 +130,7 @@ export function ToolStepRow({
   expanded,
   onToggle,
   isCommand = false,
+  verbose = false,
   progress,
   children,
   afterRow,
@@ -141,6 +142,9 @@ export function ToolStepRow({
   expanded: boolean;
   onToggle: (next: boolean) => void;
   isCommand?: boolean;
+  /** /verbose (plan §4.2): minimal locking is lifted — settled read and
+   *  successful command rows become expandable into their raw output. */
+  verbose?: boolean;
   /** Live per-file progress entries for this tool call. */
   progress?: ReadonlyArray<ProgressEntry>;
   /** Expanded response body */
@@ -172,7 +176,8 @@ export function ToolStepRow({
     isEdit ||
     (!isCommand && !isView && !!friendlyCtx?.summary?.trim());
   // ToolCallItemBody is often passed as children but returns null for view/read
-  // tools (path lives on the label). Don't treat that empty element as expandable.
+  // tools (path lives on the label). Don't treat that empty element as expandable —
+  // unless /verbose is on, in which case the body renders raw output for reads too.
   const hasExpandableContent = !!(
     hasTaskRows ||
     tool.error ||
@@ -181,13 +186,14 @@ export function ToolStepRow({
     tool.providerSetup ||
     tool.integrationSetup ||
     tool.pendingApproval ||
-    (!isView && hasChildren)
+    (hasChildren && (!isView || verbose))
   );
   // Minimal-output policy (plan §4.1): settled read rows and successful
   // command rows are header-only — no chevron, nothing to expand into.
   // Failures always stay inspectable (full output behind the click).
+  // /verbose lifts the lock so raw output is reachable inline (plan §4.2).
   const minimalLocked =
-    !running && ((isView && !errored) || (isCommand && !errored));
+    !verbose && !running && ((isView && !errored) || (isCommand && !errored));
   // View tools stay header-only while empty (no blank "Running…" panel).
   const canExpand =
     !minimalLocked && (hasExpandableContent || (running && !isView));

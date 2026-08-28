@@ -2,7 +2,8 @@
  * Built-in slash commands. Importing this file (once, from main.tsx)
  * registers the command set on the singleton registry.
  *
- * The surface is intentionally tiny: /compact, /init, /btw, /goal.
+ * The surface is intentionally tiny: /compact, /init, /btw, /goal,
+ * /circuit, /verbose.
  */
 
 import { voiceCommandRegistry } from './registry';
@@ -68,5 +69,19 @@ voiceCommandRegistry.register({
   // is skipped for the command itself.
   handler: ({ args }) => {
     voiceCommandEvents.emit({ type: 'circuit', args: args ?? '' });
+  },
+});
+
+voiceCommandRegistry.register({
+  id: 'verbose',
+  triggers: ['verbose', 'show raw output', 'debug output', 'raw tool output'],
+  slashCommand: '/verbose',
+  category: 'core',
+  description:
+    'Toggle raw tool output inline for this session ("/verbose off" to restore the minimal transcript)',
+  // Pure client-side toggle (plan §4.2 item 4): flips the per-session flag
+  // in lib/verbose-mode.ts; the transcript renderers read it directly.
+  handler: ({ args, sessionId }) => {
+    voiceCommandEvents.emit({ type: 'verbose', sessionId, args: args ?? '' });
   },
 });

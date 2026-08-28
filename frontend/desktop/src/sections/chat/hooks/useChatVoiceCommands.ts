@@ -23,6 +23,7 @@ import {
   clearComposerDraft,
   persistMessages,
 } from '../message-storage';
+import { setVerboseMode, toggleVerboseMode } from '@/lib/verbose-mode';
 
 export type ExamSeed = { topic?: string; files?: string[] };
 export type AugPreviewState = {
@@ -348,6 +349,35 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
             })
             .then(() => setInput(''))
             .catch(() => toast.error('Could not toggle the circuit workbench'));
+          break;
+        }
+        case 'verbose': {
+          // /verbose — client-side per-session toggle (plan §4.2 item 4):
+          // raw tool output renders inline until turned off. Keyed on the
+          // chat session id the transcript renderers are keyed on.
+          const sid = sessionId || event.sessionId || workbenchSessionId || '';
+          if (!sid) {
+            toast.error('No active session');
+            break;
+          }
+          const args = (event.args ?? '').trim().toLowerCase();
+          let next: boolean;
+          if (args === 'on') {
+            setVerboseMode(sid, true);
+            next = true;
+          } else if (args === 'off') {
+            setVerboseMode(sid, false);
+            next = false;
+          } else {
+            next = toggleVerboseMode(sid);
+          }
+          toast.info(
+            next
+              ? 'Verbose on — raw tool output shown inline'
+              : 'Verbose off — minimal transcript',
+          );
+          setInput('');
+          clearComposerDraft(sessionId);
           break;
         }
       }

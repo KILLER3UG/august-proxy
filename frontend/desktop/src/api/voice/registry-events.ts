@@ -82,6 +82,11 @@ export type VoiceCommandEvent =
   | {
       type: 'circuit';
       args: string;
+    }
+  | {
+      type: 'verbose';
+      sessionId?: string;
+      args: string;
     };
 
 type Listener = (event: VoiceCommandEvent) => void;
