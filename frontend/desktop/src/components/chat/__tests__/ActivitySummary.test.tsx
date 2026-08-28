@@ -156,3 +156,36 @@ describe('ActivitySummary completion mode (§9 bar)', () => {
     expect(screen.getByTestId('activity-summary-live-indicator')).toBeInTheDocument();
   });
 });
+
+describe('ActivitySummary pending state (live + empty)', () => {
+  it('renders a bold "Working…" label inline even when collapsed', () => {
+    // Reproduces the bug: at frame 0 after send, the assistant placeholder
+    // exists with no thought, no tool, no prose. The collapsed header must
+    // still read as active without requiring the user to expand.
+    render(
+      <ActivitySummary thoughtCount={0} live defaultOpen={false}>
+        <div>body</div>
+      </ActivitySummary>,
+    );
+    expect(screen.getByTestId('activity-summary-live-label')).toHaveTextContent('Working…');
+    // Live detail line is also visible while collapsed in the pending state.
+    expect(screen.getAllByText('Working…').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByTestId('activity-summary-live-indicator')).toBeInTheDocument();
+  });
+
+  it('uses the supplied liveDetail as the inline label when present', () => {
+    render(
+      <ActivitySummary
+        thoughtCount={0}
+        live
+        liveDetail="Reading config.yaml"
+        defaultOpen={false}
+      >
+        <div>body</div>
+      </ActivitySummary>,
+    );
+    expect(screen.getByTestId('activity-summary-live-label')).toHaveTextContent(
+      'Reading config.yaml',
+    );
+  });
+});

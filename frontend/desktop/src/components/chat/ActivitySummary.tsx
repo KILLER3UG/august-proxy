@@ -180,6 +180,12 @@ export function ActivitySummary({
   // Activity mode needs something to say; the completion bar always renders
   // (the timeline only mounts it when the phase ran tool calls).
   if (!isCompletion && !hasProse && segments.length === 0 && !liveLine) return null;
+  // When the turn is still live but there is nothing yet to summarise
+  // (no thought, no tool, no prose), the activity-mode collapsed header
+  // would otherwise render an empty band. Show a "Working…" label inline
+  // so the transcript always reads as active the moment the assistant
+  // placeholder appears.
+  const showLiveOnly = !isCompletion && !hasProse && segments.length === 0 && !!liveLine;
 
   return (
     <div
@@ -252,7 +258,15 @@ export function ActivitySummary({
         ) : (
           <>
             <span className="activity-summary-counts">
-              {durationLabel ? (
+              {showLiveOnly ? (
+                <span
+                  className="shrink-0 font-semibold text-foreground"
+                  data-testid="activity-summary-live-label"
+                >
+                  {liveLine || 'Working…'}
+                </span>
+              ) : null}
+              {durationLabel && !showLiveOnly ? (
                 <span className="activity-summary-duration" aria-hidden>
                   {durationLabel}
                   {hasProse || segments.length > 0 ? ' · ' : ''}
@@ -299,6 +313,19 @@ export function ActivitySummary({
 
       {live && open && liveLine ? (
         <div className="activity-summary-live" aria-live="polite">
+          <span className="activity-summary-live-dot" aria-hidden />
+          <span className="truncate">{liveLine}</span>
+        </div>
+      ) : null}
+      {/* Pending state: keep the live line visible while collapsed too, so
+          the transcript reads as active the instant the assistant placeholder
+          appears (no expansion required). The line is hidden once any real
+          prose / segment has landed — the activity summary already shows it. */}
+      {showLiveOnly && !open ? (
+        <div
+          className="activity-summary-live activity-summary-live--inline"
+          aria-live="polite"
+        >
           <span className="activity-summary-live-dot" aria-hidden />
           <span className="truncate">{liveLine}</span>
         </div>

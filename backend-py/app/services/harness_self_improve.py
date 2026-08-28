@@ -446,7 +446,12 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
         if not name:
             return {'ok': False, 'error': 'skill proposals need payload.name'}
         try:
-            from app.services.skill_service import _agentSkillsDir, _validateDescription, _validateName
+            from app.services.skill_service import (
+                _agentSkillsDir,
+                _ensure_canonical_body,
+                _validateDescription,
+                _validateName,
+            )
 
             _validateName(name)
             _validateDescription(description or 'Created from an approved harness proposal.')
@@ -456,10 +461,15 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
             if kind == 'skill_patch' and not md.exists():
                 return {'ok': False, 'error': f'skill {name!r} does not exist; use skill_create'}
             skill_dir.mkdir(parents=True, exist_ok=True)
+            normalized = _ensure_canonical_body(
+                body,
+                name=name,
+                description=description or 'Created from an approved harness proposal.',
+                is_learned=True,
+            )
             md.write_text(
                 _skill_frontmatter(name, description or 'Created from an approved harness proposal.', trigger)
-                + body
-                + '\n',
+                + normalized,
                 encoding='utf-8',
             )
             try:

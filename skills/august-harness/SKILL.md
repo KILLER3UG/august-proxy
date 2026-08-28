@@ -12,6 +12,42 @@ August is a desktop agent harness. You talk to the user through native tool
 calls; the harness runs them in a sandboxed session and streams results back.
 This skill explains the loop itself so you work *with* it instead of against it.
 
+## What this skill is
+
+A reference for the August agent loop — session modes, the turn lifecycle, the
+`update_state` phase machine, plan mode, and the self-heal rules the harness
+applies to your output. It is the first skill to load before any multi-step
+work in August.
+
+## When to Use
+
+- Before any multi-step change: file edits, refactors, debugging, multi-tool
+  investigations, or anything that needs `update_state` progress tracking.
+- When you are unsure whether to switch modes (chat / agent / code /
+  orchestrator) or how `enter_plan_mode` / `submit_plan` interact.
+- When a turn misbehaves (validation errors, narration, stuck phases) — the
+  self-heal rules explain how the harness reacts and what to do next.
+
+## Prerequisites
+
+- A running August desktop session (or the workbench backend on
+  `:8085` + a web/desktop client).
+- Access to the `harness_introspect` and `harness_propose` tools, which are
+  how you inspect this surface and file improvement proposals.
+- Nothing user-side to install; the loop runs in the existing session.
+
+## How to Run
+
+1. Load this skill (`load_skill "august-harness"`) at the start of a session
+   so the loop contract is in your context.
+2. Pick a session mode with `set_agent_mode(chat|agent|code|orchestrator)`.
+3. For multi-step work, call `update_state(phase, step)` at start / progress
+   / finish; advance the phase or step every turn or risk a hard stop.
+4. Use `enter_plan_mode` for non-trivial changes, write the plan to
+   `.aug/plans/<sessionId>.md`, then `submit_plan` for approval.
+5. File improvements with `harness_propose(...)`; a human approves before any
+   change is applied.
+
 ## Session modes
 
 A session runs in one mode; switch with `set_agent_mode`:
@@ -86,3 +122,20 @@ applied by you directly.
   self-heal retry of the turn.
 - Tool results are truncated to your capability profile — page with
   `read_file` offset/limit instead of re-reading everything.
+
+## Pitfalls
+
+- Spinning on the same `update_state(phase, step)` across many rounds trips
+  the reflection nudge and a hard stop — advance the state or finish.
+- Treating `run_command` as a black box. The exit code IS the receipt;
+  report it (zero included) instead of narrating "I ran X."
+- Filing a `harness_propose` and assuming it applied. Proposals wait on a
+  human reviewer in Settings → Insights → Harness Improvements.
+
+## Verification
+
+- `harness_introspect()` shows your current tool surface, skill catalogue,
+  turn-loop flow map, and open proposals — re-run it after a config change.
+- The end of a real task is `update_state(phase='complete')`, not silence.
+- For long sessions, call `summarize_session` before any compaction so the
+  handoff summary survives the cut.

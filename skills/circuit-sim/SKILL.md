@@ -8,6 +8,39 @@ category: engineering
 
 Proteus-style flow: pick real parts, write a netlist, simulate, render.
 
+## What this skill is
+
+A workflow for circuit work in August: real-part lookup, SPICE netlist
+authoring, ngspice simulation, and rendering schematics, 3D previews, and
+waveform charts. It encodes the part-search → integrate → simulate →
+render loop and the install requirements for ngspice.
+
+## When to Use
+
+- The user wants to design, simulate, or render a circuit.
+- You need a real part's SPICE model before writing the netlist (classic
+  parts like op-amps, BJTs, regulators, timers).
+- A schematic, board preview, or waveform plot is a useful artefact for
+  the answer.
+
+## Prerequisites
+
+- `ngspice` installed on the host (`winget install ngspice` on Windows, or
+  set `AUGUST_NGSPICE_EXE` to the executable path).
+- Network access for `web_fetch` when pulling a manufacturer model file
+  (pass `network: true` on the `run_command` if installing ngspice mid-run).
+
+## How to Run
+
+1. `load_skill "circuit-sim"` so the netlist and tool names are fresh.
+2. `circuit_search_component` (and `circuit_integrate_component` for board
+   spec sheets) BEFORE writing the netlist.
+3. Write a netlist with a title comment, real `.include` lines for
+   manufacturer models, and explicit `.measure` statements.
+4. `circuit_simulate` to run ngspice, then `render_chart` for waveforms.
+5. `draw_circuit` for the schematic, `circuit_render_3d` for the board
+   preview. State ideal-vs-real assumptions next to numeric results.
+
 ## 1. Find components
 
 `circuit_search_component` looks up parts:
@@ -60,3 +93,27 @@ meas ac vout_max find v(out) at=1k
 
 Always state assumptions (ideal vs real models, tolerances) next to
 the numeric results.
+
+## Pitfalls
+
+- Skipping the part search and writing a behavioral circuit for a part
+  with a real model. The user expects real-part simulation when one
+  exists; use the integrate step first.
+- Forgetting `.measure` statements on `.tran` / `.ac` / `.dc` decks. The
+  tool returns `measures: {name: value}` parsed from those, so absent
+  measures means you get no numeric receipt.
+- Running ngspice without `.end` (or with the title line missing). The
+  tool returns a parse error; fix the netlist, do not retry with
+  cosmetic changes.
+- Mixing `i(vsrc)` references when the source is named differently
+  (`V1` vs `Vin`). Names are case-sensitive in SPICE.
+
+## Verification
+
+- The simulate result includes parsed `measures` and (for `.tran`/`.ac`)
+  waveform data you can plot. Numbers without units or "around zero"
+  prose are not a receipt — re-run with explicit `.measure`.
+- The render step (schematic / 3D / chart) must visibly match the
+  netlist: if the rendered netlist has nodes the simulation did not
+  reference, your schematic generator drifted from your deck.
+- State ideal-vs-real assumptions next to any number you report.

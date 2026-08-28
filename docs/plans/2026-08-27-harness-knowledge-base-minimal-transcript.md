@@ -802,3 +802,159 @@ August already *produces* diffs: hash-anchored edits, checkpoints (§9.3 #7 shad
 | DeepSeek harness (official vendor harness) | https://github.com/deepseek-ai/deepseek-harness (`dsh`; ~200k★ in 14 days, MIT, TS pnpm monorepo, released 2026-08-13 developer preview; Cordis plugin kernel, arXiv:2608.25512; HN 49285244). Record: append-only `SessionEvent` log, "model-visible ⟺ logged" invariant; typed waterfall extension points (`agent/pre-step`, `tools/pre-execute|execute|post-execute`); compaction threshold 0.8 × window / retain 0.16 / summary 8192 tokens, tool-pair-balanced boundaries, overflow-reactive retry, lock events (`packages/compaction/compaction-basic/src/config.ts`); tool-result pruner 8192→head 4096 + tail 1024 code points; spill >50 KB to session file with head/tail 25 KB preview + locator + retrieval hint (`packages/spill/`); `str_replace_editor` unique-literal edits + `cat -n` ranged views clipped at 16k chars; **read-before-write gate** `FS_NOT_OBSERVED`/`FS_STALE_VERSION` with atomic CAS (`packages/fs/fs-observation-policy`); bash default timeout 120 s / max 600 s / 64 KB per-stream output; sandbox modes read-only/workspace-write/danger-full-access with bwrap/Landlock, Seatbelt, Windows ACL backends (`packages/sandbox`, `native/landlock-run`); fail-closed one-shot approvals (`packages/interaction/user-approval`); **fail-closed flush barriers** ×3 + synthetic `turn/end{interrupted}` recovery (`packages/session/session-checkpoint-policy`); repeat-tool reminder at counts [3,5,8], advisory non-blocking (`packages/guard/repeat-tool-reminder`); headless profiles incl. `sdk-minimal` benchmark mode (2 tools, danger-full-access — sandbox OFF); DeepSeek wire extensions `dsh_plugin_packages` (default-on inventory upload) + `dsh_session_log` (afterSeq-watermarked at-least-once suffix upload, opt-in); default models deepseek-v4-flash/v4-pro, 1M context / 256k max tokens, effort default high. Numbers: **none published**; DeepSWE model baselines (benchget 2026-08-20): v4-pro 62.83% pass@1, v4-flash 53.32%; only independent head-to-head (promptdriven/pdd, local Qwen3.8-27B, 2026-08-23): lost to pi 4/8 vs 6/8 passes, +14% wall, +24% TTFT. Weaknesses: developer-preview breaking changes; total-plugin indirection hurts auditability; session-format refusal with no migration; default-on plugin-inventory telemetry; compaction orphan-lock liveness hazard |
 | Harness-engineering writeups | arXiv 2405.15793 (SWE-agent ACI), 2407.01489 (Agentless 32% SWE-Lite $0.70), 2402.01030 (CodeAct +20%), 2303.11366 (Reflexion 80%→91%); metr.org 50%-horizon (doubles ~7 mo); cognition.com/blog/dont-build-multi-agents; anthropic.com/engineering: built-multi-agent-research-system (+90.2%, −90% time, tool-description agent −40%), writing-tools-for-agents (25k cap, concise/detailed) |
 | Harbor/Pier adapter mechanics | harbor `src/harbor/agents/installed/` (~35 adapters incl. hermes.py, pi.py); datacurve-ai/pier (air-gapped install specs + network allowlists, augmented ATIF v1.7, `pier critique run`); benchget/deepswe mirror (top: mini-swe-agent + opus-5 max 73.6%, 2026-08-20) |
+
+---
+
+## Part 11 — Re-check 2026-08-28 (re-pasted 5-phase plan)
+
+User re-sent the same 5-phase plan on 2026-08-28 (Claude memory + skill-format reference
+attachments re-pasted in the same turn as the request to re-review the plan). Re-checking
+each phase against the live tree at HEAD `115d762d`:
+
+| Phase | Status @ 2026-08-27 (Part 6) | Status @ 2026-08-28 (re-check) | Note |
+|---|---|---|---|
+| 1A — Timeline Rail + turn-stats-footer removal | Green | **Green — no drift** | `TimelineRail.tsx` rendered at `ChatThreadMessagePane.tsx:14,142-154`; `AssistantMessageContent.tsx:167` footer still pending removal — Phase 1A body otherwise landed |
+| 1B — Tool invocation-only rendering | Superseded by §4 | **Superseded by §4 — no drift** | Minimal-output design landed via `1d842d8d`; `d4e2111b` added `/verbose`; bug fix this session (Part 12) addressed the "Working…" inline visibility regression in §4 |
+| 2A.1 — SPICE infix (`4k7`) | Confirm | **Confirm — deliberate policy** | `circuit_tools.py:_SPICE_SCALE` line 244 + comment line 253 reject infix; per prior ruling the rejection is intentional. Not implementing without explicit supersede |
+| 2A.2 — Topological placement | Green | **Green** | |
+| 2A.3 — Component library expansion | Green | **Green** | |
+| 2B — HDL/FGPA/Arduino tools | Green w/ registration plan | **Green w/ registration plan — still pending** | `hdl_simulate` / `vcd_parse` / `fpga_verify_qsf` / `arduino_compile_sketch` still not in `tool_registrations/circuit_tools.py`; needs a separate ruling to schedule the registration work |
+| 3 — Right-drawer renderers | Reframe | **Reframe — partially landed** | Drawer work shipped via `bb76afdf` (ZCode-parity panel) + `ad18701e` (tab strip + fullscreen); `pdfjs-dist ^6.0.227` + `xlsx-js-style ^1.2.0` present in `package.json`; `three` / `docx-preview` still not added. Phase 3 is now "extend the existing 11-section drawer with renderer tabs" rather than build a new one |
+| 4 — Sidebar temporal grouping | Ruled (Q4): replace | **Ruled (Q4): replace — still pending implementation** | No temporal grouping in `frontend/desktop/src/sections/sidebar/`; folder chip (Q4 ruling) lands in `d46761f7`. Awaiting ruling on whether to schedule temporal grouping now |
+| 5 — Settings 5-hub consolidation | BLOCKED | **BLOCKED — ruling unchanged** | 8-hub / 39-section ruling stands; `settings-registry-audit.test.ts:32` asserts `toHaveLength(8)`; horizontal pill sub-tabs rejected as dated. No implementation work without an explicit supersede |
+
+**Net change vs 2026-08-27:** zero regressions across phases 1–5. The only new in-flight
+work relevant to this plan in this session is:
+
+1. **Part 12 — Pending-state working-text bug fix** (`ActivitySummary.tsx:180-184,255-269` +
+   `AssistantBlockTimeline.tsx:903-912`): collapsed assistant row now renders a bold
+   "Working…" label + inline live line at send time, not just when expanded. Resolves
+   the §4.1 "always reads as active" rule that the original transcript spec called for but
+   the code only implemented for the `completion` mode path.
+2. **Part 13 — Skill body normalizer** (`skill_service.py:_ensure_canonical_body`):
+   learned/agent-authored skills now ship with a canonical "What this skill is / When
+   to Use / How to Run / Pitfalls / Verification" structure (matches Claude's skill
+   format from the re-pasted transcript). Bundled (hand-written) skills are also
+   updated to the same template for consistency. Tests: `test_skill_body_normalizer.py`
+   (8 cases, all green).
+
+No phase-2/3/4/5 changes are scheduled. Phase 5 remains blocked. Pending a fresh ruling
+on phase 2B (HDL tools registration) and phase 4 (sidebar temporal grouping), no new
+work in those rows.
+
+---
+
+## Part 12 — Pending-state working-text bug fix (2026-08-28)
+
+**Symptom (user-reported):** "working text don't appear in the line when the user send
+its message, it don't appear unless the model start generating output. it only appear
+when i expand it."
+
+**Root cause (verified via live browser screenshot at `localhost:5174`):**
+- `ActivitySummary.tsx:300-305` only renders the live detail line when
+  `live && open && liveLine` — i.e. expanded.
+- The activity-mode collapsed header shows only `durationLabel` + `prose` + `segments`
+  + pulse. When the first block is a `ThoughtStep` with `content=""` (the pending
+  state), `prose` is empty, `segments` is empty, and the row reads as an empty band
+  with a chevron.
+- The bold "Working…" string the spec calls for lives only in the `completion` mode
+  branch (line 214), which is gated on `toolsCount > 0`.
+
+**Fix (in this session, commit pending):**
+- `ActivitySummary.tsx:184-189` — compute `showLiveOnly` when the activity-mode row has
+  no prose/segments but a live line is set.
+- `ActivitySummary.tsx:255-269` — render a bold "Working…" label inline in the
+  collapsed header when `showLiveOnly`.
+- `ActivitySummary.tsx:325-333` — render the live detail line under the header even
+  while collapsed when `showLiveOnly` (so the user sees a hint without expanding).
+- `AssistantBlockTimeline.tsx:903-912` — pass `liveDetail="Working…"` (or the
+  computed `liveDetail` once a thought/tool lands) to the `ActivitySummary` so the
+  pending state has a non-null live line.
+- `ActivitySummary.test.tsx` — added 2 cases under "pending state (live + empty)".
+
+**Verification:**
+- Frontend: `tsc --noEmit` clean; `vitest` `ActivitySummary.test.tsx` 13/13 pass.
+- Browser: live screenshot at +500ms post-send shows the in-thread row reading
+  "Working…" with pulse and inline live line.
+
+---
+
+## Part 13 — Skill body canonical template (2026-08-28)
+
+**Why:** the user re-pasted Claude's skill format (and the Claude memory format) and
+asked for August's skills — especially the ones the harness learns — to follow the
+same "what this skill is / when to use / how to run / pitfalls / verification" structure.
+
+**Changes:**
+- `app/services/skill_service.py` — added `_ensure_canonical_body()` and
+  `_parse_body_sections()`. The renderer now rewrites agent-authored / harness-proposal
+  skill bodies to the canonical template, with a `_SECTION_ALIASES` table that
+  accepts casual headings ("Steps" → "Procedure", "Common mistakes" → "Pitfalls",
+  "Verify" → "Verification", etc). Bundled (hand-written) skills are passed through
+  untouched so a human author's prose survives.
+- `app/services/harness_self_improve.py` — `skill_create` / `skill_patch` proposals
+  now route the body through the normalizer so the file on disk always has the
+  canonical sections.
+- `app/services/skill_service.py:patchSkill` — only normalizes when the caller
+  supplied a new body; a single-field patch (e.g. toggling `disabled`) preserves the
+  existing body verbatim, so the round-trip test
+  `test_setEnabled_roundtrip_preserves_unknown_frontmatter` still passes.
+- Bundled skills updated to the same template for consistency:
+  - `skills/august-harness/SKILL.md` — added What this skill is / When to Use /
+    Prerequisites / How to Run / Pitfalls / Verification sections.
+  - `skills/august-tools/SKILL.md` — same.
+  - `skills/charts/SKILL.md` — same.
+  - `skills/circuit-sim/SKILL.md` — same.
+  - All four also synced into `frontend/desktop/src-tauri/resources/skills/` so the
+    Tauri-bundled build ships the same content.
+
+**Verification:**
+- `tests/test_skill_body_normalizer.py` — 8 cases, all green:
+  bundled skills pass through; missing title falls back to description; existing
+  sections preserved; alias mapping works ("what this skill is" / "Steps" / "Common
+  mistakes" / "Verify" → canonical); required sections filled with placeholder;
+  unknown headings kept as the author's prose.
+- `tests/test_skill_service_hygiene.py` — unchanged, 7/7 still green.
+- `ruff check` + `mypy` clean on `skill_service.py` + `harness_self_improve.py` + the
+  new test file.
+
+---
+
+## Part 14 — Claude memory design comparison (2026-08-28)
+
+User re-pasted Claude's memory design (transcript: `paste-attachments/2026-08-28/pasted-text-20260828-095906-951cda8b.txt`) and asked to compare against August's memory system and fold adoptions into the plan.
+
+### 14.1 Side-by-side
+
+| Concern | Claude | August (today) | Match / gap |
+|---|---|---|---|
+| Storage substrate | File-based: one fact = one `.md` file at `/profile.md` / `/topics/<domain>.md` / `/areas/<name>.md` / `/people/<name>.md` / `/preferences.md` | DB-based: `facts` table (id, content, kind, source, scope, created_at, expires_at) + FTS5 mirror + `auto_memories` + `episodic_timeline` + KV (`memory_store`) | **Different substrate, same intent.** August's `facts` already does the typed-durable-store job; the audit (Part 1) showed it is now the only live memory write door besides human manage/import |
+| Write tools | `memory_write` / `memory_str_replace` / `memory_append` / `memory_delete` with `if_version` optimistic-concurrency token | `remember` tool (gated `modelMemoryWrites` + sensitive-topic denylist) + `/api/august/memory/import` + human manage/import UI | **Substrate-different** — `if_version` is irrelevant for SQLite-row updates; the gating policy in `august-memory-write-door.md` is the equivalent guardrail |
+| Optimistic concurrency | `if_version` token on every write | `facts.updated_at` timestamp + `WHERE updated_at = ?` UPDATE WHERE clause (already optimistic) | **Match** — August has optimistic concurrency, just hidden behind a SQL update. Not user-visible; could expose a `version` field in the manage/import response if humans ever want it |
+| Write-during-conversation policy | "did you state it?" test + durability filter + sensitive categories gated/never stored | Same — `remember` tool is gated on `modelMemoryWrites`; sensitive denylist (health / ID / minors / beliefs) blocks the call; `facts.expires_at` makes transient facts self-purge at boot | **Match** — this is the strongest overlap |
+| Retrieval: start-of-conversation index | "at the start of a conversation I get a listing of all your files (paths + one-line descriptions)" | `<capabilities>` block lists the skill catalogue; `auto_memories`/`facts` ARE injected per-turn via the relevance ranker (`build_relevant_skills_block` analogue) but **there is no human-readable one-line summary shown in the listing** | **Partial gap** — August injects facts but the catalogue is name + freeform description, not a guaranteed one-line "what this is" line. **Action:** add a one-line `summary` column to `facts` (or repurpose `kind` + first 80 chars) so the relevance block reads "August Proxy project — Tauri desktop AI coding agent" not "August Proxy project" |
+| Retrieval: selective read | "memory_read only the files that look relevant" | `load_skill` + `<relevant_skills>` BM25 ranker; per-fact injection gated by relevance score | **Match** |
+| Retrieval: surface-if-substantive | "a stored fact only gets surfaced if it changes the substance of my answer" | Relevance ranker is the same gate — facts below a score threshold are not injected | **Match** |
+| Sensitive categories (health / legal / ID / minors / beliefs) | Gated behind consent check OR never stored | Denylist blocks `remember` calls on sensitive topics; `modelMemoryWrites` toggle exists in `brain_config` | **Match** (already ruled: `august-memory-write-door.md`) |
+| Where it goes: subject-based taxonomy | `/profile.md` / `/topics/<domain>.md` / `/areas/<name>.md` / `/people/<name>.md` / `/preferences.md` | `facts.scope` (`user` / `project` / `agent`) + `facts.kind` (`preference` / `identity` / `project` / `rule`) | **Schema-different** — August's typed-store is more queryable, but it lacks the "people" axis. **Action (defer):** no `people` table; humans use the `identity` kind + freeform content for now. If the user wants a people taxonomy, that's a separate ruling |
+
+### 14.2 Adoptable today (no ruling needed)
+
+1. **Add a one-line `summary` to `facts` (or surface `kind` + truncated content) in the relevance block.** A 10-line change to `build_relevant_skills_block` to also include a one-line description for each injected fact. Brings August closer to "I get a listing of all your files with one-line descriptions at the start" without touching the DB schema — derive from the existing `kind` + first 80 chars of `content`.
+2. **Expose `version` (= `updated_at`) in the manage/import API response.** Lets a future human manage UI do the Claude-style "I read it, I write it" two-step with a visible concurrency token. Trivial: add `version` to the response model in `routers/august.py` for `/api/august/memory/import` and the manage endpoints.
+
+### 14.3 Adoptable only with a fresh ruling
+
+1. **Reorganize `facts` storage by subject** (one file per `area`/`person`/`topic` like Claude's taxonomy). **Status: NOT recommended** — the SQLite `facts` table is the right substrate for a desktop app with structured retrieval; the file-per-subject model adds a parser and loses the BM25 + kind filtering. Skip.
+2. **Add a `people` axis.** Add a `people` table + `facts.people_ref` column. **Status: defer.** No concrete user need expressed; the `identity` kind covers people references today.
+3. **Add a `preferences.md` analogue** (a special fact kind that is always injected). **Status: NOT recommended** — preferences are a `kind=preference` fact already, and the relevance ranker promotes them naturally. An "always-inject" escape hatch tends to bloat the prompt with low-value items.
+
+### 14.4 Conclusion
+
+The re-pasted Claude memory design is **substantially already implemented in August** under a different substrate. The two real adoptable deltas are:
+
+- Surface a one-line description per fact in the relevance block (today it lists `name` + `description` for skills but the same pattern isn't applied to facts).
+- Optionally expose `version` in the manage/import API for future UI work.
+
+Neither needs a fresh ruling to land — both are within the existing memory KB scope (Part 3 M3 / M4) and are small enough to fold into a normal in-flight change. **No plan-time adoption recommended**; surface as a follow-up for the next memory KB session.
+

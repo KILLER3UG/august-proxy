@@ -902,7 +902,11 @@ export function AssistantBlockTimeline({
           errors={errorsCount}
           summary={livePacked ? null : processSummary}
           live={livePacked}
-          liveDetail={null}
+          liveDetail={
+            livePacked && processBlocks.length === 0 && !liveDetail
+              ? 'Working…'
+              : liveDetail || null
+          }
           defaultOpen={false}
           collapseWhen={hasFinalOutput}
           mode={toolsCount > 0 ? 'completion' : 'activity'}

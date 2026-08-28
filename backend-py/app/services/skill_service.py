@@ -92,6 +92,48 @@ _BODYSectionOrder = [
     'Pitfalls',
     'Verification',
 ]
+# Public alias for tests.
+_BODY_SECTION_KEYS = _BODYSectionOrder
+# Sections that MUST be present (in this order) for agent-authored / learned
+# skills. Bundled (hand-written) skills keep their existing prose — only
+# `created_by: agent` / `created_by: harness-proposal` skills are normalized.
+_REQUIRED_BODY_SECTIONS = ('When to Use', 'How to Run', 'Pitfalls', 'Verification')
+# Explicit markdown heading only (must start with `#`). The body may also
+# use a "Section:" line at column 0; the parser checks that variant in a
+# second pass so we don't accidentally over-match prose.
+_BODY_HEADING_RE = re.compile(r'^(#{1,6})\s+(.+?)\s*$', re.MULTILINE)
+_SECTION_TO_LEVEL: dict[str, int] = {
+    'Title': 1,
+    'When to Use': 2,
+    'Prerequisites': 2,
+    'How to Run': 2,
+    'Quick Reference': 2,
+    'Procedure': 2,
+    'Pitfalls': 2,
+    'Verification': 2,
+}
+_SECTION_ALIASES: dict[str, str] = {
+    # Common casual headings the harness / agent might use → canonical name.
+    'what this skill is': 'Title',
+    'overview': 'Title',
+    'purpose': 'Title',
+    'when to use this': 'When to Use',
+    'when to use': 'When to Use',
+    'usage': 'When to Use',
+    'prereqs': 'Prerequisites',
+    'requirements': 'Prerequisites',
+    'how to run this': 'How to Run',
+    'how to do it': 'How to Run',
+    'instructions': 'Procedure',
+    'steps': 'Procedure',
+    'process': 'Procedure',
+    'common mistakes': 'Pitfalls',
+    'gotchas': 'Pitfalls',
+    'caveats': 'Pitfalls',
+    'verify': 'Verification',
+    'how to verify': 'Verification',
+    'check': 'Verification',
+}
 
 
 class SkillValidationError(ValueError):
@@ -427,6 +469,138 @@ def _kebab_name(name: str) -> str:
     return s[:64]
 
 
+# ── Body structure (learned skills look like Claude skills) ──────────────
+
+
+def _parse_body_sections(body: str) -> list[tuple[str, str]]:
+    """Return [(canonical_section, content), …] for a markdown body.
+
+    A heading matches a canonical section by case-insensitive name (with
+    aliases — "What this skill is" → "Title", "Steps" → "Procedure", etc).
+    Heading styles recognised:
+      * Markdown `## Section` (preferred)
+      * Plain "Section:" / "Section" at column 0 — only when the name is a
+        canonical section or a known alias, so we never over-match prose
+        lines that happen to end with a colon.
+
+    Anything before the first recognised heading is attached to the first
+    section under the implicit "Title" bucket. Unrecognised headings are
+    folded into the preceding section's content so we never drop prose.
+    """
+    out: list[tuple[str, str]] = []
+    if not body.strip():
+        return out
+    current_section = 'Title'
+    buf: list[str] = []
+    recognised_names = set(_SECTION_TO_LEVEL) | set(_SECTION_ALIASES)
+    for line in body.splitlines():
+        stripped = line.strip()
+        heading_text: str | None = None
+        m = _BODY_HEADING_RE.match(line)
+        if m:
+            heading_text = m.group(2).strip()
+        elif stripped and not line.startswith((' ', '\t')):
+            # Column-0 "Section:" or "Section" — strict: name must be a
+            # canonical section or a known alias (case-insensitive), and
+            # the line must be short (no embedded colons / punctuation).
+            candidate = stripped.rstrip(':').strip()
+            if (
+                len(candidate) <= 40
+                and re.match(r'^[A-Za-z][A-Za-z0-9 /-]*$', candidate)
+                and candidate.lower() in {n.lower() for n in recognised_names}
+            ):
+                heading_text = candidate
+        if heading_text is not None:
+            key = heading_text.lower()
+            canonical = _SECTION_ALIASES.get(key, heading_text)
+            if canonical not in _SECTION_TO_LEVEL:
+                # Heading is an alias-of-alias or external — keep prose.
+                buf.append(line)
+                continue
+            out.append((current_section, '\n'.join(buf).strip()))
+            current_section = canonical
+            buf = []
+        else:
+            buf.append(line)
+    out.append((current_section, '\n'.join(buf).strip()))
+    # Drop empty trailing sections from the leading implicit "Title".
+    if out and not out[0][1] and len(out) > 1:
+        out = out[1:]
+    return [(s, c) for s, c in out if c]
+
+
+def _ensure_canonical_body(
+    body: str,
+    *,
+    name: str,
+    description: str,
+    is_learned: bool,
+) -> str:
+    """Re-render an agent-authored / learned skill so it always has the
+    canonical sections in `_REQUIRED_BODY_SECTIONS` in the order listed in
+    `_BODYSectionOrder`. Bundled (hand-written) skills pass through unchanged
+    — the body is whatever the human shipped.
+    """
+    if not is_learned:
+        return body
+    sections = _parse_body_sections(body)
+    # Map existing section content by canonical name; preserve insertion order
+    # of any unknown headings inside the section they followed.
+    present: dict[str, str] = {}
+    for sec, content in sections:
+        if sec in present:
+            present[sec] = present[sec].rstrip() + '\n\n' + content.strip()
+        else:
+            present[sec] = content.strip()
+    # Pull the first non-empty prose block into Title when the author didn't
+    # include a "What this skill is" section. Use the frontmatter description
+    # as the fallback prose so even a no-body lesson ships a clear headline.
+    title_text = present.get('Title', '').strip()
+    if not title_text:
+        title_text = description.strip() or f'What `{name}` does.'
+    out: list[str] = []
+    out.append(f'# What this skill is\n\n{title_text}')
+    for sec in _BODYSectionOrder[1:]:
+        if sec not in _REQUIRED_BODY_SECTIONS and sec not in present:
+            continue
+        body_text = present.get(sec, '').strip()
+        if not body_text:
+            body_text = _placeholder_for(sec, name, description)
+        out.append(f'## {sec}\n\n{body_text}')
+    # Append any extra sections the author included (recognition they're not
+    # required, but we keep them so the skill body stays a superset of intent).
+    for sec, content in sections:
+        if sec in _SECTION_TO_LEVEL or sec == 'Title':
+            continue
+        if content.strip():
+            out.append(f'## {sec}\n\n{content.strip()}')
+    return '\n\n'.join(out).rstrip() + '\n'
+
+
+def _placeholder_for(section: str, name: str, description: str) -> str:
+    """Template placeholder so every learned skill ships with a useful
+    starting structure rather than an empty section."""
+    desc = (description or '').strip()
+    if section == 'When to Use':
+        return f'- {desc or f"Trigger `{name}` when the situation calls for it."}'
+    if section == 'Prerequisites':
+        return '- _None — fill in any tools, files, or state this skill needs._'
+    if section == 'How to Run':
+        return (
+            f'1. `load_skill("{name}")` to read the body.\n'
+            '2. Follow the procedure below, batching independent calls.\n'
+            '3. Run the verification step before reporting success.'
+        )
+    if section == 'Pitfalls':
+        return '- _None recorded yet — add a row the first time a call misfires._'
+    if section == 'Verification':
+        return (
+            f'- Confirm `{name}` produced the expected artefact or side-effect.\n'
+            '- Re-run a single dry call if the user asks for proof.'
+        )
+    return '_No content yet._'
+
+
 # ── Authoring (create / patch / delete) — restored 0.17.0 ─────────────────
 
 
@@ -501,8 +675,14 @@ def createSkill(
         'category': category.strip() or 'uncategorized',
         'created_by': created_by,
     }
+    normalized = _ensure_canonical_body(
+        body,
+        name=name,
+        description=description,
+        is_learned=created_by in ('agent', 'harness-proposal'),
+    )
     md = agent_dir / 'SKILL.md'
-    md.write_text(_renderSkillMd(frontmatter, body), 'utf-8')
+    md.write_text(_renderSkillMd(frontmatter, normalized), 'utf-8')
     parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
     return parsed or {'name': name, 'description': description}
@@ -548,7 +728,20 @@ def patchSkill(
         else:
             frontmatter['disabled'] = 'true'
     frontmatter.setdefault('created_by', 'agent')
-    new_body = current_body if body is None else body.strip()
+    is_learned = frontmatter.get('created_by', 'agent') in ('agent', 'harness-proposal')
+    if body is None:
+        # PATCH didn't change the body — preserve verbatim so a single-field
+        # patch (e.g. toggling `disabled`) is a true no-op for prose. This
+        # matters for round-trip tests and for humans who only wanted to
+        # flip the enable bit without re-rendering the skill.
+        new_body = current_body
+    else:
+        new_body = _ensure_canonical_body(
+            body.strip(),
+            name=as_str(frontmatter.get('name', name), name),
+            description=as_str(frontmatter.get('description', ''), ''),
+            is_learned=is_learned,
+        )
     md.write_text(_renderSkillMd(frontmatter, new_body), 'utf-8')
     parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
