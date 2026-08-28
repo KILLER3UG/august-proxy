@@ -115,13 +115,16 @@ export function AssistantMessageContent({
         )}
         {/* Unified ZCode-style changes card (plan §4.5): aggregate
             `X files changed +N −M [Undo]` header with type-aware per-file
-            rows. Visible as soon as the first edit block lands — files
-            arrive in real time; totals settle when the git diff lands. */}
-        <ChangesCard
-          blocks={message.blocks}
-          changedFiles={message.changedFiles as GitDiffResult | null}
-          sessionId={sessionId}
-        />
+            rows. Deferred until the turn finishes — mid-stream the totals
+            are unsettled and the card reads as premature noise (same gate
+            CircuitArtifactCard uses below). */}
+        {!(isLast && streaming) && (
+          <ChangesCard
+            blocks={message.blocks}
+            changedFiles={message.changedFiles as GitDiffResult | null}
+            sessionId={sessionId}
+          />
+        )}
         {/* Claude-style circuit deliverable cards: one compact clickable chip
             per schematic/3D/netlist/simulation output; content opens in the
             right side panel, never inline in chat. */}

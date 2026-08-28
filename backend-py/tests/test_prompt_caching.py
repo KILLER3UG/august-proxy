@@ -105,6 +105,34 @@ def test_disabled_via_env(monkeypatch):
     assert body['messages'][0]['content'] == 'hi'
 
 
+def test_persistent_ttl_opt_in_default_off(monkeypatch):
+    """Bug 9b: default breakpoints stay plain ephemeral (5-min, refreshed on hit)."""
+    monkeypatch.delenv('AUGUST_ANTHROPIC_PERSISTENT_CACHE', raising=False)
+    body = apply_prompt_caching({'system': 's', 'messages': [{'role': 'user', 'content': 'hi'}]})
+    assert body['system'][0]['cache_control'] == {'type': 'ephemeral'}
+
+
+def test_persistent_ttl_opt_in_uses_1h_shape(monkeypatch):
+    """Bug 9b: AUGUST_ANTHROPIC_PERSISTENT_CACHE=1 → ``{'type':'ephemeral','ttl':'1h'}``.
+
+    That is the real Anthropic extended-cache wire shape — there is no
+    ``type: 'persistent'`` and no request-side key for OpenAI-compatible
+    hosts (their prefix caching is automatic), so nothing else is injected.
+    """
+    monkeypatch.setenv('AUGUST_ANTHROPIC_PERSISTENT_CACHE', '1')
+    body = apply_prompt_caching(
+        {
+            'system': 's',
+            'tools': [{'name': 'a'}],
+            'messages': [{'role': 'user', 'content': 'hi'}],
+        }
+    )
+    marker = {'type': 'ephemeral', 'ttl': '1h'}
+    assert body['system'][0]['cache_control'] == marker
+    assert body['tools'][-1]['cache_control'] == marker
+    assert body['messages'][-1]['content'][0]['cache_control'] == marker
+
+
 def test_prompt_cache_stats():
     cache = PromptCache(maxSessions=4, ttlSeconds=60)
     cache.set('k1', 'v1')

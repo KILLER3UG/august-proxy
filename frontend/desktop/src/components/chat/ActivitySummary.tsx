@@ -258,7 +258,10 @@ export function ActivitySummary({
         ) : (
           <>
             <span className="activity-summary-counts">
-              {showLiveOnly ? (
+              {/* Collapsed-only: when expanded, the inline live line below
+                  already carries the working state — a bold header label on
+                  top of it read as noise. */}
+              {showLiveOnly && !open ? (
                 <span
                   className="shrink-0 font-semibold text-foreground"
                   data-testid="activity-summary-live-label"

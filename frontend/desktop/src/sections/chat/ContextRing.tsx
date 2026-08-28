@@ -15,6 +15,7 @@ export function ContextRing({
   breakdown,
   serverTokens,
   promptCache,
+  onOpenCacheSettings,
   onCompact,
   compacting = false,
   size = 22,
@@ -30,6 +31,8 @@ export function ContextRing({
   serverTokens?: { total: number; input: number; output: number } | null;
   /** Universal prompt-cache split for this session (hit rate display). */
   promptCache?: { hitTokens: number; missTokens: number; hitRate?: number } | null;
+  /** Opens model settings — target of the below-goal cache hint (Bug 9c). */
+  onOpenCacheSettings?: () => void;
   /** When provided, the popup gains a "Compact now" action. */
   onCompact?: () => void;
   compacting?: boolean;
@@ -264,6 +267,28 @@ export function ContextRing({
                   {formatTokens(promptCache?.hitTokens ?? 0)} / {formatTokens(cacheTotal)}
                 </span>
               </div>
+              {cacheRate < goalRate && (
+                <div
+                  className="mt-1.5 leading-4 opacity-80"
+                  data-testid="context-cache-hint"
+                >
+                  Below goal — the harness prefix-pins system + tools each turn.{' '}
+                  {onOpenCacheSettings ? (
+                    <button
+                      type="button"
+                      onClick={onOpenCacheSettings}
+                      className="underline underline-offset-2 transition hover:opacity-100"
+                      style={{ color: 'var(--dt-popover-foreground)' }}
+                      data-testid="context-cache-hint-action"
+                    >
+                      Enable the 1h persistent cache
+                    </button>
+                  ) : (
+                    <span>Enable the 1h persistent cache</span>
+                  )}{' '}
+                  (AUGUST_ANTHROPIC_PERSISTENT_CACHE=1) to hold hits across longer gaps.
+                </div>
+              )}
             </div>
           )}
           {serverTokens && (

@@ -37,6 +37,19 @@ import { api } from '@/api/client';
 
 type DisplayBlock = MessageBlock;
 
+/** Completed thinking sentences kept in the live feed per thinking block —
+ *  the working indicator shows the last 3 lines, so older ones are ballast. */
+const MAX_LIVE_THINKING_SENTENCES = 6;
+
+/** Split running thinking text into sentence-ish parts (period + whitespace
+ *  or paragraph breaks). The final part is the still-in-flight tail. */
+function splitThinkingSentences(content: string): string[] {
+  return content
+    .split(/\.\s+|\n+/)
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
 function isFinalOutput(block: DisplayBlock): boolean {
   return (
     block.type === 'finalOutput' &&
@@ -352,16 +365,42 @@ export function AssistantBlockTimeline({
     let liveDetail = '';
     for (const block of displayBlocks) {
       if (block.type === 'thinking' && block.content?.trim()) {
-        const snippet = block.content.trim().replace(/\s+/g, ' ').slice(0, 80);
-        items.push({
-          id: block.id || `think_${items.length}`,
-          kind: 'thinking',
-          label: 'Thinking',
-          detail: snippet,
-          status: 'done',
-          at: Date.now(),
-        });
-        liveDetail = `Thinking… ${snippet}${snippet.length >= 80 ? '…' : ''}`;
+        // One item per completed sentence so the working indicator advances
+        // with the thought instead of pinning the same first-80-char snippet
+        // for the whole turn; the in-flight tail rides as the newest item.
+        const parts = splitThinkingSentences(block.content.trim());
+        const lastPart = parts.length > 0 ? parts[parts.length - 1] : '';
+        const lastIsComplete = /[.!?]$/.test(lastPart);
+        const completed = (
+          lastIsComplete ? parts : parts.slice(0, -1)
+        ).slice(-MAX_LIVE_THINKING_SENTENCES);
+        const tail = lastIsComplete ? '' : lastPart;
+        const blockKey = block.id || `think_${items.length}`;
+        for (let si = 0; si < completed.length; si++) {
+          items.push({
+            id: `${blockKey}_s${si}`,
+            kind: 'thinking',
+            label: 'Thinking',
+            detail: completed[si].slice(0, 120),
+            status: 'done',
+            at: Date.now(),
+          });
+        }
+        if (tail) {
+          items.push({
+            id: `${blockKey}_tail`,
+            kind: 'thinking',
+            label: 'Thinking',
+            detail: tail.slice(0, 120),
+            status: isLast && streaming ? 'running' : 'done',
+            at: Date.now(),
+          });
+        }
+        const newest = tail || completed[completed.length - 1] || '';
+        if (newest) {
+          const snippet = newest.slice(0, 80);
+          liveDetail = `Thinking… ${snippet}${newest.length > 80 ? '…' : ''}`;
+        }
       }
       if ((block.type === 'toolCall' || block.type === 'command') && block.tool) {
         const bucket = classifyTool(block.tool.name) as LiveActivityKind;

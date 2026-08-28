@@ -177,4 +177,38 @@ describe('ContextRing prompt-cache display', () => {
     const tooltip = document.querySelector('[data-composer-popover]');
     expect(tooltip?.textContent).not.toContain('Avg cache hit rate');
   });
+
+  it('shows the persistent-cache hint when below the 96% goal (Bug 9c)', () => {
+    const onOpenCacheSettings = vi.fn();
+    render(
+      <ContextRing
+        pct={30}
+        estTokens={500}
+        maxContext={4000}
+        promptCache={{ hitTokens: 8000, missTokens: 2000, hitRate: 0.8 }}
+        onOpenCacheSettings={onOpenCacheSettings}
+      />
+    );
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
+    const hint = document.querySelector('[data-testid="context-cache-hint"]');
+    expect(hint).toBeInTheDocument();
+    expect(hint?.textContent).toContain('prefix-pins');
+    expect(hint?.textContent).toContain('AUGUST_ANTHROPIC_PERSISTENT_CACHE=1');
+    // The hint action opens model settings.
+    fireEvent.click(document.querySelector('[data-testid="context-cache-hint-action"]')!);
+    expect(onOpenCacheSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the hint once the cache hit rate meets the goal', () => {
+    render(
+      <ContextRing
+        pct={30}
+        estTokens={500}
+        maxContext={4000}
+        promptCache={{ hitTokens: 9700, missTokens: 300, hitRate: 0.97 }}
+      />
+    );
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
+    expect(document.querySelector('[data-testid="context-cache-hint"]')).toBeNull();
+  });
 });

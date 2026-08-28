@@ -101,6 +101,36 @@ def _deriveFactKey(text: str) -> str:
     return f'model:{slug or "note"}'
 
 
+# Write-time quality gates for the remember door (plan 2026-08-28 Bug 8b):
+# length bounds plus a per-turn budget so a runaway loop cannot flood the
+# facts store. All refusals are soft ({ok: False, policy}) — the model gets
+# the reason and can adjust.
+_REMEMBER_MIN_FACT_CHARS = 8
+_REMEMBER_MAX_FACT_CHARS = 500
+_REMEMBER_MAX_DETAILS_CHARS = 2000
+_REMEMBER_PER_TURN_LIMIT = 3
+# Per-turn counters keyed by workbench session id (ContextVar set by
+# _execute_tool); reset at turn start via reset_remember_turn_budget().
+_rememberTurnCounts: dict[str, int] = {}
+
+
+def reset_remember_turn_budget(sessionId: str = '') -> None:
+    """Reset the per-turn remember counter for a session (turn start)."""
+    if not sessionId:
+        _rememberTurnCounts.clear()
+        return
+    _rememberTurnCounts.pop(sessionId, None)
+
+
+def _currentRememberSessionKey() -> str:
+    try:
+        from app.services.workbench.context import currentSessionId
+
+        return str(currentSessionId.get() or 'default')
+    except Exception:
+        return 'default'
+
+
 async def _remember(
     fact: str,
     key: str = '',
@@ -128,6 +158,31 @@ async def _remember(
     text = str(fact or '').strip()
     if not text:
         return _json.dumps({'ok': False, 'error': 'fact is required'})
+    detailsText = str(details or '').strip()
+    if len(text) < _REMEMBER_MIN_FACT_CHARS:
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': f'refused: fact is too short (min {_REMEMBER_MIN_FACT_CHARS} characters). '
+                'Save complete, self-contained facts only.',
+            }
+        )
+    if len(text) > _REMEMBER_MAX_FACT_CHARS:
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': f'refused: fact exceeds {_REMEMBER_MAX_FACT_CHARS} characters. Keep the fact '
+                'to one concise sentence and move the rest into details.',
+            }
+        )
+    if len(detailsText) > _REMEMBER_MAX_DETAILS_CHARS:
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': f'refused: details exceed {_REMEMBER_MAX_DETAILS_CHARS} characters. '
+                'Trim to the essentials.',
+            }
+        )
     try:
         cfg = brain_config_service.getRuntimeConfig()
     except Exception:
@@ -148,13 +203,22 @@ async def _remember(
                 'beliefs) and sensitive memory is disabled. Do not retry.',
             }
         )
+    sessKey = _currentRememberSessionKey()
+    used = _rememberTurnCounts.get(sessKey, 0)
+    if used >= _REMEMBER_PER_TURN_LIMIT:
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': f'refused: per-turn memory budget exhausted ({_REMEMBER_PER_TURN_LIMIT} '
+                'facts max per turn). Continue the task; you can save more next turn.',
+            }
+        )
     cat = (category or 'general').strip().lower()
     if cat not in ('user', 'feedback', 'project', 'reference', 'general'):
         cat = 'general'
     factKey = (key or '').strip() or _deriveFactKey(text)
     factTitle = (title or '').strip() or memory_store.derive_fact_title(text)
     factKind = (kind or '').strip().lower()
-    detailsText = str(details or '').strip()
     value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
     exp = (expires_at or '').strip() or None
     before = memory_store.get_fact(factKey)
@@ -165,6 +229,7 @@ async def _remember(
         )
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'remember failed: {exc}'})
+    _rememberTurnCounts[sessKey] = used + 1
     try:
         # M3 usage feedback: a fact the model writes/updates counts as used.
         memory_store.touch_fact_usage([factKey])

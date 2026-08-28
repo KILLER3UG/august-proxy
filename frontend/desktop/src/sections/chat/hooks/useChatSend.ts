@@ -125,6 +125,12 @@ export function useChatSend(opts: UseChatSendOptions) {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
+  // Latest-model ref (same pattern as messagesRef): generateAIResponse is
+  // read from captured closures (generateRef, drain effect) that can lag a
+  // render behind a model switch — the ref always carries the fresh pick.
+  const modelForRequestRef = useRef(modelForRequest);
+  modelForRequestRef.current = modelForRequest;
+
   // (b) Double-Enter latch: the second send in the same frame sees a stale
   // `input`/`streaming` closure and would append a duplicate user bubble
   // (then the backend queues a duplicate turn). The latch is held from
@@ -202,11 +208,14 @@ export function useChatSend(opts: UseChatSendOptions) {
       } catch {
         autoRouteOn = false;
       }
-      let useModel = modelForRequest;
+      // Read the model from the ref: this callback is invoked from captured
+      // closures (drain effect, generateRef) whose prop snapshot can be one
+      // model-switch stale.
+      let useModel = modelForRequestRef.current;
       try {
         const candidate = opts?.autoRouteModel;
         if (autoRouteOn && candidate?.id && candidate.provider) {
-          useModel = { ...modelForRequest, ...candidate } as ModelItem;
+          useModel = { ...modelForRequestRef.current, ...candidate } as ModelItem;
         }
       } catch {
         /* keep selected model */

@@ -173,6 +173,19 @@ describe('ActivitySummary pending state (live + empty)', () => {
     expect(screen.getByTestId('activity-summary-live-indicator')).toBeInTheDocument();
   });
 
+  it('drops the redundant header label when expanded (Bug 3)', () => {
+    // Expanded + live + nothing summarised yet: the inline live line already
+    // carries the working state, so the bold header label must not duplicate it.
+    render(
+      <ActivitySummary thoughtCount={0} live liveDetail="Working…" defaultOpen>
+        <div>body</div>
+      </ActivitySummary>,
+    );
+    expect(screen.queryByTestId('activity-summary-live-label')).toBeNull();
+    // The inline live line still shows the state exactly once.
+    expect(screen.getAllByText('Working…')).toHaveLength(1);
+  });
+
   it('uses the supplied liveDetail as the inline label when present', () => {
     render(
       <ActivitySummary

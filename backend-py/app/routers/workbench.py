@@ -595,6 +595,78 @@ async def workspaceFiles(sessionId: str = '', path: str = '', q: str = '', limit
         return {'results': []}
 
 
+@router.get('/files/read')
+async def readFile(path: str = '', sessionId: str = ''):
+    """Read a file as base64 for the right-drawer viewer.
+
+    Dev / backend-only runs have no Tauri FS API, so the frontend falls back
+    to this route (payload mirrors the ``read_file_base64`` invoke). The path
+    must resolve inside the requesting session's workspace, any live
+    workbench session's workspace, or the system temp area; hardline
+    protected paths are refused in every case.
+    """
+    import base64
+    import mimetypes
+    import tempfile
+    from pathlib import Path
+
+    from app.services.sandbox.hardline import check_hardline_path
+    from app.services.sandbox.paths import is_within_root, resolve_workspace_root
+
+    raw = (path or '').strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail='path is required')
+    try:
+        resolved = Path(raw).expanduser().resolve(strict=False)
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f'Invalid path: {exc}')
+    denial = check_hardline_path(str(resolved), for_write=False)
+    if denial:
+        raise HTTPException(status_code=403, detail=f'Sandbox hardline blocked: {denial}')
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail='File not found')
+
+    roots: list[Path] = []
+    if sessionId:
+        session = wb.getWorkbenchSession(sessionId)
+        ws = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
+        root = resolve_workspace_root(ws)
+        if root is not None:
+            roots.append(root)
+    for entry in wb.listWorkbenchSessions():
+        root = resolve_workspace_root(as_str(entry.get('workspacePath') or ''))
+        if root is not None and root not in roots:
+            roots.append(root)
+    try:
+        roots.append(Path(tempfile.gettempdir()).resolve())
+    except OSError:
+        pass
+    if not any(is_within_root(resolved, root) for root in roots):
+        raise HTTPException(
+            status_code=403,
+            detail='Path is outside every workbench workspace and the temp area',
+        )
+
+    MAX_BYTES = 25 * 1024 * 1024
+    try:
+        size = resolved.stat().st_size
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail=f'Cannot stat file: {exc}')
+    if size > MAX_BYTES:
+        raise HTTPException(
+            status_code=413, detail=f'File too large ({size} bytes; limit {MAX_BYTES})'
+        )
+    data = base64.b64encode(resolved.read_bytes()).decode('ascii')
+    mime, _ = mimetypes.guess_type(resolved.name)
+    return {
+        'ok': True,
+        'data': data,
+        'name': resolved.name,
+        'path': str(resolved),
+        'mimeType': mime or 'application/octet-stream',
+    }
+
+
 @router.post('/chat/queue')
 async def queueMessage(request: Request):
     """Enqueue a user message for delivery to the model mid-response.

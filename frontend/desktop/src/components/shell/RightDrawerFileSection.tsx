@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Code2,
+  Eye,
   FileWarning,
   Image as ImageIcon,
   Maximize2,
@@ -45,19 +47,31 @@ function TextPreview({ content }: { content: string }) {
   );
 }
 
-/** The zoom-scaled preview body — rendered identically in the drawer pane
- *  and in the fullscreen overlay so both views always agree. */
-function PreviewCanvas({ file, zoom }: { file: FileAttachment; zoom: number }) {
-  const imageSrc = file.dataUrl || file.previewUrl;
-  const isImage = file.type === 'image' && !!imageSrc;
+/** Which canvas a file renders in the viewer (shared by the canvas and the
+ *  header view-mode toggle so both always agree on what is available). */
+function describePreview(file: FileAttachment): {
+  isImage: boolean;
+  hasText: boolean;
+  isHtml: boolean;
+} {
   const hasText = file.type === 'text' && typeof file.content === 'string';
   const isHtml =
     hasText && /\.(html?|xhtml)$/i.test(file.name || '') &&
     /<\/html|<!doctype html|<body/i.test(file.content ?? '');
-  const [showSource, setShowSource] = useState(false);
+  const isImage = file.type === 'image' && !!(file.dataUrl || file.previewUrl);
+  return { isImage, hasText, isHtml };
+}
+
+/** The zoom-scaled preview body — rendered identically in the drawer pane
+ *  and in the fullscreen overlay so both views always agree. The preview /
+ *  source choice comes from the header toggle (`showSource`). */
+function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom: number; showSource: boolean }) {
+  const imageSrc = file.dataUrl || file.previewUrl;
+  const { isImage, isHtml } = describePreview(file);
   // Live HTML documents render in a sandboxed iframe (scripts allowed —
   // these are the model's interactive explainers); "source" shows the code.
   const liveSrcDoc = isHtml ? file.content ?? '' : '';
+  const hasText = file.type === 'text' && typeof file.content === 'string';
 
   return (
     <div
@@ -75,32 +89,6 @@ function PreviewCanvas({ file, zoom }: { file: FileAttachment; zoom: number }) {
         </div>
       ) : isHtml ? (
         <div className="flex h-full min-h-full flex-col bg-background" data-testid="file-preview-html-live">
-          <div className="flex shrink-0 items-center gap-1 border-b border-border/50 px-2 py-1">
-            <button
-              type="button"
-              onClick={() => setShowSource(false)}
-              aria-pressed={!showSource}
-              data-testid="html-preview-tab-render"
-              className={cn(
-                'rounded px-2 py-0.5 text-[11px] transition',
-                !showSource ? 'bg-muted/60 text-foreground' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              Preview
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSource(true)}
-              aria-pressed={showSource}
-              data-testid="html-preview-tab-source"
-              className={cn(
-                'rounded px-2 py-0.5 text-[11px] transition',
-                showSource ? 'bg-muted/60 text-foreground' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              Source
-            </button>
-          </div>
           {showSource ? (
             <TextPreview content={file.content ?? ''} />
           ) : (
@@ -135,6 +123,63 @@ function PreviewCanvas({ file, zoom }: { file: FileAttachment; zoom: number }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Header preview/source toggle (Eye = rendered preview, Code2 = source).
+ *  Shown for text-ish files only; the Eye side is disabled for non-HTML
+ *  text, which has no live viewer (e.g. PPT/PPTX). */
+function ViewModeToggle({
+  file,
+  isHtml,
+  showSource,
+  setShowSource,
+}: {
+  file: FileAttachment;
+  isHtml: boolean;
+  showSource: boolean;
+  setShowSource: (v: boolean) => void;
+}) {
+  const ext = file.name.split('.').pop()?.toUpperCase() ?? '';
+  const noPreviewTip =
+    ext === 'PPT' || ext === 'PPTX'
+      ? `No preview available for ${ext}`
+      : 'No rendered preview for this file type';
+  return (
+    <div className="flex items-center gap-0.5">
+      <button
+        type="button"
+        onClick={() => setShowSource(false)}
+        disabled={!isHtml}
+        aria-pressed={isHtml && !showSource}
+        aria-label="Show rendered preview"
+        title={isHtml ? 'Rendered preview' : noPreviewTip}
+        data-testid="html-preview-tab-render"
+        className={cn(
+          'rounded-md p-1.5 transition',
+          isHtml
+            ? 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+            : 'cursor-not-allowed text-muted-foreground/35',
+          isHtml && !showSource && 'bg-muted/60 text-foreground',
+        )}
+      >
+        <Eye size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={() => setShowSource(true)}
+        aria-pressed={showSource}
+        aria-label="Show source code"
+        title="Source code"
+        data-testid="html-preview-tab-source"
+        className={cn(
+          'rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground',
+          showSource && 'bg-muted/60 text-foreground',
+        )}
+      >
+        <Code2 size={14} />
+      </button>
     </div>
   );
 }
@@ -177,6 +222,13 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
   const [zoom, setZoom] = useState(1);
   // ⤢ expands the preview into a full-window overlay (Esc / ⤡ exits).
   const [fullscreen, setFullscreen] = useState(false);
+  // Preview-vs-source choice, lifted here so the header toggle and the
+  // canvas (drawer + fullscreen) share one state.
+  const { hasText, isHtml } = describePreview(file);
+  const [showSource, setShowSource] = useState(false);
+  useEffect(() => {
+    setShowSource(false);
+  }, [file.id, file.name]);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -206,6 +258,9 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
               Truncated
             </span>
           )}
+          {hasText && (
+            <ViewModeToggle file={file} isHtml={isHtml} showSource={showSource} setShowSource={setShowSource} />
+          )}
           <ZoomControls zoom={zoom} setZoom={setZoom} />
           <button
             type="button"
@@ -229,7 +284,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto">
-          <PreviewCanvas file={file} zoom={zoom} />
+          <PreviewCanvas file={file} zoom={zoom} showSource={showSource} />
         </div>
       </div>
 
@@ -249,6 +304,9 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
                   {extensionLabel(file.name)} · Fullscreen
                 </div>
               </div>
+              {hasText && (
+                <ViewModeToggle file={file} isHtml={isHtml} showSource={showSource} setShowSource={setShowSource} />
+              )}
               <ZoomControls zoom={zoom} setZoom={setZoom} />
               <button
                 type="button"
@@ -262,7 +320,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-auto">
-              <PreviewCanvas file={file} zoom={zoom} />
+              <PreviewCanvas file={file} zoom={zoom} showSource={showSource} />
             </div>
           </div>,
           document.body,

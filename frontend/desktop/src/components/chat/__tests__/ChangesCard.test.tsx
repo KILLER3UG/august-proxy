@@ -40,7 +40,7 @@ vi.mock('@/components/shell/RightDrawerState', () => ({
 }));
 
 vi.mock('@/sections/chat/services/ChatAttachmentService', () => ({
-  ChatAttachmentService: { fromPath: vi.fn() },
+  ChatAttachmentService: { fromPath: vi.fn(), fromBackendPath: vi.fn() },
 }));
 
 vi.mock('@/lib/tauri-shell', () => ({

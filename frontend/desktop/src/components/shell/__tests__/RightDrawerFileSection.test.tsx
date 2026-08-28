@@ -113,4 +113,62 @@ describe('RightDrawerFileSection fullscreen preview', () => {
       document.querySelector('[data-testid="file-preview-html-live"] iframe'),
     ).toBeTruthy();
   });
+
+  it('shows Eye/Code2 icon toggles in the header for HTML (Bug 7b)', () => {
+    setup({
+      name: 'explainer.html',
+      size: '4 KB',
+      type: 'text',
+      content: '<!doctype html><html><body>hi</body></html>',
+    });
+    const eye = document.querySelector('[data-testid="html-preview-tab-render"]')!;
+    const code = document.querySelector('[data-testid="html-preview-tab-source"]')!;
+    // Both live in the section header (before the zoom controls).
+    expect(eye.closest('[data-testid="right-drawer-file-preview"] > div')).toBeTruthy();
+    expect(eye.getAttribute('aria-label')).toMatch(/preview/i);
+    expect(code.getAttribute('aria-label')).toMatch(/source/i);
+    // HTML supports both sides — neither is disabled.
+    expect((eye as HTMLButtonElement).disabled).toBe(false);
+    expect((code as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('disables the Eye toggle for non-HTML text with an explanatory tooltip', () => {
+    setup(); // notes.md
+    const eye = document.querySelector(
+      '[data-testid="html-preview-tab-render"]',
+    ) as HTMLButtonElement;
+    const code = document.querySelector(
+      '[data-testid="html-preview-tab-source"]',
+    ) as HTMLButtonElement;
+    expect(eye.disabled).toBe(true);
+    expect(eye.title).toMatch(/no rendered preview/i);
+    expect(code.disabled).toBe(false);
+    // Source view stays the rendered text preview.
+    expect(screen.getByText('hello world')).toBeTruthy();
+  });
+
+  it('names the disabled-preview tooltip for PPT/PPTX files', () => {
+    setup({
+      name: 'deck.pptx',
+      size: '2 MB',
+      type: 'text',
+      content: 'binary-ish stand-in',
+    });
+    const eye = document.querySelector(
+      '[data-testid="html-preview-tab-render"]',
+    ) as HTMLButtonElement;
+    expect(eye.disabled).toBe(true);
+    expect(eye.title).toBe('No preview available for PPTX');
+  });
+
+  it('hides the toggle pair for image previews', () => {
+    setup({
+      name: 'shot.png',
+      size: '84 KB',
+      type: 'image',
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+    expect(document.querySelector('[data-testid="html-preview-tab-render"]')).toBeNull();
+    expect(document.querySelector('[data-testid="html-preview-tab-source"]')).toBeNull();
+  });
 });

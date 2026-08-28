@@ -49,6 +49,7 @@ boolKeys: tuple[str, ...] = (
     'reviewLearnedGuidelines',
     'autoRoute',
     'skillRelevanceMatch',
+    'modelMemoryRead',
     'modelMemoryWrites',
     'memorySensitiveTopics',
     'cameraAccess',
@@ -92,6 +93,11 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('autoRouteMinSamples', 'auto_route_min_samples', 3, 'num'),
     ('autoRouteMinWinRate', 'auto_route_min_win_rate', 0.6, 'float'),
     ('autoRouteWinGap', 'auto_route_win_gap', 0.15, 'float'),
+    # Memory read gate: when off, no <memory> block is injected into the
+    # turn and the intake stops advertising auto-injected facts. Explicit
+    # brain_query lookups stay available (sessions/messages, not the facts
+    # store) so the model can still list its own history.
+    ('modelMemoryRead', 'model_memory_read', True, 'bool'),
     # Memory write door: the `remember` tool is offered to the model only while
     # this is on; sensitive-topic facts additionally need memorySensitiveTopics.
     ('modelMemoryWrites', 'model_memory_writes', True, 'bool'),

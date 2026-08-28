@@ -126,3 +126,21 @@ def test_relevant_skills_env_gate(freshSkillState, monkeypatch):
     _writeAgentSkill('hy-gated-skill')
     monkeypatch.setenv('AUGUST_SKILL_RELEVANCE', '0')
     assert build_relevant_skills_block('run the hy gated skill now please') == ''
+
+
+def test_bundled_tutor_skill_present(freshSkillState):
+    """The built-in ``tutor`` skill ships in the bundled root and stays loadable.
+
+    Guard so a cleanup/reorg cannot silently drop the learning skill: it must
+    be bundled (no ``created_by``), enabled, categorized ``learning``, and keep
+    its four teaching sections (learn the user / study / line-by-line / think).
+    """
+    skill = skill_service.get('tutor')
+    assert skill is not None, 'bundled tutor skill missing from discovery'
+    assert skill['enabled'] is True
+    assert skill['created_by'] == ''  # bundled, not agent-authored
+    assert skill['category'] == 'learning'
+    assert any(e['name'] == 'tutor' for e in skill_service.catalogue())
+    body = str(skill['instructions'])
+    for section in ('Learn the user', 'Explain line by line', 'Teach how to think', 'Verification'):
+        assert section in body, f'tutor skill lost section: {section}'

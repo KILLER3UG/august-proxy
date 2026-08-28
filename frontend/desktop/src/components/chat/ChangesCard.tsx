@@ -98,7 +98,7 @@ export function ChangesCard({
     if (onOpen) return onOpen(path);
     setBusyPath(path);
     try {
-      await openFileInDrawer(path);
+      await openFileInDrawer(path, effectiveSessionId ?? undefined);
     } finally {
       setBusyPath(null);
     }

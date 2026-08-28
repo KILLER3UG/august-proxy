@@ -141,10 +141,13 @@ export function ChatTitlebar({
               className="w-full"
             />
           </h1>
-          {session?.workspacePath ? (
+          {/* Branch selector — also for sessions without a bound folder:
+              the chip falls back to the app's current workspace path and
+              hides itself when nothing resolves to a git work tree. */}
+          {session ? (
             <WorkspaceBranchChip
               sessionId={session.id}
-              repoPath={session.workspacePath}
+              repoPath={session.workspacePath || undefined}
               className="shrink-0"
               menuPlacement="down"
             />

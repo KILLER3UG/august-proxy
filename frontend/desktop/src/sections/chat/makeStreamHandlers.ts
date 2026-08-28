@@ -47,6 +47,7 @@ import { advanceSessionSubscriberLastSeq } from './stream/session-subscriber';
 import { setSubagentProposal } from './subagent-proposals-store';
 import { pushNotification } from '@/store/notifications';
 import { publishExecutionState } from '@/store/liveActivity';
+import { setPromptCacheLive } from '@/store/promptCacheLive';
 import {
   addRightDrawerSection,
   closeRightDrawerSection,
@@ -730,9 +731,13 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens, promptCache }) => {
       // Live-meter event — the backend emits one per turn, not only when the
-      // window is nearly full. Only surface the warning when the budget is
-      // actually stressed (see isContextPressured); low/medium pressure is a
-      // silent no-op and the composer's ContextRing shows the gauge instead.
+      // window is nearly full. The prompt-cache split always feeds the
+      // ContextRing live store (before the pressure gate — low pressure is
+      // the common case and still carries fresh cache stats).
+      setPromptCacheLive(sessionId, promptCache as { hitTokens?: number; missTokens?: number; hitRate?: number } | undefined);
+      // Only surface the warning when the budget is actually stressed (see
+      // isContextPressured); low/medium pressure is a silent no-op and the
+      // composer's ContextRing shows the gauge instead.
       if (!isContextPressured(attentionPressure, contextUsedPct)) return;
       const pct = Number(contextUsedPct);
       const label = Number.isFinite(pct) && pct > 0 ? ` (${Math.round(pct)}% used)` : '';

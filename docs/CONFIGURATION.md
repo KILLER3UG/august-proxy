@@ -372,6 +372,7 @@ process env.
 | `AUGUST_HOST_AGENT_URL` | unset | External host-agent URL |
 | `AUGUST_AUTO_ROUTE` | unset | `1` forces evidence-driven auto-routing on (equivalent to brain config `autoRoute: true`) |
 | `AUGUST_VERIFIER_REVIEWER` | removed | was: one-shot reviewer critique for the verifier gate (feature removed 2026-08-24) |
+| `AUGUST_ANTHROPIC_PERSISTENT_CACHE` | unset | `1` swaps the Anthropic `cache_control: {type:"ephemeral"}` markers for the 1h-TTL variant so long sessions hold hits across longer gaps between turns. Off by default — 1h cache writes are billed at a premium upstream |
 
 ### Evidence-driven auto-routing
 
@@ -394,6 +395,31 @@ Routed turns are recorded with `source='auto-route'` (still counting toward
 model win rates) and every decision is logged — see
 `GET /api/brain/routing/decisions` and the Reliability dashboard's
 "Recent auto-route decisions".
+
+### Anthropic prompt-cache 1h TTL (`AUGUST_ANTHROPIC_PERSISTENT_CACHE`)
+
+By default the Anthropic adapter marks the last system block, the last tool
+definition, and the last content block of the final user message with
+`cache_control: { type: "ephemeral" }` so the stable prefix (system + tools
++ early history) hits the provider's prompt cache across turns
+(`backend-py/app/adapters/anthropic.py:apply_prompt_caching`).
+
+Ephemeral breakpoints live ~5 minutes and are refreshed on each hit, which
+is plenty for normal sessions but loses hits across longer gaps (a user
+steps away for 10 minutes, comes back, the prefix has expired and the next
+turn pays full input-token cost). Setting `AUGUST_ANTHROPIC_PERSISTENT_CACHE=1`
+swaps the markers for `cache_control: { type: "ephemeral", ttl: "1h" }` so
+the prefix stays warm for an hour. The composer's ContextRing surfaces a
+"Below goal — enable the 1h persistent cache" hint when the running
+`cacheHitRate` drops under the 96% target, with a one-click link to the
+model settings; the hint disappears when the rate is at or above target.
+
+Cost trade-off: 1h cache writes are billed at a premium upstream. Only
+opt in when the long-gap recovery matters more than the per-token write
+premium — i.e. sessions that actually idle for minutes between turns.
+
+The opt-in is per-process (env var, not brain config) so a single dev box
+can run with the default while a long-running prod instance flips it on.
 
 ### Gateway bot tokens
 

@@ -958,23 +958,38 @@ def buildSystemPrompt(
             'stores: facts=durable memory (titled entries), memory=kv notes, timeline=episodic, '
             'sessions=past chats, heuristics=legacy rules (deletable, no writer).'
         )
-        memParts = [
-            '- Memory: relevant stored facts auto-inject each turn (a <memory> block '
-            'appended to the latest user message); pull deeper context on demand via '
-            + ', '.join(memoryTools) + '. ' + storeHint
-        ]
-        # Boot index (B3): name-only list of the most recent facts/events so the
-        # model pulls relevant memory by name instead of blind-scanning tables.
         try:
-            from app.services.memory_store import brain_index_snippet as _brain_index
+            from app.services import brain_config_service as _bc
 
-            memIdx = _brain_index().strip()
+            memReadOn = bool(_bc.getRuntimeConfig().get('modelMemoryRead', True))
         except Exception:
-            memIdx = ''
-        if memIdx:
-            memParts.append('  Memory index (names only — brain_query to read one):')
-            for ln in memIdx.splitlines():
-                memParts.append('  ' + ln)
+            memReadOn = True
+        if memReadOn:
+            memParts = [
+                '- Memory: relevant stored facts auto-inject each turn (a <memory> block '
+                'appended to the latest user message); pull deeper context on demand via '
+                + ', '.join(memoryTools) + '. ' + storeHint
+            ]
+            # Boot index (B3): name-only list of the most recent facts/events so the
+            # model pulls relevant memory by name instead of blind-scanning tables.
+            try:
+                from app.services.memory_store import brain_index_snippet as _brain_index
+
+                memIdx = _brain_index().strip()
+            except Exception:
+                memIdx = ''
+            if memIdx:
+                memParts.append('  Memory index (names only — brain_query to read one):')
+                for ln in memIdx.splitlines():
+                    memParts.append('  ' + ln)
+        else:
+            # modelMemoryRead off: no auto-injection and no fact index — the
+            # model keeps on-demand lookups (brain_query reads sessions and
+            # messages, not the facts store, so it stays ungated).
+            memParts = [
+                '- Memory: auto-injection is OFF (modelMemoryRead); pull stored context '
+                'on demand via ' + ', '.join(memoryTools) + '. ' + storeHint
+            ]
         intake.append('\n'.join(memParts))
     if skillsLine:
         intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
@@ -2200,6 +2215,14 @@ async def _sendWorkbenchMessageStreamImpl(
     session.status = 'streaming'
     session.updatedAt = _now()
     _emitSessionStatus(sessionId)
+    # Fresh per-turn remember budget (Bug 8b): the model may save at most
+    # _REMEMBER_PER_TURN_LIMIT facts this turn.
+    try:
+        from app.services.tool_registrations.session_tools import reset_remember_turn_budget
+
+        reset_remember_turn_budget(sessionId)
+    except Exception:
+        pass
     # /circuit gate: when the user invokes the circuit workbench, flip the
     # session flag and short-circuit the turn with an ack (the model is not
     # called for the command itself; the NEXT user message works in circuit
@@ -2617,6 +2640,12 @@ async def _sendWorkbenchMessageStreamImpl(
         from app.services.capabilities_prompt import build_relevant_skills_block
         from app.services.memory_store.fact_retrieval import build_memory_block
 
+        try:
+            from app.services import brain_config_service as _bc
+
+            _memReadOn = bool(_bc.getRuntimeConfig().get('modelMemoryRead', True))
+        except Exception:
+            _memReadOn = True
         _lastUserIdx = next(
             (
                 i
@@ -2628,7 +2657,10 @@ async def _sendWorkbenchMessageStreamImpl(
         if _lastUserIdx is not None:
             _userMsg = currentMessages[_lastUserIdx]
             _userText = as_str(_userMsg.get('content'), '')
-            _memoryBlock, _injectedFacts = build_memory_block(_userText)
+            if _memReadOn:
+                _memoryBlock, _injectedFacts = build_memory_block(_userText)
+            else:
+                _memoryBlock, _injectedFacts = '', []
             _skillsBlock = build_relevant_skills_block(_userText)
             _tailBlocks = '\n\n'.join(b for b in (_memoryBlock, _skillsBlock) if b)
             if _tailBlocks:

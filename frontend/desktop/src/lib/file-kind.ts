@@ -74,10 +74,16 @@ export function classifyFileKind(path: string): FileKindInfo {
  * Open a produced file in the right-drawer viewer (Claude-style deliverable
  * panel); falls back to revealing the file in the OS file manager when the
  * attachment service cannot load it. Errors surface as a toast only.
+ *
+ * Read order: Tauri FS invoke → backend `/api/workbench/files/read` (dev /
+ * backend-only runs have no desktop FS API) → reveal in folder.
  */
-export async function openFileInDrawer(path: string): Promise<void> {
+export async function openFileInDrawer(path: string, sessionId?: string): Promise<void> {
   try {
-    const attachment = await ChatAttachmentService.fromPath(path);
+    let attachment = await ChatAttachmentService.fromPath(path);
+    if (!attachment) {
+      attachment = await ChatAttachmentService.fromBackendPath(path, sessionId);
+    }
     if (attachment) {
       openRightDrawerFile(attachment);
     } else {

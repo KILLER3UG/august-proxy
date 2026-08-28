@@ -2,6 +2,7 @@
 /* Reads files and clipboard images into FileAttachment[] for the composer. */
 
 import { isImageFile, readFileContent, type FileReadResult } from '@/lib/file-reader';
+import { api } from '@/api/client';
 import type { FileAttachment } from '@/types/chat';
 
 const CODE_LANG_MAP: Record<string, string> = {
@@ -181,6 +182,44 @@ export class ChatAttachmentService {
       return done;
     } catch (err) {
       console.warn('[attachments] path read failed:', err);
+      return null;
+    }
+  }
+
+  /** Build an attachment from a filesystem path via the backend read route.
+   *  Fallback for dev / backend-only runs where the Tauri FS API is not
+   *  available (``invoke('read_file_base64')`` throws outside the desktop
+   *  shell). Mirrors ``fromPath`` — same pending/readInto pipeline. */
+  static async fromBackendPath(path: string, sessionId?: string): Promise<FileAttachment | null> {
+    try {
+      const qs = new URLSearchParams({ path });
+      if (sessionId) qs.set('sessionId', sessionId);
+      const res = await api.get<{
+        ok: boolean;
+        data: string;
+        name: string;
+        path: string;
+        mimeType: string;
+      }>(`/api/workbench/files/read?${qs.toString()}`);
+      if (!res?.ok || !res.data) return null;
+      const binary = atob(res.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const file = new File([bytes], res.name, {
+        type: res.mimeType || undefined,
+        lastModified: Date.now(),
+      });
+      const pending = this.createPending(file);
+      pending.path = res.path;
+      const done = await this.readInto(file, pending);
+      // Drop ephemeral blob preview once we have a stable data URL (or on error).
+      if (done.previewUrl && (done.dataUrl || done.status === 'error')) {
+        URL.revokeObjectURL(done.previewUrl);
+        done.previewUrl = undefined;
+      }
+      return done;
+    } catch (err) {
+      console.warn('[attachments] backend path read failed:', err);
       return null;
     }
   }

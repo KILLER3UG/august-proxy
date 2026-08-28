@@ -48,7 +48,7 @@ interface StorePage {
 
 interface BrainConfigResponse {
   source?: string;
-  config?: { modelMemoryWrites?: boolean; memorySensitiveTopics?: boolean } & Record<string, unknown>;
+  config?: { modelMemoryRead?: boolean; modelMemoryWrites?: boolean; memorySensitiveTopics?: boolean } & Record<string, unknown>;
   defaults?: Record<string, unknown>;
 }
 
@@ -585,6 +585,14 @@ export function MemorySection({ active }: { active: { id: string } }) {
 
       {/* Model-memory toggles (Claude parity) */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-2 space-y-1">
+        <SettingsToggle
+          checked={Boolean(cfg?.modelMemoryRead ?? true)}
+          onCheckedChange={(next) => configMut.mutate({ modelMemoryRead: next })}
+          label="Model can read memories"
+          description="Injects stored facts into each turn. Off stops the auto-injection; explicit lookups still work."
+          disabled={configQ.isLoading || configMut.isPending}
+          data-testid="memory-model-read-toggle"
+        />
         <SettingsToggle
           checked={Boolean(cfg?.modelMemoryWrites)}
           onCheckedChange={(next) => configMut.mutate({ modelMemoryWrites: next })}

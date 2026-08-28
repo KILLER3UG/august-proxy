@@ -373,6 +373,29 @@ def _anthropicCacheControlEnabled() -> bool:
     return True
 
 
+def _anthropicCacheTtlHour() -> bool:
+    """Opt-in 1h-TTL cache breakpoints (AUGUST_ANTHROPIC_PERSISTENT_CACHE=1).
+
+    Default ephemeral breakpoints live ~5 minutes (refreshed on each hit);
+    ``ttl: '1h'`` keeps the cached prefix alive an hour so long sessions
+    keep hitting cache across longer gaps between turns. Off by default —
+    1h cache writes are billed at a premium upstream.
+    """
+    import os
+
+    val = os.environ.get('AUGUST_ANTHROPIC_PERSISTENT_CACHE')
+    if val is None:
+        return False
+    return str(val).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _cacheControlMarker() -> dict[str, object]:
+    """The cache_control value for breakpoints (plain or 1h-TTL ephemeral)."""
+    if _anthropicCacheTtlHour():
+        return {'type': 'ephemeral', 'ttl': '1h'}
+    return {'type': 'ephemeral'}
+
+
 def apply_prompt_caching(body: dict[str, object]) -> dict[str, object]:
     """Add Anthropic prompt-cache breakpoints (``cache_control: ephemeral``).
 
@@ -387,20 +410,21 @@ def apply_prompt_caching(body: dict[str, object]) -> dict[str, object]:
     if not _anthropicCacheControlEnabled():
         return body
     try:
+        marker = _cacheControlMarker()
         system = body.get('system')
         if isinstance(system, list) and system:
             last = system[-1]
             if isinstance(last, dict):
-                last.setdefault('cache_control', {'type': 'ephemeral'})
+                last.setdefault('cache_control', marker)
         elif isinstance(system, str) and system:
             body['system'] = [
-                {'type': 'text', 'text': system, 'cache_control': {'type': 'ephemeral'}}
+                {'type': 'text', 'text': system, 'cache_control': _cacheControlMarker()}
             ]
         tools = body.get('tools')
         if isinstance(tools, list) and tools:
             last_tool = tools[-1]
             if isinstance(last_tool, dict):
-                last_tool.setdefault('cache_control', {'type': 'ephemeral'})
+                last_tool.setdefault('cache_control', _cacheControlMarker())
         messages = body.get('messages')
         if isinstance(messages, list) and messages:
             for msg in reversed(messages):
@@ -409,13 +433,13 @@ def apply_prompt_caching(body: dict[str, object]) -> dict[str, object]:
                 content = msg.get('content')
                 if isinstance(content, str) and content.strip():
                     msg['content'] = [
-                        {'type': 'text', 'text': content, 'cache_control': {'type': 'ephemeral'}}
+                        {'type': 'text', 'text': content, 'cache_control': _cacheControlMarker()}
                     ]
                     break
                 if isinstance(content, list) and content:
                     last_block = content[-1]
                     if isinstance(last_block, dict):
-                        last_block.setdefault('cache_control', {'type': 'ephemeral'})
+                        last_block.setdefault('cache_control', _cacheControlMarker())
                     break
     except Exception:
         pass

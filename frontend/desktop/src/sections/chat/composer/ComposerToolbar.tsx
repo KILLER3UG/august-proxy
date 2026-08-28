@@ -2,7 +2,7 @@
 /* Slim pill controls: + menu, model/effort, voice, send / steer / stop.   */
 
 import { useState, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
-import { Loader2, Mic, Send, ShieldCheck, Square } from 'lucide-react';
+import { Loader2, Mic, Send, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import { updateSessionModel } from '@/store/sessions';
 import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchAgentMode, compactWorkbenchSession } from '@/api/workbench';
@@ -24,11 +24,11 @@ import type { EffortLevel } from '../hooks/useChatSend';
 import { ComposerActionsMenu } from './ComposerActionsMenu';
 import { CameraPopover } from './CameraPopover';
 import { ModelEffortMenu } from './ModelEffortMenu';
-import { BranchChip } from './BranchChip';
 import { SubagentSpawnModal } from './SubagentSpawnModal';
 import { CostCeilingChip } from './CostCeilingChip';
 import type { AnchorPos } from './useComposerPopovers';
 import { cn } from '@/lib/utils';
+import { usePromptCacheLiveStore, selectPromptCacheLive } from '@/store/promptCacheLive';
 import { normalizeHarnessMode, type HarnessAgentMode } from '@/components/chat/HarnessModeChip';
 import { GalleryVertical } from 'lucide-react';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
@@ -149,6 +149,9 @@ export function ComposerToolbar({
 }) {
   const [handoffPreparing, setHandoffPreparing] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
+  // Live prompt-cache stats from the turn's contextPressure SSE event —
+  // fresher than the aggregated session-usage poll (Bug 9a).
+  const livePromptCache = usePromptCacheLiveStore((s) => selectPromptCacheLive(s, sessionId));
 
   useEffect(() => {
     const onOpen = () => setSpawnOpen(true);
@@ -405,10 +408,10 @@ export function ComposerToolbar({
         className="flex items-center gap-1 overflow-x-auto px-2 pb-1.5 pt-0.5 text-[11px] text-muted-foreground scrollbar-none"
         data-testid="composer-island-footer"
       >
-        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border", sandboxMode === 'danger-full-access' ? "bg-warning/10 text-warning border-warning/20" : "bg-muted/40 text-muted-foreground border-border/50") } title={`Tool reach: ${sandboxMode}`}>
-          <ShieldCheck className="size-3" />
-          {sandboxMode === 'danger-full-access' ? 'Full access' : sandboxMode === 'workspace-write' ? 'Workspace' : 'Read-only'}
-        </span>
+        {/* Tool reach (read-only / workspace / full access) lives in the
+            WorkbenchModeSelector menu + tooltip — the standalone chip was
+            redundant "Workspace" text. Branch selector lives in the titlebar
+            (WorkspaceBranchChip), which shows for any open workspace. */}
         <span className="inline-flex items-center gap-1">
           <ContextRing
             pct={pct}
@@ -419,21 +422,28 @@ export function ComposerToolbar({
             breakdown={contextBreakdown}
             serverTokens={sessionUsage}
             promptCache={
-              sessionUsage
+              livePromptCache
                 ? {
-                    hitTokens: sessionUsage.cacheHitTokens ?? 0,
-                    missTokens: sessionUsage.cacheMissTokens ?? 0,
-                    hitRate: sessionUsage.cacheHitRate,
+                    hitTokens: livePromptCache.hitTokens,
+                    missTokens: livePromptCache.missTokens,
+                    hitRate: livePromptCache.hitRate,
                   }
-                : null
+                : sessionUsage
+                  ? {
+                      hitTokens: sessionUsage.cacheHitTokens ?? 0,
+                      missTokens: sessionUsage.cacheMissTokens ?? 0,
+                      hitRate: sessionUsage.cacheHitRate,
+                    }
+                  : null
             }
+            onOpenCacheSettings={onEditModels}
             onCompact={sessionId ? handleCompact : undefined}
             compacting={compacting}
           />
           <span className="text-[10px] tabular-nums text-muted-foreground/60">{pct}%</span>
         </span>
-        {/* Git branch selector — current branch + click to switch (workspace chats). */}
-        <BranchChip workspacePath={workspacePath} />
+        {/* Git branch selector lives in the titlebar (WorkspaceBranchChip) —
+            it shows for any open workspace, not just session-bound ones. */}
         <WorkbenchModeSelector
           selectedMode={workbenchMode}
           onChange={handleModeChange}

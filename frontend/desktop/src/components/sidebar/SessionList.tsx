@@ -208,6 +208,9 @@ export function SessionList({
         .getState()
         .sessions.find((x) => x.id !== s.id && !x.isArchived);
       if (fallback) onSelect(fallback);
+      // No other chat to land on: leave the dead /c/<id> route before the
+      // empty pane renders (white screen otherwise).
+      else onNavigate('/');
     }
   };
 
