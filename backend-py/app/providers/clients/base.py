@@ -5,6 +5,13 @@ Port of:
   - backend/lib/upstream.js (rate limiting / retry)
   - backend/adapters/sse-parser.js (SSE event parsing)
   - backend/adapters/base.js (shared adapter utilities)
+
+Retry discipline (plan §10.3 R-C — idempotency-safe retry): only requests
+that are PROVABLY unprocessed are ever replayed. A refused or pooled
+connection never reached the provider, so it may retry; a timeout waiting
+on response data or a mid-stream transport failure means the provider may
+already have generated — and been billed for — tokens, so the failure is
+surfaced instead of re-sending a possibly-billed completion.
 """
 
 from __future__ import annotations
@@ -397,10 +404,31 @@ class BaseProviderClient:
     async def requestJson(
         self, method: str, url: str, headers: dict[str, str], body: dict[str, object] | None = None
     ) -> ProviderResponse:
-        """Make a non-streaming JSON request with retry logic."""
+        """Make a non-streaming JSON request with idempotency-safe retry.
+
+        Retry policy (plan §10.3 R-C):
+        - 429/503 responses are rejections — nothing was generated upstream,
+          so replaying is safe (with backoff + rate-gate cooldown).
+        - Connection refused / pool exhaustion never reached the provider —
+          provably unprocessed, safe to retry.
+        - Read/write timeouts and protocol errors MAY have been processed
+          (and billed) upstream — surfaced immediately, never replayed.
+        """
+        # Local import: httpx costs ~170 ms at module import and the except
+        # clauses below need it bound at runtime (a TYPE_CHECKING import is
+        # invisible here — relying on it raised NameError on the first
+        # real transport error).
+        import httpx
+
+        from app.providers.clients.rate_gate import hostOfUrl, rateGate
+
+        host = hostOfUrl(url)
         for attempt in range(self.maxRetries + 1):
             try:
+                await rateGate.wait(host)
                 resp = await self.client.request(method, url, headers=headers, json=body, timeout=self.timeout)
+                if resp.status_code == 429:
+                    rateGate.recordRateLimit(host, parseRetryAfterMs(resp.headers.get('retry-after')))
                 if isRetryableStatus(resp.status_code) and attempt < self.maxRetries:
                     delay = getRetryDelayMs(resp, attempt + 1) / 1000
                     await asyncio.sleep(delay)
@@ -410,13 +438,22 @@ class BaseProviderClient:
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     data = resp.text
                 return ProviderResponse(status=resp.status_code, headers=dict(resp.headers), body=data)
-            except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+            except (httpx.ConnectError, httpx.PoolTimeout) as exc:
+                # Provably unprocessed: no connection carried the request
+                # (ConnectTimeout subclasses ConnectError and matches here).
                 if attempt >= self.maxRetries:
                     return ProviderResponse(
                         status=0, body={'error': f'Request failed after {self.maxRetries} retries: {exc}'}
                     )
                 delay = min(1000 * 2**attempt, 8000) / 1000
                 await asyncio.sleep(delay)
+            except (httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
+                # Possibly processed upstream — never replay a completion
+                # that may already have been billed (R-C idempotency rule).
+                return ProviderResponse(
+                    status=0,
+                    body={'error': f'Request failed and was not retried (may have been processed upstream): {exc}'},
+                )
         return ProviderResponse(status=0, body={'error': 'Max retries exceeded'})
 
     async def generate(self, prompt: str, system: str | None = None) -> str:
@@ -459,11 +496,27 @@ class BaseProviderClient:
         Yields parsed JSON dicts for each ``data:`` line as they arrive
         (progressive / real-time). Emits an ``error`` event on HTTP errors
         or connection failures.
+
+        Idempotency (plan §10.3 R-C): retries happen only BEFORE the first
+        event is yielded. Once anything has been yielded the provider has
+        generated — and may have been billed for — tokens, so a mid-stream
+        transport failure surfaces as ``{'type': 'error', 'partial': True}``
+        instead of replaying the whole request (which would pay for the
+        same completion twice).
         """
+        import httpx
+
+        from app.providers.clients.rate_gate import hostOfUrl, rateGate
+
+        host = hostOfUrl(url)
         lastExc: Exception | None = None
+        emittedAny = False
         for attempt in range(self.maxRetries + 1):
             try:
+                await rateGate.wait(host)
                 async with self.client.stream('POST', url, headers=headers, json=body, timeout=self.timeout) as resp:
+                    if resp.status_code == 429:
+                        rateGate.recordRateLimit(host, parseRetryAfterMs(resp.headers.get('retry-after')))
                     if isRetryableStatus(resp.status_code) and attempt < self.maxRetries:
                         delay = getRetryDelayMs(resp, attempt + 1) / 1000
                         await asyncio.sleep(delay)
@@ -509,6 +562,7 @@ class BaseProviderClient:
                             item = await queue.get()
                             if item is None:
                                 break
+                            emittedAny = True
                             yield item
                     finally:
                         feedTask.cancel()
@@ -517,8 +571,13 @@ class BaseProviderClient:
                         except asyncio.CancelledError:
                             pass
                     return
-            except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+            except httpx.HTTPError as exc:
                 lastExc = exc
+                if emittedAny:
+                    # Tokens were already generated (and possibly billed) —
+                    # never replay; hand the partial failure to the caller.
+                    yield {'type': 'error', 'error': str(lastExc), 'partial': True}
+                    return
                 if attempt < self.maxRetries:
                     delay = min(1000 * 2**attempt, 8000) / 1000
                     await asyncio.sleep(delay)

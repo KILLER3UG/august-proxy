@@ -169,6 +169,29 @@ class DaemonManager:
                 pass
             return True
 
+    async def kill_for_session(self, sessionId: str) -> int:
+        """Kill every daemon bound to a session (session-deletion cleanup).
+
+        Daemons don't auto-clean otherwise — deleting a session must take
+        its background processes with it (model-experience report,
+        2026-08-28). Returns the number killed.
+        """
+        if not sessionId:
+            return 0
+        ids = [as_str(d.get('id')) for d in self.list_daemons(sessionId)]
+        killed = 0
+        for daemonId in ids:
+            if not daemonId:
+                continue
+            try:
+                if await self.kill(daemonId):
+                    killed += 1
+            except Exception:
+                logger.debug('daemon kill failed for %s', daemonId, exc_info=True)
+        if killed:
+            logger.info('Daemons killed for deleted session %s: %d', sessionId, killed)
+        return killed
+
     def rehydrate_from_db(self) -> int:
         """Rehydrate in-memory daemon entries from DB after restart."""
         try:

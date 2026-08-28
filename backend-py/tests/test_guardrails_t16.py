@@ -121,15 +121,22 @@ class TestTruncateToolOutput:
         text = 'line one\n' + 'x' * 200
         trimmed, truncated = wb._truncateToolOutput(text, 50)
         assert truncated is True
-        assert trimmed == 'line one'
+        # Head+tail with an explicit omission marker (R-C bounded truncation):
+        # the head still cuts at the newline boundary.
+        assert trimmed.startswith('line one\n[...')
+        assert 'characters omitted' in trimmed
+        assert trimmed.endswith('xxxxxxx')
 
     def testSingleLineOverrunNeverEmpty(self):
         """T16(c): one line longer than the budget must not truncate to
-        empty or near-empty — the hard cut wins."""
+        empty or near-empty — bounded head+tail keeps real content."""
         text = 'X' * 10_000  # no newlines, no JSON boundary
         trimmed, truncated = wb._truncateToolOutput(text, 1024)
         assert truncated is True
-        assert len(trimmed) == 1024  # full hard cut, nothing dropped silently
+        assert 'characters omitted' in trimmed
+        # Stays inside the cap and keeps substantial head AND tail.
+        assert len(trimmed) <= 1024
+        assert len(trimmed) >= 900
 
     def testSingleLineWithEarlyNewlineFallsBackToHardCut(self):
         # Newline at position 5 is the only boundary — cutting there would
@@ -143,10 +150,20 @@ class TestTruncateToolOutput:
         text = '{"a": 1,' * 200 + '}'
         trimmed, truncated = wb._truncateToolOutput(text, 100)
         assert truncated is True
-        # Cut at the last ',' inside the budget (index 95), not the hard
-        # 100-char cut — the boundary char itself is excluded.
-        assert len(trimmed) == 95
-        assert trimmed == '{"a": 1,' * 11 + '{"a": 1'
+        # Head cuts at the last ',' inside the head budget (boundary char
+        # excluded); tail keeps the closing bytes; marker states the gap.
+        assert trimmed.startswith('{"a": 1,' * 3 + '{"a": 1')
+        assert 'characters omitted' in trimmed
+        assert trimmed.endswith('}')
+        assert len(trimmed) < len(text)
+
+    def testTailPreservesFinalResult(self):
+        """R-C metering: the tail carries the final lines (exit codes,
+        last error) that a head-only cut used to discard."""
+        text = 'noise\n' * 2000 + 'FAILED: 3 tests, exit code: 1'
+        trimmed, truncated = wb._truncateToolOutput(text, 1024)
+        assert truncated is True
+        assert 'exit code: 1' in trimmed
 
 
 class TestDeterministic400Classification:

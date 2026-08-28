@@ -30,27 +30,28 @@ async def test_web_search_ddg_timeout_returns_error_json():
 async def test_web_search_returns_snippets_only_no_auto_fetch():
     from app.services.tool_registrations import web_tools as wt
 
+    # Subprocess-shaped results (what _ddgs_subprocess_search returns).
+    # Patch at the subprocess boundary: patching ddgs.DDGS in-process is
+    # invisible to the real code path, which spawns a child process and
+    # would hit the live network (flaky / rate-limited).
     fake_results = [
-        {'title': f'T{i}', 'href': f'https://example.com/{i}', 'body': f'snippet {i}'}
-        for i in range(12)
+        {
+            'index': i + 1,
+            'title': f'T{i}',
+            'url': f'https://example.com/{i}',
+            'snippet': f'snippet {i}',
+        }
+        for i in range(10)
     ]
-
-    class FakeDDGS:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def text(self, query, max_results=10):
-            return fake_results[:max_results]
 
     progress_phases: list[str] = []
 
     async def on_progress(phase: str, meta=None):
         progress_phases.append(phase)
 
-    with patch('ddgs.DDGS', FakeDDGS):
+    with patch.object(
+        wt, '_ddgs_subprocess_search', AsyncMock(return_value=fake_results)
+    ):
         with patch.object(wt, 'resolve_search_backend', return_value='ddgs'):
             with patch.object(wt, '_fetchUrlContent', AsyncMock()) as fetch_mock:
                 raw = await wt._webSearch('q', maxResults=10, on_progress=on_progress)

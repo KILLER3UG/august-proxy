@@ -25,6 +25,27 @@ def test_retryable_by_message_markers():
     assert not wb._isRetryableModelError({})  # no error → not retryable
 
 
+# ── R-C idempotency gate (never replay a possibly-billed completion) ──
+
+
+def test_partial_emission_blocks_retryable_failure():
+    # The attempt streamed generated tokens → replay could double-bill.
+    assert wb._retryBlockedByPartialEmission({'error': 'x', 'errorStatus': 429}, True)
+    assert wb._retryBlockedByPartialEmission({'error': 'connection reset by peer'}, True)
+
+
+def test_no_emission_allows_retry():
+    # Nothing was generated — the request is provably unprocessed.
+    assert not wb._retryBlockedByPartialEmission({'error': 'x', 'errorStatus': 429}, False)
+    assert not wb._retryBlockedByPartialEmission({'error': 'x', 'errorStatus': 503}, False)
+
+
+def test_partial_emission_irrelevant_for_non_retryable_failure():
+    # Non-retryable errors take the normal error path, not the retry gate.
+    assert not wb._retryBlockedByPartialEmission({'error': 'invalid api key'}, True)
+    assert not wb._retryBlockedByPartialEmission({}, True)
+
+
 # ── backoff math ───────────────────────────────────────────────────────
 
 

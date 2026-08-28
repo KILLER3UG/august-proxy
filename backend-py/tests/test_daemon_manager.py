@@ -11,6 +11,8 @@ schedule, and the no-op shutdown path).
 """
 from __future__ import annotations
 
+import asyncio
+
 import app.services.daemon_manager as dm
 import pytest
 from app.services.daemon_manager import (
@@ -119,3 +121,53 @@ async def test_shutdown_all_is_noop_without_active_manager():
     dm._manager = None
     result = await shutdownAll()
     assert result is None
+
+
+async def test_kill_for_session_kills_only_that_sessions_daemons():
+    """Session deletion must take its daemons with it — other sessions'
+    daemons stay alive."""
+    mgr = DaemonManager()
+    t1 = asyncio.create_task(asyncio.sleep(60))
+    t2 = asyncio.create_task(asyncio.sleep(60))
+    mgr._daemons['s1_d1'] = {'id': 's1_d1', 'name': 'a', 'session_id': 's1', 'result': DaemonResult()}
+    mgr._daemons['s2_d1'] = {'id': 's2_d1', 'name': 'b', 'session_id': 's2', 'result': DaemonResult()}
+    mgr._tasks['s1_d1'] = t1
+    mgr._tasks['s2_d1'] = t2
+    killed = await mgr.kill_for_session('s1')
+    assert killed == 1
+    for _ in range(5):
+        await asyncio.sleep(0)  # deliver the cancellation
+    assert t1.cancelled()
+    assert not t2.cancelled()
+    assert 's1_d1' not in mgr._daemons
+    assert 's2_d1' in mgr._daemons
+    t2.cancel()
+
+
+async def test_kill_for_session_empty_session_is_noop():
+    mgr = DaemonManager()
+    assert await mgr.kill_for_session('ghost') == 0
+    assert await mgr.kill_for_session('') == 0
+
+
+async def test_cancel_session_work_kills_session_daemons(monkeypatch):
+    """cancel_session_work (session-delete path) schedules the daemon kill
+    on the running loop."""
+    mgr = DaemonManager()
+    task = asyncio.create_task(asyncio.sleep(60))
+    mgr._daemons['sess_x_d'] = {
+        'id': 'sess_x_d',
+        'name': 'watcher',
+        'session_id': 'sess_x',
+        'result': DaemonResult(),
+    }
+    mgr._tasks['sess_x_d'] = task
+    monkeypatch.setattr(dm, 'getManager', lambda: mgr)
+
+    from app.services.workbench.sessions import cancel_session_work
+
+    cancel_session_work('sess_x')
+    for _ in range(5):
+        await asyncio.sleep(0)  # let the scheduled kill task run
+    assert task.cancelled()
+    assert 'sess_x_d' not in mgr._daemons

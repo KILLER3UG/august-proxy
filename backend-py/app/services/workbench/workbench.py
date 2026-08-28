@@ -255,30 +255,54 @@ def _isRetryableModelError(response: dict[str, object]) -> bool:
     return any((marker in msg for marker in _MODEL_RETRY_MARKERS))
 
 
-def _truncateToolOutput(text: str, cap: int) -> tuple[str, bool]:
-    """JSON-aware tool-output truncation with the T16(c) overrun guard.
+def _retryBlockedByPartialEmission(response: dict[str, object], emitted_content: bool) -> bool:
+    """R-C idempotency gate (plan §10.3): never replay a completion that
+    already streamed generated tokens. Once text/thinking deltas reached
+    the user, the provider has generated — and may have been billed for —
+    those tokens, so even a retryable failure surfaces instead of retrying
+    (double-billing prevention)."""
+    return bool(emitted_content) and _isRetryableModelError(response)
 
-    Prefers a newline/JSON-boundary cut so the fragment stays parseable.
+
+def _truncateToolOutput(text: str, cap: int) -> tuple[str, bool]:
+    """Bounded head+tail tool-output truncation (plan §10.3 R-C metering).
+
+    Keeps a bounded HEAD and TAIL of the output with an explicit omission
+    marker between them — the tail carries final results (test summaries,
+    exit codes, last error) that a head-only cut discards. Prefers
+    newline/JSON-boundary cuts so the fragments stay parseable.
     Single-line overrun guard (a documented field incident: one line longer
     than the byte budget made the truncation routine return empty): when the
     boundary cut would leave almost nothing, fall back to the hard cut — a
-    mid-token fragment beats no content, and the caller's marker always
-    states how many bytes were omitted. Returns ``(trimmed, truncated)``.
+    mid-token fragment beats no content, and the marker always states how
+    many characters were omitted. Returns ``(trimmed, truncated)``.
     """
     if len(text) <= cap:
         return text, False
-    cut = text[:cap]
-    boundary = max(cut.rfind('\n'), cut.rfind('\r'))
-    if boundary <= cap // 2:
+    markerReserve = 80
+    budget = max(cap - markerReserve, cap // 2)
+    headBudget = (budget * 3) // 4
+    tailBudget = budget - headBudget
+    headCut = text[:headBudget]
+    boundary = max(headCut.rfind('\n'), headCut.rfind('\r'))
+    if boundary <= headBudget // 2:
         for ch in (',', '}'):
-            idx = cut.rfind(ch)
-            if idx > cap // 2:
+            idx = headCut.rfind(ch)
+            if idx > headBudget // 2:
                 boundary = idx
                 break
-    trimmed = cut[:boundary] if boundary > 0 else cut
-    if len(trimmed) < min(64, max(1, cap // 16)):
-        trimmed = cut
-    return trimmed, True
+    head = headCut[:boundary] if boundary > 0 else headCut
+    if len(head) < min(64, max(1, headBudget // 16)):
+        # T16(c) overrun guard: no usable boundary — degrade to the hard
+        # head cut rather than emitting a near-empty fragment.
+        return text[:cap], True
+    tailSlice = text[-tailBudget:] if tailBudget > 0 else ''
+    newline = tailSlice.find('\n')
+    if 0 <= newline < len(tailSlice) // 2:
+        tailSlice = tailSlice[newline + 1 :]
+    omitted = len(text) - len(head) - len(tailSlice)
+    marker = f'\n[... {omitted} characters omitted ...]\n'
+    return head + marker + tailSlice, True
 
 
 # ── Output-cap discipline, stage B: spill (plan §9.3 #3) ──
@@ -353,16 +377,6 @@ def _spillToolResult(session: WorkbenchSession, toolName: str, result: str) -> s
     )
     return f'{head}\n{notice}\n{tail}'
 
-
-# Auto-recall probe verbs: messages that reach into the past should trigger
-# mid-conversation recall ("what did I say about X", "do you remember…").
-_PROBES_PAST_RE = re.compile(
-    r"\b(remember|recall|what did i (?:say|tell|ask)|last (?:time|week|month|session|chat)|"
-    r"earlier|before|previously|previous (?:chat|session)|"
-    r"(?:my )?(?:preference|setting|habit|goal)s?|"
-    r"do you (?:remember|know) (?:me|about)|who am i|about me)\b",
-    re.IGNORECASE,
-)
 
 # Refusal patterns: a model claiming it cannot use tools despite being
 # offered them (or hosted on a gateway that silently drops `tools`). Narrow
@@ -945,7 +959,9 @@ def buildSystemPrompt(
             'sessions=past chats, heuristics=legacy rules (deletable, no writer).'
         )
         memParts = [
-            '- Memory: durable memory is pull-on-demand via ' + ', '.join(memoryTools) + '. ' + storeHint
+            '- Memory: relevant stored facts auto-inject each turn (a <memory> block '
+            'appended to the latest user message); pull deeper context on demand via '
+            + ', '.join(memoryTools) + '. ' + storeHint
         ]
         # Boot index (B3): name-only list of the most recent facts/events so the
         # model pulls relevant memory by name instead of blind-scanning tables.
@@ -2881,7 +2897,16 @@ async def _sendWorkbenchMessageStreamImpl(
                 # a failed attempt cannot leave duplicate/garbled answers.
                 # Non-text events (toolResult, warnings) pass through live too.
 
+                # R-C idempotency (plan §10.3): track whether THIS attempt
+                # emitted any generated content. A retryable failure after
+                # partial emission must not replay the completion — the
+                # provider already generated (and may have billed) tokens.
+                attemptEmittedContent = False
+
                 def _attemptEmit(evt: dict[str, object]) -> None:
+                    nonlocal attemptEmittedContent
+                    if evt.get('type') in ('finalOutput', 'thinking'):
+                        attemptEmittedContent = True
                     if emit is not None:
                         emit(evt)
 
@@ -2968,6 +2993,17 @@ async def _sendWorkbenchMessageStreamImpl(
                             continue
                     break
                 if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():
+                    break
+                if _retryBlockedByPartialEmission(response, attemptEmittedContent):
+                    # R-C: the attempt already streamed generated tokens to
+                    # the user; replaying it would pay for the same
+                    # completion twice. Surface the error, keep the partial
+                    # text (no `retrying` rollback event).
+                    logger.warning(
+                        'workbench model call failed after partial emission — not retrying '
+                        '(replay could double-bill): %s',
+                        as_str(response.get('error')),
+                    )
                     break
                 delayMs = _modelRetryDelayMs(retryAttempt + 1, response, retryPolicy)
                 logger.warning(

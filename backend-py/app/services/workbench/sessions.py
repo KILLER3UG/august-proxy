@@ -954,6 +954,7 @@ def cancel_session_work(session_id: str) -> None:
       * background ``spawn_subagents`` completion ``_watch()`` tasks
       * fire-and-forget recurring-task sub-agents (they bypass the orchestrator)
       * pending spawn proposals bound to the session (memory + DB)
+      * session daemons (killed + DB rows removed so they don't rehydrate)
 
     Live chat-turn tasks (``routers/workbench._activeStreams`` / ``_cancelled``)
     are owned by the router and cancelled in its ``deleteSession`` handler.
@@ -987,6 +988,25 @@ def cancel_session_work(session_id: str) -> None:
         expire_proposals_for_session(session_id)
     except Exception:
         logger.debug('proposal expiry failed', exc_info=True)
+    try:
+        # Daemons don't auto-clean: a deleted session must take its
+        # background processes with it (or they leak until app shutdown).
+        import asyncio as _asyncio
+
+        from app.services.daemon_manager import getManager
+
+        _mgr = getManager()
+
+        def _schedule_daemon_kill() -> None:
+            try:
+                _loop = _asyncio.get_running_loop()
+                _loop.create_task(_mgr.kill_for_session(session_id))
+            except RuntimeError:
+                _asyncio.run(_mgr.kill_for_session(session_id))
+
+        _schedule_daemon_kill()
+    except Exception:
+        logger.debug('daemon session cleanup failed', exc_info=True)
 
 
 def delete_workbench_session(session_id: str) -> bool:

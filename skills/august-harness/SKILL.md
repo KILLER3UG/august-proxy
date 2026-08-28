@@ -1,6 +1,6 @@
 ---
 name: august-harness
-description: "How the August agent loop works: session modes, turn lifecycle, update_state phases, plan mode, verifier gate. Load before any multi-step work."
+description: "How the August agent loop works: session modes, turn lifecycle, update_state phases, plan mode. Load before any multi-step work."
 category: harness
 version: 1.0.0
 platforms: [linux, macos, windows]
@@ -21,7 +21,6 @@ A session runs in one mode; switch with `set_agent_mode`:
 - `code` — one fenced ```python block executed through the sandbox with a
   workspace-bound API (`read_file`, `write_file`, `run_command`, `list_files`).
 - `orchestrator` — dispatch workstreams; no direct shell/edit.
-- `benchmark` — minimal 2-tool surface.
 
 If a request is conversation, stay in `chat` behavior (just answer). If it is
 work, use tools directly — do not narrate that you will use them.
@@ -36,8 +35,8 @@ Multi-step tasks must track state with `update_state`:
 - The loop watches progress: a turn whose phase/step never advances across many
   rounds gets a reflection nudge, then a hard stop. Advance state as you go;
   never spin on the same step.
-- End real work with `phase='complete'` — this is also what satisfies the
-  verifier gate when it is on.
+- End real work with `phase='complete'`. `run_command` always surfaces the
+  exit code (zero included), so report real receipts, not claims.
 
 Tool rounds are budgeted. Batch independent calls in parallel, prefer the
 `bulk` family for repeats, and stop gathering once you have enough to act.
@@ -50,14 +49,6 @@ write the plan as markdown to the session plan file it returns
 (`.aug/plans/<sessionId>.md` — the only writable file in plan mode), then call
 `submit_plan`. For simple, clearly-scoped requests, skip plan mode and just do
 the work.
-
-## Verifier gate
-
-Sessions may enable the verifier (session `verifierEnforced` flag). When on,
-your final answer is withheld until `update_state(phase='complete')` passes
-verification; a blocked verdict shows as a banner — fix the gap and complete
-again, do not repeat the same final answer. `run_command` always surfaces the
-exit code (zero included), so completion is judged on real receipts, not claims.
 
 ## Improving the harness itself
 
@@ -91,6 +82,7 @@ applied by you directly.
 - A `[Validation Error] … Do NOT stop` result means your tool JSON was
   malformed — re-emit a correct call immediately.
 - Never narrate a tool call ("I'll use the X tool", JSON in code fences).
-  Emit the real call; narration aborts the stream and wastes a retry.
+  Emit the real call; a narration with no actual tool call triggers a
+  self-heal retry of the turn.
 - Tool results are truncated to your capability profile — page with
   `read_file` offset/limit instead of re-reading everything.

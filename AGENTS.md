@@ -49,9 +49,11 @@ defaults to 25 (brain-config `maxWorkbenchToolLoops` overrides); a turn whose
 `update_state` phase/step never advances across 8+ rounds gets a reflection
 nudge, then hard-stops. Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
-bare tool surface after 3 consecutive failures. Stream rules abort
-mid-generation when the model *narrates* a tool call ("I'll use the X tool",
-code-fenced JSON) and retry with a reminder. Per-model capability profiles
+bare tool surface after 3 consecutive failures. Stream rules flag
+tool-call *narration* ("I'll use the X tool", code-fenced JSON) but defer
+the verdict to end-of-turn: a flag is cancelled the moment a real tool
+call arrives, and only a narration with NO tool call triggers the
+reminder + retry. Per-model capability profiles
 (`toolSurface` full/reduced/bare, `maxTools`, `maxToolResultChars` in Model
 settings) are honored by both tool-definition paths and result truncation.
 Routing evidence records real outcomes (`ok` = no turn error); with ≥3 samples
