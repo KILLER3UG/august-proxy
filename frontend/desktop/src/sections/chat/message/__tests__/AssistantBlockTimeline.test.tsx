@@ -646,4 +646,48 @@ describe('minimal-output transcript (plan §4.1/§4.3)', () => {
     expect(document.querySelectorAll('[data-slot="edit-rail-row"]').length).toBe(0);
     expect(screen.getAllByTestId('plan-phase-head').length).toBe(1);
   });
+
+  it('folds consecutive reads of the same file into one ×N row (plan 15.1)', () => {
+    renderTimeline([
+      makeToolBlock('r1', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'src/consolidation.py' }),
+      }),
+      makeToolBlock('r2', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'src/consolidation.py' }),
+      }),
+      makeToolBlock('r3', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'src/consolidation.py' }),
+      }),
+      makeToolBlock('r4', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'src/consolidation.py' }),
+      }),
+    ]);
+
+    expandActivitySummary();
+    const rows = document.querySelectorAll('[data-slot="tool-step-row"]');
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain('×4');
+    expect(rows[0].textContent).toContain('consolidation.py');
+  });
+
+  it('keeps errored reads individual next to the collapsed run (plan 15.1)', () => {
+    renderTimeline([
+      makeToolBlock('r1', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'a.py' }),
+      }),
+      makeToolBlock('r2', 'read_file', 'done', {
+        context: JSON.stringify({ path: 'a.py' }),
+      }),
+      makeToolBlock('r3', 'read_file', 'error', {
+        context: JSON.stringify({ path: 'a.py' }),
+        error: 'ENOENT: no such file',
+      }),
+    ]);
+
+    expandActivitySummary();
+    const rows = document.querySelectorAll('[data-slot="tool-step-row"]');
+    expect(rows.length).toBe(2);
+    expect(rows[0].textContent).toContain('×2');
+    expect(rows[1]).toHaveAttribute('data-status', 'error');
+  });
 });

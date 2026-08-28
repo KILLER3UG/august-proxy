@@ -45,6 +45,8 @@ _ORACLE_READ = frozenset({
     # (the tool deletes the raw file before returning, and the result is a
     # vision description, not the bytes).
     'camera_list_devices', 'camera_snapshot',
+    # Memory CRUD read door — lists durable fact keys/titles.
+    'list_facts',
 })
 _ORACLE_WRITE = frozenset({
     'browser_click', 'browser_evaluate', 'browser_scroll', 'browser_select',
@@ -56,6 +58,9 @@ _ORACLE_WRITE = frozenset({
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad',
     # Post-consolidation addition: model-driven memory write.
     'remember',
+    # Memory delete door — removes one durable fact by key (rollback
+    # snapshot recorded).
+    'forget',
     # Precision line-edit tool (R1).
     'edit_lines',
     # PPTX commenting (mutating).

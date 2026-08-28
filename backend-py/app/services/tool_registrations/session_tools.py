@@ -249,6 +249,137 @@ async def _remember(
     return _json.dumps({'ok': True, 'key': factKey, 'category': cat, 'updated': before is not None})
 
 
+# Sources the model may delete via `forget`: its own writes, user-added
+# entries, and imports. Anything else (extracted / lesson / consolidation
+# daemons) is system-owned and survives model cleanup.
+_FORGET_ALLOWED_SOURCES = ('model', 'user', '')
+
+
+async def _forget(key: str) -> str:
+    """Delete one durable fact from long-term memory by exact key.
+
+    The delete half of the model's memory CRUD (with ``remember`` = write and
+    ``list_facts`` = read). Gated by ``modelMemoryWrites``; only model / user
+    / imported facts can be deleted. A rollback snapshot is recorded so the
+    delete is undoable, matching the Memory UI's delete path.
+    """
+    import json as _json
+
+    from app.services import brain_config_service, memory_store
+
+    factKey = (key or '').strip()
+    if not factKey:
+        return _json.dumps({'ok': False, 'error': 'key is required — call list_facts to see keys'})
+    try:
+        cfg = brain_config_service.getRuntimeConfig()
+    except Exception:
+        cfg = {}
+    if not bool(cfg.get('modelMemoryWrites', True)):
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': 'model memory writes are disabled by the user. Do not retry; '
+                "tell the user you can't delete memories while this setting is off.",
+            }
+        )
+    before = memory_store.get_fact(factKey)
+    if not before:
+        return _json.dumps(
+            {
+                'ok': False,
+                'deleted': False,
+                'error': f'no fact with key "{factKey}" — call list_facts to see current keys',
+            }
+        )
+    source = str(before.get('source') or '')
+    if source not in _FORGET_ALLOWED_SOURCES and not source.startswith('imported'):
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': f'refused: "{factKey}" is system-owned (source="{source}"); '
+                'only model/user/imported facts can be forgotten.',
+            }
+        )
+    try:
+        deleted = memory_store.delete_fact(factKey)
+    except Exception as exc:
+        return _json.dumps({'ok': False, 'error': f'forget failed: {exc}'})
+    if deleted:
+        try:
+            from app.services.rollback_store import record_rollback
+
+            record_rollback(
+                type='restore_memory_item',
+                target=factKey,
+                before=before,
+                after=None,
+            )
+        except Exception:
+            pass
+    return _json.dumps({'ok': bool(deleted), 'deleted': bool(deleted), 'key': factKey})
+
+
+async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> str:
+    """List durable memory entries (key, title, category, source).
+
+    The read half of the model's memory CRUD — this is what makes
+    ``remember``'s "pass a stable key to update" and ``forget``'s key
+    argument actually usable. Gated by ``modelMemoryRead``. Bounded at 50
+    rows, newest first.
+    """
+    import json as _json
+
+    from app.services import brain_config_service, memory_store
+
+    try:
+        cfg = brain_config_service.getRuntimeConfig()
+    except Exception:
+        cfg = {}
+    if not bool(cfg.get('modelMemoryRead', True)):
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': 'model memory reads are disabled by the user. Do not retry; '
+                'answer from the conversation context instead.',
+            }
+        )
+    lim = max(1, min(as_int(limit, 50), 50))
+    cat = (category or '').strip().lower()
+    q = (query or '').strip()
+    try:
+        rows = memory_store.search_facts(q, cat) if q else memory_store.list_facts(cat)
+    except Exception as exc:
+        return _json.dumps({'ok': False, 'error': f'list_facts failed: {exc}'})
+    facts: list[dict[str, object]] = []
+    for r in rows[:lim]:
+        title = str(r.get('title') or '').strip()
+        value = str(r.get('factValue') or '')
+        if not title:
+            # factValue is stored JSON-encoded: unwrap {"fact","details"}
+            # dicts and plain strings alike; fall back to the first line.
+            try:
+                obj = _json.loads(value)
+                if isinstance(obj, dict) and isinstance(obj.get('fact'), str):
+                    title = str(obj.get('fact'))
+                elif isinstance(obj, str):
+                    title = obj
+            except Exception:
+                pass
+            if not title:
+                title = value.split('\n', 1)[0][:80]
+        facts.append(
+            {
+                'key': r.get('factKey'),
+                'title': title[:120],
+                'category': r.get('category') or '',
+                'source': r.get('source') or '',
+                'kind': r.get('kind') or '',
+                'updated': r.get('updatedAt') or '',
+            }
+        )
+    return _json.dumps({'ok': True, 'count': len(facts), 'facts': facts})
+
+
 def _purge_session_everywhere(sessionId: str) -> dict[str, object]:
     """Remove a session from workbench storage + brain SQLite (cascade children)."""
     from app.services import memory_store
@@ -487,7 +618,8 @@ def register() -> None:
         'remember',
         'Save one durable fact to long-term memory (the only model write door). Use for user-stated '
         'preferences, project constraints, and feedback that must outlive this session. Pass a stable '
-        'key to update an existing fact rather than duplicate. Sensitive topics are refused unless enabled.',
+        'key to update an existing fact rather than duplicate (call list_facts to see current keys). '
+        'Sensitive topics are refused unless enabled.',
         _remember,
         {
             'type': 'object',
@@ -519,6 +651,41 @@ def register() -> None:
                 },
             },
             'required': ['fact'],
+        },
+    )
+    tool_registry.register(
+        'list_facts',
+        'List durable long-term memory entries (key, title, category, source, updated). Call this '
+        'before `remember` with a stable key (update, don\'t duplicate) and before `forget` (to get '
+        'the exact key). Optional filters: category (user | feedback | project | reference | general) '
+        'and free-text query over keys/values.',
+        _list_facts,
+        {
+            'type': 'object',
+            'properties': {
+                'category': {
+                    'type': 'string',
+                    'enum': ['user', 'feedback', 'project', 'reference', 'general'],
+                    'description': 'Optional category filter.',
+                },
+                'query': {'type': 'string', 'description': 'Optional text search over keys/values.'},
+                'limit': {'type': 'integer', 'description': 'Max rows (1-50). Default 50.'},
+            },
+        },
+    )
+    tool_registry.register(
+        'forget',
+        'Delete one durable memory fact by its exact key (call list_facts to see keys). Use when a '
+        'stored fact is wrong or outdated, or when the user asks to forget something. Only '
+        'model/user/imported entries can be deleted; system-owned entries are refused. IMPORTANT: '
+        'never delete a memory the user did not ask to remove or that is not clearly superseded.',
+        _forget,
+        {
+            'type': 'object',
+            'properties': {
+                'key': {'type': 'string', 'description': 'The exact fact key to delete (from list_facts).'},
+            },
+            'required': ['key'],
         },
     )
     tool_registry.register(

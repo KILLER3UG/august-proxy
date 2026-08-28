@@ -335,8 +335,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   privacy: PrivacyWrapper,
   'memory-knowledge': MemoryWrapper,
   'memory-facts': MemoryWrapper,
-  'memory-timeline': MemoryWrapper,
-  'memory-sessions': MemoryWrapper,
   'health-simulator': HealthSimulatorWrapper,
 };
 

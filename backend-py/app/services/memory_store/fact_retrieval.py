@@ -182,6 +182,11 @@ def build_memory_block(query: str, k: int = 5) -> tuple[str, list[tuple[str, str
     if not facts:
         return '', []
     lines: list[str] = ['<memory>']
+    # One-line key index up front (Claude listing pattern): the model can
+    # target remember/forget by exact key without a list_facts round-trip.
+    keys = [str(f.get('key')) for f in facts if str(f.get('key') or '').strip()]
+    if keys:
+        lines.append('index: [' + ', '.join(keys) + ']')
     injected: list[tuple[str, str]] = []
     budget = _BLOCK_CHAR_CAP
     for f in facts:
@@ -198,6 +203,9 @@ def build_memory_block(query: str, k: int = 5) -> tuple[str, list[tuple[str, str
         injected.append((str(f.get('key')), title))
     if not injected:
         return '', []
-    lines.append('These are stored facts relevant to this message; cite or update via remember/brain_query as needed.')
+    lines.append(
+        'These are stored facts relevant to this message; cite them, update one by passing its key '
+        'to remember, or remove a stale one with forget.'
+    )
     lines.append('</memory>')
     return '\n'.join(lines), injected

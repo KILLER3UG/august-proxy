@@ -8,7 +8,7 @@
  */
 
 import { Children, useEffect, useId, useState, type ReactNode } from 'react';
-import { AlertCircle, Check, ChevronDown, Loader2, Pencil } from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, Loader2, Pencil, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   Task,
@@ -252,11 +252,31 @@ export function ToolStepRow({
               className={cn(
                 'process-tool-label',
                 running && 'shimmer process-tool-label--live',
+                // Plan 15.1: command rows carry the command in monospace.
+                isCommand && 'font-mono text-[11.5px]',
               )}
               title={filename ?? undefined}
             >
               {label}
             </span>
+            {isCommand && !running && (
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center rounded-full border px-1.5 py-px',
+                  errored
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+                )}
+                data-testid="tool-status-pill"
+                aria-label={errored ? 'Command failed' : 'Command succeeded'}
+              >
+                {errored ? (
+                  <X className="size-2.5" aria-hidden />
+                ) : (
+                  <Check className="size-2.5" aria-hidden />
+                )}
+              </span>
+            )}
             {showReadDuration && (
               <span
                 className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60"

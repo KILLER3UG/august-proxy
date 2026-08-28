@@ -958,3 +958,93 @@ The re-pasted Claude memory design is **substantially already implemented in Aug
 
 Neither needs a fresh ruling to land — both are within the existing memory KB scope (Part 3 M3 / M4) and are small enough to fold into a normal in-flight change. **No plan-time adoption recommended**; surface as a follow-up for the next memory KB session.
 
+
+---
+
+## Part 15 — Tool-step rendering + Memory cleanup + Skills hub + Drawer overlay + Memory CRUD stewardship (2026-08-28)
+
+**Driver:** standing rule ("implement all in the plan + improve the harness, use computer use"). Five separate user asks in one turn:
+1. Tool-step spec pasted from chat — render each tool call as a single compact row; collapse reads, show command + pill, error inline for failures, expand search/edit, group consecutive same-file reads, indent tool rows under plan steps.
+2. The Timeline + Sessions sub-tabs in Settings → Memory are useless — delete them.
+3. Skills are under the Tools hub — make sure they have their own tab (note: a top-level Skills hub **revises the 8-hub ruling** and is a scope change; we will surface the change but not land a hub move without an explicit ruling — Skills already has its own section under Tools at `settings-registry.ts:391`).
+4. Hard rule: every content surface renders in the middle column / on the right; never left-aligned with a giant right rail.
+5. Model memory stewardship is one-way — audit whether the model actually has a way to add/edit/delete/learn memory.
+
+### 15.1 — Tool-step rendering (replace inline args/result with a thin line)
+
+**Current state (read in code):** `ToolCallCard` (`sections/chat/message/ToolCallCard.tsx:41-151`) already renders a thin row with tool name + file icon + status pill, but a successful command's result is *implicitly* shown via the inline `<FormattedResultSection>` in `/verbose` mode only. The per-step collapse of consecutive reads of the same file exists in `WorkingIndicator.tsx:80-84` but **not in the transcript** — each read still gets its own bubble in `AssistantBlockTimeline.tsx:renderProcessBlocks` (the section that drives the per-step rail).
+
+**Plan:**
+
+- Add a per-tool-step collapse in `AssistantBlockTimeline.renderProcessBlocks` that folds `view` (read) tools of the same path into one row with a counter (`read consolidation.py ×4`). The collapse must:
+  - Run on the **rendered list**, not the underlying `processBlocks` array (so the BM25 / inference / scoring in the rest of the timeline is unchanged).
+  - Preserve the first tool's id so `toolProgress` + `subagentBlocks` keep working.
+  - Add a new "step" label for the counter: `read consolidation.py ×4` + duration.
+- Replace the per-step result dump (the row-level "show stdout inline" path) with a click-to-expand `<DisclosureRow>` wrapper, **unless** the tool errored — in which case the error is inline (one line, with a "show full" disclosure for the rest).
+- Search (web_search, search_files) and edit (apply_patch, edit_lines) stay expanded by default with a length cap (5 lines / 1 KiB), plus a "view all" disclosure for the rest. `ChangesCard` (already shipped) handles the aggregate of edits.
+- Commands (run_command / Bash) collapse to one line: monospace command + green pill on success, red pill + first error line on failure. No stdout inline.
+- The aggregate in the `ActivitySummary` `completion` mode header (already shipped) stays as-is — that's the "this is what happened" summary chip.
+
+**Implementation record (2026-08-28):** most of this was already in tree from the minimal-transcript work — the ×N read collapse lives in `AssistantBlockTimeline.renderFlatProcess` (consecutive same-path non-errored `view` calls fold into one `ToolStepRow` labeled `… ×N` with summed duration; errored reads stay individual), settled reads and successful commands are header-only (`minimalLocked` in `ToolStepRow`), failed commands show one inline red line (`commandErrorOneLiner`) with the full output behind the click, and edits/searches/memory writes are expanded-by-default with capped bodies. What this batch adds: a **green ✓ / red ✗ status pill** on settled command rows (`data-testid="tool-status-pill"`) and **monospace command labels**, plus tests for the ×N collapse, the errored-read carve-out, and the pills.
+
+### 15.2 — Delete the Memory Timeline + Sessions sub-tabs
+
+**Current state (read in code):** `MemorySection.tsx:55-78` defines four sub-tabs. Per the audit (this section's header proof), `timeline` has no live writer in the request path, and `sessions`+`messages`+`exams`+`examAttempts` duplicate the proper UI surfaces (sidebar session list, chat thread, exam section). All four are also read-only in the `STORE_META` (lines 170-209) — the Edit/Export/Delete buttons render but no-op.
+
+**Plan:** remove the `memory-timeline` and `memory-sessions` entries from the settings registry (`settings-registry.ts:267-283`) and the `SCOPES` map (`MemorySection.tsx:55-78`). The two surviving sub-tabs are `memory-knowledge` (KV + legacy auto-memory) and `memory-facts` (the durable facts). The 8-hub ruling is unaffected (we're not adding or removing hubs).
+
+**No-data consequence:** the episodic_timeline table still exists in the schema (line 384 of `brain.py` is the only reader). If a future feature wants to surface the timeline (e.g. an "agent did X" timeline), it re-adds the sub-tab. Until then, the table sits empty and costs nothing.
+
+**Implementation record (2026-08-28):** done — registry `legacyAliases` on `memory-knowledge` now absorb `memory-timeline` + `memory-sessions` deep links, `SECTION_COMPONENTS` and `SCOPES` dropped to two scopes, the Memory hub counts 2 sections (audit doc updated: 39 → 37), and the test asserts the flat Memories list renders without the Timeline rows.
+
+### 15.3 — Skills as a top-level hub
+
+**Note:** this **revises the 8-hub ruling** and is presented as a separate proposal, not part of this batch. The user said "make sure the skills have its own tab" — Skills already has its own **section** under the Tools hub (`settings-registry.ts:391-399`, `category: 'tools'`). What they probably want is a top-level **Skills** hub so the rail item is "Skills" not "Tools → Skills tab." If that's the rule, this batch lands a placeholder section; the hub move is a separate ruling.
+
+For this batch, **no-op** on the hub structure. The Skills section already has its own tab inside Tools; the existing implementation is correct. If the hub move is wanted, say so explicitly and we'll file a Part 16.
+
+### 15.4 — Hard rule: content in the middle column, secondary on the right
+
+**Current state (read in code):** the chat column is centered (`ChatThread.tsx:1363`, `max-w-3xl mx-auto`). The right drawer (`RightDrawer.tsx:180`) is `position: relative shrink-0` — it sits inline and **pushes the chat left** when open. The user's "render in the middle" rule means the chat should stay centered even when the drawer is open.
+
+**Plan:** make the right drawer an **overlay** rather than an inline column. `position: fixed` (or `absolute` to its scroll parent), `right-0 top-0 bottom-0`, with a left scrim to dismiss. The chat column keeps its `max-w-3xl mx-auto` regardless of drawer state. Storage: keep the same `BASE_WIDTH_KEY` but anchor to viewport right edge. The resize handle becomes a left edge handle.
+
+This is a small CSS + a few `width: 0` / `right: 0` swaps; the section registry and feature surface are unchanged. Side effect: the titlebar / composer must avoid layout shift — since the chat is centered and the drawer is floating, no shift.
+
+**Implementation record (2026-08-28):** landed with one deviation — **no dismiss scrim**. The drawer is a persistent workbench panel (tabs + terminal); a scrim would close it on every composer click. Instead it is `absolute right-0 top-0 bottom-0 z-30` inside `.august-content-area` (which is `relative` with no transformed ancestors), dismissed by **Escape** (suppressed while typing in an input/textarea or while the section chooser is open — Escape closes the chooser first) and the header ✗. A soft left edge shadow (`-18px 0 42px -26px`) separates it from the chat. The width clamp still keeps ≥40% of the viewport for the chat, and the chat keeps `max-w-3xl mx-auto` — on wide windows the centered column never overlaps the drawer at all. Tests cover the overlay classes, Escape dismiss, the input-focus suppression, and the chooser-first Escape.
+
+### 15.5 — Model memory CRUD stewardship
+
+**Current state (read in code):** the model can `remember` (write) and `brain_query` (read sessions/messages/blackboard/daemons). It **cannot list, get, or delete its own facts** — there is no `forget` / `delete_fact` / `list_facts` tool. The `remember` description does say "pass a stable key to update" but the model has no way to enumerate keys to update.
+
+**Plan (5 small adds, all gated on the existing `modelMemoryWrites` / `modelMemoryRead` toggles):**
+
+1. **Register `forget` tool** — `_forget(key)` handler. Validates the key exists in the model's own facts (source='model' or owned by the user), deletes via `delete_fact(key)`. Hard-refuses if the fact is system-owned. Returns `{ok, deleted, key}` so the model can confirm.
+2. **Register `list_facts` tool** — `_list_facts(category?, limit?)` handler. Returns the model's own fact rows (`source='model'` or `user` for the user-facing fact store), with `key` + `title` + `category` + `updated_at`. Bounded at 50 rows. This is what makes `remember`'s "pass a stable key" actually usable.
+3. **Add `feedback` prompt hint** in `<memory_policy>` (`workbench.py:1098-1106`) — one extra line: *"If the user corrects you, save it with `category: 'feedback'` and a stable key like `feedback:<short-topic>` so future turns can recall it."*
+4. **Make `<memory>` block a one-line index** in the system prompt (per Claude's listing pattern) — currently the auto-injection is a `<memory>title: body</memory>` block (`fact_retrieval.py:184-203`); change to first an `index: [k1, k2, ...]` (the `brain_index_snippet` already does this for the boot intake at `brain.py:357-397`, so the wire is in place — just surface it inside the per-turn `<memory>` block too, with `modelMemoryRead` gating it).
+5. **Test harness** — `tests/test_model_memory_crud.py`: `list_facts` row shape + `{"fact","details"}` title unwrap, category filter, query search, limit clamp (0→1, 999→50); `forget` deletes model facts + records a `restore_memory_item` rollback, allows `user`/`imported:*` sources, hard-refuses system-owned (`extracted`), missing/blank key points at `list_facts`, both tools honor their config gates; a `remember → list_facts → revise-by-key → forget` round trip; and the `<memory>` block `index: [key]` line + key-aware footer.
+
+**Implementation record (2026-08-28):** all five landed. `forget` allows `source ∈ {model, user, ''}` plus any `imported:*` prefix (the import path tags `imported:<provider>`); everything else is system-owned and survives model cleanup. `list_facts` also takes an optional `query` (routes to `search_facts`) on top of `category`/`limit`. The `<memory>` block now opens with `index: [k1, k2, …]` and its footer tells the model to update by key (`remember`) or drop stale entries (`forget`). Both tools are registered in `tool_policy.py` (`list_facts` → read bucket, `forget` → write bucket) and mirrored in the `test_tool_policy_parity.py` oracles.
+
+### 15.6 — Memory import parser hardening (the reported bug)
+
+**Bug (user-reported):** dropping `claude-legacy-memory.md` into the Memory import dialog returned *"No entries found."* The parser (`ImportMemoryDialog.tsx`) only understood `- key: value` bullets, so Claude memory dumps — plain sentence bullets like `- Prefers concise answers without preamble` — produced zero entries. A second latent bug: August's **own** export is frontmatter-based (`---\nname:…\ndescription:…\n---` segments from `entryToMarkdown`), which the parser also didn't understand, so an August export couldn't round-trip back in.
+
+**Fix:** rewrote the parser around four accepted shapes —
+1. **August frontmatter export** — split on `---`/`***`/`___` rules, parse a leading `field: value` block (`name/description/type/updated/key/category/source/fact/details`), value = body → description → fact, key = slugified `name`/`key` else derived from the first six words of the value.
+2. **Claude plain-sentence bullets** — `-`/`*`/`•` or `1.`/`1)` numbered lines with no colon get a key derived from the first six words (`prefers-concise-answers-without-preamble`).
+3. **`key: value` bullets** — still split, guarded so times (`at 3:00 pm`) and long leads don't false-split.
+4. **Link bullets** `- [Title](file) — hook` — title → key, hook → value.
+
+Plus: heading lines (`# …`) set a category hint for the bullets under them, indented continuation lines append to the previous entry, code fences + horizontal rules are skipped, and the whole result is deduped by key (last wins — matching the upsert semantics of the import endpoint). Exported as `parseMemoryImportEntries(text, source)` with 14 unit tests in `ImportMemoryDialog.test.ts`.
+
+### 15.7 — Validation
+
+- Backend: `uv run pytest tests/test_model_memory_crud.py tests/test_tool_policy_parity.py tests/test_remember_throttle.py tests/test_memory_kb_m1m3m4m5.py` green; `ruff check` + `mypy` clean on the four touched modules.
+- Frontend: `tsc --noEmit` clean; `vitest` green on `ToolStepRow`, `AssistantBlockTimeline`, `RightDrawer`, `MemorySection`, and `ImportMemoryDialog` suites.
+
+### 15.8 — Out of scope (deferred / needs a ruling)
+
+- **Skills top-level hub (15.3):** no-op this batch — Skills already has its own section under Tools. Moving it to a top-level hub revises the 8-hub ruling and needs an explicit ruling (filed as a Part 16 candidate).
+- **Episodic timeline table:** `episodic_timeline` stays in the schema with no live writer; a future feature re-adds the sub-tab if it wants the surface.

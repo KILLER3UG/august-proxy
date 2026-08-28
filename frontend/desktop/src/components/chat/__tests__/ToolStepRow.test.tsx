@@ -217,6 +217,99 @@ describe('ToolStepRow — minimal-output policy (plan §4.1)', () => {
   });
 });
 
+describe('ToolStepRow — command status pill (plan 15.1)', () => {
+  it('successful command rows carry a green ✓ pill', () => {
+    const tool = makeTool({
+      name: 'run_command',
+      status: 'done',
+      context: JSON.stringify({ command: 'ls' }),
+      summary: 'file.txt',
+    });
+    render(
+      <ToolStepRow
+        tool={tool}
+        label="Ran: ls"
+        isCommand
+        expanded={false}
+        onToggle={() => {}}
+      />,
+    );
+    const pill = screen.getByTestId('tool-status-pill');
+    expect(pill).toHaveAttribute('aria-label', 'Command succeeded');
+    expect(pill.className).toContain('emerald');
+  });
+
+  it('failed command rows carry a red ✗ pill next to the error line', () => {
+    const tool = makeTool({
+      name: 'run_command',
+      status: 'error',
+      context: JSON.stringify({ command: 'false' }),
+      error: 'exit code 1',
+    });
+    render(
+      <ToolStepRow
+        tool={tool}
+        label="Ran: false"
+        isCommand
+        expanded={false}
+        onToggle={() => {}}
+      />,
+    );
+    const pill = screen.getByTestId('tool-status-pill');
+    expect(pill).toHaveAttribute('aria-label', 'Command failed');
+    expect(pill.className).toContain('rose');
+    expect(screen.getByTestId('tool-error-line')).toBeInTheDocument();
+  });
+
+  it('running commands and non-command tools show no pill', () => {
+    const running = makeTool({
+      name: 'run_command',
+      status: 'running',
+      context: JSON.stringify({ command: 'sleep 5' }),
+    });
+    const { unmount } = render(
+      <ToolStepRow
+        tool={running}
+        label="Running: sleep 5"
+        isCommand
+        expanded
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId('tool-status-pill')).toBeNull();
+    unmount();
+
+    const read = makeTool({
+      name: 'read_file',
+      status: 'done',
+      context: JSON.stringify({ path: 'a.py' }),
+    });
+    render(
+      <ToolStepRow tool={read} label="Read a.py" expanded={false} onToggle={() => {}} />,
+    );
+    expect(screen.queryByTestId('tool-status-pill')).toBeNull();
+  });
+
+  it('command labels render in monospace', () => {
+    const tool = makeTool({
+      name: 'run_command',
+      status: 'done',
+      context: JSON.stringify({ command: 'ls' }),
+    });
+    const { container } = render(
+      <ToolStepRow
+        tool={tool}
+        label="Ran: ls"
+        isCommand
+        expanded={false}
+        onToggle={() => {}}
+      />,
+    );
+    const label = container.querySelector('.process-tool-label');
+    expect(label?.className).toContain('font-mono');
+  });
+});
+
 describe('ToolStepRow — /verbose lifts the minimal lock (plan §4.2)', () => {
   it('verbose makes settled read rows expandable into their raw output', () => {
     const tool = makeTool({

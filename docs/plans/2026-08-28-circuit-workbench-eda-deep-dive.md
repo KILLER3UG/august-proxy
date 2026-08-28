@@ -2,6 +2,8 @@
 
 **Date:** 2026-08-28 · **Status:** DRAFT — awaiting ruling (§8 open questions) · **Scope:** `backend-py` circuit/HDL tools + desktop Circuit panel + FPGA flow
 
+**Review pass (2026-08-28, post-`471482a1`):** re-verified against the tree after the five commits that landed since this plan was written (workbench kernel split, `/verbose`, R-C billing, skill-template work, 7-bug batch + right-panel). Findings: `circuit_tools.py` / `artifact_tools.py` / the circuit frontend components are byte-identical, so every Part-2 anchor there still holds; the policy-table row mislabeled `_PROMPT_SHELL` as `_SHELL_EXACT` (corrected below); all planned tools remain greenfield; skills moved to root `skills/` (user correction folded in); and §5 now covers the new harness layer (`kernel.py` tool bridge, `edit_verification.py`, `read_before_edit.py`, `shadow_git.py`) that postdates the plan.
+
 This plan supersedes the unapproved pasted spec of 2026-08-27 (Phase-2 circuit enhancements). Its four proposals are folded in here: SPICE infix → Q1; topological placement → superseded by Phase 5 (tscircuit/KiCad placement replaces the sqrt-grid); library expansion → §4 P1.6; the four new EDA/FPGA tools → expanded into Phase 4 (seven tools).
 
 Research basis: three parallel web-research sweeps (2026-08-28) covering Quartus Prime, SimulIDE, Proteus, Electronics Workbench/Multisim, Qucs-S, LTspice, Falstad/CircuitJS1, Wokwi/avr8js/rp2040js, tscircuit, KiCad 8–10 automation, ngspice 47, GHDL/Icarus/Verilator/cocotb, GTKWave/Surfer/WaveDrom, Digital/Logisim, SymbiYosys, Renode, PySpice, lcapy. Sources in §9.
@@ -149,7 +151,7 @@ Current stable **47**. Beyond what August uses today:
 
 ## Part 2 — Current-state audit (what August has today)
 
-All anchors verified against the working tree 2026-08-28.
+All anchors re-verified against the working tree 2026-08-28 (post-`471482a1`; circuit files unchanged since the plan was written).
 
 | Capability | Where | Notes |
 |---|---|---|
@@ -167,7 +169,7 @@ All anchors verified against the working tree 2026-08-28.
 | Schematic PNG | `artifact_tools.py:303` (`draw_circuit`) | schemdraw, series-loop elements |
 | Charts | `artifact_tools.py:129` (`render_chart`) | matplotlib PNG from columns |
 | HTML artifacts | `artifact_tools.py:357` | sandboxed iframe (`allow-scripts`, no `allow-same-origin`) |
-| Policy gates | `tool_policy.py:36-39` (read-only), `:64-66` (write), `:81` (delete), `:84` (`_SHELL_EXACT`), `:123-124` (plan-mode block), `:155-156` (circuit-mode gate) | parity oracle in `test_tool_policy_parity.py` |
+| Policy gates | `tool_policy.py:36-39` (read-only), `:64-66` (write), `:81` (`_PROMPT_DESTRUCTIVE` delete), `:84` (`_PROMPT_SHELL` incl. `circuit_simulate`), `:123-124` (plan-mode block), `:149-157` (`_SHELL_EXACT` edit-mode gate, circuit entries `:156`, dispatch `is_shell_mutation:211`) | parity oracle in `tests/test_tool_policy_parity.py`; the `/circuit` advertisement gate lives in `workbench.py` (hint injection `:1048-1051`, `circuitMode` SSE `:2229-2242`) |
 | Frontend | `CircuitArtifactCard.tsx` (155 ln), `RightDrawerCircuitSection.tsx` (151 ln), `lib/artifacts.ts` (168 ln) | card + drawer panel; **no three.js/uPlot/viewer deps in `package.json`** |
 | Skill | `skills/circuit-sim/SKILL.md` | accurate post-2026-08-26 rewrite (moved from orphaned `backend-py/skills/` on 2026-08-27) |
 
@@ -215,7 +217,7 @@ Ordering principle: each phase ships standalone value; P0–P1 have **zero new r
 
 ### Phase 1 — SPICE depth: waveforms, sweeps, tests, symbols, faults, parts (~3–4 days)
 
-**P1.1 Waveform extraction (the oscilloscope data path).** Today `circuit_simulate` returns only scalar measures. Add: inject `wrdata <file> <exprs>` (or parse the `.raw` binary) into `.tran/.ac/.dc` decks; return `traces: {name: {x: [...], y: [...], unit, xunit}}` downsampled to a budget (e.g. ≤2k points/trace, ≤8 traces) alongside `measures`. `render_chart` gains a `traces` input so the model can plot real waveforms immediately. This single change converts August from "multimeter" to "oscilloscope" at the data level.
+**P1.1 Waveform extraction (the oscilloscope data path).** Today `circuit_simulate` returns only scalar measures. Add: inject `wrdata <file> <exprs>` (or parse the `.raw` binary) into `.tran/.ac/.dc` decks; return `traces: {name: {x: [...], y: [...], unit, xunit}}` downsampled to a budget (e.g. ≤2k points/trace, ≤8 traces) alongside `measures`. `render_chart` gains a `traces` input so the model can plot real waveforms immediately. This single change converts August from "multimeter" to "oscilloscope" at the data level. Bonus now that the T13 kernel exists (§5.6): traces returned through the bridge spill oversized payloads to disk automatically (`kernel.py` `BRIDGE_SPILL_CHARS`), so code-mode cells get NumPy-friendly waveform files without inline bloat.
 
 **P1.2 Parametric sweeps (LTspice `.step` idea).** `circuit_simulate` accepts `sweep: {param, from, to, steps}` → emits `.step param` + per-step `.meas`; result carries `sweepResults: [{paramValue, measures}]`; `render_chart` renders the curve family. The model gets "sweep R1 1k→10k and find where the cutoff hits 1 kHz" in one tool call.
 
@@ -223,7 +225,7 @@ Ordering principle: each phase ships standalone value; P0–P1 have **zero new r
 
 **P1.4 `circuit_symbolic` via lcapy (LGPL — linkable).** Input: netlist or a two-node transfer query. Output: symbolic `H(s)`, poles/zeros, `V(t)` step response, LaTeX string. Two uses: *explain* a circuit to the student, and *cross-check* ngspice numbers (symbolic −3 dB point vs. measured). Optional dep — degrades to "install lcapy" guidance.
 
-**P1.5 `circuit_inject_fault` (Multisim Education).** Given a deck + `{ref, fault: open|short|drift(±%)}`, emit the faulted variant deck (open = delete line; short = replace with `R<ref>_f n1 n2 1m`; drift = scale value). Powers troubleshooting exercises: August (or the user) faults a circuit, the student diagnoses with sims, or August demonstrates why a symptom occurs.
+**P1.5 `circuit_inject_fault` (Multisim Education).** Given a deck + `{ref, fault: open|short|drift(±%)}`, emit the faulted variant deck (open = delete line; short = replace with `R<ref>_f n1 n2 1m`; drift = scale value). Powers troubleshooting exercises: August (or the user) faults a circuit, the student diagnoses with sims, or August demonstrates why a symptom occurs. P1.4 + P1.5 are natural inputs to the existing `skills/tutor/` study loop (§5.8).
 
 **P1.6 Library expansion (15 → ~35 parts) + XSPICE digital.** Add to `_COMPONENT_LIBRARY` (`circuit_tools.py:717`): MOSFETs (2N7000, IRF540/IRF9540, BS170), op-amps (TL072, OP07, LM324 + macro-model cards), more regulators (LM337, 78xx family), zeners, the classic 555 internals card. **74xx via XSPICE**: ngspice ships digital primitives (gates, flip-flops, LUT, state machine — §1.10); add `circuit_search_component` knowledge + paste-ready XSPICE subcircuit cards for 7400/02/04/08/32/74/76/161/595. Gate on runtime detection: the winget ngspice build must include XSPICE code models — `circuit_env` probes this (simulate a 1-line inverter deck) and the library only advertises 74xx when present.
 
@@ -297,15 +299,17 @@ New tool family, gated behind the existing circuit mode (or a sibling `/hdl` mod
 
 ## Part 5 — Harness wiring checklist (every new tool)
 
-Per the established pattern (and the parity-oracle lesson — green tests ≠ correct policy):
+Per the established pattern (and the parity-oracle lesson — green tests ≠ correct policy), updated for the post-kernel-split harness:
 
 1. Implementation in `backend-py/app/services/tools/circuit_tools.py` (SPICE/firmware) or a new `hdl_tools.py` (Phase 4).
 2. Wrapper + `register()` in `tool_registrations/circuit_tools.py` (or sibling `hdl_tools.py`).
-3. `CIRCUIT_HINT` (`circuit_tools.py:59-79`) updated with the new surface.
-4. `tool_policy.py` classification: read-only tools (`circuit_env`, `vcd_parse`, `hdl_lint`) → read set; mutating tools (`circuit_test` writes nothing, `firmware_compile` writes artifacts) → write set + plan-mode block where they mutate; `fpga_program` → confirm-gated shell class.
-5. **`test_tool_policy_parity.py` oracle updated in the same commit** (policy + oracle together, always).
-6. Skill updates: `skills/circuit-sim/SKILL.md` extended; new `skills/hdl-fpga/SKILL.md` for Phase 4.
-7. Frontend: Circuit panel sections are additive; artifact templates register in `lib/artifacts.ts`.
+3. `CIRCUIT_HINT` (`circuit_tools.py:59-79`) updated with the new surface. The constant is injected from `workbench.py:1048-1051` — no change needed there unless the session-block format changes.
+4. `tool_policy.py` classification: read-only tools (`circuit_env`, `vcd_parse`, `hdl_lint`) → read set; mutating tools (`circuit_test` writes nothing, `firmware_compile` writes artifacts) → write set + plan-mode block where they mutate; **any tool that spawns an external binary** (`hdl_simulate`→ghdl/iverilog, `fpga_compile`→quartus_sh, `firmware_compile`→arduino-cli, the Node sidecar) **goes into `_SHELL_EXACT`** exactly like `circuit_simulate` (`:149-157`) — edit-mode gating applies to binary launchers, not just `run_command`. `fpga_program` additionally confirm-gated.
+5. **`tests/test_tool_policy_parity.py` oracle updated in the same commit** (policy + oracle together, always).
+6. **Kernel bridge comes free.** The T13 code-mode tool bridge (`workbench/kernel.py:284` `bridge_call`) re-applies `_checkToolGuard` + `_resolveCommandApproval` and dispatches through `_executeTool`, so every new circuit/HDL tool is automatically callable from `code`-mode Python cells with the same gates — no extra wiring, but it means students can orchestrate sweeps/co-sim/firmware runs programmatically in Python (this is the PySpice DX without the GPL dependency; see P1.1).
+7. **New-harness interactions:** post-edit verification (`workbench/edit_verification.py`, T1/T14) covers the generic file-edit tools — `circuit_test` (P1.3) and `hdl_test` (P4.4) are the domain-specific analogs and should not double-gate; read-before-edit (`read_before_edit.py`, T17) applies when the model edits a `.cir`/`.vhd` via `edit_lines` (desirable — leave it); **shadow-git** (`shadow_git.py`) snapshots every workspace artifact automatically, so netlists/VCD/HEX flow into the ChangesCard for free — but watch snapshot size once Phase 3/4 start emitting `.sof`/UF2/FST binaries (check the snapshot caps; add binary globs to the ignore list if they bloat).
+8. Skill updates: `skills/circuit-sim/SKILL.md` extended; new `skills/hdl-fpga/SKILL.md` for Phase 4; `skills/charts/SKILL.md` already claims "waveform data coming out of a circuit sim" — P1.1/P2.1 must make that true; `skills/august-tools/SKILL.md` (the load-before-tools reference) gains the new tool families; `skills/tutor/SKILL.md` cross-referenced from P1.4/P1.5 (symbolic explanation + fault-injection exercises are tutor material).
+9. Frontend: Circuit panel sections are additive; artifact templates register in `lib/artifacts.ts`.
 
 ---
 

@@ -12,14 +12,14 @@ Records the settings IA so future contributors can extend without re-deriving. D
 
 ## Current IA (verified 2026-08-26)
 
-**39 sections across 8 hubs.** No `advanced` gate — hubs + pills give progressive disclosure. `tier: 'hidden'` ids are interior tabs, not separate rail items.
+**37 sections across 8 hubs.** No `advanced` gate — hubs + pills give progressive disclosure. `tier: 'hidden'` ids are interior tabs, not separate rail items.
 
 | Hub | Sections (related data) | Concern |
 |-----|------------------------|---------|
 | **System** `system` (4) | System Health, Account, Updates, Data & Privacy | Health, profiles, updater, retention |
 | **Appearance** `appearance` (2) | Appearance & Behavior, UI Designer | Theme, text size, colors |
 | **Models** `models` (9) | Models & Providers, All Models, Aliases, Fallback, Live (STT/TTS), Quotas, Background & Reflection, Model Fleet, AI Setup | Providers, catalog, routing |
-| **Memory** `memory` (4) | Memories, Facts & Rules, Timeline, Sessions | Human-readable entry cards, detail + delete + edit, add-box, model-memory toggles, Markdown export |
+| **Memory** `memory` (2) | Memories, Facts & Rules | Human-readable entry cards, detail + delete + edit, add-box, model-memory toggles, Markdown export |
 | **Automations** `automations` (3) | Reminders, Automations, Agent Board | Agents, kanban, cron |
 | **Tools & Skills** `tools` (4) | Integrations, Skills, Desktop Automation, Prompt Templates | MCP, skills, computer use |
 | **Access** `access` (5) | Files & Shell Access, Path Permissions, Python Sandbox, Desktop App Permissions, External API Access | Sandbox + gating |
@@ -41,8 +41,6 @@ Sub-agent drawer is **drawer-only** (no inline `SubagentLaunchList` pill in tran
 | `model-providers` | Models & Providers | models | basic |
 | `memory-knowledge` | Memories | memory | basic |
 | `memory-facts` | Facts & Rules | memory | basic |
-| `memory-timeline` | Timeline | memory | basic |
-| `memory-sessions` | Sessions | memory | basic |
 | `privacy` | Data & Privacy | system | basic |
 | `observability` | Activity Log | insights | advanced |
 | `api-access` | External API Access | access | basic |
@@ -69,3 +67,4 @@ Hermes-structured: `delegation: {maxConcurrent:5, maxIterations:50, maxDepth:1, 
 - `Show advanced` toggle removed — `WorkspaceShell.tsx` no longer uses `useSettingsAdvancedPreference`; `workspace-shell-tier-filter.test.tsx` now asserts 5→8 hubs.
 - 2026-08-26: `memory` hub restored as its own top-level category (dropped in the 0.17.0 IA reorg) and split into four store-scoped sub-tabs — Memories (`memory-knowledge`: autoMemories + kv), Facts & Rules (`memory-facts`: facts + heuristics), Timeline (`memory-timeline`: timeline + blackboard), Sessions (`memory-sessions`: sessions + messages + exams) — all rendered by one `MemorySection` component backed by `GET /api/brain/stores[/{name}]`. Data & Privacy stays in `system`.
 - 2026-08-26 (memory humanization): `MemorySection` rewritten from a raw table browser to human-readable titled **entry cards** (facts grouped under category headers), a **detail view** (Markdown body, provenance line, Delete via confirm dialog, inline edit over a per-store field whitelist → `PATCH /api/brain/stores/{name}/{id}`), a Claude-style **add-box** (`POST /api/memory/manage`, `source='user'`), two **model-memory toggles** (`modelMemoryWrites`, `memorySensitiveTopics` → `PUT /api/brain/config`), and per-entry / per-store **Markdown export**. `heuristics` + `autoMemories` render as read-only **Legacy** stores. Section ids, icons, and keywords are unchanged.
+- 2026-08-28 (Part 15.2): `memory-timeline` + `memory-sessions` sub-tabs deleted — the `episodic_timeline` table has no live writer, and the sessions/messages/exams stores duplicate the sidebar, chat, and exam UIs (all were read-only). The Memory hub keeps two sections (Memories, Facts & Rules); the deleted ids survive as `legacyAliases` on `memory-knowledge` so stale deep links land on Memories. 39 → 37 sections.

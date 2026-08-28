@@ -244,12 +244,13 @@ describe('MemorySection — unified flat list (§5.1)', () => {
     });
   });
 
-  it('keeps raw-but-readable card grids on the Timeline tab', () => {
-    renderSection('memory-timeline');
-    // Store chips (raw tabs only) + the card grid, no flat list.
-    expect(screen.getByText('timeline')).toBeInTheDocument();
-    expect(screen.queryByTestId('memory-flat-list')).not.toBeInTheDocument();
-    expect(screen.getByText('Edited workbench.py')).toBeInTheDocument();
+  it('dropped the Timeline + Sessions sub-tabs (Part 15.2)', () => {
+    renderSection('memory-knowledge');
+    // The Memories scope merges only autoMemories + memory into the flat
+    // list; rows from the deleted timeline/sessions scopes must not leak in.
+    const rows = screen.getAllByTestId('memory-flat-row');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(screen.queryByText('Edited workbench.py')).not.toBeInTheDocument();
   });
 });
 

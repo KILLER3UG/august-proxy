@@ -1,0 +1,20 @@
+{
+  "mcp": {
+    "autoclaw-productivity": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:19681/mcp",
+      "enabled": true
+    },
+    "autoclaw-github": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:19681/github/mcp",
+      "enabled": false
+    },
+    "notion": {
+      "type": "streamable-http",
+      "url": "https://mcp.notion.com/mcp",
+      "auth": "oauth",
+      "enabled": false
+    }
+  }
+}

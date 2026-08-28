@@ -281,6 +281,81 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
   });
 });
 
+describe('RightDrawer overlay layout (Part 15.4 — content stays in the middle)', () => {
+  beforeEach(() => {
+    $rightDrawer.set({ open: false, sections: [] });
+  });
+
+  function mountWithClose(onClose: () => void) {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    return render(
+      <QueryClientProvider client={qc}>
+        <RightDrawer
+          open
+          sessionId="sess_tab"
+          workspacePath={null}
+          workbenchSession={null}
+          onApprovePlan={async () => {}}
+          onClose={onClose}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  it('floats over the right edge instead of sitting inline (no chat push)', () => {
+    act(() => {
+      toggleRightDrawerSection('tasks');
+    });
+    mountWithClose(() => {});
+    const aside = document.querySelector('aside.august-right-drawer')!;
+    // Absolute overlay anchored to the right edge of the content area…
+    expect(aside.className).toContain('absolute');
+    expect(aside.className).toContain('right-0');
+    expect(aside.className).toContain('top-0');
+    expect(aside.className).toContain('bottom-0');
+    // …never the old inline flex sibling that squeezed the chat column.
+    expect(aside.className).not.toContain('shrink-0');
+    expect(aside.className.split(/\s+/)).not.toContain('relative');
+  });
+
+  it('Escape dismisses the whole panel', () => {
+    const onClose = vi.fn();
+    act(() => {
+      toggleRightDrawerSection('tasks');
+    });
+    mountWithClose(onClose);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Escape does not dismiss while typing in an editable field', () => {
+    const onClose = vi.fn();
+    act(() => {
+      toggleRightDrawerSection('tasks');
+    });
+    mountWithClose(onClose);
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    input.remove();
+  });
+
+  it('Escape backs out of the chooser first without closing the drawer', () => {
+    const onClose = vi.fn();
+    act(() => {
+      toggleRightDrawerSection('tasks');
+      $rightDrawer.set({ open: true, sections: ['tasks'], chooserActive: true });
+    });
+    mountWithClose(onClose);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="drawer-section-chooser"]')).toBeNull();
+  });
+});
+
 const TRACE: HarnessTrace = {
   id: 41,
   turn_seq: 7,

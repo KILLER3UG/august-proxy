@@ -53,7 +53,10 @@ interface BrainConfigResponse {
 }
 
 /** Store scope per Memory-hub sub-tab (section id → stores shown). Ids are
- *  immutable (settings-registry audit) — only the blurbs change. */
+ *  immutable (settings-registry audit) — only the blurbs change.
+ *  Part 15.2: the Timeline + Sessions sub-tabs were deleted — the
+ *  episodic_timeline table has no live writer, and the sessions/messages/
+ *  exams stores duplicate the sidebar, chat, and exam UIs. */
 const SCOPES: Record<string, { title: string; blurb: string; stores: string[] }> = {
   'memory-knowledge': {
     title: 'Memories',
@@ -64,16 +67,6 @@ const SCOPES: Record<string, { title: string; blurb: string; stores: string[] }>
     title: 'Facts & Rules',
     blurb: 'Structured facts August extracted and the behavioral rules it learned.',
     stores: ['facts', 'heuristics'],
-  },
-  'memory-timeline': {
-    title: 'Timeline',
-    blurb: 'Episodic record of what August did, plus inter-agent blackboard notes.',
-    stores: ['timeline', 'blackboard'],
-  },
-  'memory-sessions': {
-    title: 'Sessions',
-    blurb: 'Raw conversation sessions, chat messages, and exam records as stored.',
-    stores: ['sessions', 'messages', 'exams', 'examAttempts'],
   },
 };
 

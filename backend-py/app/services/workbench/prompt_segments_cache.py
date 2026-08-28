@@ -74,8 +74,11 @@ MEMORY_BLOCK = (
     '- User-stated preferences, decisions, and constraints (category "user" / "project").\n'
     '- Feedback on how you should work (category "feedback").\n'
     '- Pointers to external resources (category "reference").\n'
+    'If the user corrects you, save the correction with category "feedback" and a stable key like '
+    '`feedback:<short-topic>` so future turns recall it; revise it the same way if they refine it.\n'
     'Do NOT save task steps, code structure, or anything git / the codebase already records.\n'
-    "Update, don't duplicate: pass a stable `key` to revise an existing fact instead of saving a twin.\n"
+    "Update, don't duplicate: call `list_facts` to see stored keys, then pass the matching `key` to "
+    'revise an existing fact instead of saving a twin. `forget` deletes a fact that is wrong or outdated.\n'
     'Sensitive topics (health specifics, ID numbers, minors, beliefs) are refused unless the user '
     'enabled sensitive memory — do not retry a refused save.\n'
     '</memory_policy>'

@@ -47,6 +47,9 @@ _PROMPT_READ = frozenset({
     'harness_introspect',
     # Session state summary for handoff/compaction — read-only.
     'summarize_session',
+    # Memory CRUD read door — lists durable fact keys/titles (gated by
+    # modelMemoryRead in the handler).
+    'list_facts',
 })
 
 _PROMPT_WRITE = frozenset({
@@ -60,6 +63,9 @@ _PROMPT_WRITE = frozenset({
     'pptx_comment',
     # Memory write door — saves a durable fact (gated by modelMemoryWrites).
     'remember',
+    # Memory delete door — removes one durable fact by key (rollback
+    # snapshot recorded; gated by modelMemoryWrites in the handler).
+    'forget',
     # Artifact creation — each writes a file into the workspace.
     'create_pptx', 'render_chart', 'render_video', 'draw_circuit',
     # Circuit workbench mutations — netlist files + rendered PNG output.

@@ -114,6 +114,21 @@ export function RightDrawer({
     return () => document.removeEventListener('keydown', onKey);
   }, [chooserActive]);
 
+  // Overlay drawer (Part 15.4): Escape dismisses the whole panel. The
+  // chooser handles its own Escape above, and editable fields keep Escape
+  // for themselves (terminal, inputs, textareas).
+  useEffect(() => {
+    if (!open || chooserActive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, chooserActive, onClose]);
+
   // Stop dragging if the component unmounts mid-drag.
   useEffect(() => {
     if (!isDragging) return;
@@ -165,6 +180,9 @@ export function RightDrawer({
   };
 
   // Keep AnimatePresence mounted so exit width/opacity can play.
+  // Part 15.4 hard rule — content renders in the middle column: the drawer
+  // OVERLAYS the right edge (absolute inside the relative .august-content-area)
+  // instead of pushing the chat column left as an inline flex sibling.
   return (
     <AnimatePresence initial={false}>
       {open && (
@@ -177,7 +195,7 @@ export function RightDrawer({
             duration: isDragging ? 0 : PANEL_MS,
             ease: PANEL_EASE,
           }}
-          className="august-right-drawer relative shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-background text-foreground"
+          className="august-right-drawer absolute right-0 top-0 bottom-0 z-30 min-h-0 overflow-hidden border-l border-border bg-background text-foreground"
           aria-label="Workbench sidebar"
         >
           {/* Inner shell keeps content at target width while the outer panel animates. */}

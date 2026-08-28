@@ -2,7 +2,7 @@
 /* Drives the left rail, global search, route resolution, and the
  * parallel chat-side workspace panel.
  *
- * 8 category hubs, 39 sections. Hubs are the rail; each hub stacks its
+ * 8 category hubs, 37 sections. Hubs are the rail; each hub stacks its
  * related sections as inner tabs (see `docs/settings-audit.md`).
  *
  * See `docs/settings-audit.md` for the rationale + section movement
@@ -251,7 +251,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     category: 'memory',
     tier: 'basic',
     keywords: ['memory', 'memories', 'stored', 'remembers', 'remembered', 'recall', 'brain', 'auto-memory'],
-    legacyAliases: ['memory', 'vector-db', 'recalled-memory', 'auto-memories', 'project-memories'],
+    legacyAliases: [
+      'memory',
+      'vector-db',
+      'recalled-memory',
+      'auto-memories',
+      'project-memories',
+      // Part 15.2: the Timeline + Sessions sub-tabs were deleted (dead
+      // episodic_timeline writer; session/message/exam stores duplicate the
+      // sidebar + chat + exam UIs). Stale deep links land on Memories.
+      'memory-timeline',
+      'memory-sessions',
+    ],
   },
   {
     id: 'memory-facts',
@@ -263,24 +274,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     keywords: ['facts', 'heuristics', 'rules', 'learned', 'semantic', 'knowledge'],
     legacyAliases: ['semantic-facts'],
   },
-  {
-    id: 'memory-timeline',
-    label: 'Timeline',
-    description: 'Episodic record of what August did, plus inter-agent blackboard notes.',
-    icon: History,
-    category: 'memory',
-    tier: 'basic',
-    keywords: ['timeline', 'episodic', 'episodes', 'blackboard'],
-  },
-  {
-    id: 'memory-sessions',
-    label: 'Sessions',
-    description: 'Raw conversation sessions, chat messages, and exam records as stored.',
-    icon: ScrollText,
-    category: 'memory',
-    tier: 'basic',
-    keywords: ['sessions', 'messages', 'exam', 'attempts', 'stored conversations'],
-  },
+  // memory-timeline and memory-sessions sub-tabs removed (Part 15.2 of
+  // 2026-08-27 plan). The episodic_timeline table has no live writer; the
+  // sessions/messages/exam stores duplicate the sidebar + chat + exam UIs.
+  // Their section ids are reserved as no-op legacy aliases so the rail
+  // doesn't crash on a stale deep link.
 
   /* ── Intelligence ────────────────────────────────────────────── */
   {

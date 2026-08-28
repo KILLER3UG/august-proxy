@@ -1094,12 +1094,13 @@ input::placeholder {
   border-top: 0 !important;
   border-right: 0 !important;
   border-bottom: 0 !important;
-  /* Blend into the chat area — same surface, separated by the hairline
-     divider only (ZCode-style continuous canvas). */
+  /* Overlay panel (Part 15.4): same surface as the chat area, floating
+     above the right edge — the hairline divider plus a soft left shadow
+     mark the boundary while the chat column stays centered underneath. */
   border-left: 1px solid color-mix(in srgb, var(--dt-border) 70%, transparent) !important;
   border-radius: 0;
   background: var(--dt-background) !important;
-  box-shadow: none;
+  box-shadow: -18px 0 42px -26px rgb(0 0 0 / 0.5);
 }
 
 .august-right-drawer > div {

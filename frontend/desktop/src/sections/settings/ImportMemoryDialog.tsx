@@ -1,10 +1,14 @@
 /* ── ImportMemoryDialog ──────────────────────────────────────────────────── */
 /* Bulk-import facts from another AI's memory export.                        */
 /*                                                                           */
-/* Supports three input shapes:                                              */
-/*   1. August's own Markdown export (`<store>-export.md`)                  */
-/*   2. Claude / generic Markdown bullet lists (`- key: value`)             */
-/*   3. JSON arrays of { key, value, ... } or Claude's { fact, details }    */
+/* Supports four input shapes:                                               */
+/*   1. August's own Markdown export — `---` frontmatter entries             */
+/*      (`name:` / `description:` / `type:` / `updated:` + body)             */
+/*   2. Claude memory dumps — plain sentence bullets (`- Prefers …`),        */
+/*      with headings kept as category hints                                 */
+/*   3. Generic Markdown bullet lists (`- key: value`, numbered items,       */
+/*      `- [Title](file) — hook` index rows)                                 */
+/*   4. JSON arrays of { key, value, ... } or Claude's { fact, details }     */
 /*                                                                           */
 /* The parsed entries are shown in a preview table; the user picks a         */
 /* provider label (e.g. "claude", "chatgpt") and a default category, then   */
@@ -76,45 +80,164 @@ function tryParseJsonEntries(text: string): Array<Record<string, unknown>> | nul
   return null;
 }
 
-function parseMarkdownEntries(text: string): ParsedEntry[] {
-  const out: ParsedEntry[] = [];
-  const lines = text.split(/\r?\n/);
-  let i = 0;
-  while (i < lines.length) {
-    const raw = lines[i];
-    const line = raw.trimEnd();
-    // Section heading like "## Sheesh (user)" or "# Work context" — used by
-    // August's own export to group entries. We attach the heading as a
-    // category hint for the rows that follow until the next heading.
-    const headingMatch = /^\s{0,3}#{1,4}\s+(.+?)\s*$/.exec(line);
-    if (headingMatch) {
-      const hint = slugifyKey(headingMatch[1]);
-      i += 1;
-      while (i < lines.length) {
-        const next = lines[i].trimEnd();
-        if (/^\s{0,3}#{1,4}\s+/.test(next)) break;
-        const parsed = parseBulletLine(next, hint, `md-${i}`);
-        if (parsed) out.push(parsed);
-        i += 1;
-      }
-      continue;
-    }
-    const parsed = parseBulletLine(line, '', `md-${i}`);
-    if (parsed) out.push(parsed);
-    i += 1;
-  }
-  return out;
+/** Strip lightweight Markdown emphasis so derived keys/values read clean. */
+function stripMd(s: string): string {
+  return s
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1$2')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .trim();
 }
 
+/** Derive a stable fact key from free text: first words, slugified. */
+function deriveKey(text: string): string {
+  const cleaned = stripMd(text).replace(/[.!?;:,\u2026]+\s*$/g, '');
+  return slugifyKey(cleaned.split(/\s+/).slice(0, 6).join(' '));
+}
+
+/** Horizontal rules, fence markers — never entries on their own. */
+const NOISE_LINE = /^\s*(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,}|```|~~~)\s*$/;
+
+/** `- [Title](target) — hook` memory-index bullet. */
+const LINK_BULLET = /^\[([^\]]+)\]\([^)]*\)\s*(?:[—–:]\s*(.+))?$/;
+
+/** Explicit `key: value` separator inside a bullet. */
+const KV_BULLET = /^(.+?)\s*[:—–]\s+(.+)$/;
+
 function parseBulletLine(line: string, categoryHint: string, uid: string): ParsedEntry | null {
-  if (!line) return null;
-  // "- key: value" / "- key — value" / "- key — multi-line value (next indented line)"
-  const m = /^\s*[-*•]\s+(.+?)\s*[:—\-]\s+(.+)$/.exec(line);
-  if (!m) return null;
-  const key = slugifyKey(m[1]);
-  const value = m[2].trim();
-  if (!key || !value) return null;
-  return { uid, key, value, category: normalizeCategory(categoryHint) };
+  if (!line || NOISE_LINE.test(line)) return null;
+  // Bullet markers: -, *, •, or numbered "1." / "1)".
+  const bullet = /^\s*(?:[-*•]|\d{1,2}[.)])\s+(.+)$/.exec(line);
+  if (!bullet) return null;
+  const text = stripMd(bullet[1]).trim();
+  if (!text) return null;
+
+  // "- [Title](file.md) — hook" (memory-index style): title → key, hook → value.
+  const link = LINK_BULLET.exec(text);
+  if (link) {
+    const key = slugifyKey(link[1]);
+    const value = (link[2] ?? '').trim() || link[1].trim();
+    if (!key || !value) return null;
+    return { uid, key, value, category: normalizeCategory(categoryHint) };
+  }
+
+  // "- key: value" / "- key — value". A digit right before the separator is
+  // a time or ratio ("at 3:00 pm"), not a label — keep those whole.
+  const kv = KV_BULLET.exec(text);
+  if (kv && !/\d$/.test(kv[1]) && kv[1].length <= 48) {
+    const key = slugifyKey(kv[1]);
+    const value = kv[2].trim();
+    if (key && value) return { uid, key, value, category: normalizeCategory(categoryHint) };
+  }
+
+  // Plain sentence bullet (Claude memory dumps): the whole text is the
+  // value; the key is derived from the first words.
+  const key = deriveKey(text);
+  if (!key) return null;
+  return { uid, key, value: text, category: normalizeCategory(categoryHint) };
+}
+
+/** Field names August's own export writes into a frontmatter block. */
+const FRONTMATTER_FIELDS = new Set([
+  'name', 'description', 'type', 'updated', 'key', 'category', 'source', 'fact', 'details',
+]);
+
+/** Parse a segment as a `---` frontmatter block: every non-empty line must
+ *  be a `field: value` pair and at least one field must be a known one, so a
+ *  list of plain "Key: value" sentences is never mistaken for frontmatter. */
+function parseFrontmatterFields(segment: string): Record<string, string> | null {
+  const lines = segment.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return null;
+  const fields: Record<string, string> = {};
+  for (const line of lines) {
+    const m = /^([\w-]+)\s*:\s*(.*)$/.exec(line);
+    if (!m || line.startsWith('-') || line.startsWith('*')) return null;
+    fields[m[1].toLowerCase()] = m[2].trim();
+  }
+  return Object.keys(fields).some((k) => FRONTMATTER_FIELDS.has(k)) ? fields : null;
+}
+
+/** Later duplicates overwrite earlier ones — matches save_fact's upsert on key. */
+function dedupeByKey(entries: ParsedEntry[]): ParsedEntry[] {
+  const seen = new Map<string, ParsedEntry>();
+  for (const e of entries) seen.set(e.key, e);
+  return [...seen.values()];
+}
+
+function parseMarkdownEntries(text: string): ParsedEntry[] {
+  const out: ParsedEntry[] = [];
+  // August's own export wraps each entry in a `---` frontmatter block and
+  // joins entries with `---`, so split on horizontal rules and classify
+  // each segment; everything else falls through to the bullet parser.
+  const segments = text.split(/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/m);
+  let pending: { fields: Record<string, string>; hint: string; uid: string } | null = null;
+  let bodyParts: string[] = [];
+  let headingHint = '';
+
+  const flushPending = () => {
+    if (!pending) return;
+    const f = pending.fields;
+    const value = (bodyParts.join('\n\n').trim()) || f.description || f.fact || '';
+    const key = slugifyKey(f.name || f.key || '') || deriveKey(value);
+    if (key && value.trim()) {
+      out.push({
+        uid: pending.uid,
+        key,
+        value: value.trim(),
+        category: normalizeCategory(f.category || f.type || pending.hint),
+      });
+    }
+    pending = null;
+    bodyParts = [];
+  };
+
+  segments.forEach((segment, si) => {
+    const fields = parseFrontmatterFields(segment);
+    if (fields) {
+      flushPending();
+      pending = { fields, hint: headingHint, uid: `md-fm-${si}` };
+      return;
+    }
+    if (pending) {
+      const body = segment.trim();
+      if (body) bodyParts.push(body);
+      return;
+    }
+    // No pending frontmatter: parse bullets line by line, with headings as
+    // category hints and indented lines as continuations of the last bullet.
+    let inFence = false;
+    let last: ParsedEntry | null = null;
+    const lines = segment.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i].trimEnd();
+      if (/^\s*(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        last = null;
+        continue;
+      }
+      if (inFence) continue;
+      const heading = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
+      if (heading) {
+        headingHint = heading[1];
+        last = null;
+        continue;
+      }
+      const entry = parseBulletLine(line, headingHint, `md-${si}-${i}`);
+      if (entry) {
+        out.push(entry);
+        last = entry;
+        continue;
+      }
+      if (last && /^\s{2,}\S/.test(line)) {
+        last.value += `\n${line.trim()}`;
+        continue;
+      }
+      last = null;
+    }
+  });
+  flushPending();
+  return dedupeByKey(out);
 }
 
 function normalizeCategory(raw: string): Category {
@@ -128,11 +251,14 @@ function normalizeCategory(raw: string): Category {
   return 'general';
 }
 
-function parseEntries(text: string, source: string): ParsedEntry[] {
+/** Parse a memory-export file (.md / .json) into preview entries.
+ *  Exported for tests — the dialog renders the result for review before
+ *  anything is persisted. */
+export function parseMemoryImportEntries(text: string, source: string): ParsedEntry[] {
   if (looksLikeJson(text)) {
     const arr = tryParseJsonEntries(text);
     if (arr) {
-      return arr
+      const parsed = arr
         .map((item, idx): ParsedEntry | null => {
           const keyRaw = (item.key ?? item.factKey ?? item.fact ?? item.title ?? '') as
             | string
@@ -161,6 +287,7 @@ function parseEntries(text: string, source: string): ParsedEntry[] {
           return { uid: `${source}-${idx}`, key, value: value.trim(), category: cat, confidence: conf };
         })
         .filter((x): x is ParsedEntry => x !== null);
+      return dedupeByKey(parsed);
     }
   }
   return parseMarkdownEntries(text);
@@ -213,7 +340,7 @@ export function ImportMemoryDialog({
       return;
     }
     const text = await file.text();
-    const parsed = parseEntries(text, file.name);
+    const parsed = parseMemoryImportEntries(text, file.name);
     if (parsed.length === 0) {
       setParseError(
         'No entries found. The file should be a Markdown bullet list, an August export, or a JSON array of {key, value}.',

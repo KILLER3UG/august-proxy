@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "autoclaw-productivity": {
+      "enabled": true,
+      "baseUrl": "http://127.0.0.1:19681/mcp"
+    },
+    "autoclaw-github": {
+      "enabled": false,
+      "baseUrl": "http://127.0.0.1:19681/github/mcp"
+    },
+    "notion": {
+      "enabled": false,
+      "baseUrl": "https://mcp.notion.com/mcp",
+      "auth": "oauth"
+    }
+  },
+  "imports": []
+}
