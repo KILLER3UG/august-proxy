@@ -7,7 +7,7 @@ import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
+import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, ensureTaskHomeWorkspace, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
 import { openShortcutsModal } from "@/store/shortcuts-modal";
@@ -66,6 +66,8 @@ export function ChatLayout() {
 
   // OS home directory — workspace for folderless "task" chats (dynamic per user).
   const { path: defaultWorkspacePath } = useDefaultWorkspace();
+  const defaultWorkspaceRef = useRef(defaultWorkspacePath);
+  defaultWorkspaceRef.current = defaultWorkspacePath;
 
   useEffect(() => {
     const shouldPersist =
@@ -104,10 +106,25 @@ export function ChatLayout() {
     // Collapse any sess_* + wb_* duplicate pairs left by older builds / races.
     healDuplicateSessions();
     startRealtimeBridge();
-    void reconcileSessionsFromBackend();
-    const t = setInterval(() => { void reconcileSessionsFromBackend(); }, 60_000);
+    // Backfill after the merge settles so freshly-restored backend sessions are
+    // included (reconcile always resolves; the backfill is an idempotent no-op
+    // once every unfiled chat carries the home workspace).
+    void reconcileSessionsFromBackend().then(() => {
+      ensureTaskHomeWorkspace(defaultWorkspaceRef.current);
+    });
+    const t = setInterval(() => {
+      void reconcileSessionsFromBackend().then(() => {
+        ensureTaskHomeWorkspace(defaultWorkspaceRef.current);
+      });
+    }, 60_000);
     return () => clearInterval(t);
   }, []);
+
+  // Backfill the "task" group default: existing unfiled chats point at the
+  // OS home directory once it resolves (created chats get it at creation).
+  useEffect(() => {
+    if (defaultWorkspacePath) ensureTaskHomeWorkspace(defaultWorkspacePath);
+  }, [defaultWorkspacePath]);
 
   // Sidebar "needs handoff" dots: one lightweight aggregate poll for the
   // whole session list (per-session workstream polls would fan out).
@@ -321,11 +338,12 @@ export function ChatLayout() {
 
   const createSessionInCurrentWorkspace = () => {
     const path = currentWorkspacePath || null;
-    if (path) {
+    if (path && path !== defaultWorkspacePath) {
       const { folder } = ensureFolderForWorkspacePath(path);
       return createSession(folder.id, defaultSessionTitle(), path);
     }
-    return createSession(null, defaultSessionTitle(), null);
+    // No project workspace selected → task chat anchored at the OS home dir.
+    return createSession(null, defaultSessionTitle(), defaultWorkspacePath ?? null);
   };
 
   // C4: remember the last active session so `/` restores it after a restart.
@@ -443,14 +461,24 @@ export function ChatLayout() {
     const activeFolder = activeFolderId
       ? folders.find((f) => f.id === activeFolderId)
       : null;
+
+    // A task chat's workspace is the OS home dir. Treat home as "no project"
+    // wherever it appears as a fallback, otherwise an active task chat would
+    // make the next New chat spawn a Projects folder for ~ and add ~ to the
+    // workspace list — both must never happen.
+    const isHomePath = (p: string | null | undefined): boolean =>
+      !!p && !!defaultWorkspacePath && p === defaultWorkspacePath;
+
     const projectPath =
       activeFolder?.workspacePath ??
-      active?.workspacePath ??
-      currentWorkspacePath ??
+      (isHomePath(active?.workspacePath) ? null : active?.workspacePath) ??
+      (isHomePath(currentWorkspacePath) ? null : currentWorkspacePath) ??
       null;
 
     let targetFolderId: string | null =
-      activeFolder?.workspacePath ? activeFolderId : null;
+      activeFolder?.workspacePath && !isHomePath(activeFolder.workspacePath)
+        ? activeFolderId
+        : null;
     if (!targetFolderId && projectPath) {
       targetFolderId = ensureFolderForWorkspacePath(projectPath).folder.id;
     }

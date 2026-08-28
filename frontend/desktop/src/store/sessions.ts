@@ -135,6 +135,31 @@ export function healDuplicateSessions(): void {
 }
 
 /**
+ * Backfill the "task" group's default workspace: point every unfiled,
+ * non-archived chat that still has no workspace at the OS home directory —
+ * like a fresh terminal opening at ~. Idempotent: only touches sessions whose
+ * workspacePath is null, so it is safe to re-run (boot + reconcile tick) and
+ * never overrides a project path a session already carries. Returns the number
+ * of sessions updated (0 = nothing to save).
+ */
+export function ensureTaskHomeWorkspace(homePath: string | null): number {
+  if (!homePath) return 0;
+  const sessions = useSessionsStore.getState().sessions;
+  let changed = 0;
+  const updated = sessions.map((s) => {
+    if (!s.isArchived && !s.folderId && s.workspacePath == null) {
+      changed += 1;
+      return { ...s, workspacePath: homePath };
+    }
+    return s;
+  });
+  if (!changed) return 0;
+  useSessionsStore.setState({ sessions: updated });
+  saveSessionsToStorage(updated);
+  return changed;
+}
+
+/**
  * Resolve the active session for a route id, matching either the UI id
  * (`sess_*`) or the workbench id (`wb_*`). Single source of truth for the
  * dual-id lookup that was previously copy-pasted across ChatThread /

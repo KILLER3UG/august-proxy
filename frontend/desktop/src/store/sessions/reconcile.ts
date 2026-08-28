@@ -65,6 +65,10 @@ export async function reconcileSessionsFromBackend(
           provider: backend.provider || local.provider,
           model: (backend.model) || local.model,
           workbenchProvider: backend.provider || local.workbenchProvider,
+          // Keep the local workspace; fall back to the backend's so a linked
+          // session never loses its true path (the task-home backfill would
+          // otherwise reassign it to ~).
+          workspacePath: local.workspacePath || backend.workspacePath || null,
         });
         continue;
       }
@@ -114,6 +118,9 @@ export async function reconcileSessionsFromBackend(
             provider: bs.provider || pending.provider,
             model: (bs.model) || pending.model,
             workbenchProvider: bs.provider || pending.workbenchProvider,
+            // Draft had no path of its own → inherit the backend session's so
+            // the row reflects where its turns actually run.
+            workspacePath: pending.workspacePath || bs.workspacePath || null,
           };
           continue;
         }
@@ -128,6 +135,9 @@ export async function reconcileSessionsFromBackend(
         model: (bs.model) || '',
         workbenchSessionId: bs.id,
         workbenchProvider: bs.provider || '',
+        // Carry the backend workspace across so a restored project session
+        // keeps its path (and the task-home backfill does not claim it).
+        workspacePath: bs.workspacePath || null,
       });
     }
 
