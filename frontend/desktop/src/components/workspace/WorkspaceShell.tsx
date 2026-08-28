@@ -8,16 +8,10 @@ import { type ReactNode, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ArrowUpCircle,
-  Activity,
-  Boxes,
-  Bot,
   BrainCircuit,
   Globe,
   LineChart,
-  Palette,
   Settings2,
-  ShieldCheck,
-  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -29,6 +23,7 @@ import { cn } from '@/lib/utils';
 import {
   SETTINGS_SECTIONS,
   SETTINGS_CATEGORIES,
+  RAIL_CHILDREN,
   railCanonicalId,
   getSection,
   sectionsForCategory,
@@ -43,16 +38,13 @@ export interface WorkspaceSectionMeta {
   category?: string;
 }
 
-/** Map of category id → lucide icon for the rail group header. 8 hubs. */
+/** Map of category id → lucide icon for the rail group header.
+ *  3 header groups (2026-08-28 restructure): Settings / Agent
+ *  Capabilities / Data & Statistics. */
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  system: Activity,
-  appearance: Palette,
-  models: Boxes,
-  memory: BrainCircuit,
-  automations: Bot,
-  tools: Wrench,
-  access: ShieldCheck,
-  insights: LineChart,
+  settings: Settings2,
+  capabilities: BrainCircuit,
+  data: LineChart,
 };
 
 interface WorkspaceShellProps {
@@ -74,7 +66,7 @@ export function WorkspaceShell({
   const { available: updateAvailable } = useAppUpdate();
 
   const railActive = railCanonicalId(active);
-  // Hub IA: active can be a section id OR a category id (e.g. /settings/general). Resolve category for highlight.
+  // Header IA: active can be a section id OR a category id (e.g. /settings/capabilities). Resolve category for highlight.
   const activeSection = getSection(active);
   const activeCategoryId = activeSection?.category ?? (SETTINGS_CATEGORIES.find((c) => c.id === active)?.id ?? null);
 
@@ -104,11 +96,12 @@ export function WorkspaceShell({
     });
   }, [sections]);
 
-  // Hub IA: no tier filter — all sections stay reachable, but the rail only
-  // shows the 5 category hubs when not searching. Search bypasses hubs and
-  // surfaces matching sections directly (grouped by category) so deep
-  // discovery still works. Hidden sections never appear as rail rows;
-  // they live inside their parent hub's stacked cards.
+  // Header IA: no tier filter — all sections stay reachable, but the rail
+  // only shows the 3 header groups when not searching. Search bypasses
+  // headers and surfaces matching sections directly (grouped by category)
+  // so deep discovery still works. Hidden sections never appear as rail
+  // rows; they live inside their parent's stacked cards or as tree
+  // grandchildren (RAIL_CHILDREN).
   const visibleForSearch = useMemo(() => decorated.filter((s) => s.tier !== 'hidden'), [decorated]);
 
   const filtered = useMemo(() => {
@@ -202,9 +195,6 @@ export function WorkspaceShell({
             )
           ) : (
             <div className="px-2 py-1 flex flex-col gap-0.5">
-              <p className="px-2 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/40">
-                Settings
-              </p>
               {SETTINGS_CATEGORIES.map((cat) => {
                 const Icon = CATEGORY_ICONS[cat.id] ?? Globe;
                 const isActive = activeCategoryId === cat.id;
@@ -227,25 +217,59 @@ export function WorkspaceShell({
                       <div className="ml-4 flex flex-col gap-px border-l border-sidebar-border/60 py-0.5 pl-1.5">
                         {children.map((s) => {
                           const childActive = active === s.id || railActive === s.id;
+                          // Second-level tree items (e.g. UI Designer under
+                          // Appearance) — visible while the parent row is
+                          // active so the nested page stays reachable.
+                          const grandchildren = (RAIL_CHILDREN[s.id] ?? [])
+                            .map((gid) => getSection(gid))
+                            .filter((g): g is SettingsSection => !!g);
                           return (
-                            <button
-                              key={s.id}
-                              type="button"
-                              onClick={() => {
-                                if (childActive && active === s.id) return;
-                                void navigate(`/settings/${s.id}`);
-                              }}
-                              data-testid={`settings-subnav-${s.id}`}
-                              aria-current={active === s.id ? 'page' : undefined}
-                              className={cn(
-                                'truncate rounded-md px-2 py-1 text-left text-[12px] transition-colors',
-                                active === s.id
-                                  ? 'bg-white/[0.07] font-medium text-foreground'
-                                  : 'text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground',
+                            <div key={s.id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (childActive && active === s.id) return;
+                                  void navigate(`/settings/${s.id}`);
+                                }}
+                                data-testid={`settings-subnav-${s.id}`}
+                                aria-current={active === s.id ? 'page' : undefined}
+                                className={cn(
+                                  'w-full truncate rounded-md px-2 py-1 text-left text-[12px] transition-colors',
+                                  active === s.id
+                                    ? 'bg-white/[0.07] font-medium text-foreground'
+                                    : 'text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground',
+                                )}
+                              >
+                                {s.label}
+                              </button>
+                              {childActive && grandchildren.length > 0 && (
+                                <div className="ml-3 flex flex-col gap-px border-l border-sidebar-border/40 py-0.5 pl-1.5">
+                                  {grandchildren.map((g) => {
+                                    const gActive = active === g.id;
+                                    return (
+                                      <button
+                                        key={g.id}
+                                        type="button"
+                                        onClick={() => {
+                                          if (gActive) return;
+                                          void navigate(`/settings/${g.id}`);
+                                        }}
+                                        data-testid={`settings-subnav-${g.id}`}
+                                        aria-current={gActive ? 'page' : undefined}
+                                        className={cn(
+                                          'w-full truncate rounded-md px-2 py-1 text-left text-[11.5px] transition-colors',
+                                          gActive
+                                            ? 'bg-white/[0.07] font-medium text-foreground'
+                                            : 'text-muted-foreground/70 hover:bg-white/[0.04] hover:text-foreground',
+                                        )}
+                                      >
+                                        {g.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               )}
-                            >
-                              {s.label}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>

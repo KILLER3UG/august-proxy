@@ -1,5 +1,6 @@
-/* ── WorkspaceShell — hub IA (no advanced toggle) ──────────────── */
-/* After v0.16.4 the rail shows 5 category hubs, not 32 section rows.
+/* ── WorkspaceShell — header IA (no advanced toggle) ──────────────── */
+/* Since the 2026-08-28 restructure the rail shows 3 header groups
+ * (Settings / Agent Capabilities / Data & Statistics), not section rows.
  * Search surfaces matching sections grouped by category. */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

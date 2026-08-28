@@ -410,40 +410,8 @@ export function ComposerToolbar({
       >
         {/* Tool reach (read-only / workspace / full access) lives in the
             WorkbenchModeSelector menu + tooltip — the standalone chip was
-            redundant "Workspace" text. Branch selector lives in the titlebar
-            (WorkspaceBranchChip), which shows for any open workspace. */}
-        <span className="inline-flex items-center gap-1">
-          <ContextRing
-            pct={pct}
-            estTokens={estTokens}
-            maxContext={maxContext}
-            modelName={modelForRequest?.name}
-            size={16}
-            breakdown={contextBreakdown}
-            serverTokens={sessionUsage}
-            promptCache={
-              livePromptCache
-                ? {
-                    hitTokens: livePromptCache.hitTokens,
-                    missTokens: livePromptCache.missTokens,
-                    hitRate: livePromptCache.hitRate,
-                  }
-                : sessionUsage
-                  ? {
-                      hitTokens: sessionUsage.cacheHitTokens ?? 0,
-                      missTokens: sessionUsage.cacheMissTokens ?? 0,
-                      hitRate: sessionUsage.cacheHitRate,
-                    }
-                  : null
-            }
-            onOpenCacheSettings={onEditModels}
-            onCompact={sessionId ? handleCompact : undefined}
-            compacting={compacting}
-          />
-          <span className="text-[10px] tabular-nums text-muted-foreground/60">{pct}%</span>
-        </span>
-        {/* Git branch selector lives in the titlebar (WorkspaceBranchChip) —
-            it shows for any open workspace, not just session-bound ones. */}
+            redundant "Workspace" text. The git branch selector lives in the
+            titlebar (WorkspaceBranchChip), which shows for any open workspace. */}
         <WorkbenchModeSelector
           selectedMode={workbenchMode}
           onChange={handleModeChange}
@@ -518,6 +486,37 @@ export function ComposerToolbar({
             })();
           }}
         />
+        {/* Context ring sits right after the model/effort dropdown. */}
+        <span className="inline-flex items-center gap-1">
+          <ContextRing
+            pct={pct}
+            estTokens={estTokens}
+            maxContext={maxContext}
+            modelName={modelForRequest?.name}
+            size={16}
+            breakdown={contextBreakdown}
+            serverTokens={sessionUsage}
+            promptCache={
+              livePromptCache
+                ? {
+                    hitTokens: livePromptCache.hitTokens,
+                    missTokens: livePromptCache.missTokens,
+                    hitRate: livePromptCache.hitRate,
+                  }
+                : sessionUsage
+                  ? {
+                      hitTokens: sessionUsage.cacheHitTokens ?? 0,
+                      missTokens: sessionUsage.cacheMissTokens ?? 0,
+                      hitRate: sessionUsage.cacheHitRate,
+                    }
+                  : null
+            }
+            onOpenCacheSettings={onEditModels}
+            onCompact={sessionId ? handleCompact : undefined}
+            compacting={compacting}
+          />
+          <span className="text-[10px] tabular-nums text-muted-foreground/60">{pct}%</span>
+        </span>
       </div>
       <SubagentSpawnModal
         sessionId={workbenchSession?.id}

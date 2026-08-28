@@ -49,8 +49,6 @@ export function ContextRing({
     promptCache?.hitRate ??
     (cacheTotal > 0 ? (promptCache?.hitTokens ?? 0) / cacheTotal : 0);
   const goalRate = 0.96;
-  const cacheDeltaPct = Math.round((cacheRate - goalRate) * 100);
-  const cacheColor = cacheRate >= 0.96 ? 'var(--dt-success)' : cacheRate >= 0.8 ? 'var(--dt-warning)' : 'var(--dt-danger)';
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
@@ -172,11 +170,12 @@ export function ContextRing({
           />
         </svg>
         {/* Average cache hit — always visible once the session has cached
-            input (the tooltip carries the full hit/total split). */}
+            input (the tooltip carries the full hit/total split). Shares the
+            ring's tone instead of its own color scale. */}
         {cacheTotal > 0 && (
           <span
             className="font-mono tabular-nums text-[10px] leading-none"
-            style={{ color: cacheColor }}
+            style={{ color: tone }}
             data-testid="context-cache-hit"
             title="Average prompt-cache hit rate"
           >
@@ -203,19 +202,6 @@ export function ContextRing({
               {formatTokens(estTokens)} / {formatTokens(maxContext)} tokens used ({clamped}%)
             </span>
           </div>
-          <div className="h-1 rounded-full overflow-hidden mb-2.5 relative" style={{ backgroundColor: 'var(--dt-muted)' }}>
-            <div
-              className="h-full rounded-full transition-all duration-300"
-              style={{ width: `${clamped}%`, backgroundColor: 'var(--dt-primary)' }}
-            />
-            <div className="absolute top-0 h-full w-px opacity-60" style={{ left: `${goalRate * 100}%`, backgroundColor: 'var(--dt-warning)', borderLeft: '1px dashed var(--dt-warning)' }} title="96% goal" />
-          </div>
-          {promptCache && (
-            <div className="mb-2 h-1 rounded-full overflow-hidden relative" style={{ backgroundColor: 'var(--dt-muted)' }}>
-              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(100, cacheRate * 100)}%`, backgroundColor: cacheColor }} />
-              <div className="absolute top-0 h-full w-px" style={{ left: `${goalRate * 100}%`, backgroundColor: 'var(--dt-warning)', opacity: 0.7 }} />
-            </div>
-          )}
           {rows && (
             <div className="space-y-0.5">
               {rows.map((r) => (
@@ -253,12 +239,9 @@ export function ContextRing({
                 <span className="font-medium" style={{ color: 'var(--dt-muted-foreground)' }}>Avg cache hit rate</span>
                 <span
                   className="font-mono tabular-nums"
-                  style={{ color: cacheColor }}
-                  title={cacheRate >= goalRate ? 'Goal met (96%)' : `${Math.abs(cacheDeltaPct)}% to 96% goal`}
+                  style={{ color: tone }}
                 >
                   {Math.round(cacheRate * 100)}%
-                  <span className="opacity-60"> / 96% goal</span>
-                  {cacheDeltaPct !== 0 ? ` (${cacheDeltaPct > 0 ? '+' : ''}${cacheDeltaPct}%)` : ''}
                 </span>
               </div>
               <div className="flex justify-between mt-0.5">

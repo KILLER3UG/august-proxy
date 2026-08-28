@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Pin,
-  MoreHorizontal,
+  EllipsisVertical,
   Folder as FolderIcon,
   ChevronRight,
   Edit3,
@@ -307,9 +307,6 @@ export function SessionRow({
               )}
             />
           )}
-          {pinned && (
-            <Pin className="size-2.5 text-sidebar-foreground/35 shrink-0" />
-          )}
           {session.workspacePath && (
             <FolderIcon className="size-3 text-sidebar-foreground/30 shrink-0" />
           )}
@@ -406,7 +403,7 @@ export function SessionRow({
         </AnimatePresence>
       </button>
 
-      {/* Pin and kebab — hover-revealed controls on the session row */}
+      {/* Kebab — hover-revealed controls on the session row */}
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
@@ -414,21 +411,6 @@ export function SessionRow({
           active || showMenu ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
       >
-        <motion.button
-          type="button"
-          onClick={onTogglePin}
-          whileHover={hoverScale.whileHover}
-          whileTap={hoverScale.whileTap}
-          className="p-0.5 hover:bg-white/[0.06] rounded"
-          aria-label={pinned ? "Unpin" : "Pin"}
-        >
-          <Pin
-            className={cn(
-              "size-2.5 text-sidebar-foreground/40 hover:text-sidebar-foreground/70",
-              pinned && "text-sidebar-foreground/60",
-            )}
-          />
-        </motion.button>
         <motion.button
           ref={kebabRef}
           type="button"
@@ -443,7 +425,7 @@ export function SessionRow({
           aria-expanded={showMenu}
           aria-haspopup="menu"
         >
-          <MoreHorizontal className="size-2.5 text-sidebar-foreground/40 hover:text-sidebar-foreground/70" />
+          <EllipsisVertical className="size-2.5 text-sidebar-foreground/40 hover:text-sidebar-foreground/70" />
         </motion.button>
       </div>
 

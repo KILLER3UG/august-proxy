@@ -25,21 +25,24 @@ import {
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
 import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 
-/** Hub IA: 8 category hubs (clean, related data per hub). Rail shows hubs, not 32 rows. */
+/** Header IA: 3 header groups (Settings / Agent Capabilities / Data &
+ *  Statistics, 2026-08-28 restructure). Rail shows headers, not 38 rows. */
 const HUB_CATEGORY_IDS = new Set(SETTINGS_CATEGORIES.map((c) => c.id));
 const LEGACY_HUB_MAP: Record<string, string> = {
-  general: 'system',
-  intelligence: 'models',
-  tools: 'tools',
-  activity: 'insights',
-  security: 'access',
+  system: 'settings',
+  intelligence: 'capabilities',
+  insights: 'data',
+  tools: 'tools-connections',
+  access: 'agent-sandbox',
+  security: 'agent-sandbox',
 };
 function isHubId(id: string | null | undefined): boolean {
   return !!id && HUB_CATEGORY_IDS.has(id);
 }
 
-/** The default section when no :section param is present. Hub IA: System hub first. */
-const DEFAULT_SECTION_ID = 'system';
+/** The default section when no :section param is present. General is the
+ *  landing page (profile + preferences), mirroring the reference design. */
+const DEFAULT_SECTION_ID = 'general';
 
 /** While first-run setup is incomplete (no provider + workspace yet),
  *  bare /settings lands on the guided AI Setup wizard instead. */
@@ -279,8 +282,8 @@ const ModelLiveWrapper = lazySection(
   'LiveSettingsTab',
 );
 const AccountWrapper = lazySection(() => import('./AccountSection'), 'AccountSection');
-const GeneralWrapper = lazySection(() => import('@/sections/workspace/WorkspaceGeneralSection'), 'WorkspaceGeneralSection');
-const ProfilePreferencesWrapper = lazySection(() => import('./ProfilePreferencesSection'), 'ProfilePreferencesSection');
+const GeneralWrapper = lazySection(() => import('./GeneralSection'), 'GeneralSection');
+const AppearanceWrapper = lazySection(() => import('./AppearanceSection'), 'AppearanceSection');
 const SystemHealthWrapper = lazySection(() => import('./SystemHealthSection'), 'SystemHealthSection');
 const ToolsConnectionsWrapper = lazySection(() => import('./IntegrationsSection'), 'IntegrationsSection');
 const SkillsWrapper = lazySection(() => import('./SkillsSection'), 'SkillsSection');
@@ -309,8 +312,9 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'model-live': ModelLiveWrapper,
   'model-quotas': ModelQuotasWrapper,
   account: AccountWrapper,
-  'profile-preferences': ProfilePreferencesWrapper,
-  'ui-designer': ProfilePreferencesWrapper,
+  general: GeneralWrapper,
+  appearance: AppearanceWrapper,
+  'ui-designer': AppearanceWrapper,
   'system-health': SystemHealthWrapper,
   'tools-connections': ToolsConnectionsWrapper,
   skills: SkillsWrapper,

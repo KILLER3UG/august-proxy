@@ -10,7 +10,6 @@ import {
   type ToolProgressMap,
 } from './AssistantBlockTimeline';
 import { AssistantMessageActions } from './AssistantMessageActions';
-import { formatTokenCount, formatTurnDuration } from './token-display';
 
 type DisplayBlock = MessageBlock;
 
@@ -158,20 +157,6 @@ export function AssistantMessageContent({
             data-testid="fallback-chip"
           >
             answered via {message.usedFallback}
-          </div>
-        ) : null}
-        {/* Per-turn stats footer: billed tokens + generation time (from the
-            done payload). Hidden while streaming so it appears settled. */}
-        {!(isLast && streaming) &&
-        message.usage &&
-        (message.usage.inputTokens > 0 || message.usage.outputTokens > 0) ? (
-          <div
-            className="text-[10px] tabular-nums text-muted-foreground/50"
-            data-testid="turn-stats-footer"
-          >
-            {formatTokenCount(message.usage.inputTokens)} in ·{' '}
-            {formatTokenCount(message.usage.outputTokens)} out
-            {message.usage.durationMs ? ` · ${formatTurnDuration(message.usage.durationMs)}` : ''}
           </div>
         ) : null}
       </div>

@@ -38,6 +38,8 @@ import { friendlyError } from '@/lib/error-copy';
 import { pathBasename } from '@/lib/tool-labels';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { playReceiveChime } from '@/lib/chat-chime';
+import { OsNotifyService } from '@/lib/os-notify';
+import { usePreferencesStore } from '@/lib/preferences';
 import { getOrInitSessionStreamState } from './stream/session-stream-store';
 import { isNonEmptyPlan, normalizeWorkbenchSession } from '@/lib/workbench-plan';
 import { buildCompactionNoticeMessage } from '@/sections/chat/message/CompactionNoticeCard';
@@ -293,6 +295,17 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     }
     // Receive chime when the reply finishes (matches gradient-chat-input).
     if (status === 'done') playReceiveChime();
+    // OS notification when the reply finishes (General → Notifications →
+    // Response completions). Only fires while the window is unfocused —
+    // no noise while you're already watching the stream.
+    if (status === 'done' && usePreferencesStore.getState().notifyResponseComplete) {
+      if (typeof document !== 'undefined' && !document.hasFocus()) {
+        void OsNotifyService.notifyDirect('August', {
+          body: 'Response complete.',
+          tag: 'august-response-complete',
+        });
+      }
+    }
     finishTurn(turn, status);
 
   };

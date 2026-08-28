@@ -1,18 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
-  Volume2,
   Minus,
   Square,
   X,
   PanelLeftClose,
   Minimize2,
-  MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
-import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
-import { NotificationBell } from "./NotificationBell";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import { WorkspaceBranchChip } from "@/components/workspace/WorkspaceBranchChip";
 import type { Session } from "@/store/sessions";
@@ -35,28 +31,7 @@ export function ChatTitlebar({
   onSelectRightDrawerSection,
   workersBadge = 0,
 }: ChatTitlebarProps) {
-  const [speaking, setSpeaking] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
-  const [overflowOpen, setOverflowOpen] = useState(false);
-  const overflowRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!overflowOpen) return;
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (overflowRef.current && overflowRef.current.contains(target)) return;
-      setOverflowOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOverflowOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [overflowOpen]);
 
   // ── Window controls (Tauri only) ──
   useEffect(() => {
@@ -94,26 +69,6 @@ export function ChatTitlebar({
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().close();
     } catch { /* silent */ }
-  };
-
-  const speakLatest = () => {
-    if (speaking) {
-      window.speechSynthesis.cancel();
-      setSpeaking(false);
-      return;
-    }
-    const lastMessage = sessionStorage.getItem("august_last_assistant_message");
-    if (!lastMessage) {
-      toast.info("No message to read");
-      return;
-    }
-    const utterance = new SpeechSynthesisUtterance(lastMessage);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-    setSpeaking(true);
   };
 
   return (
@@ -161,55 +116,6 @@ export function ChatTitlebar({
           onSelect={onSelectRightDrawerSection}
           workersBadge={workersBadge}
         />
-
-        <div ref={overflowRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setOverflowOpen((v) => !v)}
-            className={cn(
-              "p-1.5 hover:bg-accent rounded-md transition",
-              overflowOpen
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground/60 hover:text-foreground",
-            )}
-            title="More"
-            aria-expanded={overflowOpen}
-            aria-haspopup="menu"
-          >
-            <MoreHorizontal className="size-3.5" />
-          </button>
-
-          {overflowOpen && (
-            <div
-              role="menu"
-              className="absolute top-full mt-1 right-0 z-50 min-w-[200px] rounded-lg border border-border/50 bg-popover shadow-xl py-1 origin-top-right"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  speakLatest();
-                  setOverflowOpen(false);
-                }}
-                className={cn(
-                  "w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition",
-                  speaking
-                    ? "text-primary"
-                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-                )}
-              >
-                <Volume2 className={cn("size-3.5", speaking && "animate-pulse")} />
-                {speaking ? "Stop reading" : "Read aloud"}
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="h-3.5 w-px bg-border/30 mx-1" />
-
-        <NotificationBell />
-
-        <div className="h-3.5 w-px bg-border/30 mx-1" />
 
         {/* Windows-style title bar buttons */}
         <div className="flex items-stretch">

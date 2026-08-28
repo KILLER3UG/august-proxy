@@ -2,8 +2,9 @@
 /* Drives the left rail, global search, route resolution, and the
  * parallel chat-side workspace panel.
  *
- * 8 category hubs, 37 sections. Hubs are the rail; each hub stacks its
- * related sections as inner tabs (see `docs/settings-audit.md`).
+ * 3 header groups (Settings / Agent Capabilities / Data & Statistics),
+ * 38 sections. The headers are the rail; each header expands its related
+ * sections as an inline tree (see `docs/settings-audit.md`).
  *
  * See `docs/settings-audit.md` for the rationale + section movement
  * history.
@@ -27,14 +28,12 @@ import {
   BookOpen,
   Bot,
   BrainCircuit,
-  StickyNote,
   FolderOpen,
   FileText,
   Code2,
   FolderLock,
   GitBranch,
   Globe,
-  History,
   Kanban,
   Lightbulb,
   LineChart,
@@ -48,6 +47,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Palette,
+  Paintbrush,
   UserRound,
   ArrowUpCircle,
   Bell,
@@ -55,13 +55,11 @@ import {
   Wand2,
   Database,
   Stethoscope,
-  Server,
   ArrowRightLeft,
   Layers,
   AudioLines,
   Coins,
   Route,
-  ScrollText,
   Users,
 } from 'lucide-react';
 
@@ -99,50 +97,26 @@ export interface SettingsCategory {
 }
 
 /**
- * Top-level categories shown as hubs in the sidebar. 8 hubs, not 32 rows —
- * each hub stacks its related sections as pill tabs (no long scroll).
- * Mirrors the reference provider list: hub label = related data group.
+ * Top-level header groups shown in the sidebar rail (2026-08-28
+ * restructure: the previous 8 hubs were folded into three headers per
+ * the UI enhancement request). Headers group related sections; the rail
+ * expands each header's sections as an inline tree.
  */
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
-    id: 'system',
-    label: 'System',
-    description: 'Health, updates, and data retention.',
+    id: 'settings',
+    label: 'Settings',
+    description: 'General, system status, account, and data privacy.',
   },
   {
-    id: 'appearance',
-    label: 'Appearance',
-    description: 'Theme, layout, and personalization.',
+    id: 'capabilities',
+    label: 'Agent Capabilities',
+    description: 'Models, memory, skills, tools, automations, and access.',
   },
   {
-    id: 'models',
-    label: 'Models',
-    description: 'Providers, catalog, and quotas.',
-  },
-  {
-    id: 'memory',
-    label: 'Memory',
-    description: 'What August remembers — and the data it holds on this device.',
-  },
-  {
-    id: 'automations',
-    label: 'Automations',
-    description: 'Agents, board, and recurring tasks.',
-  },
-  {
-    id: 'tools',
-    label: 'Tools',
-    description: 'Integrations, MCP, and computer use.',
-  },
-  {
-    id: 'access',
-    label: 'Access',
-    description: 'Filesystem, shell, and external API.',
-  },
-  {
-    id: 'insights',
-    label: 'Insights',
-    description: 'Activity, usage, and diagnostics.',
+    id: 'data',
+    label: 'Data & Statistics',
+    description: 'Usage, activity, and diagnostics.',
   },
 ] as const;
 
@@ -155,15 +129,48 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
  *
  * `tier: 'basic'` items are shown by default. `tier: 'advanced'` items
  * are hidden until the user enables the "Show advanced" toggle.
+ *
+ * Array order = rail order within each header group.
  */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
-  /* ── General ───────────────────────────────────────────────────── */
+  /* ── Settings header ───────────────────────────────────────────── */
+  {
+    id: 'general',
+    label: 'General',
+    description:
+      'Profile, preferences, notifications, text size, experience presets, shortcuts, and onboarding.',
+    icon: SlidersHorizontal,
+    category: 'settings',
+    tier: 'basic',
+    keywords: [
+      'general',
+      'profile',
+      'preferences',
+      'notifications',
+      'text size',
+      'presets',
+      'onboarding',
+      'tour',
+      'shortcuts',
+      'hotkeys',
+      'language',
+      'chat font',
+      'serif',
+      'reduce motion',
+      'call you',
+      'instructions for august',
+    ],
+    // Renamed from the old profile-preferences section (2026-08-28); the
+    // old id resolves here forever. 'appearance'/'theme' vocabulary moved
+    // to the dedicated appearance section.
+    legacyAliases: ['profile-preferences'],
+  },
   {
     id: 'system-health',
     label: 'System Status',
     description: 'Gateway status, uptime, RAM, endpoint URLs, and connect-an-app URLs.',
     icon: Activity,
-    category: 'system',
+    category: 'settings',
     tier: 'basic',
     // Note: 'gateway' is owned by api-access (the action surface for
     // opening/closing it). 'connect' is owned by api-access.
@@ -177,78 +184,153 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Account',
     description: 'Local August profiles on this device — create, switch, and edit your account.',
     icon: UserRound,
-    category: 'system',
+    category: 'settings',
     tier: 'basic',
     keywords: ['account', 'login', 'sign up', 'display name', 'avatar', 'sign out'],
     legacyAliases: ['accounts', 'user'],
-  },
-  {
-    id: 'ai-setup',
-    label: 'AI Setup',
-    description: 'Guided first-run wizard: connect a provider, test it, pick models, and choose a safety mode.',
-    icon: Wand2,
-    category: 'models',
-    tier: 'hidden',
-    // Hidden from Models hub per user request — still reachable via legacy alias / deep link.
-    keywords: ['setup', 'wizard', 'getting started', 'first run', 'beginner', 'welcome'],
-  },
-  {
-    id: 'profile-preferences',
-    label: 'Appearance & Behavior',
-    description: 'Theme, appearance, text size, presets, keyboard shortcuts, and onboarding.',
-    icon: SlidersHorizontal,
-    category: 'appearance',
-    tier: 'basic',
-    keywords: ['profile', 'theme', 'appearance', 'shortcuts', 'hotkeys', 'presets', 'onboarding', 'tour', 'language'],
-    legacyAliases: ['appearance', 'theme', 'shortcuts', 'hotkeys'],
-  },
-  {
-    id: 'ui-designer',
-    label: 'UI Designer',
-    description: 'Customize colors for background, chat input, sidebar, settings, and brand — live preview + Apply.',
-    icon: Palette,
-    category: 'appearance',
-    tier: 'hidden',
-    keywords: ['ui designer', 'customize', 'colors', 'paint', 'branding', 'sidebar color', 'chat input color', 'preview'],
-    legacyAliases: ['ui-customization', 'theme-editor', 'design-ui'],
-  },
-  {
-    id: 'conversations-history',
-    label: 'Conversations',
-    description: 'Archived chat sessions and per-conversation history.',
-    icon: MessagesSquare,
-    category: 'insights',
-    tier: 'advanced',
-    keywords: ['conversation', 'history', 'archive', 'session', 'chat'],
-    legacyAliases: ['archive', 'conversations', 'chat-history', 'session-history'],
-  },
-  {
-    id: 'app-updates',
-    label: 'Updates',
-    description: 'Check for desktop app releases from GitHub and install updates.',
-    icon: ArrowUpCircle,
-    category: 'system',
-    tier: 'basic',
-    keywords: ['update', 'release', 'version', 'download app', 'upgrade', 'changelog'],
-    legacyAliases: ['updates', 'updater', 'version', 'about'],
   },
   {
     id: 'privacy',
     label: 'Data & Privacy',
     description: 'What August stores on this device — export, purge memories, clear logs, and delete usage.',
     icon: Database,
-    category: 'system',
+    category: 'settings',
     tier: 'basic',
     // Note: 'delete' is owned by skills; 'history' by conversations-history.
     // This section is reached via its own vocabulary.
     keywords: ['privacy', 'data', 'export', 'retention', 'purge', 'wipe', 'cleanup', 'clear data', 'erase'],
   },
   {
+    id: 'app-updates',
+    label: 'Updates',
+    description: 'Check for desktop app releases from GitHub and install updates.',
+    icon: ArrowUpCircle,
+    category: 'settings',
+    tier: 'basic',
+    keywords: ['update', 'release', 'version', 'download app', 'upgrade', 'changelog'],
+    legacyAliases: ['updates', 'updater', 'version', 'about'],
+  },
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    description: 'Theme, light/dark mode, and the UI color designer.',
+    icon: Paintbrush,
+    category: 'settings',
+    tier: 'basic',
+    keywords: ['appearance', 'theme', 'dark mode', 'light mode', 'color scheme'],
+    // 'appearance' used to resolve to profile-preferences (now General);
+    // since 2026-08-28 it is its own section hosting the UI Designer.
+    legacyAliases: ['theme'],
+  },
+  {
+    id: 'ui-designer',
+    label: 'UI Designer',
+    description: 'Customize colors for background, chat input, sidebar, settings, and brand — live preview + Apply.',
+    icon: Palette,
+    category: 'settings',
+    tier: 'hidden',
+    keywords: ['ui designer', 'customize', 'colors', 'paint', 'branding', 'sidebar color', 'chat input color', 'preview'],
+    legacyAliases: ['ui-customization', 'theme-editor', 'design-ui'],
+  },
+  {
+    id: 'ai-setup',
+    label: 'AI Setup',
+    description: 'Guided first-run wizard: connect a provider, test it, pick models, and choose a safety mode.',
+    icon: Wand2,
+    category: 'settings',
+    tier: 'hidden',
+    // Hidden from the rail per user request — still reachable via legacy
+    // alias / deep link, and as the first-run landing section.
+    keywords: ['setup', 'wizard', 'getting started', 'first run', 'beginner', 'welcome'],
+  },
+
+  /* ── Agent Capabilities header ─────────────────────────────────── */
+  {
+    id: 'model-providers',
+    label: 'Models & Providers',
+    description: 'Provider cards, model catalog, aliases, quotas, and per-model usage + cost.',
+    icon: Boxes,
+    category: 'capabilities',
+    tier: 'basic',
+    keywords: ['provider', 'api key', 'base url', 'api format', 'model discovery', 'usage', 'cost', 'reasoning', 'effort', 'temperature'],
+    legacyAliases: ['models', 'providers'],
+  },
+  {
+    id: 'model-catalog',
+    label: 'All Models',
+    description: 'Every discovered model across providers — context windows, capabilities, and per-model editing.',
+    icon: Layers,
+    category: 'capabilities',
+    tier: 'basic',
+    keywords: ['all models', 'discover', 'context window', 'capability'],
+    legacyAliases: ['all-models'],
+  },
+  {
+    id: 'model-fleet',
+    label: 'Model Fleet',
+    description: 'Cognitive role assignments — cortex, cerebellum, hippocampus, and prefrontal models.',
+    icon: Users,
+    category: 'capabilities',
+    tier: 'advanced',
+    keywords: ['fleet', 'cortex', 'cerebellum', 'hippocampus', 'prefrontal'],
+    legacyAliases: ['fleet-tab'],
+  },
+  {
+    id: 'model-reflection',
+    label: 'Background Review & Reflection',
+    description: 'Background models for titles, memory extraction, and self-reflection critics.',
+    icon: BrainCircuit,
+    category: 'capabilities',
+    tier: 'advanced',
+    keywords: ['background', 'reflection', 'critic'],
+    legacyAliases: ['reflection-tab'],
+  },
+  {
+    id: 'model-live',
+    label: 'Live (STT/TTS)',
+    description: 'Speech-to-text and text-to-speech engines for live voice sessions.',
+    icon: AudioLines,
+    category: 'capabilities',
+    tier: 'basic',
+    keywords: ['stt', 'tts', 'speech', 'voice', 'microphone'],
+    legacyAliases: ['live-tab'],
+  },
+  {
+    id: 'model-aliases',
+    label: 'Aliases',
+    description: 'User-defined model aliases routed to a real provider + model pair.',
+    icon: ArrowRightLeft,
+    category: 'capabilities',
+    tier: 'basic',
+    keywords: ['aliases', 'alias routing', 'rename model'],
+    legacyAliases: ['aliases-tab'],
+  },
+  {
+    id: 'model-fallback',
+    label: 'Fallback',
+    description: 'Automatic failover chains when a provider errors or rate-limits mid-turn.',
+    icon: Route,
+    category: 'capabilities',
+    tier: 'basic',
+    keywords: ['fallback', 'failover', 'chain'],
+    legacyAliases: ['fallback-tab'],
+  },
+  {
+    id: 'model-quotas',
+    label: 'Quotas',
+    description: 'Daily token limits and per-provider spend ceilings.',
+    icon: Coins,
+    category: 'capabilities',
+    tier: 'basic',
+    keywords: ['token limit', 'spend ceiling', 'daily limit'],
+    legacyAliases: ['quotas-tab'],
+  },
+  {
     id: 'memory-knowledge',
     label: 'Memories',
     description: 'Auto-captured memories and key-value notes August has learned.',
     icon: Network,
-    category: 'memory',
+    category: 'capabilities',
     tier: 'basic',
     keywords: ['memory', 'memories', 'stored', 'remembers', 'remembered', 'recall', 'brain', 'auto-memory'],
     legacyAliases: [
@@ -269,7 +351,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Facts & Rules',
     description: 'Structured facts August extracted and behavioral rules it learned.',
     icon: Lightbulb,
-    category: 'memory',
+    category: 'capabilities',
     tier: 'basic',
     keywords: ['facts', 'heuristics', 'rules', 'learned', 'semantic', 'knowledge'],
     legacyAliases: ['semantic-facts'],
@@ -279,97 +361,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   // sessions/messages/exam stores duplicate the sidebar + chat + exam UIs.
   // Their section ids are reserved as no-op legacy aliases so the rail
   // doesn't crash on a stale deep link.
-
-  /* ── Intelligence ────────────────────────────────────────────── */
   {
-    id: 'model-providers',
-    label: 'Models & Providers',
-    description: 'Provider cards, model catalog, aliases, quotas, and per-model usage + cost.',
-    icon: Boxes,
-    category: 'models',
+    id: 'skills',
+    label: 'Skills',
+    description: 'Create, edit, and manage agent skills and their lifecycle (active / stale / archived).',
+    icon: BookOpen,
+    category: 'capabilities',
     tier: 'basic',
-    keywords: ['provider', 'api key', 'base url', 'api format', 'model discovery', 'usage', 'cost', 'reasoning', 'effort', 'temperature'],
-    legacyAliases: ['models', 'providers'],
-  },
-  {
-    id: 'model-catalog',
-    label: 'All Models',
-    description: 'Every discovered model across providers — context windows, capabilities, and per-model editing.',
-    icon: Layers,
-    category: 'models',
-    tier: 'basic',
-    keywords: ['all models', 'discover', 'context window', 'capability'],
-    legacyAliases: ['all-models'],
-  },
-  {
-    id: 'model-aliases',
-    label: 'Aliases',
-    description: 'User-defined model aliases routed to a real provider + model pair.',
-    icon: ArrowRightLeft,
-    category: 'models',
-    tier: 'basic',
-    keywords: ['aliases', 'alias routing', 'rename model'],
-    legacyAliases: ['aliases-tab'],
-  },
-  {
-    id: 'model-fallback',
-    label: 'Fallback',
-    description: 'Automatic failover chains when a provider errors or rate-limits mid-turn.',
-    icon: Route,
-    category: 'models',
-    tier: 'basic',
-    keywords: ['fallback', 'failover', 'chain'],
-    legacyAliases: ['fallback-tab'],
-  },
-  {
-    id: 'model-reflection',
-    label: 'Background & Reflection',
-    description: 'Background models for titles, memory extraction, and self-reflection critics.',
-    icon: BrainCircuit,
-    category: 'models',
-    tier: 'advanced',
-    keywords: ['background', 'reflection', 'critic'],
-    legacyAliases: ['reflection-tab'],
-  },
-  {
-    id: 'model-fleet',
-    label: 'Model Fleet',
-    description: 'Cognitive role assignments — cortex, cerebellum, hippocampus, and prefrontal models.',
-    icon: Users,
-    category: 'models',
-    tier: 'advanced',
-    keywords: ['fleet', 'cortex', 'cerebellum', 'hippocampus', 'prefrontal'],
-    legacyAliases: ['fleet-tab'],
-  },
-  {
-    id: 'model-live',
-    label: 'Live (STT/TTS)',
-    description: 'Speech-to-text and text-to-speech engines for live voice sessions.',
-    icon: AudioLines,
-    category: 'models',
-    tier: 'basic',
-    keywords: ['stt', 'tts', 'speech', 'voice', 'microphone'],
-    legacyAliases: ['live-tab'],
-  },
-  {
-    id: 'model-quotas',
-    label: 'Quotas',
-    description: 'Daily token limits and per-provider spend ceilings.',
-    icon: Coins,
-    category: 'models',
-    tier: 'basic',
-    keywords: ['token limit', 'spend ceiling', 'daily limit'],
-    legacyAliases: ['quotas-tab'],
-  },
-  {
-    id: 'recurring-tasks',
-    label: 'Reminders',
-    description:
-      'Recurring-task daemon — time- and workspace-based reminders fired into the notification bell.',
-    icon: Bell,
-    category: 'automations',
-    tier: 'basic',
-    keywords: ['reminder', 'reminders', 'recurring', 'task', 'every', 'when i open', 'daemon'],
+    keywords: ['skill', 'author', 'create', 'edit', 'manage', 'curator', 'lifecycle', 'stale', 'pin'],
+    legacyAliases: ['skills-authoring', 'skill-curator'],
   },
   {
     id: 'prompt-templates',
@@ -377,30 +377,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       'Reusable prompt templates with variable placeholders for common tasks.',
     icon: FileText,
-    category: 'tools',
+    category: 'capabilities',
     tier: 'advanced',
     // 'prompt' is owned by memory-knowledge — keep this section's keywords
     // distinct so the registry audit (unique ownership) stays green.
     keywords: ['templates', 'template', 'reusable', 'variable', 'shortcut'],
-  },
-
-  /* ── Tools & Skills ──────────────────────────────────────────── */
-  {
-    id: 'skills',
-    label: 'Skills',
-    description: 'Create, edit, and manage agent skills and their lifecycle (active / stale / archived).',
-    icon: BookOpen,
-    category: 'tools',
-    tier: 'basic',
-    keywords: ['skill', 'author', 'create', 'edit', 'manage', 'curator', 'lifecycle', 'stale', 'pin'],
-    legacyAliases: ['skills-authoring', 'skill-curator'],
   },
   {
     id: 'tools-connections',
     label: 'Integrations',
     description: 'Add Gmail, Calendar, Drive, GitHub, Slack, and MCP extensions for August.',
     icon: Plug,
-    category: 'tools',
+    category: 'capabilities',
     tier: 'basic',
     keywords: [
       'mcp',
@@ -424,38 +412,38 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Desktop Automation',
     description: 'Desktop automation with SOM overlay, cross-platform support, and safe approval workflows.',
     icon: Monitor,
-    category: 'tools',
+    category: 'capabilities',
     tier: 'advanced',
     // Note: 'automation' is owned by agents-automation (cron/automations).
     // Computer Use is reached via 'desktop', 'som', or 'screenshot'.
     keywords: ['computer', 'use', 'desktop', 'som', 'overlay', 'screenshot', 'click', 'type'],
   },
   {
+    id: 'recurring-tasks',
+    label: 'Reminders',
+    description:
+      'Recurring-task daemon — time- and workspace-based reminders fired into the notification surface.',
+    icon: Bell,
+    category: 'capabilities',
+    tier: 'basic',
+    keywords: ['reminder', 'reminders', 'recurring', 'task', 'every', 'when i open', 'daemon'],
+  },
+  {
     id: 'agents-automation',
     label: 'Automations',
     description: 'Agent registry, permissions, automations, and approvals.',
     icon: Bot,
-    category: 'automations',
+    category: 'capabilities',
     tier: 'advanced',
     keywords: ['agent', 'automation', 'permission', 'scope', 'approval', 'terminal', 'schedule', 'job'],
     legacyAliases: ['agents', 'agent-permissions', 'automations', 'terminal'],
-  },
-  {
-    id: 'tool-grants',
-    label: 'Path Permissions',
-    description: 'Always-here tool grants by workspace path — list, explain, revoke.',
-    icon: FolderLock,
-    category: 'access',
-    tier: 'hidden',
-    keywords: ['grant', 'always', 'path-permission', 'revoke', 'allowlist-path'],
-    legacyAliases: ['always-grants', 'path-grants'],
   },
   {
     id: 'agent-board',
     label: 'Agent Board',
     description: 'Durable kanban board for multi-agent work across sessions.',
     icon: Kanban,
-    category: 'automations',
+    category: 'capabilities',
     tier: 'hidden',
     keywords: ['kanban', 'board', 'multi-agent', 'cards'],
     legacyAliases: ['kanban'],
@@ -466,110 +454,37 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       'Sandbox reach, always-here path grants, and the safe Python cell — one access page.',
     icon: Shield,
-    category: 'access',
+    category: 'capabilities',
     tier: 'basic',
     keywords: ['sandbox', 'seatbelt', 'landlock', 'appcontainer', 'isolation', 'workspace-write', 'reach'],
     legacyAliases: ['codex-sandbox', 'agent-sandbox'],
+  },
+  {
+    id: 'tool-grants',
+    label: 'Path Permissions',
+    description: 'Always-here tool grants by workspace path — list, explain, revoke.',
+    icon: FolderLock,
+    category: 'capabilities',
+    tier: 'hidden',
+    keywords: ['grant', 'always', 'path-permission', 'revoke', 'allowlist-path'],
+    legacyAliases: ['always-grants', 'path-grants'],
   },
   {
     id: 'python-sandbox',
     label: 'Python Sandbox',
     description: 'Safe Python cell with no network, banned imports, and timeout.',
     icon: Code2,
-    category: 'access',
+    category: 'capabilities',
     tier: 'hidden',
     keywords: ['python', 'cell', 'exec'],
     legacyAliases: ['sandbox'],
   },
-
-  /* ── Activity ────────────────────────────────────────────────── */
-  {
-    id: 'observability',
-    label: 'Activity Log',
-    description: 'Audit log, rollback history, post-observation screenshots, traffic, and logs.',
-    icon: LineChart,
-    category: 'insights',
-    tier: 'advanced',
-    // Note: 'screenshot' is owned by computer-use. 'history' is owned
-    // by conversations-history. 'security' is owned by computer-access.
-    // Post-observation screenshots are reached via 'observation' here.
-    keywords: ['audit', 'rollback', 'observation', 'compliance', 'undo', 'traffic', 'log', 'activity'],
-    legacyAliases: ['traffic-activity', 'overview', 'logs', 'traffic', 'activity', 'audit', 'rollback', 'observations'],
-  },
-
-  {
-    id: 'usage',
-    label: 'Usage & Limits',
-    description: 'Token usage, model cost, quotas, and per-model consumption.',
-    icon: Gauge,
-    category: 'insights',
-    tier: 'basic',
-    keywords: ['limits', 'spend', 'quotas', 'tokens', 'usage-limits'],
-    legacyAliases: ['usage-limits'],
-  },
-
-  {
-    id: 'harness-improve',
-    label: 'Harness Improvements',
-    description: 'Improvement proposals the model filed against its own harness — review, approve, or reject.',
-    icon: HeartPulse,
-    category: 'insights',
-    tier: 'basic',
-    keywords: ['harness', 'proposal', 'self-improvement', 'introspect', 'review queue', 'approve'],
-    legacyAliases: ['reliability', 'harness-proposals'],
-  },
-
-  {
-    id: 'conversation-inspector',
-    label: 'Request Inspector',
-    description: 'Readable transcript, raw request/response bodies, and assistant thinking.',
-    icon: SearchIcon,
-    category: 'insights',
-    tier: 'advanced',
-    // Note: 'debug' is owned by developer-console. Conversation Inspector
-    // is reached via 'inspector', 'request', 'response', 'thinking'.
-    keywords: ['inspector', 'request', 'response', 'body', 'thinking', 'trace', 'finish reason', 'error'],
-    legacyAliases: ['inspector', 'conversation', 'thinking'],
-  },
-  {
-    id: 'backend-monitor',
-    label: 'Backend Monitor',
-    description: 'Real-time stream of proxy, memory, scheduler, and tool events.',
-    icon: Radio,
-    category: 'insights',
-    tier: 'hidden',
-    // Note: 'memory' is owned by memory-knowledge. 'console' is owned
-    // by developer-console. 'monitor' is the dominant discoverer here.
-    keywords: ['logs', 'live', 'stream', 'events', 'monitor', 'websocket', 'proxy', 'scheduler'],
-  },
-  {
-    id: 'feature-flow',
-    label: 'Feature Flow',
-    description: 'Animated live pipeline of backend feature execution with inventory directory.',
-    icon: GitBranch,
-    category: 'insights',
-    tier: 'advanced',
-    keywords: ['feature', 'flow', 'pipeline', 'animation', 'inventory', 'sse', 'execution'],
-    legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
-  },
-  {
-    id: 'health-simulator',
-    label: 'Provider Health Simulator',
-    description: 'Preflight a provider + model: connectivity, tool support, and fallback route before relying on it.',
-    icon: Stethoscope,
-    category: 'insights',
-    tier: 'hidden',
-    // Note: 'health' is owned by system-health; 'test'/'connect' are not
-    // claimed keywords — this section owns the simulator vocabulary.
-    keywords: ['simulate', 'simulator', 'probe', 'preflight', 'diagnose', 'tool support', 'fallback route'],
-  },
-  /* ── Security & Access ──────────────────────────────────────── */
   {
     id: 'computer-access',
     label: 'Desktop App Permissions',
     description: 'Filesystem scope, allowed roots, and computer-use app allowlist.',
     icon: ShieldCheck,
-    category: 'access',
+    category: 'capabilities',
     tier: 'advanced',
     // Note: 'filesystem' is owned by tools-connections (MCP/FS tools).
     keywords: ['roots', 'security', 'allowlist', 'computer-use-scope'],
@@ -579,11 +494,100 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'External API Access',
     description: 'Open or close the proxy gateway for external clients, manage the API key.',
     icon: Globe,
-    category: 'access',
+    category: 'capabilities',
     tier: 'basic',
     // Note: 'token' is owned by model-providers (token cost tracking).
     // API auth tokens are reached via 'bearer' here.
     keywords: ['api', 'access', 'gateway', 'key', 'external', 'client', 'curl', 'openai', 'anthropic', 'bearer', 'sdk', 'endpoint'],
+  },
+
+  /* ── Data & Statistics header ──────────────────────────────────── */
+  {
+    id: 'usage',
+    label: 'Usage & Limits',
+    description: 'Token usage, model cost, quotas, and per-model consumption.',
+    icon: Gauge,
+    category: 'data',
+    tier: 'basic',
+    keywords: ['limits', 'spend', 'quotas', 'tokens', 'usage-limits', 'statistics'],
+    legacyAliases: ['usage-limits'],
+  },
+  {
+    id: 'observability',
+    label: 'Activity Log',
+    description: 'Audit log, rollback history, post-observation screenshots, traffic, and logs.',
+    icon: LineChart,
+    category: 'data',
+    tier: 'advanced',
+    // Note: 'screenshot' is owned by computer-use. 'history' is owned
+    // by conversations-history. 'security' is owned by computer-access.
+    // Post-observation screenshots are reached via 'observation' here.
+    keywords: ['audit', 'rollback', 'observation', 'compliance', 'undo', 'traffic', 'log', 'activity'],
+    legacyAliases: ['traffic-activity', 'overview', 'logs', 'traffic', 'activity', 'audit', 'rollback', 'observations'],
+  },
+  {
+    id: 'conversations-history',
+    label: 'Conversations',
+    description: 'Archived chat sessions and per-conversation history.',
+    icon: MessagesSquare,
+    category: 'data',
+    tier: 'advanced',
+    keywords: ['conversation', 'history', 'archive', 'session', 'chat'],
+    legacyAliases: ['archive', 'conversations', 'chat-history', 'session-history'],
+  },
+  {
+    id: 'conversation-inspector',
+    label: 'Request Inspector',
+    description: 'Readable transcript, raw request/response bodies, and assistant thinking.',
+    icon: SearchIcon,
+    category: 'data',
+    tier: 'advanced',
+    // Note: 'debug' is owned by developer-console. Conversation Inspector
+    // is reached via 'inspector', 'request', 'response', 'thinking'.
+    keywords: ['inspector', 'request', 'response', 'body', 'thinking', 'trace', 'finish reason', 'error'],
+    legacyAliases: ['inspector', 'conversation', 'thinking'],
+  },
+  {
+    id: 'feature-flow',
+    label: 'Feature Flow',
+    description: 'Animated live pipeline of backend feature execution with inventory directory.',
+    icon: GitBranch,
+    category: 'data',
+    tier: 'advanced',
+    keywords: ['feature', 'flow', 'pipeline', 'animation', 'inventory', 'sse', 'execution'],
+    legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
+  },
+  {
+    id: 'harness-improve',
+    label: 'Harness Improvements',
+    description: 'Improvement proposals the model filed against its own harness — review, approve, or reject.',
+    icon: HeartPulse,
+    category: 'data',
+    tier: 'basic',
+    keywords: ['harness', 'proposal', 'self-improvement', 'introspect', 'review queue', 'approve'],
+    legacyAliases: ['reliability', 'harness-proposals'],
+  },
+  {
+    id: 'backend-monitor',
+    label: 'Backend Monitor',
+    description: 'Real-time stream of proxy, memory, scheduler, and tool events.',
+    icon: Radio,
+    category: 'data',
+    tier: 'hidden',
+    // Note: 'memory' is owned by memory-knowledge. 'console' is owned
+    // by developer-console. 'monitor' is the dominant discoverer here.
+    keywords: ['logs', 'live', 'stream', 'events', 'monitor', 'websocket', 'proxy', 'scheduler'],
+  },
+  {
+    id: 'health-simulator',
+    label: 'Provider Health Simulator',
+    description: 'Preflight a provider + model: connectivity, tool support, and fallback route before relying on it.',
+    icon: Stethoscope,
+    category: 'data',
+    tier: 'hidden',
+    // Note: 'health' is owned by system-health; 'test'/'connect' are not
+    // claimed keywords — this section owns the simulator vocabulary.
+    keywords: ['simulate', 'simulator', 'probe', 'preflight', 'diagnose', 'tool support', 'fallback route'],
   },
 ] as const;
 
@@ -612,11 +616,18 @@ const RAIL_PARENT: Readonly<Record<string, string>> = {
   'recalled-memory': 'memory-knowledge',
   'added-memory': 'memory-knowledge',
   'project-memories': 'memory-knowledge',
-  'ui-designer': 'profile-preferences',
+  'ui-designer': 'appearance',
   'tool-grants': 'agent-sandbox',
   'python-sandbox': 'agent-sandbox',
   'backend-monitor': 'observability',
   'health-simulator': 'system-health',
+};
+
+/** Visible tree children: section id → child section ids rendered as
+ *  indented sub-items under the parent in the rail tree (2026-08-28:
+ *  UI Designer moved under Appearance per the UI enhancement request). */
+export const RAIL_CHILDREN: Readonly<Record<string, readonly string[]>> = {
+  appearance: ['ui-designer'],
 };
 
 /** Section id the left rail should mark active. */

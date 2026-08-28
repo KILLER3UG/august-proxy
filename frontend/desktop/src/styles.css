@@ -829,6 +829,32 @@ input::placeholder {
   letter-spacing: -0.011em;
 }
 
+/* Chat font preference (General → Preferences → Chat font). Applied via
+   data attribute on <html> by @/lib/preferences. Serif reads like the
+   reference provider's serif option; mono is for code-heavy chats. */
+:root[data-chat-font='serif'] .chat-message-text {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
+    'Times New Roman', serif;
+  letter-spacing: 0;
+}
+:root[data-chat-font='mono'] .chat-message-text {
+  font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo,
+    Consolas, monospace;
+  font-size: 0.875rem;
+  letter-spacing: 0;
+}
+
+/* Reduce-motion preference (General → Preferences → Motion). Mirrors the
+   OS prefers-reduced-motion treatment but driven by the in-app toggle. */
+:root[data-reduce-motion='1'] *,
+:root[data-reduce-motion='1'] *::before,
+:root[data-reduce-motion='1'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
 .chat-thought-text {
   font-size: 0.9375rem;
   line-height: 1.6;

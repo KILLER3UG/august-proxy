@@ -40,6 +40,13 @@ export class OsNotifyService {
   /** Fire an OS notification if the user opted in and granted permission. */
   static async notify(title: string, options?: NotificationOptions): Promise<void> {
     if (!this.isEnabled() || !this.isSupported()) return;
+    await this.notifyDirect(title, options);
+  }
+
+  /** Fire regardless of the job-complete toggle — callers gate this with
+   *  their own preference (e.g. General → Response completions). */
+  static async notifyDirect(title: string, options?: NotificationOptions): Promise<void> {
+    if (!this.isSupported()) return;
     const ok = await this.ensurePermission();
     if (!ok) return;
     try {

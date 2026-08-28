@@ -133,7 +133,7 @@ export function SessionList({
         openSettingsSection();
         break;
       case "appearance":
-        openSettingsSection("profile-preferences");
+        openSettingsSection("appearance");
         break;
       case "notifications":
         setNotificationsOpen(true);
@@ -663,9 +663,6 @@ export function SessionList({
                 </Avatar>
                 <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-sidebar-foreground/80">
                   {dropdownUser.name}
-                  {!signedIn && (
-                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground/60">Free</span>
-                  )}
                 </span>
                 {updateAvailable && (
                   <span

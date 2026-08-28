@@ -24,7 +24,7 @@ export const WORKSPACE_VISIBLE_IDS = new Set([
   'memory-knowledge',        // → Memory (data-dense)
   'observability',           // → Observability (data-dense)
   'conversation-inspector',  // → Conversation Inspector (data-dense)
-  'profile-preferences',     // → Profile Preferences (theme/shortcuts)
+  'general',                 // → General (profile/preferences/shortcuts)
 ]);
 
 /**
@@ -33,7 +33,7 @@ export const WORKSPACE_VISIBLE_IDS = new Set([
  * the workspace panel historically picked one icon per section.)
  */
 const WORKSPACE_ICONS: Record<string, LucideIcon> = {
-  'profile-preferences':    SlidersHorizontal,
+  'general':                SlidersHorizontal,
   'model-providers':        Boxes,
   'memory-knowledge':       Brain,
   'observability':          AlignJustify,
@@ -47,7 +47,7 @@ const WORKSPACE_ICONS: Record<string, LucideIcon> = {
  * registry.
  */
 const WORKSPACE_CATEGORY_MAP: Record<string, string> = {
-  'profile-preferences':    'general',
+  'general':                'general',
   'model-providers':        'chat',
   'memory-knowledge':       'general',
   'observability':          'monitoring',

@@ -6,7 +6,8 @@
  *   - every section.category references a declared category id
  *   - every section declares a valid `tier` (`basic` or `advanced`)
  *   - legacy alias resolution is stable
- *   - the 5/3-5/3 distribution is preserved (no singleton categories)
+ *   - the 3 header groups (Settings / Agent Capabilities / Data &
+ *     Statistics) each hold at least 2 sections (no singleton headers)
  *
  * If any of these regress, the IA has been broken. The build will fail
  * rather than silently ship a buggy left rail.
@@ -28,8 +29,8 @@ describe('settings-registry audit', () => {
     expect(() => auditRegistry()).not.toThrow();
   });
 
-  it('has 8 categories with no singleton columns', () => {
-    expect(SETTINGS_CATEGORIES).toHaveLength(8);
+  it('has 3 header groups with no singleton columns', () => {
+    expect(SETTINGS_CATEGORIES).toHaveLength(3);
     const counts = SETTINGS_CATEGORIES.map((c) => ({
       id: c.id,
       count: sectionsForCategory(c.id).length,
@@ -137,11 +138,14 @@ describe('legacy alias resolution', () => {
     // account aliases
     ['accounts',        'account'],
     ['user',            'account'],
-    // profile-preferences aliases
-    ['appearance',      'profile-preferences'],
-    ['theme',           'profile-preferences'],
-    ['shortcuts',       'profile-preferences'],
-    ['hotkeys',         'profile-preferences'],
+    // 2026-08-28 restructure: 'appearance'/'theme' now resolve to the new
+    // appearance section; shortcut vocabulary moved to general (the old
+    // profile-preferences id is itself an alias for general now).
+    ['appearance',      'appearance'],
+    ['theme',           'appearance'],
+    ['shortcuts',       'general'],
+    ['hotkeys',         'general'],
+    ['profile-preferences', 'general'],
     // system-health aliases
     ['health',          'system-health'],
     // model-providers aliases
@@ -190,7 +194,7 @@ describe('section getters', () => {
 
   it('railCanonicalId maps split views onto their hub', () => {
     expect(railCanonicalId('recalled-memory')).toBe('memory-knowledge');
-    expect(railCanonicalId('ui-designer')).toBe('profile-preferences');
+    expect(railCanonicalId('ui-designer')).toBe('appearance');
     expect(railCanonicalId('python-sandbox')).toBe('agent-sandbox');
     expect(railCanonicalId('backend-monitor')).toBe('observability');
     expect(railCanonicalId('health-simulator')).toBe('system-health');

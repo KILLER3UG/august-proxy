@@ -8,6 +8,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { hydrateTheme } from './lib/theme';
 import { hydrateUiCustomization } from './lib/ui-customization';
+import { applyStoredPreferences } from './lib/preferences';
 import { queryClient } from './query-client';
 import { startRealtimeBridge } from './realtime/bridge';
 import App from './App';
@@ -20,6 +21,8 @@ import './styles.css';
 hydrateTheme();
 // Restore user color overrides (UI Designer) after base theme classes land.
 hydrateUiCustomization();
+// Restore chat-font / reduce-motion data attributes (General → Preferences).
+applyStoredPreferences();
 
 // Instant backend→frontend push (sessions, chat active, plans, catalog, …)
 startRealtimeBridge();
