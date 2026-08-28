@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from pathlib import Path
 from typing import Callable
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -286,6 +287,16 @@ async def createSessionDirect(request: Request):
         sandboxNetwork=body.get('sandboxNetwork') if 'sandboxNetwork' in body else body.get('sandbox_network'),
     )
     return session.toDict()
+
+
+@router.get('/default-workspace')
+async def defaultWorkspace():
+    """Default workspace for folderless ("task") sessions.
+
+    The OS user's home directory — the same place a fresh terminal opens.
+    Resolved per host user at request time, never hardcoded.
+    """
+    return {'path': str(Path.home())}
 
 
 @router.delete('/sessions/{sessionId}')

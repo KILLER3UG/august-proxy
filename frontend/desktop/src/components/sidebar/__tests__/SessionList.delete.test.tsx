@@ -55,7 +55,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 describe('SessionList — delete-active fallback (Bug 1)', () => {
   beforeEach(() => {
     useSessionsStore.setState({ sessions: [], folders: [], sessionStates: {} });
-    // Expand the "Other chats" group so unfiled session rows render.
+    // Expand the "task" group so unfiled session rows render.
     localStorage.setItem('august-uncategorized-collapsed', '0');
   });
 

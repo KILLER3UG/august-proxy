@@ -134,3 +134,16 @@ async def testApiTerminal(client):
     resp = await client.get('/api/terminal')
     assert resp.status_code == 200
 
+
+@pytest.mark.asyncio
+async def testWorkbenchDefaultWorkspace(client):
+    # Folderless "task" sessions anchor at the OS user's home directory —
+    # resolved dynamically per host user, never hardcoded.
+    from pathlib import Path
+
+    resp = await client.get('/api/workbench/default-workspace')
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data['path'] == str(Path.home())
+    assert data['path']
+

@@ -204,7 +204,7 @@ describe('createFolder — manual (no path)', () => {
 });
 
 describe('deleteUncategorizedSessions', () => {
-  it('removes only active chats in the virtual Other chats group', () => {
+  it('removes only active chats in the virtual task group', () => {
     const other = createSession(null, 'Other');
     const archived = createSession(null, 'Archived');
     const folder = createFolder('Project');
@@ -252,11 +252,11 @@ describe('getOrCreateEmptySession — no blank stacking', () => {
     expect($sessions.get()).toHaveLength(2);
   });
 
-  it('does not reuse a path-bound draft for a path-less Other chat', () => {
-    // Regression: the "Other chats" + button calls
-    // getOrCreateEmptySession(null, …, null). It reused any empty unfiled
-    // draft and kept its stale workspacePath, so the "new" chat landed in the
-    // last project instead of staying path-less.
+  it('does not reuse a path-bound draft for a path-less task chat', () => {
+    // Regression: a path-less getOrCreateEmptySession(null, …, null) call
+    // (backend home unavailable) must not reuse any empty unfiled draft and
+    // keep its stale workspacePath, or the "new" chat lands in the last
+    // project instead of staying path-less.
     const stale = createSession(null, 'Stale', 'C:/Dev/last-proj');
     expect(stale.workspacePath).toBe('C:/Dev/last-proj');
 
@@ -272,12 +272,23 @@ describe('getOrCreateEmptySession — no blank stacking', () => {
     expect($sessions.get()).toHaveLength(2);
   });
 
-  it('still reuses a path-less draft for a path-less Other chat', () => {
+  it('still reuses a path-less draft for a path-less task chat', () => {
     const first = getOrCreateEmptySession(null, 'Chat A', null);
     expect(first.workspacePath).toBeNull();
     const second = getOrCreateEmptySession(null, 'Chat B', null);
     expect(second.id).toBe(first.id);
     expect(second.workspacePath).toBeNull();
+    expect($sessions.get()).toHaveLength(1);
+  });
+
+  it('reuses a path-less draft and assigns the path when one is requested', () => {
+    // The task "+" button asks for the OS home dir; an existing path-less
+    // empty draft is reusable and gets the path assigned instead of stacking.
+    const first = getOrCreateEmptySession(null, 'Chat A', null);
+    expect(first.workspacePath).toBeNull();
+    const second = getOrCreateEmptySession(null, 'Chat B', '/home/u');
+    expect(second.id).toBe(first.id);
+    expect(second.workspacePath).toBe('/home/u');
     expect($sessions.get()).toHaveLength(1);
   });
 });

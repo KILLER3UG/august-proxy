@@ -12,6 +12,7 @@ import { isTauri } from "@/lib/tauri-detect";
 import { t } from "@/lib/motion";
 import { useAppUpdate } from "@/hooks/useAppUpdate";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { useDefaultWorkspace } from "@/hooks/useDefaultWorkspace";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import {
   useSessionsStore,
@@ -95,6 +96,9 @@ export function SessionList({
     () => localStorage.getItem("august-uncategorized-collapsed") !== "0",
   );
   const [searchQuery, setSearchQuery] = useState("");
+
+  // OS home directory — shown as the "task" group tooltip (dynamic per user).
+  const { path: defaultWorkspacePath } = useDefaultWorkspace();
 
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
@@ -357,7 +361,7 @@ export function SessionList({
     const ok = await confirmStyled({
       title: "Delete folder?",
       message:
-        "All sessions inside will be moved to uncategorized (Other chats).",
+        "All sessions inside will be moved to uncategorized (task).",
       confirmLabel: "Delete folder",
       variant: "destructive",
     });
@@ -382,8 +386,8 @@ export function SessionList({
       );
     if (!unfiled.length) return;
     const ok = await confirmStyled({
-      title: "Delete Other chats?",
-      message: `Permanently delete all ${unfiled.length} chat${unfiled.length === 1 ? "" : "s"} in Other chats?`,
+      title: "Delete task chats?",
+      message: `Permanently delete all ${unfiled.length} chat${unfiled.length === 1 ? "" : "s"} in task?`,
       confirmLabel: "Delete",
       variant: "destructive",
     });
@@ -446,7 +450,7 @@ export function SessionList({
           activePath={typeof window !== 'undefined' ? window.location.pathname : ''}
         />
 
-        {/* Session search — filters titles across Pinned / folders / Other chats */}
+        {/* Session search — filters titles across Pinned / folders / task */}
         <div className="px-1.5 pt-1.5">
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-sidebar-foreground/30 pointer-events-none" />
@@ -575,6 +579,7 @@ export function SessionList({
                       onToggleCollapse={toggleUncategorizedCollapse}
                       onNewSession={() => onNewInFolder?.(null)}
                       onDelete={handleDeleteUncategorized}
+                      workspaceHint={defaultWorkspacePath}
                     />
 
                     {(!uncategorizedCollapsed || searching) && (
@@ -608,7 +613,7 @@ export function SessionList({
                         )}
                         {uncategorizedSessions.length === 0 && !searching && (
                           <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
-                            No other chats
+                            No task chats yet
                           </p>
                         )}
                       </div>

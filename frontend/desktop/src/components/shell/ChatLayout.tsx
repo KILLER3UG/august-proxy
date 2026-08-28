@@ -33,6 +33,7 @@ import type { RightDrawerSectionId } from "./RightDrawerState";
 import { dispatchFocusComposer, dispatchInsertComposerText, onUiAction } from "@/api/ui-events";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { useDefaultWorkspace } from "@/hooks/useDefaultWorkspace";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 const WORKBENCH_SIDEBAR_OPEN_KEY = "august-workbench-sidebar-open";
@@ -62,6 +63,9 @@ export function ChatLayout() {
   const currentWorkspacePath = currentWorkspaceId
     ? workspaces.find(w => w.id === currentWorkspaceId)?.path ?? null
     : null;
+
+  // OS home directory — workspace for folderless "task" chats (dynamic per user).
+  const { path: defaultWorkspacePath } = useDefaultWorkspace();
 
   useEffect(() => {
     const shouldPersist =
@@ -404,11 +408,16 @@ export function ChatLayout() {
 
     const folders = useSessionsStore.getState().folders;
 
-    // Explicit "Other chats" target — the "+" on the Other chats header passes
-    // null on purpose. Bypass the workspace divert below so the new chat stays
-    // uncategorized instead of landing in a Projects folder.
+    // Explicit "task" target — the "+" on the task header passes null on
+    // purpose. Bypass the workspace divert below so the new chat stays
+    // uncategorized instead of landing in a Projects folder. It still gets
+    // the default workspace (the OS home directory, like a fresh terminal).
     if (folderId === null) {
-      const newSess = getOrCreateEmptySession(null, defaultSessionTitle(), null);
+      const newSess = getOrCreateEmptySession(
+        null,
+        defaultSessionTitle(),
+        defaultWorkspacePath ?? null,
+      );
       void navigate(`/c/${newSess.id}`);
       return;
     }
@@ -429,12 +438,12 @@ export function ChatLayout() {
 
     // Top-level "New chat": stay in the active project folder when possible.
     // Resolve by folderId first, then by workspace path so chats do not land
-    // in "Other chats" while Projects folders keep growing.
+    // in "task" while Projects folders keep growing.
     const activeFolderId = active?.folderId ?? null;
     const activeFolder = activeFolderId
       ? folders.find((f) => f.id === activeFolderId)
       : null;
-    const targetPath =
+    const projectPath =
       activeFolder?.workspacePath ??
       active?.workspacePath ??
       currentWorkspacePath ??
@@ -442,17 +451,22 @@ export function ChatLayout() {
 
     let targetFolderId: string | null =
       activeFolder?.workspacePath ? activeFolderId : null;
-    if (!targetFolderId && targetPath) {
-      targetFolderId = ensureFolderForWorkspacePath(targetPath).folder.id;
+    if (!targetFolderId && projectPath) {
+      targetFolderId = ensureFolderForWorkspacePath(projectPath).folder.id;
     }
+
+    // No project workspace in play → the chat lands in "task" with the OS
+    // home directory as its workspace (like a fresh terminal). Home never
+    // spawns a Projects folder and is never added to the workspace list.
+    const targetPath = projectPath ?? defaultWorkspacePath ?? null;
 
     const newSess = getOrCreateEmptySession(
       targetFolderId,
       defaultSessionTitle(),
       targetPath,
     );
-    if (targetPath) {
-      addWorkspace(targetPath);
+    if (projectPath) {
+      addWorkspace(projectPath);
     }
     void navigate(`/c/${newSess.id}`);
   };
