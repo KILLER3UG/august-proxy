@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { UncategorizedHeader } from '../FolderTree';
 
-describe('UncategorizedHeader (task)', () => {
+describe('UncategorizedHeader (Tasks)', () => {
   it('offers a new-chat action even when the group is empty', () => {
     const onNewSession = vi.fn();
     render(
@@ -15,11 +15,11 @@ describe('UncategorizedHeader (task)', () => {
       />,
     );
 
-    const add = screen.getByRole('button', { name: 'New chat in task' });
+    const add = screen.getByRole('button', { name: 'New chat in Tasks' });
     fireEvent.click(add);
     expect(onNewSession).toHaveBeenCalledTimes(1);
     // Delete-all stays hidden while there is nothing to delete.
-    expect(screen.queryByRole('button', { name: 'Delete all task chats' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete all tasks' })).toBeNull();
   });
 
   it('creates without collapsing the group (click does not bubble)', () => {
@@ -34,7 +34,7 @@ describe('UncategorizedHeader (task)', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'New chat in task' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New chat in Tasks' }));
     expect(onToggleCollapse).not.toHaveBeenCalled();
   });
 
@@ -50,9 +50,9 @@ describe('UncategorizedHeader (task)', () => {
       />,
     );
 
-    const label = screen.getByText('task');
-    expect(label).toHaveAttribute('title', 'task — /home/test-user');
-    // Chevron only — no folder icon in the task group.
+    const label = screen.getByText('Tasks');
+    expect(label).toHaveAttribute('title', 'Tasks — /home/test-user');
+    // Chevron only — no folder icon in the Tasks group.
     expect(document.querySelector('svg.lucide-folder')).toBeNull();
     expect(document.querySelector('svg.lucide-folder-open')).toBeNull();
   });

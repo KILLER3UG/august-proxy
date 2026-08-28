@@ -135,7 +135,7 @@ export function healDuplicateSessions(): void {
 }
 
 /**
- * Backfill the "task" group's default workspace: point every unfiled,
+ * Backfill the "Tasks" group's default workspace: point every unfiled,
  * non-archived chat that still has no workspace at the OS home directory —
  * like a fresh terminal opening at ~. Idempotent: only touches sessions whose
  * workspacePath is null, so it is safe to re-run (boot + reconcile tick) and
@@ -197,7 +197,7 @@ export function findReusableEmptySession(
       // Match workspace, including the path-less case. A caller asking for a
       // path-less chat (workspacePath null) must not reuse a draft that still
       // carries a project path, or the new chat silently lands in the last
-      // workspace. When a path IS requested (e.g. the "task" + button, which
+      // workspace. When a path IS requested (e.g. the "Tasks" + button, which
       // asks for the OS home dir), a path-less draft stays reusable (it gets
       // the path assigned).
       if (workspacePath) {
@@ -445,10 +445,10 @@ export function deleteSession(id: string) {
 }
 
 /**
- * Permanently remove the chats represented by the virtual "task"
+ * Permanently remove the chats represented by the virtual "Tasks"
  * sidebar group.  Unlike normal folders this group has no folder record: it
  * is every active unfiled chat that is not pinned (pinned unfiled chats live
- * under Pinned, not task).
+ * under Pinned, not Tasks).
  *
  * Pass `excludeIds` (typically the pinned id set) so wipe matches the sidebar
  * group exactly.  The local removal is one transaction so the sidebar updates

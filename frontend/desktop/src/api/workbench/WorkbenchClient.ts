@@ -394,7 +394,7 @@ export class WorkbenchClient {
     return wbFetch<DoctorReport>('/api/workbench/doctor');
   }
 
-  /** OS home directory — default workspace for folderless "task" chats. */
+  /** OS home directory — default workspace for folderless "Tasks" chats. */
   async defaultWorkspace(): Promise<{ path: string }> {
     return wbFetch<{ path: string }>('/api/workbench/default-workspace');
   }

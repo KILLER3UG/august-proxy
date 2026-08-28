@@ -1,4 +1,4 @@
-/* ── Folder tree — section labels, collapsible folders, task group ── */
+/* ── Folder tree — section labels, collapsible folders, Tasks group ── */
 
 import { useState } from "react";
 import {
@@ -173,7 +173,7 @@ export function FolderHeader({
   );
 }
 
-/** Collapsible header for sessions that are not in any folder ("task").
+/** Collapsible header for sessions that are not in any folder ("Tasks").
  *  No folder icon — just the collapse chevron and the name. The group's
  *  workspace is the OS home directory, surfaced as a tooltip. */
 export function UncategorizedHeader({
@@ -207,9 +207,9 @@ export function UncategorizedHeader({
         </span>
         <span
           className="truncate text-[12.5px] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80"
-          title={workspaceHint ? `task — ${workspaceHint}` : "task"}
+          title={workspaceHint ? `Tasks — ${workspaceHint}` : "Tasks"}
         >
-          task
+          Tasks
         </span>
         {count > 0 && (
           <span className="text-[10px] text-sidebar-foreground/25 tabular-nums shrink-0">
@@ -226,8 +226,8 @@ export function UncategorizedHeader({
               onNewSession();
             }}
             className="p-0.5 rounded text-sidebar-foreground/40 hover:bg-white/[0.06] hover:text-sidebar-foreground/70"
-            title="New chat in task"
-            aria-label="New chat in task"
+            title="New chat in Tasks"
+            aria-label="New chat in Tasks"
           >
             <Plus className="size-2.5" />
           </button>
@@ -240,8 +240,8 @@ export function UncategorizedHeader({
               onDelete();
             }}
             className="p-0.5 rounded text-destructive/70 hover:bg-white/[0.06] hover:text-destructive"
-            title="Delete all task chats"
-            aria-label="Delete all task chats"
+            title="Delete all tasks"
+            aria-label="Delete all tasks"
           >
             <Trash2 className="size-2.5" />
           </button>

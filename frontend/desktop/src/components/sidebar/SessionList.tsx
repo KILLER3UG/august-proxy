@@ -97,7 +97,7 @@ export function SessionList({
   );
   const [searchQuery, setSearchQuery] = useState("");
 
-  // OS home directory — shown as the "task" group tooltip (dynamic per user).
+  // OS home directory — shown as the "Tasks" group tooltip (dynamic per user).
   const { path: defaultWorkspacePath } = useDefaultWorkspace();
 
   const accounts = useAccountStore((s) => s.accounts);
@@ -361,7 +361,7 @@ export function SessionList({
     const ok = await confirmStyled({
       title: "Delete folder?",
       message:
-        "All sessions inside will be moved to uncategorized (task).",
+        "All sessions inside will be moved to uncategorized (Tasks).",
       confirmLabel: "Delete folder",
       variant: "destructive",
     });
@@ -386,8 +386,8 @@ export function SessionList({
       );
     if (!unfiled.length) return;
     const ok = await confirmStyled({
-      title: "Delete task chats?",
-      message: `Permanently delete all ${unfiled.length} chat${unfiled.length === 1 ? "" : "s"} in task?`,
+      title: "Delete all tasks?",
+      message: `Permanently delete all ${unfiled.length} chat${unfiled.length === 1 ? "" : "s"} in Tasks?`,
       confirmLabel: "Delete",
       variant: "destructive",
     });
@@ -613,7 +613,7 @@ export function SessionList({
                         )}
                         {uncategorizedSessions.length === 0 && !searching && (
                           <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
-                            No task chats yet
+                            No tasks yet
                           </p>
                         )}
                       </div>

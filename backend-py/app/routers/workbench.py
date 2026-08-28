@@ -291,7 +291,7 @@ async def createSessionDirect(request: Request):
 
 @router.get('/default-workspace')
 async def defaultWorkspace():
-    """Default workspace for folderless ("task") sessions.
+    """Default workspace for folderless ("Tasks") sessions.
 
     The OS user's home directory — the same place a fresh terminal opens.
     Resolved per host user at request time, never hardcoded.

@@ -137,7 +137,7 @@ async def testApiTerminal(client):
 
 @pytest.mark.asyncio
 async def testWorkbenchDefaultWorkspace(client):
-    # Folderless "task" sessions anchor at the OS user's home directory —
+    # Folderless "Tasks" sessions anchor at the OS user's home directory —
     # resolved dynamically per host user, never hardcoded.
     from pathlib import Path
 

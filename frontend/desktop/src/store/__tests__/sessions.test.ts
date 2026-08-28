@@ -205,7 +205,7 @@ describe('createFolder — manual (no path)', () => {
 });
 
 describe('deleteUncategorizedSessions', () => {
-  it('removes only active chats in the virtual task group', () => {
+  it('removes only active chats in the virtual Tasks group', () => {
     const other = createSession(null, 'Other');
     const archived = createSession(null, 'Archived');
     const folder = createFolder('Project');
@@ -294,7 +294,7 @@ describe('getOrCreateEmptySession — no blank stacking', () => {
   });
 });
 
-describe('ensureTaskHomeWorkspace — task group home backfill', () => {
+describe('ensureTaskHomeWorkspace — Tasks group home backfill', () => {
   const HOME = '/home/u';
 
   it('points unfiled, non-archived, path-less chats at the home dir', () => {
@@ -319,7 +319,7 @@ describe('ensureTaskHomeWorkspace — task group home backfill', () => {
     const changed = ensureTaskHomeWorkspace(HOME);
 
     // Only nothing-to-backfill remains: project keeps its path, grouped is
-    // in a folder, archived is out of the task group.
+    // in a folder, archived is out of the Tasks group.
     expect(changed).toBe(0);
     expect($sessions.get().find((s) => s.id === project.id)?.workspacePath).toBe('C:/Dev/proj');
     expect($sessions.get().find((s) => s.id === grouped.id)?.workspacePath).toBeNull();

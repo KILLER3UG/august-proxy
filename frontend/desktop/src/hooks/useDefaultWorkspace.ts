@@ -1,5 +1,5 @@
 /* ── Default workspace (React Query) ────────────────────────────────── */
-/* The OS user's home directory — the workspace a folderless "task" chat  */
+/* The OS user's home directory — the workspace a folderless "Tasks" chat */
 /* points to, like a fresh terminal opening at ~. Resolved dynamically by  */
 /* the backend per host user; never hardcoded in the UI.                   */
 

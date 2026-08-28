@@ -64,7 +64,7 @@ export function ChatLayout() {
     ? workspaces.find(w => w.id === currentWorkspaceId)?.path ?? null
     : null;
 
-  // OS home directory — workspace for folderless "task" chats (dynamic per user).
+  // OS home directory — workspace for folderless "Tasks" chats (dynamic per user).
   const { path: defaultWorkspacePath } = useDefaultWorkspace();
   const defaultWorkspaceRef = useRef(defaultWorkspacePath);
   defaultWorkspaceRef.current = defaultWorkspacePath;
@@ -120,7 +120,7 @@ export function ChatLayout() {
     return () => clearInterval(t);
   }, []);
 
-  // Backfill the "task" group default: existing unfiled chats point at the
+  // Backfill the "Tasks" group default: existing unfiled chats point at the
   // OS home directory once it resolves (created chats get it at creation).
   useEffect(() => {
     if (defaultWorkspacePath) ensureTaskHomeWorkspace(defaultWorkspacePath);
@@ -426,7 +426,7 @@ export function ChatLayout() {
 
     const folders = useSessionsStore.getState().folders;
 
-    // Explicit "task" target — the "+" on the task header passes null on
+    // Explicit "Tasks" target — the "+" on the Tasks header passes null on
     // purpose. Bypass the workspace divert below so the new chat stays
     // uncategorized instead of landing in a Projects folder. It still gets
     // the default workspace (the OS home directory, like a fresh terminal).
@@ -456,7 +456,7 @@ export function ChatLayout() {
 
     // Top-level "New chat": stay in the active project folder when possible.
     // Resolve by folderId first, then by workspace path so chats do not land
-    // in "task" while Projects folders keep growing.
+    // in "Tasks" while Projects folders keep growing.
     const activeFolderId = active?.folderId ?? null;
     const activeFolder = activeFolderId
       ? folders.find((f) => f.id === activeFolderId)
@@ -483,7 +483,7 @@ export function ChatLayout() {
       targetFolderId = ensureFolderForWorkspacePath(projectPath).folder.id;
     }
 
-    // No project workspace in play → the chat lands in "task" with the OS
+    // No project workspace in play → the chat lands in "Tasks" with the OS
     // home directory as its workspace (like a fresh terminal). Home never
     // spawns a Projects folder and is never added to the workspace list.
     const targetPath = projectPath ?? defaultWorkspacePath ?? null;
