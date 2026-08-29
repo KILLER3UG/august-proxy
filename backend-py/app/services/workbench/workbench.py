@@ -798,6 +798,49 @@ def clear_skill_prompt_caches() -> None:
         pass
 
 
+_MEMORY_NUDGE_MIN_ROUNDS = 3
+
+
+def queue_memory_habit_nudge(
+    session: WorkbenchSession,
+    *,
+    rounds: int,
+    rememberOffered: bool,
+    memWritesOn: bool,
+) -> None:
+    """End-of-turn memory-habit trigger (2026-08-29).
+
+    A substantial turn (>= _MEMORY_NUDGE_MIN_ROUNDS managed tool rounds) that
+    produced no `remember` call queues a one-shot <memory_nudge> hint for the
+    NEXT turn's tail injection — the model's chance to consolidate durable
+    knowledge (root cause + fix location, user directives, project
+    constraints, corrections to stored memories) into the facts store.
+    Behavior shaping only: never blocks a turn, never withholds output, and
+    rides the per-turn tail block so the system prompt stays byte-stable.
+    """
+    if not memWritesOn or not rememberOffered or rounds < _MEMORY_NUDGE_MIN_ROUNDS:
+        return
+    try:
+        from app.services.tool_registrations.session_tools import remember_used_this_turn
+
+        if remember_used_this_turn(getattr(session, 'id', '') or ''):
+            return
+    except Exception:
+        logger.debug('memory habit: remember counter unavailable', exc_info=True)
+        return
+    session._memory_nudge_pending = True
+
+
+def memory_nudge_block(session: WorkbenchSession, memWritesOn: bool) -> str:
+    """Consume the pending memory-habit nudge as a one-shot tail block."""
+    if not memWritesOn or not getattr(session, '_memory_nudge_pending', False):
+        return ''
+    session._memory_nudge_pending = False
+    from app.services.workbench import prompt_segments_cache
+
+    return prompt_segments_cache.MEMORY_NUDGE_BLOCK
+
+
 def _harness_guide_text() -> str:
     """Inlined bodies of the two built-in harness skills (memoized)."""
     if 'text' not in _harness_guide_cache:
@@ -921,7 +964,7 @@ def buildSystemPrompt(
 
         skillNames = sorted(
             str(s.get('name') or '')
-            for s in _skill_service.catalogue()
+            for s in _skill_service.catalogue(workspacePath or None)
             if s.get('name')
         )
     except Exception:
@@ -951,7 +994,8 @@ def buildSystemPrompt(
             if workspacePath
             else '- Workspace: none open (file tools bind to the system temp area).'
         ),
-        '- Session state: goal, plan, execution phase, scratchpad, todos — in <session>.',
+        '- Session state: goal, plan, execution phase, scratchpad, todos — in the per-turn '
+        '<session_state> block appended to your latest message.',
     ]
     if memoryTools:
         storeHint = (
@@ -1004,6 +1048,34 @@ def buildSystemPrompt(
                 '- Memory: auto-injection is OFF (modelMemoryRead); pull stored context '
                 'on demand via ' + ', '.join(memoryTools) + '. ' + storeHint
             ]
+        # Part 17 Phase A: frozen per-session project-memory index (titles
+        # only) — same freeze discipline as the global index above so hand
+        # edits to the md files don't bust the cached prefix mid-session;
+        # fresh entries still reach the model via the per-turn <memory> tail.
+        _projIdx = getattr(session, '_frozen_project_index', None)
+        if _projIdx is None:
+            _projIdx = ''
+            try:
+                from app.services import brain_config_service as _pbc
+
+                _projOn = bool(_pbc.getRuntimeConfig().get('projectMemory', True))
+            except Exception:
+                _projOn = True
+            if _projOn and workspacePath and hasattr(session, 'workspacePath'):
+                try:
+                    from app.services import project_memory as _pm
+
+                    _projIdx = _pm.project_block(workspacePath)
+                except Exception:
+                    logger.debug('prompt: project block failed', exc_info=True)
+                    _projIdx = ''
+            try:
+                session._frozen_project_index = _projIdx  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        if _projIdx:
+            for ln in _projIdx.splitlines():
+                memParts.append('  ' + ln)
         intake.append('\n'.join(memParts))
     if skillsLine:
         intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
@@ -1038,18 +1110,23 @@ def buildSystemPrompt(
         parts.append('\n'.join(ws))
         if augMdBody:
             parts.append(f'<aug_directives>\n{augMdBody}\n</aug_directives>')
+    # Phase L (Part 17, 2026-08-29): the <session> block stays BYTE-STABLE for
+    # the whole session lifetime — id/title/goal/plan/plan-status/
+    # execution_state/scratchpad/last_tool_failure/todos were moved OUT of the
+    # system prompt into the per-turn <session_state> tail block on the last
+    # user message (same injection point as <memory>/<relevant_skills>).
+    # Why: the provider prompt-cache breakpoint covers the WHOLE system block
+    # (adapters/anthropic.py marks the last system block), so ANY byte diff —
+    # a title change, a plan update, a todo tick — re-read 100% of a ~29k-char
+    # prompt upstream. Worse, the embedded `id:` made each new session's
+    # system block unique, so turn 1 of every new chat was a guaranteed cold
+    # read. Freshness is not lost: receipts already re-inject plan state into
+    # the message stream mid-turn (_planStateBlock / _injectPlanState), and
+    # the tail block re-renders the same state every turn. Only fields that
+    # are byte-stable for the session lifetime AND genuinely model-facing
+    # stay here (guardMode, agentMode, the circuit-mode hint).
     agentMode = as_str(getattr(session, 'agent_mode', '') or '')
-    sessionBlock = [
-        '<session>',
-        f"id: {getattr(session, 'id', '') or ''}",
-        f"title: {getattr(session, 'title', '') or ''}",
-    ]
-    if session.goal:
-        sessionBlock.append(f'goal: {session.goal}')
-    if session.plan:
-        sessionBlock.append(f'plan: {json.dumps(session.plan, default=str)}')
-    if session.plan:
-        sessionBlock.append('plan status: ' + ('approved' if session.planApproved else 'pending'))
+    sessionBlock = ['<session>']
     sessionBlock.append(
         'guardMode: ' + normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
     )
@@ -1065,21 +1142,6 @@ def buildSystemPrompt(
             sessionBlock.append(f'circuit: {CIRCUIT_HINT}')
     except Exception:
         pass
-    execState = getattr(session, '_execution_state', None)
-    if execState:
-        sessionBlock.append(f'execution_state: {json.dumps(execState, default=str)}')
-    working = getattr(session, '_working_memory', None)
-    if working:
-        sessionBlock.append(
-            f'scratchpad: {working if isinstance(working, str) else json.dumps(working, default=str)}'
-        )
-    failure = getattr(session, '_failure_feedback', None)
-    if failure:
-        sessionBlock.append(
-            f'last_tool_failure: {failure if isinstance(failure, str) else json.dumps(failure, default=str)}'
-        )
-    if session.todos:
-        sessionBlock.append(f'todos: {json.dumps(session.todos, default=str)}')
     sessionBlock.append('</session>')
     parts.append('\n'.join(sessionBlock))
     if session.agentId:
@@ -1092,13 +1154,21 @@ def buildSystemPrompt(
         except Exception:
             logger.debug('prompt: agent context failed', exc_info=True)
     if tool_names:
-        capsKey = '\n'.join(sorted(tool_names))
+        # Part 17 Phase B: the capabilities memo is keyed by workspace path
+        # TOO — per-workspace catalogues (project skills shadowing) must not
+        # cross-contaminate sessions; a mutation still busts every key via
+        # clear_skill_prompt_caches().
+        capsKey = f'{workspacePath or ""}\n' + '\n'.join(sorted(tool_names))
         caps = _caps_block_cache.get(capsKey)
         if caps is None:
             try:
+                from app.services import skill_service as _sk_svc
                 from app.services.capabilities_prompt import build_capabilities_block
 
-                caps = build_capabilities_block(tool_names)
+                caps = build_capabilities_block(
+                    tool_names,
+                    catalogue=_sk_svc.catalogue(workspacePath or None),
+                )
             except Exception:
                 logger.debug('prompt: capabilities block failed', exc_info=True)
                 caps = ''
@@ -1233,8 +1303,9 @@ def _planStateBlock(session: WorkbenchSession) -> str:
 
     Plan/todo state lives on the session, outside the transcript, so it
     survives compaction by construction. Pre-turn it is carried by the
-    <session> block in the system prompt (pre-turn defer); mid-turn the
-    system text was built at turn start and goes stale the moment
+    per-turn <session_state> tail block on the last user message (Phase L —
+    the system prompt's <session> block is byte-stable and holds no state);
+    mid-turn the tail was built at turn start and goes stale the moment
     update_state / submit_todos / submit_plan run — so their receipts
     re-inject this block, and a post-compaction transcript gets it back
     via ``_injectPlanState``.
@@ -1322,6 +1393,43 @@ def _planStateBlock(session: WorkbenchSession) -> str:
     return '<plan_state>\n' + '\n'.join(lines) + '\n</plan_state>'
 
 
+def _sessionStateBlock(session: WorkbenchSession) -> str:
+    """Per-turn <session_state> block (Part 17 Phase L, 2026-08-29).
+
+    Carries everything purged from the cached system prompt's <session>
+    block: id/title (per-session unique / mutable), goal, plan status,
+    execution phase, scratchpad, last tool failure, todos, and the compact
+    plan/todo state. Injected into the LAST USER MESSAGE each turn — the
+    same tail-injection point as <memory>/<relevant_skills>, outside the
+    provider prefix cache — so state changes never bust the cached system
+    block while staying fresh in the model's view every turn.
+    """
+    lines: list[str] = []
+    title = as_str(getattr(session, 'title', '') or '').strip()
+    # Placeholder titles carry no information — skip so a fresh chat gets
+    # no junk block (the titler replaces the placeholder and it appears here
+    # from the next turn).
+    if title and title not in ('New Session', 'New chat'):
+        lines.append(f'title: {" ".join(title.split())[:160]}')
+    # Compact plan/goal/todos/exec state — same renderer the receipts use.
+    planPart = _planStateBlock(session)
+    if planPart:
+        lines.append(planPart)
+    working = getattr(session, '_working_memory', None)
+    if working:
+        lines.append(
+            f'scratchpad: {working if isinstance(working, str) else json.dumps(working, default=str)}'
+        )
+    failure = getattr(session, '_failure_feedback', None)
+    if failure:
+        lines.append(
+            f'last_tool_failure: {failure if isinstance(failure, str) else json.dumps(failure, default=str)}'
+        )
+    if not lines:
+        return ''
+    return '<session_state>\n' + '\n'.join(lines) + '\n</session_state>'
+
+
 def _injectPlanState(
     messages: list[dict[str, object]], session: WorkbenchSession
 ) -> list[dict[str, object]]:
@@ -1333,7 +1441,8 @@ def _injectPlanState(
     recent rounds. Without a summary (no compaction marker found) it goes
     above the last user message. User role: a mid-transcript ``system``
     message breaks the Anthropic wire format. Pre-turn needs no transcript
-    copy — the system prompt's <session> block is rebuilt every turn.
+    copy — the per-turn <session_state> tail block re-renders every build
+    (Phase L; the system prompt's <session> block stays byte-stable).
     """
     from app.services.workbench.context_compressor import _isSummaryMessage
 
@@ -2674,12 +2783,98 @@ async def _sendWorkbenchMessageStreamImpl(
         if _lastUserIdx is not None:
             _userMsg = currentMessages[_lastUserIdx]
             _userText = as_str(_userMsg.get('content'), '')
+            # Phase D item 2 (Part 17): query expansion — the previous user
+            # turn joins the facts query at half weight so follow-ups
+            # ("and the second one?") still recall their antecedent fact.
+            _priorTurn = ''
+            for _pi in range(_lastUserIdx - 1, -1, -1):
+                _pm2 = currentMessages[_pi]
+                if isinstance(_pm2, dict) and _pm2.get('role') == 'user':
+                    _priorTurn = as_str(_pm2.get('content'), '')
+                    break
             if _memReadOn:
-                _memoryBlock, _injectedFacts = build_memory_block(_userText)
+                # Phase A (Part 17): with a non-home workspace the memory tail
+                # also carries the project's md-file entries (tagged section).
+                _wsForTail = session.workspacePath if session.workspacePath else ''
+                _recalledRows: list[dict[str, object]] = []
+                _memoryBlock, _injectedFacts = build_memory_block(
+                    _userText,
+                    workspace=_wsForTail,
+                    recalled=_recalledRows,
+                    prior_turn=_priorTurn,
+                )
+                # Phase D item 4 (Part 17): recall metrics — one internal_state
+                # counter row per turn (before/after instrument for every
+                # retrieval change). Best-effort, never blocking.
+                try:
+                    from app.services.memory_store.kv import set_internal_state
+
+                    _metrics = {
+                        'globalFactsRecalled': sum(
+                            1 for r in _recalledRows if r.get('scope') == 'global'
+                        ),
+                        'projectEntriesRecalled': sum(
+                            1 for r in _recalledRows if r.get('scope') == 'project'
+                        ),
+                        'memoryBlockChars': len(_memoryBlock or ''),
+                        'skillsBlockChars': 0,
+                    }
+                    set_internal_state(
+                        'memory:recall:last_turn', json.dumps(_metrics)
+                    )
+                    try:
+                        from app.services.memory_store.kv import get_internal_state
+
+                        _totals = json.loads(
+                            str(get_internal_state('memory:recall:totals') or '{}')
+                        )
+                        if isinstance(_totals, dict):
+                            _totals['turns'] = int(_totals.get('turns') or 0) + 1
+                            _totals['globalFactsRecalled'] = int(
+                                _totals.get('globalFactsRecalled') or 0
+                            ) + _metrics['globalFactsRecalled']
+                            _totals['projectEntriesRecalled'] = int(
+                                _totals.get('projectEntriesRecalled') or 0
+                            ) + _metrics['projectEntriesRecalled']
+                            set_internal_state(
+                                'memory:recall:totals', json.dumps(_totals)
+                            )
+                    except Exception:
+                        pass
+                except Exception:
+                    logger.debug('recall metrics write failed', exc_info=True)
+                # Phase A.4 (Part 17): the typed-but-unrendered recalledMemories
+                # event — what memory this turn actually recalled, for the
+                # transcript's recall chip. One event per turn, non-blocking.
+                if emit and _recalledRows:
+                    try:
+                        emit(
+                            {
+                                'type': 'recalledMemories',
+                                'sessionId': sessionId,
+                                'memories': _recalledRows,
+                            }
+                        )
+                    except Exception:
+                        logger.debug('recalledMemories emit failed', exc_info=True)
             else:
                 _memoryBlock, _injectedFacts = '', []
-            _skillsBlock = build_relevant_skills_block(_userText)
-            _tailBlocks = '\n\n'.join(b for b in (_memoryBlock, _skillsBlock) if b)
+            try:
+                _memWritesOn = bool(_bc.getRuntimeConfig().get('modelMemoryWrites', True))
+            except Exception:
+                _memWritesOn = True
+            _skillsBlock = build_relevant_skills_block(
+                _userText, _wsForTail or None
+            )
+            _nudgeBlock = memory_nudge_block(session, _memWritesOn)
+            # Phase L (Part 17): per-turn <session_state> carries the volatile
+            # session fields purged from the (now byte-stable) system prompt.
+            _stateBlock = _sessionStateBlock(session)
+            _tailBlocks = '\n\n'.join(
+                b
+                for b in (_memoryBlock, _skillsBlock, _stateBlock, _nudgeBlock)
+                if b
+            )
             if _tailBlocks:
                 _patched = dict(_userMsg)
                 _patched['content'] = f'{_userText}\n\n{_tailBlocks}'
@@ -4001,9 +4196,9 @@ async def _sendWorkbenchMessageStreamImpl(
                 else:
                     logger.debug('tool %s raised after dispatch; not re-running', toolName, exc_info=True)
             # T7: update_state changed plan/execution state mid-turn — the
-            # <session> block in the system text was built at turn start, so
-            # re-inject the compact state block on the receipt to keep later
-            # rounds of this same turn oriented.
+            # <session_state> tail was built at turn start, so re-inject the
+            # compact state block on the receipt to keep later rounds of this
+            # same turn oriented.
             if toolName == 'update_state' and isinstance(result, str) and result.startswith('State updated'):
                 stateBlock = _planStateBlock(session)
                 if stateBlock:
@@ -4339,6 +4534,25 @@ async def _sendWorkbenchMessageStreamImpl(
                 ]
                 if usedKeys:
                     touch_fact_usage(usedKeys)
+        # Memory-habit nudge (2026-08-29): a substantial turn that saved no
+        # memory queues a one-shot <memory_nudge> tail hint for the NEXT turn
+        # — the model's chance to consolidate durable knowledge. Best-effort,
+        # never blocks the turn, never touches the system prompt.
+        try:
+            from app.services import brain_config_service as _nudgeBc
+
+            _nudgeWritesOn = bool(_nudgeBc.getRuntimeConfig().get('modelMemoryWrites', True))
+        except Exception:
+            _nudgeWritesOn = True
+        try:
+            queue_memory_habit_nudge(
+                session,
+                rounds=toolRound,
+                rememberOffered=any(_toolDefName(t) == 'remember' for t in (tools or [])),
+                memWritesOn=_nudgeWritesOn,
+            )
+        except Exception:
+            logger.debug('memory habit nudge queue failed', exc_info=True)
         # Telemetry: one structured row per turn, no model calls, never
         # injected into prompts (diagnostics for Observability only).
         _telemetryProvider = (
@@ -4354,7 +4568,25 @@ async def _sendWorkbenchMessageStreamImpl(
             error_class=turn_outcomes.classify_error(turnError or ''),
             duration_ms=max(0, int(time.time() * 1000) - _turnStartMs),
             session_id=sessionId,
+            ttft_ms=int(_trace.ttft_ms or 0),
+            cache_hit_tokens=int(totalCacheHitTokens or 0),
+            cache_miss_tokens=int(totalCacheMissTokens or 0),
         )
+        # Phase L: surface the per-turn latency/cache numbers as one SSE event
+        # (Observability; the transcript can show a cache-hit chip) — turns
+        # the "feels slow" regression into visible numbers.
+        if emit:
+            emit(
+                {
+                    'type': 'turnTelemetry',
+                    'ttftMs': int(_trace.ttft_ms or 0),
+                    'durationMs': max(0, int(time.time() * 1000) - _turnStartMs),
+                    'cacheHitTokens': int(totalCacheHitTokens or 0),
+                    'cacheMissTokens': int(totalCacheMissTokens or 0),
+                    'inputTokens': int(totalInputTokens or 0),
+                    'outputTokens': int(totalOutputTokens or 0),
+                }
+            )
         if turnError is not None:
             # Rare promoted-lesson path (Q2): repeated failures of one
             # signature may yield ONE reviewed, deduplicated lesson fact.

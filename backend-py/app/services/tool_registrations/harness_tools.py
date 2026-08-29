@@ -60,7 +60,9 @@ def register() -> None:
         'harness_propose',
         'File a harness-improvement proposal for human review. Args: problem, evidence, proposal, '
         'rollback, kind (brain_config|skill_create|skill_patch|skill_delete|tool_bucket|tool_description|'
-        'flow_map|observation), expectedMetric?, payload?. You apply nothing — approval runs a deterministic applier.',
+        'flow_map|observation|promote), expectedMetric?, payload?. You apply nothing — approval runs a '
+        'deterministic applier. (promote proposals are judge-filed by the scheduled cross-project pass; '
+        'a model-filed promote payload is still human-gated before anything applies.)',
         _propose,
         {
             'type': 'object',

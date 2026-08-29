@@ -2,28 +2,37 @@
 /* Memories + Facts tabs render one flat chronological list across kinds
  * (plan §5.1): kind chip · title · relative date · ⋯, filter chips above
  * (not tabs), no cards/meters, and a one-line health footer fed by the
- * consolidation log. Timeline/Sessions stay raw-but-readable card grids.
+ * consolidation log.
  *
  * Detail view (Markdown body, delete, inline edit over whitelisted fields),
  * the Claude-style add-box, the two model-memory toggles, and per-entry /
  * per-store Markdown export are shared by both modes.
  *
+ * Part 17 Phase C: scope selector (Global + one entry per known workspace,
+ * C-1), source badges on rows (C-2), server-side category/source/confidence
+ * filters + sort control (C-3/4), pagination past the 200-row fetch cap
+ * (C-5), bulk select + bulk delete/export (C-6), add-box category + scope
+ * (C-7), expired rows visually separated with absolute dates (C-8), the
+ * project view (md files + entries + sessions bound to the workspace, C-9).
+ * The unreachable non-unified card branch and 6 dead STORE_META entries are
+ * gone (C-10), and heuristics rows are deletable to match the backend
+ * (C-11 — brain.py _ROW_DELETABLE includes it; "legacy" only means no live
+ * writer, not undeletable).
+ *
  * Counts come from /api/brain/stores, rows from /api/brain/stores/{name}.
  * Writes go to /api/august/memory/manage (add-box) and
- * /api/brain/stores/{name}/{id} (edit/delete). Heuristics + auto-memories
- * are legacy read-only stores — they render with a Legacy badge and no
- * mutations. The footer's raw-state lookup (§5.5) is the only surface where
- * internal_state machine state is ever visible. */
+ * /api/brain/stores/{name}/{id} (edit/delete). */
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Brain, ChevronLeft, ChevronRight, Download, FileUp, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Brain, ChevronLeft, ChevronRight, Download, FileUp, FolderTree, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { cn, timeAgo } from '@/lib/utils';
 import { ImportMemoryDialog } from './ImportMemoryDialog';
@@ -52,6 +61,31 @@ interface BrainConfigResponse {
   defaults?: Record<string, unknown>;
 }
 
+interface WorkspaceInfo {
+  path: string;
+  name: string;
+  hasMemory?: boolean;
+  hasSkills?: boolean;
+  sessions?: number;
+}
+
+/** C-9: one `## <title>` entry from a project's memory.md. */
+interface ProjectEntry {
+  key: string;
+  title: string;
+  body: string;
+  updated: string;
+  file: string;
+}
+
+/** C-9: /api/august/memory/manage {action:list, scope:project} response. */
+interface ProjectList {
+  ok?: boolean;
+  scope?: string;
+  files?: string[];
+  entries?: ProjectEntry[];
+}
+
 /** Store scope per Memory-hub sub-tab (section id → stores shown). Ids are
  *  immutable (settings-registry audit) — only the blurbs change.
  *  Part 15.2: the Timeline + Sessions sub-tabs were deleted — the
@@ -73,11 +107,19 @@ const SCOPES: Record<string, { title: string; blurb: string; stores: string[] }>
 /** Tabs rendered as one flat chronological list across kinds (§5.1). */
 const UNIFIED_TABS = new Set(['memory-knowledge', 'memory-facts']);
 
+const SORTS: Array<{ value: string; label: string }> = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+  { value: 'updated', label: 'Recently updated' },
+  { value: 'confidence', label: 'Confidence' },
+];
+
 /** Per-store rendering + mutation metadata. `idField` is the row identifier
  *  (the KV memory store keys by `key`; everything else by `id`). `editable`
  *  mirrors the backend field whitelist in memory_store/brain.py; `deletable`
  *  mirrors _ROW_DELETABLE there — stores without it reject DELETE, so the
- *  button must not render. */
+ *  button must not render. Part 17 C-10: only the 4 stores the two unified
+ *  scopes actually use remain; the dead card-grid entries are gone. */
 interface StoreMeta {
   idField: string;
   title: (r: Row) => string;
@@ -104,7 +146,7 @@ function str(v: unknown): string {
 }
 
 /** facts.fact_value is stored as JSON; the remember tool writes
- *  {"fact","details"} when details are present. Unwrap for display. */
+ * {"fact","details"} when details are present. Unwrap for display. */
 function parseFactValue(raw: unknown): { summary: string; details?: string } {
   const s = str(raw);
   try {
@@ -151,6 +193,8 @@ const STORE_META: Record<string, StoreMeta> = {
     legacy: true,
     readOnly: true,
   },
+  // C-11: heuristics is legacy (no live writer) but DELETABLE — brain.py's
+  // _ROW_DELETABLE includes it, so the UI stops suppressing the button.
   heuristics: {
     idField: 'id',
     title: (r) => str(r.rule),
@@ -159,46 +203,7 @@ const STORE_META: Record<string, StoreMeta> = {
     updated: (r) => str(r.updated_at),
     legacy: true,
     readOnly: true,
-  },
-  timeline: {
-    idField: 'id',
-    title: (r) => str(r.event_summary),
-    summary: (r) => str(r.session_id),
-    category: (r) => str(r.category),
-    updated: (r) => str(r.timestamp),
-    editable: ['event_summary', 'category'],
     deletable: true,
-  },
-  blackboard: {
-    idField: 'id',
-    title: (r) => str(r.key),
-    summary: (r) => str(r.value),
-    source: (r) => str(r.agent),
-    updated: (r) => str(r.created_at),
-  },
-  sessions: {
-    idField: 'id',
-    title: (r) => str(r.title) || str(r.id),
-    summary: (r) => str(r.model),
-    updated: (r) => str(r.started_at),
-  },
-  messages: {
-    idField: 'id',
-    title: (r) => str(r.role),
-    summary: (r) => str(r.content),
-    updated: (r) => str(r.created_at),
-  },
-  exams: {
-    idField: 'id',
-    title: (r) => str(r.title),
-    summary: (r) => str(r.topic),
-    updated: (r) => str(r.created_at),
-  },
-  examAttempts: {
-    idField: 'id',
-    title: (r) => str(r.exam_id),
-    summary: (r) => (r.is_correct ? 'answered correctly' : 'answered'),
-    updated: (r) => str(r.answered_at),
   },
 };
 
@@ -227,6 +232,13 @@ function hasExpiry(r: Row): boolean {
   return str(r.expires_at).trim() !== '';
 }
 
+/** C-8: a fact whose expires_at is in the past — visually separated from
+ *  live expiring rows (which still have time left). */
+function isExpired(r: Row): boolean {
+  const t = Date.parse(str(r.expires_at).replace(' ', 'T'));
+  return Number.isFinite(t) && t < Date.now();
+}
+
 function sortTime(r: Row, meta: StoreMeta | undefined): number {
   const t = Date.parse(meta?.updated?.(r) ?? '');
   return Number.isFinite(t) ? t : 0;
@@ -241,10 +253,11 @@ interface FlatEntry {
   summary: string;
   updated: string;
   expiring: boolean;
+  expired: boolean;
   legacy: boolean;
+  source: string;
 }
 
-const PAGE_SIZE = 25;
 const UNIFIED_FETCH = 200;
 const UNIFIED_RENDER = 50;
 const LONG_TEXT_FIELDS = new Set(['fact_value', 'value', 'event_summary', 'rule']);
@@ -303,11 +316,21 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
-  const [offset, setOffset] = useState(0);
   const [addText, setAddText] = useState('');
+  const [addCategory, setAddCategory] = useState('general');
   const [importOpen, setImportOpen] = useState(false);
   const [kindFilter, setKindFilter] = useState<'all' | EntryKind | 'expiring'>('all');
   const [unifiedShown, setUnifiedShown] = useState(UNIFIED_RENDER);
+  // C-1: scope selector — '' = Global, a path = that project's view.
+  const [wsScope, setWsScope] = useState('');
+  // C-3/4: server-side filters + sort (persist across page navigation).
+  const [catFilter, setCatFilter] = useState('');
+  const [srcFilter, setSrcFilter] = useState('');
+  const [sort, setSort] = useState('newest');
+  // C-6: bulk selection over the merged list.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  // C-5: pagination past the 200-row unified fetch cap.
+  const [unifiedOffset, setUnifiedOffset] = useState(0);
   const query = search.trim();
 
   // Switching sub-tabs resets the browse state to that scope's first store.
@@ -316,10 +339,15 @@ export function MemorySection({ active }: { active: { id: string } }) {
     setMode('list');
     setSelected(null);
     setEditing(false);
-    setOffset(0);
     setSearch('');
     setKindFilter('all');
     setUnifiedShown(UNIFIED_RENDER);
+    setWsScope('');
+    setCatFilter('');
+    setSrcFilter('');
+    setSort('newest');
+    setChecked(new Set());
+    setUnifiedOffset(0);
   }, [active.id, scope]);
 
   const storesQ = useQuery<{ stores: StoreInfo[] }>({
@@ -330,35 +358,45 @@ export function MemorySection({ active }: { active: { id: string } }) {
     queryKey: ['brain-config'],
     queryFn: () => api.get<BrainConfigResponse>('/api/brain/config'),
   });
-  // Non-unified tabs page one store at a time.
-  const pageQ = useQuery<StorePage>({
-    queryKey: ['brain-store', activeStore, offset, query],
+  // C-1: known project workspaces for the scope selector.
+  const workspacesQ = useQuery<{ workspaces: WorkspaceInfo[] }>({
+    queryKey: ['memory-workspaces'],
+    queryFn: () => api.get<{ workspaces: WorkspaceInfo[] }>('/api/august/memory/workspaces'),
+  });
+  // C-9: with a project scope selected, the section switches to the project
+  // view — the workspace's md files + entries (Phase A door) + the sessions
+  // bound to that workspace — instead of the global store rows.
+  const projectQ = useQuery<ProjectList>({
+    queryKey: ['project-memory', wsScope],
     queryFn: () =>
-      api.get<StorePage>(
-        `/api/brain/stores/${encodeURIComponent(activeStore)}` +
-          `?limit=${PAGE_SIZE}&offset=${offset}&query=${encodeURIComponent(query)}`,
-      ),
-    enabled: !unified,
+      api.post<ProjectList>('/api/august/memory/manage', {
+        action: 'list',
+        scope: 'project',
+        workspace: wsScope,
+      }),
+    enabled: !!wsScope,
   });
   // Unified tabs fetch both scope stores and merge client-side (§5.1).
+  // C-5: real pagination — the fetch uses UNIFIED_FETCH rows per page and a
+  // movable offset, so page 2+ reaches rows past the old hard 200 cap.
   const unifiedStoreA = unified ? scope.stores[0] : '';
   const unifiedStoreB = unified ? (scope.stores[1] ?? '') : '';
+  const unifiedFetch = (store: string) =>
+    api.get<StorePage>(
+      `/api/brain/stores/${encodeURIComponent(store)}` +
+        `?limit=${UNIFIED_FETCH}&offset=${unifiedOffset}&query=${encodeURIComponent(query)}` +
+        `&sort=${encodeURIComponent(sort)}` +
+        (catFilter ? `&category=${encodeURIComponent(catFilter)}` : '') +
+        (srcFilter ? `&source=${encodeURIComponent(srcFilter)}` : ''),
+    );
   const unifiedQa = useQuery<StorePage>({
-    queryKey: ['brain-store', unifiedStoreA, 0, query, UNIFIED_FETCH],
-    queryFn: () =>
-      api.get<StorePage>(
-        `/api/brain/stores/${encodeURIComponent(unifiedStoreA)}` +
-          `?limit=${UNIFIED_FETCH}&offset=0&query=${encodeURIComponent(query)}`,
-      ),
+    queryKey: ['brain-store', unifiedStoreA, unifiedOffset, query, UNIFIED_FETCH, catFilter, srcFilter, sort],
+    queryFn: () => unifiedFetch(unifiedStoreA),
     enabled: unified && !!unifiedStoreA,
   });
   const unifiedQb = useQuery<StorePage>({
-    queryKey: ['brain-store', unifiedStoreB, 0, query, UNIFIED_FETCH],
-    queryFn: () =>
-      api.get<StorePage>(
-        `/api/brain/stores/${encodeURIComponent(unifiedStoreB)}` +
-          `?limit=${UNIFIED_FETCH}&offset=0&query=${encodeURIComponent(query)}`,
-      ),
+    queryKey: ['brain-store', unifiedStoreB, unifiedOffset, query, UNIFIED_FETCH, catFilter, srcFilter, sort],
+    queryFn: () => unifiedFetch(unifiedStoreB),
     enabled: unified && !!unifiedStoreB,
   });
 
@@ -378,6 +416,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
     mutationFn: (body: Record<string, unknown>) => api.post('/api/august/memory/manage', body),
     onSuccess: () => {
       invalidate();
+      void qc.invalidateQueries({ queryKey: ['memory-workspaces'] });
       setAddText('');
       toast.success('Memory saved');
     },
@@ -453,7 +492,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
           summary: m?.summary(row) ?? '',
           updated: m?.updated?.(row) ?? '',
           expiring: hasExpiry(row),
+          expired: isExpired(row),
           legacy: !!m?.legacy,
+          source: m?.source?.(row) ?? '',
         });
       }
     }
@@ -478,15 +519,18 @@ export function MemorySection({ active }: { active: { id: string } }) {
   }, [flatEntries]);
 
   const filteredEntries = useMemo(() => {
-    if (kindFilter === 'all') return flatEntries;
-    if (kindFilter === 'expiring') return flatEntries.filter((e) => e.expiring);
-    return flatEntries.filter((e) => e.kind === kindFilter);
+    let out = flatEntries;
+    if (kindFilter === 'expiring') out = out.filter((e) => e.expiring);
+    else if (kindFilter !== 'all') out = out.filter((e) => e.kind === kindFilter);
+    // C-8: expired rows separate to the bottom of the list, live rows first.
+    return [...out].sort((a, b) => Number(b.expired) - Number(a.expired));
   }, [flatEntries, kindFilter]);
 
-  const rows = pageQ.data?.rows ?? [];
-  const total = pageQ.data?.total ?? 0;
-  const from = total === 0 ? 0 : offset + 1;
-  const to = Math.min(offset + PAGE_SIZE, total);
+  // Server-reported totals drive the unified pager (C-5).
+  const unifiedTotal = (unifiedQa.data?.total ?? 0) + (unifiedQb.data?.total ?? 0);
+  const unifiedCanPrev = unifiedOffset > 0;
+  const unifiedCanNext = unifiedOffset + UNIFIED_FETCH < unifiedTotal;
+
   const title = scope?.title ?? 'Memory';
   const showAddBox = active.id === 'memory-knowledge' || active.id === 'memory-facts';
 
@@ -532,6 +576,44 @@ export function MemorySection({ active }: { active: { id: string } }) {
     });
   };
 
+  /* C-6: bulk delete iterates the checked entries through the same per-row
+   * delete door (each store row needs its own DELETE path). */
+  const bulkDelete = async () => {
+    const targets = flatEntries.filter((e) => checked.has(`${e.store}:${e.id}`));
+    const ok = await confirm({
+      title: `Delete ${checked.size} entr${checked.size === 1 ? 'y' : 'ies'}?`,
+      message: `${checked.size} selected entr${checked.size === 1 ? 'y' : 'ies'} will be removed. This cannot be undone from here.`,
+      confirmLabel: 'Delete all',
+      variant: 'destructive',
+    });
+    if (!ok) return;
+    let failed = 0;
+    for (const e of targets) {
+      const m = STORE_META[e.store];
+      if (!m) continue;
+      try {
+        await api.delete(
+          `/api/brain/stores/${encodeURIComponent(e.store)}/${encodeURIComponent(e.id)}`,
+        );
+      } catch {
+        failed += 1;
+      }
+    }
+    invalidate();
+    setChecked(new Set());
+    if (failed > 0) toast.error(`${failed} deletion${failed === 1 ? '' : 's'} failed`);
+    else toast.success(`Deleted ${targets.length - failed} entr${targets.length - failed === 1 ? 'y' : 'ies'}`);
+  };
+
+  const bulkExport = () => {
+    const targets = flatEntries.filter((e) => checked.has(`${e.store}:${e.id}`));
+    if (targets.length === 0) return;
+    const body = targets
+      .map((e) => entryToMarkdown(e.store, e.row, STORE_META[e.store]))
+      .join('\n\n---\n\n');
+    downloadMarkdown(`memory-selected-${targets.length}.md`, body);
+  };
+
   const exportEntry = (rowOverride?: Row, storeOverride?: string) => {
     const row = rowOverride ?? selected;
     const store = storeOverride ?? activeStore;
@@ -541,28 +623,45 @@ export function MemorySection({ active }: { active: { id: string } }) {
   };
 
   const exportStore = () => {
-    if (unified) {
-      if (flatEntries.length === 0) return;
-      const body = flatEntries
-        .map((e) => entryToMarkdown(e.store, e.row, STORE_META[e.store]))
-        .join('\n\n---\n\n');
-      downloadMarkdown(`${scope?.title ?? 'memory'}-export.md`.toLowerCase().replace(/\s+/g, '-'), body);
-      return;
-    }
-    if (!meta || rows.length === 0) return;
-    const body = rows.map((r) => entryToMarkdown(activeStore, r, meta)).join('\n\n---\n\n');
-    downloadMarkdown(`${activeStore}-export.md`, body);
+    // C-10: only the unified scopes are mounted — the per-store card-grid
+    // export branch is gone with the dead card view.
+    if (flatEntries.length === 0) return;
+    const body = flatEntries
+      .map((e) => entryToMarkdown(e.store, e.row, STORE_META[e.store]))
+      .join('\n\n---\n\n');
+    downloadMarkdown(`${scope?.title ?? 'memory'}-export.md`.toLowerCase().replace(/\s+/g, '-'), body);
   };
 
+  /* C-7: the add box gains category + scope. Global writes land in facts
+   * with the chosen category (no more always-general); project writes go
+   * through the md-file door (scope=project + workspace). */
   const addMemory = () => {
     const text = addText.trim();
     if (!text) return;
-    addMut.mutate({ action: 'set', key: `user:${slugify(text)}`, value: text, category: 'general', source: 'user' });
+    if (wsScope) {
+      addMut.mutate({
+        action: 'set',
+        scope: 'project',
+        workspace: wsScope,
+        key: text.split('\n')[0].slice(0, 80),
+        value: text,
+        details: '',
+      });
+      return;
+    }
+    addMut.mutate({
+      action: 'set',
+      key: `user:${slugify(text)}`,
+      value: text,
+      category: addCategory,
+      source: 'user',
+    });
   };
 
   const cfg = configQ.data?.config;
   const unifiedLoading = unified && (unifiedQa.isLoading || (!!unifiedStoreB && unifiedQb.isLoading));
   const unifiedError = unified && ((unifiedQa.isError && unifiedQa.error) || (unifiedQb.isError && unifiedQb.error));
+  const workspaces = workspacesQ.data?.workspaces ?? [];
 
   return (
     <div className="px-8 py-6 max-w-4xl space-y-5">
@@ -608,67 +707,114 @@ export function MemorySection({ active }: { active: { id: string } }) {
         <PageLoader label="Loading memory stores…" variant="card" className="py-10" />
       ) : (
         <>
-          {/* Store chips — raw tabs only; the unified list uses kind chips. */}
-          {!unified && (
-            <div className="flex flex-wrap gap-2">
-              {stores.map((s) => (
-                <button
-                  key={s.name}
-                  type="button"
-                  onClick={() => {
-                    setActiveStore(s.name);
-                    setOffset(0);
-                    setMode('list');
-                    setSelected(null);
-                  }}
-                  title={s.label}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition',
-                    s.name === activeStore
-                      ? 'border-primary/50 bg-primary/10 text-foreground'
-                      : 'border-border/60 bg-card/60 text-muted-foreground hover:border-primary/30 hover:text-foreground',
-                  )}
-                >
-                  <span className="font-medium">{s.name}</span>
-                  <span className="rounded bg-muted/60 px-1 text-[10px] tabular-nums">{s.count}</span>
-                </button>
-              ))}
+          {/* C-1: scope selector — Global + one entry per known workspace. */}
+          <div className="flex items-center gap-2" data-testid="memory-scope-row">
+            <FolderTree className="size-3.5 text-muted-foreground/70" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">Scope</span>
+            <div className="max-w-xs flex-1">
+              <WorkspaceSelect
+                value={wsScope}
+                onChange={(e) => {
+                  setWsScope(e.target.value);
+                  setChecked(new Set());
+                  setUnifiedOffset(0);
+                }}
+                options={[
+                  { value: '', label: 'Global (all workspaces)' },
+                  ...workspaces.map((w) => ({
+                    value: w.path,
+                    label: `${w.name}${w.hasMemory || w.hasSkills ? ' · project' : ''}`,
+                  })),
+                ]}
+                data-testid="memory-scope-select"
+                aria-label="Memory scope"
+              />
             </div>
-          )}
+          </div>
 
-          {/* Search + refresh + export-store */}
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1 max-w-sm">
+          {/* Search + filters + sort + refresh + export-store */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 max-w-sm min-w-44">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
               <input
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
-                  setOffset(0);
+                  setUnifiedOffset(0);
                   setUnifiedShown(UNIFIED_RENDER);
+                  setUnifiedOffset(0);
                 }}
                 placeholder="Search memory…"
                 className="w-full rounded-lg border border-border/60 bg-card/60 py-1.5 pl-8 pr-3 text-xs text-foreground outline-none transition focus:border-primary/40"
                 data-testid="memory-search-input"
               />
             </div>
+            {/* C-3: category + source filters (server-side). */}
+            <select
+              value={catFilter}
+              onChange={(e) => {
+                setCatFilter(e.target.value);
+                setUnifiedOffset(0);
+                setUnifiedOffset(0);
+              }}
+              className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
+              data-testid="memory-category-filter"
+              aria-label="Filter by category"
+            >
+              <option value="">All categories</option>
+              {['general', 'user', 'project', 'workflow', 'preference'].map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <select
+              value={srcFilter}
+              onChange={(e) => {
+                setSrcFilter(e.target.value);
+                setUnifiedOffset(0);
+                setUnifiedOffset(0);
+              }}
+              className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
+              data-testid="memory-source-filter"
+              aria-label="Filter by source"
+            >
+              <option value="">All sources</option>
+              {['remember', 'user', 'extracted', 'lesson'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            {/* C-4: sort control. */}
+            <select
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value);
+                setUnifiedOffset(0);
+                setUnifiedOffset(0);
+              }}
+              className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
+              data-testid="memory-sort"
+              aria-label="Sort order"
+            >
+              {SORTS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={() => {
                 void storesQ.refetch();
-                void pageQ.refetch();
                 void unifiedQa.refetch();
                 void unifiedQb.refetch();
+                void workspacesQ.refetch();
               }}
               title="Refresh"
               className="rounded-lg border border-border/60 bg-card/60 p-1.5 text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
             >
-              <RefreshCw className={cn('size-3.5', (pageQ.isFetching || unifiedQa.isFetching || unifiedQb.isFetching) && 'animate-spin')} />
+              <RefreshCw className={cn('size-3.5', (unifiedQa.isFetching || unifiedQb.isFetching) && 'animate-spin')} />
             </button>
             <button
               type="button"
               onClick={exportStore}
-              disabled={unified ? flatEntries.length === 0 : rows.length === 0}
+              disabled={flatEntries.length === 0}
               title="Export as Markdown"
               className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
             >
@@ -685,19 +831,36 @@ export function MemorySection({ active }: { active: { id: string } }) {
             </button>
           </div>
 
-          {/* Add-box (Memories + Facts tabs) */}
+          {/* Add-box (Memories + Facts tabs) — C-7: category + scope aware. */}
           {showAddBox && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 value={addText}
                 onChange={(e) => setAddText(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') addMemory();
                 }}
-                placeholder="Add a memory, e.g. “My plant is named Gerald”"
-                className="flex-1 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs text-foreground outline-none transition focus:border-primary/40"
+                placeholder={
+                  wsScope
+                    ? `Add to this project’s memory (md file), e.g. “NSIS is legacy here”`
+                    : 'Add a memory, e.g. “My plant is named Gerald”'
+                }
+                className="flex-1 min-w-56 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs text-foreground outline-none transition focus:border-primary/40"
                 data-testid="memory-add-input"
               />
+              {!wsScope && (
+                <select
+                  value={addCategory}
+                  onChange={(e) => setAddCategory(e.target.value)}
+                  className="rounded-lg border border-border/60 bg-card/60 px-2 py-2 text-xs text-foreground outline-none"
+                  data-testid="memory-add-category"
+                  aria-label="Category for the new memory"
+                >
+                  {['general', 'user', 'project', 'workflow', 'preference'].map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              )}
               <button
                 type="button"
                 onClick={addMemory}
@@ -705,7 +868,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                 className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
                 data-testid="memory-add-button"
               >
-                <Plus className="size-3.5" /> Add
+                <Plus className="size-3.5" /> Add{wsScope ? ' to project' : ''}
               </button>
             </div>
           )}
@@ -729,6 +892,39 @@ export function MemorySection({ active }: { active: { id: string } }) {
               onCancelEdit={() => setEditing(false)}
               onDelete={() => requestDelete()}
               onExport={() => exportEntry()}
+            />
+          ) : wsScope ? (
+            /* C-9: project scope view — md files + entries + sessions bound
+             * to the workspace, replacing the global store rows. */
+            <ProjectMemoryView
+              workspacePath={wsScope}
+              query={query}
+              data={projectQ.data}
+              loading={projectQ.isLoading}
+              error={projectQ.isError ? (projectQ.error as Error | null)?.message ?? 'unknown error' : ''}
+              sessions={workspaces.find((w) => w.path === wsScope)?.sessions ?? 0}
+              onDelete={(title) => {
+                void confirm({
+                  title: 'Delete this project entry?',
+                  message: `“${title}” will be removed from this project's memory file. This cannot be undone from here.`,
+                  confirmLabel: 'Delete',
+                  variant: 'destructive',
+                }).then((ok) => {
+                  if (!ok) return;
+                  api
+                    .post('/api/august/memory/manage', {
+                      action: 'delete',
+                      scope: 'project',
+                      workspace: wsScope,
+                      key: title,
+                    })
+                    .then(() => {
+                      void qc.invalidateQueries({ queryKey: ['project-memory'] });
+                      toast.success('Project entry deleted');
+                    })
+                    .catch((e: Error) => toast.error(e.message || 'Delete failed'));
+                });
+              }}
             />
           ) : unified ? (
             <>
@@ -757,6 +953,30 @@ export function MemorySection({ active }: { active: { id: string } }) {
                     onClick={() => setKindFilter('expiring')}
                   />
                 )}
+                {/* C-6: bulk bar appears when rows are checked. */}
+                {checked.size > 0 && (
+                  <>
+                    <span className="ml-2 text-[11px] text-muted-foreground" data-testid="memory-bulk-count">
+                      {checked.size} selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void bulkExport()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
+                      data-testid="memory-bulk-export"
+                    >
+                      <Download className="size-3" /> Export selected
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void bulkDelete()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] text-destructive transition hover:bg-destructive/20"
+                      data-testid="memory-bulk-delete"
+                    >
+                      <Trash2 className="size-3" /> Delete selected
+                    </button>
+                  </>
+                )}
               </div>
 
               {unifiedLoading ? (
@@ -779,6 +999,16 @@ export function MemorySection({ active }: { active: { id: string } }) {
                     <FlatEntryRow
                       key={`${e.store}:${e.id}`}
                       entry={e}
+                      checked={checked.has(`${e.store}:${e.id}`)}
+                      onCheck={(v) =>
+                        setChecked((prev) => {
+                          const next = new Set(prev);
+                          const k = `${e.store}:${e.id}`;
+                          if (v) next.add(k);
+                          else next.delete(k);
+                          return next;
+                        })
+                      }
                       onView={() => openDetail(e.row, e.store)}
                       onEdit={() => {
                         openDetail(e.row, e.store);
@@ -807,6 +1037,43 @@ export function MemorySection({ active }: { active: { id: string } }) {
                 </div>
               )}
 
+              {/* C-5: server-side pager past the 200-row cap. */}
+              {unifiedTotal > UNIFIED_FETCH && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground" data-testid="memory-unified-pager">
+                  <span className="tabular-nums" data-testid="memory-unified-range">
+                    {unifiedOffset + 1}–{Math.min(unifiedOffset + UNIFIED_FETCH, unifiedTotal)} of {unifiedTotal}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={!unifiedCanPrev}
+                      onClick={() => {
+                        setUnifiedOffset(Math.max(0, unifiedOffset - UNIFIED_FETCH));
+                        setUnifiedShown(UNIFIED_RENDER);
+                        setChecked(new Set());
+                      }}
+                      className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
+                      title="Previous 200"
+                    >
+                      <ChevronLeft className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!unifiedCanNext}
+                      onClick={() => {
+                        setUnifiedOffset(unifiedOffset + UNIFIED_FETCH);
+                        setUnifiedShown(UNIFIED_RENDER);
+                        setChecked(new Set());
+                      }}
+                      className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
+                      title="Next 200"
+                    >
+                      <ChevronRight className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* §5.1 health footer — the §3.5 audit surface. */}
               <HealthFooter
                 consolidating={consolidateMut.isPending}
@@ -814,62 +1081,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
               />
             </>
           ) : (
-            <>
-              {/* Entry list (raw-but-readable tabs: Timeline, Sessions) */}
-              <div className="space-y-4">
-                {pageQ.isLoading ? (
-                  <PageLoader label="Loading entries…" variant="card" className="py-8" />
-                ) : pageQ.isError ? (
-                  <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-center text-xs text-destructive">
-                    Could not load {activeStore}:{' '}
-                    {(pageQ.error as Error | null)?.message ?? 'unknown error'}
-                  </div>
-                ) : rows.length === 0 ? (
-                  <p className="rounded-xl border border-white/[0.06] bg-card/60 px-4 py-6 text-center text-xs text-muted-foreground">
-                    {query
-                      ? `No ${activeStore} entries match “${query}”.`
-                      : meta?.legacy
-                        ? `Nothing stored in ${activeStore}. This is a legacy store — no new entries are written here.`
-                        : `Nothing stored in ${activeStore} yet.`}
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {rows.map((r, i) => (
-                      <EntryCard key={`row-${i}`} row={r} meta={meta} onOpen={() => openDetail(r)} />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Pagination */}
-              {total > PAGE_SIZE && (
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="tabular-nums">
-                    {from}–{to} of {total}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={offset === 0}
-                      onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                      className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
-                      title="Previous page"
-                    >
-                      <ChevronLeft className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={offset + PAGE_SIZE >= total}
-                      onClick={() => setOffset(offset + PAGE_SIZE)}
-                      className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
-                      title="Next page"
-                    >
-                      <ChevronRight className="size-3.5" />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
+            <p className="rounded-xl border border-white/[0.06] bg-card/60 px-4 py-6 text-center text-xs text-muted-foreground">
+              This store is not browsable from here.
+            </p>
           )}
         </>
       )}
@@ -893,7 +1107,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
         onClose={() => setImportOpen(false)}
         onImported={() => {
           void storesQ.refetch();
-          void pageQ.refetch();
           void unifiedQa.refetch();
           void unifiedQb.refetch();
         }}
@@ -937,12 +1150,16 @@ function KindChip({
 
 function FlatEntryRow({
   entry,
+  checked,
+  onCheck,
   onView,
   onEdit,
   onDelete,
   onExport,
 }: {
   entry: FlatEntry;
+  checked: boolean;
+  onCheck: (v: boolean) => void;
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -951,15 +1168,25 @@ function FlatEntryRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const meta = STORE_META[entry.store];
   const canEdit = !!meta?.editable && !meta?.readOnly;
-  const canDelete = !!meta?.deletable && !meta?.readOnly;
+  const canDelete = !!meta?.deletable;
   const kind = KIND_META[entry.kind];
 
   return (
     <div
-      className="group relative flex items-center gap-2.5 py-2"
+      className={cn('group relative flex items-center gap-2.5 py-2', entry.expired && 'opacity-50')}
       data-testid="memory-flat-row"
       data-kind={entry.kind}
+      data-expired={entry.expired ? 'true' : undefined}
     >
+      {/* C-6: bulk-select checkbox. */}
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onCheck(e.target.checked)}
+        className="size-3.5 shrink-0 accent-primary"
+        aria-label={`Select ${entry.title}`}
+        data-testid="memory-bulk-check"
+      />
       <span
         className={cn(
           'w-14 shrink-0 rounded-md border px-1 py-0.5 text-center text-[9px] font-medium uppercase tracking-wide',
@@ -979,20 +1206,42 @@ function FlatEntryRow({
           “{entry.title}”
         </span>
       </button>
+      {/* C-2: source badge — imported:<provider> and remember/user visible. */}
+      {entry.source && (
+        <span
+          className="shrink-0 rounded border border-border/50 bg-muted/30 px-1 py-0.5 text-[8.5px] font-medium uppercase tracking-wide text-muted-foreground"
+          data-testid="memory-source-badge"
+        >
+          {entry.source}
+        </span>
+      )}
       {entry.legacy && (
         <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-amber-400">
           legacy
         </span>
       )}
-      {entry.expiring && (
+      {entry.expired ? (
+        // C-8: expired rows show the absolute date, dimmed.
+        <span
+          className="shrink-0 rounded border border-destructive/30 bg-destructive/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-destructive"
+          title={`Expired: ${str(entry.row.expires_at)}`}
+          data-testid="memory-expired-badge"
+        >
+          expired {str(entry.row.expires_at).slice(0, 10)}
+        </span>
+      ) : entry.expiring ? (
         <span
           className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-warning"
           title={`Expires: ${str(entry.row.expires_at)}`}
+          data-testid="memory-expiring-badge"
         >
           expiring
         </span>
-      )}
-      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
+      ) : null}
+      <span
+        className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60"
+        title={entry.updated}
+      >
         {timeAgo(entry.updated)}
       </span>
       <div className="relative shrink-0">
@@ -1242,50 +1491,108 @@ function RawStateLookup() {
   );
 }
 
-/* ── Entry card (raw-but-readable tabs) ────────────────────────────── */
+/* ── C-9: project scope view — md files + entries + bound sessions ──── */
 
-function EntryCard({ row, meta, onOpen }: { row: Row; meta: StoreMeta; onOpen: () => void }) {
-  const title = meta.title(row) || '(untitled)';
-  const summary = meta.summary(row);
-  const category = meta.category?.(row);
-  const source = meta.source?.(row);
-  const updated = meta.updated?.(row);
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group w-full rounded-xl border border-border/50 bg-card/50 p-4 text-left transition hover:border-border hover:bg-card/80 focus:outline-none focus:ring-1 focus:ring-primary/40"
-    >
-      <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-[11px] font-semibold uppercase text-primary">
-          {title.slice(0, 2)}
-        </span>
-        <div className="min-w-0 flex-1">
-          <span className="block truncate text-[13.5px] font-semibold text-foreground">{title}</span>
-          <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-muted-foreground">
-            {summary || 'No content'}
-          </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {category && (
-              <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                {category}
-              </span>
-            )}
-            {source && (
-              <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                {source}
-              </span>
-            )}
-            {meta.legacy && (
-              <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-amber-400">
-                legacy
-              </span>
-            )}
-            {updated && <span className="ml-auto text-[10px] text-muted-foreground/70">{timeAgo(updated)}</span>}
-          </div>
-        </div>
+function ProjectMemoryView({
+  workspacePath,
+  query,
+  data,
+  loading,
+  error,
+  sessions,
+  onDelete,
+}: {
+  workspacePath: string;
+  query: string;
+  data?: ProjectList;
+  loading: boolean;
+  error: string;
+  sessions: number;
+  onDelete: (title: string) => void;
+}) {
+  const entries = useMemo(() => {
+    const all = data?.entries ?? [];
+    if (!query) return all;
+    const q = query.toLowerCase();
+    return all.filter(
+      (e) => e.title.toLowerCase().includes(q) || e.body.toLowerCase().includes(q),
+    );
+  }, [data, query]);
+  const files = data?.files ?? [];
+  const wsName = workspacePath.split(/[\\/]/).filter(Boolean).pop() ?? workspacePath;
+
+  if (loading) {
+    return <PageLoader label="Loading project memory…" variant="card" className="py-8" />;
+  }
+  if (error) {
+    return (
+      <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-center text-xs text-destructive">
+        Could not load project memory: {error}
       </div>
-    </button>
+    );
+  }
+  return (
+    <div className="space-y-3" data-testid="memory-project-view">
+      <div className="flex flex-wrap items-center gap-1.5 text-[10.5px] text-muted-foreground/80">
+        <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-medium uppercase tracking-wide text-emerald-400">
+          project
+        </span>
+        <span className="font-mono" data-testid="memory-project-path">
+          {workspacePath}
+        </span>
+        <span>· {entries.length} entr{entries.length === 1 ? 'y' : 'ies'}</span>
+        <span>· {files.length} file{files.length === 1 ? '' : 's'}</span>
+        <span>· {sessions} session{sessions === 1 ? '' : 's'} bound to this workspace</span>
+      </div>
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" data-testid="memory-project-files">
+          {files.map((f) => (
+            <span
+              key={f}
+              className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+            >
+              {f}
+            </span>
+          ))}
+        </div>
+      )}
+      {entries.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border/60 bg-card/40 px-4 py-6 text-center text-xs text-muted-foreground">
+          No project memory yet in <strong>{wsName}</strong> — use the add-box above or the
+          remember tool in a session bound to this workspace.
+        </p>
+      ) : (
+        <div className="divide-y divide-white/[0.04]">
+          {entries.map((e) => (
+            <div key={e.key} className="flex items-start gap-2.5 py-2" data-testid="memory-project-entry">
+              <span className="mt-0.5 w-14 shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1 py-0.5 text-center text-[9px] font-medium uppercase tracking-wide text-emerald-400">
+                entry
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-[12.5px] text-foreground/90">{e.title}</span>
+                <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                  {e.body.split('\n')[0]}
+                </p>
+              </div>
+              {e.updated && (
+                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60" title={e.updated}>
+                  {timeAgo(e.updated)}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => onDelete(e.title)}
+                className="shrink-0 rounded p-0.5 text-muted-foreground/40 transition hover:text-destructive"
+                aria-label={`Delete ${e.title}`}
+                data-testid="memory-project-delete"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1328,6 +1635,8 @@ function DetailView({
   const updated = meta.updated?.(row);
   const created = str(row.created_at);
   const confidence = str(row.confidence);
+  const expiresAt = str(row.expires_at);
+  const expired = isExpired(row);
 
   return (
     <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
@@ -1348,13 +1657,29 @@ function DetailView({
               </span>
             )}
             {source && (
-              <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span
+                className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground"
+                data-testid="memory-detail-source"
+              >
                 {source}
               </span>
             )}
             {meta.legacy && (
               <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-amber-400">
-                legacy · read-only
+                legacy
+              </span>
+            )}
+            {expiresAt && (
+              <span
+                className={cn(
+                  'rounded-md border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide',
+                  expired
+                    ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                    : 'border-warning/30 bg-warning/10 text-warning',
+                )}
+                data-testid="memory-detail-expiry"
+              >
+                {expired ? 'expired' : 'expires'} {expiresAt.slice(0, 10)}
               </span>
             )}
           </div>
@@ -1376,7 +1701,7 @@ function DetailView({
           >
             <Download className="size-3.5" /> Export
           </button>
-          {!meta.readOnly && meta.deletable && (
+          {meta.deletable && (
             <button
               type="button"
               onClick={onDelete}

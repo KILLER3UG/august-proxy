@@ -519,6 +519,20 @@ class BaseProviderClient:
                         rateGate.recordRateLimit(host, parseRetryAfterMs(resp.headers.get('retry-after')))
                     if isRetryableStatus(resp.status_code) and attempt < self.maxRetries:
                         delay = getRetryDelayMs(resp, attempt + 1) / 1000
+                        # Phase L (Part 17): retries were silent — a capped
+                        # Retry-After wait could stall the stream ~30 s with
+                        # zero events, reading to the user as "the model is
+                        # slow". Yield a marker event so consumers (workbench
+                        # SSE → transcript pill) can show the wait. Yielded
+                        # BEFORE any upstream event, so it never violates the
+                        # idempotency rule (retries only pre-first-token).
+                        yield {
+                            'type': 'upstreamRetry',
+                            'attempt': attempt + 1,
+                            'maxRetries': self.maxRetries,
+                            'delayMs': int(delay * 1000),
+                            'status': resp.status_code,
+                        }
                         await asyncio.sleep(delay)
                         continue
                     if resp.status_code >= 400:
@@ -580,6 +594,13 @@ class BaseProviderClient:
                     return
                 if attempt < self.maxRetries:
                     delay = min(1000 * 2**attempt, 8000) / 1000
+                    yield {
+                        'type': 'upstreamRetry',
+                        'attempt': attempt + 1,
+                        'maxRetries': self.maxRetries,
+                        'delayMs': int(delay * 1000),
+                        'status': 0,
+                    }
                     await asyncio.sleep(delay)
                     continue
                 yield {'type': 'error', 'error': str(lastExc)}

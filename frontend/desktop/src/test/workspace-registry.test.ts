@@ -74,4 +74,13 @@ describe('workspace-registry filter', () => {
     expect(getWorkspaceSection(null).id).toBe(WORKSPACE_SECTIONS[0].id);
     expect(getWorkspaceSection(undefined).id).toBe(WORKSPACE_SECTIONS[0].id);
   });
+
+  /* Part 17 Phase C registry line: the chat-side workspace panel exposes
+   * skills and memory consistently — both workspace-scoped surfaces ship
+   * with a workspace selector, so neither may be missing from the panel. */
+  it('exposes skills and memory consistently', () => {
+    const ids = WORKSPACE_SECTIONS.map((s) => s.id);
+    expect(ids).toContain('memory-knowledge');
+    expect(ids).toContain('skills');
+  });
 });

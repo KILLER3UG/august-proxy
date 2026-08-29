@@ -11,6 +11,7 @@ the caution level of their primary bucket (read / write / destructive / …).
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from typing import Iterable
 
 from app.json_narrowing import as_str
@@ -469,7 +470,9 @@ def skill_relevance_enabled() -> bool:
         return True
 
 
-def build_relevant_skills_block(query: str) -> str:
+def build_relevant_skills_block(
+    query: str, workspace: str | Path | None = None
+) -> str:
     """Render the per-turn ``<relevant_skills>`` block (M6 item 6).
 
     The Tier-1 ``<skills>`` index is name-only and cacheable; this block
@@ -479,6 +482,9 @@ def build_relevant_skills_block(query: str) -> str:
     context by the workbench (never the system prompt) so the provider
     prefix cache stays stable (Q14). Empty string when gated off, the query
     is too short, or nothing scores above zero.
+
+    Part 17 Phase B: ``workspace`` scopes the catalogue — project skills
+    (and their shadowing of global names) join the ranking.
     """
     q = (query or '').strip()
     if len(q) < _RELEVANT_SKILLS_MIN_QUERY or not skill_relevance_enabled():
@@ -487,7 +493,7 @@ def build_relevant_skills_block(query: str) -> str:
         from app.services import skill_service
         from app.services.tools.retrieval import BM25, _tokenize
 
-        catalogue = skill_service.catalogue()
+        catalogue = skill_service.catalogue(workspace)
         if not catalogue:
             return ''
         queryTokens = _tokenize(q)

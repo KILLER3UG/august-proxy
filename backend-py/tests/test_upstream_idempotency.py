@@ -222,3 +222,67 @@ class TestRateGate:
     async def testWaitOnUnknownHostIsInstant(self):
         gate = ProviderRateGate()
         await gate.wait('never-seen')  # must not raise or block
+
+
+class TestUpstreamRetryVisibility:
+    """Phase L (Part 17): silent retries became visible events.
+
+    A capped Retry-After wait (up to 30 s) inside the client retry loop
+    previously produced ZERO stream events — the transcript sat frozen and
+    users read it as "the model is slow". The retry loop must yield a
+    type='upstreamRetry' marker (attempt/delayMs/status) before each wait,
+    both for retryable HTTP statuses and pre-response transport failures.
+    """
+
+    @pytest.mark.asyncio
+    async def test429RetryEmitsUpstreamRetryEvent(self, fastSleep):
+        calls = {'n': 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls['n'] += 1
+            if calls['n'] == 1:
+                return httpx.Response(429, headers={'retry-after': '2'}, json={'error': 'slow down'})
+            return httpx.Response(200, stream=_SseByteStream([b'data: {"n": 1}\n\n']))
+
+        client = _clientWithHandler(handler)
+        events = [e async for e in client.streamSse('http://upstream.test/x', {}, {})]
+        retryEvents = [e for e in events if e.get('type') == 'upstreamRetry']
+        assert len(retryEvents) == 1, 'one retry marker expected, before the content'
+        assert events[0].get('type') == 'upstreamRetry'
+        assert retryEvents[0].get('attempt') == 1
+        assert retryEvents[0].get('status') == 429
+        # Retry-After: 2 → 2000 ms (delay surfaced so the UI can show the wait).
+        assert retryEvents[0].get('delayMs') == 2000
+        assert any(e.get('n') == 1 for e in events)
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def testConnectErrorRetryEmitsUpstreamRetryEvent(self, fastSleep):
+        calls = {'n': 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls['n'] += 1
+            if calls['n'] == 1:
+                raise httpx.ConnectError('refused')
+            return httpx.Response(200, stream=_SseByteStream([b'data: {"n": 1}\n\n']))
+
+        client = _clientWithHandler(handler)
+        events = [e async for e in client.streamSse('http://upstream.test/x', {}, {})]
+        retryEvents = [e for e in events if e.get('type') == 'upstreamRetry']
+        assert len(retryEvents) == 1
+        assert retryEvents[0].get('status') == 0  # transport-level failure
+        assert retryEvents[0].get('attempt') == 1
+        assert retryEvents[0].get('delayMs', 0) > 0
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def testNoRetryNoMarker(self, fastSleep):
+        """A clean first-attempt stream must NOT emit any retry marker."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, stream=_SseByteStream([b'data: {"n": 1}\n\n']))
+
+        client = _clientWithHandler(handler)
+        events = [e async for e in client.streamSse('http://upstream.test/x', {}, {})]
+        assert not any(e.get('type') == 'upstreamRetry' for e in events)
+        await client.close()

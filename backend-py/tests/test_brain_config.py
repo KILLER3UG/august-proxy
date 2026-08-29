@@ -48,6 +48,8 @@ _ALLCamelKeys = {
     'consolidationModelSummarize',
     # M7 titling target override (plan §3.7).
     'titleModel',
+    # Part 16/17 skill-learning judge mode (off | extract-only | full).
+    'skillLearning',
 }
 
 

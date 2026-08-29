@@ -192,6 +192,16 @@ describe('section getters', () => {
     }
   });
 
+  /* Part 17 Phase C registry line: memory and skills are the two
+   * project-scoped surfaces; their registry entries must carry the
+   * project-scope vocabulary so search finds them by it. */
+  it('memory and skills entries carry project-scope keywords', () => {
+    const mem = getSection('memory-knowledge');
+    expect(mem?.keywords).toContain('project memory');
+    const skills = getSection('skills');
+    expect(skills?.keywords).toContain('project skills');
+  });
+
   it('railCanonicalId maps split views onto their hub', () => {
     expect(railCanonicalId('recalled-memory')).toBe('memory-knowledge');
     expect(railCanonicalId('ui-designer')).toBe('appearance');

@@ -40,3 +40,30 @@ async def decideProposal(pid: str, body: ProposalDecision):
         return harness_self_improve.decide_proposal(pid, body.decision, body.note)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post('/promotion/run')
+async def runPromotionPass(force: bool = False):
+    """Part 17 Phase E: run the cross-project promotion judge now.
+
+    Files ``promote`` proposals into this same review queue (≥2-project
+    recurrence bar, sensitive denylist, never mutates project files). Runs
+    under Part 16's ``skillLearning`` config — ``off`` skips unless
+    ``force``.
+    """
+    from app.services.harness_promote import run_promotion_pass
+
+    summary = run_promotion_pass(force=force)
+    if not summary.get('ran'):
+        raise HTTPException(status_code=409, detail=summary.get('reason') or 'pass skipped')
+    return summary
+
+
+@router.post('/promotion/demote-scan')
+async def runDemoteScan():
+    """Part 17 Phase E measurement: demote suggestions for promoted items
+    that never triggered outside their origin project — observation-kind
+    proposals in this same queue, never deletions."""
+    from app.services.harness_promote import suggest_demotions
+
+    return {'suggestions': suggest_demotions()}

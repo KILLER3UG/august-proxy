@@ -36,7 +36,11 @@ from app.json_narrowing import as_dict, as_int, as_list, as_str
 APPROVABLE_KINDS = frozenset({'brain_config', 'skill_create', 'skill_patch', 'skill_delete'})
 # Analysis-only kinds — always safe to store, never auto-applied.
 OBSERVATION_KINDS = frozenset({'tool_bucket', 'tool_description', 'flow_map', 'observation'})
-VALID_KINDS = APPROVABLE_KINDS | OBSERVATION_KINDS
+# Part 17 Phase E: cross-project promotion. Filed by harness_promote's judge
+# pass (≥2-project bar); approved via the same human gate, applied
+# copy-on-write by harness_promote.apply_promotion with provenance.
+PROMOTION_KINDS = frozenset({'promote'})
+VALID_KINDS = APPROVABLE_KINDS | OBSERVATION_KINDS | PROMOTION_KINDS
 
 _MAX_PROPOSAL_FILES = 200
 
@@ -507,6 +511,14 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             return {'ok': False, 'error': str(exc)}
 
+    if kind == 'promote':
+        # Part 17 Phase E: copy-on-write promotion (global fact or global
+        # skill with provenance) — the deterministic applier lives in
+        # harness_promote so the enumeration/judge code stays separate.
+        from app.services.harness_promote import apply_promotion
+
+        return apply_promotion(payload)
+
     return {'ok': False, 'error': f'kind {kind!r} is human-only — nothing applies automatically'}
 
 
@@ -532,6 +544,15 @@ async def scheduled_introspection_loop() -> None:
 
                 logging.getLogger(__name__).info(
                     'harness introspection filed %d observation proposal(s)', filed
+                )
+            # Part 17 Phase E: the cross-project promotion judge rides the
+            # same cadence — files `promote` proposals only (never applies).
+            import asyncio as _aio
+
+            promo = await _aio.to_thread(_run_scheduled_promotion_pass)
+            if promo:
+                logging.getLogger(__name__).info(
+                    'promotion judge filed %d promote proposal(s)', promo
                 )
         except Exception:
             import logging
@@ -588,3 +609,18 @@ def _run_scheduled_pass() -> int:
         return 1
     except ValueError:
         return 0  # duplicate open proposal — nothing to do
+
+
+def _run_scheduled_promotion_pass() -> int:
+    """Part 17 Phase E: promotion judge on the same scheduled cadence.
+
+    Returns the number of ``promote`` proposals filed (0 when skillLearning
+    is off or nothing recurs across ≥2 projects). Never applies anything.
+    """
+    try:
+        from app.services.harness_promote import run_promotion_pass
+
+        summary = run_promotion_pass()
+        return int(summary.get('proposalsFiled') or 0)
+    except Exception:
+        return 0

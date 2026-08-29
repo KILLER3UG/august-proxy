@@ -333,6 +333,22 @@ export function dispatchWorkbenchEvent(
         key: typeof p?.key === 'string' ? p.key : undefined,
       });
       break;
+    case 'recalledMemories': {
+      // Part 17 A.4: rows the per-turn <memory> tail injected this turn.
+      const rows = Array.isArray(p?.memories)
+        ? (p.memories as Array<Record<string, unknown>>).map((m) => ({
+            key: typeof m.key === 'string' ? m.key : undefined,
+            category: typeof m.category === 'string' ? m.category : undefined,
+            snippet: typeof m.snippet === 'string' ? m.snippet : undefined,
+            scope: typeof m.scope === 'string' ? m.scope : undefined,
+          }))
+        : undefined;
+      handlers.onRecalledMemories?.({
+        sessionId: typeof p?.sessionId === 'string' ? p.sessionId : undefined,
+        memories: rows && rows.length > 0 ? rows : undefined,
+      });
+      break;
+    }
     case 'circuitMode':
       handlers.onCircuitMode?.({
         active: p?.active === true,
@@ -388,6 +404,19 @@ export function dispatchWorkbenchEvent(
         maxRetries,
         delayMs,
         reason: typeof p?.reason === 'string' ? p.reason : 'Provider error',
+      });
+      break;
+    }
+    case 'upstreamRetry': {
+      // Phase L (Part 17): a retry INSIDE the provider client loop (429/503/
+      // connection refused, before any token of this round streamed).
+      // Notice-only — no buffer rollback (nothing was emitted to undo, and
+      // earlier rounds' text must stay on screen).
+      handlers.onUpstreamRetry?.({
+        attempt: Number(p?.attempt) || 0,
+        maxRetries: Number(p?.maxRetries) || 0,
+        delayMs: Number(p?.delayMs) || 0,
+        status: Number(p?.status) || 0,
       });
       break;
     }

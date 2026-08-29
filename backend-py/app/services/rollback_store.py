@@ -192,15 +192,48 @@ def undo_entry(entry_id: str) -> dict[str, object]:
 
             target = as_str(entry.get('target'))
             before = entry.get('before')
-            if before is None:
+            if target.startswith('project:'):
+                # Part 17 Phase A project delete: restore the md entry into
+                # its workspace exactly as snapshotted (no global copy).
+                try:
+                    from app.services import project_memory as _pm
+
+                    if isinstance(before, dict) and as_str(before.get('workspace')):
+                        _pm.upsert_entry(
+                            as_str(before.get('workspace')),
+                            as_str(before.get('title')) or target.removeprefix('project:'),
+                            as_str(before.get('body') or ''),
+                            file=as_str(before.get('file') or '') or 'memory.md',
+                        )
+                        message = f'Restored project memory {target}'
+                    else:
+                        message = f'Cannot restore project memory {target}: no workspace in snapshot'
+                except Exception as exc:
+                    message = f'Restore project memory {target} failed: {exc}'
+            elif before is None:
                 memory_store.delete_fact(target)
                 message = f'Deleted created memory {target}'
             elif isinstance(before, dict):
-                # Wire shape from get_fact: factKey/factValue/category (or key/value)
+                # Wire shape from get_fact: factKey/factValue/category (or
+                # key/value). Phase D hygiene: source/title/kind/expiresAt/
+                # confidence ride along — a rollback must not silently
+                # degrade the fact into an untitled default entry.
                 key = as_str(before.get('factKey') or before.get('key') or target)
                 value = before.get('factValue') if 'factValue' in before else before.get('value')
                 category = as_str(before.get('category') or 'general') or 'general'
-                memory_store.save_fact(key, cast(JsonValue, value), category=category)
+                try:
+                    memory_store.save_fact(
+                        key,
+                        cast(JsonValue, value),
+                        category=category,
+                        source=as_str(before.get('source') or ''),
+                        confidence=float(before.get('confidence') or 1.0),
+                        expires_at=as_str(before.get('expiresAt') or '') or None,
+                        title=as_str(before.get('title') or ''),
+                        kind=as_str(before.get('kind') or ''),
+                    )
+                except (TypeError, ValueError):
+                    memory_store.save_fact(key, cast(JsonValue, value), category=category)
                 message = f'Restored memory {key}'
             else:
                 memory_store.save_fact(target, cast(JsonValue, before), category='general')

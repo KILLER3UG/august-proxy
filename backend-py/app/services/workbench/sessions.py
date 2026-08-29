@@ -128,6 +128,16 @@ class WorkbenchSession:
     # the intake index stays byte-stable for the session's lifetime; new
     # sessions pick up fresh memory on their first turn.
     _frozen_mem_index: str | None = None
+    # Part 17 Phase A: frozen project-memory index (<project_memory> titles)
+    # from the session's first buildSystemPrompt() — same byte-stability
+    # discipline as _frozen_mem_index; hand edits to <ws>/.aug/memory/*.md
+    # apply on the next session. RAM-only — never serialized.
+    _frozen_project_index: str | None = None
+    # Memory-habit nudge (2026-08-29): set at turn end when a substantial turn
+    # (>= _MEMORY_NUDGE_MIN_ROUNDS tool rounds) saved no memory. The next
+    # build's tail injection carries a one-shot <memory_nudge> hint and clears
+    # this flag. RAM-only like _frozen_mem_index — never serialized.
+    _memory_nudge_pending: bool = False
 
     def toDict(self) -> dict[str, object]:
         return {

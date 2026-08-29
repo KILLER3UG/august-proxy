@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AssistantBlockTimeline } from '../AssistantBlockTimeline';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
@@ -689,5 +689,79 @@ describe('minimal-output transcript (plan §4.1/§4.3)', () => {
     expect(rows.length).toBe(2);
     expect(rows[0].textContent).toContain('×2');
     expect(rows[1]).toHaveAttribute('data-status', 'error');
+  });
+});
+
+describe('recalledMemories renderer (Part 17 A.4)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    cleanup();
+  });
+
+  it('renders one collapsed chip with global + project rows scope-tagged', () => {
+    renderTimeline([
+      {
+        id: 'b_recall_1',
+        type: 'recalledMemories',
+        memories: [
+          {
+            id: 'r1',
+            key: 'user-name',
+            category: 'user',
+            snippet: 'Prefers concise answers',
+            scope: 'global',
+          },
+          {
+            id: 'r2',
+            key: 'project:DB port',
+            category: 'project',
+            snippet: 'Postgres on 5433',
+            scope: 'project',
+          },
+        ],
+      } as MessageBlock,
+    ]);
+
+    expandActivitySummary();
+    const chip = document.querySelector('[data-testid="recalled-memories-block"]');
+    expect(chip).toBeTruthy();
+    expect(chip!.textContent).toContain('Recalled 2 memories (1 project)');
+    // Open the details and check both scope badges render.
+    fireEvent.click(chip!.querySelector('summary')!);
+    expect(chip!.textContent).toContain('user-name');
+    expect(chip!.textContent).toContain('project:DB port');
+    expect(chip!.textContent).toContain('glob');
+    expect(chip!.textContent).toContain('proj');
+  });
+
+  it('skips empty memories rows (no chip for a nothing-recalled turn)', () => {
+    renderTimeline([
+      { id: 'b_recall_2', type: 'recalledMemories', memories: [] } as MessageBlock,
+    ]);
+    // A recall-only block with zero rows contributes no activity — no pack,
+    // no chip (the reducer skips the event entirely for empty rows).
+    expect(document.querySelector('[data-slot="activity-summary"]')).toBeNull();
+    expect(
+      document.querySelector('[data-testid="recalled-memories-block"]'),
+    ).toBeNull();
+  });
+
+  it('single-row chip shows the row key directly', () => {
+    renderTimeline([
+      {
+        id: 'b_recall_3',
+        type: 'recalledMemories',
+        memories: [
+          { id: 'r1', key: 'build-cmd', category: 'project', snippet: 'npm run build', scope: 'project' },
+        ],
+      } as MessageBlock,
+    ]);
+    expandActivitySummary();
+    const chip = document.querySelector('[data-testid="recalled-memories-block"]');
+    expect(chip).toBeTruthy();
+    expect(chip!.textContent).toContain('Recalled: build-cmd');
   });
 });

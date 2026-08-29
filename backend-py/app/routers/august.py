@@ -132,6 +132,12 @@ class ActionBody(CamelModel):
     app: str | None = None
     policy: str | None = None
     source: str | None = None
+    # Part 17 Phase A: project-memory write door for the Memory UI. scope
+    # 'project' + workspace routes set/delete to <ws>/.aug/memory md entries;
+    # key doubles as the entry title there.
+    scope: str | None = None
+    workspace: str | None = None
+    details: str | None = None
 
 
 @router.post('/settings/update')
@@ -342,6 +348,50 @@ async def manage_agents(body: ActionBody):
     return {'ok': True, 'agents': agents}
 
 
+@router.get('/memory/workspaces')
+async def list_memory_workspaces():
+    """Known project workspaces for the Memory/Skills scope selector (C-1/C-9).
+
+    Part 17 Phase E enumeration rule: never invent paths — a workspace is
+    "known" when a workbench session was ever bound to it (distinct
+    non-empty, non-home ``workspacePath`` across all sessions). Entries get
+    ``hasMemory``/``hasSkills`` flags (does ``.aug/memory`` / ``.aug/skills``
+    exist) so the UI can badge project roots that actually hold content.
+    """
+    from pathlib import Path
+
+    from app.services.workbench.sessions import list_workbench_sessions
+
+    home = Path.home().resolve()
+    seen: dict[str, dict[str, object]] = {}
+    try:
+        sessions = list_workbench_sessions()
+    except Exception:
+        sessions = []
+    for s in sessions:
+        ws = str(s.get('workspacePath') or '').strip()
+        if not ws or ws in seen:
+            continue
+        try:
+            p = Path(ws).resolve()
+        except Exception:
+            continue
+        if p == home or not p.is_dir():
+            continue
+        seen[ws] = {
+            'path': ws,
+            'name': p.name,
+            'hasMemory': (p / '.aug' / 'memory').is_dir(),
+            'hasSkills': (p / '.aug' / 'skills').is_dir(),
+            'sessions': 0,
+        }
+    for s in sessions:
+        ws = str(s.get('workspacePath') or '').strip()
+        if ws in seen:
+            seen[ws]['sessions'] = int(seen[ws]['sessions']) + 1  # type: ignore[assignment]
+    return {'ok': True, 'workspaces': sorted(seen.values(), key=lambda w: str(w.get('name', '')))}
+
+
 @router.post('/memory/manage')
 async def manage_memory(body: ActionBody):
     import copy
@@ -351,6 +401,79 @@ async def manage_memory(body: ActionBody):
 
     action = (body.action or '').lower()
     key = body.key or ''
+    # Part 17 Phase A: project scope — the UI's add/edit/delete writes
+    # through the same md-file door as remember(scope='project'). key IS
+    # the entry title; details rides below the one-line fact.
+    if (body.scope or '').strip().lower() == 'project':
+        from app.services import project_memory as pm
+
+        ws = (body.workspace or '').strip()
+        if not ws:
+            return {'ok': False, 'error': 'scope=project requires a workspace path'}
+        if action in ('set', 'upsert') and key:
+            value_text = body.value if isinstance(body.value, str) else ''
+            if not value_text.strip():
+                return {'ok': False, 'error': 'value is required for project entries'}
+            existing = pm.read_entries(ws, title=key)
+            beforeProject = (
+                {
+                    'file': existing[0].file,
+                    'title': existing[0].title,
+                    'body': existing[0].body,
+                    'updated': existing[0].updated,
+                }
+                if existing
+                else None
+            )
+            body_text = f'{value_text}\n\n{body.details}' if (body.details or '').strip() else value_text
+            pm.upsert_entry(ws, key, body_text)
+            try:
+                record_rollback(
+                    type='restore_memory_item',
+                    target=f'project:{key}',
+                    before=beforeProject,
+                    after={'workspace': ws, 'title': key, 'body': body_text},
+                )
+            except Exception:
+                pass
+            return {'ok': True, 'scope': 'project', 'key': key, 'file': 'memory.md'}
+        if action in ('delete', 'forget') and key:
+            existing = pm.read_entries(ws, title=key)
+            if not existing:
+                return {'ok': False, 'error': f'no project-memory entry titled "{key}"'}
+            entry = existing[0]
+            pm.delete_entry(ws, key)
+            try:
+                record_rollback(
+                    type='restore_memory_item',
+                    target=f'project:{entry.title}',
+                    before={
+                        'file': entry.file,
+                        'title': entry.title,
+                        'body': entry.body,
+                        'updated': entry.updated,
+                    },
+                    after=None,
+                )
+            except Exception:
+                pass
+            return {'ok': True, 'scope': 'project', 'deleted': True, 'key': key}
+        if action == 'list':
+            files = pm.list_files(ws)
+            entries = [
+                {
+                    'key': f'project:{e.title}',
+                    'title': e.title,
+                    'body': e.body,
+                    'updated': e.updated,
+                    'file': e.file,
+                    'category': 'project',
+                    'source': 'project-file',
+                }
+                for e in pm.read_entries(ws)
+            ]
+            return {'ok': True, 'scope': 'project', 'files': files, 'entries': entries}
+        return {'ok': False, 'error': f'unsupported action "{action}" for project scope'}
     # Provenance for the facts store: the Memory UI add-box sends source='user';
     # default to 'user' since this endpoint is the human-facing write door.
     source = (body.source or 'user').strip() or 'user'
@@ -401,6 +524,10 @@ class MemoryImportBody(CamelModel):
     items: list[object] = []
     defaultCategory: str | None = None
     defaultSource: str | None = None
+    # Part 17 Phase A: project imports land as `## <title>` entries in the
+    # workspace's memory.md instead of the global facts store.
+    scope: str | None = None
+    workspace: str | None = None
 
 
 @router.post('/memory/import')
@@ -411,6 +538,10 @@ async def import_memory(body: MemoryImportBody):
     the Memory UI can highlight imported rows. Items that already exist
     are overwritten (matching the single-entry manage_memory behavior);
     the rollback store captures a snapshot before each overwrite.
+
+    Part 17 Phase A: ``scope='project'`` + ``workspace`` writes each item
+    as a project-memory md entry (title = item title/first line) instead
+    of a facts row — the same store remember(scope='project') uses.
     """
     import copy as _copy
 
@@ -421,6 +552,51 @@ async def import_memory(body: MemoryImportBody):
     default_category = (body.defaultCategory or 'general').strip() or 'general'
     default_source = (body.defaultSource or 'imported').strip() or 'imported'
     accepted = {'user', 'feedback', 'project', 'reference', 'general'}
+
+    # Project-scope branch: one md entry per item, via the same writer as
+    # remember(scope='project').
+    if (body.scope or '').strip().lower() == 'project':
+        from app.services import project_memory as pm
+
+        ws = (body.workspace or '').strip()
+        if not ws:
+            return {'ok': False, 'error': 'scope=project requires a workspace path'}
+        projResults: list[dict[str, object]] = []
+        projFailed: list[dict[str, object]] = []
+        projWritten = 0
+        for index, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                projFailed.append({'index': index, 'error': 'item is not an object'})
+                continue
+            value_raw = item.get('value') or ''
+            details_raw = item.get('details')
+            if (not isinstance(value_raw, str) or not value_raw.strip()) and isinstance(
+                item.get('fact'), str
+            ) and item.get('fact', '').strip():
+                # Claude's {fact, details} convenience shape → fact + blank
+                # line + details (the project entry body format).
+                fact = str(item.get('fact')).strip()
+                det = details_raw if isinstance(details_raw, str) else ''
+                value_raw = f'{fact}\n\n{det.strip()}' if det.strip() else fact
+            if not isinstance(value_raw, str) or not value_raw.strip():
+                projFailed.append({'index': index, 'error': 'missing "value"'})
+                continue
+            title_raw = item.get('title') or item.get('key')
+            if isinstance(title_raw, str) and title_raw.strip():
+                entry_title = title_raw.strip()
+            else:
+                entry_title = value_raw.split('\n', 1)[0][:80]
+            try:
+                pm.upsert_entry(ws, entry_title, value_raw.strip())
+            except Exception as exc:  # noqa: BLE001 — surface to the caller
+                projFailed.append({'index': index, 'error': f'upsert_entry failed: {exc}'})
+                continue
+            projResults.append({'index': index, 'key': f'project:{entry_title}', 'scope': 'project'})
+            projWritten += 1
+        return {
+            'ok': True, 'count': projWritten, 'total': len(raw_items),
+            'results': projResults, 'failed': projFailed, 'scope': 'project', 'file': 'memory.md',
+        }
 
     results: list[dict[str, object]] = []
     failed: list[dict[str, object]] = []
@@ -435,13 +611,13 @@ async def import_memory(body: MemoryImportBody):
             failed.append({'index': index, 'error': 'missing or empty "key"'})
             continue
         key = key_raw.strip()
-        value_raw = item.get('value')
-        if value_raw is None:
+        valueIn: object = item.get('value')
+        if valueIn is None:
             # Convenience: accept Claude's `{fact, details}` shape.
-            fact = item.get('fact')
-            details = item.get('details')
-            if isinstance(fact, str) and fact.strip():
-                value_raw = {'fact': fact.strip(), 'details': details if details is not None else ''}
+            factIn = item.get('fact')
+            detailsIn = item.get('details')
+            if isinstance(factIn, str) and factIn.strip():
+                valueIn = {'fact': factIn.strip(), 'details': detailsIn if detailsIn is not None else ''}
             else:
                 failed.append({'index': index, 'error': 'missing "value"'})
                 continue
@@ -463,17 +639,17 @@ async def import_memory(body: MemoryImportBody):
         title_raw = item.get('title')
         if isinstance(title_raw, str) and title_raw.strip():
             fact_title = title_raw.strip()
-        elif isinstance(value_raw, str):
-            fact_title = memory_store.derive_fact_title(value_raw)
-        elif isinstance(value_raw, dict) and isinstance(value_raw.get('fact'), str):
-            fact_title = memory_store.derive_fact_title(str(value_raw.get('fact')))
+        elif isinstance(valueIn, str):
+            fact_title = memory_store.derive_fact_title(valueIn)
+        elif isinstance(valueIn, dict) and isinstance(valueIn.get('fact'), str):
+            fact_title = memory_store.derive_fact_title(str(valueIn.get('fact')))
         else:
             fact_title = ''
         kind_raw = item.get('kind')
         fact_kind = str(kind_raw).strip().lower() if isinstance(kind_raw, str) else ''
         try:
             memory_store.save_fact(
-                key, cast(JsonValue, value_raw), category=category, source=source,
+                key, cast(JsonValue, valueIn), category=category, source=source,
                 confidence=confidence, title=fact_title, kind=fact_kind,
             )
         except Exception as exc:  # noqa: BLE001 — surface to the caller
@@ -484,7 +660,7 @@ async def import_memory(body: MemoryImportBody):
                 type='restore_memory_item',
                 target=key,
                 before=before,
-                after={'key': key, 'value': value_raw, 'category': category, 'source': source},
+                after={'key': key, 'value': valueIn, 'category': category, 'source': source},
             )
         except Exception:
             pass

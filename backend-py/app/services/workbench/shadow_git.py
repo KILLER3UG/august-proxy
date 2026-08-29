@@ -44,7 +44,10 @@ _EXCLUDES = (
     'build/',
     'target/',
     'web-dist/',
-    '.aug/spill/',
+    # Part 17: the whole .aug workspace state dir — spill (transient) AND
+    # memory (the user's own .gitignore decides whether project memory is
+    # committed to THEIR repo; August's shadow repo never carries it).
+    '.aug/',
     '.pytest_cache/',
     '.mypy_cache/',
     '.ruff_cache/',

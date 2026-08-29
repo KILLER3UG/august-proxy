@@ -1,30 +1,20 @@
-"""Cache semi-stable system-prompt segments (not full turn prompts).
+"""Semi-stable system-prompt segment constants (not full turn prompts).
 
-Caches:
-  * skills catalogue text used by Tier 1 ``<capabilities>``
-  * static clarify / bulk instruction blocks (constants)
+Holds the static clarify / bulk / web / memory instruction blocks — plain
+constants the workbench prompt builder composes.
 
-Does **not** cache volatile Tier-3 pieces (recent messages, auto-memories,
-daemon updates, todos). Tier1/Tier2 still use existing ``prompt_cache``.
-
-Disable with env ``AUGUST_P1_PROMPT_CACHE=0`` to force a rebuild every turn
-(useful for A/B latency measurements).
+Part 17 Phase E cleanup: the skills-catalogue cache path
+(``get_skills_segments`` / ``_build_skills_segments``) was dead code — zero
+callers, superseded by the Tier-1/Tier-2 prompt caches (skill mutations bust
+those via ``clear_skill_prompt_caches``). ``clear()`` remains as the
+compatibility bust door for ``skill_service`` and the test fixtures.
 """
 
 from __future__ import annotations
 
-import os
 import threading
-import time
 
 _lock = threading.Lock()
-_skills: tuple[float, str, str] | None = None  # (mono, manifest, capabilities_skills_inner)
-_hits = 0
-_misses = 0
-# RAM/latency pass 0.16.8: was 30s — a cold rebuild costs ~0.5s (84 files
-# parsed) and landed on a turn every 30 seconds. Skills mutate rarely and
-# clear() is invoked on every mutation path, so 10 minutes is safe.
-_SKILLS_TTL = 600.0  # seconds
 
 CLARIFY_BLOCK = (
     '<clarify_policy>\n'
@@ -74,8 +64,14 @@ MEMORY_BLOCK = (
     '- User-stated preferences, decisions, and constraints (category "user" / "project").\n'
     '- Feedback on how you should work (category "feedback").\n'
     '- Pointers to external resources (category "reference").\n'
+    '- Durable lessons from your own work (category "project" / "reference"): after diagnosing '
+    'and fixing a real problem, save the root cause, the fix, and where it lives (file:line).\n'
     'If the user corrects you, save the correction with category "feedback" and a stable key like '
     '`feedback:<short-topic>` so future turns recall it; revise it the same way if they refine it.\n'
+    'Correct yourself too: when a stored memory proves wrong or incomplete, update the SAME key '
+    'and say what changed — stale memory is worse than none.\n'
+    'Shape: make the `fact` a description-first one-liner (scannable in an index); put depth in '
+    '`details`; cross-reference related facts as [[key]] inside details.\n'
     'Do NOT save task steps, code structure, or anything git / the codebase already records.\n'
     "Update, don't duplicate: call `list_facts` to see stored keys, then pass the matching `key` to "
     'revise an existing fact instead of saving a twin. `forget` deletes a fact that is wrong or outdated.\n'
@@ -84,85 +80,37 @@ MEMORY_BLOCK = (
     '</memory_policy>'
 )
 
-
-def enabled() -> bool:
-    v = os.environ.get('AUGUST_P1_PROMPT_CACHE', '1').strip().lower()
-    return v not in ('0', 'false', 'no', 'off')
+# One-shot end-of-turn nudge (2026-08-29): queued on the session when a
+# substantial turn saved no memory; consumed into the NEXT turn's tail
+# injection (never the system prompt — cache-safe). See
+# workbench.queue_memory_habit_nudge / workbench.memory_nudge_block.
+MEMORY_NUDGE_BLOCK = (
+    '<memory_nudge>\n'
+    'The previous turn did real work but saved no memory. If it produced durable knowledge '
+    '(root cause + fix location, a user directive, a project constraint, a correction to a stored '
+    'memory), save it now with `remember` — stable key, description-first one-liner, depth in '
+    '`details`. Skip if nothing here will matter beyond this session.\n'
+    '</memory_nudge>'
+)
 
 
 def clear() -> None:
-    """Global bust of the skills-segment cache.
-
-    Global (not per-session) is acceptable here: August is single-user /
-    local-desktop scale, and skill create/approve/patch/delete is infrequent
-    enough that a full bust is simpler than scoped keys. Revisit scoped
-    invalidation if evolving-skill creation frequency climbs enough to hurt
-    cache hit rate.
-    """
-    global _skills, _hits, _misses
+    """Compatibility bust door — kept for ``skill_service`` and the test
+    fixtures. The skills-segment cache itself was dead code (Phase E
+    cleanup); real prompt busting happens in
+    ``workbench.clear_skill_prompt_caches`` (Tier-1/2 caches)."""
     with _lock:
-        _skills = None
-        _hits = 0
-        _misses = 0
+        pass
 
 
 def stats() -> dict[str, object]:
+    """Cache stats (Phase E: the skills segment cache is gone — Tier-1/2
+    ``prompt_cache.stats()`` is the live instrument now)."""
     with _lock:
         return {
-            'enabled': enabled(),
-            'skills_cached': _skills is not None,
-            'hits': _hits,
-            'misses': _misses,
-            'skills_ttl_s': _SKILLS_TTL,
+            'enabled': True,
+            'skills_cached': False,
+            'hits': 0,
+            'misses': 0,
+            'skills_ttl_s': 0,
         }
-
-
-def get_skills_segments() -> tuple[str, str]:
-    """Return (skills_manifest_lines, skills_inner_for_capabilities).
-
-    The second value is the formatted skills catalogue body (no ``## Available Skills``
-    markdown — capabilities live in Tier 1 XML).
-    """
-    global _skills, _hits, _misses
-    if not enabled():
-        return _build_skills_segments()
-    now = time.monotonic()
-    with _lock:
-        if _skills is not None and (now - _skills[0]) < _SKILLS_TTL:
-            _hits += 1
-            return _skills[1], _skills[2]
-        _misses += 1
-    manifest, extra = _build_skills_segments()
-    with _lock:
-        _skills = (time.monotonic(), manifest, extra)
-    return manifest, extra
-
-
-def _build_skills_segments() -> tuple[str, str]:
-    manifest = ''
-    extra = ''
-    try:
-        from app.services import skill_service
-        from app.services.capabilities_prompt import format_skill_index
-
-        cat = skill_service.catalogue()
-        if not cat:
-            return '', ''
-        lines_m: list[str] = []
-        for s in cat:
-            desc = s.get('description', '')
-            trigger = s.get('trigger', '')
-            created = s.get('created_by', '')
-            evolving = ' [evolving]' if created in ('agent', 'auto-gen') else ''
-            entry = f'{s["name"]}{evolving}: {desc}' if desc else f'{s["name"]}{evolving}'
-            if trigger:
-                entry += f' (trigger: {trigger})'
-            lines_m.append(entry)
-        manifest = '\n'.join(lines_m)
-        # Tier-1 <skills> carries the compact name-only index; per-turn
-        # descriptions for relevant entries are injected separately in
-        # Tier 3 (capabilities_prompt.build_relevant_skills_block).
-        extra = format_skill_index(cat)
-    except Exception:
-        return '', ''
-    return manifest, extra

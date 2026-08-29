@@ -92,11 +92,28 @@ async def getBrainStore(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     query: str = Query('', max_length=200),
+    sort: str = Query('', description='newest|oldest|updated|confidence (Part 17 C-4)'),
+    category: str = Query('', max_length=64, description='Server-side category filter (C-3)'),
+    source: str = Query('', max_length=64, description='Server-side source filter (C-3)'),
+    confidence: str = Query('', max_length=16, description='Server-side confidence filter (C-3)'),
 ):
-    """Read-only paginated browse of one brain store (Memory settings page)."""
+    """Read-only paginated browse of one brain store (Memory settings page).
+
+    Part 17 Phase C: ``sort``/``category``/``source``/``confidence`` move
+    filtering and ordering server-side so they hold past the fetch cap.
+    """
     from app.services.memory_store.brain import brain_browse
 
-    result = brain_browse(name, limit=limit, offset=offset, query=query)
+    result = brain_browse(
+        name,
+        limit=limit,
+        offset=offset,
+        query=query,
+        sort=sort,
+        category=category,
+        source=source,
+        confidence=confidence,
+    )
     if result.get('error') and not result.get('total') and 'not available' in str(result.get('error')):
         raise HTTPException(status_code=404, detail=result['error'])
     return result
@@ -183,6 +200,71 @@ async def getTurnOutcomes(days: int = Query(7, ge=1, le=30)):
     from app.services.turn_outcomes import error_rate_by_model
 
     return {'days': days, 'models': error_rate_by_model(days=days)}
+
+
+@router.get('/memory/metrics')
+async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
+    """Phase D item 4 (Part 17): recall + latency instrument.
+
+    Two sections, both read-only diagnostics:
+      * ``recall`` — per-turn counts from internal_state (global facts
+        recalled, project entries recalled, block sizes): the before/after
+        instrument for this plan and every later retrieval change.
+      * ``latency`` — the Phase L section: TTFT / duration / prompt-cache
+        hit split aggregated over ``days`` from turn_outcomes.
+    """
+    import json as _json
+
+    from app.services.memory_conn import conn as _mem_conn
+    from app.services.memory_store.kv import get_internal_state
+
+    def _readTotals() -> dict[str, int]:
+        try:
+            raw = get_internal_state('memory:recall:totals')
+            val = _json.loads(str(raw)) if isinstance(raw, str) else raw
+            if isinstance(val, dict):
+                return {str(k): int(str(v)) for k, v in val.items()}
+            return {}
+        except Exception:
+            return {}
+
+    totals = _readTotals()
+    recall = {
+        'turns': int(totals.get('turns') or 0),
+        'globalFactsRecalled': int(totals.get('globalFactsRecalled') or 0),
+        'projectEntriesRecalled': int(totals.get('projectEntriesRecalled') or 0),
+    }
+    latency: dict[str, object] = {'turns': 0}
+    try:
+        rows = _mem_conn().execute(
+            """
+            SELECT COUNT(*) AS turns,
+                   AVG(ttft_ms) AS avg_ttft_ms,
+                   MAX(ttft_ms) AS max_ttft_ms,
+                   AVG(duration_ms) AS avg_duration_ms,
+                   SUM(cache_hit_tokens) AS cache_hit_tokens,
+                   SUM(cache_miss_tokens) AS cache_miss_tokens
+            FROM turn_outcomes
+            WHERE ts >= datetime('now', ?)
+            """,
+            (f'-{int(days)} days',),
+        ).fetchall()
+        for r in rows:
+            turns = int(r['turns'] or 0)
+            hitT = int(r['cache_hit_tokens'] or 0)
+            missT = int(r['cache_miss_tokens'] or 0)
+            latency = {
+                'turns': turns,
+                'avgTtftMs': round(float(r['avg_ttft_ms'] or 0), 1) if turns else 0.0,
+                'maxTtftMs': int(r['max_ttft_ms'] or 0) if turns else 0,
+                'avgDurationMs': round(float(r['avg_duration_ms'] or 0), 1) if turns else 0.0,
+                'cacheHitTokens': hitT,
+                'cacheMissTokens': missT,
+                'cacheHitRate': round(hitT / (hitT + missT), 3) if (hitT + missT) else 0.0,
+            }
+    except Exception:
+        latency = {'turns': 0, 'error': 'turn_outcomes unavailable'}
+    return {'days': days, 'recall': recall, 'latency': latency}
 
 
 @router.get('/state-lookup')

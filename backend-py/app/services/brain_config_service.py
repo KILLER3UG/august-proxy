@@ -62,7 +62,7 @@ numKeys: tuple[str, ...] = (
     'consolidationIntervalHours',
 )
 floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap')
-strKeys: tuple[str, ...] = ('titleModel',)
+strKeys: tuple[str, ...] = ('titleModel', 'skillLearning')
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys + floatKeys + strKeys)
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
@@ -115,6 +115,10 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # M7 item 3: optional cheap model for session titling. Empty string =
     # fall back to the turn's own model (existing behavior).
     ('titleModel', 'title_model', '', 'str'),
+    # Part 16/17 skillLearning: off = no promotion judge; extract-only
+    # (ship default) = mining + promote proposals; full = also draft skill
+    # bodies. Governs harness_promote.run_promotion_pass.
+    ('skillLearning', 'skill_learning', 'extract-only', 'str'),
 )
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}
@@ -211,6 +215,8 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 return (False, f'{key!r} must be a string (got {type(value).__name__})')
             if len(value) > 120:
                 return (False, f'{key!r} must be at most 120 chars (got {len(value)})')
+            if key == 'skillLearning' and value not in ('off', 'extract-only', 'full'):
+                return (False, f'{key!r} must be off | extract-only | full (got {value!r})')
         elif kind == 'float':
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return (False, f'{key!r} must be a number (got {type(value).__name__})')

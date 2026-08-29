@@ -292,9 +292,20 @@ export const WorkbenchUserMessageQueueEventSchema = WorkbenchBaseSchema.extend({
 
 /** Lifecycle events without dedicated UI handling yet (todo-list updates,
  *  filesystem checkpoints) — accepted so they don't trip the schema-mismatch
- *  warning in the stream dispatcher. */
+ *  warning in the stream dispatcher. `upstreamRetry` (Phase L) and
+ *  `turnTelemetry` (Phase L) are handled in streamEvents.ts via the raw
+ *  payload — listed here so the schema union accepts them. `recalledMemories`
+ *  (Part 17 A.4) likewise routes in streamEvents.ts. */
 export const WorkbenchMiscLifecycleEventSchema = WorkbenchBaseSchema.extend({
-  type: z.enum(['todosUpdated', 'checkpoint', 'aborted', 'retrying']),
+  type: z.enum([
+    'todosUpdated',
+    'checkpoint',
+    'aborted',
+    'retrying',
+    'upstreamRetry',
+    'turnTelemetry',
+    'recalledMemories',
+  ]),
 });
 
 /** Legacy snake_case alias of `finalOutput` — some paths still emit it. */

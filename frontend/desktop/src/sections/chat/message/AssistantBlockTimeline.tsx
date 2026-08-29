@@ -294,6 +294,7 @@ export function AssistantBlockTimeline({
   let searchesCount = 0;
   let commandsCount = 0;
   let errorsCount = 0;
+  let memoriesCount = 0;
   let anyToolRunning = false;
   const filesTouched = new Set<string>();
   let seqStart = Number.POSITIVE_INFINITY;
@@ -325,6 +326,11 @@ export function AssistantBlockTimeline({
         seqStart = Math.min(seqStart, tool.startedAt);
         seqEnd = Math.max(seqEnd, tool.startedAt + (tool.duration ?? 0));
       }
+    }
+    if (block.type === 'recalledMemories' && block.memories) {
+      // Part 17 A.4: recall rows count as turn activity — keeps the pack
+      // mounted for a recall-only turn (no tools, no thinking).
+      memoriesCount += block.memories.length;
     }
   }
   // Coalesced consecutive thoughts count as one ThoughtStep in the UI.
@@ -735,6 +741,57 @@ export function AssistantBlockTimeline({
         continue;
       }
 
+      if (block.type === 'recalledMemories' && block.memories && block.memories.length > 0) {
+        // Part 17 A.4 (gap C-13): what the per-turn <memory> tail actually
+        // recalled this turn — one subtle chip; the rows expand on click.
+        // Global + project rows both ride here, scope-tagged.
+        const rows = block.memories;
+        const projectCount = rows.filter((m) => m.scope === 'project').length;
+        const label =
+          rows.length === 1
+            ? `Recalled: ${rows[0].key || rows[0].snippet || 'memory'}`
+            : `Recalled ${rows.length} memories${projectCount ? ` (${projectCount} project)` : ''}`;
+        tagged.push({
+          kind: 'block',
+          node: (
+            <details
+              key={block.id || `recall_${ti}`}
+              data-testid="recalled-memories-block"
+              className="mx-3 my-1 max-w-full rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1 text-[11px] text-sky-300/90"
+            >
+              <summary className="cursor-pointer select-none list-none">
+                <span aria-hidden="true" className="mr-1 opacity-70">
+                  💭
+                </span>
+                <span className="truncate">{label}</span>
+              </summary>
+              <ul className="mt-1 space-y-1 pl-1">
+                {rows.map((m) => (
+                  <li key={m.id} className="flex items-start gap-1.5">
+                    <span
+                      className={
+                        m.scope === 'project'
+                          ? 'shrink-0 rounded bg-emerald-500/15 px-1 text-[9px] uppercase tracking-wide text-emerald-300/90'
+                          : 'shrink-0 rounded bg-sky-500/15 px-1 text-[9px] uppercase tracking-wide text-sky-300/90'
+                      }
+                      title={m.scope === 'project' ? 'Project memory' : 'Global memory'}
+                    >
+                      {m.scope === 'project' ? 'proj' : 'glob'}
+                    </span>
+                    <span className="min-w-0 break-words">
+                      {m.key || m.category ? <span className="font-medium">{m.key || m.category}</span> : null}
+                      {m.snippet ? <span className="opacity-75"> — {m.snippet}</span> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ),
+        });
+        ti++;
+        continue;
+      }
+
       if (block.type === 'error') {
         // Real generation/tool failure — red banner, never collapsed away.
         // Friendly copy up front; the raw upstream text sits in an
@@ -940,6 +997,7 @@ export function AssistantBlockTimeline({
           searches={searchesCount}
           commands={commandsCount}
           errors={errorsCount}
+          memoriesCount={memoriesCount}
           summary={livePacked ? null : processSummary}
           live={livePacked}
           liveDetail={

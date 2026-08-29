@@ -3,6 +3,9 @@
 /* Detail view: name + attribution + enabled toggle + description with  */
 /* see-more + SKILL.md rendered as markdown. Authoring via create/edit  */
 /* forms and delete-with-confirm; bundled skills are copy-on-write.     */
+/* Part 17 Phase C: workspace scope selector (project skills merge in   */
+/* with shadowing, C-1), scope + overrides badges (C-2), and the write  */
+/* paths (create/edit/delete/toggle) route through the selected scope.  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -10,6 +13,7 @@ import {
   ArrowLeft,
   BookOpen,
   ChevronLeft,
+  FolderTree,
   Info,
   Loader2,
   Pencil,
@@ -23,6 +27,7 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { cn } from '@/lib/utils';
 
@@ -33,10 +38,20 @@ interface SkillSummary {
   category: string;
   enabled: boolean;
   createdBy: string;
+  scope?: string;
+  overrides?: string;
 }
 
 interface SkillDetail extends SkillSummary {
   instructions: string;
+}
+
+interface WorkspaceInfo {
+  path: string;
+  name: string;
+  hasMemory?: boolean;
+  hasSkills?: boolean;
+  sessions?: number;
 }
 
 type Mode = 'list' | 'detail' | 'create' | 'edit';
@@ -52,36 +67,59 @@ export function SkillsSection() {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [seeMore, setSeeMore] = useState(false);
+  // C-1: '' = global scope, a path = that project's merged view.
+  const [wsScope, setWsScope] = useState('');
+
+  const workspacesQ = useQuery<{ workspaces: WorkspaceInfo[] }>({
+    queryKey: ['memory-workspaces'],
+    queryFn: () => api.get<{ workspaces: WorkspaceInfo[] }>('/api/august/memory/workspaces'),
+  });
 
   const listQuery = useQuery({
-    queryKey: ['skills-list', search],
+    queryKey: ['skills-list', search, wsScope],
     queryFn: () => {
-      const path = search
-        ? `/api/skills?q=${encodeURIComponent(search)}`
-        : '/api/skills';
-      return api.get<{ skills: SkillSummary[]; total: number }>(path);
+      const params = new URLSearchParams();
+      if (search) params.set('q', search);
+      if (wsScope) params.set('workspace', wsScope);
+      const qs = params.toString();
+      return api.get<{ skills: SkillSummary[]; total: number }>(`/api/skills${qs ? `?${qs}` : ''}`);
     },
     staleTime: 30_000,
   });
 
   const detailQuery = useQuery({
-    queryKey: ['skill-detail', selectedName],
-    queryFn: () =>
-      api.get<SkillDetail>(`/api/skills/${encodeURIComponent(selectedName ?? '')}`),
+    queryKey: ['skill-detail', selectedName, wsScope],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (wsScope) params.set('workspace', wsScope);
+      const qs = params.toString();
+      return api.get<SkillDetail>(
+        `/api/skills/${encodeURIComponent(selectedName ?? '')}${qs ? `?${qs}` : ''}`,
+      );
+    },
     enabled: !!selectedName && (mode === 'detail' || mode === 'edit'),
   });
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['skills-list'] });
     void queryClient.invalidateQueries({ queryKey: ['skill-detail', selectedName] });
+    void queryClient.invalidateQueries({ queryKey: ['memory-workspaces'] });
   }, [queryClient, selectedName]);
 
   useEffect(() => {
     if (mode !== 'detail') setSeeMore(false);
   }, [mode]);
 
+  // Switching scope drops the open detail — the skill may not exist there.
+  useEffect(() => {
+    setSelectedName(null);
+    setMode('list');
+    setConfirmDelete(null);
+  }, [wsScope]);
+
   const skills = useMemo(() => listQuery.data?.skills ?? [], [listQuery.data]);
   const selected = detailQuery.data ?? null;
+  const workspaces = workspacesQ.data?.workspaces ?? [];
 
   const openDetail = (name: string) => {
     setSelectedName(name);
@@ -110,15 +148,19 @@ export function SkillsSection() {
     setSaving(true);
     try {
       if (mode === 'create') {
-        await api.post('/api/skills', form);
-        toast.success(`Skill '${form.name}' created`);
+        await api.post('/api/skills', { ...form, workspace: wsScope || undefined });
+        toast.success(`Skill '${form.name}' created${wsScope ? ' in this project' : ''}`);
       } else if (mode === 'edit' && form.name) {
-        await api.patch(`/api/skills/${encodeURIComponent(form.name)}`, {
-          body: form.body,
-          description: form.description,
-          trigger: form.trigger,
-          category: form.category,
-        });
+        await api.patch(
+          `/api/skills/${encodeURIComponent(form.name)}`,
+          {
+            body: form.body,
+            description: form.description,
+            trigger: form.trigger,
+            category: form.category,
+            workspace: wsScope || undefined,
+          },
+        );
         toast.success('Skill saved');
       }
       refresh();
@@ -134,8 +176,11 @@ export function SkillsSection() {
   const handleDelete = async (name: string) => {
     setSaving(true);
     try {
-      await api.delete(`/api/skills/${encodeURIComponent(name)}`);
-      toast.success(`Skill '${name}' deleted`);
+      const params = new URLSearchParams();
+      if (wsScope) params.set('workspace', wsScope);
+      const qs = params.toString();
+      await api.delete(`/api/skills/${encodeURIComponent(name)}${qs ? `?${qs}` : ''}`);
+      toast.success(`Skill '${name}' deleted${wsScope ? ' from this project' : ''}`);
       setConfirmDelete(null);
       if (selectedName === name) {
         setSelectedName(null);
@@ -153,6 +198,7 @@ export function SkillsSection() {
     try {
       await api.patch(`/api/skills/${encodeURIComponent(name)}`, {
         disabled: currently, // sending disabled=true flips it off
+        ...(wsScope ? { workspace: wsScope } : {}),
       });
       toast.success(currently ? `'${name}' disabled` : `'${name}' enabled`);
       refresh();
@@ -225,10 +271,13 @@ export function SkillsSection() {
               </Button>
               {/* M6 item 7: deletable only when authored (non-bundled) origin.
                   Bundled skills carry an empty createdBy; also treat explicit
-                  'builtin'/'bundled' markers as non-deletable. */}
-              {selected.createdBy &&
-                selected.createdBy !== 'builtin' &&
-                selected.createdBy !== 'bundled' && (
+                  'builtin'/'bundled' markers as non-deletable. A project
+                  override (scope=project) is always deletable — removing it
+                  only restores the global copy it shadows. */}
+              {(selected.scope === 'project' ||
+                (selected.createdBy &&
+                  selected.createdBy !== 'builtin' &&
+                  selected.createdBy !== 'bundled')) && (
                 <Button
                   variant="outline"
                   className="border-destructive/40 text-destructive hover:bg-destructive/10"
@@ -255,6 +304,34 @@ export function SkillsSection() {
           )}
         </div>
       </header>
+
+      {/* ── C-1: scope selector ─────────────────────────────────────── */}
+      {mode === 'list' && (
+        <div className="flex shrink-0 items-center gap-2" data-testid="skills-scope-row">
+          <FolderTree className="size-3.5 text-muted-foreground/70" />
+          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">Scope</span>
+          <div className="max-w-xs flex-1">
+            <WorkspaceSelect
+              value={wsScope}
+              onChange={(e) => setWsScope(e.target.value)}
+              options={[
+                { value: '', label: 'Global (all skills)' },
+                ...workspaces.map((w) => ({
+                  value: w.path,
+                  label: `${w.name}${w.hasSkills ? ' · has project skills' : ''}`,
+                })),
+              ]}
+              data-testid="skills-scope-select"
+              aria-label="Skills scope"
+            />
+          </div>
+          {wsScope && (
+            <span className="text-[10.5px] text-muted-foreground/70">
+              Project skills shadow same-named global ones
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── List ────────────────────────────────────────────────────── */}
       {mode === 'list' && (
@@ -299,6 +376,28 @@ export function SkillsSection() {
                       {selected.createdBy ? `by ${selected.createdBy}` : 'bundled'}
                     </span>
                     <Badge variant="outline" className="text-[10px] capitalize">{selected.category}</Badge>
+                    {/* C-2: scope + overrides badges */}
+                    {selected.scope && (
+                      <span
+                        className={cn(
+                          'rounded-md border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide',
+                          selected.scope === 'project'
+                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                            : 'border-border/50 bg-muted/30 text-muted-foreground',
+                        )}
+                        data-testid="skill-scope-badge"
+                      >
+                        {selected.scope}
+                      </span>
+                    )}
+                    {selected.overrides && (
+                      <span
+                        className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-sky-400"
+                        data-testid="skill-overrides-badge"
+                      >
+                        overrides {selected.overrides}
+                      </span>
+                    )}
                   </div>
                   <p className={cn('mt-1 text-[12.5px] leading-relaxed text-muted-foreground', !seeMore && 'line-clamp-2')}>
                     {selected.description || 'No description.'}
@@ -374,7 +473,14 @@ export function SkillsSection() {
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
           <div className="max-w-2xl space-y-4 rounded-xl border border-border/60 bg-card/60 p-5">
             {mode === 'create' && (
-              <FormField label="Name" hint="Lowercase, dotted/hyphenated. Max 64 chars.">
+              <FormField
+                label="Name"
+                hint={
+                  wsScope
+                    ? 'Created in this project (`.aug/skills/`) — it shadows any same-named global skill here.'
+                    : 'Lowercase, dotted/hyphenated. Max 64 chars.'
+                }
+              >
                 <input
                   type="text"
                   value={form.name}
@@ -419,7 +525,10 @@ export function SkillsSection() {
                 </select>
               </FormField>
             </div>
-            <FormField label="Body (SKILL.md markdown)">
+            <FormField
+              label="Body (SKILL.md markdown)"
+              hint={mode === 'edit' && wsScope ? 'Saving copy-on-writes this skill into the project scope if it is not a project skill yet.' : undefined}
+            >
               <textarea
                 value={form.body}
                 onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
@@ -447,7 +556,16 @@ export function SkillsSection() {
           >
             <h3 className="text-base font-semibold text-foreground">Delete skill?</h3>
             <p className="text-sm text-muted-foreground">
-              Delete <strong>{confirmDelete}</strong>? Bundled skills cannot be deleted.
+              {wsScope ? (
+                <>
+                  Delete <strong>{confirmDelete}</strong> from this project? The global skill it
+                  shadows (if any) stays intact.
+                </>
+              ) : (
+                <>
+                  Delete <strong>{confirmDelete}</strong>? Bundled skills cannot be deleted.
+                </>
+              )}
             </p>
             <div className="flex justify-end gap-3">
               <Button variant="outline" onClick={() => setConfirmDelete(null)}>
@@ -491,6 +609,23 @@ function SkillCard({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void 
             {skill.createdBy && (
               <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
                 {skill.createdBy}
+              </span>
+            )}
+            {/* C-2: scope + overrides badges on cards. */}
+            {skill.scope === 'project' && (
+              <span
+                className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-emerald-400"
+                data-testid="skill-card-scope"
+              >
+                project
+              </span>
+            )}
+            {skill.overrides && (
+              <span
+                className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-sky-400"
+                data-testid="skill-card-overrides"
+              >
+                overrides {skill.overrides}
               </span>
             )}
             {skill.enabled === false && (

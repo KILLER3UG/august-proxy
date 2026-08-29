@@ -44,7 +44,11 @@ SUBAGENT_BLOCKED_TOOLS = frozenset(
     {'spawn_subagent', 'spawn_subagents', 'create_agent', 'set_agent_mode',
      'interrupt_subagent', 'send_subagent_message',
      # Sub-agents do not write durable memory — only the main model does.
-     'remember'}
+     # Part 17: the whole memory write/read-CRUD surface is blocked, not
+     # just `remember` — a sub-agent flipping facts or project-memory
+     # entries bypasses the main model's stewardship (gap found in the
+     # Part 17 review: only `remember` was listed).
+     'remember', 'forget', 'list_facts'}
 )
 
 # Capability tiers for subagents — main model picks per-launch.
@@ -477,7 +481,12 @@ async def executeSubAgent(
         allowedNames = raw_allowed
         tools = [t for t in fullTools if _toolName(t) in allowedNames]
         openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
+    # Part 17 Phase B: sub-agents inherit the parent session's workspace
+    # so project skills (and their shadowing) appear in their prompts —
+    # tool dispatch already resolves paths against the same workspace.
+    _ws = as_str(getattr(session, 'workspacePath', '') or '') or None
     try:
+        from app.services import skill_service as _sk_svc
         from app.services.capabilities_prompt import (
             build_capabilities_block,
             skills_tools_allowed,
@@ -485,6 +494,7 @@ async def executeSubAgent(
 
         caps = build_capabilities_block(
             sorted(allowedNames),
+            catalogue=_sk_svc.catalogue(_ws),
             include_skills=skills_tools_allowed(allowedNames),
         )
     except Exception:
@@ -506,7 +516,7 @@ async def executeSubAgent(
         try:
             from app.services.skill_service import load_bodies
 
-            bodies = load_bodies(skill_names)
+            bodies = load_bodies(skill_names, workspace=_ws)
             if bodies:
                 systemText += f'\n\n<preloaded_skills>\n{bodies}\n</preloaded_skills>'
         except Exception:

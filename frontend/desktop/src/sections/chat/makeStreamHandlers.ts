@@ -786,6 +786,22 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
+    onRecalledMemories: ({ memories }) => {
+      // Part 17 A.4: what the per-turn <memory> tail injected — one
+      // collapsed recall chip per turn (the reducer skips empty rows).
+      if (!memories || memories.length === 0) return;
+      streamBlocks = appendBlockEvent(streamBlocks, {
+        type: 'recalledMemories',
+        memories: memories.map((m, i) => ({
+          id: `recall_${Date.now()}_${i}`,
+          key: m.key || '',
+          category: m.category || 'general',
+          snippet: m.snippet || '',
+          ...(m.scope ? { scope: m.scope } : {}),
+        })),
+      });
+      scheduleUpdate();
+    },
     onCircuitMode: ({ active, message }) => {
       // /circuit gate ack: pop (or close) the Circuit panel in the right
       // drawer and surface the notice inline as a system block.
@@ -856,6 +872,19 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = streamBlocks.filter(
         (b) => b.type !== 'thinking' && b.type !== 'finalOutput',
       );
+      scheduleUpdate();
+    },
+    onUpstreamRetry: ({ attempt, maxRetries, delayMs, status }) => {
+      // Phase L (Part 17): the provider client itself is backing off
+      // (429/503/connection refused, pre-first-token of this round).
+      // Notice-only — no buffer rollback: nothing of this round streamed,
+      // and earlier rounds' text blocks must stay on screen.
+      const reason = status === 429
+        ? 'Provider rate limit'
+        : status === 503
+          ? 'Provider overloaded'
+          : 'Provider connection issue';
+      retryNotice = `⏳ ${reason} — retrying ${attempt}/${maxRetries} in ${Math.max(1, Math.ceil(delayMs / 1000))}s…`;
       scheduleUpdate();
     },
     onError: ({ message }) => {

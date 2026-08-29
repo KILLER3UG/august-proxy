@@ -27,6 +27,9 @@ export interface ActivitySummaryCounts {
   commands?: number;
   /** Tool calls that errored — renders an alert accent on the completion bar. */
   errors?: number;
+  /** Part 17 A.4: recalled-memory rows this turn (recalledMemories block) —
+   *  keeps the activity pack mounted for recall-only turns. */
+  memoriesCount?: number;
 }
 
 export interface ActivitySummaryProps extends ActivitySummaryCounts {
@@ -96,6 +99,11 @@ export function buildActivityCountSegments(c: ActivitySummaryCounts): Array<{ ke
   if ((c.workersCount ?? 0) > 0) {
     segs.push({ key: 'workers', text: plural(c.workersCount!, 'worker', 'workers') });
   }
+  if ((c.memoriesCount ?? 0) > 0) {
+    // Part 17 A.4: memory recall counts as activity — a turn that only
+    // recalled memories still shows a pack (with the recall chip inside).
+    segs.push({ key: 'memories', text: plural(c.memoriesCount!, 'memory', 'memories') });
+  }
 
   return segs;
 }
@@ -130,6 +138,7 @@ export function ActivitySummary({
   searches = 0,
   commands = 0,
   errors = 0,
+  memoriesCount = 0,
   children,
   summary,
   durationLabel,
@@ -164,6 +173,7 @@ export function ActivitySummary({
     ranCount,
     usedCount,
     workersCount,
+    memoriesCount,
   });
   const prose = summary?.trim() || '';
   const hasProse = prose.length > 0;

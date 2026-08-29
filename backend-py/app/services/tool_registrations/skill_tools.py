@@ -6,12 +6,33 @@ from app.json_narrowing import as_str
 from app.services import tool_registry
 
 
+def _currentWorkspacePath() -> str:
+    """The current workbench session's workspacePath ('' when none/home).
+
+    Part 17 Phase B: skill tools resolve through the session's workspace
+    so project skills (``<ws>/.aug/skills/``) load/list with shadowing.
+    """
+    try:
+        from app.services.workbench import workbench as _wb
+        from app.services.workbench.context import currentSessionId
+
+        sid = str(currentSessionId.get() or '')
+        if not sid:
+            return ''
+        session = _wb.get_workbench_session(sid)
+        if session is None:
+            return ''
+        return as_str(getattr(session, 'workspacePath', '') or '')
+    except Exception:
+        return ''
+
+
 async def _loadSkill(name: str) -> str:
     """Load a skill's full instructions."""
     from app.services import skill_service
 
     try:
-        skill = skill_service.get(name)
+        skill = skill_service.get(name, _currentWorkspacePath() or None)
         if not skill:
             return f"Error: Skill '{name}' not found."
         if not skill.get('enabled'):
@@ -29,11 +50,12 @@ async def _listSkills(query: str = '') -> str:
     from app.services import skill_service
 
     try:
+        ws = _currentWorkspacePath() or None
         if query:
             # search() defaults to enabledOnly=True.
-            skills = skill_service.search(query)
+            skills = skill_service.search(query, workspace=ws)
         else:
-            skills = [s for s in skill_service.list_all() if s.get('enabled')]
+            skills = [s for s in skill_service.list_all(ws) if s.get('enabled')]
         if not skills:
             return 'No skills found.' if not query else f"No skills matching '{query}'."
         lines = [f'Available skills ({len(skills)}):\n']

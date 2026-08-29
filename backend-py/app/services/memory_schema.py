@@ -455,7 +455,10 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
 # v10: vector/graph tables removed (025_memory_state_separation drops them).
 # v11: knowledge-base redesign — internal_state + turn_outcomes tables (026),
 #      facts title/kind/use_count/last_used_at/status columns.
-_SCHEMA_USER_VERSION = 11
+# v11: knowledge-base redesign — internal_state + turn_outcomes tables (026),
+#      facts title/kind/use_count/last_used_at/status columns.
+# v12: turn latency telemetry (027) — turn_outcomes ttft_ms + cache hit/miss.
+_SCHEMA_USER_VERSION = 12
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
@@ -615,6 +618,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
             ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
             ensure_column(conn, 'learned_heuristics', 'confidence', 'REAL DEFAULT 0.5')
+            # Phase L (Part 17, 027): per-turn TTFT + prompt-cache telemetry.
+            ensure_column(conn, 'turn_outcomes', 'ttft_ms', 'INTEGER DEFAULT 0')
+            ensure_column(conn, 'turn_outcomes', 'cache_hit_tokens', 'INTEGER DEFAULT 0')
+            ensure_column(conn, 'turn_outcomes', 'cache_miss_tokens', 'INTEGER DEFAULT 0')
             _ensure_messages_fts(conn)
             repair_fts_sync(conn)
             _run_migrations_safe(conn)

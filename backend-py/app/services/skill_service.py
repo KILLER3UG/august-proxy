@@ -32,9 +32,31 @@ def _agentSkillsDir() -> Path:
     return base / 'skills'
 
 
-def _skillRoots() -> list[Path]:
-    """Search roots in precedence order — agent first wins on name clash."""
-    return [_agentSkillsDir(), SKILLS_DIR]
+def _skillRoots(workspace: str | Path | None = None) -> list[tuple[str, Path]]:
+    """Search roots in precedence order — earlier roots win on name clash.
+
+    Part 17 Phase B: with a non-home ``workspace`` the project root
+    ``<workspace>/.aug/skills/`` is prepended — project skills shadow
+    same-named global/bundled ones (the workspace's own way of working
+    overrides August's defaults). Home is deliberately NOT a project root:
+    the Tasks home anchors folderless chats, not authored skills.
+
+    Returns (scope, path) PAIRS so the label can never drift from the root
+    list (a bare list made home/no-workspace lists mislabel the agent root
+    as 'project' once the optional root is absent).
+    """
+    roots: list[tuple[str, Path]] = []
+    ws = str(workspace or '').strip()
+    if ws:
+        try:
+            wsPath = Path(ws).resolve()
+            if wsPath != Path.home().resolve():
+                roots.append(('project', wsPath / '.aug' / 'skills'))
+        except Exception:
+            pass
+    roots.append(('agent', _agentSkillsDir()))
+    roots.append(('bundled', SKILLS_DIR))
+    return roots
 
 
 _NAMEPattern = re.compile('^[a-z0-9][a-z0-9._-]*$')
@@ -204,20 +226,24 @@ def _parse_frontmatter_block(block: str) -> dict[str, str]:
     return frontmatter
 
 
-def isEnabled(name: str) -> bool:
+def isEnabled(name: str, workspace: str | Path | None = None) -> bool:
     """The single enabled-check predicate (M6 item 1). Unknown skills are
     treated as not-loadable (False)."""
-    skill = get(name)
+    skill = get(name, workspace)
     return bool(skill and skill.get('enabled'))
 
 
 
-def list_all() -> list[dict[str, object]]:
-    """Discover all skills from both the agent and bundled roots.
+def list_all(workspace: str | Path | None = None) -> list[dict[str, object]]:
+    """Discover all skills from the project (optional), agent, and bundled
+    roots — earlier roots shadow same-named later ones.
 
     M6 item 5: entries whose names fail the authoring-name rule are skipped
     and logged at discovery — invalid folders (e.g. leftover ``pending-*``
     approval staging dirs) never reach any catalogue, prompt, or UI list.
+
+    Part 17 Phase B: each entry carries ``scope`` (project | agent | bundled)
+    and ``overrides`` = the shadowed root's name when this entry shadows one.
     """
     global _flat_migrate_done
     if not _flat_migrate_done:
@@ -228,7 +254,10 @@ def list_all() -> list[dict[str, object]]:
             pass
     skills: list[dict[str, object]] = []
     seen: set[str] = set()
-    for root in _skillRoots():
+    # name → every root scope that contains it, in precedence order —
+    # used after the loop to badge which root each kept entry shadows (C-2).
+    scopesByName: dict[str, list[str]] = {}
+    for scope, root in _skillRoots(workspace):
         if not root.is_dir():
             continue
         for entry in sorted(root.iterdir()):
@@ -250,16 +279,29 @@ def list_all() -> list[dict[str, object]]:
                     'skipping skill with invalid name %r (%s): %s', name, md, exc
                 )
                 continue
+            scopesByName.setdefault(name, []).append(scope)
             if name in seen:
                 continue
+            parsed['scope'] = scope
             seen.add(name)
             skills.append(parsed)
+    for s in skills:
+        name = as_str(s['name'], '')
+        scopes = scopesByName.get(name, [])
+        idx = scopes.index(as_str(s.get('scope'), '')) if scopes else -1
+        if idx >= 0 and idx + 1 < len(scopes):
+            s['overrides'] = scopes[idx + 1]
     return skills
 
 
-def search(query: str = '', category: str = '', enabledOnly: bool = True) -> list[dict[str, object]]:
+def search(
+    query: str = '',
+    category: str = '',
+    enabledOnly: bool = True,
+    workspace: str | Path | None = None,
+) -> list[dict[str, object]]:
     """Search skills by name, description, trigger, or category."""
-    allSkills = list_all()
+    allSkills = list_all(workspace)
     q = query.lower().strip()
     results = []
     for s in allSkills:
@@ -279,15 +321,17 @@ def search(query: str = '', category: str = '', enabledOnly: bool = True) -> lis
     return results
 
 
-def get(name: str) -> Optional[dict[str, object]]:
-    """Get a single skill by name (agent root takes precedence)."""
-    for s in list_all():
+def get(name: str, workspace: str | Path | None = None) -> Optional[dict[str, object]]:
+    """Get a single skill by name (project > agent > bundled precedence)."""
+    for s in list_all(workspace):
         if s['name'] == name:
             return s
     return None
 
 
-def load_bodies(names: list[str], *, max_chars: int = 24000) -> str:
+def load_bodies(
+    names: list[str], *, max_chars: int = 24000, workspace: str | Path | None = None
+) -> str:
     """Concatenate SKILL.md bodies for worker preload (progressive disclosure skip).
 
     Disabled skills are never inlined (M6 item 1 — ``<harness_guide>`` skips
@@ -299,7 +343,7 @@ def load_bodies(names: list[str], *, max_chars: int = 24000) -> str:
         name = str(raw or '').strip()
         if not name:
             continue
-        skill = get(name)
+        skill = get(name, workspace)
         if not skill:
             parts.append(f'## skill:{name}\n(not found)')
             continue
@@ -316,7 +360,7 @@ def load_bodies(names: list[str], *, max_chars: int = 24000) -> str:
     return '\n\n'.join(parts)
 
 
-def catalogue() -> list[dict[str, object]]:
+def catalogue(workspace: str | Path | None = None) -> list[dict[str, object]]:
     """Compact metadata for every usable skill — the skill catalogue.
 
     Following the Claude-Code progressive-disclosure pattern: only this
@@ -337,28 +381,47 @@ def catalogue() -> list[dict[str, object]]:
     mtimes (a cold build parses ~84 SKILL.md files ≈ 0.5s and this used to
     run on MANY turns via the Tier-3 relevance pass). Any create/patch/
     delete bumps the roots' mtime → next call rebuilds automatically.
+
+    Part 17 Phase B: the memo is keyed by (workspace, roots, mtimes) so
+    per-workspace catalogues never cross-contaminate sessions; project
+    entries carry ``scope: 'project'`` and an ``overrides`` label when they
+    shadow a global/bundled name.
     """
     global _cat_cache, _cat_cache_key
+    wsKey = str(workspace or '')
     try:
-        roots = tuple(str(r) for r in _skillRoots())
-        marks = tuple(_root_mtime(r) for r in _skillRoots())
-        key = (roots, marks)
+        pairs = _skillRoots(workspace)
+        roots = tuple(f'{scope}:{r}' for scope, r in pairs)
+        marks = tuple(_root_mtime(r) for _scope, r in pairs)
+        key: tuple | None = (wsKey, roots, marks)
     except Exception:
         key = None
     if key is not None and _cat_cache is not None and _cat_cache_key == key:
         return _cat_cache
-    entries = [
-        {
+    byName = {as_str(s['name'], ''): s for s in list_all()}
+    entries: list[dict[str, object]] = []
+    for s in list_all(workspace):
+        if not s.get('enabled'):
+            continue
+        name = as_str(s['name'], '')
+        scope = as_str(s.get('scope'), '')
+        shadowed = ''
+        if scope == 'project':
+            g = byName.get(name)
+            if g is not None and g is not s:
+                shadowed = as_str(g.get('scope'), 'global')
+        entry: dict[str, object] = {
             'name': s['name'],
             'description': s.get('description', ''),
             'trigger': s.get('trigger', ''),
             'category': s.get('category', 'uncategorized'),
             'created_by': s.get('created_by', ''),
             'enabled': True,
+            'scope': scope or 'global',
         }
-        for s in list_all()
-        if s.get('enabled')
-    ]
+        if shadowed:
+            entry['overrides'] = shadowed
+        entries.append(entry)
     out = sorted(entries, key=lambda e: as_str(e.get('name'), ''))
     if key is not None:
         _cat_cache = out
@@ -366,9 +429,9 @@ def catalogue() -> list[dict[str, object]]:
     return out
 
 
-def skill_body(name: str) -> str | None:
+def skill_body(name: str, workspace: str | Path | None = None) -> str | None:
     """Full instruction body for a skill, or None when not found."""
-    sk = get(name)
+    sk = get(name, workspace)
     return as_str(sk.get('instructions'), '') if sk else None
 
 
@@ -658,16 +721,28 @@ def createSkill(
     trigger: str = '',
     category: str = 'uncategorized',
     created_by: str = 'agent',
+    workspace: str | Path | None = None,
 ) -> dict[str, object]:
-    """Create a new agent-authored skill."""
+    """Create a new agent-authored skill.
+
+    Part 17 Phase B: with a non-home ``workspace`` the skill lands in the
+    project root ``<ws>/.aug/skills/`` (created on demand) — project scope
+    by choice, global otherwise.
+    """
     _validateName(name)
     _validateDescription(description)
     if not body.strip():
         raise SkillValidationError('Skill body is required.')
-    if get(name):
+    if get(name, workspace):
         raise SkillValidationError(f"Skill '{name}' already exists.")
-    agent_dir = _ensureAgentRoot() / name
-    agent_dir.mkdir(parents=True, exist_ok=False)
+    wsStr = str(workspace or '').strip()
+    if wsStr and Path(wsStr).resolve() != Path.home().resolve():
+        root = Path(wsStr) / '.aug' / 'skills'
+        root.mkdir(parents=True, exist_ok=True)
+        skill_dir = root / name
+    else:
+        skill_dir = _ensureAgentRoot() / name
+    skill_dir.mkdir(parents=True, exist_ok=False)
     frontmatter = {
         'name': name,
         'description': description.strip(),
@@ -681,7 +756,7 @@ def createSkill(
         description=description,
         is_learned=created_by in ('agent', 'harness-proposal'),
     )
-    md = agent_dir / 'SKILL.md'
+    md = skill_dir / 'SKILL.md'
     md.write_text(_renderSkillMd(frontmatter, normalized), 'utf-8')
     parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
@@ -696,20 +771,43 @@ def patchSkill(
     trigger: Optional[str] = None,
     category: Optional[str] = None,
     enabled: Optional[bool] = None,
+    workspace: str | Path | None = None,
 ) -> dict[str, object]:
     """Patch an existing skill (copy-on-write for bundled skills).
 
     M6 item 4: the enabled/disabled flip is handled HERE so a PATCH that
     changes both ``disabled`` and content fields performs exactly one file
     write (the router previously called setEnabled + patchSkill = 2 writes).
+
+    Part 17 Phase B: with a ``workspace``, a project entry patches in
+    place (project root); a bundled/global name copy-on-writes INTO the
+    project root as a project override — the workspace's customized copy.
     """
-    existing = get(name)
+    existing = get(name, workspace)
     if not existing:
         raise SkillValidationError(f"Skill '{name}' not found.")
     if description is not None:
         _validateDescription(description)
-    agent_dir = _copyOnWrite(name)
-    md = agent_dir / 'SKILL.md'
+    wsStr = str(workspace or '').strip()
+    inProject = False
+    md = None
+    if wsStr and Path(wsStr).resolve() != Path.home().resolve():
+        projDir = Path(wsStr) / '.aug' / 'skills' / name
+        if projDir.exists():
+            md = projDir / 'SKILL.md'
+            inProject = True
+        else:
+            # Copy-on-write the resolved skill into the project root —
+            # the project's customized shadow of a global/bundled skill.
+            projDir.mkdir(parents=True, exist_ok=True)
+            src = Path(as_str(existing.get('path'), ''))
+            (projDir / 'SKILL.md').write_text(src.read_text('utf-8'), 'utf-8')
+            md = projDir / 'SKILL.md'
+            inProject = True
+    if not inProject:
+        agent_dir = _copyOnWrite(name)
+        md = agent_dir / 'SKILL.md'
+    assert md is not None
     text = md.read_text('utf-8')
     m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
     if not m:
@@ -748,10 +846,37 @@ def patchSkill(
     return parsed or {'name': name, 'description': frontmatter.get('description', '')}
 
 
-def deleteSkill(name: str) -> dict[str, object]:
-    """Delete an agent-authored skill. Refuses bundled skills."""
+def deleteSkill(name: str, workspace: str | Path | None = None) -> dict[str, object]:
+    """Delete a skill. Refuses bundled skills.
+
+    Part 17 Phase B override safety: with a ``workspace``, deleting a name
+    that exists as a PROJECT entry removes only the project override — the
+    shadowed global/bundled skill stays intact. Deleting a name that has
+    no project entry but exists globally is refused (the UI should redirect
+    to the global scope); bundled skills are never deletable.
+    """
     import shutil as _shutil
 
+    wsStr = str(workspace or '').strip()
+    project_root = (
+        Path(wsStr) / '.aug' / 'skills'
+        if wsStr and Path(wsStr).resolve() != Path.home().resolve()
+        else None
+    )
+    if project_root is not None:
+        projDir = project_root / name
+        if projDir.exists():
+            _shutil.rmtree(projDir)
+            _bust_prompt_skills_cache()
+            return {'deleted': name, 'scope': 'project', 'override_removed': True}
+        # No project entry: if a global/agent copy exists, deleting here
+        # would have to delete the GLOBAL skill — refuse; the caller should
+        # delete it from the global scope explicitly.
+        if get(name) is not None:
+            raise SkillValidationError(
+                f"Skill '{name}' has no project override in this workspace; "
+                'delete it from the global scope instead.'
+            )
     agent_dir = _agentSkillDir(name)
     if not agent_dir.exists():
         bundled = SKILLS_DIR / name
@@ -762,7 +887,7 @@ def deleteSkill(name: str) -> dict[str, object]:
         raise SkillValidationError(f"Skill '{name}' not found.")
     _shutil.rmtree(agent_dir)
     _bust_prompt_skills_cache()
-    return {'deleted': name}
+    return {'deleted': name, 'scope': 'global'}
 
 
 def setEnabled(name: str, *, enabled: bool) -> dict[str, object]:

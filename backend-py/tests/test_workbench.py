@@ -158,18 +158,29 @@ class TestSystemPrompt:
         assert f'- Date: {today}' in prompt
 
     def testPromptWithGoal(self):
+        # Phase L: the goal left the (byte-stable) system prompt; it
+        # rides the per-turn <session_state> tail block instead.
         session = createWorkbenchSession()
         setWorkbenchGoal(session, 'Build feature')
         prompt = buildSystemPrompt(session)
-        assert 'Build feature' in prompt
+        assert 'Build feature' not in prompt
+        from app.services.workbench.workbench import _sessionStateBlock
+
+        assert 'Build feature' in _sessionStateBlock(session)
 
     def testPromptWithPlan(self):
+        # Phase L: plan status lives in the per-turn <session_state>
+        # block (markdown head + path), not the cached system prompt.
         session = createWorkbenchSession()
-        submitPlan(session, {'plan': 'My plan'})
+        submitPlan(session, {'markdown': 'My plan', 'planPath': 'plans/p.md'})
         approveWorkbenchPlan(session.id)
         prompt = buildSystemPrompt(session)
-        assert 'My plan' in prompt
-        assert 'approved' in prompt
+        assert 'My plan' not in prompt
+        from app.services.workbench.workbench import _sessionStateBlock
+
+        state = _sessionStateBlock(session)
+        assert 'My plan' in state
+        assert 'approved' in state
 
     def testPlanModeNotInjectedIntoPrompt(self):
         session = createWorkbenchSession(guardMode='plan')

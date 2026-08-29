@@ -152,6 +152,115 @@ def _brain_query_daemons(query: str, filters: dict | None, limit: int) -> str:
         return _json.dumps([])
 
 
+def _brain_query_project_memory(query: str, filters: dict | None, limit: int) -> str:
+    """Part 17 Phase A: the project-memory store (virtual, md-file backed).
+
+    Rows = {file, title, body, updated} from the current session's
+    workspace ``<ws>/.aug/memory/*.md``, BM25-ranked for a query (fallback:
+    file order). Workspace comes from the calling session via the
+    ContextVar; ``filters={'workspace': …}`` overrides for admin surfaces.
+    """
+    import json as _json
+
+    ws = ''
+    if filters and isinstance(filters.get('workspace'), str) and filters['workspace'].strip():
+        ws = str(filters['workspace']).strip()
+    if not ws:
+        try:
+            from app.services.workbench import workbench as _wb
+            from app.services.workbench.context import currentSessionId
+
+            sid = str(currentSessionId.get() or '')
+            session = _wb.getWorkbenchSession(sid) if sid else None
+            if session is not None:
+                ws = str(getattr(session, 'workspacePath', '') or '')
+        except Exception:
+            ws = ''
+    if not ws:
+        return _json.dumps(
+            {'error': 'project-memory requires a workspace (no workspacePath on this session)'}
+        )
+    try:
+        from app.services import project_memory as _pm
+
+        if query:
+            entries = _pm.search_entries(ws, query, k=limit)
+        else:
+            entries = _pm.read_entries(ws)[: max(1, limit)]
+        rows = [
+            {
+                'file': e.file,
+                'title': e.title,
+                'body': e.body,
+                'updated': e.updated,
+            }
+            for e in entries
+        ]
+        return _json.dumps(rows, ensure_ascii=False)
+    except Exception as exc:
+        return _json.dumps({'error': f'project-memory query failed: {exc}'})
+
+
+def _brain_query_facts_ranked(query: str, filters: dict | None, limit: int) -> str:
+    """Phase D: BM25-ranked facts retrieval for ``brain_query``.
+
+    Mirrors the tail block's ranking (``fact_retrieval`` — one shared
+    implementation) instead of LIKE-in-rowid-order. An exact ``fact_key``
+    hit short-circuits to the direct row. Returns the same wire shape as
+    the generic path (camelCase rows) so callers see no difference.
+    """
+    q = (query or '').strip()
+    cap = max(1, min(limit, 100))
+    # Exact-key fast path: a point query must not depend on tokenization.
+    conn = _conn()
+    exact = conn.execute(
+        'SELECT * FROM facts WHERE fact_key = ?', (q,)
+    ).fetchone()
+    if exact is not None:
+        return json.dumps([_row_as_wire(exact)], default=str, ensure_ascii=False)
+    try:
+        from app.services.memory_store.fact_retrieval import retrieve_relevant_facts
+
+        facts = retrieve_relevant_facts(q, k=cap)
+    except Exception as exc:
+        return json.dumps({'error': f'brain_query(facts): ranked retrieval failed: {exc}'})
+    if not facts:
+        # No BM25 hits — fall through to the old LIKE scan so partial
+        # tokens and punctuation-heavy queries still find their rows.
+        return ''
+    # Enrich the compact ranking rows with the full wire columns the
+    # generic path returns (join back by key, one IN query).
+    keys = [str(f.get('key') or '') for f in facts]
+    placeholders = ','.join('?' * len(keys))
+    rows = conn.execute(
+        f'SELECT * FROM facts WHERE fact_key IN ({placeholders})', keys
+    ).fetchall()
+    byKey = {str(r['fact_key']): r for r in rows}
+    ordered = [byKey[k] for k in keys if k in byKey]
+    results = [_row_as_wire(r) for r in ordered]
+    # Filters apply after ranking (status/category equality on wire keys).
+    if filters:
+        import re as _re
+
+        def _match(row: dict[str, object]) -> bool:
+            for fk, fv in filters.items():
+                snake = _re.sub(r'(?<!^)(?=[A-Z])', '_', str(fk)).lower()
+                for cand in (fk, snake):
+                    if cand in row and str(row[cand]) != str(fv):
+                        return False
+            return True
+
+        results = [r for r in results if _match(r)]
+    resultJson = json.dumps(results, default=str, ensure_ascii=False)
+    if len(resultJson) > 2000 * 4:
+        wrapped = {
+            'rows': results[:10],
+            'note': f'{max(0, len(results) - 10)} more rows; narrow your query',
+        }
+        resultJson = json.dumps(wrapped, default=str, ensure_ascii=False)
+    return resultJson
+
+
 def brain_query(store: str, query: str = '', filters: dict | None = None, limit: int = 10) -> str:
     """Read-only query across any brain store (§11 of the cognitive spec).
 
@@ -168,6 +277,8 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
     conn = _conn()
     if store in ('daemons',):
         return _brain_query_daemons(query, filters, limit)
+    if store in ('project-memory', 'project_memory', 'projectMemory'):
+        return _brain_query_project_memory(query, filters, limit)
     store = _resolve_store(store)
     if store not in _BRAINStores:
         available = sorted(set(list(_BRAINStores.keys()) + list(_STORE_ALIASES.keys()) + ['daemons']))
@@ -175,6 +286,14 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
             {'error': f"store '{store}' not available in this build", 'available': available}
         )
     info = _BRAINStores[store]
+    # Phase D (Part 17): facts queries rank through the BM25 index shared
+    # with the tail block — relevance instead of LIKE-in-rowid-order. An
+    # exact fact_key match keeps the direct fast path (a key lookup is a
+    # point query, not a search). '' = no BM25 hits → generic LIKE scan.
+    if store == 'facts' and query:
+        ranked = _brain_query_facts_ranked(query, filters, limit)
+        if ranked:
+            return ranked
     try:
         tableCheck = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (info['table'],)
@@ -307,12 +426,26 @@ def brain_store_summary() -> list[dict[str, object]]:
     return out
 
 
-def brain_browse(store: str, limit: int = 50, offset: int = 0, query: str = '') -> dict[str, object]:
+def brain_browse(
+    store: str,
+    limit: int = 50,
+    offset: int = 0,
+    query: str = '',
+    *,
+    sort: str = '',
+    category: str = '',
+    source: str = '',
+    confidence: str = '',
+) -> dict[str, object]:
     """Paginated browse over a brain store for the settings UI.
 
     Unlike ``brain_query`` (token-capped JSON string for models) this
     returns structured rows + total so a human can page through what
     August stores. Read-only; unknown stores return an error dict.
+
+    Part 17 Phase C: ``sort`` (newest|oldest|updated|confidence) picks the
+    ORDER BY; ``category``/``source``/``confidence`` are server-side
+    equality filters (gap 3-4) so filtering works past the fetch cap.
     """
     conn = _conn()
     resolved = _resolve_store(store)
@@ -329,17 +462,41 @@ def brain_browse(store: str, limit: int = 50, offset: int = 0, query: str = '') 
         ).fetchone()
         if not tableCheck:
             return {'store': resolved, 'rows': [], 'total': 0, 'limit': lim, 'offset': off}
-        where = ''
+        whereParts: list[str] = []
         params: list[object] = []
         q = (query or '').strip()
         if q:
             searchCols = as_list(info['search_cols'])
             if searchCols:
-                where = ' WHERE ' + ' OR '.join(f'{col} LIKE ?' for col in searchCols)
-                params = [f'%{q}%'] * len(searchCols)
+                whereParts.append(' OR '.join(f'{col} LIKE ?' for col in searchCols))
+                params.extend([f'%{q}%'] * len(searchCols))
+        # Server-side equality filters (only columns the table actually has,
+        # so a filter on one store never 500s another).
+        colInfo = conn.execute(f'PRAGMA table_info({table})').fetchall()
+        colNames = {c['name'] for c in colInfo}
+        for key, val in (('category', category), ('source', source), ('confidence', confidence)):
+            v = (val or '').strip()
+            if not v:
+                continue
+            if key == 'confidence' and v not in ('', 'low', 'medium', 'high'):
+                continue  # free-text confidence stays unfiltered, not a 500
+            if key in colNames:
+                whereParts.append(f'{key} = ?')
+                params.append(v)
+        where = (' WHERE ' + ' AND '.join(f'({p})' for p in whereParts)) if whereParts else ''
         total = int(conn.execute(f'SELECT COUNT(*) FROM {table}{where}', params).fetchone()[0])
+        # Sort control (gap 4). Newest/oldest ride the rowid; updated/confidence
+        # fall back to rowid when the column is missing on this store.
+        order = ' ORDER BY rowid DESC'
+        s = (sort or '').strip().lower()
+        if s == 'oldest':
+            order = ' ORDER BY rowid ASC'
+        elif s == 'updated' and 'updated_at' in colNames:
+            order = ' ORDER BY updated_at DESC'
+        elif s == 'confidence' and 'confidence' in colNames:
+            order = ' ORDER BY CAST(confidence AS REAL) DESC'
         rows = conn.execute(
-            f'SELECT {cols} FROM {table}{where} ORDER BY rowid DESC LIMIT ? OFFSET ?',
+            f'SELECT {cols} FROM {table}{where}{order} LIMIT ? OFFSET ?',
             [*params, lim, off],
         ).fetchall()
         return {

@@ -87,6 +87,9 @@ export interface RecalledMemoryItem {
   key: string;
   category: string;
   snippet: string;
+  /** Part 17 A.4: 'global' (facts store) or 'project' (workspace md entry);
+   *  absent on legacy rows — treat missing as 'global'. */
+  scope?: string;
 }
 
 export interface MessageBlockToolCall {

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 
-from app.json_narrowing import as_int
+from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
 
 
@@ -122,6 +122,19 @@ def reset_remember_turn_budget(sessionId: str = '') -> None:
     _rememberTurnCounts.pop(sessionId, None)
 
 
+def remember_used_this_turn(sessionId: str = '') -> bool:
+    """True when `remember` already ran this turn for the session (counter > 0).
+
+    Read by the end-of-turn memory-habit nudge (workbench.py) so a turn that
+    already consolidated knowledge does not get nudged again.
+    """
+    try:
+        key = sessionId or _currentRememberSessionKey()
+    except Exception:
+        return False
+    return _rememberTurnCounts.get(key, 0) > 0
+
+
 def _currentRememberSessionKey() -> str:
     try:
         from app.services.workbench.context import currentSessionId
@@ -129,6 +142,30 @@ def _currentRememberSessionKey() -> str:
         return str(currentSessionId.get() or 'default')
     except Exception:
         return 'default'
+
+
+def _currentWorkspacePath() -> str:
+    """The current workbench session's workspacePath ('' when none/home).
+
+    Part 17 Phase A: resolves the session bound to the current tool
+    dispatch via the ContextVar so the project-memory write door can route
+    remember/forget to the right workspace without changing the tool
+    signature everywhere.
+    """
+    try:
+        from app.services.workbench import workbench as _wb
+        from app.services.workbench.context import currentSessionId
+
+        sid = str(currentSessionId.get() or '')
+        if not sid:
+            return ''
+        session = _wb.getWorkbenchSession(sid)
+        if session is None:
+            return ''
+        ws = as_str(getattr(session, 'workspacePath', '') or '')
+        return ws
+    except Exception:
+        return ''
 
 
 async def _remember(
@@ -139,6 +176,7 @@ async def _remember(
     expires_at: str = '',
     title: str = '',
     kind: str = '',
+    scope: str = '',
     **_extra: object,
 ) -> str:
     """Single model write door into durable memory (facts store).
@@ -149,6 +187,13 @@ async def _remember(
     records a rollback entry so the write is undoable. Every entry gets a
     short human ``title`` (derived from the text when not supplied) and a
     ``kind`` (fact | lesson | preference | skill-note).
+
+    Part 17 Phase A: ``scope='project'`` writes to the workspace's md-file
+    project memory (``<ws>/.aug/memory/memory.md``) instead of the global
+    facts store — same gates, same rollback snapshot, same per-turn budget.
+    Inside a session with a non-home workspace the default scope IS project
+    (the workspace's constraints and lessons belong to that project); the
+    global store is reached explicitly with ``scope='global'``.
     """
     import json as _json
 
@@ -213,6 +258,68 @@ async def _remember(
                 'facts max per turn). Continue the task; you can save more next turn.',
             }
         )
+    # ── Part 17 Phase A: project scope (md-file workspace memory) ──────────
+    ws = _currentWorkspacePath()
+    scopeNorm = (scope or '').strip().lower()
+    if scopeNorm == 'project' or (not scopeNorm and ws):
+        if not ws:
+            return _json.dumps(
+                {
+                    'ok': False,
+                    'error': 'scope=project requires a workspace; no workspacePath is bound to '
+                    'this session (use scope=global or open a workspace first)',
+                }
+            )
+        try:
+            cfgPj = brain_config_service.getRuntimeConfig()
+        except Exception:
+            cfgPj = {}
+        if not bool(cfgPj.get('projectMemory', True)):
+            return _json.dumps(
+                {
+                    'ok': False,
+                    'policy': 'project memory is disabled by the user (projectMemory setting). '
+                    'Do not retry; save with scope=global only if the fact is user-level.',
+                }
+            )
+        entryTitle = (title or '').strip() or memory_store.derive_fact_title(text)
+        before: dict[str, object] | None = None
+        try:
+            from app.services import project_memory as _pm
+
+            existing = _pm.read_entries(ws, title=entryTitle)
+            if existing:
+                before = {
+                    'file': existing[0].file,
+                    'title': existing[0].title,
+                    'body': existing[0].body,
+                    'updated': existing[0].updated,
+                }
+            body = f'{text}\n\n{detailsText}' if detailsText else text
+            _pm.upsert_entry(ws, entryTitle, body)
+        except Exception as exc:
+            return _json.dumps({'ok': False, 'error': f'remember(project) failed: {exc}'})
+        _rememberTurnCounts[sessKey] = used + 1
+        try:
+            from app.services.rollback_store import record_rollback
+
+            record_rollback(
+                type='restore_memory_item',
+                target=f'project:{entryTitle}',
+                before=before,
+                after={'workspace': ws, 'title': entryTitle, 'body': body},
+            )
+        except Exception:
+            pass
+        return _json.dumps(
+            {
+                'ok': True,
+                'scope': 'project',
+                'key': entryTitle,
+                'file': 'memory.md',
+                'updated': before is not None,
+            }
+        )
     cat = (category or 'general').strip().lower()
     if cat not in ('user', 'feedback', 'project', 'reference', 'general'):
         cat = 'general'
@@ -221,7 +328,7 @@ async def _remember(
     factKind = (kind or '').strip().lower()
     value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
     exp = (expires_at or '').strip() or None
-    before = memory_store.get_fact(factKey)
+    before = memory_store.get_fact(factKey)  # type: ignore[assignment]
     try:
         memory_store.save_fact(
             factKey, value, category=cat, source='model', confidence=0.7,
@@ -256,12 +363,16 @@ _FORGET_ALLOWED_SOURCES = ('model', 'user', '')
 
 
 async def _forget(key: str) -> str:
-    """Delete one durable fact from long-term memory by exact key.
+    """Delete one durable memory entry by exact key.
 
     The delete half of the model's memory CRUD (with ``remember`` = write and
     ``list_facts`` = read). Gated by ``modelMemoryWrites``; only model / user
     / imported facts can be deleted. A rollback snapshot is recorded so the
     delete is undoable, matching the Memory UI's delete path.
+
+    Part 17 Phase A: ``project:<title>`` deletes a project-memory entry
+    (the remember scope='project' write door's counterpart — deletes from
+    ``<ws>/.aug/memory/``, moves nothing into the global store).
     """
     import json as _json
 
@@ -270,6 +381,68 @@ async def _forget(key: str) -> str:
     factKey = (key or '').strip()
     if not factKey:
         return _json.dumps({'ok': False, 'error': 'key is required — call list_facts to see keys'})
+    # Project-scope delete: `project:<title>` targets the workspace's md
+    # entries; a bare key inside a non-home workspace tries the project
+    # entries first (matching remember's auto-project default) and falls
+    # through to the global facts store when no entry matches.
+    ws = _currentWorkspacePath()
+    if ws:
+        isProjectKey = factKey.startswith('project:')
+        title = factKey[len('project:') :].strip() if isProjectKey else factKey
+        try:
+            from app.services import project_memory as _pm
+
+            existing = [e for e in _pm.read_entries(ws) if e.title.lower() == title.lower()]
+        except Exception:
+            existing = []
+        if existing:
+            try:
+                cfgF = brain_config_service.getRuntimeConfig()
+            except Exception:
+                cfgF = {}
+            if not bool(cfgF.get('modelMemoryWrites', True)):
+                return _json.dumps(
+                    {
+                        'ok': False,
+                        'policy': 'model memory writes are disabled by the user. Do not retry; '
+                        "tell the user you can't delete memories while this setting is off.",
+                    }
+                )
+            entry = existing[0]
+            try:
+                from app.services import project_memory as _pm
+
+                _pm.delete_entry(ws, entry.title)
+            except Exception as exc:
+                return _json.dumps({'ok': False, 'error': f'forget(project) failed: {exc}'})
+            try:
+                from app.services.rollback_store import record_rollback
+
+                record_rollback(
+                    type='restore_memory_item',
+                    target=f'project:{entry.title}',
+                    before={
+                        'workspace': ws,
+                        'file': entry.file,
+                        'title': entry.title,
+                        'body': entry.body,
+                        'updated': entry.updated,
+                    },
+                    after=None,
+                )
+            except Exception:
+                pass
+            return _json.dumps(
+                {'ok': True, 'deleted': True, 'scope': 'project', 'key': entry.title}
+            )
+        if isProjectKey:
+            return _json.dumps(
+                {
+                    'ok': False,
+                    'deleted': False,
+                    'error': f'no project-memory entry titled "{title}" in this workspace',
+                }
+            )
     try:
         cfg = brain_config_service.getRuntimeConfig()
     except Exception:
@@ -351,6 +524,29 @@ async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> s
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'list_facts failed: {exc}'})
     facts: list[dict[str, object]] = []
+    # Part 17 Phase A: inside a workspace, project-memory entries list first
+    # (they are the remember-default scope there) with key `project:<title>`.
+    ws = _currentWorkspacePath()
+    if ws:
+        try:
+            from app.services import project_memory as _pm
+
+            for e in _pm.read_entries(ws):
+                if q and q.lower() not in e.title.lower() and q.lower() not in e.body.lower():
+                    continue
+                facts.append(
+                    {
+                        'key': f'project:{e.title}',
+                        'title': e.title[:120],
+                        'category': 'project',
+                        'source': 'project-file',
+                        'kind': 'entry',
+                        'updated': e.updated or '',
+                        'file': e.file,
+                    }
+                )
+        except Exception:
+            pass
     for r in rows[:lim]:
         title = str(r.get('title') or '').strip()
         value = str(r.get('factValue') or '')
@@ -593,16 +789,18 @@ def register() -> None:
     )
     tool_registry.register(
         'brain_query',
-        "Read-only query over runtime stores (sessions, messages, blackboard, daemons). "
-        'Returns compact JSON rows. Use store=sessions to list chats before deleting.',
+        "Read-only query over runtime stores (sessions, messages, blackboard, daemons, "
+        'facts, project-memory). Returns compact JSON rows. Use store=sessions to list chats '
+        'before deleting; store=project-memory reads this workspace\'s md-file entries '
+        '(BM25-ranked by query).',
         _brainQuery,
         {
             'type': 'object',
             'properties': {
                 'store': {
                     'type': 'string',
-                    'description': 'Which store to read: sessions | messages | blackboard | daemons',
-                    'enum': ['sessions', 'messages', 'blackboard', 'daemons'],
+                    'description': 'Which store to read: sessions | messages | blackboard | daemons | facts | project-memory',
+                    'enum': ['sessions', 'messages', 'blackboard', 'daemons', 'facts', 'project-memory'],
                 },
                 'query': {'type': 'string', 'description': 'Search text (FTS or LIKE). Optional.'},
                 'filters': {
@@ -616,10 +814,12 @@ def register() -> None:
     )
     tool_registry.register(
         'remember',
-        'Save one durable fact to long-term memory (the only model write door). Use for user-stated '
+        'Save one durable memory entry (the only model write door). Use for user-stated '
         'preferences, project constraints, and feedback that must outlive this session. Pass a stable '
-        'key to update an existing fact rather than duplicate (call list_facts to see current keys). '
-        'Sensitive topics are refused unless enabled.',
+        'key to update an existing entry rather than duplicate (call list_facts to see current keys). '
+        'Sensitive topics are refused unless enabled. Scope: inside a workspace session the default is '
+        "project (this workspace's md-file memory); use scope='global' for user-level facts that "
+        "apply everywhere, or scope='project' to force the project store.",
         _remember,
         {
             'type': 'object',
@@ -643,6 +843,12 @@ def register() -> None:
                     'type': 'string',
                     'enum': ['user', 'feedback', 'project', 'reference', 'general'],
                     'description': 'Memory category. Default general.',
+                },
+                'scope': {
+                    'type': 'string',
+                    'enum': ['global', 'project'],
+                    'description': 'Where to save: project (workspace md memory, the default inside a '
+                    'workspace session) or global (user-level facts store, the default without a workspace).',
                 },
                 'details': {'type': 'string', 'description': 'Optional extra context stored alongside the fact.'},
                 'expires_at': {
@@ -677,8 +883,10 @@ def register() -> None:
         'forget',
         'Delete one durable memory fact by its exact key (call list_facts to see keys). Use when a '
         'stored fact is wrong or outdated, or when the user asks to forget something. Only '
-        'model/user/imported entries can be deleted; system-owned entries are refused. IMPORTANT: '
-        'never delete a memory the user did not ask to remove or that is not clearly superseded.',
+        'model/user/imported entries can be deleted; system-owned entries are refused. Inside a '
+        'workspace, project-memory entries match by title (the key IS the entry title); prefix '
+        '"project:" to force the project store. IMPORTANT: never delete a memory the user did not '
+        'ask to remove or that is not clearly superseded.',
         _forget,
         {
             'type': 'object',

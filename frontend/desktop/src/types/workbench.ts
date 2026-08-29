@@ -363,6 +363,18 @@ export interface WorkbenchEventHandlers {
     content?: string;
     key?: string;
   }) => void;
+  /** Recalled memory rows (Part 17 A.4): what the per-turn <memory> tail
+   *  actually injected this turn — global facts + project md entries.
+   *  Rendered as one collapsed recall chip per turn; never blocking. */
+  onRecalledMemories?: (data: {
+    sessionId?: string;
+    memories?: Array<{
+      key?: string;
+      category?: string;
+      snippet?: string;
+      scope?: string;
+    }>;
+  }) => void;
   /** /circuit workbench toggled — the desktop opens/closes the Circuit
    *  panel in the right drawer and shows the ack notice. */
   onCircuitMode?: (data: {
@@ -415,6 +427,11 @@ export interface WorkbenchEventHandlers {
   /** Backend is backing off before retrying a failed model call (429/5xx).
    *  The chat shows a self-updating notice instead of dying mid-turn. */
   onRetrying?: (data: { attempt: number; maxRetries: number; delayMs: number; reason: string }) => void;
+  /** Phase L: a retry INSIDE the provider client loop, before any token of
+   *  this round streamed (429/503/connection refused). Notice-only — no
+   *  buffer rollback, unlike onRetrying (nothing was emitted to undo, and
+   *  earlier rounds' text must stay on screen). */
+  onUpstreamRetry?: (data: { attempt: number; maxRetries: number; delayMs: number; status: number }) => void;
   onError?: (data: { message: string }) => void;
   /** The model asked a clarifying question because it was uncertain. The
    *  chat thread renders a `ClarifyTool` popup anchored to the assistant

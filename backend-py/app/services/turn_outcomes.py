@@ -81,13 +81,23 @@ def record_turn_outcome(
     error_class: str = '',
     duration_ms: int = 0,
     session_id: str = '',
+    ttft_ms: int = 0,
+    cache_hit_tokens: int = 0,
+    cache_miss_tokens: int = 0,
 ) -> None:
-    """Append one telemetry row. Best-effort: never raises into the turn."""
+    """Append one telemetry row. Best-effort: never raises into the turn.
+
+    Phase L (Part 17): ``ttft_ms`` + the prompt-cache token split make
+    latency regressions measurable per turn — "chat feels slow" becomes
+    "first token 42 s, cache hit 0 / miss 29k" instead of a vibe.
+    """
     try:
         conn = _conn()
         conn.execute(
-            'INSERT INTO turn_outcomes (model, provider, task_type, ok, error_class, duration_ms, session_id) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO turn_outcomes '
+            '(model, provider, task_type, ok, error_class, duration_ms, session_id, '
+            ' ttft_ms, cache_hit_tokens, cache_miss_tokens) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 model or '',
                 provider or '',
@@ -96,6 +106,9 @@ def record_turn_outcome(
                 error_class or '',
                 int(duration_ms or 0),
                 session_id or '',
+                int(ttft_ms or 0),
+                int(cache_hit_tokens or 0),
+                int(cache_miss_tokens or 0),
             ),
         )
         conn.commit()

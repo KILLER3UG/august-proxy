@@ -26,6 +26,10 @@ _ENTRY_CHAR_CAP = 300
 # Queries shorter than this get no BM25 injection (the intake
 # brain_index_snippet fallback covers empty/short turns).
 _MIN_QUERY_CHARS = 8
+# Recency decay (Phase D): the usage boost halves per 30 days unused —
+# often-quoted stale facts stop crowding out fresh ones. '' last_used_at
+# (never used) gets NO decay; a fact earns its boost on first use.
+_DECAY_HALF_LIFE_DAYS = 30.0
 
 _lock = threading.Lock()
 _cache: dict[str, Any] | None = None
@@ -74,7 +78,7 @@ def _load_index() -> dict[str, Any]:
     try:
         conn = _conn()
         factRows = conn.execute(
-            "SELECT fact_key, fact_value, title, kind, category, use_count FROM facts "
+            "SELECT fact_key, fact_value, title, kind, category, use_count, last_used_at FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR expires_at > datetime('now')) "
             "AND (status IS NULL OR status = 'active')"
         ).fetchall()
@@ -96,6 +100,7 @@ def _load_index() -> dict[str, Any]:
                     'kind': str(r['kind'] or 'fact'),
                     'category': str(r['category'] or 'general'),
                     'use_count': int(r['use_count'] or 0),
+                    'last_used_at': str(r['last_used_at'] or ''),
                 }
             )
             corpus.append(tokens)
@@ -140,11 +145,46 @@ def find_similar_facts(text: str, k: int = 3) -> list[tuple[float, str, str]]:
     return scored[: max(1, k)]
 
 
-def retrieve_relevant_facts(query: str, k: int = 5) -> list[dict[str, object]]:
+def _usage_decay(last_used_at: str) -> float:
+    """Multiplier on the ``use_count`` boost — halves every 30 idle days.
+
+    ``1.0`` when unused ('' / unparseable: a fact with no usage history has
+    no staleness signal yet, so its boost stays at face value), decaying
+    toward 0 as time since last use grows. Phase D (Part 17) item 3.
+    """
+    raw = (last_used_at or '').strip()
+    if not raw:
+        return 1.0
+    try:
+        from datetime import datetime, timezone
+
+        # Stored as datetime('now') UTC — tolerate a trailing 'Z'/offset.
+        normalized = raw[:-1] + '+00:00' if raw.endswith('Z') else raw
+        lastUsed = datetime.fromisoformat(normalized)
+        if lastUsed.tzinfo is None:
+            lastUsed = lastUsed.replace(tzinfo=timezone.utc)
+        days = max(0.0, (datetime.now(timezone.utc) - lastUsed).total_seconds() / 86400.0)
+        return 0.5 ** (days / _DECAY_HALF_LIFE_DAYS)
+    except (ValueError, TypeError):
+        return 1.0
+
+
+def retrieve_relevant_facts(
+    query: str,
+    k: int = 5,
+    *,
+    prior_turn: str = '',
+) -> list[dict[str, object]]:
     """Top-k active facts relevant to ``query``, usage-boosted.
 
     BM25 score plus a small ``use_count`` boost — the cheapest real
     "learns what's useful" signal without embeddings (plan §3.4).
+
+    Phase D (Part 17): ``prior_turn`` (the previous *user* message) joins
+    the query tokens — a follow-up like "and the second one?" stops being
+    single-message myopic. Cheap: no extra calls, no history payload; the
+    current message's tokens still dominate because they are scored
+    separately and summed.
     """
     q = (query or '').strip()
     if len(q) < _MIN_QUERY_CHARS:
@@ -158,28 +198,75 @@ def retrieve_relevant_facts(query: str, k: int = 5) -> list[dict[str, object]]:
     from app.services.tools.retrieval import _tokenize
 
     queryTokens = _tokenize(q)
+    priorTokens = _tokenize((prior_turn or '').strip()) if (prior_turn or '').strip() else []
     if not queryTokens:
         return []
     for i, row in enumerate(rows):
         s = bm25.score(queryTokens, i)
+        if priorTokens:
+            # Follow-up expansion: prior-turn overlap counts at half
+            # weight — context, not a substitute for the current ask.
+            s += 0.5 * bm25.score(priorTokens, i)
         if s <= 0:
             continue
-        s += 0.05 * min(int(row.get('use_count') or 0), 20)
+        # Phase D item 3: the usage boost decays with idle time (halved at
+        # 30 days unused) so often-quoted stale facts stop crowding out
+        # fresh ones.
+        s += 0.05 * min(int(row.get('use_count') or 0), 20) * _usage_decay(
+            str(row.get('last_used_at') or '')
+        )
         scored.append((s, row))
     scored.sort(key=lambda pair: pair[0], reverse=True)
     return [dict(row) for _, row in scored[: max(1, k)]]
 
 
-def build_memory_block(query: str, k: int = 5) -> tuple[str, list[tuple[str, str]]]:
+def build_memory_block(
+    query: str,
+    k: int = 5,
+    *,
+    workspace: str = '',
+    recalled: list[dict[str, object]] | None = None,
+    prior_turn: str = '',
+) -> tuple[str, list[tuple[str, str]]]:
     """Render the `<memory>` injection block for one turn.
 
     Returns ``(block, injected)`` where ``injected`` is a list of
     ``(fact_key, title)`` pairs actually included — the turn-end usage
     feedback scans the assistant reply for these. Empty block when nothing
     relevant exists or the query is too short.
+
+    Part 17 Phase A: with a ``workspace`` the block also carries the
+    project's md-file entries as a tagged `project:` section (one tail,
+    several tagged sections). Project entries do NOT join ``injected``
+    (they have no facts-store key for usage feedback). When ``recalled``
+    is a list, the rows actually injected (global + project) are appended
+    to it as ``{key, category, snippet, scope}`` dicts — the chat UI's
+    recalledMemories event payload (Phase A.4/C-13).
+
+    Phase D item 2: ``prior_turn`` (the previous user message) expands the
+    facts query — see :func:`retrieve_relevant_facts`.
     """
-    facts = retrieve_relevant_facts(query, k=k)
-    if not facts:
+    facts = retrieve_relevant_facts(query, k=k, prior_turn=prior_turn)
+    projectSection = ''
+    projectRows: list[dict[str, object]] = []
+    if workspace:
+        try:
+            from app.services import project_memory as _pm
+
+            projectSection = _pm.build_project_memory_tail(workspace, query)
+            if projectSection and recalled is not None:
+                for e in _pm.search_entries(workspace, query, k=3):
+                    projectRows.append(
+                        {
+                            'key': f'project:{e.title}',
+                            'category': 'project',
+                            'snippet': e.body[:120],
+                            'scope': 'project',
+                        }
+                    )
+        except Exception:
+            logging.debug('project memory tail build failed', exc_info=True)
+    if not facts and not projectSection:
         return '', []
     lines: list[str] = ['<memory>']
     # One-line key index up front (Claude listing pattern): the model can
@@ -201,11 +288,29 @@ def build_memory_block(query: str, k: int = 5) -> tuple[str, list[tuple[str, str
         budget -= len(line)
         lines.append(line)
         injected.append((str(f.get('key')), title))
-    if not injected:
+    if projectSection and (budget - len(projectSection) >= 0 or not injected):
+        # Project entries share the remaining tail budget; a section that
+        # would overflow is dropped whole (never half-truncated).
+        lines.append(projectSection)
+        budget -= len(projectSection)
+    if not injected and not projectSection:
         return '', []
     lines.append(
         'These are stored facts relevant to this message; cite them, update one by passing its key '
         'to remember, or remove a stale one with forget.'
     )
     lines.append('</memory>')
+    if recalled is not None:
+        recalled.extend(projectRows)
+        for f in facts:
+            if len(recalled) >= k + 3:
+                break
+            recalled.append(
+                {
+                    'key': str(f.get('key')),
+                    'category': str(f.get('category') or 'general'),
+                    'snippet': str(f.get('body') or '')[:120],
+                    'scope': 'global',
+                }
+            )
     return '\n'.join(lines), injected

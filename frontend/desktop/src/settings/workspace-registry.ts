@@ -6,6 +6,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   AlignJustify,
+  BookOpen,
   Boxes,
   Brain,
   Search as SearchIcon,
@@ -22,6 +23,7 @@ export const WORKSPACE_VISIBLE_IDS = new Set([
   // Mirrors the historical data-dense sections from the workspace panel.
   'model-providers',         // → Models & Provider catalog
   'memory-knowledge',        // → Memory (data-dense)
+  'skills',                  // → Skills (project-scoped, Part 17)
   'observability',           // → Observability (data-dense)
   'conversation-inspector',  // → Conversation Inspector (data-dense)
   'general',                 // → General (profile/preferences/shortcuts)
@@ -35,7 +37,8 @@ export const WORKSPACE_VISIBLE_IDS = new Set([
 const WORKSPACE_ICONS: Record<string, LucideIcon> = {
   'general':                SlidersHorizontal,
   'model-providers':        Boxes,
-  'memory-knowledge':       Brain,
+  'memory-knowledge':      Brain,
+  'skills':                 BookOpen,
   'observability':          AlignJustify,
   'conversation-inspector': SearchIcon,
 };
@@ -50,6 +53,7 @@ const WORKSPACE_CATEGORY_MAP: Record<string, string> = {
   'general':                'general',
   'model-providers':        'chat',
   'memory-knowledge':       'general',
+  'skills':                 'general',
   'observability':          'monitoring',
   'conversation-inspector': 'monitoring',
 };

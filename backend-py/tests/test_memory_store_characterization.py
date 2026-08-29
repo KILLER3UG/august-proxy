@@ -228,6 +228,42 @@ class TestBrainBrowse:
         out = ms.brain_browse('nope_store')
         assert 'error' in out and out['rows'] == []
 
+    # Part 17 Phase C — server-side sort + equality filters (gaps 3-4)
+
+    def test_browse_sorts_oldest_first(self, brain):
+        for i in range(3):
+            ms.save_fact(f'sort_old_{i}', f'v{i}', category='sorting')
+        newest = ms.brain_browse('facts', limit=10, query='sort_old_', sort='newest')
+        oldest = ms.brain_browse('facts', limit=10, query='sort_old_', sort='oldest')
+        newestKeys = [r['factKey'] for r in newest['rows']]
+        oldestKeys = [r['factKey'] for r in oldest['rows']]
+        assert oldestKeys == list(reversed(newestKeys))
+
+    def test_browse_filter_category_and_source(self, brain):
+        ms.save_fact('f_cat_a', 'a', category='alpha', source='remember')
+        ms.save_fact('f_cat_b', 'b', category='beta', source='remember')
+        ms.save_fact('f_src_c', 'c', category='alpha', source='extracted')
+        onlyAlpha = ms.brain_browse('facts', limit=10, query='f_cat_', category='alpha')
+        assert [r['factKey'] for r in onlyAlpha['rows']] == ['f_cat_a']
+        onlyExtracted = ms.brain_browse('facts', limit=10, query='f_src_', source='extracted')
+        assert [r['factKey'] for r in onlyExtracted['rows']] == ['f_src_c']
+        # combined filters AND together
+        both = ms.brain_browse('facts', limit=10, query='f_', category='alpha', source='remember')
+        assert 'f_cat_a' in [r['factKey'] for r in both['rows']]
+        assert 'f_src_c' not in [r['factKey'] for r in both['rows']]
+
+    def test_browse_filter_ignores_missing_columns(self, brain):
+        # A filter on a store without the column must not 500 — the
+        # heuristics store has no `source` search filter semantics here.
+        out = ms.brain_browse('memory', limit=10, category='alpha')
+        assert 'error' not in out
+
+    def test_browse_sort_confidence_casts_text(self, brain):
+        ms.save_fact('conf_low', 'x', category='conf', confidence=0.2)
+        ms.save_fact('conf_high', 'y', category='conf', confidence=0.9)
+        out = ms.brain_browse('facts', limit=10, query='conf_', sort='confidence')
+        assert out['rows'][0]['factKey'] == 'conf_high'
+
     def test_store_summary_counts(self, brain):
         ms.save_fact('sum_fact', 'v', category='summary')
         summary = ms.brain_store_summary()

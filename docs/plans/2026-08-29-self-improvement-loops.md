@@ -1,6 +1,6 @@
 # Part 16 — Self-Improvement Loops
 
-**Status:** DRAFT — awaiting ruling. Reconstructed into the repo on 2026-08-29 from the drafted design record, then re-grounded against a same-day full scan of the memory/skills stack (all file:line verified against the working tree; live smoke test 2026-08-29).
+**Status:** DRAFT — awaiting ruling. Reconstructed into the repo on 2026-08-29 from the drafted design record, then re-grounded against a same-day full scan of the memory/skills stack (live smoke test 2026-08-29). SECOND review 2026-08-30: every file:line re-verified against the working tree — citations corrected, Step 0 trimmed (search memory-section CUT; guidance/refine-store/curator-bar demoted), migration retargeted 027 → **028**, and the two failure→memory lanes (`turn_outcomes` vs episode fingerprints) explicitly separated. Implementation status after the 2026-08-30 Part 17 landing: `skillLearning` (off | extract-only | full, default extract-only) and the promotion judge/queue are ALIVE via Part 17 Phase E (brain_config_service.py:65, :121, :218); the episode engine itself is NOT — no `episode_miner.py`, no `episodes`/`failure_fingerprints` tables, migration 028 unused. Phases A–C below must extend the landed queue/config, not duplicate it.
 **Series:** Part 15 = tool-step rendering + memory cleanup (2026-08-28). This is Part 16. Sibling plan: *Project-Scoped Memory & Skills* (`2026-08-29-project-scoped-memory.md`) — that plan is the substrate (where per-project memories/skills live); this plan is the engine (how they improve). Neither blocks the other for Phases A–D; Part 17's Phase E distillation calls this plan's Phase C engine when both are adopted.
 
 ---
@@ -17,12 +17,16 @@ measure whether the recurring failure actually stopped → draft revision-or-ret
 
 Two-tier on purpose: **tier 1 is deterministic and free** (heuristics over telemetry already being recorded); only the small flagged slice pays for a model call. Design center: *the model's lived experience (turn outcomes, retries, self-corrections) becomes durable skill and memory, gated by recurrence evidence and human approval for skills.* Nothing here withholds, delays, or degrades an answer; the entire loop is asynchronous and post-hoc — the judge never runs inside a live turn or inside a sub-agent.
 
+**Already shipped (in-loop sibling, keep distinct):** the memory-habit nudge (2026-08-29, `queue_memory_habit_nudge` / `memory_nudge_block` in workbench.py + the upgraded `<memory_policy>`) teaches the *main model itself* to consolidate single-episode lessons via `remember` right after substantial turns. That habit covers what one session can see; Phase A's mining exists for what it cannot — cross-session recurrence patterns, abandoned-approach windows, and skill-worthy workflows. No overlap: the nudge writes via the existing door, mining proposes via the judge.
+
+**Two failure→memory lanes, kept separate (2026-08-30 second review):** the shipped `turn_outcomes` promotion lane is the **provider/error grain** — signature `provider/model:error_class`, fact key `harness-lesson:<sig>` (`maybe_promote_failure_lesson` :229-311) — and it already has a cheap-model YES/NO gate (`_review_lesson` :191-226, discard-default). Phase B fingerprints are the **workflow/tool grain** (`missing-binary:ngspice`). The lanes deliberately do NOT share a fact-key prefix and must not be merged: the same lesson under two grains = two duplicate facts with different keys. The `_review_lesson` gate is NOT this plan's judge — the judge is post-hoc, batched, and reads episode windows, not single candidate strings.
+
 ## 2. What already exists (build on, don't duplicate)
 
 | Piece | State (verified 2026-08-29) | Role in this plan |
 |---|---|---|
-| `harness_self_improve.py` — proposal queue, human approval, deterministic applier (`_apply_approved` :421-510, `skill_create/patch/delete` :441-508), scheduled introspection (:515-590; boots and files real proposals — confirmed live) | ALIVE | **Is** the review queue + applier for drafts (Phase D). No new approval machinery. |
-| `turn_outcomes.py` — one telemetry row per turn (error_class/duration/task_type), failure-lesson promotion ≥3 same-signature failures in 7d → BM25 dedupe >0.55 → one `harness-lesson:<sig>` fact (:178-213, :267-291) | ALIVE | Tier-1 raw material + the fingerprint discipline Phase B generalizes. Its promotion lane is kept as-is. |
+| `harness_self_improve.py` — proposal queue, human approval, deterministic applier (`_apply_approved` :421-510, `skill_create/patch/delete` :441-508), scheduled introspection (:518-590; boots and files real proposals — confirmed live) | ALIVE | **Is** the review queue + applier for drafts (Phase D). No new approval machinery. |
+| `turn_outcomes.py` — one telemetry row per turn (error_class/duration/task_type), failure-lesson promotion ≥3 same-signature failures in 7d → BM25 dedupe >0.55 → one `harness-lesson:<sig>` fact (`maybe_promote_failure_lesson` :229-311, plus a `_review_lesson` cheap-model YES/NO gate :191-226) | ALIVE | Tier-1 raw material + the fingerprint discipline Phase B generalizes. Its promotion lane is kept as-is. |
 | `consolidation.py` — BM25 near-duplicate merge ≥0.85, contradiction supersede, expiry sweep (:91-235) | ALIVE | All distilled memories route through `save_fact`, so dedupe/supersede/expiry apply for free. |
 | `skill_service.py` — learned-skill roots (`data/skills/` — **empty; nothing has ever written a learned skill**), canonical body normalizer :532-577, enabled-filtered catalogue :359-361 | ALIVE | Where approved skills land; canonical template (Title / When to Use / How to Run / Pitfalls / Verification) enforced at write time. |
 | Workbench loop telemetry — retry/self-heal receipts, malformed-tool-JSON validation errors, non-advancing `update_state` reflection nudges, routing evidence | ALIVE | Episode events are read from what these already record. No new chat-loop instrumentation. |
@@ -34,12 +38,12 @@ Two-tier on purpose: **tier 1 is deterministic and free** (heuristics over telem
 
 | Item | Evidence | Action |
 |---|---|---|
-| `/api/curator/run` 404 | `CuratorSuggestionBar.tsx:31` calls it; no router implements it (live: HTTP 404) | **Implement in Phase E** — it becomes the staleness/demotion report the loop already computes. |
-| Command Palette "Run sleep cycle now" 404 | `CommandPalette.tsx:310` posts `/api/brain/run-consolidation`; route is `/api/brain/consolidation/run` (brain_config.py:167; live: HTTP 404) | One-line frontend fix, ships with the Step 0 batch. |
-| `memorySuggestions` F3 pattern | `workbench.py:4525-4552` + `types/workbench.ts:413` have no readers on either side | Delete; Phase A supersedes it with evidence-backed candidates. |
-| `guidance.py` | zero callers repo-wide | Delete file. |
-| `search` tool label | tool_policy.py:61-62 claims "memory/files/web"; implementation (session_tools.py:12-53) is files+web only | Fix label; Phase B adds the memory hit section via `brain_query`. |
-| refine-store `skill`/`subagent` kinds | stored (refine_store.py:34) but never injected (:389) and never touch `data/skills/` | `skill` entries gain an escalate-to-proposal path (Phase D). No new store. |
+| `/api/curator/run` 404 | `CuratorSuggestionBar.tsx:31` calls it; no router implements it (live: HTTP 404) — and the bar itself is **never mounted** (zero imports), while the palette's "Review pending skills" navigates `/brain?tab=learning`, a tab that does not exist (CommandPalette.tsx:294) | **Implement the report endpoint in Phase E** (`POST /api/curator/run?dryRun=` + `GET /api/curator/report`); mounting the chip + the Learning tab is the prerequisite work, not an afterthought. |
+| Command Palette "Run sleep cycle now" 404 | `CommandPalette.tsx:310` posts `/api/brain/run-consolidation`; route is `/api/brain/consolidation/run` (brain_config.py:167; live: HTTP 404) | One-line frontend fix; independent ship-now bugfix — do not wait for the loop. |
+| `memorySuggestions` F3 pattern | `_MEMORY_SUGGESTION_PATTERNS` `workbench.py:4680-4700` + `types/workbench.ts:413` have no readers on either side | Delete; Phase A supersedes it with evidence-backed candidates. |
+| `guidance.py` | zero **production** callers, but `tests/test_phase5_features.py` imports it | **Demoted:** delete only together with that test's rewrite — not a Step-0 sweep item. |
+| `search` tool label | tool_policy.py:61-62 comment claims "memory/files/web"; implementation (session_tools.py:12-53) is files+web only — registration copy already honest (:773-776) | Fix the comment only. The "memory hit section via `brain_query`" add is **CUT** — `brain_query` already is the memory search tool; unifying search is a new product surface, not loop work. |
+| refine-store `skill`/`subagent` kinds | stored (refine_store.py:34) but never injected (:389) and never touch `data/skills/` | **Demoted:** a second skill-draft path beside `harness_self_improve` is the duplication this plan avoids; escalate only if refine_store is touched for another reason. |
 
 ## 3. Architecture
 
@@ -51,7 +55,7 @@ New service `backend-py/app/services/episode_miner.py` + two tables + skill-stor
 
 Typed events mined (all already observable): tool errors/exit codes, retries of the same tool+args, malformed-tool-JSON validation errors, non-advancing `update_state` rounds, user-correction messages after an assistant claim, abandoned approaches (plan/branch discarded), user rescue (user performing the step themselves). Sub-agent transcripts are minable post-hoc.
 
-Migration (next free number; 027 at draft time — coordinate with Part 17 if both land in one batch):
+Migration (**028** — 027 is taken by Part 17 Phase L's untracked `027_turn_latency_telemetry.sql`, whose ttft/cache columns are already documented as schema v12):
 
 ```sql
 CREATE TABLE episodes (
@@ -79,7 +83,7 @@ CREATE TABLE failure_fingerprints (
 
 - **Fingerprint** = turn_outcomes' signature discipline generalized: `cause-class + normalized key tokens` (slug-cased, stopword-stripped; `missing-binary:ngspice` is the canonical shape). Same fingerprint increments `episode_count`; paraphrase-level dedupe via the consolidation BM25 similarity (≥0.85, consolidation.py:122-187, extracted to a shared `text_similarity.py`).
 - **Six fixed rubric criteria** (deterministic, no LLM): completion (did the turn end resolved), correction count, recurrence (fingerprint count), recovery quality (rounds to recovery), cause stability (same cause across sessions?), generalizability (does the cause mention project-specific names). Weighted score; **only the top ≤5% of episodes are flagged to tier 2** — the cost gate.
-- **Unified search memory scope:** the `search` tool's memory section is a thin `brain_query` call over `facts` + fingerprints — makes the Step 0 label fix real.
+- **Fingerprints are `brain_query`-searchable (not a `search`-tool add):** fingerprints join the `facts`-adjacent query surface so `brain_query` can hit them; the earlier draft's "add a memory section to the `search` tool" is CUT (2026-08-30) — `brain_query` already is the memory search tool.
 
 ### 3.3 Phase C — Tier-2 judge + distiller
 
@@ -97,8 +101,8 @@ One model call per flagged cluster (batched ≤5; piggybacks the consolidation c
 ]}
 ```
 
-- `memory` → `save_fact(source='harness', kind='lesson')` (the server-side path `remember` uses, rest.py:30-73) — lands in the facts store, consolidation-deduped, **human-deletable in the Memory UI** (`_ROW_DELETABLE` includes `facts`, brain.py:409; only the model's `forget` tool defers to system lanes, session_tools.py:294-302).
-- `create_skill` / `amend_*` → `harness_self_improve.save_proposal(kind='skill_create'|'skill_patch')` — the existing queue. Bodies normalized through `_ensure_canonical_body(..., is_learned=True)` at **propose** time so reviewers see the final shape (applier re-normalizes at apply, harness_self_improve.py:464-469).
+- `memory` → `save_fact(source='harness', kind='lesson')` (the server-side path `remember` uses, rest.py:30-73) — lands in the facts store, consolidation-deduped, **human-deletable in the Memory UI** (`_ROW_DELETABLE` includes `facts`, brain.py:461; only the model's `forget` tool defers to system lanes, session_tools.py:467-474 via `_FORGET_ALLOWED_SOURCES` :360-363).
+- `create_skill` / `amend_*` → `harness_self_improve.save_proposal(kind='skill_create'|'skill_patch')` — the existing queue. Bodies normalized through `_ensure_canonical_body(..., is_learned=True)` at **propose** time so reviewers see the final shape (today only the applier normalizes, harness_self_improve.py:464-469 — propose-time normalization is new work).
 - Sensitive-topic denylist (session_tools.py:75-93, extracted to a shared util) applies to every drafted summary/body before persist.
 - **Ship bar:** judge precision ≥ 0.8 on ≥ 30 hand-labeled episodes before any `amend_body` is enabled; until then `amend_body` verdicts downgrade to proposals-with-note.
 - **Frontmatter quote fix (earns its place — live bug):** `_parse_frontmatter_block` never strips quotes (skill_service.py:197-204) while `_skill_frontmatter` writes quoted descriptions (harness_self_improve.py:414), and the bundled `august-harness`/`august-tools` SKILL.md files are quoted too — confirmed live: `GET /api/skills` returns literal quote characters that then ride into every prompt's skills index. One parse-time strip fixes both.
@@ -108,7 +112,7 @@ One model call per flagged cluster (batched ≤5; piggybacks the consolidation c
 
 **Step 1 — residual demotion-leak closure (the original step-1 bug is verified fixed; these are what remain):**
 1. `catalogue()` memoizes on root-dir mtime only (skill_service.py:43-65, :341-365) — in-place SKILL.md edits never bust prompt caches until an unrelated mutation. Fix: per-skill SKILL.md mtime in the memo key.
-2. No supersession link — a distilled v2 can ship while v1 stays enabled (double injection). Fix: applier honors `supersedes` — disables the old skill in the same write (`setEnabled` → copy-on-write + full cache bust, skill_service.py:725-729, :375-405) and stamps `supersedes:` in the new frontmatter.
+2. No supersession link — a distilled v2 can ship while v1 stays enabled (double injection). Fix: applier honors `supersedes` — disables the old skill in the same write (patchSkill's enabled flip :725-729 via copy-on-write `_copyOnWrite` :636-650; `setEnabled` :768-776; full cache bust :375-405) and stamps `supersedes:` in the new frontmatter.
 
 **Step 2 — skill-store extensions:** learned skills carry frontmatter `origin: human|distilled|amended`, `learned_from: <episode ids>`, `version: N`, `status: active|stale|retired`. Bundled skills are never amended (proposals against them become fresh drafts referencing them).
 
@@ -125,6 +129,8 @@ One model call per flagged cluster (batched ≤5; piggybacks the consolidation c
 
 `skillLearning: off | extract-only | full` (rec ship default **`extract-only`**: mining + scoring + memory distillation run; skill drafting requires flipping to `full`) + `skillLearningJudgeModel` (resolver: explicit setting → `auxiliary.background_review.autoMemoryModel` — its first reader → titler resolver order, title_generator.py:147-169, so keyless gateways work). Budget knobs: `escalationBudgetPerDay` (2), `flagRateCap` (5%).
 
+**Status (2026-08-30):** `skillLearning` is already live via Part 17 Phase E (brain_config_service.py:65, :121, :218, enum-guarded to off/extract-only/full, default extract-only) — this plan consumes it; only `skillLearningJudgeModel` and the two budget knobs remain to add.
+
 ## 5. UI
 
 Learning section in the existing Skills hub **vertical rail** (no pill tabs, 2026-08-27 ruling): metric header from the report, flagged-episode list with fingerprint + rubric scores, proposal drafts inline with approve/reject, resolved/recurred history. All read-only until a deliberate approve.
@@ -132,8 +138,8 @@ Learning section in the existing Skills hub **vertical rail** (no pill tabs, 202
 ## 6. Validation
 
 - New tests: `tests/test_episode_miner.py` (window extraction from synthetic transcripts, typed events, no-live-turn coupling), `tests/test_fingerprints.py` (signature stability, paraphrase dedupe, ≤5% flag cap), `tests/test_distiller.py` (JSON contract, all five actions, denylist on drafts, one-draft-per-(fp,action,target)), `tests/test_skill_supersession.py` (v2 approval disables v1, caches busted, mtime-staleness fix, quote strip), `tests/test_recurrence_meter.py` (usage recording, resolution math, curator report).
-- Judge-precision harness: 30 hand-labeled episodes scripted against the real loop (same discipline as `tests/test_harness_evals.py`) — the ship bar is a test, not a vibe.
-- Existing baseline: the 14 memory/skills suites + `test_prompt_cache_stability.py` = **191 passed** (2026-08-29). Run subsets with `--basetemp="$TEMP/august_pytest"`; never two suites concurrently.
+- Judge-precision harness: 30 hand-labeled episodes scripted against the real loop, as a NEW `tests/test_distiller_precision.py` (the previously cited `tests/test_harness_evals.py` does not exist) — the ship bar is a test, not a vibe.
+- Existing baseline: "191 memory/skills tests green (2026-08-29)" was NOT reproduced on the 2026-08-30 re-count (name-match ≈187 test functions; tight 14-suite guess ≈144) — re-run once and pin the real number before claiming no-regressions. Run subsets with `--basetemp="$TEMP/august_pytest"`; never two suites concurrently.
 - Fast path: `cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q` on the touched subset first. Frontend bits (curator bar, palette fix, Learning section): `npm run test:frontend` (tsc + vitest; eslint has pre-existing errors at HEAD — diff before blaming).
 - Desktop ship rule: backend changes are bundled — the 7-file version bump applies on release.
 
@@ -154,3 +160,4 @@ Learning section in the existing Skills hub **vertical rail** (no pill tabs, 202
 - No auto-executing or auto-shipping skills (approval queue is load-bearing; `full` mode still queues).
 - No changes to `remember`/`forget` model semantics; no new always-on prompt sections beyond what the freeze already covers.
 - No per-project scoping here — Part 17's substrate; its global distillation (Phase E) calls this plan's Phase C engine when both are adopted.
+- **Coordination update (2026-08-30):** Part 17 Phase E landed FIRST — `skillLearning` config + a promotion judge/queue are already live (brain_config_service.py:65, :121, :218). This plan's Phases A–C must extend that machinery (one distiller, one queue, one config knob), NOT add a parallel engine; the earlier "hard gate on Part 16 Phase C" is satisfied in reverse — the gate now binds Part 16 to reuse what landed.

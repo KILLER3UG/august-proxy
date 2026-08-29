@@ -486,6 +486,21 @@ async def call_anthropic_workbench(
         async for event in client.messages_stream(body):
             if _cancel_event is not None and _cancel_event.is_set():
                 break
+            # Phase L (Part 17): client-level retries (429/503/connection,
+            # pre-first-token) yield type='upstreamRetry' — surface them so
+            # the transcript can show "provider busy — retrying in Ns"
+            # instead of a silent multi-second stall.
+            if event.get('type') == 'upstreamRetry' and emit is not None:
+                emit(
+                    {
+                        'type': 'upstreamRetry',
+                        'attempt': event.get('attempt', 1),
+                        'maxRetries': event.get('maxRetries', 3),
+                        'delayMs': event.get('delayMs', 0),
+                        'status': event.get('status', 0),
+                    }
+                )
+                continue
             agg.on_event(event)
             # Stream rules: detect narration, but do NOT abort mid-stream —
             # the hit is cancelled if a real tool_use arrives later in this
@@ -682,6 +697,22 @@ async def call_openai_workbench(
             async for event in client.chat_completions_stream(body):
                 if _cancel_event is not None and _cancel_event.is_set():
                     break
+                # Phase L (Part 17): client-level retries (429/503/connection,
+                # pre-first-token) yield type='upstreamRetry' — surface them
+                # so the transcript can show the provider wait instead of a
+                # silent stall.
+                if as_str(event.get('type')) == 'upstreamRetry':
+                    if emit is not None:
+                        emit(
+                            {
+                                'type': 'upstreamRetry',
+                                'attempt': event.get('attempt', 1),
+                                'maxRetries': event.get('maxRetries', 3),
+                                'delayMs': event.get('delayMs', 0),
+                                'status': event.get('status', 0),
+                            }
+                        )
+                    continue
                 # Surface HTTP/provider errors instead of returning an empty "success".
                 if as_str(event.get('type')) == 'error' or event.get('error') is not None:
                     msg = _extract_upstream_error_message(event)

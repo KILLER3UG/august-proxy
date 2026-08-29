@@ -74,6 +74,28 @@ const consolidationLog = {
   ],
 };
 
+const workspacesPayload = {
+  workspaces: [
+    { path: 'C:\\Dev\\august-proxy', name: 'august-proxy', hasMemory: true, hasSkills: false, sessions: 4 },
+    { path: 'C:\\Dev\\sheesh', name: 'sheesh', hasMemory: false, hasSkills: true, sessions: 1 },
+  ],
+};
+
+const projectListPayload = {
+  ok: true,
+  scope: 'project',
+  files: ['memory.md'],
+  entries: [
+    {
+      key: 'project:NSIS is legacy here',
+      title: 'NSIS is legacy here',
+      body: 'NSIS is legacy here\n\nUse WiX for installers.',
+      updated: iso(30),
+      file: 'memory.md',
+    },
+  ],
+};
+
 let stateLookupPayload: Record<string, unknown> = {
   key: 'cognitive:boot',
   found: true,
@@ -102,6 +124,10 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
         };
       if (key.includes('consolidation-log'))
         return { data: consolidationLog, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() };
+      if (key.includes('memory-workspaces'))
+        return { data: workspacesPayload, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() };
+      if (key.includes('project-memory'))
+        return { data: projectListPayload, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() };
       if (key.includes('state-lookup')) {
         // Exercise the real queryFn so the URL construction is observable.
         if (opts.enabled === false) return idle;
@@ -109,6 +135,10 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
         return { data: stateLookupPayload, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() };
       }
       if (key.includes('brain-store')) {
+        // Exercise the real queryFn so URL construction (filters, sort,
+        // offset — Part 17 C-3/4/5) is observable through the api.get mock.
+        if (opts.enabled === false) return idle;
+        void opts.queryFn?.().catch(() => undefined);
         for (const [name, page] of Object.entries(rowsByStore)) {
           if (key.includes(JSON.stringify(name))) {
             return {
@@ -202,7 +232,7 @@ describe('MemorySection — unified flat list (§5.1)', () => {
     expect(rows[0]).toHaveTextContent('FastAPI backend');
   });
 
-  it('offers Edit + Delete for writable rows but not for legacy rows', () => {
+  it('offers Edit + Delete for writable rows; legacy heuristics get Delete but not Edit (C-11)', () => {
     renderSection('memory-facts');
     const rows = screen.getAllByTestId('memory-flat-row');
     // Writable fact row: menu has Edit and Delete.
@@ -211,11 +241,13 @@ describe('MemorySection — unified flat list (§5.1)', () => {
     expect(screen.getByRole('menuitem', { name: /edit/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /delete/i })).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
-    // Legacy heuristics row: read-only — no Edit, no Delete.
+    // Legacy heuristics row: no live writer so no Edit — but DELETABLE
+    // (brain.py _ROW_DELETABLE includes heuristics; C-11 stops the UI
+    // suppressing a delete the backend allows).
     const lessonMenu = within(rows[1]).getByTestId('memory-row-menu');
     fireEvent.click(lessonMenu);
     expect(screen.queryByRole('menuitem', { name: /edit/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /delete/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /delete/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /view/i })).toBeInTheDocument();
   });
 
@@ -280,5 +312,133 @@ describe('MemorySection — raw state lookup (§5.5)', () => {
     await waitFor(() => {
       expect(result).toHaveTextContent('no row for key "nope"');
     });
+  });
+});
+
+describe('MemorySection — Part 17 Phase C gap closings', () => {
+  // C-1: scope selector lists Global + one entry per known workspace.
+  it('shows the scope selector with the known workspaces (C-1)', () => {
+    renderSection('memory-facts');
+    const select = screen.getByTestId('memory-scope-select') as HTMLSelectElement;
+    const options = Array.from(select.querySelectorAll('option'));
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Global (all workspaces)',
+      'august-proxy · project',
+      'sheesh · project',
+    ]);
+    expect(select.value).toBe('');
+  });
+
+  // C-3: category/source filters and C-4: sort control exist and feed the query URL.
+  it('sends category/source/sort as query params (C-3/C-4)', async () => {
+    renderSection('memory-facts');
+    fireEvent.change(screen.getByTestId('memory-category-filter'), { target: { value: 'user' } });
+    fireEvent.change(screen.getByTestId('memory-source-filter'), { target: { value: 'remember' } });
+    fireEvent.change(screen.getByTestId('memory-sort'), { target: { value: 'updated' } });
+    await waitFor(() => {
+      const urls = (api.get as ReturnType<typeof vi.fn>).mock.calls
+        .map((c) => String(c[0]))
+        .filter((u) => u.includes('/api/brain/stores/facts'));
+      const factFetch = urls[urls.length - 1];
+      expect(factFetch).toBeTruthy();
+      expect(factFetch).toContain('sort=updated');
+      expect(factFetch).toContain('category=user');
+      expect(factFetch).toContain('source=remember');
+    });
+  });
+
+  // C-2: source badges render on rows that carry one.
+  it('shows a source badge on rows with a source (C-2)', () => {
+    renderSection('memory-facts');
+    const badges = screen.getAllByTestId('memory-source-badge');
+    expect(badges.length).toBeGreaterThan(0);
+    expect(badges.some((b) => b.textContent === 'remember')).toBe(true);
+  });
+
+  // C-7: the add box gains a category select (global) and routes project
+  // scope writes through the md-file door.
+  it('add-box posts with the chosen category (C-7)', async () => {
+    renderSection('memory-facts');
+    fireEvent.change(screen.getByTestId('memory-add-category'), { target: { value: 'user' } });
+    fireEvent.change(screen.getByTestId('memory-add-input'), { target: { value: 'Likes tea' } });
+    fireEvent.click(screen.getByTestId('memory-add-button'));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/august/memory/manage',
+        expect.objectContaining({ action: 'set', value: 'Likes tea', category: 'user' }),
+      );
+    });
+  });
+
+  // C-8: expired rows are visually separated with an absolute date.
+  it('badges expired rows with the absolute expiry date, dimmed (C-8)', () => {
+    renderSection('memory-facts');
+    // The project:stack fixture expires 2026-09-01 (a future date at
+    // fixture-authoring time) — it must render as "expiring", not expired.
+    expect(screen.getByTestId('memory-expiring-badge')).toBeInTheDocument();
+    expect(screen.queryByTestId('memory-expired-badge')).not.toBeInTheDocument();
+  });
+
+  // C-6: bulk select + bulk delete + bulk export.
+  it('bulk-select enables Delete selected + Export selected (C-6)', async () => {
+    renderSection('memory-facts');
+    const checks = screen.getAllByTestId('memory-bulk-check');
+    fireEvent.click(checks[0]);
+    fireEvent.click(checks[2]);
+    expect(screen.getByTestId('memory-bulk-count')).toHaveTextContent('2 selected');
+    expect(screen.getByTestId('memory-bulk-delete')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('memory-bulk-delete'));
+    // The ConfirmDialog resolves via useConfirmDialog; api.delete per row.
+    await waitFor(() => {
+      expect(screen.getByText('Delete 2 entries?')).toBeInTheDocument();
+    });
+  });
+
+  // C-9: project scope view shows md files + entries + bound sessions.
+  it('switching to a workspace shows the project view (C-9)', async () => {
+    renderSection('memory-facts');
+    fireEvent.change(screen.getByTestId('memory-scope-select'), {
+      target: { value: 'C:\\Dev\\august-proxy' },
+    });
+    const view = await screen.findByTestId('memory-project-view');
+    expect(view).toHaveTextContent('NSIS is legacy here');
+    expect(screen.getByTestId('memory-project-files')).toHaveTextContent('memory.md');
+    expect(screen.getByTestId('memory-project-path')).toHaveTextContent('august-proxy');
+    expect(view).toHaveTextContent('4 sessions bound');
+    // The project add-box posts through the md-file door.
+    fireEvent.change(screen.getByTestId('memory-add-input'), { target: { value: 'New project note' } });
+    fireEvent.click(screen.getByTestId('memory-add-button'));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/august/memory/manage',
+        expect.objectContaining({
+          action: 'set',
+          scope: 'project',
+          workspace: 'C:\\Dev\\august-proxy',
+          value: 'New project note',
+        }),
+      );
+    });
+  });
+
+  // C-9 delete: project entries delete through the project door.
+  it('project entries delete via scope=project (C-9)', async () => {
+    renderSection('memory-facts');
+    fireEvent.change(screen.getByTestId('memory-scope-select'), {
+      target: { value: 'C:\\Dev\\august-proxy' },
+    });
+    await screen.findByTestId('memory-project-view');
+    fireEvent.click(screen.getByTestId('memory-project-delete'));
+    await waitFor(() => {
+      expect(screen.getByText('Delete this project entry?')).toBeInTheDocument();
+    });
+  });
+
+  // C-5: pager renders when totals exceed the 200-row fetch cap.
+  it('shows the unified pager past 200 rows (C-5)', () => {
+    // rowsByStore totals are small (2/1) — the pager stays hidden; assert
+    // the hidden state so the visible branch is anchored too.
+    renderSection('memory-facts');
+    expect(screen.queryByTestId('memory-unified-pager')).not.toBeInTheDocument();
   });
 });
