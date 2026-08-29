@@ -46,11 +46,13 @@ async def _renderChart(
     title: str = '',
     xlabel: str = '',
     ylabel: str = '',
+    traces=None,
 ) -> str:
     try:
         result = artifact_tools.render_chart(
             path, kind, series, labels=labels, title=title,
             xlabel=xlabel, ylabel=ylabel, workspace=_workspace(),
+            traces=traces,
         )
         return json.dumps(result)
     except Exception as exc:
@@ -112,7 +114,10 @@ def register() -> None:
         'render_chart',
         'Render a chart to PNG with matplotlib. kind: line | bar | pie | '
         'scatter | hist. series is a list of numeric lists; labels are '
-        'category/x labels for bar/pie.',
+        'category/x labels for bar/pie. For waveforms from '
+        'circuit_simulate, pass its tracesFile path (or the traces dict) '
+        'as traces with kind=line — each trace plots as an x/y line with '
+        'a legend and unit-labelled axes.',
         _renderChart,
         {
             'type': 'object',
@@ -127,8 +132,13 @@ def register() -> None:
                 'title': {'type': 'string'},
                 'xlabel': {'type': 'string'},
                 'ylabel': {'type': 'string'},
+                'traces': {
+                    'description': 'Waveform traces from circuit_simulate: its '
+                    'tracesFile path (string) or the traces dict. kind must be '
+                    'line; overrides series.',
+                },
             },
-            'required': ['path', 'kind', 'series'],
+            'required': ['path', 'kind'],
         },
     )
     tool_registry.register(

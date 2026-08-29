@@ -81,6 +81,30 @@ class TestInitAndSnapshot:
         assert 'real.py' in ls.stdout
         assert 'node_modules' not in ls.stdout
 
+    def testExcludesEdaDerivedBinaries(self, env: Path) -> None:
+        """§5.7: .sof/.pof/.glb/.hex are tool-regeneratable outputs whose
+        random bytes don't compress — each compile iteration would cost its
+        full size in the object store. Text EDA artifacts (.cir/.vcd/.svg)
+        stay tracked (revert-protectable, ChangesCard-diffable)."""
+        (env / 'build.sof').write_bytes(b'\x00' * 4096)
+        (env / 'board.glb').write_bytes(b'\x00' * 4096)
+        (env / 'fw.hex').write_text(':10000000C3\n')
+        (env / 'deck.cir').write_text('* deck\n.tran 1m\n')
+        (env / 'wave.vcd').write_text('$timescale 1us $end\n')
+        (env / 'op.op.svg').write_text('<svg/>')
+        sg.commit_snapshot('s1', str(env), 'snap')
+        d = sg.shadow_dir('s1')
+        ls = subprocess.run(
+            ['git', f'--git-dir={d}', f'--work-tree={env}', 'ls-files'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for binary in ('build.sof', 'board.glb', 'fw.hex'):
+            assert binary not in ls.stdout
+        for text_artifact in ('deck.cir', 'wave.vcd', 'op.op.svg'):
+            assert text_artifact in ls.stdout
+
 
 class TestListAndDiff:
     def _twoSnaps(self, env: Path) -> tuple[str, str]:

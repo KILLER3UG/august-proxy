@@ -135,3 +135,32 @@ async def testOversizedFileIs413(client, layout):
         '/api/workbench/files/read', params={'path': str(big), 'sessionId': sid}
     )
     assert resp.status_code == 413
+
+
+# ── /api/workbench/files/raw — Surfer iframe CORS feed (P2.3) ──────────────
+# Same sandbox contract as /files/read, but raw bytes + waveform mime, so
+# the embedded Surfer viewer (separate origin) can fetch workspace VCDs.
+
+
+@pytest.mark.asyncio
+async def testRawServesWorkspaceVcdAsTextPlain(client, layout):
+    sid = _makeSession(str(layout['ws']))
+    vcd = layout['ws'] / 'digital.vcd'
+    vcd.write_text('$date today $end\n$var wire 1 ! dout $end\n', 'utf-8')
+    resp = await client.get(
+        '/api/workbench/files/raw', params={'path': str(vcd), 'sessionId': sid}
+    )
+    assert resp.status_code == 200
+    assert resp.headers['content-type'].startswith('text/plain')
+    assert b'$var wire 1 ! dout' in resp.content
+
+
+@pytest.mark.asyncio
+async def testRawRefusesOutsideWorkspaceAndMissingPath(client, layout):
+    _makeSession(str(layout['ws']))
+    resp = await client.get(
+        '/api/workbench/files/raw', params={'path': str(layout['outside'] / 'secret.txt')}
+    )
+    assert resp.status_code == 403
+    resp = await client.get('/api/workbench/files/raw')
+    assert resp.status_code == 400

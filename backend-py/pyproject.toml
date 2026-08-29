@@ -61,7 +61,19 @@ gateway = [
     # Platform bot adapters (Telegram uses httpx already in core deps).
     # Install with: uv sync --extra gateway   or   pip install -e ".[gateway]"
     "discord.py>=2.3.0",
-    "slack_sdk>=3.27.0",
+    "slack_sdk>=3.3.0",
+]
+eda = [
+    # Symbolic circuit analysis for circuit_symbolic (transfer functions,
+    # poles/zeros, V(t) step response, LaTeX). LGPL-2.1 — linkable. The
+    # tool degrades to install guidance without it; install with
+    # `uv sync --extra eda`.
+    "lcapy>=1.16",
+    # Python testbench framework for hdl_test (BSD-2-Clause) — runs
+    # coroutine testbenches against GHDL/Icarus and emits results.
+    # Optional: hdl_test degrades to install guidance without it.
+    "cocotb>=1.8",
+    "cocotb-bus>=0.2",
 ]
 
 [tool.setuptools.packages.find]

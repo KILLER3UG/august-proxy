@@ -88,6 +88,54 @@ def test_render_chart_png(tmp_path):
     assert out.read_bytes()[:8] == b'\x89PNG\r\n\x1a\n'
 
 
+def test_render_chart_traces_dict_and_file(tmp_path):
+    import json as _json
+
+    traces = {
+        'v(out)': {'x': [0.0, 1e-3, 2e-3], 'y': [0.0, 0.63, 0.86], 'xunit': 's', 'unit': 'V'},
+        'v(in)': {'x': [0.0, 1e-3, 2e-3], 'y': [5.0, 5.0, 5.0], 'xunit': 's', 'unit': 'V'},
+    }
+    out = tmp_path / 'waves.png'
+    result = artifact_tools.render_chart(
+        str(out), 'line', traces=traces, title='RC step', workspace=str(tmp_path)
+    )
+    assert result['traceNames'] == ['v(out)', 'v(in)']
+    assert out.read_bytes()[:8] == b'\x89PNG\r\n\x1a\n'
+    # File form: circuit_simulate's tracesFile path round-trips the same.
+    tf = tmp_path / 'sim_traces.json'
+    tf.write_text(_json.dumps(traces), encoding='utf-8')
+    out2 = tmp_path / 'waves2.png'
+    result2 = artifact_tools.render_chart(
+        str(out2), 'line', traces='sim_traces.json', workspace=str(tmp_path)
+    )
+    assert result2['traceNames'] == ['v(out)', 'v(in)']
+
+
+def test_render_chart_traces_validation(tmp_path):
+    good = {'a': {'x': [0.0, 1.0], 'y': [0.0, 1.0]}}
+    # Traces only plot as lines.
+    with pytest.raises(ValueError):
+        artifact_tools.render_chart(
+            str(tmp_path / 'x.png'), 'bar', traces=good, workspace=str(tmp_path)
+        )
+    # Mismatched x/y lengths are rejected.
+    with pytest.raises(ValueError):
+        artifact_tools.render_chart(
+            str(tmp_path / 'y.png'), 'line',
+            traces={'a': {'x': [0.0, 1.0], 'y': [0.0]}}, workspace=str(tmp_path),
+        )
+    # Missing traces file is rejected.
+    with pytest.raises(ValueError):
+        artifact_tools.render_chart(
+            str(tmp_path / 'z.png'), 'line', traces='nope.json', workspace=str(tmp_path)
+        )
+    # Neither series nor traces is rejected.
+    with pytest.raises(ValueError):
+        artifact_tools.render_chart(
+            str(tmp_path / 'w.png'), 'line', workspace=str(tmp_path)
+        )
+
+
 def test_render_video_mp4(tmp_path):
     from PIL import Image
 

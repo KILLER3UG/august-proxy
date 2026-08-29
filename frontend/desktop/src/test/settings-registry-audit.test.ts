@@ -43,7 +43,7 @@ describe('settings-registry audit', () => {
   it('has a balanced set of sections distributed across categories', () => {
     // Grown as product surfaces ship (was 18; +path grants, kanban, sandbox, …).
     expect(SETTINGS_SECTIONS.length).toBeGreaterThanOrEqual(18);
-    expect(SETTINGS_SECTIONS.length).toBeLessThanOrEqual(42);
+    expect(SETTINGS_SECTIONS.length).toBeLessThanOrEqual(50);
   });
 
   it('every section id is unique', () => {

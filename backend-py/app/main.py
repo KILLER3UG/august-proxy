@@ -33,6 +33,10 @@ def _cors_allow_origins() -> list[str]:
         'tauri://localhost',
         'https://tauri.localhost',
         'http://tauri.localhost',
+        # Surfer waveform viewer embed (Circuit panel): the hosted WASM
+        # build fetches workspace VCDs from the raw-file route below.
+        # iframe embedding keeps it a separate program (EUPL guardrail).
+        'https://app.surfer-project.org',
     ]
     extra = os.environ.get('AUGUST_CORS_ORIGINS', '')
     if extra.strip():
@@ -335,6 +339,7 @@ from app.routers import skills as skillsRoutes  # noqa: E402
 from app.routers import subagent as subagentRoutes  # noqa: E402
 from app.routers import terminal as terminalRoutes  # noqa: E402
 from app.routers import terminal_routes as terminalWsRoutes  # noqa: E402
+from app.routers import usage as usageRoutes  # noqa: E402
 from app.routers import whats_new as whatsNewRoutes  # noqa: E402
 from app.routers import workbench as workbenchRoutes  # noqa: E402
 
@@ -354,6 +359,7 @@ app.include_router(mcpRoutes.router)
 app.include_router(gitRoutes.router)
 app.include_router(desktopAutomationRoutes.router)
 app.include_router(browserRoutes.router)
+app.include_router(usageRoutes.router)
 # terminal_routes (literal /sessions, /buffer, …) must be registered before
 # terminal's /{sessionId} catch-all, or "sessions" is treated as an id.
 app.include_router(terminalWsRoutes.router)

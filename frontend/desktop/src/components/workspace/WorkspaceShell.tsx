@@ -102,7 +102,7 @@ export function WorkspaceShell({
   // so deep discovery still works. Hidden sections never appear as rail
   // rows; they live inside their parent's stacked cards or as tree
   // grandchildren (RAIL_CHILDREN).
-  const visibleForSearch = useMemo(() => decorated.filter((s) => s.tier !== 'hidden'), [decorated]);
+  const visibleForSearch = useMemo(() => decorated, [decorated]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -117,7 +117,7 @@ export function WorkspaceShell({
       if (!match(s)) continue;
       ids.add(s.id);
     }
-    const chosen = decorated.filter((s) => ids.has(s.id) && s.tier !== 'hidden');
+    const chosen = decorated.filter((s) => ids.has(s.id));
     return groupAllByCategory(chosen);
   }, [decorated, visibleForSearch, query]);
 
@@ -194,89 +194,56 @@ export function WorkspaceShell({
               })
             )
           ) : (
-            <div className="px-2 py-1 flex flex-col gap-0.5">
+            <div className="px-2 py-1 flex flex-col gap-3">
               {SETTINGS_CATEGORIES.map((cat) => {
-                const Icon = CATEGORY_ICONS[cat.id] ?? Globe;
-                const isActive = activeCategoryId === cat.id;
-                // Tree sub-nav: the active category expands its sections
-                // INLINE under the rail row (folder ▸ files pattern) — no
-                // separate pill tab strip inside the content pane.
-                const children = sectionsForCategory(cat.id).filter((s) => s.tier !== 'hidden');
+                const items = sectionsForCategory(cat.id).filter(
+                  (s) => s.tier !== 'hidden' && s.id !== 'ai-setup',
+                );
+                if (items.length === 0) return null;
                 return (
-                  <div key={cat.id}>
-                    <WorkspaceNavLink
-                      icon={Icon}
-                      label={cat.label}
-                      active={!!isActive}
-                      onSelect={() => {
-                        setQuery('');
-                        void navigate(`/settings/${cat.id}`);
-                      }}
-                    />
-                    {isActive && children.length > 0 && (
-                      <div className="ml-4 flex flex-col gap-px border-l border-sidebar-border/60 py-0.5 pl-1.5">
-                        {children.map((s) => {
-                          const childActive = active === s.id || railActive === s.id;
-                          // Second-level tree items (e.g. UI Designer under
-                          // Appearance) — visible while the parent row is
-                          // active so the nested page stays reachable.
-                          const grandchildren = (RAIL_CHILDREN[s.id] ?? [])
-                            .map((gid) => getSection(gid))
-                            .filter((g): g is SettingsSection => !!g);
-                          return (
-                            <div key={s.id}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (childActive && active === s.id) return;
-                                  void navigate(`/settings/${s.id}`);
-                                }}
-                                data-testid={`settings-subnav-${s.id}`}
-                                aria-current={active === s.id ? 'page' : undefined}
-                                className={cn(
-                                  'w-full truncate rounded-md px-2 py-1 text-left text-[12px] transition-colors',
-                                  active === s.id
-                                    ? 'bg-white/[0.07] font-medium text-foreground'
-                                    : 'text-muted-foreground/80 hover:bg-white/[0.04] hover:text-foreground',
-                                )}
-                              >
-                                {s.label}
-                              </button>
-                              {childActive && grandchildren.length > 0 && (
-                                <div className="ml-3 flex flex-col gap-px border-l border-sidebar-border/40 py-0.5 pl-1.5">
-                                  {grandchildren.map((g) => {
-                                    const gActive = active === g.id;
-                                    return (
-                                      <button
-                                        key={g.id}
-                                        type="button"
-                                        onClick={() => {
-                                          if (gActive) return;
-                                          void navigate(`/settings/${g.id}`);
-                                        }}
-                                        data-testid={`settings-subnav-${g.id}`}
-                                        aria-current={gActive ? 'page' : undefined}
-                                        className={cn(
-                                          'w-full truncate rounded-md px-2 py-1 text-left text-[11.5px] transition-colors',
-                                          gActive
-                                            ? 'bg-white/[0.07] font-medium text-foreground'
-                                            : 'text-muted-foreground/70 hover:bg-white/[0.04] hover:text-foreground',
-                                        )}
-                                      >
-                                        {g.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                  <div key={cat.id} className="flex flex-col gap-0.5">
+                    <div className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-sidebar-foreground/50">
+                      {cat.label}
+                    </div>
+                    {items.map((s) => (
+                      <WorkspaceNavLink
+                        key={s.id}
+                        icon={s.icon}
+                        label={s.label}
+                        active={active === s.id || railActive === s.id}
+                        badge={
+                          s.id === 'app-updates' && updateAvailable ? 'New' : null
+                        }
+                        onSelect={() => {
+                          if (s.id === active) return;
+                          setQuery('');
+                          void navigate(`/settings/${s.id}`);
+                        }}
+                      />
+                    ))}
                   </div>
                 );
               })}
+              {/* Standalone Onboard entry */}
+              {(() => {
+                const onboard = getSection('ai-setup');
+                if (!onboard) return null;
+                return (
+                  <div className="pt-1">
+                    <WorkspaceNavLink
+                      key={onboard.id}
+                      icon={onboard.icon}
+                      label={onboard.label}
+                      active={active === onboard.id || railActive === onboard.id}
+                      onSelect={() => {
+                        if (onboard.id === active) return;
+                        setQuery('');
+                        void navigate(`/settings/${onboard.id}`);
+                      }}
+                    />
+                  </div>
+                );
+              })()}
             </div>
           )}
         </nav>

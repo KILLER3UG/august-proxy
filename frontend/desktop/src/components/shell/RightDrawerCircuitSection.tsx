@@ -14,10 +14,16 @@ import {
 import { ChatAttachmentService } from '@/sections/chat/services/ChatAttachmentService';
 import { revealInFolder } from '@/lib/tauri-shell';
 import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
+import { CircuitInstruments } from '@/components/shell/CircuitInstruments';
+import { CircuitWaveformViewer } from '@/components/shell/CircuitWaveformViewer';
 import type { MessageBlock } from '@/types/chat';
 
-const CIRCUIT_TOOLS = /^circuit_/i;
+const CIRCUIT_TOOLS =
+  /^(circuit_|firmware_|hdl_|vcd_parse|fpga_compile|kicad_)/i;
 const NETLIST_EXT = /\.(cir|net|ckt|sp)$/i;
+// Bitstreams and 3D models have no inline renderer — the file viewer would
+// show their raw bytes as mojibake in a data-URL iframe. Reveal instead.
+const BINARY_ARTIFACT_EXT = /\.(sof|pof|glb|uf2)$/i;
 
 interface CircuitArtifact {
   path: string;
@@ -37,7 +43,11 @@ function collectCircuitArtifacts(blocks?: MessageBlock[] | null): CircuitArtifac
     let path: string | null = null;
     try {
       const parsed = JSON.parse(block.tool.context || '{}') as Record<string, unknown>;
-      for (const key of ['path', 'filePath', 'savedTo']) {
+      // path/filePath/savedTo cover circuit_* + firmware_stimulus;
+      // waveFile (hdl_simulate), svgFile (hdl_timing_diagram),
+      // junitFile (hdl_test), sofFile (fpga_compile), renderedFile
+      // (kicad_render) are the new family's artifact keys.
+      for (const key of ['path', 'filePath', 'savedTo', 'waveFile', 'svgFile', 'junitFile', 'sofFile', 'renderedFile']) {
         const v = parsed[key];
         if (typeof v === 'string' && v.length > 0) {
           path = v;
@@ -77,7 +87,7 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
 
   const open = async (path: string) => {
     try {
-      if (NETLIST_EXT.test(path)) {
+      if (NETLIST_EXT.test(path) || BINARY_ARTIFACT_EXT.test(path)) {
         await revealInFolder(path);
         return;
       }
@@ -102,6 +112,8 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2 chat-scroll">
+        <CircuitInstruments messages={messages} />
+        <CircuitWaveformViewer messages={messages} sessionId={sessionId} />
         {artifacts.length === 0 ? (
           <p className="px-1 py-6 text-center text-[11px] leading-relaxed text-muted-foreground/70">
             No circuit artifacts yet.

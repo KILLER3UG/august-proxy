@@ -1642,6 +1642,9 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         tools = [t for t in tools if _tool_name_plan(t) not in blocked_in_plan]
     # /circuit gate (OpenAI path): same visibility rule as toolDefinitions.
     try:
+        from app.services.tool_registrations.circuit_tools import (
+            _is_circuit_gate_tool,
+        )
         from app.services.tools.circuit_tools import is_circuit_mode
 
         def _circuit_gate_name(t: dict[str, object]) -> str:
@@ -1649,7 +1652,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             return as_str(fn.get('name') or t.get('name'))
 
         if session is None or not is_circuit_mode(session):
-            tools = [t for t in tools if not _circuit_gate_name(t).startswith('circuit_')]
+            tools = [t for t in tools if not _is_circuit_gate_tool(_circuit_gate_name(t))]
     except Exception:
         pass
     return _finalize_session_tools(session, tools)

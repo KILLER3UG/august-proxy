@@ -55,6 +55,19 @@ interface Props {
   formatValue?: (v: number) => string;
 }
 
+function formatShortTokens(tokens: number): string {
+  if (tokens >= 1_000_000_000) {
+    return `${(tokens / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
+  }
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${(tokens / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  }
+  return tokens.toLocaleString();
+}
+
 export function WorkspaceDonut({
   slices,
   centerLabel,
@@ -63,8 +76,8 @@ export function WorkspaceDonut({
   className,
   formatValue,
 }: Props) {
-  const R = 36;
-  const STROKE = 14;
+  const R = 42;
+  const STROKE = 18;
   const C = 2 * Math.PI * R;
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
 
@@ -72,67 +85,75 @@ export function WorkspaceDonut({
   const visible = slices.slice(0, legendLimit);
 
   return (
-    <div className={cn('flex items-center gap-6', className)}>
-      <svg viewBox="0 0 96 96" className="size-32 shrink-0">
-        <g transform="rotate(-90 48 48)">
-          {visible.map((s, i) => {
-            const len = (s.value / total) * C;
-            const dash = `${len} ${C - len}`;
-            const off = -offset;
-            offset += len;
-            const color = s.color ?? modelColor(s.label);
-            return (
-              <circle
-                key={s.label + i}
-                cx="48"
-                cy="48"
-                r={R}
-                fill="none"
-                stroke={color}
-                strokeWidth={STROKE}
-                strokeDasharray={dash}
-                strokeDashoffset={off}
-              />
-            );
-          })}
-        </g>
-        <text
-          x="48"
-          y="48"
-          textAnchor="middle"
-          dominantBaseline="central"
-          className="fill-white"
-          style={{ fontSize: 13, fontWeight: 600 }}
-        >
-          {centerLabel ?? total.toLocaleString()}
-        </text>
-        <text
-          x="48"
-          y="62"
-          textAnchor="middle"
-          dominantBaseline="central"
-          className="fill-white/70"
-          style={{ fontSize: 7 }}
-        >
-          {centerSub}
-        </text>
-      </svg>
+    <div className={cn('flex flex-col md:flex-row items-center gap-8 py-2', className)}>
+      <div className="relative shrink-0">
+        <svg viewBox="0 0 120 120" className="size-48">
+          <g transform="rotate(-90 60 60)">
+            {visible.map((s, i) => {
+              const len = (s.value / total) * C;
+              const dash = `${len} ${C - len}`;
+              const off = -offset;
+              offset += len;
+              const color = s.color ?? modelColor(s.label);
+              return (
+                <circle
+                  key={s.label + i}
+                  cx="60"
+                  cy="60"
+                  r={R}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={STROKE}
+                  strokeDasharray={dash}
+                  strokeDashoffset={off}
+                  className="transition-all hover:opacity-80"
+                />
+              );
+            })}
+          </g>
+          <text
+            x="60"
+            y="56"
+            textAnchor="middle"
+            dominantBaseline="central"
+            className="fill-white"
+            style={{ fontSize: 16, fontWeight: 700 }}
+          >
+            {centerLabel ?? formatShortTokens(total)}
+          </text>
+          <text
+            x="60"
+            y="72"
+            textAnchor="middle"
+            dominantBaseline="central"
+            className="fill-muted-foreground/80"
+            style={{ fontSize: 10 }}
+          >
+            {centerSub}
+          </text>
+        </svg>
+      </div>
 
-      <div className="flex-1 min-w-0 space-y-1.5">
+      <div className="flex-1 w-full min-w-0 space-y-3">
         {visible.map((s, i) => {
           const color = s.color ?? modelColor(s.label);
+          const formattedVal = formatValue
+            ? formatValue(s.value)
+            : `${formatShortTokens(s.value)} tokens`;
           return (
-            <div key={s.label + i} className="flex items-center gap-2 text-xs">
-              <span
-                className="size-2 rounded-full shrink-0"
-                style={{ backgroundColor: color }}
-              />
-              <span className="flex-1 truncate text-foreground">{s.label}</span>
-              <span className="text-muted-foreground tabular-nums shrink-0">
-                {formatValue ? formatValue(s.value) : s.value.toLocaleString()}
-              </span>
-              <span className="text-muted-foreground tabular-nums shrink-0 w-12 text-right">
-                {s.percent.toFixed(1)}%
+            <div key={s.label + i} className="flex items-center justify-between gap-4 text-xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span
+                  className="size-2 rounded-full shrink-0"
+                  style={{ backgroundColor: color }}
+                />
+                <div className="min-w-0">
+                  <div className="truncate font-mono text-[11.5px] text-foreground">{s.label}</div>
+                  <div className="text-[10.5px] text-muted-foreground/70">{formattedVal}</div>
+                </div>
+              </div>
+              <span className="text-muted-foreground/80 font-mono text-xs tabular-nums shrink-0">
+                {s.percent.toFixed(s.percent < 10 && s.percent % 1 !== 0 ? 1 : 0)}%
               </span>
             </div>
           );

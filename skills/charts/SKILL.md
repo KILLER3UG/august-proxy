@@ -54,7 +54,11 @@ A short reference for the `render_chart` tool: how to call it, which
 - Prefer PNG over ASCII tables whenever numbers have a shape.
 - Label axes and units; keep one chart per call.
 - For waveforms / simulation output, plot the numeric columns you got
-  from `simulate_circuit` (or `wrdata` files read via `read_file`).
+  from `simulate_circuit` (or `wrdata` files read via `read_file`) —
+  its `tracesFile` JSON is accepted by `render_chart` directly, and the
+  right Circuit panel's scope/bode instruments render the same data
+  interactively. Digital timing diagrams belong to
+  `hdl_timing_diagram` (WaveDrom), not a line chart.
 
 ## Pitfalls
 

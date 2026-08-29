@@ -196,5 +196,15 @@ def assembleToolDefs(
                     patched['description'] = str(bd.get('description', '')) + hint[:800]
                     _BRIDGEToolDefs[i] = patched
                     break
-    result.tool_defs = coreDefs + preloadedDefs + _BRIDGEToolDefs
+    # The bridge tools may ALSO sit in coreDefs/preloadedDefs (the registry
+    # registers its own dispatchable copies for the non-activated path).
+    # When disclosure is active the hardcoded bridge defs are the ones we
+    # want (their descriptions carry the short-catalog hint); drop the
+    # registry copies so the assembled surface never duplicates a name.
+    bridge_names = {str(bd.get('name', '')) for bd in _BRIDGEToolDefs}
+    result.tool_defs = (
+        [t for t in coreDefs if t.get('name', '') not in bridge_names]
+        + [t for t in preloadedDefs if t.get('name', '') not in bridge_names]
+        + _BRIDGEToolDefs
+    )
     return result

@@ -29,7 +29,8 @@ import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
  *  Statistics, 2026-08-28 restructure). Rail shows headers, not 38 rows. */
 const HUB_CATEGORY_IDS = new Set(SETTINGS_CATEGORIES.map((c) => c.id));
 const LEGACY_HUB_MAP: Record<string, string> = {
-  system: 'settings',
+  settings: 'basics',
+  system: 'basics',
   intelligence: 'capabilities',
   insights: 'data',
   tools: 'tools-connections',
@@ -311,6 +312,11 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'model-fleet': ModelFleetWrapper,
   'model-live': ModelLiveWrapper,
   'model-quotas': ModelQuotasWrapper,
+  'browser-use': ComputerUseWrapper,
+  subagents: AgentsAutomationWrapper,
+  plugins: ToolsConnectionsWrapper,
+  hooks: FeatureFlowWrapper,
+  indexing: PrivacyWrapper,
   account: AccountWrapper,
   general: GeneralWrapper,
   appearance: AppearanceWrapper,
@@ -322,8 +328,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'conversations-history': ConversationsHistoryWrapper,
   'agents-automation': AgentsAutomationWrapper,
   'computer-access': ComputerAccessSettingsWrapper,
-  // traffic-activity is now an alias for observability (handled by
-  // resolveLegacyTab + legacyAliases in the registry), so no entry here.
   observability: ObservabilitySectionWrapper,
   'backend-monitor': BackendMonitorWrapper,
   'feature-flow': FeatureFlowWrapper,

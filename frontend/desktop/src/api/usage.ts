@@ -7,10 +7,12 @@ export type UsageRange = '7d' | '30d';
 export interface UsageStats {
   range: UsageRange;
   totalTokens: number;
+  peakTokens: number;
   sessions: number;
   messages: number;
   activeDays: number;
   currentStreak: number;
+  longestStreak: number;
   favoriteModel: string | null;
   favoriteModelShare: number;
   at: string;

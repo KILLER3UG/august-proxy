@@ -37,8 +37,24 @@ _ORACLE_READ = frozenset({
     # Circuit workbench lookups — netlists, datasheet/board facts (read-only).
     'circuit_list_boards', 'circuit_search_component', 'circuit_read_netlist',
     'circuit_list_netlists',
+    # Circuit environment doctor — probes installed EDA engines; reads
+    # machine state only, no workspace mutation.
+    'circuit_env',
+    # Fault injection — pure text transform on deck text (no binary spawn,
+    # no file writes); the variant deck still flows through the gated
+    # simulate/test tools to run.
+    'circuit_inject_fault',
+    # Symbolic analysis — in-process SymPy/lcapy compute over deck text;
+    # reads nothing, writes nothing.
+    'circuit_symbolic',
+    # Wiring-diagram lint — pure JSON validation transform (no binary
+    # spawn, no file writes); spawns nothing.
+    'circuit_lint_diagram',
     # Datasheet/model-card lookup — network read, no workspace mutation.
     'circuit_integrate_component',
+    # VCD analysis — pure-Python read of a workspace waveform file; no
+    # engine spawn, no writes (protocol decode happens in-process).
+    'vcd_parse',
     # Media analysis — the sanctioned reader for images/video/audio/docs.
     'analyze_media',
     # Camera capture — read-only image acquisition; frames are transient
@@ -76,6 +92,15 @@ _ORACLE_WRITE = frozenset({
     'create_html_artifact',
     # Circuit workbench mutations — netlist files + rendered PNG output.
     'circuit_create_netlist', 'circuit_update_netlist', 'circuit_render_3d',
+    # Firmware→SPICE bridge — reads the pin-timeline JSON and writes the
+    # merged <name>.cir stimulus deck into the workspace (no binary spawn).
+    'firmware_stimulus',
+    # WaveDrom timing-diagram — writes <name>.timing.svg into the
+    # workspace (spawns the bundled node for rendering, like render_chart).
+    'hdl_timing_diagram',
+    # KiCad board render — writes <name>.png/.glb into the workspace
+    # (spawns kicad-cli pcb render/export, like render_chart).
+    'kicad_render',
 })
 _ORACLE_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',
@@ -84,7 +109,7 @@ _ORACLE_DESTRUCTIVE = frozenset({
     # Circuit workbench: removes a netlist file from the workspace.
     'circuit_delete_netlist',
 })
-_ORACLE_SHELL = frozenset({'run_command', 'run_commands', 'simulate_circuit', 'circuit_simulate'})
+_ORACLE_SHELL = frozenset({'run_command', 'run_commands', 'simulate_circuit', 'circuit_simulate', 'circuit_test', 'circuit_export_vcd', 'circuit_annotate', 'firmware_compile', 'firmware_run', 'hdl_lint', 'hdl_simulate', 'hdl_test', 'fpga_compile', 'kicad_checks'})
 _ORACLE_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
     'spawn_subagents', 'update_agent', 'set_agent_mode',
@@ -161,7 +186,19 @@ _ORACLE_SHELL_EXACT = frozenset({
     'install', 'uninstall', 'pip_install', 'npm_install', 'pnpm_add',
     'install_mcp_server',
     # Spawns the ngspice binary — classified shell-side like run_command.
-    'simulate_circuit', 'circuit_simulate',
+    # circuit_test wraps simulate_circuit, so it spawns the binary too;
+    # circuit_export_vcd runs the deck through eprvcd for the VCD artifact;
+    # firmware_compile spawns arduino-cli / avr-gcc for the HEX artifact;
+    # firmware_run spawns the Node avr8js sidecar; hdl_lint/hdl_simulate/
+    # hdl_test spawn ghdl/verilator/iverilog/cocotb child processes.
+    'simulate_circuit', 'circuit_simulate', 'circuit_test',
+    'circuit_export_vcd', 'circuit_annotate', 'firmware_compile',
+    'firmware_run', 'hdl_lint', 'hdl_simulate', 'hdl_test',
+    # Quartus full-flow compile (map→fit→asm→sta) — spawns quartus_sh.
+    'fpga_compile',
+    # ERC/DRC gate — spawns kicad-cli sch erc / pcb drc; read-only on
+    # the design files (no workspace writes).
+    'kicad_checks',
 })
 
 

@@ -95,6 +95,30 @@ file moved under you — re-read, don't retry blind.
 - `list_skills` / `load_skills` / `load_skill` — load a skill's full guidance
   before doing the thing it covers.
 
+## Circuit / HDL / FPGA workbench (`/circuit`)
+
+All gated behind `/circuit` session mode — call `circuit_env` first to see
+which engines are actually installed; missing engines return install
+guidance, never error walls.
+
+- SPICE: netlist CRUD, `circuit_simulate` (.op/.dc/.tran/.ac + measures +
+  traces), `circuit_test` (assertion grading), `circuit_inject_fault`
+  (troubleshooting drills), `circuit_symbolic` (H(s)/poles/V(t)),
+  `circuit_export_vcd` (digital logic-analyzer dump), `circuit_annotate`
+  (voltage-colored .op overlay SVG).
+- Firmware: `firmware_compile` (Arduino/C → HEX), `firmware_run` (avr8js
+  emulation + serial/GPIO/timeline), `firmware_stimulus` (pin timeline →
+  ngspice PWL deck — the firmware↔SPICE bridge), `circuit_lint_diagram`
+  (diagram.json breadboard wiring validation).
+- HDL: `hdl_lint` (ghdl/verilator file:line diagnostics), `hdl_simulate`
+  (testbench run + .vcd artifact), `hdl_test` (cocotb runner, JUnit XML
+  verdict), `vcd_parse` (waveform analysis + UART protocol decode),
+  `hdl_timing_diagram` (WaveDrom SVG).
+- FPGA + boards: `fpga_compile` (Quartus flow, parsed LE/regs/fmax, .sof),
+  `kicad_checks` (ERC/DRC gates), `kicad_render` (real-board PNG/GLB).
+  `fpga_program` (JTAG download) is confirm-gated hardware — never
+  auto-run it.
+
 ## Introspection & state
 
 - `describe_environment` / `diagnose_proxy` to learn what this runtime can do.

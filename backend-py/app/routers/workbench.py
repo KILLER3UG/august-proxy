@@ -678,6 +678,96 @@ async def readFile(path: str = '', sessionId: str = ''):
     }
 
 
+async def _resolve_shared_read_file(path: str, sessionId: str) -> tuple[Path, str]:
+    """Shared /files/read + /files/raw access gate.
+
+    Returns (resolved, mime) after hardline + workspace-root + size checks
+    raise otherwise. Raw bytes for embedded cross-origin viewers (Surfer
+    waveform iframe) — the same rules as the base64 route, minus the
+    base64 envelope.
+    """
+    import mimetypes
+    import tempfile
+
+    from app.services.sandbox.hardline import check_hardline_path
+    from app.services.sandbox.paths import is_within_root, resolve_workspace_root
+
+    raw = (path or '').strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail='path is required')
+    try:
+        resolved = Path(raw).expanduser().resolve(strict=False)
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f'Invalid path: {exc}')
+    denial = check_hardline_path(str(resolved), for_write=False)
+    if denial:
+        raise HTTPException(status_code=403, detail=f'Sandbox hardline blocked: {denial}')
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail='File not found')
+
+    roots: list[Path] = []
+    if sessionId:
+        session = wb.getWorkbenchSession(sessionId)
+        ws = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
+        root = resolve_workspace_root(ws)
+        if root is not None:
+            roots.append(root)
+    for entry in wb.listWorkbenchSessions():
+        root = resolve_workspace_root(as_str(entry.get('workspacePath') or ''))
+        if root is not None and root not in roots:
+            roots.append(root)
+    try:
+        roots.append(Path(tempfile.gettempdir()).resolve())
+    except OSError:
+        pass
+    if not any(is_within_root(resolved, root) for root in roots):
+        raise HTTPException(
+            status_code=403,
+            detail='Path is outside every workbench workspace and the temp area',
+        )
+
+    MAX_BYTES = 50 * 1024 * 1024
+    try:
+        size = resolved.stat().st_size
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail=f'Cannot stat file: {exc}')
+    if size > MAX_BYTES:
+        raise HTTPException(
+            status_code=413, detail=f'File too large ({size} bytes; limit {MAX_BYTES})'
+        )
+    mime, _ = mimetypes.guess_type(resolved.name)
+    return resolved, mime or 'application/octet-stream'
+
+
+_WAVEFORM_MIME = {
+    '.vcd': 'text/plain', '.fst': 'application/octet-stream',
+    '.ghw': 'application/octet-stream',
+}
+
+
+@router.get('/files/raw')
+async def readRawFile(path: str = '', sessionId: str = Query('')):
+    """Raw file bytes for embedded cross-origin viewers.
+
+    Serves the Surfer waveform viewer iframe (Circuit panel) workspace
+    VCD/FST/GHW files: surfer's WASM build runs on its own origin and
+    fetches the waveform over CORS from this route. Same sandbox rules
+    as /files/read (hardline + workspace/temp roots + size cap).
+    """
+    resolved, _ = await _resolve_shared_read_file(path, sessionId)
+    mime = _WAVEFORM_MIME.get(resolved.suffix.lower(), 'application/octet-stream')
+    from fastapi.responses import Response as _Response
+
+    return _Response(
+        content=resolved.read_bytes(),
+        media_type=mime,
+        headers={
+            # Plain-cacheable, no revalidation needed for immutable artifacts.
+            'Cache-Control': 'no-store',
+        },
+    )
+
+
 @router.post('/chat/queue')
 async def queueMessage(request: Request):
     """Enqueue a user message for delivery to the model mid-response.

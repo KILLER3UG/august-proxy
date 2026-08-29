@@ -25,7 +25,10 @@ def _registerTools():
 
 @pytest.fixture
 def session() -> WorkbenchSession:
-    return WorkbenchSession(id='wb_test_tooldefs')
+    # Model with a huge context window so progressive disclosure never
+    # activates for these tests — they assert the FULL registered surface
+    # (a small window would legitimately defer tools like browser_type).
+    return WorkbenchSession(id='wb_test_tooldefs', model='gpt-4.1')
 
 
 # Plan-gating tools are deliberately filtered per guard mode (Full Access must
@@ -35,8 +38,17 @@ FULL_MODE_BLOCKED = {'submit_plan', 'submitPlan', 'approve_plan', 'reject_plan'}
 PLAN_MODE_BLOCKED = {'enter_plan_mode', 'request_plan_mode'}
 # /circuit tools are visibility-gated per session (only present while the
 # session's circuit workbench is ON) — skipped in the default-surface tests
-# and covered positively by TestCircuitGateVisibility below.
+# and covered positively by TestCircuitGateVisibility below. The gate owns
+# the circuit_* names PLUS the firmware/HDL/VCD/FPGA/KiCad families.
 CIRCUIT_MODE_PREFIX = 'circuit_'
+
+
+def _is_circuit_gate_tool(name: str) -> bool:
+    from app.services.tool_registrations.circuit_tools import (
+        _is_circuit_gate_tool as owns,
+    )
+
+    return owns(name)
 
 
 class TestAnthropicFormat:
@@ -47,7 +59,7 @@ class TestAnthropicFormat:
             expected = reg['function']['name']
             if expected in FULL_MODE_BLOCKED:
                 continue  # session fixture runs in full mode
-            if expected.startswith(CIRCUIT_MODE_PREFIX):
+            if _is_circuit_gate_tool(expected):
                 continue  # gated behind /circuit mode; covered below
             assert expected in names, f'{expected} missing from anthropic tool list'
 
@@ -72,7 +84,7 @@ class TestOpenAIFormat:
             expected = reg['function']['name']
             if expected in FULL_MODE_BLOCKED:
                 continue  # session fixture runs in full mode
-            if expected.startswith(CIRCUIT_MODE_PREFIX):
+            if _is_circuit_gate_tool(expected):
                 continue  # gated behind /circuit mode; covered below
             assert expected in names
 
@@ -94,17 +106,21 @@ class TestCircuitGateVisibility:
     def testCircuitToolsHiddenByDefaultAndShownInCircuitMode(self):
         from app.services.tools.circuit_tools import is_circuit_mode
 
-        plain = WorkbenchSession(id='wb_plain')
-        gated = WorkbenchSession(id='wb_circ', metadata={'circuitMode': True})
+        plain = WorkbenchSession(id='wb_plain', model='gpt-4.1')
+        gated = WorkbenchSession(id='wb_circ', metadata={'circuitMode': True}, model='gpt-4.1')
         assert not is_circuit_mode(plain)
         assert is_circuit_mode(gated)
 
+        # The gate owns circuit_* plus the firmware/HDL/VCD/FPGA/KiCad
+        # families — every owned name must vanish from a plain session.
         for defs in (toolDefinitions(plain), openaiToolDefinitions(plain)):
             names = {
                 t.get('name') or t['function']['name'] for t in defs
             }
-            assert not any(n.startswith(CIRCUIT_MODE_PREFIX) for n in names)
+            leaked = {n for n in names if _is_circuit_gate_tool(n)}
+            assert not leaked, f'circuit-gate tools leaked into a plain session: {leaked}'
 
+        # And ALL of them must be present when circuit mode is ON.
         for defs in (toolDefinitions(gated), openaiToolDefinitions(gated)):
             names = {
                 t.get('name') or t['function']['name'] for t in defs
@@ -112,13 +128,29 @@ class TestCircuitGateVisibility:
             expected = {
                 reg['function']['name']
                 for reg in tool_registry.listTools()
-                if reg['function']['name'].startswith(CIRCUIT_MODE_PREFIX)
+                if _is_circuit_gate_tool(reg['function']['name'])
             }
             missing = expected - names
             assert not missing, f'circuit tools missing in circuit mode: {missing}'
 
 
 PASSTHROUGH_NAMES = {'mcp__workspace__bash', 'WebSearch', 'WebFetch'}
+
+
+class TestProgressiveDisclosureNoDupes:
+    """Regression: when disclosure ACTIVATES (deferred tokens cross the
+    10%-of-context threshold — the 125-tool registry does this at the
+    default 128k window), the bridge tools (tool_call/tool_search/
+    tool_describe) must not be duplicated with their registry copies,
+    and every visible name stays unique on both wire formats."""
+
+    def testActivatedSurfaceHasNoDuplicateBridgeTools(self):
+        small = WorkbenchSession(id='wb_small_window', model='gpt-4o')
+        for defs in (toolDefinitions(small), openaiToolDefinitions(small)):
+            names = [t.get('name') or t['function']['name'] for t in defs]
+            assert len(names) == len(set(names)), f'duplicate tools: {names}'
+            for bridge in ('tool_call', 'tool_search', 'tool_describe'):
+                assert names.count(bridge) == 1, f'{bridge} duplicated'
 
 
 class TestNoPassthroughTools:

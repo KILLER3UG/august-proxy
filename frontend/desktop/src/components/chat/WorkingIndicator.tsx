@@ -8,7 +8,7 @@
 /*     between steps the last line carries animated ellipsis dots.        */
 
 import { useMemo } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useLiveActivityStore } from '@/store/liveActivity';
 import { resolveUiSessionId } from '@/sections/chat/stream/session-id-map';
 
@@ -61,6 +61,12 @@ function Dots({ tone = 'text-muted-foreground/70' }: { tone?: string }) {
   );
 }
 
+function cleanThinkingText(s: string): string {
+  let cleaned = s.replace(/^Thinking(?:\.{1,3}|:|\s*·|\s+)/i, '').trim();
+  cleaned = cleaned.replace(/^\.+|\.+$/g, '').trim();
+  return cleaned;
+}
+
 export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps) {
   // The activity store is keyed by UI session id; the pane may hand us a
   // wb_* route id, so normalize before subscribing.
@@ -75,9 +81,16 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
     const items = entry?.items ?? [];
     const out: string[] = [];
     for (const item of items) {
-      const base = item.status === 'error' ? `${item.label} — failed` : item.label;
-      const detail = (item.detail || '').split('\n')[0];
-      const line = trimLine(detail && detail !== item.label ? `${base} · ${detail}` : base);
+      let line = '';
+      if (item.kind === 'thinking') {
+        const rawDetail = (item.detail || '').split('\n')[0];
+        const cleaned = cleanThinkingText(rawDetail || item.label);
+        line = trimLine(cleaned);
+      } else {
+        const base = item.status === 'error' ? `${item.label} — failed` : item.label;
+        const detail = (item.detail || '').split('\n')[0];
+        line = trimLine(detail && detail !== item.label ? `${base} · ${detail}` : base);
+      }
       if (!line) continue;
       const dupIdx = out.lastIndexOf(line);
       if (dupIdx >= 0) out.splice(dupIdx, 1);
@@ -109,40 +122,35 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
           </div>
         ) : null}
         <div className="w-full max-w-xl" data-testid="working-lines">
-          <AnimatePresence initial={false} mode="popLayout">
-            {idle ? (
-              <motion.div
-                key="idle-line"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex items-baseline justify-center gap-1 text-[11.5px] italic leading-4 text-muted-foreground/70"
-              >
-                <span>Thinking</span>
-                <Dots />
-              </motion.div>
-            ) : (
-              lines.map((line, i) => {
+          {idle ? (
+            <div
+              key="idle-line"
+              className="flex items-baseline justify-center gap-1 text-[11.5px] italic leading-4 text-muted-foreground/70"
+            >
+              <span>Thinking</span>
+              <Dots />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {lines.map((line, i) => {
                 const isLast = i === lines.length - 1;
+                const opacityClass = isLast
+                  ? 'opacity-95 text-foreground/90 font-normal'
+                  : i === lines.length - 2
+                    ? 'opacity-60 text-muted-foreground'
+                    : 'opacity-35 text-muted-foreground';
                 return (
-                  <motion.div
-                    key={`${i}-${line}`}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{
-                      opacity: isLast ? 0.95 : Math.max(0.28, 0.85 - (lines.length - 1 - i) * 0.3),
-                      y: 0,
-                    }}
-                    exit={{ opacity: 0, y: -3 }}
-                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className="truncate text-center text-[11.5px] leading-4 text-muted-foreground"
+                  <div
+                    key={`slot-${i}`}
+                    className={`truncate text-center text-[11.5px] leading-4 transition-opacity duration-150 ${opacityClass}`}
                   >
                     <span>{line}</span>
                     {isLast && <Dots tone="text-primary/60" />}
-                  </motion.div>
+                  </div>
                 );
-              })
-            )}
-          </AnimatePresence>
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

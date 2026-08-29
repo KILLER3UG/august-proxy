@@ -373,6 +373,12 @@ process env.
 | `AUGUST_AUTO_ROUTE` | unset | `1` forces evidence-driven auto-routing on (equivalent to brain config `autoRoute: true`) |
 | `AUGUST_VERIFIER_REVIEWER` | removed | was: one-shot reviewer critique for the verifier gate (feature removed 2026-08-24) |
 | `AUGUST_ANTHROPIC_PERSISTENT_CACHE` | unset | `1` swaps the Anthropic `cache_control: {type:"ephemeral"}` markers for the 1h-TTL variant so long sessions hold hits across longer gaps between turns. Off by default — 1h cache writes are billed at a premium upstream |
+| `AUGUST_NGSPICE_EXE` | auto | Explicit ngspice executable for the circuit workbench (PATH probe + versioned install dirs by default) |
+| `AUGUST_QUARTUS_SH` | auto | Explicit `quartus_sh` path for `fpga_compile` (defaults to PATH + `C:\intelFPGA*\<ver>\quartus\bin64` discovery) |
+| `AUGUST_KICAD_CLI` | auto | Explicit `kicad-cli` path for `kicad_checks` / `kicad_render` (defaults to PATH + `C:\Program Files\KiCad\<ver>\bin`) |
+| `AUGUST_ARDUINO_CLI` | auto | Explicit arduino-cli path for `firmware_compile` |
+| `AUGUST_AVR_GCC` | auto | Explicit avr-gcc path for plain-C `firmware_compile` |
+| `AUGUST_NODE_EXE` | auto | Explicit Node runtime for the avr8js/wavedrom sidecar (defaults to the bundled Tauri node binary, then PATH) |
 
 ### Evidence-driven auto-routing
 

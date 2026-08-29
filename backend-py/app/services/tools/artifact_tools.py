@@ -126,39 +126,86 @@ def create_pptx(path: str, slides: Any, workspace: str = '') -> dict[str, Any]:
 _CHART_KINDS = ('line', 'bar', 'pie', 'scatter', 'hist')
 
 
+def _resolve_traces(traces: Any, workspace: str) -> dict[str, Any]:
+    """Accept traces as a dict {name: {x, y, ...}} or a workspace JSON
+    path (circuit_simulate's tracesFile) and return the dict form."""
+    if isinstance(traces, str):
+        bound, err = bind_path(traces, workspace, for_write=False)
+        if err or bound is None or not bound.exists():
+            raise ValueError(f'traces file not found / outside workspace: {traces}')
+        data = json.loads(bound.read_text(encoding='utf-8'))
+    elif isinstance(traces, dict):
+        data = traces
+    else:
+        raise ValueError(
+            'traces must be a {name: {x, y}} dict or a workspace JSON path.'
+        )
+    if not data:
+        raise ValueError('traces is empty.')
+    return data
+
+
 def render_chart(
     path: str,
     kind: str,
-    series: Any,
+    series: Any = None,
     labels: Any = None,
     title: str = '',
     xlabel: str = '',
     ylabel: str = '',
     workspace: str = '',
+    traces: Any = None,
 ) -> dict[str, Any]:
     """Render line/bar/pie/scatter/hist chart(s) to PNG.
 
     ``series``: [[num, ...], ...] — one inner list per plotted set.
     ``labels``: category/x labels (bar/pie) — len must match the data.
+    ``traces``: waveform traces from circuit_simulate — either the
+    ``traces`` dict or the ``tracesFile`` path. Each trace plots as an
+    x/y line (kind must be 'line'); overrides ``series``.
     """
     out = _bind_write(path, workspace, ('.png', '.jpg', '.jpeg', '.webp'))
     k = (kind or '').strip().lower()
     if k not in _CHART_KINDS:
         raise ValueError(f'kind must be one of {", ".join(_CHART_KINDS)}.')
-    data = _as_list(series)
-    if not data or not all(isinstance(row, (list, tuple)) for row in data):
-        # Allow a flat numeric list as a single series.
-        if data and all(isinstance(v, (int, float)) for v in data):
-            data = [data]
-        else:
-            raise ValueError('series must be a list of numeric lists.')
-    rows = [[float(v) for v in row] for row in data]
+    trace_map = _resolve_traces(traces, workspace) if traces is not None else None
+    if trace_map is not None and k != 'line':
+        raise ValueError("traces input only supports kind='line'.")
+    rows: list[list[float]] = []
+    if trace_map is None:
+        data = _as_list(series)
+        if not data or not all(isinstance(row, (list, tuple)) for row in data):
+            # Allow a flat numeric list as a single series.
+            if data and all(isinstance(v, (int, float)) for v in data):
+                data = [data]
+            else:
+                raise ValueError('pass series (numeric lists) or traces.')
+        rows = [[float(v) for v in row] for row in data]
 
     plt = _ensure_matplotlib()
     fig, ax = plt.subplots(figsize=(8, 5), dpi=150)
     try:
         lab = [str(x) for x in _as_list(labels)] if labels else None
-        if k == 'line':
+        if trace_map is not None:
+            names: list[str] = []
+            for tname, t in trace_map.items():
+                if not isinstance(t, dict):
+                    raise ValueError(f'trace {tname} must be a {{x, y}} object.')
+                xv = [float(v) for v in _as_list(t.get('x'))]
+                yv = [float(v) for v in _as_list(t.get('y'))]
+                if not xv or len(xv) != len(yv):
+                    raise ValueError(
+                        f'trace {tname}: x and y must be equal-length non-empty lists.'
+                    )
+                ax.plot(xv, yv, linewidth=1.6, label=str(tname))
+                names.append(str(tname))
+                if not xlabel and str(t.get('xunit') or ''):
+                    xlabel = str(t['xunit'])
+                if not ylabel and str(t.get('unit') or ''):
+                    ylabel = str(t['unit'])
+            if len(names) > 1:
+                ax.legend(fontsize=8)
+        elif k == 'line':
             for r in rows:
                 ax.plot(r, marker='o', linewidth=2)
         elif k == 'bar':
@@ -191,13 +238,18 @@ def render_chart(
             ax.set_xlabel(xlabel)
         if ylabel and k != 'pie':
             ax.set_ylabel(ylabel)
-        if k in ('line', 'bar', 'hist'):
+        if trace_map is not None or k in ('line', 'bar', 'hist'):
             ax.grid(True, alpha=0.25)
         fig.tight_layout()
         fig.savefig(out)
     finally:
         plt.close(fig)
-    return {'path': out, 'kind': k, 'seriesCount': len(rows)}
+    result: dict[str, Any] = {'path': out, 'kind': k}
+    if trace_map is not None:
+        result['traceNames'] = [str(t) for t in trace_map]
+    else:
+        result['seriesCount'] = len(rows)
+    return result
 
 
 # ── Video ─────────────────────────────────────────────────────────────────

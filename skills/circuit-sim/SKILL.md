@@ -1,6 +1,6 @@
 ---
 name: circuit-sim
-description: Search real parts and simulate SPICE circuits (ngspice).
+description: Search real parts and simulate SPICE circuits (ngspice); firmware-in-the-loop, HDL, FPGA, and KiCad flows under /circuit mode.
 category: engineering
 ---
 
@@ -90,9 +90,55 @@ meas ac vout_max find v(out) at=1k
   labels and directions).
 - `circuit_render_3d` renders a board preview PNG from a netlist.
 - `render_chart` plots waveforms from measured/wrdata columns.
+- `circuit_annotate` runs `.op` and draws the voltage-colored schematic
+  SVG (blue→red) with branch currents — the at-a-glance bias picture.
+- `hdl_timing_diagram` renders WaveDrom WaveJSON to a timing SVG for
+  protocol/handshake explanations (also emits a zero-install
+  svg.wavedrom.com URL).
 
 Always state assumptions (ideal vs real models, tolerances) next to
 the numeric results.
+
+## 4. Firmware-in-the-loop (MCU + analog together)
+
+The compile → emulate → bridge chain:
+
+1. `firmware_compile` — Arduino sketch (`board=uno/nano/mega`) or plain C
+   (avr-gcc) → HEX artifact + flash/RAM usage.
+2. `firmware_run` — emulate the HEX for bounded milliseconds: serial
+   monitor capture, GPIO state per pin, `expect`/`fail` serial
+   assertions, and with `timeline=<name>` a pin-edge timeline persisted
+   as `<name>_pins.json`.
+3. `firmware_stimulus` — convert that timeline into ngspice PWL sources
+   (`Vp<pin> N<pin> 0 PWL(...)`, board-aware logic level 5V/3.3V) and
+   optionally inject them into a deck copy (`<name>.cir`) → hand to
+   `circuit_simulate` for PWM-into-RC-filter mixed-signal runs.
+4. `circuit_lint_diagram` — validate a diagram.json breadboard-wiring
+   artifact (Wokwi-compatible parts + `"part:pin"` connections) when the
+   task involves wiring around the MCU; netlists stay the SPICE source
+   of truth, the diagram describes the breadboard and pins the co-sim
+   mapping.
+
+## 5. HDL + FPGA
+
+- `hdl_lint` — instant file:line syntax/semantic check (ghdl for VHDL,
+  verilator/iverilog for Verilog); run it after every HDL edit, before
+  any sim.
+- `hdl_simulate` — run a self-contained testbench; the `.vcd` waveform
+  lands in the workspace and the right Circuit panel renders it
+  (Surfer viewer).
+- `hdl_test` — cocotb Python testbenches with a JUnit XML verdict
+  (requires `uv sync --extra eda` for cocotb + ghdl/iverilog installed).
+- `vcd_parse` — read any VCD: signal activity, pulse widths,
+  value-at-time queries, and UART decode (baud auto-detected, 8N1) —
+  the protocol-analyser slice for both HDL and SPICE-digital dumps.
+- `fpga_compile` — full Quartus flow (`quartus_sh --flow compile`),
+  pin map via `pins={signal: PIN_xx}`, reports parsed to
+  logic-elements/registers/fmax vs. device capacity, `.sof` artifact to
+  the workspace. `fpga_program` (JTAG download) is confirm-gated
+  hardware — never auto-run it.
+- `kicad_checks` / `kicad_render` — ERC/DRC gates and real-board
+  PNG/GLB visuals on genuine `.kicad_sch`/`.kicad_pcb` designs.
 
 ## Pitfalls
 
@@ -107,6 +153,15 @@ the numeric results.
   cosmetic changes.
 - Mixing `i(vsrc)` references when the source is named differently
   (`V1` vs `Vin`). Names are case-sensitive in SPICE.
+- Calling HDL/FPGA/KiCad tools without `/circuit` mode — they are
+  gated; run `circuit_env` first and follow its install guidance when
+  an engine is missing instead of shelling out manually.
+- Editing HDL without an immediate `hdl_lint` pass. Small VHDL syntax
+  errors surface best at the lint step with file:line, not deep in a
+  testbench run.
+- Treating a `firmware_run` GPIO toggle count as proof the circuit
+  works — the analog half needs the `firmware_stimulus` →
+  `circuit_simulate` chain (or bench measurement) for that claim.
 
 ## Verification
 
@@ -117,3 +172,9 @@ the numeric results.
   netlist: if the rendered netlist has nodes the simulation did not
   reference, your schematic generator drifted from your deck.
 - State ideal-vs-real assumptions next to any number you report.
+- For firmware claims, the receipt is the `firmware_run` serial capture
+  + `assertionsOk` flag (expect/fail text), and for mixed-signal claims
+  the `firmware_stimulus` deck's simulated waveform (e.g. RC-filter
+  output that actually settles toward the rail, not a pass-through).
+- For FPGA claims, the receipt is `fpga_compile`'s parsed `fit`
+  utilization + `.sof` artifact path — not "the tool ran".

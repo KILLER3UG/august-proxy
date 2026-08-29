@@ -398,8 +398,9 @@ export function AssistantBlockTimeline({
         }
         const newest = tail || completed[completed.length - 1] || '';
         if (newest) {
-          const snippet = newest.slice(0, 80);
-          liveDetail = `Thinking… ${snippet}${newest.length > 80 ? '…' : ''}`;
+          const cleanNewest = newest.replace(/^Thinking(?:\.{1,3}|:|\s*·|\s+)/i, '').trim();
+          const snippet = (cleanNewest || newest).slice(0, 80);
+          liveDetail = `${snippet}${(cleanNewest || newest).length > 80 ? '…' : ''}`;
         }
       }
       if ((block.type === 'toolCall' || block.type === 'command') && block.tool) {

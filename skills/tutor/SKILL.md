@@ -52,6 +52,12 @@ A teaching mode for August. When the user wants to study, understand, or learn
 - The memory tools: `remember` (to persist what you learn about the user) and
   `brain_query` (to recall prior sessions). Both are part of the normal tool
   surface; nothing extra to install.
+- For electronics/HDL material: `/circuit` mode + the `circuit-sim` and
+  `hdl-fpga` skills — `circuit_symbolic` derives the exact H(s)/V(t) you can
+  walk through step by step, `circuit_inject_fault` powers troubleshooting
+  exercises (fault the deck, let the student diagnose), `hdl_lint`/
+  `hdl_simulate` give per-line VHDL feedback, and `hdl_timing_diagram`
+  draws the waveforms you would hand-sketch on a whiteboard.
 
 ## How to Run
 

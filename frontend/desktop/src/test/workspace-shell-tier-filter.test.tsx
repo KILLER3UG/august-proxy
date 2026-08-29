@@ -47,16 +47,18 @@ describe('WorkspaceShell — hub IA', () => {
     localStorage.clear();
   });
 
-  it('shows 5 category hubs in the rail when not searching', () => {
+  it('shows category headings and sections in the rail when not searching', () => {
     renderShell(
-      <WorkspaceShell sections={pickSections()} active="system-health">
+      <WorkspaceShell sections={pickSections()} active="skills">
         <div>main</div>
       </WorkspaceShell>,
     );
-    const labels = visibleRailLabels();
     for (const cat of SETTINGS_CATEGORIES) {
-      expect(labels.some((l) => l.includes(cat.label)), `${cat.label} hub should render`).toBe(true);
+      expect(screen.getByText(cat.label)).toBeInTheDocument();
     }
+    const labels = visibleRailLabels();
+    expect(labels).toContain('General');
+    expect(labels).toContain('Skills');
   });
 
   it('search surfaces matching sections grouped by category', () => {

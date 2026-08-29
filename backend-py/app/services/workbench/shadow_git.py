@@ -48,6 +48,13 @@ _EXCLUDES = (
     '.pytest_cache/',
     '.mypy_cache/',
     '.ruff_cache/',
+    # EDA derived binaries (plan §5.7): tool-regeneratable outputs, not
+    # user-authored work. Random bitstream/model bytes don't zlib-compress,
+    # so each compile iteration costs its full size in the object store.
+    '*.sof',
+    '*.pof',
+    '*.glb',
+    '*.hex',
 )
 
 
