@@ -71,13 +71,17 @@ def get_usage_stats(range: str = Query("30d")) -> dict[str, Any]:
     ).fetchone()
     peak_tokens = int(peak_row["day_tokens"]) if peak_row else 0
 
-    # Current streak & longest streak
+    # Current streak & longest streak (within the selected range — the
+    # card is labeled by range, so an unbounded streak would contradict
+    # the range-limited numbers next to it).
     day_rows = conn.execute(
         """
         SELECT DISTINCT strftime('%Y-%m-%d', created_at) AS day
         FROM usage_events
+        WHERE created_at >= ?
         ORDER BY day DESC
-        """
+        """,
+        (cutoff_str,),
     ).fetchall()
     active_dates = {r["day"] for r in day_rows}
 
@@ -130,7 +134,12 @@ def get_usage_stats(range: str = Query("30d")) -> dict[str, Any]:
 
 @router.get("/heatmap")
 def get_usage_heatmap(range: str = Query("30d")) -> dict[str, Any]:
-    """Get daily token activity for the past 365 days."""
+    """Get daily token activity for the heatmap grid.
+
+    The 52-week grid always shows a full year, so ``range`` is accepted
+    for API symmetry (the frontend sends the active selector) but the
+    window stays 365 days regardless.
+    """
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
     conn = _conn()

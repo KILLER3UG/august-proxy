@@ -1078,13 +1078,27 @@ TL_BLINK = {
 def test_pwl_points_boots_low_and_pins_flat_tail():
     from app.services.tools.firmware_tools import _pwl_points
 
-    pts = _pwl_points(
+    pts, n_edges = _pwl_points(
         TL_BLINK['pins']['13']['edges'], 1000.0, 5.0)
     assert pts[0] == (0.0, 0.0)          # pins float at boot → 0 V
     assert (100.0, 5.0) in pts and (200.0, 0.0) in pts
     # Tail: flat at the last level, past the last edge, within the window+1ms.
     tail = pts[-1]
     assert tail[1] == 0.0 and tail[0] >= 1000.0
+    assert n_edges == 4
+
+
+def test_pwl_points_edge_at_t_zero_replaces_boot_point():
+    """An edge at exactly t=0 must not stack a second point at t=0 —
+    the boot point becomes (0, v) and the edge count stays 1."""
+    from app.services.tools.firmware_tools import _pwl_points
+
+    pts, n_edges = _pwl_points([{'t': 0.0, 'to': 1}], 100.0, 5.0)
+    assert pts[0] == (0.0, 5.0)
+    assert len([p for p in pts if p[0] == 0.0]) == 1
+    assert n_edges == 1
+    # Flat tail pins the high level to the window end.
+    assert pts[-1] == (100.0, 5.0)
 
 
 def test_firmware_stimulus_validates_timeline(tmp_path):
@@ -1335,6 +1349,19 @@ def test_vcd_parse_value_at_boundary_semantics(tmp_path):
     # t=45000: after the last rx change (#20000) — still high.
     assert vals['45000']['rx'] == '1'
 
+    # Query order must never matter: a descending/duplicated at= list
+    # returns the same per-tick values as the ascending one (the snapshots
+    # are re-keyed by tick, not zipped against the caller's order).
+    r_desc = ht.vcd_parse(
+        str(p), at=['45000', '5000', '4000', '4000', '500', '0'],
+        workspace=str(tmp_path),
+    )
+    assert r_desc['values']['45000']['rx'] == vals['45000']['rx']
+    assert r_desc['values']['5000']['rx'] == vals['5000']['rx']
+    assert r_desc['values']['4000']['rx'] == vals['4000']['rx']
+    assert r_desc['values']['500']['rx'] == vals['500']['rx']
+    assert r_desc['values']['0']['rx'] == vals['0']['rx']
+
 
 def test_vcd_parse_uart_decode(tmp_path):
     from app.services.tools import hdl_tools as ht
@@ -1395,6 +1422,27 @@ def test_cocotb_verdict_parser_and_junit():
     # Noise (running/start lines) never produces verdicts.
     assert ht._parse_cocotb_results(
         'running test_blink (1/3)\n0.00ns INFO start') == []
+
+    # XML escaping: quotes/angle brackets in test + suite names must not
+    # break the XML (name attribute is escaped, not just failReason).
+    weird = [
+        {'passed': True, 'skipped': False, 'simTimeNs': 1.0, 'name': 'a"b<c>'},
+        {'passed': False, 'skipped': False, 'simTimeNs': 2.0,
+         'name': 'x&y', 'failReason': 'assert "<bad>" & failed'},
+    ]
+    xml = ht._junit_xml(weird, 'su"ite')
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(xml)  # noqa: S314 — self-constructed string from the line above
+    assert root.get('name') == 'su"ite'
+    assert root[0].get('name') == 'a"b<c>'
+    assert root[1][0].get('message') == 'assert "<bad>" & failed'
+
+    # SKIP is not a failure: a run whose only non-PASS verdict is a SKIP
+    # still counts as ok (mirrors the hdl_test ok computation).
+    skip_run = [{'passed': False, 'skipped': True, 'simTimeNs': 0.0, 'name': 't_skip'}]
+    assert not any(
+        not v['passed'] and not v.get('skipped') for v in skip_run)
 
 
 def test_hdl_test_degrades_without_cocotb():

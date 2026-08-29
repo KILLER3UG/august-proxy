@@ -283,7 +283,6 @@ def _parse_sim_asserts(text: str) -> list[dict[str, object]]:
 async def hdl_simulate(
     source: str,
     top: str = '',
-    timeout_ms: object = None,
     name: str = 'sim',
     workspace: str = '',
     session: object | None = None,
@@ -438,9 +437,15 @@ def vcd_parse(
                 except ValueError:
                     pass
     if at_times:
+        # _vcd_states_at walks the file in sorted time order; re-key each
+        # snapshot by its tick so the caller's at= order never matters.
         states = _vcd_states_at(text, summary, [t for t, _ in at_times])
-        for (t, label), state in zip(at_times, states):
-            queries[label] = state
+        by_tick: dict[float, dict[str, object]] = {}
+        tick_seq = sorted({t for t, _ in at_times})
+        for tick, state in zip(tick_seq, states):
+            by_tick[tick] = state
+        for t, label in at_times:
+            queries[label] = by_tick[t]
 
     result: dict[str, object] = dict(summary)
     if queries:
@@ -538,7 +543,11 @@ def _vcd_states_at(
 ) -> list[dict[str, object]]:
     """Snapshot of every scalar signal's value at each requested tick time
     (changes listed after a #T marker are IN effect at T, per the VCD spec's
-    change-after-marker ordering)."""
+    change-after-marker ordering).
+
+    Returns snapshots in sorted tick order — callers must re-key by tick
+    (``vcd_parse`` does), never zip against their original query order.
+    """
     ids: dict[str, str] = {}
     for seg in re.finditer(r'\$var\s+\w+\s+(\d+)\s+(\S+)\s+([\w.\[\]/]+)', text):
         ids[seg.group(2)] = seg.group(3)
@@ -546,7 +555,7 @@ def _vcd_states_at(
     idx = 0
     t = 0.0
     prev: dict[str, object] = {}
-    times = sorted(tick_times)
+    times = sorted(set(tick_times))
 
     def _snap() -> dict[str, object]:
         return {ids.get(k, k): v for k, v in prev.items()}
@@ -626,7 +635,8 @@ def uart_decode(
     if not lows:
         return None
     bit_w = min(lows)
-    # Reject when the min LOW is >10× shorter than the median (glitch noise).
+    # Reject when the min LOW is <1/8 the median (glitch noise — a real
+    # start bit is never 8× narrower than the typical LOW interval).
     sorted_lows = sorted(lows)
     median_low = sorted_lows[len(sorted_lows) // 2]
     if median_low > 0 and bit_w < median_low / 8:
@@ -720,24 +730,26 @@ def _junit_xml(verdicts: list[dict[str, object]], name: str) -> str:
         raw = v.get('simTimeNs', 0)
         return float(raw) if isinstance(raw, (int, float)) else 0.0
 
+    def _esc(s: str) -> str:
+        return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+
     total = len(verdicts)
     failed = sum(1 for v in verdicts if not v.get('passed'))
     ts = _dt.datetime.now(_dt.UTC).isoformat()
     head = (
-        f'<testsuite name="{name}" tests="{total}" failures="{failed}" '
+        f'<testsuite name="{_esc(name)}" tests="{total}" failures="{failed}" '
         f'time="{sum(_ns(v) for v in verdicts):.1f}" '
         f'timestamp="{ts}">'
     )
     body = []
     for v in verdicts:
-        tname = str(v.get('name', 'test'))
+        tname = _esc(str(v.get('name', 'test')))
         if v.get('passed'):
             body.append(
                 f'<testcase classname="cocotb" name="{tname}" '
                 f'time="{_ns(v):.1f}"/>')
         else:
-            msg = str(v.get('failReason') or 'assertion failed')
-            msg = msg.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            msg = _esc(str(v.get('failReason') or 'assertion failed'))
             body.append(
                 f'<testcase classname="cocotb" name="{tname}" '
                 f'time="{_ns(v):.1f}">'
@@ -863,7 +875,14 @@ async def hdl_test(
         elif ghdl is not None:
             engine_name = 'ghdl'
         else:
-            engine_name = 'iverilog'  # vhdl-only sources but only iverilog exists
+            # VHDL sources but only iverilog exists — iverilog cannot
+            # compile VHDL; degrade to guidance instead of a confusing
+            # compiler error wall.
+            return {
+                'installed': False,
+                'error': 'VHDL sources need GHDL for cocotb runs, but only '
+                         f'Icarus Verilog was found. {_GHDL_INSTALL_HINT}',
+            }
         first_hdl = hdl_paths[0]
         top_name = (top or '').strip() or first_hdl.stem
 
@@ -888,9 +907,13 @@ async def hdl_test(
         run_py.write_text(runner_script, encoding='utf-8')
         rc, out = await _run([sys.executable, str(run_py)], 120.0, cwd=tmpdir)
         verdicts = _parse_cocotb_results(out)
+        # SKIP is not a failure — ok means "no test failed" (a skipped
+        # test neither passes nor breaks the run).
         result: dict[str, object] = {
             'installed': True,
-            'ok': rc == 0 and all(v['passed'] for v in verdicts) if verdicts else rc == 0,
+            'ok': rc == 0 and not any(
+                not v['passed'] and not v.get('skipped') for v in verdicts
+            ) if verdicts else rc == 0,
             'exitCode': rc,
             'engine': engine_name,
             'top': top_name,

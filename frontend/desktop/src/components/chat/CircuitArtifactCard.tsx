@@ -9,12 +9,13 @@ import { Cpu, FileText, Image as ImageIcon, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { openRightDrawerFile, addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { ChatAttachmentService } from '@/sections/chat/services/ChatAttachmentService';
+import { revealInFolder } from '@/lib/tauri-shell';
 import type { MessageBlock } from '@/types/chat';
 
 interface CircuitDeliverable {
   path: string;
   label: string;
-  kind: 'schematic' | 'board3d' | 'netlist' | 'simulation';
+  kind: 'schematic' | 'board3d' | 'netlist' | 'simulation' | 'waveform' | 'firmware';
   detail: string;
 }
 
@@ -22,8 +23,10 @@ const NETLIST_EXT = /\.(cir|net|ckt|sp)$/i;
 
 function kindOf(path: string): CircuitDeliverable['kind'] {
   if (NETLIST_EXT.test(path)) return 'netlist';
-  if (/3d|board/i.test(path)) return 'board3d';
-  if (/_sim\b|sim\.txt|\.csv$/i.test(path)) return 'simulation';
+  if (/\.vcd$/i.test(path)) return 'waveform';
+  if (/\.hex$/i.test(path)) return 'firmware';
+  if (/\.glb$|3d|board/i.test(path)) return 'board3d';
+  if (/_sim\b|sim\.txt|\.csv$|\.xml$/i.test(path)) return 'simulation';
   return 'schematic';
 }
 
@@ -32,9 +35,15 @@ const KIND_ICON = {
   board3d: Cpu,
   netlist: FileText,
   simulation: Activity,
+  waveform: Activity,
+  firmware: Cpu,
 } as const;
 
-/** Derive circuit deliverables from the turn's circuit_* tool blocks. */
+const CIRCUIT_TOOLS = /^(circuit_|firmware_|hdl_|vcd_parse|fpga_compile|kicad_)/i;
+// Bitstreams and 3D models have no inline renderer (see RightDrawerCircuitSection).
+const BINARY_ARTIFACT_EXT = /\.(sof|pof|glb|uf2)$/i;
+
+/** Derive circuit deliverables from the turn's circuit-family tool blocks. */
 export function collectCircuitDeliverables(blocks?: MessageBlock[] | null): CircuitDeliverable[] {
   if (!blocks) return [];
   const seen = new Set<string>();
@@ -42,7 +51,7 @@ export function collectCircuitDeliverables(blocks?: MessageBlock[] | null): Circ
   for (const block of blocks) {
     if (block.type !== 'toolCall' || !block.tool) continue;
     const name = block.tool.name || '';
-    if (!/^circuit_/i.test(name)) continue;
+    if (!CIRCUIT_TOOLS.test(name)) continue;
     let parsed: Record<string, unknown> = {};
     try {
       parsed = JSON.parse(block.tool.context || '{}') as Record<string, unknown>;
@@ -52,6 +61,12 @@ export function collectCircuitDeliverables(blocks?: MessageBlock[] | null): Circ
     const path =
       firstString(parsed.path) ??
       firstString(parsed.savedTo) ??
+      firstString(parsed.hexFile) ??
+      firstString(parsed.waveFile) ??
+      firstString(parsed.sofFile) ??
+      firstString(parsed.svgFile) ??
+      firstString(parsed.junitFile) ??
+      firstString(parsed.renderedFile) ??
       null;
     if (!path) continue;
     const key = path.replace(/\\/g, '/');
@@ -69,7 +84,11 @@ export function collectCircuitDeliverables(blocks?: MessageBlock[] | null): Circ
             ? `${parsed.componentCount ?? '?'} components`
             : kind === 'netlist'
               ? `${parsed.lines ?? '?'} lines · SPICE`
-              : 'schemdraw render',
+              : kind === 'waveform'
+                ? `${parsed.durationSec != null ? `${parsed.durationSec} s · ` : ''}VCD capture`
+                : kind === 'firmware'
+                  ? 'AVR firmware · HEX'
+                  : 'schemdraw render',
     });
   }
   return out;
@@ -85,13 +104,18 @@ export function CircuitArtifactCard({ blocks }: { blocks?: MessageBlock[] | null
 
   const open = async (path: string) => {
     try {
-      if (NETLIST_EXT.test(path)) {
-        // Netlists read best as text → straight to the file viewer.
-        const attachment = await ChatAttachmentService.fromPath(path);
-        if (attachment) openRightDrawerFile(attachment);
+      if (/\.vcd$/i.test(path)) {
+        // Waveforms belong in the Circuit panel's embedded viewer.
+        addRightDrawerSection('circuit');
         return;
       }
-      // Images (schematic/3D/simulation plots) open the file viewer too;
+      if (BINARY_ARTIFACT_EXT.test(path)) {
+        // Bitstreams/3D models have no inline renderer — show them in
+        // the file manager instead of mojibake.
+        await revealInFolder(path);
+        return;
+      }
+      // Netlists, images, HEX, reports open the file viewer as text/preview;
       // the Circuit panel stays one click away via "Open workbench".
       const attachment = await ChatAttachmentService.fromPath(path);
       if (attachment) openRightDrawerFile(attachment);

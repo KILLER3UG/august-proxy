@@ -806,16 +806,50 @@ def test_golden_firmware_run_blink_serial_and_pins(tmp_path):
     assert '13' in tl.read_text(encoding='utf-8')
 
 
-def test_golden_firmware_run_fail_assertion(tmp_path):
-    """failText present in serial → assertionsOk False."""
+def test_golden_sidecar_mode_change_is_not_an_edge(tmp_path):
+    """pinMode(13, OUTPUT) with no level change must not count as an edge.
+
+    The sidecar keys its edge detection on the electrical LEVEL only — a
+    DDR transition alone (input hi-Z LOW → output LOW) is not a toggle and
+    must not seed a phantom PWL step into firmware_stimulus.
+    """
     import asyncio
 
     from app.services.tools import firmware_tools as ft
 
-    if ft._resolve_arduino_cli() is None:
-        pytest.skip('arduino-cli not installed')
     if ft._resolve_node() is None or not ft._sidecar_ready():
         pytest.skip('Node sidecar not available')
+
+    def _hex_line(addr, data):
+        rec = bytes([len(data), (addr >> 8) & 0xFF, addr & 0xFF, 0x00]) + bytes(data)
+        ck = (-sum(rec)) & 0xFF
+        return ':' + rec.hex().upper() + f'{ck:02X}'
+
+    # ATmega328P machine code at address 0 (little-endian words):
+    #   sbi 0x04, 5  ; DDRB bit 5 = 1 — pinMode(13, OUTPUT)
+    #   rjmp .       ; idle loop forever
+    # PORTB is never written, so pin 13's level stays LOW throughout.
+    code = [0x9A25, 0xCFFF]
+    data = []
+    for w in code:
+        data += [w & 0xFF, (w >> 8) & 0xFF]
+    hex_text = '\n'.join([
+        _hex_line(0x0000, data),
+        ':00000001FF',  # EOF
+    ])
+    hex_file = tmp_path / 'ddronly.hex'
+    hex_file.write_text(hex_text, encoding='utf-8')
+
+    run = asyncio.run(ft.firmware_run(
+        str(hex_file), ms=100, pins=[13], workspace=str(tmp_path)))
+    assert run.get('ok') is True, run
+    # The mode flip alone produced ZERO edges on pin 13.
+    t13 = run['toggles'].get('13')
+    assert t13 is not None, run.get('toggles')
+    assert t13['count'] == 0, t13
+    assert t13['edges'] == []
+    # Final state: output mode, level LOW.
+    assert run['pins']['13'] == {'mode': 'out', 'level': 0}
 
     sketch = (
         'void setup() { Serial.begin(9600); }\n'

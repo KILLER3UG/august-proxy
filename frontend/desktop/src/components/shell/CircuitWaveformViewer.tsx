@@ -95,26 +95,37 @@ export function CircuitWaveformViewer({
 
   // Boot the surfer iframe once and LoadUrl the active waveform whenever
   // it changes. The iframe is same-URL always; only the postMessage load
-  // differs — no reload flashes between files.
+  // differs — no reload flashes between files. The hosted app needs a
+  // moment to boot its WASM before it registers the message listener, so
+  // re-send LoadUrl a few times — a dropped early message (listener not
+  // yet up) is otherwise indistinguishable from a slow load, and repeated
+  // commands are ignored by the listener.
   useEffect(() => {
     if (!activePath || !srcDocReady) return;
     let cancelled = false;
     void (async () => {
       const url = await rawFileUrl(activePath, sessionId);
       if (cancelled) return;
-      iframeRef.current?.contentWindow?.postMessage(
-        { command: 'LoadUrl', url },
-        SURFER_URL,
-      );
+      const send = () =>
+        iframeRef.current?.contentWindow?.postMessage(
+          { command: 'LoadUrl', url },
+          SURFER_URL,
+        );
+      send();
+      // Re-send at 2s/5s/10s — cheap, idempotent, covers cold WASM boots.
+      for (const delay of [2000, 5000, 10000]) {
+        await new Promise((r) => setTimeout(r, delay));
+        if (cancelled) return;
+        send();
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [activePath, srcDocReady, sessionId]);
 
-  // The hosted app needs a moment to boot its WASM before it registers
-  // the message listener; a fixed grace delay is the pragmatic minimum.
-  // Retries are cheap: an unknown command is ignored by the listener.
+  // Grace period before the first LoadUrl: the WASM build needs a moment
+  // to register its message listener.
   useEffect(() => {
     if (srcDocReady) return;
     const t = setTimeout(() => setSrcDocReady(true), 3000);

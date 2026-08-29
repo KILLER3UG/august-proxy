@@ -141,7 +141,11 @@ try {
     for (const p of pinsToTrack) {
       const st = readPin(cpu, p);
       if (!st) continue;
-      const key = `${st.mode}:${st.level}`;
+      // Track the electrical LEVEL only. Mode (DDR) transitions are not
+      // edges — pinMode(13, OUTPUT) with no level change must not feed a
+      // phantom PWL step into the firmware→SPICE bridge. When a mode flip
+      // genuinely changes the driven level, that level change IS the edge.
+      const key = st.level;
       if (prevLevel[p] !== undefined && prevLevel[p] !== key) {
         const t = toggles[p];
         t.count += 1;

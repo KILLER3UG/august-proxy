@@ -482,6 +482,11 @@ async def firmware_run(
                     encoding='utf-8',
                 )
                 result['timelineFile'] = str(tl_path)
+            # The sidecar echoes the staged temp hex path for inline-HEX
+            # runs; the workspace artifact contract stays clean of temp
+            # dirs, so only keep it when it points at the caller's file.
+            if isinstance(result.get('hexFile'), str) and not hex_path:
+                result.pop('hexFile')
             result['installed'] = True
             return result
         return {
@@ -504,8 +509,8 @@ _BOARD_LOGIC_LEVELS = {
 
 def _pwl_points(
     edges: list[object], simulated_ms: float, level: float,
-) -> list[tuple[float, float]]:
-    """Pin edges → PWL (time, voltage) pairs.
+) -> tuple[list[tuple[float, float]], int]:
+    """Pin edges → (PWL (time, voltage) pairs, real edge count).
 
     The firmware boots with pins floating (0 V in SPICE terms), so the
     sequence starts at (0, 0). Each recorded edge ``{t, to}`` becomes a
@@ -516,6 +521,7 @@ def _pwl_points(
     pts: list[tuple[float, float]] = [(0.0, 0.0)]
     last_t = 0.0
     last_v = 0.0
+    real_edges = 0
     for e in edges:
         if not isinstance(e, dict):
             continue
@@ -527,15 +533,23 @@ def _pwl_points(
         if not isinstance(to, bool) and not isinstance(to, (int, float)):
             continue
         v = level if to else 0.0
-        # Collapse identical-level points at the same timestamp.
-        if abs(t - last_t) < 1e-9 and abs(v - last_v) < 1e-12:
-            continue
         if t < last_t:
             t = last_t  # never time-travel; sidecar emits monotonic edges
+        # Same timestamp as the previous point: REPLACE its voltage instead
+        # of stacking a second point at t (an edge at t=0 means the pin was
+        # driven from the very first cycle — the boot point becomes (0, v)).
+        if abs(t - last_t) < 1e-9:
+            if abs(v - last_v) < 1e-12:
+                continue
+            pts[-1] = (t, v)
+            last_v = v
+            real_edges += 1
+            continue
         pts.append((t, v))
         last_t, last_v = t, v
+        real_edges += 1
     pts.append((max(simulated_ms, last_t + 1.0), last_v))
-    return pts
+    return pts, real_edges
 
 
 def firmware_stimulus(
@@ -615,12 +629,12 @@ def firmware_stimulus(
         edges = t.get('edges') or []
         if not edges:
             continue
-        pts = _pwl_points(edges, simulated_ms, level)
+        pts, real_edges = _pwl_points(edges, simulated_ms, level)
         pairs = ' '.join(f'{t_ * 1e-3:.6g}s {v:.4g}' for t_, v in pts)
         cards.append(f'Vp{pin} N{pin} 0 PWL({pairs})')
         used_pins[str(pin)] = {
             'count': t.get('count'),
-            'edges': len(pts) - 2,  # minus the (0,0) boot point and flat tail
+            'edges': real_edges,
         }
 
     if not cards:

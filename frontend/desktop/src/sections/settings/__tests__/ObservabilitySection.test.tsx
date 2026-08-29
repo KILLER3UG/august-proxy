@@ -21,7 +21,7 @@ const mockUsage = {
     activeDays: 0,
     currentStreak: 0,
     favoriteModel: 'MiniMax-M3',
-    favoriteModelShare: 0.42,
+    favoriteModelShare: 42, // percent 0-100 (backend /api/usage/stats contract)
     at: new Date().toISOString()
 };
 
