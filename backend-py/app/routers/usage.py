@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -98,7 +98,20 @@ def get_usage_stats(range: str = Query("30d")) -> dict[str, Any]:
             current_streak += 1
             check_day -= timedelta(days=1)
 
-    longest_streak = max(active_days, current_streak)
+    # Longest consecutive run of active days within the range — not the
+    # distinct-day count (active_days = N distinct days, longest_streak =
+    # the longest back-to-back run among them).
+    longest_streak = 0
+    run = 0
+    prev_day: date | None = None
+    for day_str in sorted(active_dates):
+        d = datetime.strptime(day_str, '%Y-%m-%d').date()
+        if prev_day is not None and (d - prev_day).days == 1:
+            run += 1
+        else:
+            run = 1
+        longest_streak = max(longest_streak, run)
+        prev_day = d
 
     # Favorite model in this range
     fav_row = conn.execute(

@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { usageApi, type UsageRange } from '@/api/usage';
-import { WorkspaceHeatmap } from '@/components/workspace/WorkspaceHeatmap';
+import { WorkspaceHeatmap, type ActivityMode } from '@/components/workspace/WorkspaceHeatmap';
 import { WorkspaceTrendChart } from '@/components/workspace/WorkspaceTrendChart';
 import { WorkspaceDonut } from '@/components/workspace/WorkspaceDonut';
 import { cn } from '@/lib/utils';
@@ -16,8 +16,6 @@ const RANGES: { key: UsageRange; label: string }[] = [
   { key: '7d', label: 'Last 7 days' },
   { key: '30d', label: 'Last 30 days' },
 ];
-
-type ActivityMode = 'daily' | 'weekly' | 'cumulative';
 
 function formatShortTokens(tokens: number): string {
   if (tokens >= 1_000_000_000) {
@@ -146,7 +144,7 @@ export function WorkspaceUsageSection() {
             ))}
           </div>
         </div>
-        <WorkspaceHeatmap cells={rawHeatmap} />
+        <WorkspaceHeatmap cells={rawHeatmap} activityMode={activityMode} />
       </div>
 
       {/* Time Range Selector */}

@@ -312,11 +312,11 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'model-fleet': ModelFleetWrapper,
   'model-live': ModelLiveWrapper,
   'model-quotas': ModelQuotasWrapper,
-  'browser-use': ComputerUseWrapper,
-  subagents: AgentsAutomationWrapper,
-  plugins: ToolsConnectionsWrapper,
-  hooks: FeatureFlowWrapper,
-  indexing: PrivacyWrapper,
+  // browser-use / subagents / plugins / hooks / indexing intentionally
+  // fall through to SettingsStub: the registry entries exist for the IA,
+  // but their real pages are not built yet. Rendering a *different*
+  // feature's page (Computer Use, MCP, Privacy, ...) under these ids
+  // misleads users searching for what the section title promises.
   account: AccountWrapper,
   general: GeneralWrapper,
   appearance: AppearanceWrapper,

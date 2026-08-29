@@ -972,12 +972,26 @@ def buildSystemPrompt(
             ]
             # Boot index (B3): name-only list of the most recent facts/events so the
             # model pulls relevant memory by name instead of blind-scanning tables.
-            try:
-                from app.services.memory_store import brain_index_snippet as _brain_index
+            # Frozen per session: this block sits near the TOP of the prompt, so a
+            # fresh read each turn (new timeline rows land after every completed
+            # turn) would change those bytes and invalidate the provider's
+            # entire prefix cache — the "chat feels slow" regression. Fresh
+            # memory still reaches the model two ways: the per-turn <memory>
+            # tail block (byte-stable system prompt, appended to the latest
+            # user message) and brain_query on demand.
+            frozen = getattr(session, '_frozen_mem_index', None)
+            if frozen is None:
+                try:
+                    from app.services.memory_store import brain_index_snippet as _brain_index
 
-                memIdx = _brain_index().strip()
-            except Exception:
-                memIdx = ''
+                    frozen = _brain_index().strip()
+                except Exception:
+                    frozen = ''
+                try:
+                    session._frozen_mem_index = frozen
+                except Exception:
+                    pass
+            memIdx = frozen
             if memIdx:
                 memParts.append('  Memory index (names only — brain_query to read one):')
                 for ln in memIdx.splitlines():

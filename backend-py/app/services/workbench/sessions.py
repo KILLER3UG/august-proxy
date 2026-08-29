@@ -121,6 +121,13 @@ class WorkbenchSession:
     # the BM25 memory pass — the turn-end usage scan credits any the assistant
     # echoed back. Set at injection, cleared at the turn-end scan.
     _injected_facts: list[tuple[str, str]] = field(default_factory=list)
+    # Frozen memory-index text from the session's first buildSystemPrompt()
+    # call. The index rides near the TOP of the system prompt, so re-reading
+    # it each turn would shift those bytes every time a timeline row lands
+    # and invalidate the provider's whole prompt-prefix cache. Once frozen
+    # the intake index stays byte-stable for the session's lifetime; new
+    # sessions pick up fresh memory on their first turn.
+    _frozen_mem_index: str | None = None
 
     def toDict(self) -> dict[str, object]:
         return {

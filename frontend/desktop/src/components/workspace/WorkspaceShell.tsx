@@ -39,10 +39,10 @@ export interface WorkspaceSectionMeta {
 }
 
 /** Map of category id → lucide icon for the rail group header.
- *  3 header groups (2026-08-28 restructure): Settings / Agent
+ *  3 header groups (2026-08-28 restructure): Basics / Agent
  *  Capabilities / Data & Statistics. */
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  settings: Settings2,
+  basics: Settings2,
   capabilities: BrainCircuit,
   data: LineChart,
 };
