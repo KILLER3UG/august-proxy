@@ -26,6 +26,8 @@ def _mode() -> str:
 @router.post('/run')
 async def runCurator(dryRun: bool = False):
     """One skill-learning pass. Never runs inside a live turn."""
+    import asyncio
+
     mode = _mode()
     if mode == 'off':
         raise HTTPException(status_code=409, detail='skillLearning is off')
@@ -33,9 +35,15 @@ async def runCurator(dryRun: bool = False):
     from app.services.episode_miner import mine_sessions, run_resolution_check
     from app.services.skill_distiller import run_distiller_pass
 
-    mined = mine_sessions()
-    distiller = run_distiller_pass(dryRun=dryRun)
-    resolution = {} if dryRun else run_resolution_check()
+    def syncPass() -> tuple[dict, dict, dict]:
+        mined = mine_sessions()
+        distiller = run_distiller_pass(dryRun=dryRun)
+        resolution = {} if dryRun else run_resolution_check()
+        return mined, distiller, resolution
+
+    # §12 F-4: mining + judging are multi-second synchronous work — run
+    # them off the event loop so the API stays responsive.
+    mined, distiller, resolution = await asyncio.to_thread(syncPass)
     return {
         'ok': True,
         'mode': mode,
@@ -59,7 +67,11 @@ def _skillStatusReport() -> dict[str, object]:
     archived: list[str] = []
     active = 0
     for s in skills:
-        status = str(s.get('status', '') or '')
+        # §12 F-9: _parseSkill nests unrecognized frontmatter (incl. the
+        # status: field) under 'meta' — a top-level read was always ''.
+        metaRaw = s.get('meta')
+        meta = metaRaw if isinstance(metaRaw, dict) else {}
+        status = str(s.get('status') or meta.get('status') or '')
         name = str(s.get('name', ''))
         if status == 'stale':
             staled.append(name)
@@ -80,18 +92,24 @@ async def flaggedEpisodes(limit: int = 20):
 
     out: list[dict[str, object]] = []
     for ep in flagged_episodes(limit=min(50, max(1, limit))):
+        # §12 F-3: the tier-1 rubric lives in tier1_result; judge_verdict
+        # holds only the real tier-2 model verdict.
+        rubricRaw = str(ep.get('tier1_result') or '')
         verdictRaw = str(ep.get('judge_verdict') or '')
         rubric: dict[str, object] = {}
         judged = None
         try:
-            parsed = _json.loads(verdictRaw) if verdictRaw else {}
+            parsed = _json.loads(rubricRaw) if rubricRaw else {}
             if isinstance(parsed.get('tier1'), dict):
                 rubric = parsed['tier1'].get('subscores', {})
                 rubric = {'score': parsed['tier1'].get('score'), **rubric}
-            elif parsed:
-                judged = parsed
         except Exception:
             pass
+        try:
+            parsedVerdict = _json.loads(verdictRaw) if verdictRaw else {}
+            judged = parsedVerdict or None
+        except Exception:
+            judged = None
         out.append(
             {
                 'id': ep.get('id'),

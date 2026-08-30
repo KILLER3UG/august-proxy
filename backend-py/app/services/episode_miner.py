@@ -73,7 +73,14 @@ _TOOL_ERROR_RE = re.compile(
 
 
 def _messageText(content: object) -> str:
-    """Flatten a stored message content (string or block list) to text."""
+    """Flatten a stored message content to text.
+
+    §12 F-1: the workbench persistence path stores assistant/tool messages
+    as JSON DICTS (``{"content": ..., "tool_calls": [...]}`` —
+    memory_store/sessions.py) and tool results as role='tool' dicts. The
+    old flatten handled str + block-list only, so every dict-shaped message
+    read as empty and the miner mined nothing from real transcripts.
+    """
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -82,39 +89,108 @@ def _messageText(content: object) -> str:
             if isinstance(block, dict) and isinstance(block.get('text'), str):
                 parts.append(str(block['text']))
         return '\n'.join(parts)
+    if isinstance(content, dict):
+        parts = []
+        inner = content.get('content')
+        if isinstance(inner, str):
+            parts.append(inner)
+        elif inner:
+            parts.append(_messageText(inner))
+        for tc in content.get('tool_calls') or []:
+            if not isinstance(tc, dict):
+                continue
+            fnRaw = tc.get('function')
+            fn = fnRaw if isinstance(fnRaw, dict) else {}
+            name = str(fn.get('name') or tc.get('name') or '')
+            args = str(fn.get('arguments') or tc.get('input') or '')
+            if name:
+                parts.append(f'{name} {args[:200]}'.strip())
+        return '\n'.join(p for p in parts if p)
     return ''
+
+
+def _loadContent(raw: object) -> object:
+    """Parse a stored content column; raw text passes through (§12 F-2 —
+    the app itself writes non-JSON rows, e.g. [Proxy Self-Heal] nudges)."""
+    s = str(raw if raw is not None else '')
+    if not s:
+        return ''
+    try:
+        return json.loads(s)
+    except Exception:
+        return s
+
+
+# §12 F-11: machine-injected user-role blocks (harness plumbing, not the
+# human talking). Mining them as corrections/rescues/abandons is noise.
+_INJECTION_PREFIXES = (
+    '[SUBAGENT RESULTS',
+    '[SUBAGENT_COMPLETE',
+    '[Proxy Self-Heal]',
+    '[SYSTEM:',
+    '[SYSTEM_INJECTION',
+    '<memory_nudge',
+)
+
+
+def _isMachineInjected(text: str) -> bool:
+    stripped = text.lstrip()
+    return any(stripped.startswith(p) for p in _INJECTION_PREFIXES)
 
 
 # ── window extraction (Phase A) ─────────────────────────────────────────
 
 
 def _extractEvents(role: str, text: str) -> list[dict[str, str]]:
-    """Typed events observable in one stored message."""
+    """Typed events observable in one stored message.
+
+    §12 F-1: tool-role messages are where error receipts actually live in
+    real transcripts (assistant-role hits are rare — the model narrates,
+    the tool result carries the failure). Both roles are scanned now.
+    """
     events: list[dict[str, str]] = []
     stripped = text.strip()
     if not stripped:
         return events
-    if role == 'assistant' and _TOOL_ERROR_RE.search(stripped):
+    if role in ('assistant', 'tool') and _TOOL_ERROR_RE.search(stripped):
         events.append(
             {
                 'type': 'tool_error',
                 'excerpt': stripped[:_MAX_EXCERPT],
             }
         )
-    if role == 'user' and _CORRECTION_RE.search(stripped):
+    if role != 'user' or _isMachineInjected(stripped):
+        # §12 F-11: harness-injected user-role blocks are not human speech.
+        return events
+    if _CORRECTION_RE.search(stripped):
         events.append({'type': 'user_correction', 'excerpt': stripped[:_MAX_EXCERPT]})
-    if role == 'user' and _RESCUE_RE.search(stripped):
+    if _RESCUE_RE.search(stripped):
         events.append({'type': 'user_rescue', 'excerpt': stripped[:_MAX_EXCERPT]})
-    if role == 'user' and _ABANDON_RE.search(stripped):
+    if _ABANDON_RE.search(stripped):
         events.append({'type': 'abandoned_approach', 'excerpt': stripped[:_MAX_EXCERPT]})
     return events
+
+
+def _innerText(content: object) -> str:
+    """The assistant's own prose only (tool-call payloads excluded) — used
+    to decide whether a message is a CLEAN continuation of the turn."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, dict):
+        inner = content.get('content')
+        return inner.strip() if isinstance(inner, str) else ''
+    if isinstance(content, list):
+        return '\n'.join(
+            str(b.get('text')) for b in content if isinstance(b, dict) and isinstance(b.get('text'), str)
+        ).strip()
+    return ''
 
 
 def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
     """Mine one session's stored transcript into episode windows.
 
     Three window shapes (plan §3.1):
-      * failure_recovery  — assistant error → later clean continuation
+      * failure_recovery  — tool/assistant error → later clean continuation
         (resolved), user rescue (rescued), or session end (unresolved)
       * correction_accepted — user correction → assistant reply with no
         immediate re-correction
@@ -124,9 +200,14 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
         'SELECT id, role, content FROM messages WHERE session_id = ? ORDER BY id',
         (sessionId,),
     ).fetchall()
+    # §12 F-2: content is parsed defensively — raw-text rows are real
+    # (sessions.py stores str payloads verbatim) and must never abort mining.
+    parsed = [_loadContent(r['content']) for r in rows]
     msgs: list[tuple[int, str, str]] = [
-        (int(r['id']), str(r['role']), _messageText(json.loads(str(r['content']))))
-        for r in rows
+        (int(r['id']), str(r['role']), _messageText(p)) for r, p in zip(rows, parsed)
+    ]
+    clean: list[bool] = [
+        bool(_innerText(p)) and not _TOOL_ERROR_RE.search(_innerText(p)) for p in parsed
     ]
     episodes: list[dict[str, Any]] = []
     n = len(msgs)
@@ -135,22 +216,23 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
         if not events:
             continue
         kinds = {e['type'] for e in events}
-        if role == 'assistant' and 'tool_error' in kinds:
-            # failure_recovery: scan forward to the first clean assistant
-            # message after user traffic, or a rescue marker.
+        if role in ('assistant', 'tool') and 'tool_error' in kinds:
+            # failure_recovery: scan forward to the first assistant message
+            # carrying real prose (a tool-call-only retry is NOT recovery),
+            # or a rescue marker.
             outcome = 'unresolved'
             end = mid
             for j in range(i + 1, n):
                 _, r2, t2 = msgs[j]
-                if r2 == 'user' and _RESCUE_RE.search(t2):
+                if r2 == 'user' and _RESCUE_RE.search(t2) and not _isMachineInjected(t2):
                     outcome = 'rescued'
                     end = msgs[j][0]
                     break
-                if r2 == 'assistant' and not _TOOL_ERROR_RE.search(t2):
+                if r2 == 'assistant' and clean[j]:
                     outcome = 'resolved'
                     end = msgs[j][0]
                     break
-                if r2 == 'user' and _ABANDON_RE.search(t2):
+                if r2 == 'user' and _ABANDON_RE.search(t2) and not _isMachineInjected(t2):
                     outcome = 'unresolved'
                     end = msgs[j][0]
                     break
@@ -170,7 +252,7 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
             reCorrections = sum(
                 1
                 for _, r2, t2 in msgs[i + 1 : i + 6]
-                if r2 == 'user' and _CORRECTION_RE.search(t2)
+                if r2 == 'user' and not _isMachineInjected(t2) and _CORRECTION_RE.search(t2)
             )
             episodes.append(
                 {
@@ -328,18 +410,60 @@ def save_episode(episode: dict[str, Any]) -> int:
     return int(as_int(cur.lastrowid, 0))
 
 
+def _episodeExists(episode: dict[str, Any]) -> bool:
+    """True when the (session, window, kind) episode is already stored —
+    §12 F-6: re-mining the same window must not re-upsert its fingerprint
+    (every 24h pass was inflating episode_count and bumping last_seen,
+    faking recurrence and churning resolution state)."""
+    return (
+        _conn()
+        .execute(
+            'SELECT 1 FROM episodes WHERE session_id = ? AND start_message_id = ? AND kind = ?',
+            (
+                str(episode.get('session_id', '')),
+                int(episode.get('start_message_id', 0)),
+                str(episode.get('kind', '')),
+            ),
+        )
+        .fetchone()
+        is not None
+    )
+
+
+def _existingFingerprintTexts(limit: int = 25) -> list[tuple[str, str]]:
+    """(fingerprint, excerpt-text) pairs for paraphrase dedupe, rebuilt from
+    the episodes table. §12 F-6 (related): record_episode used to read a
+    nonexistent ``last_excerpt`` column, so only the token-containment
+    dedupe lane ever ran."""
+    out: list[tuple[str, str]] = []
+    for r in _conn().execute(
+        """
+        SELECT fingerprint_id, events FROM episodes
+        WHERE fingerprint_id != ''
+        GROUP BY fingerprint_id HAVING MAX(id)
+        ORDER BY MAX(id) DESC LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall():
+        try:
+            events = json.loads(str(r['events']))
+        except Exception:
+            events = []
+        out.append((str(r['fingerprint_id']), _episodeText({'events': events})))
+    return out
+
+
 def record_episode(episode: dict[str, Any], existingFingerprints: list[tuple[str, str]] | None = None) -> int:
     """Fingerprint + dedupe + persist one episode. Returns the episode id."""
     fp = fingerprint_for(episode)
     if existingFingerprints is None:
-        existingFingerprints = [
-            (str(r['fingerprint']), str(r.get('last_excerpt', '')))
-            for r in recent_fingerprints(limit=25)
-        ]
+        existingFingerprints = _existingFingerprintTexts()
     fp = paraphrase_dedupe(fp, _episodeText(episode), existingFingerprints)
     episode = {**episode, 'fingerprint_id': fp}
+    isNew = not _episodeExists(episode)
     episodeId = save_episode(episode)
-    upsert_fingerprint(fp)
+    if isNew:
+        upsert_fingerprint(fp)
     return episodeId
 
 
@@ -366,11 +490,15 @@ def _parseEpisodeRow(row: Any) -> dict[str, Any]:
 
 
 def unscored_episodes(limit: int = 200) -> list[dict[str, Any]]:
-    """Tier-1 episodes that have not been scored yet (no tier-1 verdict)."""
+    """Tier-1 episodes that have not been scored yet (no tier-1 result).
+
+    §12 F-3: the rubric result lives in ``tier1_result`` — the tier-2
+    ``judge_verdict`` column must stay empty until the distiller judges, or
+    the distiller's unjudged selector is empty by construction."""
     rows = _conn().execute(
         """
         SELECT * FROM episodes
-        WHERE tier = 1 AND judge_verdict IS NULL
+        WHERE tier = 1 AND tier1_result IS NULL
         ORDER BY id DESC LIMIT ?
         """,
         (int(limit),),
@@ -481,8 +609,10 @@ def flag_top_slice(
         ).fetchone()
         fpCount = int(fpRow['episode_count']) if fpRow else 1
         result = score_episode(ep, fpCount, _sameCauseSessions(fp))
+        # §12 F-3: the tier-1 rubric is NOT a judge verdict — writing it into
+        # judge_verdict made the distiller's unjudged set always empty.
         conn.execute(
-            "UPDATE episodes SET judge_verdict = ? WHERE id = ?",
+            "UPDATE episodes SET tier1_result = ? WHERE id = ?",
             (json.dumps({'tier1': result}, ensure_ascii=False), int(ep['id'])),
         )
         scored.append((result['score'], ep))
@@ -520,25 +650,15 @@ def mine_sessions(sinceDays: int = 30) -> dict[str, int]:
         """,
         (since,),
     ).fetchall()
-    existing: list[tuple[str, str]] = []
-    for r in _conn().execute(
-        """
-        SELECT fingerprint_id, events FROM episodes
-        WHERE fingerprint_id IN (SELECT fingerprint FROM failure_fingerprints)
-        GROUP BY fingerprint_id HAVING MAX(id)
-        """,
-    ).fetchall():
-        try:
-            events = json.loads(str(r['events']))
-        except Exception:
-            events = []
-        existing.append((str(r['fingerprint_id']), _episodeText({'events': events})))
+    existing = _existingFingerprintTexts(limit=1000)
     extracted = 0
     for r in rows:
         for episode in extract_episodes(str(r['sid'])):
             episode['session_id'] = str(r['sid'])
+            isNew = not _episodeExists(episode)
             record_episode(episode, existingFingerprints=existing)
-            extracted += 1
+            if isNew:
+                extracted += 1
     return {'sessions': len(rows), 'episodes': extracted}
 
 
@@ -671,19 +791,45 @@ def run_resolution_check(windowDays: int = _RESOLUTION_WINDOW_DAYS) -> dict[str,
             )
         if status == 'resolved' and stale and _skillLoadCount(skill) == 0:
             # Zero loads + no recurrence in the window → demotion SUGGESTION.
-            demotionCount += 1
-            _file_suggestion(
+            filed = _file_suggestion(
                 kind='skill_delete',
                 problem=f'Demotion suggestion for {skill!r}: zero loads, no recurrence in {windowDays}d',
                 evidence=f'fingerprint {fp} resolved; usage sidecar count = 0',
                 proposal=f'Disable/delete skill {skill!r} (human-approved; nothing auto-deletes).',
                 payload={'name': skill, 'fingerprint': fp, 'action': 'demote', 'target': skill, 'origin': 'distilled'},
             )
+            if filed:
+                demotionCount += 1
     return {'resolved': resolvedCount, 'recurred': recurredCount, 'demotionSuggestions': demotionCount}
 
 
-def _file_suggestion(**kw: Any) -> None:
-    """File a suggestion proposal, deduped on (fingerprint, action, target)."""
+def set_fingerprint_status(fp: str, status: str) -> None:
+    """§12 F-10: the advertised statuses (open | skill_drafted | resolved |
+    retired) must actually be written. ``skill_drafted`` is set when a
+    distilled draft files; ``retired`` when the fingerprint's skill_delete
+    applies (from ANY prior state — demotions flow from resolved). A draft
+    never resurrects a resolved fingerprint to drafted."""
+    if not fp:
+        return
+    conn = _conn()
+    if status == 'retired':
+        conn.execute(
+            'UPDATE failure_fingerprints SET status = ? WHERE fingerprint = ?',
+            (str(status), str(fp)),
+        )
+    else:
+        conn.execute(
+            "UPDATE failure_fingerprints SET status = ? WHERE fingerprint = ? AND status = 'open'",
+            (str(status), str(fp)),
+        )
+    conn.commit()
+
+
+def _file_suggestion(**kw: Any) -> bool:
+    """File a suggestion proposal, deduped on (fingerprint, action, target).
+    Returns True only when a proposal was actually filed — dedupe (including
+    §12 F-8 rejected-draft suppression) reports False so callers must not
+    count a skipped suggestion."""
     try:
         from app.services.harness_self_improve import save_proposal
 
@@ -695,7 +841,7 @@ def _file_suggestion(**kw: Any) -> None:
             str(payload.get('action', '')),
             str(payload.get('target', '')),
         ):
-            return
+            return False
         save_proposal(
             problem=str(kw.get('problem', '')),
             evidence=str(kw.get('evidence', '')),
@@ -704,5 +850,7 @@ def _file_suggestion(**kw: Any) -> None:
             kind=str(kw.get('kind', 'observation')),
             payload=payload,
         )
+        return True
     except Exception as exc:
         logger.debug('suggestion filing failed: %s', exc)
+        return False

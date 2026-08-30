@@ -166,24 +166,32 @@ def _extractJson(raw: str) -> dict[str, Any]:
 
 
 async def call_judge(prompt: str) -> dict[str, Any] | None:
-    """One judge model call. Returns parsed JSON or None (judge failed)."""
+    """One judge model call. Returns parsed JSON or None (judge failed).
+
+    §12 F-7: uses an UNPOOLED client, closed after the call — judge batches
+    run on throwaway event loops (one ``asyncio.run`` per pass), and a
+    pooled client's keep-alive connections bind to the loop that made them,
+    so the next pass hits "Event loop is closed" every other time."""
     model = resolve_judge_model()
     provider = _resolveProvider(model)
     if not provider or not model:
         logger.info('distiller judge skipped: no judge model resolves')
         return None
     try:
-        from app.providers.clients import getClient
+        from app.providers.clients import getUnpooledClient
 
-        client = getClient(provider)
+        client = getUnpooledClient(provider)
         if not client:
             return None
         try:
             client.config = {**dict(client.config or {}), 'model': model}
-        except Exception:
-            pass
-        raw = await client.generate(prompt, system=_JUDGE_SYSTEM)
-        return _extractJson(str(raw))
+            raw = await client.generate(prompt, system=_JUDGE_SYSTEM)
+            return _extractJson(str(raw))
+        finally:
+            try:
+                await client.close()
+            except Exception:
+                pass
     except Exception as exc:
         logger.warning('distiller judge call failed: %s', exc)
         return None
@@ -193,12 +201,17 @@ async def call_judge(prompt: str) -> dict[str, Any] | None:
 
 
 def _draftExists(fp: str, action: str, target: str) -> bool:
+    """One draft per (fingerprint, action, target) — across ALL statuses.
+
+    §12 F-8: matching only ``open`` meant a human-REJECTED suggestion
+    re-filed on every pass (the queue refilled with rejected noise), and an
+    APPLIED draft could be filed again. Anti-drift (plan §3.4): once the
+    judge has produced a draft for a fingerprint/action/target, the loop
+    never re-files it."""
     try:
         from app.services.harness_self_improve import list_proposals
 
         for p in list_proposals():
-            if p.get('status') != 'open':
-                continue
             payload = p.get('payload')
             if not isinstance(payload, dict):
                 continue
@@ -361,12 +374,23 @@ def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extrac
         except ValueError as exc:
             logger.info('distiller draft proposal refused: %s', exc)
             return 'refused'
+        # §12 F-10: the fingerprint's status clock starts at ship time, not
+        # at the last mined occurrence.
+        try:
+            from app.services.episode_miner import set_fingerprint_status
+
+            set_fingerprint_status(fingerprint, 'skill_drafted')
+        except Exception:
+            pass
         return 'proposal-filed'
 
     if action == 'amend_body':
         # OQ 2: human-authored bodies are off-limits until the precision
-        # ship bar is met — until then the verdict downgrades to a
-        # proposal-with-note (which the queue shows for review).
+        # ship bar is met. §12 F-5: the downgrade MUST NOT file an
+        # approvable skill_patch — its payload has no body, and approving
+        # that used to overwrite the target SKILL.md with placeholder
+        # canonical text. Downgrades are review-only observations; a real
+        # patch comes back as a full skill_patch once the bar is met.
         state = precision_state()
         if not state['amendBodyEnabled']:
             skill = str(verdict.get('skill', '')).strip()
@@ -378,8 +402,8 @@ def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extrac
                     f"{state['precision']} over {state['labeled']} labels)",
                     evidence=f'flagged fingerprint {fingerprint}',
                     proposal=str(verdict.get('patch_markdown', ''))[:4000] or 'no patch text',
-                    rollback='reject the proposal; the existing skill body is untouched.',
-                    kind='skill_patch',
+                    rollback='reject the observation; the existing skill body is untouched.',
+                    kind='observation',
                     payload={
                         'name': skill,
                         'fingerprint': fingerprint,
@@ -455,18 +479,40 @@ def _run_batch(batch: list[dict[str, Any]]) -> dict[str, Any] | None:
 
     prompt = build_judge_prompt(batch)
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
-        loop = None
-    if loop is not None:
-        # Inside a live loop (e.g. an API handler): run with a timeout as a
-        # task — the judge is post-hoc but the caller may still be async.
-        return None  # never block a live turn; schedule via the sync path
+        pass
+    else:
+        # §12 F-4: a live loop (e.g. the runCurator API handler) must NOT
+        # block on the judge — but it must not silently skip either. Offload
+        # to a worker thread that owns a fresh event loop.
+        return _run_batch_off_loop(prompt)
     try:
         return asyncio.run(asyncio.wait_for(call_judge(prompt), timeout=_JUDGE_TIMEOUT_S))
     except Exception as exc:
         logger.warning('distiller judge batch failed: %s', exc)
         return None
+
+
+def _run_batch_off_loop(prompt: str) -> dict[str, Any] | None:
+    """Run one judge call on a worker thread (§12 F-4). None = judge failed
+    or timed out past the grace window."""
+    import asyncio
+    import threading
+
+    box: dict[str, Any] = {}
+
+    def worker() -> None:
+        try:
+            box['result'] = asyncio.run(asyncio.wait_for(call_judge(prompt), timeout=_JUDGE_TIMEOUT_S))
+        except Exception as exc:
+            logger.warning('distiller judge batch failed: %s', exc)
+            box['result'] = None
+
+    thread = threading.Thread(target=worker, daemon=True, name='august-distiller-judge')
+    thread.start()
+    thread.join(_JUDGE_TIMEOUT_S + 15)
+    return box.get('result')
 
 
 def _cooldownKey() -> str:

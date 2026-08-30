@@ -75,6 +75,20 @@ def getClient(providerConfig: dict[str, object]) -> BaseProviderClient | None:
         return client
 
 
+def getUnpooledClient(providerConfig: dict[str, object]) -> BaseProviderClient | None:
+    """Return a FRESH client that is NOT stored in the pool.
+
+    For one-shot, out-of-loop callers (the Part 16 judge pass runs on a
+    throwaway event loop per batch): a pooled client's keep-alive
+    connections bind to the loop that created them, so reusing the pool
+    across ``asyncio.run`` passes alternates "Event loop is closed"
+    failures (Part 16 §12 F-7). The caller closes it after use.
+    """
+    if not providerConfig:
+        return None
+    return _make_client(providerConfig)
+
+
 def clear_client_pool() -> None:
     """Drop pooled clients (tests / credential rotation)."""
     with _lock:
@@ -86,5 +100,6 @@ __all__ = [
     'AnthropicClient',
     'OpenAIClient',
     'getClient',
+    'getUnpooledClient',
     'clear_client_pool',
 ]

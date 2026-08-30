@@ -500,6 +500,10 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
         learnedFrom = payload.get('episodeIds') or payload.get('learned_from') or []
         if not name:
             return {'ok': False, 'error': 'skill proposals need payload.name'}
+        if kind == 'skill_patch' and not body.strip():
+            # §12 F-5: a body-less patch would render _ensure_canonical_body's
+            # all-placeholder text over the real SKILL.md on approval. Refuse.
+            return {'ok': False, 'error': 'skill_patch proposals need payload.body'}
         try:
             from app.services.skill_service import (
                 _agentSkillsDir,
@@ -591,6 +595,16 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
                 _bust_prompt_skills_cache()
             except Exception:
                 pass
+            # §12 F-10: a retired fingerprint's clock stops here — mark it so
+            # the resolution pass never re-suggests what a human retired.
+            fp = as_str(payload.get('fingerprint'), '')
+            if fp:
+                try:
+                    from app.services.episode_miner import set_fingerprint_status
+
+                    set_fingerprint_status(fp, 'retired')
+                except Exception:
+                    pass
             return {'ok': True, 'action': 'deleted', 'name': name}
         except Exception as exc:
             return {'ok': False, 'error': str(exc)}

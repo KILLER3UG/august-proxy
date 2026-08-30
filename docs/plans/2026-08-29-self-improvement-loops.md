@@ -2,7 +2,9 @@
 
 **Status:** IMPLEMENTED 2026-08-30 — Step-0 + Phases A–E landed (see §11 for
 the per-phase changelog); OQ 1–6 follow the recommended defaults
-(confirm-or-revert). Third review 2026-08-30 (§9): every
+(confirm-or-revert). THIRD REVIEW OF THE IMPLEMENTATION 2026-08-30 (§12):
+11 findings F-1…F-11 from executable probes against live data; the §12 fix
+batch (all 11) LANDED 2026-08-30 test-first — see §12.1. Original plan review (§9): every
 citation re-verified against the working tree (all hold; two line-number
 drifts noted; the frontmatter quote bug confirmed LIVE by execution);
 implementation is gated behind the Part 17 §9 fix batch. Reconstructed into the repo on 2026-08-29 from the drafted design record, then re-grounded against a same-day full scan of the memory/skills stack (live smoke test 2026-08-29). SECOND review 2026-08-30: every file:line re-verified against the working tree — citations corrected, Step 0 trimmed (search memory-section CUT; guidance/refine-store/curator-bar demoted), migration retargeted 027 → **028**, and the two failure→memory lanes (`turn_outcomes` vs episode fingerprints) explicitly separated. Implementation status after the 2026-08-30 Part 17 landing: `skillLearning` (off | extract-only | full, default extract-only) and the promotion judge/queue are ALIVE via Part 17 Phase E (brain_config_service.py:65, :121, :218); the episode engine itself is NOT — no `episode_miner.py`, no `episodes`/`failure_fingerprints` tables, migration 028 unused. Phases A–C below must extend the landed queue/config, not duplicate it.
@@ -337,3 +339,257 @@ reports in session transcript; clones in `%TEMP%`):
     same day on the user's hold — §10 is the reviewed design record it was
     re-implemented from (this pass re-lands the reviewed design; the
     revert's unregistered-knobs gap was found and fixed en route).
+
+---
+
+## 12. Third review (2026-08-30) — adversarial findings → fix batch (§12.1)
+
+Executable probes against the working tree + a copy of the LIVE production
+DB (`AppData/Roaming/com.august.proxy/data/august_brain.sqlite`, 1244
+messages / 34 recent sessions). Probe scripts + raw outputs:
+`%TEMP%/probe{1,2,3,4,5,6,7,8,8b,9}_*.py` (copied to the reviewer profile's
+`probes/part16-review/`). Baseline re-verified before probing: ruff + mypy
+clean (305 files); the 7 Part 16 suites = 65 passed.
+
+**Headline: the loop as landed cannot learn anything from real transcripts
+(F-1/F-2/F-3/F-4 — four independent blockers, each sufficient alone), and
+one queue item is a loaded weapon that destroys a skill body on approval
+(F-5).** The 56 new tests are green because they seed the DB in shapes the
+app never writes (JSON-string content, assistant-role errors) and call
+`apply_verdict`/`_run_batch` directly instead of the wired chain.
+
+### F-1 (Critical) — miner reads the wrong transcript shape; Phase A mines zero episodes from real data
+
+`_messageText` (episode_miner.py:75-85) handles `str` and block-LIST, but
+the app stores assistant/tool messages as JSON **dicts**
+`{"content": "...", "tool_calls": [...]}` (memory_store/sessions.py:139-147
+— the workbench persistence path; routers/sessions.py:170 is the only
+plain-string writer). `_messageText` returns `''` for dicts.
+
+Probe 1 (live DB): parsed content types `{str: 10, dict: 1177}`; non-empty
+text after flatten `{assistant: 0, tool: 0, user: 10}` — **531 assistant +
+646 tool messages all flatten to empty**. `_TOOL_ERROR_RE` matches 19
+messages on their INNER text, every one role=`tool` (assistant-role hits:
+0) — the miner only scans role=assistant (episode_miner.py:97), so the
+typed-event layer is blind to where errors actually live. Probe 7-C:
+end-to-end `mine_sessions` on an app-shaped seeded session →
+`{'sessions': 1, 'episodes': 0}`. Fix direction: flatten dict content
+(`content` + `tool_calls` names/args), scan role=`tool` for errors, and
+treat the assistant→tool pair as the failure event.
+
+### F-2 (Critical) — raw-text stored messages crash mining; `POST /api/curator/run` 500s on real data
+
+episode_miner.py:128 `json.loads(str(r['content']))` has no try/except, and
+57/1244 live messages are raw text (sessions.py:144 stores `content_str`
+verbatim when the payload is already a str — e.g. `[Proxy Self-Heal]`
+nudges, plain user turns). Probe 2: `extract_episodes` RAISES
+`JSONDecodeError` on the busiest session AND on the session with raw rows;
+`mine_sessions()` aborts entirely. Probe 5 (handlers called directly against
+a copy of the live DB): `POST /api/curator/run` **with dryRun=true and
+without — both RAISED JSONDecodeError → HTTP 500**. User-visible: the
+LearningPanel "Run now" toast fails, CuratorSuggestionBar shows "Curation
+pass failed — check backend". The 24h consolidation pass swallows the same
+crash at debug level (consolidation.py:275-277) → silent zero-learning.
+
+### F-3 (High) — `flag_top_slice` pre-marks episodes judged; the distiller never judges
+
+`flag_top_slice` writes the tier-1 rubric into `judge_verdict`
+(episode_miner.py:484-487), but `run_distiller_pass` selects
+`unjudged = tier-2 episodes with EMPTY judge_verdict`
+(skill_distiller.py:417-421). Every flagged episode already carries a
+non-empty verdict → `unjudged` is **always empty by construction**. Probe 3:
+episode flagged via the real `set_flagged` + tier-1 verdict write →
+`run_distiller_pass: {'batches': 0, 'verdicts': 0}`, scripted judge called
+0 times even with `skillLearning=full`. The only test touching
+`run_distiller_pass` asserts the cooldown skip, so the hole is invisible.
+Fix direction: a distinct column/state for tier-1 score vs tier-2 verdict
+(the schema has both `tier` and `judge_verdict`; conflating them broke the
+state machine).
+
+### F-4 (High) — `_run_batch` returns None inside a live loop; the manual curator run can never judge
+
+skill_distiller.py:458-464: when `asyncio.get_running_loop()` succeeds,
+`_run_batch` returns `None` ("schedule via the sync path" — no such path
+exists). The consolidation cadence is safe (`asyncio.to_thread`,
+consolidation.py:356), but `runCurator` is an `async def` handler
+(routers/curator.py:27) that calls `mine_sessions()` +
+`run_distiller_pass()` inline → judge always "fails" → 30-min cooldown
+fires on a manual run. Probe 3: `_run_batch inside live loop returns: None`.
+Secondary: the same handler runs the full multi-session mining pass
+synchronously ON the event loop (blocks the API for the scan's duration).
+
+### F-5 (High) — approving an `amend_body` downgrade proposal WIPES the target skill's body
+
+The downgrade path (skill_distiller.py:376-391) files `kind='skill_patch'`
+with **no `payload.body`**. The applier reads
+`body = as_str(payload.get('body'), '')` (harness_self_improve.py:495) →
+`''` → `_ensure_canonical_body('')` renders an all-placeholder canonical
+body → `md.write_text(frontmatter + normalized)` overwrites the real
+SKILL.md. Probe 6-A: a learned skill with a real How-to-Run/Pitfalls body
+(331 chars) → human approves the downgrade proposal → 735 chars of
+placeholders, `body prose preserved? False`. The proposal's own rollback
+text claims "the existing skill body is untouched" — false. The precision
+ship bar is therefore moot until this is fixed: the "safe" pre-bar artifact
+is the destructive one. (The Part 17 §9 F-2 name validation holds —
+`save_proposal` + applier both `_validateName`; the traversal hunt came up
+clean everywhere else: curator router takes no paths, `record_skill_use`
+derives its path from the catalogue, `_isBundledSkill` only probes
+existence.)
+
+### F-6 (Medium) — re-mining the same window inflates recurrence and churns resolution state
+
+`save_episode` dedupes on (session, start, kind) and returns early, but
+`record_episode` (episode_miner.py:341-342) calls `upsert_fingerprint(fp)`
+unconditionally → `episode_count += 1` on EVERY 24h pass for the same
+window (probe 4-1: same window twice → count 2). `last_seen` also bumps.
+Probe 8b (clean chain): fingerprint resolved (45d old, skill shipped) →
+cadence re-mines the same window → `last_seen` = now → next
+`run_resolution_check` sees `recurred: 1` with **zero new failures**,
+re-flags, and files a revise-or-retire suggestion. Related: the
+paraphrase-dedupe text lane is dead — `record_episode` reads
+`r.get('last_excerpt','')` (episode_miner.py:336) but no such column
+exists, so only the token-containment path ever runs.
+
+### F-7 (Medium) — pooled httpx client reused across `asyncio.run` passes → alternating "Event loop is closed"
+
+`_run_batch` opens a fresh loop per pass (skill_distiller.py:466) while
+`getClient` POOLS clients (providers/clients/__init__.py:57-73) whose
+`httpx.AsyncClient` keeps a connection bound to the previous, now-closed
+loop. Probe 7-B′ (keep-alive local server): pass 1 ok → pass 2 `RuntimeError:
+Event loop is closed` → pass 3 ok. Each transport failure burns the 30-min
+judge cooldown, halving effective judge throughput on top of F-3/F-4.
+
+### F-8 (Medium) — rejected demotion suggestions re-file forever
+
+`_draftExists` (skill_distiller.py:195-213) only matches `status == 'open'`.
+After a human REJECTS a demotion, the next resolution pass re-files the
+identical `skill_delete` proposal (probe 4-2: after reject, third pass
+`demotionSuggestions: 1`, fresh open proposal). The queue refills with
+rejected noise every 24h — and §3.4's anti-drift rule ("the judge never
+sees its own pending/rejected drafts") is violated in the filing direction.
+
+### F-9 (Low) — curator report status fields are dead
+
+`_parseSkill` (skill_service.py:208-236) puts unrecognized frontmatter —
+including the new `status:` — into `meta`, not top-level.
+`_skillStatusReport` reads `s.get('status')` (curator.py:62) → always `''`
+→ every skill counts active; `staled`/`archived` are permanently empty
+(probe 9-G: applied skill with `status: active` frontmatter → report
+`{'active': 7, 'staled': [], 'archived': []}`).
+
+### F-10 (Low) — `skill_drafted` / `retired` fingerprint statuses never written
+
+Migration 028 + §3.1 advertise `open | skill_drafted | resolved | retired`;
+grep shows `skill_drafted` only READ (episode_miner.py:646), nothing sets
+it, and `retired` appears nowhere in app code. A fingerprint whose skill
+was just drafted+approved stays `open`, so the resolution clock starts from
+the LAST mined occurrence (see F-6) rather than from ship time.
+
+### F-11 (Low) — correction regex false-positives on machine-injected user blocks
+
+Probe 9-H: 7/67 real user messages hit `_CORRECTION_RE` (~10%), including
+`[SUBAGENT RESULTS …]` / `[SUBAGENT_COMPLETE …]` harness-injected blocks
+(user-role but machine-authored) and a pasted-article dump. These mine as
+`correction_accepted` episodes. The miner has no notion of the
+`[SYSTEM: …]`/injection prefixes the workbench itself writes.
+
+### Verified clean (probed, no defect)
+
+* `_fingerprintSkillMap` (episode_miner.py:583-602): newest-applied wins —
+  `list_proposals` sorts `createdAt` DESC and `setdefault` keeps the first
+  (probe 8-E: v2 held after both applied). Correct as designed.
+* Supersession write path: v2 approval disables v1 in the same write
+  (`setEnabled` → `patchSkill`, single write) + stamps `supersedes:`;
+  `skill_delete` applier carries the §9 F-2 `_validateName` guard
+  (harness_self_improve.py:575-591).
+* Config knobs: `skillLearningJudgeModel` / `escalationBudgetPerDay` /
+  `flagRateCap` registered + range-validated + oracle-extended (the
+  reverted-draft trap checked — registrations present, not phantom).
+* Frontmatter quote-strip: matching-pair strip only, bundled unquoted
+  frontmatter unaffected (hygiene test green).
+* Judge model resolver order + `_extractJson` fence tolerance behave.
+
+### Severity roll-up
+
+| # | Sev | One-liner |
+|---|---|---|
+| F-1 | Critical | dict-shaped real messages flatten to empty — engine mines 0 episodes from live data |
+| F-2 | Critical | raw-text rows crash mining — `/api/curator/run` 500s on real data (both UI buttons) |
+| F-3 | High | tier-1 verdict pre-fills `judge_verdict` — distiller's unjudged set is always empty |
+| F-4 | High | `_run_batch` no-ops inside a live loop — manual curator run can never judge |
+| F-5 | High | approving the amend_body downgrade proposal overwrites the skill body with placeholders |
+| F-6 | Medium | re-mine inflates `episode_count`/`last_seen` — false recurrence + suggestion churn |
+| F-7 | Medium | pooled client across `asyncio.run` — alternating "Event loop is closed" judge failures |
+| F-8 | Medium | rejected demotions re-file every pass (`_draftExists` open-only) |
+| F-9 | Low | curator report reads top-level `status` that `_parseSkill` nests under `meta` |
+| F-10 | Low | `skill_drafted`/`retired` states advertised but never written |
+| F-11 | Low | correction regex fires on `[SUBAGENT …]` machine blocks (~10% FP on live users) |
+
+**Review verdict:** Phases A–E are structurally present but the end-to-end
+chain (mine → flag → judge → draft) has never executed successfully on
+real-shaped data — each link breaks independently (F-1→F-2→F-3→F-4). The
+loop is currently a no-op with a 500-ing button and one destructive queue
+item (F-5). Recommend F-1…F-5 as the fix batch (test-first, with at least
+one test seeded in the REAL storage shape + one chain test through
+`run_distiller_pass` via `flag_top_slice`), F-6…F-8 second tier, F-9…F-11
+folded in opportunistically. (2026-08-30, later: the full batch was ruled in
+and landed — see §12.1; the text above is the review as written.)
+
+### 12.1 Fix-batch changelog (2026-08-30) — all 11 landed test-first
+
+Batch order F-1→F-11; every fix has a regression test in
+`tests/test_part16_review_fixes.py` seeded in the REAL storage shapes
+(dict payloads with tool_calls, tool-role errors, raw-text rows) — the
+seed-shape gap §12 called out. All 15 tests green before the full-suite run.
+
+* **F-1** — `_messageText` flattens dict-shaped content (`content` +
+  `tool_calls` names/args, the workbench persistence shape); `_extractEvents`
+  scans role=`tool` too (errors live there in real transcripts); recovery
+  detection uses `_innerText` (prose only — a tool-call-only retry is not a
+  clean continuation).
+* **F-2** — `_loadContent` parses the content column defensively; raw-text
+  rows (e.g. `[Proxy Self-Heal]` nudges) no longer abort mining, and
+  `/api/curator/run` no longer 500s on real data.
+* **F-3** — migration `029_episode_tier1_score.sql` adds `episodes.tier1_result`
+  and backfills the F-3 shape (tier-1 blob out of `judge_verdict`);
+  `flag_top_slice` writes the rubric there; `unscored_episodes` selects on
+  `tier1_result IS NULL`; curator `/episodes` reads the rubric from
+  `tier1_result`. NOTE: the flag cap keeps its strict `int(n*cap)` semantics
+  (the Phase B oracle `test_zero_score_never_flagged` depends on it) — the
+  chain tests use `flagRateCap=1.0` to flag their single episode.
+* **F-4** — `_run_batch` no longer returns None inside a live loop: it
+  offloads to a worker thread owning a fresh loop (`_run_batch_off_loop`).
+  `runCurator` additionally runs the whole sync pass via `asyncio.to_thread`
+  so mining never blocks the event loop.
+* **F-5** — the `amend_body` downgrade files `kind='observation'`
+  (review-only, never approvable) instead of a body-less `skill_patch`; the
+  applier independently refuses `skill_patch` payloads with an empty body
+  (`applyResult.ok=false`), so no approval can ever overwrite a SKILL.md
+  with placeholder canonical text.
+* **F-6** — `record_episode`/`mine_sessions` detect existing (session,
+  window, kind) episodes and only `upsert_fingerprint` on NEW ones —
+  re-mining no longer inflates `episode_count`/`last_seen`, so a resolved
+  fingerprint stays resolved across cadence re-mines; `mine_sessions` counts
+  only new episodes. The dead paraphrase lane is fixed: `_existingFingerprintTexts`
+  rebuilds (fingerprint, excerpt) pairs from the episodes table (the
+  nonexistent `last_excerpt` column read is gone) and is shared by both paths.
+* **F-7** — `call_judge` uses a new `getUnpooledClient` factory (fresh
+  client per batch, closed after the call) — the pooled client's keep-alive
+  connections used to bind to each throwaway per-pass loop and alternate
+  "Event loop is closed" failures. Test: `TestF7UnpooledJudgeClient`.
+* **F-8** — `_draftExists` matches proposals in ALL statuses: a rejected
+  suggestion is never re-filed, an applied draft is never re-filed;
+  `_file_suggestion` returns whether it filed and `run_resolution_check`
+  counts only actual filings.
+* **F-9** — `_skillStatusReport` reads `status` from `_parseSkill`'s `meta`
+  fallback, so `status: stale` frontmatter actually reaches the report.
+* **F-10** — `set_fingerprint_status` writes the advertised statuses:
+  `skill_drafted` when a distilled draft files (only from `open` — no
+  resurrection of resolved fingerprints), `retired` when a fingerprint's
+  `skill_delete` applies (from any state).
+* **F-11** — `_isMachineInjected` skips harness-injected user-role blocks
+  (`[SUBAGENT RESULTS`, `[Proxy Self-Heal]`, `[SYSTEM:`, `<memory_nudge`, …)
+  for correction/rescue/abandon mining (~10% false positives on live users).
+
+Validation: ruff clean, mypy clean (305 files), the 6 Part 16 suites +
+the fix-batch file 68 passed; full suite numbers in the final report.

@@ -2,7 +2,9 @@
 
 **Status:** DRAFT — awaiting ruling. Written 2026-08-30 from a performance
 lens over two deep-scanned external harnesses (see §7 provenance record)
-plus a hot-path audit of the August working tree.
+plus a hot-path audit of the August working tree. Citation verification
+against the post-Part-16 tree: §8 — P1.1 and P1.4 are ALREADY SHIPPED
+(cut), P2.1/P2.4 need re-scoping, P3.3 cites a wrong identifier.
 **Series:** Part 16 = self-improvement engine (sibling plan). This plan is
 the speed/smoothness twin: every item here either cuts tokens (→ TTFT and
 cost), cuts wall-clock work per turn, or keeps background work off the hot
@@ -172,3 +174,82 @@ speculated.
   bounded digests everywhere (memory overview 120-char entries, bounded
   stderr tails), plan/apply separation keeping refinement off the hot path,
   per-worker transcript caches above 4MiB, attachment-local backpressure.
+
+---
+
+## 8. Citation verification (2026-08-30, against the post-af51762e tree)
+
+Line references re-checked against the working tree after Part 16 landed.
+No implementation performed — this section only records what holds.
+
+**VERIFIED (claim holds as written):**
+
+* **P1.2** — `tests/test_prompt_cache_stability.py` exists (4 tests,
+  shipped in df42f1a9); the scenario extensions are genuinely new work.
+* **P2.3** — `_truncateToolOutput` at workbench.py:267 exactly as cited;
+  head+tail + per-model caps live. **Follow-up finding:** the marker is
+  `f'[... {omitted} characters omitted ...]'` (workbench.py:304) — the
+  template is constant but the embedded count is per-call, so the marker
+  is NOT a byte-stable string. It rides in tool results (message tail),
+  not the system prefix, so cache impact is limited to re-sent history.
+* **P3.2** — premise true: code mode spawns an isolated `python -I`
+  subprocess per call (code_runner.py:233 comment); persistence is
+  snapshot/restore (code_runner.py:158-229), not a warm process. Line
+  drift: the caps are the `_SNAPSHOT_TAIL.format(...)` call at
+  code_runner.py:388 with constants defined at kernel.py:39
+  (`PER_VARIABLE_CAP_BYTES = 16 MiB`) — the cited "384-389" covers the
+  use site, not the definition.
+* **P3.3** — shipped, but the identifier is wrong: the SSE event is
+  `{'type': 'retrying'}` (workbench.py:3112, :3263, :3291) handled by
+  `onRetrying` (types/workbench.ts:426). `retryingBackoff` exists nowhere
+  in frontend or backend. Backoff + Retry-After at base.py:92-136 as
+  cited (`parseRetryAfterMs` :92, `getRetryDelayMs` :119).
+* **§1 Phase-L premise** — ttft_ms + cache_hit/miss columns wired
+  (turn_outcomes.py:84-109; recorded at workbench.py:4571);
+  `_frozen_mem_index` at workbench/sessions.py:130. Caveat: never yet
+  observed with LIVE data (schema v12 columns unexercised since the
+  landing — see the TTFT-measurement task).
+
+**STALE — already shipped; CUT from this plan's scope:**
+
+* **P1.1 session-block split** — done by Part 17 Phase L before this
+  draft was written. workbench.py:1113-1127 documents it: id/title/plan/
+  state moved OUT of `<session>` into the per-turn `<session_state>` tail
+  on the last user message; only byte-stable fields (guardMode,
+  agentMode, circuit hint) remain (workbench.py:1129-1145). The
+  acceptance property (title change busts ≤ tail) is already the design.
+* **P1.4 catalogue memo** — shipped in af51762e (Part 16 Phase D step 1):
+  `_skillMdMarks` (skill_service.py:78) folds per-skill SKILL.md mtimes
+  into the memo key at :423. The plan's own note anticipated this
+  ("implement once") — it was implemented; cited lines :43-65/:341-365
+  are pre-drift positions.
+
+**PREMISE PARTIALLY STALE — re-scope before any ruling:**
+
+* **P2.1 skills-index byte budget** — the main-agent path no longer
+  embeds the descriptive catalogue: `build_capabilities_block` renders a
+  NAME-ONLY index for the main agent (`compact_skills=True`,
+  capabilities_prompt.py:408-434) and per-turn descriptions ride in
+  `<relevant_skills>` under a 600-char cap
+  (`_RELEVANT_SKILLS_CHAR_CAP`, :453, enforced :524-531). `load_bodies`
+  caps at 24000 (skill_service.py:361). The unbounded surface that
+  remains is the SUBAGENT descriptive catalogue
+  (`format_skills_by_category`) — the budget idea survives only there.
+* **P2.4 cacheRead exclusion** — vacuous against current code: the
+  auto-compact budget (`token_budget.computeBudget`) estimates tokens
+  from the message TEXT (estimateTokens over flattened messages), never
+  from provider usage, so no budget currently counts cacheRead tokens at
+  all. The exclusion rule is only meaningful if a usage-based budget is
+  introduced; recorded as a design constraint, not a task.
+
+**OPEN WORK (no citations to check):** P1.3 serialization audit, P2.2
+compaction handoff format, P3.1 early-dispatch telemetry field, P4.1
+grep-gate test (note: the workbench loop module does not import the
+miner/distiller — the real off-loop violation is Part 16 §12 F-4, the
+curator ROUTER running mining inline on the event loop; a P4.1 test
+should cover router doors too), P4.2 debounced persistence.
+
+**Net:** of the plan's 12 items, 2 are already shipped (P1.1, P1.4), 2
+need re-scoping (P2.1, P2.4), 1 has a wrong identifier (P3.3 — shipped
+regardless), and the rest are genuine open work. Awaiting user ruling;
+nothing implemented.
