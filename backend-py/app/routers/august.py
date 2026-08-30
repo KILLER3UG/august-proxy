@@ -417,6 +417,7 @@ async def manage_memory(body: ActionBody):
             existing = pm.read_entries(ws, title=key)
             beforeProject = (
                 {
+                    'workspace': ws,
                     'file': existing[0].file,
                     'title': existing[0].title,
                     'body': existing[0].body,
@@ -448,6 +449,7 @@ async def manage_memory(body: ActionBody):
                     type='restore_memory_item',
                     target=f'project:{entry.title}',
                     before={
+                        'workspace': ws,
                         'file': entry.file,
                         'title': entry.title,
                         'body': entry.body,

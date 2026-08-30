@@ -1,6 +1,9 @@
 # Part 16 — Self-Improvement Loops
 
-**Status:** DRAFT — awaiting ruling. Reconstructed into the repo on 2026-08-29 from the drafted design record, then re-grounded against a same-day full scan of the memory/skills stack (live smoke test 2026-08-29). SECOND review 2026-08-30: every file:line re-verified against the working tree — citations corrected, Step 0 trimmed (search memory-section CUT; guidance/refine-store/curator-bar demoted), migration retargeted 027 → **028**, and the two failure→memory lanes (`turn_outcomes` vs episode fingerprints) explicitly separated. Implementation status after the 2026-08-30 Part 17 landing: `skillLearning` (off | extract-only | full, default extract-only) and the promotion judge/queue are ALIVE via Part 17 Phase E (brain_config_service.py:65, :121, :218); the episode engine itself is NOT — no `episode_miner.py`, no `episodes`/`failure_fingerprints` tables, migration 028 unused. Phases A–C below must extend the landed queue/config, not duplicate it.
+**Status:** DRAFT — awaiting ruling. Third review 2026-08-30 (§9): every
+citation re-verified against the working tree (all hold; two line-number
+drifts noted; the frontmatter quote bug confirmed LIVE by execution);
+implementation is gated behind the Part 17 §9 fix batch. Reconstructed into the repo on 2026-08-29 from the drafted design record, then re-grounded against a same-day full scan of the memory/skills stack (live smoke test 2026-08-29). SECOND review 2026-08-30: every file:line re-verified against the working tree — citations corrected, Step 0 trimmed (search memory-section CUT; guidance/refine-store/curator-bar demoted), migration retargeted 027 → **028**, and the two failure→memory lanes (`turn_outcomes` vs episode fingerprints) explicitly separated. Implementation status after the 2026-08-30 Part 17 landing: `skillLearning` (off | extract-only | full, default extract-only) and the promotion judge/queue are ALIVE via Part 17 Phase E (brain_config_service.py:65, :121, :218); the episode engine itself is NOT — no `episode_miner.py`, no `episodes`/`failure_fingerprints` tables, migration 028 unused. Phases A–C below must extend the landed queue/config, not duplicate it.
 **Series:** Part 15 = tool-step rendering + memory cleanup (2026-08-28). This is Part 16. Sibling plan: *Project-Scoped Memory & Skills* (`2026-08-29-project-scoped-memory.md`) — that plan is the substrate (where per-project memories/skills live); this plan is the engine (how they improve). Neither blocks the other for Phases A–D; Part 17's Phase E distillation calls this plan's Phase C engine when both are adopted.
 
 ---
@@ -161,3 +164,56 @@ Learning section in the existing Skills hub **vertical rail** (no pill tabs, 202
 - No changes to `remember`/`forget` model semantics; no new always-on prompt sections beyond what the freeze already covers.
 - No per-project scoping here — Part 17's substrate; its global distillation (Phase E) calls this plan's Phase C engine when both are adopted.
 - **Coordination update (2026-08-30):** Part 17 Phase E landed FIRST — `skillLearning` config + a promotion judge/queue are already live (brain_config_service.py:65, :121, :218). This plan's Phases A–C must extend that machinery (one distiller, one queue, one config knob), NOT add a parallel engine; the earlier "hard gate on Part 16 Phase C" is satisfied in reverse — the gate now binds Part 16 to reuse what landed.
+
+## 9. Third review (2026-08-30) — citation re-verification + implementation gate
+
+Adversarial re-verification against the working tree (live probes + full
+suite runs; see Part 17 §9 for the shared validation record: backend 1985
+passed / 1 skipped, ruff + mypy clean, frontend 958/958 + tsc clean).
+
+**§2 table — all ALIVE claims hold.** `harness_self_improve` applier +
+scheduled introspection wired; `turn_outcomes` `maybe_promote_failure_lesson`
+:229 and `_review_lesson` gate :191 confirmed at cited lines; consolidation
+`_MERGE_SIMILARITY = 0.85` (:27) + supersede (:190-211); refine_store kinds
+:34; `data/skills/` holds only `.usage.json` — nothing has ever written a
+learned skill, confirmed on disk.
+
+**Step-0 dead-surface sweep — all hold, with line drifts:**
+`/api/curator/run` still has no router (grep: zero hits in routers/);
+`CuratorSuggestionBar.tsx:31` still zero importers; palette dead links
+confirmed at `components/overlays/CommandPalette.tsx:294` (`/brain?tab=learning`
+— no such tab in routes/settings-registry) and `:310`
+(`/api/brain/run-consolidation` vs real route `POST /api/brain/consolidation/run`,
+now at brain_config.py:184, not :167). `_MEMORY_SUGGESTION_PATTERNS` has
+drifted to workbench.py:4761 (was :4680-4700), still zero readers;
+`memorySuggestions` now types/workbench.ts:425 (was :413), still unread.
+`guidance.py` zero production callers confirmed. `tool_policy.py:61-62`
+comment mismatch unchanged.
+
+**The frontmatter quote bug is CONFIRMED LIVE by execution:**
+`list_all()` returns descriptions with literal surrounding quotes
+(`'"How the August agent loop works…'`) — `_parse_frontmatter_block`
+(skill_service.py:219-226, drifted from :197-204) never strips them while
+`_skill_frontmatter` (harness_self_improve.py:417-422) and the bundled
+august-harness/august-tools SKILL.md files write quoted values. These quoted
+strings ride into every prompt's skills index. Phase C's quote-strip fix is
+justified and independent — it can ship any time.
+
+**New dependency on Part 17 §9 (implementation gate):** Part 17's third
+review found the `skill_delete` proposal applier (harness_self_improve.py
+:491-503) rmtree's `_agentSkillsDir() / name` with NO `_validateName`
+(Part 17 finding F-2), and `save_proposal` doesn't validate payload.name.
+This plan's Phase C/D distiller FILES skill proposals into that same queue —
+so the F-2 fix (validate at propose time + apply time) MUST land before any
+automated drafting is enabled, or the judge becomes a programmatic caller of
+the unvalidated delete path. Same for the project-memory rollback gap (F-3)
+and home-scope leak (F-5): Phase A's episode miner reads sessions and
+workspace state and would inherit those defects as noise.
+
+**Sequencing ruling (for the implementing agent):**
+1. Part 17 §9 fix batch F-1…F-7 first (small, security + correctness).
+2. Part 16 Step-0 quick wins any time after: palette route fix (:310),
+   tab=learning dead link (:294) or create the Learning tab, quote-strip
+   fix, tool_policy comment.
+3. Part 16 Phases A–E only after (1) lands — the engine builds on the
+   substrate; migration 028 retarget still correct.

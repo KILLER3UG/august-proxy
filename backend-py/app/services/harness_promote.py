@@ -274,7 +274,12 @@ def run_promotion_pass(*, force: bool = False) -> dict[str, Any]:
                     'Promote this recurring lesson into the GLOBAL facts store so every '
                     'project sees it (copy-on-write — the project files stay untouched).'
                 ),
-                rollback='forget the promoted global fact by its promoted-<key>.',
+                # §9 F-7: `forget` can't delete promoted facts — its
+                # source allowlist covers model/user/'' only, and promoted
+                # facts carry source='promoted-from:<ws>'. Point the human
+                # at the door that actually works.
+                rollback='delete the promoted global fact via the Memory UI '
+                '(its source is promoted-from:<workspace>).',
                 kind='promote',
                 expected_metric='promoted fact recalled in ≥1 non-origin project within 30 days',
                 payload={

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from pathlib import Path
 
 from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
@@ -163,6 +164,11 @@ def _currentWorkspacePath() -> str:
         if session is None:
             return ''
         ws = as_str(getattr(session, 'workspacePath', '') or '')
+        if ws and Path(ws).resolve() == Path.home().resolve():
+            # §9 F-5: the home dir is NOT a project root (matches the
+            # docstring and every other Part 17 door) — auto-project must
+            # not create <home>/.aug/memory/ for home-anchored sessions.
+            return ''
         return ws
     except Exception:
         return ''
@@ -290,6 +296,7 @@ async def _remember(
             existing = _pm.read_entries(ws, title=entryTitle)
             if existing:
                 before = {
+                    'workspace': ws,
                     'file': existing[0].file,
                     'title': existing[0].title,
                     'body': existing[0].body,

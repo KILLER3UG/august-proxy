@@ -857,6 +857,7 @@ def deleteSkill(name: str, workspace: str | Path | None = None) -> dict[str, obj
     """
     import shutil as _shutil
 
+    _validateName(name)  # §9 F-1: traversal names ('..', separators) must not reach the project-root join
     wsStr = str(workspace or '').strip()
     project_root = (
         Path(wsStr) / '.aug' / 'skills'

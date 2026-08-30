@@ -90,6 +90,42 @@ def test_skill_create_applier_is_visible_to_skill_service(hsi):
     assert 'do things' in str(skill.get('instructions'))
 
 
+def test_skill_proposals_reject_traversal_names_at_save_time(hsi):
+    # §9 F-2: the queue must never hold a live weapon — skill-kind proposals
+    # whose payload.name fails _validateName are rejected at file time.
+    for kind in ('skill_create', 'skill_patch', 'skill_delete'):
+        with pytest.raises(ValueError, match='name'):
+            hsi.save_proposal(
+                problem=f'traversal {kind}', evidence='e', proposal='p',
+                rollback='r', kind=kind, payload={'name': '..'},
+            )
+        with pytest.raises(ValueError, match='name'):
+            hsi.save_proposal(
+                problem=f'separator {kind}', evidence='e', proposal='p',
+                rollback='r', kind=kind, payload={'name': 'a/b\\c'},
+            )
+
+
+def test_skill_delete_applier_refuses_traversal_and_deletes_normally(hsi, tmp_path, monkeypatch):
+    victim = tmp_path / 'victim-dir' / 'keep'
+    victim.mkdir(parents=True)
+    agent_root = tmp_path / 'agent-skills'
+    skill_dir = agent_root / 'del-me'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text('---\nname: del-me\ndescription: d\n---\nbody\n', 'utf-8')
+    monkeypatch.setattr('app.services.skill_service._agentSkillsDir', lambda: agent_root)
+
+    # Direct applier defense-in-depth: a row that bypassed save_proposal.
+    res = hsi._apply_approved({'kind': 'skill_delete', 'payload': {'name': '..'}})
+    assert res['ok'] is False
+    assert victim.exists()
+
+    res = hsi._apply_approved({'kind': 'skill_delete', 'payload': {'name': 'del-me'}})
+    assert res['ok'] is True
+    assert not skill_dir.exists()
+    assert victim.exists()
+
+
 def test_brain_config_requires_payload(hsi):
     row = hsi.save_proposal(
         problem='tweak loops', evidence='e', proposal='set 20 rounds',

@@ -207,7 +207,12 @@ def undo_entry(entry_id: str) -> dict[str, object]:
                         )
                         message = f'Restored project memory {target}'
                     else:
-                        message = f'Cannot restore project memory {target}: no workspace in snapshot'
+                        # §9 F-3: raise so undo reports ok=False — a silent
+                        # "message only" here returned ok=True with the
+                        # entry still deleted.
+                        raise ValueError(
+                            f'Cannot restore project memory {target}: no workspace in snapshot'
+                        )
                 except Exception as exc:
                     message = f'Restore project memory {target} failed: {exc}'
             elif before is None:

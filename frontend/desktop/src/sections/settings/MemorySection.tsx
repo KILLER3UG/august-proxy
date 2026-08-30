@@ -326,6 +326,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
   // C-3/4: server-side filters + sort (persist across page navigation).
   const [catFilter, setCatFilter] = useState('');
   const [srcFilter, setSrcFilter] = useState('');
+  const [confFilter, setConfFilter] = useState('');
   const [sort, setSort] = useState('newest');
   // C-6: bulk selection over the merged list.
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -345,6 +346,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
     setWsScope('');
     setCatFilter('');
     setSrcFilter('');
+    setConfFilter('');
     setSort('newest');
     setChecked(new Set());
     setUnifiedOffset(0);
@@ -387,15 +389,16 @@ export function MemorySection({ active }: { active: { id: string } }) {
         `?limit=${UNIFIED_FETCH}&offset=${unifiedOffset}&query=${encodeURIComponent(query)}` +
         `&sort=${encodeURIComponent(sort)}` +
         (catFilter ? `&category=${encodeURIComponent(catFilter)}` : '') +
-        (srcFilter ? `&source=${encodeURIComponent(srcFilter)}` : ''),
+        (srcFilter ? `&source=${encodeURIComponent(srcFilter)}` : '') +
+        (confFilter ? `&confidence=${encodeURIComponent(confFilter)}` : ''),
     );
   const unifiedQa = useQuery<StorePage>({
-    queryKey: ['brain-store', unifiedStoreA, unifiedOffset, query, UNIFIED_FETCH, catFilter, srcFilter, sort],
+    queryKey: ['brain-store', unifiedStoreA, unifiedOffset, query, UNIFIED_FETCH, catFilter, srcFilter, confFilter, sort],
     queryFn: () => unifiedFetch(unifiedStoreA),
     enabled: unified && !!unifiedStoreA,
   });
   const unifiedQb = useQuery<StorePage>({
-    queryKey: ['brain-store', unifiedStoreB, unifiedOffset, query, UNIFIED_FETCH, catFilter, srcFilter, sort],
+    queryKey: ['brain-store', unifiedStoreB, unifiedOffset, query, UNIFIED_FETCH, catFilter, srcFilter, confFilter, sort],
     queryFn: () => unifiedFetch(unifiedStoreB),
     enabled: unified && !!unifiedStoreB,
   });
@@ -781,6 +784,22 @@ export function MemorySection({ active }: { active: { id: string } }) {
               {['remember', 'user', 'extracted', 'lesson'].map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
+            </select>
+            {/* C-3: confidence bucket filter (§9 F-6 — low < 0.5, medium < 0.8, high >= 0.8). */}
+            <select
+              value={confFilter}
+              onChange={(e) => {
+                setConfFilter(e.target.value);
+                setUnifiedOffset(0);
+              }}
+              className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
+              data-testid="memory-confidence-filter"
+              aria-label="Filter by confidence"
+            >
+              <option value="">All confidence</option>
+              <option value="high">high</option>
+              <option value="medium">medium</option>
+              <option value="low">low</option>
             </select>
             {/* C-4: sort control. */}
             <select

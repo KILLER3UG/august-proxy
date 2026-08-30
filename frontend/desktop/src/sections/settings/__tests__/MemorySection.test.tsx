@@ -329,11 +329,12 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     expect(select.value).toBe('');
   });
 
-  // C-3: category/source filters and C-4: sort control exist and feed the query URL.
-  it('sends category/source/sort as query params (C-3/C-4)', async () => {
+  // C-3: category/source/confidence filters and C-4: sort control exist and feed the query URL.
+  it('sends category/source/confidence/sort as query params (C-3/C-4, §9 F-6)', async () => {
     renderSection('memory-facts');
     fireEvent.change(screen.getByTestId('memory-category-filter'), { target: { value: 'user' } });
     fireEvent.change(screen.getByTestId('memory-source-filter'), { target: { value: 'remember' } });
+    fireEvent.change(screen.getByTestId('memory-confidence-filter'), { target: { value: 'high' } });
     fireEvent.change(screen.getByTestId('memory-sort'), { target: { value: 'updated' } });
     await waitFor(() => {
       const urls = (api.get as ReturnType<typeof vi.fn>).mock.calls
@@ -344,6 +345,7 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
       expect(factFetch).toContain('sort=updated');
       expect(factFetch).toContain('category=user');
       expect(factFetch).toContain('source=remember');
+      expect(factFetch).toContain('confidence=high');
     });
   });
 

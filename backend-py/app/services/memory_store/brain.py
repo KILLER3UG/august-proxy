@@ -478,8 +478,17 @@ def brain_browse(
             v = (val or '').strip()
             if not v:
                 continue
-            if key == 'confidence' and v not in ('', 'low', 'medium', 'high'):
-                continue  # free-text confidence stays unfiltered, not a 500
+            if key == 'confidence':
+                # §9 F-6: confidence is a REAL column — low/medium/high are
+                # range buckets, not equality matches (equality against the
+                # word can never hit a number).
+                if v not in ('low', 'medium', 'high') or 'confidence' not in colNames:
+                    continue  # free-text confidence stays unfiltered, not a 500
+                whereParts.append('CAST(confidence AS REAL) < ?' if v == 'low' else
+                                  'CAST(confidence AS REAL) >= ? AND CAST(confidence AS REAL) < ?'
+                                  if v == 'medium' else 'CAST(confidence AS REAL) >= ?')
+                params.extend([0.5] if v == 'low' else [0.5, 0.8] if v == 'medium' else [0.8])
+                continue
             if key in colNames:
                 whereParts.append(f'{key} = ?')
                 params.append(v)

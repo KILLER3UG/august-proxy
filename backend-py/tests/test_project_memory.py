@@ -117,6 +117,50 @@ class TestRoundTrip:
 # ── free-form hand-edit tolerance ──────────────────────────────────────
 
 
+class TestWriterSanitization:
+    """§9 F-4 — the writer must uphold the format contract (one `## <title>`
+    per entry) so hand-editable files can't be corrupted via the doors."""
+
+    def test_body_heading_line_cannot_inject_entry(self, ws: Path) -> None:
+        pm.upsert_entry(ws, 'a', 'x\n\n## evil\nbody')
+        titles = [e.title for e in pm.read_entries(ws)]
+        assert titles == ['a']
+        assert 'evil' in pm.read_entries(ws)[0].body
+
+    def test_title_newline_flattened(self, ws: Path) -> None:
+        pm.upsert_entry(ws, 'two\n## lines', 'b')
+        titles = [e.title for e in pm.read_entries(ws)]
+        assert titles == ['two ## lines']
+
+    def test_title_collision_across_files_updates_first_match(self, ws: Path) -> None:
+        pm.upsert_entry(ws, 'Dup', 'v1', file='extra.md')
+        out = pm.upsert_entry(ws, 'Dup', 'v2')  # default file=memory.md
+        assert out.file == 'extra.md'
+        entries = pm.read_entries(ws)
+        dups = [e for e in entries if e.title == 'Dup']
+        assert len(dups) == 1 and dups[0].body == 'v2' and dups[0].file == 'extra.md'
+        memory_pf = pm.parse_memory_md((pm.memory_root(ws) / 'memory.md').read_text('utf-8'))
+        assert not any(e.title == 'Dup' for e in memory_pf.entries)
+
+    def test_delete_multi_file_match_deletes_first_only(self, ws: Path) -> None:
+        # The duplicate can't be created through upsert anymore (collision
+        # guard) — it represents a hand-edited / pre-guard file set.
+        pm.upsert_entry(ws, 'Dup', 'in memory.md')
+        _writeMd(
+            ws,
+            'extra.md',
+            '# Extra\n\n## Dup\n\nin extra.md\n\n## Other\n\nkeep\n',
+        )
+        assert pm.delete_entry(ws, 'Dup') is True
+        entries = pm.read_entries(ws)
+        # sorted-file-order first match (extra.md) deleted…
+        assert not any(e.title == 'Dup' and e.file == 'extra.md' for e in entries)
+        assert any(e.title == 'Other' for e in entries)  # untouched sibling
+        # …the memory.md copy survives.
+        remaining = [e for e in entries if e.title == 'Dup']
+        assert len(remaining) == 1 and remaining[0].file == 'memory.md'
+
+
 class TestFreeFormTolerance:
     def test_preamble_preserved_verbatim(self, ws: Path) -> None:
         raw = (
@@ -295,6 +339,33 @@ class TestRememberProjectDoor:
             assert 'workspace' in res.get('error', '')
         finally:
             currentSessionId.reset(token)
+
+
+    def test_home_workspace_never_auto_projects(self, tmp_path: Path, monkeypatch) -> None:
+        # §9 F-5: a session whose workspacePath IS the home dir must not get
+        # auto-project scope — remember() with no scope writes a global fact,
+        # and nothing lands in <home>/.aug/memory/.
+        import asyncio
+
+        from app.services import memory_store
+        from app.services.tool_registrations import session_tools as st
+
+        fake_home = tmp_path / 'fake-home'
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, 'home', classmethod(lambda cls: fake_home))
+        sid = _mkSession(fake_home)
+        token = currentSessionId.set(sid)
+        try:
+            reset_remember_turn_budget(sid)
+            out = asyncio.run(st._remember('Home session fact should stay global.'))
+            res = json.loads(out)
+            assert res['ok'] is True, res
+            assert res.get('scope', 'global') != 'project'
+            fact = memory_store.get_fact(res['key'])
+            assert fact is not None
+        finally:
+            currentSessionId.reset(token)
+        assert not (fake_home / '.aug' / 'memory').exists()
 
 
 class TestForgetProjectDoor:
@@ -507,6 +578,78 @@ class TestMemoryManageProject:
         )
         assert r.json()['ok'] is False
         assert 'workspace' in r.json()['error']
+
+    @staticmethod
+    def _undoLatestProjectEntry(target: str) -> dict:
+        from app.json_narrowing import as_str
+        from app.services.rollback_store import list_entries, undo_entry
+
+        entryId = next(
+            as_str(e.get('id'))
+            for e in reversed(list_entries())
+            if as_str(e.get('type')) == 'restore_memory_item'
+            and as_str(e.get('target')) == target
+        )
+        return undo_entry(str(entryId))
+
+    def test_delete_rollback_restores_entry(self, ws: Path) -> None:
+        # §9 F-3: the UI delete door must snapshot the workspace so undo
+        # can restore the md entry — before the fix the snapshot had no
+        # workspace and undo failed with "no workspace in snapshot".
+        from app.json_narrowing import as_str
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        r = client.post(
+            '/api/august/memory/manage',
+            json={
+                'action': 'set', 'key': 'Undo me', 'value': 'Original body text.',
+                'scope': 'project', 'workspace': str(ws),
+            },
+        )
+        assert r.json()['ok'] is True
+        orig = pm.read_entries(ws)[0]
+
+        r = client.post(
+            '/api/august/memory/manage',
+            json={
+                'action': 'delete', 'key': 'Undo me',
+                'scope': 'project', 'workspace': str(ws),
+            },
+        )
+        assert r.json()['ok'] is True
+        assert pm.read_entries(ws) == []
+
+        result = self._undoLatestProjectEntry('project:Undo me')
+        assert result.get('ok'), f"undo failed: {result.get('message')}"
+        restored = pm.read_entries(ws)
+        assert [e.title for e in restored] == ['Undo me']
+        back = restored[0]
+        assert back.body == orig.body
+        assert back.file == orig.file
+        assert back.updated == orig.updated
+        assert as_str(back.title) == 'Undo me'
+
+    def test_update_rollback_restores_prior_body(self, ws: Path) -> None:
+        # §9 F-3 (same class): the update path's `before` snapshot also
+        # needs the workspace or undoing an edit fails the same way.
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        for value in ('First version.', 'Second version.'):
+            r = client.post(
+                '/api/august/memory/manage',
+                json={
+                    'action': 'set', 'key': 'Edited entry', 'value': value,
+                    'scope': 'project', 'workspace': str(ws),
+                },
+            )
+            assert r.json()['ok'] is True
+        result = self._undoLatestProjectEntry('project:Edited entry')
+        assert result.get('ok'), f"undo failed: {result.get('message')}"
+        assert pm.read_entries(ws)[0].body == 'First version.'
 
 
 class TestImportProjectScope:

@@ -284,6 +284,18 @@ def save_proposal(
     if kind not in VALID_KINDS:
         raise ValueError(f'unknown kind {kind!r}; use one of {sorted(VALID_KINDS)}')
 
+    # §9 F-2: fail skill-kind proposals at file time so the queue never holds
+    # a live weapon — payload.name must pass the same validation the applier
+    # (and skill CRUD) enforces.
+    if kind in APPROVABLE_KINDS and kind != 'brain_config':
+        p_name = as_str((payload or {}).get('name'), '').strip()
+        from app.services.skill_service import SkillValidationError, _validateName
+
+        try:
+            _validateName(p_name)
+        except SkillValidationError as exc:
+            raise ValueError(f'invalid payload.name: {exc}') from exc
+
     # Duplicate guard: same kind + near-same problem while a proposal is open.
     for existing in list_proposals():
         existing_problem = as_str(existing.get('problem'), '').strip()
@@ -495,8 +507,9 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
         try:
             import shutil
 
-            from app.services.skill_service import _agentSkillsDir
+            from app.services.skill_service import _agentSkillsDir, _validateName
 
+            _validateName(name)  # §9 F-2: same guard as create/patch — no traversal past the agent root
             skill_dir = _agentSkillsDir() / name
             if not skill_dir.is_dir():
                 return {'ok': False, 'error': f'skill {name!r} not found in agent skills'}

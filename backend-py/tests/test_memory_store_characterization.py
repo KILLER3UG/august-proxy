@@ -252,6 +252,20 @@ class TestBrainBrowse:
         assert 'f_cat_a' in [r['factKey'] for r in both['rows']]
         assert 'f_src_c' not in [r['factKey'] for r in both['rows']]
 
+    def test_browse_filter_confidence_buckets(self, brain):
+        # §9 F-6: confidence is a REAL column — the low/medium/high filter
+        # must bucket ranges (low < 0.5, medium < 0.8, high >= 0.8), not
+        # equality-match the word against the number.
+        ms.save_fact('conf_low', 'a', category='conf', confidence=0.3)
+        ms.save_fact('conf_med', 'b', category='conf', confidence=0.7)
+        ms.save_fact('conf_high', 'c', category='conf', confidence=0.9)
+        low = ms.brain_browse('facts', limit=10, query='conf_', confidence='low')
+        assert [r['factKey'] for r in low['rows']] == ['conf_low']
+        med = ms.brain_browse('facts', limit=10, query='conf_', confidence='medium')
+        assert [r['factKey'] for r in med['rows']] == ['conf_med']
+        high = ms.brain_browse('facts', limit=10, query='conf_', confidence='high')
+        assert [r['factKey'] for r in high['rows']] == ['conf_high']
+
     def test_browse_filter_ignores_missing_columns(self, brain):
         # A filter on a store without the column must not 500 — the
         # heuristics store has no `source` search filter semantics here.

@@ -2,7 +2,11 @@
 
 Date: 2026-08-29
 Status: IMPLEMENTED 2026-08-29/30 — all phases (0, L, A, B, C, D, E) landed in
-the working tree; see §7 implementation changelog. The 6 open questions in §5
+the working tree; see §7 implementation changelog. THIRD REVIEW (2026-08-30,
+§9): adversarial re-verification with live probes found 3 HIGH + 2 MEDIUM +
+3 LOW defects — the §9 fix batch LANDED 2026-08-30 (F-1…F-7 implemented
+test-first; two review claims corrected, see §9.1; F-8 deliberately not
+implemented — see §9.2). The 6 open questions in §5
 still await a ruling; the shipped code follows the recommended default for
 each (md SoT, auto-project scope, shadowing, hidden .aug, ≥2-project bar,
 durable-only). Landed in-repo 2026-08-29 after claim-by-claim review
@@ -501,6 +505,222 @@ Verified still open (not regressions — explicit leftovers):
    before the numbers mean anything.
 5. The §7 test-run counts are the implementer's report; the 2026-08-30
    second review did not re-run the suites.
+
+## 9. Third review (2026-08-30) — verified defects + fix batch (IMPLEMENT THIS FIRST)
+
+Independent adversarial re-verification against the working tree, with live
+executable probes (not code reading alone). Validation baseline re-run fresh:
+backend full suite **1985 passed / 1 skipped**, the 7 Part 17/L test files
+**107 passed**, ruff + mypy clean (300 files), frontend **958/958 vitest
+(116 files)** + tsc clean. §7's numbers reproduce. Everything §8 verified
+holds. What follows are the NEW findings — each was reproduced by running
+code. Ordered by severity; this is the fix batch.
+
+### F-1 (HIGH) — path traversal: `deleteSkill` skips name validation
+
+`skill_service.py:849+` (`deleteSkill`): unlike `createSkill` (:733) and
+`patchSkill` (:786), it never calls `_validateName(name)` before
+`shutil.rmtree(project_root / name)` on the Part 17 Phase B project branch.
+`name=".."` (or any value containing path separators) escapes
+`<workspace>/.aug/skills/`. Probe-confirmed: joining `..` segments onto the
+project root and rmtree-ing deletes directories OUTSIDE it (victim dir gone).
+HTTP reachability today is narrow (single-segment `/api/skills/..` hits the
+SPA fallback route; `%2e%2e` encodings 404 at the router), but the service
+function is called with caller-controlled strings and any future caller
+(model tool, batch endpoint, CLI) inherits the hole.
+**Fix:** `_validateName(name)` as the first statement of `deleteSkill`
+(same guard the other doors use: `^[a-z0-9][a-z0-9._-]*$`, ≤64 chars).
+Regression test: `deleteSkill('..', workspace=ws)` raises
+SkillValidationError and the sibling directory survives.
+
+### F-2 (HIGH) — same class in the `skill_delete` proposal applier
+
+`harness_self_improve.py:491-503` (`_apply_approved`, kind `skill_delete`):
+`skill_dir = _agentSkillsDir() / name; shutil.rmtree(skill_dir)` with NO
+`_validateName` — the sibling `skill_create/skill_patch` branch validates at
+:460, delete does not. `save_proposal` (:263-320) never validates
+`payload.name` either. Chain: a compromised or confused model files
+`harness_propose(kind='skill_delete', payload={"name": "..\\..\\.."})`;
+a human approving the proposal executes an arbitrary-directory rmtree.
+The human gate makes this lower-probability than F-1 but the blast radius is
+identical and the fix is one line in each place.
+**Fix:** `_validateName(name)` in the `skill_delete` branch before the join,
+AND reject proposals whose `payload.name` fails validation at
+`save_proposal` time for skill kinds (fail at file time so the queue never
+holds a live weapon). Regression test as in F-1.
+
+### F-3 (HIGH) — project-memory rollback restore can never restore
+
+`rollback_store.py:194-206` reads `before.get('workspace')` for
+`restore_memory_item` rows whose target starts with `project:` — but BOTH
+delete doors record `before` WITHOUT the workspace key:
+`routers/august.py:450-455` (UI delete: before = file/title/body/updated)
+and `session_tools.py` `_forget` project path (same shape; workspace only
+lands in the `after` dict of the UPSERT doors, :310). Live probe against the
+real undo path: `undo_entry` returns
+`"Cannot restore project memory project:keep-me: no workspace in snapshot"`
+and the entry stays deleted. The plan's "rollback snapshot + undoable"
+claim (Phase A.2) is FALSE for project deletes as shipped.
+**Fix:** add `'workspace': ws` to the `before` dict in both delete doors
+(one line each). Regression test: delete via `/api/memory/manage`
+scope=project → `undo_entry(id)` → entry present with original
+title/body/file/updated.
+
+### F-4 (MEDIUM) — md format-contract injection in `project_memory`
+
+The module docstring promises "everything the parser understands
+round-trips byte-exactly". Probe results against the real writer/parser:
+* a body containing a `## heading` line becomes a SEPARATE entry on
+  reparse (entry-injection: `upsert_entry(ws,"a","x\n\n## evil\nbody")` →
+  titles `['a','evil']`);
+* a title containing a newline splits into two entries (`"two\n## lines"` →
+  titles `['two','lines']`);
+* `## ` inside fenced code blocks in the preamble parses as an entry
+  (fence-blind regex at :34);
+* `delete_entry(ws, title)` with no `file` deletes the title from ALL md
+  files (documented as "unique per workspace by convention" — but
+  `upsert_entry` accepts a `file` param and never checks cross-file
+  collisions, so duplicates are trivially creatable and one delete nukes
+  both).
+None of these are exploitable outside the write doors, but they silently
+corrupt the user's hand-editable SoT file — the exact artifact the
+readability ruling is about.
+**Fix (writer-side sanitization, parser stays simple):** in `upsert_entry`,
+reject/flatten newlines in `title`; strip or indent any body line matching
+`^##\s` (or escape to `\##`); on title collision across files, update the
+first match and log. In `delete_entry`, when `file` is empty and the title
+matches >1 file, delete only the first and report the rest. Pin each with a
+round-trip test in `tests/test_project_memory.py`.
+
+### F-5 (MEDIUM) — auto-project scope leaks into the HOME workspace
+
+`session_tools.py:262-264`: `if scopeNorm == 'project' or (not scopeNorm and ws)`
+— `ws` comes from `_currentWorkspacePath()` (:147-168) which returns the raw
+`session.workspacePath` with NO home comparison, contradicting the function's
+own docstring ("'' when none/home") and the Phase A design (auto-project is
+for *project* sessions). A session whose workspacePath IS the home dir gets
+`~/.aug/memory/memory.md` created and home-level notes injected as "project"
+memory. Every other Part 17 door compares against home (`skill_service.py`
+`Path(wsStr).resolve() != Path.home().resolve()` at :741/:793/:862,
+`harness_promote._known_workspaces` :90).
+**Fix:** normalize in `_currentWorkspacePath()`: return `''` when
+`Path(ws).resolve() == Path.home().resolve()`. Regression test: remember()
+with no scope in a home-workspace session writes a global fact, not
+`~/.aug/memory/`.
+
+### F-6 (LOW) — Phase C gap 3 only 2/3 closed
+
+Backend `brain_browse` supports category/source/confidence filters
+(brain.py:437-443 + :42-48 confidence bucketing) and the frontend sends
+category + source (`MemorySection.tsx:389-390`) — but NO confidence filter
+control exists in the UI (grep: only sort-option + editable-field mentions).
+The plan text claims all three. **Fix:** add the low/medium/high select and
+send `&confidence=`; or amend the claim to 2/3. Test asserts the param
+reaches the query.
+
+### F-7 (LOW) — promotion rollback text is misleading
+
+`harness_promote.py:277` rollback says "forget the promoted global fact by
+its promoted-<key>" — but `forget` defers to system lanes for
+non-allowlisted sources (`_FORGET_ALLOWED_SOURCES` = model/user/'' at
+session_tools.py:362; promoted facts carry
+`source='promoted-from:<ws>'`), so the model CANNOT undo it. The UI delete
+can. **Fix:** reword to "delete via Memory UI (source promoted-from:*)".
+
+### F-8 (LOW, pre-existing, inherited) — `requestJson` retries still silent
+
+Already listed §8.1; unchanged. Non-stream 429/503 retries (base.py:426-435)
+emit no SSE event. Retry POLICY itself verified sound: 429/503 replay-safe,
+timeouts/protocol errors never replayed (:400-448 comments match code),
+rate-gate + jitter present. Fix = surface the existing stream-path
+`upstreamRetry` event from the non-stream loop (needs a callback/hook
+plumbed from client → turn dispatcher).
+
+### Not defects (checked, clean)
+
+`_usage_decay` math, prior-turn 0.5 expansion, BM25 facts routing,
+subagent tool block, `.aug/` shadow-git exclude, caps-cache workspace key,
+`<session>` purge + `<session_state>` tail (tests assert real invariants
+incl. cross-session identity), migration 027 idempotency (duplicate-column
+guard at memory_schema.py:226-229), metrics endpoint latency section,
+snapshot parity test (compares dir sets; skips when snapshot absent —
+correct, it's gitignored), Phase E wiring (`promote` in VALID_KINDS,
+human-gated apply, rejected-draft anti-drift, ≥2-project bar),
+`_ROW_DELETABLE` includes heuristics and the frontend matches.
+
+### Sequencing for the implementing agent
+
+F-1 + F-2 (one-line guards, security) → F-3 (two-line, restores a promised
+feature) → F-5 (one-line + test) → F-4 (writer sanitization + 4 tests) →
+F-6 + F-7 (small) → F-8 (optional, larger plumbing). Each fix ships with its
+regression test FIRST (red), then the fix (green). Fast path per fix:
+`cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest
+<file> -q --no-cov --basetemp outside repo`. After the batch: full suite +
+frontend suite must stay at ≥ the baseline counts above.
+
+### 9.1 Fix-batch changelog (2026-08-30) — what landed, plus two review corrections
+
+All fixes landed test-first (red → green), in the prescribed order:
+
+* **F-1** — `_validateName(name)` is the first statement of `deleteSkill`
+  (skill_service.py). Regression test
+  `test_project_skills.py::test_delete_rejects_path_traversal_names` pins
+  5 traversal shapes and asserts the sibling directory survives.
+* **F-2** — `_validateName` guard in the `skill_delete` applier branch AND
+  `save_proposal` now rejects skill-kind proposals (`skill_create` /
+  `skill_patch` / `skill_delete`) whose `payload.name` fails validation at
+  file time. Tests in `test_harness_self_improve.py`
+  (`test_skill_proposals_reject_traversal_names_at_save_time`,
+  `test_skill_delete_applier_refuses_traversal_and_deletes_normally`).
+* **F-3** — REVIEW CORRECTION 1: `session_tools._forget`'s project branch
+  ALREADY recorded `'workspace'` in `before` (:425) — the review's claim
+  that both delete doors lacked it was half-stale; only the UI delete door
+  (`routers/august.py`) was broken. Landed: `workspace` added to the UI
+  delete door AND to both UPDATE-path `before` snapshots (routers/august.py
+  upsert door + session_tools remember door — same defect class, an edit
+  undo failed identically). Plus: the no-workspace restore branch in
+  rollback_store.py now RAISES instead of setting a message and returning
+  `ok: true` while restoring nothing. Regression tests
+  `test_project_memory.py::TestMemoryManageProject::`
+  `test_delete_rollback_restores_entry` + `test_update_rollback_restores_`
+  `prior_body` go through the real `/api/memory/manage` door (the old
+  Phase D test hand-assembled its snapshot, which is how this survived).
+* **F-5** — `_currentWorkspacePath()` returns `''` when the session's
+  workspacePath resolves to home. Regression test
+  `test_project_memory.py::test_home_workspace_never_auto_projects`.
+* **F-4** — writer-side guards in project_memory.py: `_sanitizeTitle`
+  flattens newlines; `_sanitizeBody` escapes `^##\s` body lines to `\##`;
+  cross-file title collision updates the first match (file order) and
+  logs; `delete_entry` with no `file` deletes only the first matching file
+  and logs the rest. 4 round-trip tests in
+  `test_project_memory.py::TestWriterSanitization`. Note: the collision
+  guard makes duplicates UNCREATABLE via the doors — the multi-file delete
+  test hand-writes the duplicate (the hand-edit scenario the guard
+  protects).
+* **F-6** — REVIEW CORRECTION 2: the backend confidence filter was NOT
+  working as reviewed — `confidence` is a REAL column and the shipped
+  equality match (`confidence = 'low'`) can never hit a number (the
+  "bucketing at brain.py:42-48" the review cited does not exist in this
+  tree). Landed: real bucketing in brain.py (low < 0.5, medium 0.5–<0.8,
+  high ≥ 0.8, documented in code), the missing frontend select
+  (`memory-confidence-filter`) sending `&confidence=`, and tests on both
+  layers (`test_memory_store_characterization.py::`
+  `test_browse_filter_confidence_buckets`; MemorySection C-3 test now pins
+  `confidence=high` in the fetch URL).
+* **F-7** — promotion rollback text now says "delete the promoted global
+  fact via the Memory UI (its source is promoted-from:<workspace>)."
+
+### 9.2 F-8 — deliberately not implemented (ruling needed if wanted)
+
+The plan's own probe confirmed the workbench CHAT turn already surfaces
+retries: the stream paths emit `upstreamRetry` (workbench/providers.py:490+,
+:701+). `requestJson`'s remaining callers are (a) the `/v1` proxy adapters —
+whose SSE consumer is an EXTERNAL tool (OpenCode, Claude Code, …);
+inventing a non-standard `upstreamRetry` SSE event on that wire risks
+breaking strict third-party parsers and is a wire-protocol decision, not a
+"callback/hook plumbing" fix; and (b) single-shot helpers (model Test
+button, `generate`) where a silent 1–8 s retry is acceptable. Surfacing
+retries to external proxy clients needs a design ruling first; skipped here.
 
 **Validation update (2026-08-30, later same day):** the full suites then ran
 for real. Backend `uv run pytest -q`: **1982 passed, 1 skipped** — 3 failures,

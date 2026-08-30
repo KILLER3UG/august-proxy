@@ -213,6 +213,22 @@ def test_delete_removes_only_project_override(isolated, tmp_path):
         _cleanProject(ws)
 
 
+def test_delete_rejects_path_traversal_names(isolated, tmp_path):
+    # §9 F-1: deleteSkill must validate `name` like create/patch do — a
+    # traversal name ('..' or containing separators) must raise BEFORE the
+    # project-root join, and the sibling directory must survive.
+    ws = tmp_path / 'ws-deltrav'
+    ws.mkdir()
+    victim = tmp_path / 'victim-dir'
+    _mkSkillDir(victim, 'keep', 'victim sibling', body='Survive.')
+    _mkSkillDir(ws / '.aug' / 'skills', 'innocent', 'innocent project skill')
+    for bad in ('..', '../..', '..\\..\\..', 'a/b', 'a\\b'):
+        with pytest.raises(SkillValidationError):
+            skill_service.deleteSkill(bad, str(ws))
+    assert victim.exists() and (victim / 'keep' / 'SKILL.md').exists()
+    assert (ws / '.aug' / 'skills' / 'innocent' / 'SKILL.md').exists()
+
+
 def test_delete_refused_when_no_project_override(isolated, tmp_path):
     ws = tmp_path / 'ws-delref'
     ws.mkdir()

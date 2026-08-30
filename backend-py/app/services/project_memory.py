@@ -26,10 +26,13 @@ decides whether it lands in theirs.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _HEADING_RE = re.compile(r'^##\s+(.+?)\s*$', re.MULTILINE)
 _UPDATED_RE = re.compile(r'^\*updated:\s*([^*\s]+)\*\s*$|^\*\s*updated:\s*([^*\s]+)\*\s*$', re.MULTILINE)
@@ -167,6 +170,22 @@ def read_entries(workspace: str | Path, *, title: str = '') -> list[ProjectEntry
     return out
 
 
+def _sanitizeTitle(title: str) -> str:
+    """§9 F-4: a newline in the title would render a second `## ` heading
+    and re-parse as a separate entry — flatten to one line."""
+    return ' '.join((title or '').split())
+
+
+def _sanitizeBody(body: str) -> str:
+    """§9 F-4: escape body lines that look like `## ` headings so a body can
+    never inject a new entry on re-parse (writer-side; parser stays simple)."""
+    if not body or '##' not in body:
+        return body
+    return '\n'.join(
+        re.sub(r'^##(\s)', r'\\\1', ln, count=1) for ln in body.splitlines()
+    )
+
+
 def upsert_entry(
     workspace: str | Path,
     title: str,
@@ -177,11 +196,17 @@ def upsert_entry(
 ) -> ProjectEntry:
     """Append or update one `## <title>` entry (write door for remember
     scope='project' and the UI). Title is the entry key; body replaces the
-    old body. An `*updated: …*` stamp is refreshed when ``touch_updated``."""
+    old body. An `*updated: …*` stamp is refreshed when ``touch_updated``.
+
+    §9 F-4 format-contract guards: titles are flattened to one line and
+    heading-looking body lines are escaped, so the entries written here
+    always re-parse 1:1; a title that already exists in ANOTHER md file is
+    updated there (first match in file order) instead of duplicated."""
     root = ensure_root(workspace)
     target = root / file
     pf = parse_memory_md(target.read_text('utf-8')) if target.exists() else ProjectFile()
-    title = (title or '').strip() or 'Untitled'
+    title = _sanitizeTitle(title) or 'Untitled'
+    body = _sanitizeBody(body)
     now = datetime.now().astimezone().strftime('%Y-%m-%d')
     hit = False
     for e in pf.entries:
@@ -192,6 +217,25 @@ def upsert_entry(
             hit = True
             break
     if not hit:
+        # Title keys are unique per workspace by convention — upsert accepts
+        # a file param, so a cross-file duplicate is creatable and one
+        # delete would only remove part of it. Update the first match
+        # elsewhere instead of creating a duplicate.
+        for p in _list_files(workspace):
+            if p == target:
+                continue
+            pf_other = parse_memory_md(p.read_text('utf-8'))
+            for e in pf_other.entries:
+                if e.title.strip().lower() == title.lower():
+                    e.body = body.strip()
+                    if touch_updated:
+                        e.updated = now
+                    p.write_text(render_memory_md(pf_other), 'utf-8')
+                    log.info(
+                        'project_memory: title %r matched in %s; updated there instead of creating in %s',
+                        title, p.name, file,
+                    )
+                    return ProjectEntry(title=title, body=body, updated=now if touch_updated else '', file=p.name)
         pf.entries.append(
             ProjectEntry(title=title, body=body.strip(), updated=now if touch_updated else '')
         )
@@ -202,17 +246,36 @@ def upsert_entry(
 def delete_entry(workspace: str | Path, title: str, *, file: str = '') -> bool:
     """Delete one entry by exact title (case-insensitive). When ``file`` is
     empty every md file is searched (title keys are unique per workspace by
-    convention). Returns True when an entry was removed."""
+    convention). Returns True when an entry was removed.
+
+    §9 F-4: with ``file`` empty and the title matching more than one file,
+    only the FIRST match (sorted file order) is deleted and the rest are
+    logged — pass ``file=`` to target a specific file."""
     removed = False
+    rest: list[str] = []
     for p in _list_files(workspace):
         pf = parse_memory_md(p.read_text('utf-8'))
         keep = [e for e in pf.entries if e.title.strip().lower() != (title or '').strip().lower()]
-        if len(keep) != len(pf.entries):
+        if len(keep) == len(pf.entries):
+            continue
+        if file:
+            if p.name != file:
+                continue
+            pf.entries = keep
+            p.write_text(render_memory_md(pf), 'utf-8')
+            return True
+        if not removed:
             pf.entries = keep
             p.write_text(render_memory_md(pf), 'utf-8')
             removed = True
-            if file and p.name == file:
-                return True
+        else:
+            rest.append(p.name)
+    if rest:
+        log.warning(
+            'project_memory: title %r also matched %s — deleted only the first match; '
+            'pass file= to target a specific file',
+            title, ', '.join(rest),
+        )
     return removed
 
 
