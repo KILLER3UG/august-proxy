@@ -420,9 +420,6 @@ export interface WorkbenchEventHandlers {
       coreFactsUsed?: boolean;
       augDirectiveUsed?: boolean;
     };
-    /** Deterministic preference candidates from the last user message —
-     *  rendered as one-click "save as memory" chips (backend F3). */
-    memorySuggestions?: string[];
   }) => void;
   /** Backend is backing off before retrying a failed model call (429/5xx).
    *  The chat shows a self-updating notice instead of dying mid-turn. */

@@ -50,6 +50,10 @@ _ALLCamelKeys = {
     'titleModel',
     # Part 16/17 skill-learning judge mode (off | extract-only | full).
     'skillLearning',
+    # Part 16 Phase C: dedicated judge model + tier-2 cost gates.
+    'skillLearningJudgeModel',
+    'escalationBudgetPerDay',
+    'flagRateCap',
 }
 
 

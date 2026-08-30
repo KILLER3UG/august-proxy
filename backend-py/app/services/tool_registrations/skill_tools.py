@@ -40,6 +40,8 @@ async def _loadSkill(name: str) -> str:
                 f"Skill '{name}' is disabled. It cannot be loaded — "
                 'enable it in Settings → Skills first.'
             )
+        # Part 16 Phase E: trigger-hit telemetry (per-skill usage sidecar).
+        skill_service.record_skill_use(as_str(skill.get('path'), ''))
         return f'# {skill["name"]}\n\n{as_str(skill.get("description"), "")}\n\n{as_str(skill.get("instructions"), "")}'
     except Exception as exc:
         return f"Error loading skill '{name}': {exc}"

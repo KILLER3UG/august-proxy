@@ -28,6 +28,7 @@ import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
+import { LearningPanel } from '@/sections/settings/LearningPanel';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { cn } from '@/lib/utils';
 
@@ -332,6 +333,9 @@ export function SkillsSection() {
           )}
         </div>
       )}
+
+      {/* ── Part 16 Phase E: Learning (curator report + drafts) ─────── */}
+      {mode === 'list' && <LearningPanel />}
 
       {/* ── List ────────────────────────────────────────────────────── */}
       {mode === 'list' && (

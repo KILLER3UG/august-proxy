@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
+from app.services.sensitive_topics import isSensitiveMemory as _isSensitiveMemory
 
 
 async def _search(query: str, scope: str = 'files', limit: int = 10) -> str:
@@ -73,25 +74,9 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
         return f'{{"error": "brain_query: {exc}"}}'
 
 
-# Sensitive-topic denylist for the `remember` write door. Keyword/regex scan —
-# deliberately conservative; a hit refuses the write unless the user turned on
-# memorySensitiveTopics. Covers health specifics, ID numbers, minors, beliefs.
-_SENSITIVE_MEMORY_RE = re.compile(
-    r'\b('
-    r'diagnos\w*|cancer|tumor|hiv\b|diabet\w*|medication|prescription|dosage|'
-    r'antidepressant|psychotherap\w*|mental illness|'
-    r'social security|ssn\b|passport|credit card|bank account|routing number|tax id|'
-    r'religio\w*|political party|political affiliation|'
-    r'(?:son|daughter|child|kid)(?:\'s)? (?:name|age|school|medical)'
-    r')\b'
-    r'|\b\d{3}-\d{2}-\d{4}\b',  # SSN-like pattern
-    re.IGNORECASE,
-)
-
-
-def _isSensitiveMemory(*texts: str) -> bool:
-    blob = ' '.join(str(t) for t in texts if t)
-    return bool(_SENSITIVE_MEMORY_RE.search(blob))
+# Sensitive-topic denylist for the `remember` write door — the scanner now
+# lives in services.sensitive_topics (shared with the Part 16 distiller's
+# drafted summaries/bodies); this alias keeps the remember door unchanged.
 
 
 def _deriveFactKey(text: str) -> str:

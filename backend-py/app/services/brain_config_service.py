@@ -60,9 +60,10 @@ numKeys: tuple[str, ...] = (
     'maxWorkbenchToolLoops',
     'autoRouteMinSamples',
     'consolidationIntervalHours',
+    'escalationBudgetPerDay',
 )
-floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap')
-strKeys: tuple[str, ...] = ('titleModel', 'skillLearning')
+floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap', 'flagRateCap')
+strKeys: tuple[str, ...] = ('titleModel', 'skillLearning', 'skillLearningJudgeModel')
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys + floatKeys + strKeys)
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
@@ -70,6 +71,8 @@ minSamplesRange = (1, 20)
 minWinRateRange = (0.05, 1.0)
 winGapRange = (0.0, 0.9)
 consolidationIntervalRange = (1, 168)
+escalationBudgetRange = (0, 50)
+flagRateCapRange = (0.0, 0.5)
 fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'),
     ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'),
@@ -119,6 +122,14 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # (ship default) = mining + promote proposals; full = also draft skill
     # bodies. Governs harness_promote.run_promotion_pass.
     ('skillLearning', 'skill_learning', 'extract-only', 'str'),
+    # Part 16 Phase C: dedicated judge model for the episode distiller
+    # (empty = fall back to the background-review memory model, then the
+    # titler resolver order — keyless gateways keep working).
+    ('skillLearningJudgeModel', 'skill_learning_judge_model', '', 'str'),
+    # Part 16 cost gates: tier-2 escalations per day and the max fraction of
+    # scored episodes flagged to tier 2 (episode_miner.flag_top_slice).
+    ('escalationBudgetPerDay', 'escalation_budget_per_day', 2, 'num'),
+    ('flagRateCap', 'flag_rate_cap', 0.05, 'float'),
 )
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}
@@ -221,6 +232,8 @@ def validatePatch(patch: object) -> tuple[bool, str]:
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return (False, f'{key!r} must be a number (got {type(value).__name__})')
             lo, hi = minWinRateRange if key == 'autoRouteMinWinRate' else winGapRange
+            if key == 'flagRateCap':
+                lo, hi = flagRateCapRange
             if value < lo or value > hi:
                 return (False, f'{key!r} must be between {lo} and {hi} (got {value})')
         else:
@@ -232,6 +245,8 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = minSamplesRange
             elif key == 'consolidationIntervalHours':
                 lo, hi = consolidationIntervalRange
+            elif key == 'escalationBudgetPerDay':
+                lo, hi = escalationBudgetRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:

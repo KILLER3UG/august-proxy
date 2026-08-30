@@ -88,6 +88,15 @@ _STORE_ALIASES: dict[str, str] = {
     'memory_store': 'memory',
 }
 
+# Virtual (non-table) stores handled by dedicated query fns.
+_VIRTUAL_STORES = frozenset({'failure-fingerprints'})
+_STORE_ALIASES.update(
+    {
+        'failure_fingerprints': 'failure-fingerprints',
+        'failureFingerprints': 'failure-fingerprints',
+    }
+)
+
 
 def _resolve_store(store: str) -> str:
     """Map wire/SQL aliases to a canonical ``_BRAINStores`` key."""
@@ -201,6 +210,41 @@ def _brain_query_project_memory(query: str, filters: dict | None, limit: int) ->
         return _json.dumps({'error': f'project-memory query failed: {exc}'})
 
 
+def _brain_query_fingerprints(query: str, filters: dict | None, limit: int) -> str:
+    """Part 16 Phase B: failure fingerprints as a virtual brain_query store.
+
+    Fingerprints are the workflow-grain recurrence evidence — querying them
+    via ``brain_query store=failure-fingerprints`` makes them model-visible
+    without touching the ``search`` tool (the "search memory section" add
+    is CUT — brain_query already IS the memory search tool). Query matches
+    against the signature text; rows rank by episode_count (recurrence)
+    then recency.
+    """
+    import json as _json
+
+    conn = _conn()
+    sql = 'SELECT * FROM failure_fingerprints'
+    params: list[object] = []
+    where: list[str] = []
+    q = (query or '').strip()
+    if q:
+        where.append('(fingerprint LIKE ? OR status LIKE ?)')
+        params.extend([f'%{q}%', f'%{q}%'])
+    if filters and isinstance(filters.get('status'), str) and filters['status'].strip():
+        where.append('status = ?')
+        params.append(str(filters['status']).strip())
+    if where:
+        sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY episode_count DESC, last_seen DESC'
+    cap = max(1, min(limit, 100))
+    sql += f' LIMIT {cap}'
+    try:
+        rows = [_row_as_wire(r) for r in conn.execute(sql, params).fetchall()]
+        return _json.dumps(rows, default=str, ensure_ascii=False)
+    except Exception as exc:
+        return _json.dumps({'error': f'failure-fingerprints query failed: {exc}'})
+
+
 def _brain_query_facts_ranked(query: str, filters: dict | None, limit: int) -> str:
     """Phase D: BM25-ranked facts retrieval for ``brain_query``.
 
@@ -280,8 +324,12 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
     if store in ('project-memory', 'project_memory', 'projectMemory'):
         return _brain_query_project_memory(query, filters, limit)
     store = _resolve_store(store)
+    if store in _VIRTUAL_STORES:
+        return _brain_query_fingerprints(query, filters, limit)
     if store not in _BRAINStores:
-        available = sorted(set(list(_BRAINStores.keys()) + list(_STORE_ALIASES.keys()) + ['daemons']))
+        available = sorted(
+            set(list(_BRAINStores.keys()) + list(_STORE_ALIASES.keys()) + ['daemons'] + list(_VIRTUAL_STORES))
+        )
         return json.dumps(
             {'error': f"store '{store}' not available in this build", 'available': available}
         )

@@ -426,12 +426,48 @@ def decide_proposal(pid: str, decision: str, note: str = '') -> dict[str, Any]:
     return row
 
 
-def _skill_frontmatter(name: str, description: str, trigger: str) -> str:
+def _skill_frontmatter(
+    name: str,
+    description: str,
+    trigger: str,
+    *,
+    origin: str = 'human',
+    learnedFrom: list[str] | None = None,
+    version: int = 1,
+    supersedes: str = '',
+) -> str:
+    """Learned-skill frontmatter with Part 16 Phase D provenance:
+    origin (human|distilled|amended), learned_from (episode ids), version,
+    status, and the supersedes lineage stamp."""
     lines = ['---', f'name: {name}', f'description: "{description}"']
     if trigger:
         lines.append(f'trigger: {trigger}')
-    lines += ['category: learned', 'created_by: harness-proposal', '---', '']
+    lines += [
+        'category: learned',
+        'created_by: harness-proposal',
+        f'origin: {origin}',
+        f'learned_from: {",".join(learnedFrom or [])}',
+        f'version: {version}',
+        'status: active',
+    ]
+    if supersedes:
+        lines.append(f'supersedes: {supersedes}')
+    lines += ['---', '']
     return '\n'.join(lines)
+
+
+def _parse_frontmatter_from_md(text: str) -> dict[str, str]:
+    """Minimal frontmatter reader for version bumps (no quote stripping
+    needed — version is a bare integer)."""
+    if not text.startswith('---'):
+        return {}
+    block = text[3:].split('---', 1)[0]
+    out: dict[str, str] = {}
+    for line in block.split('\n'):
+        if ':' in line:
+            key, _, val = line.partition(':')
+            out[key.strip()] = val.strip()
+    return out
 
 
 def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
@@ -459,6 +495,9 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
         body = as_str(payload.get('body'), '')
         description = as_str(payload.get('description'), '')
         trigger = as_str(payload.get('trigger'), '')
+        supersedes = as_str(payload.get('supersedes'), '').strip()
+        origin = as_str(payload.get('origin'), '') or 'human'
+        learnedFrom = payload.get('episodeIds') or payload.get('learned_from') or []
         if not name:
             return {'ok': False, 'error': 'skill proposals need payload.name'}
         try:
@@ -483,18 +522,50 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
                 description=description or 'Created from an approved harness proposal.',
                 is_learned=True,
             )
-            md.write_text(
-                _skill_frontmatter(name, description or 'Created from an approved harness proposal.', trigger)
-                + normalized,
-                encoding='utf-8',
+            # Part 16 Phase D step 2: learned-skill provenance. version bumps
+            # per approved patch; status starts active (stale/retired via
+            # later proposals); supersedes stamps the lineage.
+            version = 1
+            if kind == 'skill_patch' and md.exists():
+                try:
+                    prior = _parse_frontmatter_from_md(md.read_text('utf-8'))
+                    version = int(prior.get('version') or 1) + 1
+                except Exception:
+                    version = 2
+            frontmatter = _skill_frontmatter(
+                name,
+                description or 'Created from an approved harness proposal.',
+                trigger,
+                origin=origin if origin in ('human', 'distilled', 'amended') else 'human',
+                learnedFrom=[str(x) for x in learnedFrom] if isinstance(learnedFrom, list) else [],
+                version=version,
+                supersedes=supersedes,
             )
+            md.write_text(frontmatter + normalized, encoding='utf-8')
+            # Part 16 Phase D step 2 supersession: an approved v2 disables
+            # the v1 it supersedes in the SAME write — no double injection.
+            supersededResult = ''
+            if supersedes and supersedes != name:
+                try:
+                    from app.services.skill_service import setEnabled
+
+                    setEnabled(supersedes, enabled=False)
+                    supersededResult = f'; disabled {supersedes!r}'
+                except Exception as exc:
+                    supersededResult = f'; failed to disable {supersedes!r}: {exc}'
             try:
                 from app.services.skill_service import _bust_prompt_skills_cache
 
                 _bust_prompt_skills_cache()
             except Exception:
                 pass
-            return {'ok': True, 'action': 'patched' if kind == 'skill_patch' else 'created', 'name': name}
+            return {
+                'ok': True,
+                'action': 'patched' if kind == 'skill_patch' else 'created',
+                'name': name,
+                'version': version,
+                'superseded': supersededResult,
+            }
         except ValueError as exc:
             return {'ok': False, 'error': str(exc)}
         except Exception as exc:

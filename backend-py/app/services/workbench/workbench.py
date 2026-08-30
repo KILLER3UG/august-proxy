@@ -4754,29 +4754,6 @@ def _lastUserMessageText(session: WorkbenchSession) -> str:
     return ''
 
 
-# Deterministic preference patterns for one-click memory suggestions (F3).
-# Conservative by design: full sentences with an explicit preference verb, so
-# casual chat rarely triggers and genuine statements ("I prefer X over Y")
-# become saveable facts without an extra LLM call per turn.
-_MEMORY_SUGGESTION_PATTERNS = [
-    re.compile(r'\b(?:I|we)\s+(?:prefer|use|like|love|hate|dislike|need|want|avoid)\s+(.{8,120})', re.IGNORECASE),
-    re.compile(r'\b(?:My|our)\s+(?:name|role|stack|team|company|project|tool)\s+(?:is|are)\s+(.{3,120})', re.IGNORECASE),
-    re.compile(r'\b(?:I|we)\s+work(?:ing)?\s+on\s+(.{8,120})', re.IGNORECASE),
-    re.compile(
-        r'\b(?:actually|correction)\s*[:,]?\s+(.{8,120})',
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r'\b(?:that(?:\'s| is) (?:wrong|incorrect)[,.]?\s*)(.{8,120})',
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r'\b(?:I meant|do not|don\'t|never)\s+(.{8,120})',
-        re.IGNORECASE,
-    ),
-]
-
-
 async def _executeTool(
     toolName: str, args: dict[str, object], session: WorkbenchSession, toolUseId: str = ''
 ) -> str:

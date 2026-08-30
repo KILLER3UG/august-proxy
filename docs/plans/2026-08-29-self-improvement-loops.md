@@ -1,6 +1,8 @@
 # Part 16 — Self-Improvement Loops
 
-**Status:** DRAFT — awaiting ruling. Third review 2026-08-30 (§9): every
+**Status:** IMPLEMENTED 2026-08-30 — Step-0 + Phases A–E landed (see §11 for
+the per-phase changelog); OQ 1–6 follow the recommended defaults
+(confirm-or-revert). Third review 2026-08-30 (§9): every
 citation re-verified against the working tree (all hold; two line-number
 drifts noted; the frontmatter quote bug confirmed LIVE by execution);
 implementation is gated behind the Part 17 §9 fix batch. Reconstructed into the repo on 2026-08-29 from the drafted design record, then re-grounded against a same-day full scan of the memory/skills stack (live smoke test 2026-08-29). SECOND review 2026-08-30: every file:line re-verified against the working tree — citations corrected, Step 0 trimmed (search memory-section CUT; guidance/refine-store/curator-bar demoted), migration retargeted 027 → **028**, and the two failure→memory lanes (`turn_outcomes` vs episode fingerprints) explicitly separated. Implementation status after the 2026-08-30 Part 17 landing: `skillLearning` (off | extract-only | full, default extract-only) and the promotion judge/queue are ALIVE via Part 17 Phase E (brain_config_service.py:65, :121, :218); the episode engine itself is NOT — no `episode_miner.py`, no `episodes`/`failure_fingerprints` tables, migration 028 unused. Phases A–C below must extend the landed queue/config, not duplicate it.
@@ -211,9 +213,127 @@ and home-scope leak (F-5): Phase A's episode miner reads sessions and
 workspace state and would inherit those defects as noise.
 
 **Sequencing ruling (for the implementing agent):**
-1. Part 17 §9 fix batch F-1…F-7 first (small, security + correctness).
+1. Part 17 §9 fix batch F-1…F-7 first (small, security + correctness). — **LANDED** `1721b2a9` (2026-08-30).
 2. Part 16 Step-0 quick wins any time after: palette route fix (:310),
    tab=learning dead link (:294) or create the Learning tab, quote-strip
-   fix, tool_policy comment.
+   fix, tool_policy comment. — **LANDED in the working tree** (2026-08-30:
+   palette routes → `/settings/skills` + `/api/brain/consolidation/run`,
+   `_MEMORY_SUGGESTION_PATTERNS` + `memorySuggestions` deleted,
+   `tool_policy.py` search comment fixed, `_parse_frontmatter_block`
+   quote-strip + hygiene test).
 3. Part 16 Phases A–E only after (1) lands — the engine builds on the
-   substrate; migration 028 retarget still correct.
+   substrate; migration 028 retarget still correct. — **IN PROGRESS**
+   (2026-08-30 implementation pass; see §11 for live status).
+
+---
+
+## 10. External research deltas (2026-08-30) — PROVENANCE RECORD AREA
+
+> Record area per the plans directive: the two externally-scanned agent
+> harnesses are named here ONLY. Every adopted delta below is restated in
+> August-native terms in the phases above/below; nothing in §10 defines new
+> behavior by reference.
+
+Two external harnesses were deep-scanned this day (4 subagent scans each;
+reports in session transcript; clones in `%TEMP%`):
+
+* **prime-agent** (PrimeIntellect-ai) — a "Self-Improving RLM Harness";
+  its `/refine` mechanism is the closest shipped cousin of this plan's
+  Phase C/D.
+* **zed** (zed-industries) — its `agent_skills` crate README + prompt-cache
+  discipline informed the skills surfaces.
+
+**Adopted into this plan (all restated natively in code):**
+
+| Delta | Where it lands |
+|---|---|
+| Separate plan from apply; LLM only proposes, a deterministic validator gates every edit; per-edit failure isolation (one bad verdict never aborts the batch) | Phase C distiller verdict loop + the existing proposal queue's `save_proposal` validation |
+| Cheap review-gate before distiller spend: cooldown + "prefer an empty verdict list over speculative drafts" instruction in the judge prompt | Phase C `run_distiller_pass` gating |
+| Evidence as two mandatory structured fields — rationale (trajectory evidence) + expectedOutcome (what should improve, how to validate) — recorded per judgment and REPLAYED into future judge prompts (last N) | Phase C verdict records (`judge_verdict` blob) + judge prompt assembly |
+| Optimistic concurrency: state re-read at apply time; per-edit validation at propose time (payload.name validated at file time) | Already shipped (§9 F-2); reaffirmed as the boundary |
+| Skill catalog memo keyed per-skill SKILL.md mtime so in-place edits bust prompt caches | Phase D step 1 |
+| Supersession on approval: approved v2 disables v1 in the same write and stamps `supersedes:` frontmatter | Phase D step 2 |
+| Learned-skill frontmatter provenance: origin / learned_from / version / status | Phase D step 2 |
+| Amends never touch bundled skills — proposals against them become fresh drafts referencing them | Phase C distiller target resolution |
+| Usage sidecar (per-skill trigger counts) as the precondition for honest recurrence measurement | Phase E `record_skill_use` |
+
+**Considered and NOT adopted (each cut by the every-item-earns rule):**
+
+* Executable Python-skill packaging (skills as importable modules) — August
+  skills are markdown procedures; the judge writing code files violates the
+  refiner-never-writes-code boundary anyway.
+* Full persistent-REPL / prompt-as-variable architecture and the multi-process
+  daemon topology — different design point; August's conventional loop and
+  single backend process are deliberate.
+* Skill catalog byte-budget + deterministic overflow (50KB) — worth adopting
+  only when the catalogue first exceeds a few KB in practice; recorded as a
+  future knob, not v1.
+* `disable-model-invocation` frontmatter flag — overlaps August's existing
+  `disabled` + enabled-filter machinery; no second mechanism.
+
+---
+
+## 11. Implementation status (2026-08-30, updated after the Phase C landing)
+
+* **Landed (working tree):**
+  * *Phase A+B* — `episode_miner.py` (window extraction, typed events,
+    fingerprints, six-criterion rubric, flag-rate-cap + daily escalation
+    budget, 90-day prune), migration `028_episodes_fingerprints.sql`,
+    shared `text_similarity.py` BM25 ratio, `test_episode_miner.py`,
+    `test_fingerprints.py`.
+  * *Shared denylist* — `sensitive_topics.py` extracted from
+    session_tools' remember-gate scanner (Phase C prerequisite); the
+    remember door aliases it unchanged.
+  * *Fingerprint visibility* — `brain.py` `_brain_query_fingerprints`:
+    `brain_query store=failure-fingerprints` virtual store (recurrence-
+    ranked), per the §3.2 CUT note (no `search`-tool add).
+  * *Phase C* — `skill_distiller.py` (batched ≤5 judge, strict 5-action
+    JSON, judge timeout/cooldown, `precision_state`/`record_precision_run`
+    ship-bar machinery, `_draftExists` anti-drift, `dryRun` support,
+    propose-time canonical bodies) + `test_distiller.py`.
+  * *Cadence wiring* — consolidation `_skill_learning_pass`: mine → flag →
+    distill → prune piggyback the consolidation loop, `skillLearning`-gated.
+  * *Step-0 sweep* — palette routes (`/settings/skills`,
+    `/api/brain/consolidation/run`), `_MEMORY_SUGGESTION_PATTERNS` +
+    `memorySuggestions` deleted, tool_policy comment, frontmatter
+    quote-strip + hygiene test.
+  * *Config knobs REGISTERED (2026-08-30, later — the "live gap" below is
+    CLOSED):* `skillLearningJudgeModel` (str), `escalationBudgetPerDay`
+    (num 0-50, default 2), `flagRateCap` (float 0.0-0.5, default 0.05) are
+    in `brain_config_service.py` key tuples + `fieldTable` + range
+    validation; `_ALLCamelKeys` oracle in test_brain_config.py extended.
+    (The reverted first draft had registered them; the revert dropped the
+    registrations — re-landed deliberately with validation branches.)
+* **Phase D LANDED (2026-08-30, same-day implementation pass):**
+  per-skill SKILL.md mtimes in the catalogue memo key
+  (`_skillMdMarks` — in-place edits bust the memo); `supersedes` honored
+  by the applier (v2 approval disables v1 in the same write + stamps
+  `supersedes:` frontmatter); learned provenance
+  (`origin`/`learned_from`/`version`/`status`) written at apply time with
+  version bump on patch; proposals endpoint `origin` filter (§3.4 step 3);
+  bundled-skill amends convert to fresh `-revised` drafts referencing the
+  original (distiller side).
+* **Phase E LANDED (same pass):** `record_skill_use` sidecar
+  (`.usage.json`) wired into `load_skill` (bulk inherits); recurrence
+  meter `run_resolution_check` (resolve / re-flag / revision-or-retire /
+  demotion suggestions — all suggestion-only, deduped via
+  `_draftExists`); `/api/curator/run` + `/api/curator/report` +
+  `/api/curator/episodes` router (CuratorSuggestionBar un-404'd, its
+  report shape composed); LearningPanel mounted in the Skills hub
+  (metric header, flagged episodes with rubric scores, distiller drafts
+  with approve/reject through the existing queue).
+* **Remaining test files LANDED:** `test_skill_supersession.py` (5),
+  `test_recurrence_meter.py` (7), `test_distiller_precision.py` (6 — the
+  ship-bar harness: gate math + scripted-judge accumulation; production
+  hand-labels accumulate in `data/skill_learning_precision.json`).
+* **Still open (design in §10 / phases above):**
+  * Production hand-labeling of ≥30 real episodes to actually open the
+    `amend_body` gate (the harness + gate ship; real labels accumulate).
+  * OQ 1–6 confirm-or-revert rulings (code follows recommended defaults:
+    extract-only, no amend-body at birth, sub-agent mining in scope,
+    dedicated judge model with fallback, suggestion-only demotion, 90-day
+    prune).
+  * A first agent-written draft of Phase C–E was written and REVERTED the
+    same day on the user's hold — §10 is the reviewed design record it was
+    re-implemented from (this pass re-lands the reviewed design; the
+    revert's unregistered-knobs gap was found and fixed en route).

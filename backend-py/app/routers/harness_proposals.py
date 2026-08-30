@@ -17,10 +17,22 @@ class ProposalDecision(CamelModel):
 
 
 @router.get('')
-async def listProposals(status: str = ''):
-    """List harness proposals, newest first (optionally filtered by status)."""
+async def listProposals(status: str = '', origin: str = ''):
+    """List harness proposals, newest first (optionally filtered by status).
+
+    Part 16 Phase D step 3: ``origin`` groups self-improvement drafts
+    (payload.origin: human | distilled | amended) so reviewable drafts are
+    recognizable at a glance."""
+    proposals = harness_self_improve.list_proposals(status=status)
+    if origin:
+        proposals = [
+            p
+            for p in proposals
+            if isinstance(p.get('payload'), dict)
+            and str(p['payload'].get('origin', '')) == origin
+        ]
     return {
-        'proposals': harness_self_improve.list_proposals(status=status),
+        'proposals': proposals,
         'openCount': len(harness_self_improve.list_proposals(status='open')),
     }
 

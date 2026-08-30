@@ -291,7 +291,7 @@ export function CommandPalette() {
             </Command.Item>
             <Command.Item
               value="action brain pending skills"
-              onSelect={run(() => { void navigate("/brain?tab=learning"); })}
+              onSelect={run(() => { void navigate("/settings/skills"); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
               <Sparkles className="size-3.5" /> Review pending skills
@@ -307,7 +307,7 @@ export function CommandPalette() {
               value="action brain run consolidation"
               onSelect={run(() => {
                 void api
-                  .post("/api/brain/run-consolidation", {})
+                  .post("/api/brain/consolidation/run", {})
                   .then(() => toast.success("Sleep cycle finished"))
                   .catch((e: Error) => toast.error(e.message || "Consolidation failed"));
               })}

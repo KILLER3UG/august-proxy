@@ -58,7 +58,7 @@ _PROMPT_READ = frozenset({
     'web_fetch_many', 'web_search',
     # Component datasheet/parts lookup — network read, no workspace mutation.
     'search_component',
-    # Unified cross-store search (memory/files/web) — read-only.
+    # Unified cross-store search (files/web) — read-only.
     'search',
     # Harness self-inspection — read-only aggregation of runtime state.
     'harness_introspect',

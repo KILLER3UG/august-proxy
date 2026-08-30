@@ -128,6 +128,34 @@ def test_relevant_skills_env_gate(freshSkillState, monkeypatch):
     assert build_relevant_skills_block('run the hy gated skill now please') == ''
 
 
+def test_parse_frontmatter_strips_surrounding_quotes(freshSkillState):
+    # Part 16 Phase C quote-strip: _skill_frontmatter (and the bundled
+    # august-harness/august-tools SKILL.md files) write quoted values, but
+    # the parser kept the literal quotes — they rode into every prompt's
+    # skills index and GET /api/skills.
+    fm = skill_service._parse_frontmatter_block(
+        'description: "How the loop works"\ntrigger: \'when testing\'\ncategory: plain\n'
+    )
+    assert fm['description'] == 'How the loop works'
+    assert fm['trigger'] == 'when testing'
+    assert fm['category'] == 'plain'
+    # Inner/unbalanced quotes stay untouched.
+    fm2 = skill_service._parse_frontmatter_block('description: say "hello" aloud\n')
+    assert fm2['description'] == 'say "hello" aloud'
+
+
+def test_bundled_skills_no_literal_quotes_in_descriptions(freshSkillState):
+    # Live-bug regression (Part 16 §9 confirmed by execution): the two
+    # bundled quoted frontmatters must parse clean.
+    quoted = [
+        s['name']
+        for s in skill_service.list_all()
+        if str(s.get('description', '')).startswith(('"', "'"))
+        or str(s.get('description', '')).endswith(('"', "'"))
+    ]
+    assert quoted == []
+
+
 def test_bundled_tutor_skill_present(freshSkillState):
     """The built-in ``tutor`` skill ships in the bundled root and stays loadable.
 

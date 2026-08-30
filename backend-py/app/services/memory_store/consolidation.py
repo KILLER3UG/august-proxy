@@ -235,6 +235,49 @@ def _maybe_vacuum() -> bool:
         return False
 
 
+def _skill_learning_pass() -> dict[str, object]:
+    """Part 16: mining + scoring + distiller piggyback the consolidation
+    cadence — no new scheduler. Gated on ``skillLearning`` (off skips).
+    The distiller's model call happens on the consolidation cadence, so a
+    slow judge never touches a live turn."""
+    out: dict[str, object] = {}
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        mode = str(getRuntimeConfig().get('skillLearning', 'extract-only') or '')
+    except Exception:
+        mode = 'extract-only'
+    if mode == 'off':
+        return out
+    try:
+        from app.services.episode_miner import flag_top_slice, mine_sessions, prune_old_episodes
+
+        mined = mine_sessions()
+        out['episodesMined'] = mined.get('episodes', 0)
+        flagRateCap, budgetPerDay = 0.05, 2
+        try:
+            cfg = getRuntimeConfig()
+            capRaw = cfg.get('flagRateCap')
+            budgetRaw = cfg.get('escalationBudgetPerDay')
+            if isinstance(capRaw, (int, float)) and not isinstance(capRaw, bool):
+                flagRateCap = float(capRaw)
+            if isinstance(budgetRaw, int) and not isinstance(budgetRaw, bool):
+                budgetPerDay = int(budgetRaw)
+        except Exception:
+            pass
+        out['flagged'] = flag_top_slice(flagRateCap=flagRateCap, budgetPerDay=budgetPerDay)['flagged']
+        out['episodesPruned'] = prune_old_episodes()
+        if mode in ('extract-only', 'full'):
+            from app.services.skill_distiller import run_distiller_pass
+
+            dist = run_distiller_pass()
+            out['distiller'] = {'verdicts': dist.get('verdicts', 0), 'skipped': dist.get('skipped', '')}
+    except Exception as exc:
+        logger.debug('skill-learning pass failed: %s', exc, exc_info=True)
+        out['skillLearningError'] = str(exc)
+    return out
+
+
 def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
     """One consolidation pass. Synchronous; callers wrap it. Never raises."""
     from app.services.memory_store import record_lifecycle, set_internal_state
@@ -260,6 +303,7 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
         notes.extend(superNotes)
         summary['outcomesSwept'] = sweep_old_outcomes()
         summary['vacuumed'] = _maybe_vacuum()
+        summary.update(_skill_learning_pass())
         summary['notes'] = notes
         summary['ranAt'] = datetime.now(timezone.utc).isoformat()
         try:

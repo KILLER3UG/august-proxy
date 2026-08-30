@@ -75,6 +75,26 @@ def _root_mtime(root: Path) -> float:
         return 0.0
 
 
+def _skillMdMarks(pairs: list[tuple[str, Path]]) -> tuple:
+    """Per-skill SKILL.md mtimes for the catalogue memo key (Part 16 Phase D
+    step 1). Root-dir mtime misses IN-PLACE SKILL.md edits — a hand edit or
+    external writer never bumped the memo until an unrelated mutation.
+    Stats are cheap (~84 per rebuild window) next to the parse they gate."""
+    marks: list[tuple[str, float]] = []
+    for _scope, root in pairs:
+        try:
+            if not root.is_dir():
+                continue
+            for md in root.glob('*/SKILL.md'):
+                try:
+                    marks.append((str(md), md.stat().st_mtime))
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    return tuple(marks)
+
+
 def _bust_catalogue_cache() -> None:
     """Invalidate the catalogue memo (create/patch/delete paths).
 
@@ -217,12 +237,20 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
 
 
 def _parse_frontmatter_block(block: str) -> dict[str, str]:
-    """Parse ``key: value`` frontmatter lines, preserving insertion order."""
+    """Parse ``key: value`` frontmatter lines, preserving insertion order.
+
+    Part 16 Phase C quote-strip: ``_skill_frontmatter`` and the bundled
+    august-harness/august-tools SKILL.md files write quoted values — a
+    matching surrounding quote pair is stripped so literal quotes never
+    ride into the skills index / prompts."""
     frontmatter: dict[str, str] = {}
     for line in block.split('\n'):
         if ':' in line:
             key, __, val = line.partition(':')
-            frontmatter[key.strip()] = val.strip()
+            val = val.strip()
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+                val = val[1:-1]
+            frontmatter[key.strip()] = val
     return frontmatter
 
 
@@ -392,7 +420,7 @@ def catalogue(workspace: str | Path | None = None) -> list[dict[str, object]]:
     try:
         pairs = _skillRoots(workspace)
         roots = tuple(f'{scope}:{r}' for scope, r in pairs)
-        marks = tuple(_root_mtime(r) for _scope, r in pairs)
+        marks = tuple(_root_mtime(r) for _scope, r in pairs) + _skillMdMarks(pairs)
         key: tuple | None = (wsKey, roots, marks)
     except Exception:
         key = None
@@ -889,6 +917,34 @@ def deleteSkill(name: str, workspace: str | Path | None = None) -> dict[str, obj
     _shutil.rmtree(agent_dir)
     _bust_prompt_skills_cache()
     return {'deleted': name, 'scope': 'global'}
+
+
+def record_skill_use(skillPath: str) -> None:
+    """Bump the per-skill usage sidecar (``<skillDir>/.usage.json``).
+
+    Part 16 Phase E: without trigger-hit counts, "zero loads and no
+    recurrence" is unknowable — which is why honest demotion suggestions
+    and the curator report could not exist before. Best-effort: a failed
+    sidecar write never blocks the load."""
+    try:
+        import json as _json
+        from datetime import datetime
+
+        d = Path(skillPath).parent
+        if not d.is_dir():
+            return
+        sidecar = d / '.usage.json'
+        data: dict[str, object] = {}
+        if sidecar.exists():
+            try:
+                data = _json.loads(sidecar.read_text('utf-8'))
+            except Exception:
+                data = {}
+        data['count'] = int(str(data.get('count') or 0) or 0) + 1
+        data['lastUsed'] = datetime.now().astimezone().isoformat()
+        sidecar.write_text(_json.dumps(data), 'utf-8')
+    except Exception:
+        pass
 
 
 def setEnabled(name: str, *, enabled: bool) -> dict[str, object]:
