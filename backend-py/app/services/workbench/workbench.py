@@ -1165,9 +1165,15 @@ def buildSystemPrompt(
                 from app.services import skill_service as _sk_svc
                 from app.services.capabilities_prompt import build_capabilities_block
 
+                # Part 18 P1.2/P2.1: the main-agent Tier-1 index is NAME-ONLY
+                # (compact_skills) — descriptions ride in the per-turn
+                # <relevant_skills> tail instead, so name-only catalog grows
+                # without re-reading the cached prefix and in-place
+                # description edits keep the system prompt byte-stable.
                 caps = build_capabilities_block(
                     tool_names,
                     catalogue=_sk_svc.catalogue(workspacePath or None),
+                    compact_skills=True,
                 )
             except Exception:
                 logger.debug('prompt: capabilities block failed', exc_info=True)
@@ -1418,12 +1424,12 @@ def _sessionStateBlock(session: WorkbenchSession) -> str:
     working = getattr(session, '_working_memory', None)
     if working:
         lines.append(
-            f'scratchpad: {working if isinstance(working, str) else json.dumps(working, default=str)}'
+            f'scratchpad: {working if isinstance(working, str) else json.dumps(working, default=str, sort_keys=True)}'
         )
     failure = getattr(session, '_failure_feedback', None)
     if failure:
         lines.append(
-            f'last_tool_failure: {failure if isinstance(failure, str) else json.dumps(failure, default=str)}'
+            f'last_tool_failure: {failure if isinstance(failure, str) else json.dumps(failure, default=str, sort_keys=True)}'
         )
     if not lines:
         return ''
@@ -2649,6 +2655,7 @@ async def _sendWorkbenchMessageStreamImpl(
     try:
         from app.providers.clients.base import estimateTokens
         from app.services.workbench.context_compressor import (
+            REPLAY_USER_BUDGET_BYTES,
             acquireCompactionLock,
             compressMessages,
             isFeatureEnabled,
@@ -2712,11 +2719,15 @@ async def _sendWorkbenchMessageStreamImpl(
                         # of a phase/step or an error string the model still needs.
                         pin_predicates=[_is_update_state_transition, _is_failing_receipt],
                         # Prune-then-compact (§9.3 #2): token-budgeted verbatim
-                        # tail (retain 0.16 × window) + fixed markdown schema
+                        # tail (retain 0.16 × window) + fixed handoff schema
                         # carrying the file ledger across compactions.
                         contextWindow=contextWindow or None,
                         goalHint=as_str(getattr(session, 'goal', '') or ''),
                         schema=summarizer is None,
+                        # Part 18 P2.2: replay the newest verbatim user turns
+                        # right after the summary (the summary loses nuance
+                        # the user already paid for — fewer recovery rounds).
+                        replayUserBytes=REPLAY_USER_BUDGET_BYTES,
                     )
                     compressedTokens = estimateTokens(compressed)
                     if compressedTokens < originalTokens:

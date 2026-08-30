@@ -80,6 +80,15 @@ def computeBudget(
             "max_context": 200000,
             "tokenizer": "anthropic_sdk" | "tiktoken" | "gemini" | "heuristic",
         }
+
+    Design constraint (Part 18 P2.4): the budget counts LOCAL text
+    estimation only (input + output + cacheWrite) and MUST never ingest
+    provider usage — ``cacheRead`` tokens are a re-read of context the
+    model already paid for once and must not exhaust a budget early
+    (verifier/eval loops with 100k+ cached tokens would otherwise trip
+    the auto-compact threshold on every pass). Any future usage-based
+    budget must EXCLUDE ``cacheRead`` explicitly. Guarded by
+    ``test_compute_budget_usage_fields_never_counted``.
     """
     if isinstance(messages, str):
         text = messages

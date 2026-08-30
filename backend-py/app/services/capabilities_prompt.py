@@ -10,11 +10,14 @@ the caution level of their primary bucket (read / write / destructive / …).
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
 
 from app.json_narrowing import as_str
+
+logger = logging.getLogger(__name__)
 
 # Primary buckets (exactly one per tool). Order matters for prompt rendering.
 BUCKET_ORDER: tuple[str, ...] = (
@@ -271,10 +274,27 @@ def format_tools_by_bucket(
     return '\n'.join(lines).rstrip()
 
 
+# Part 18 P2.1: descriptive catalogue byte budget (default 24 KiB).
+# Deterministic stop-packing: pack alphabetically and stop BEFORE the first
+# entry that would overflow; entries are always rendered whole (a mid-entry
+# cut would render a partial description as if it were the full one).
+_SKILLS_INDEX_BYTE_BUDGET = 24 * 1024
+
+
 def format_skills_by_category(
     catalogue: list[dict[str, object]] | None = None,
+    max_bytes: int = _SKILLS_INDEX_BYTE_BUDGET,
 ) -> str:
-    """Render the ``<skills>`` body grouped by category with [evolving] markers."""
+    """Render the ``<skills>`` body grouped by category with [evolving] markers.
+
+    P2.1: the descriptive catalogue is bounded by ``max_bytes`` of entry
+    content with deterministic stop-packing — entries pack in the rendered
+    (category, name) order and the render stops before the first entry that
+    would overflow; the overflow is surfaced as a trailing notice line plus
+    a module log warning (an overflow must be visible, never silent). A
+    single entry larger than the budget is listed whole (an empty index
+    would be strictly worse than a small overage); it still surfaces.
+    """
     if catalogue is None:
         try:
             from app.services import skill_service
@@ -300,21 +320,60 @@ def format_skills_by_category(
         cat = as_str(s.get('category'), 'uncategorized') or 'uncategorized'
         by_cat[cat].append(s)
 
+    def _entryLines(s: dict[str, object]) -> list[str]:
+        name = as_str(s.get('name'), '')
+        desc = as_str(s.get('description'), '')
+        trigger = as_str(s.get('trigger'), '')
+        created = as_str(s.get('created_by'), '')
+        evolving = ' [evolving]' if created in _EVOLVING_CREATED_BY else ''
+        entry = f'- {name}{evolving}: {desc}' if desc else f'- {name}{evolving}'
+        if trigger:
+            entry += f' (trigger: {trigger})'
+        return [entry] if name else []
+
+    # Pack alphabetical entry streams (whole entries only), stop before the
+    # first entry that overflows — except a lone oversized entry, which is
+    # listed whole so no skill can be unreachable by budget alone.
+    body: list[str] = []
+    acc = 0
+    total = 0
+    packedCount = 0
+    truncated = False
     for cat in sorted(by_cat.keys()):
-        lines.append(f'### {cat}')
+        body.append(f'### {cat}')
         for s in sorted(by_cat[cat], key=lambda x: as_str(x.get('name'), '')):
-            name = as_str(s.get('name'), '')
-            if not name:
+            entryLines = _entryLines(s)
+            if not entryLines:
                 continue
-            desc = as_str(s.get('description'), '')
-            trigger = as_str(s.get('trigger'), '')
-            created = as_str(s.get('created_by'), '')
-            evolving = ' [evolving]' if created in _EVOLVING_CREATED_BY else ''
-            entry = f'- {name}{evolving}: {desc}' if desc else f'- {name}{evolving}'
-            if trigger:
-                entry += f' (trigger: {trigger})'
-            lines.append(entry)
-        lines.append('')
+            total += 1
+            cost = sum(len(ln) + 1 for ln in entryLines)
+            if acc + cost > max_bytes:
+                if acc == 0:
+                    # Nothing visible yet and this entry alone overflows:
+                    # list it whole rather than declaring an empty index.
+                    body.extend(entryLines)
+                    acc += cost
+                    packedCount += 1
+                    truncated = True
+                    continue
+                truncated = True
+                continue
+            body.extend(entryLines)
+            acc += cost
+            packedCount += 1
+        body.append('')
+    if truncated:
+        logger.warning(
+            'skills index truncated at %d-byte budget — %d of %d skills listed (descriptive catalogue)',
+            max_bytes,
+            packedCount,
+            total,
+        )
+        body.append(
+            f'... (skills index truncated at the {max_bytes}-byte budget: '
+            f'{packedCount} of {total} skills listed; use list_skills for the rest)'
+        )
+    lines.extend(body)
     return '\n'.join(lines).rstrip()
 
 

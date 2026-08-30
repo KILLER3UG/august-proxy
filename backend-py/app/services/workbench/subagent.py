@@ -113,6 +113,19 @@ def _toolName(t: dict[str, object]) -> str:
     return as_str(t.get('name')) or as_str(as_dict(t.get('function')).get('name', ''))
 
 
+def _renderYieldSchema(schema: dict[str, object]) -> str:
+    """Render a yieldSchema for the subagent goal text (P1.3).
+
+    ``sort_keys`` makes the embedded block byte-identical for the same
+    logical schema regardless of the writer's dict key order — the schema
+    rides in the subagent prompt, and unstable key order would re-read a
+    cached prefix for an identical contract.
+    """
+    import json as _json
+
+    return _json.dumps(schema, indent=2, sort_keys=True)
+
+
 def _agentOrGeneral(agentId: str, parentAlias: str) -> dict[str, object]:
     """Return the persisted agent, or a synthetic fallback for known roles."""
     agent = getAgent(agentId)
@@ -540,12 +553,10 @@ async def executeSubAgent(
 
     goalText = goal
     if yield_schema:
-        import json as _json
-
         goalText += (
             '\n\nReturn your final answer as a SINGLE JSON object (no prose, no markdown '
             'fences) matching this schema:\n'
-            f'{_json.dumps(yield_schema, indent=2)}\n'
+            f'{_renderYieldSchema(yield_schema)}\n'
             'The parent agent reads your result programmatically, so every field the '
             'schema requires must be present and correctly typed.'
         )

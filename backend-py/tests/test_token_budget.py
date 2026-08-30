@@ -78,3 +78,26 @@ def test_compute_budget_messages_list():
     # pct is the rounded ratio of total over max_context.
     expected_pct = round(budget['total_tokens'] / budget['max_context'] * 100, 1)
     assert budget['context_used_pct'] == expected_pct
+
+
+# ── Part 18 P2.4: budgets never count provider usage (cacheRead excluded) ──
+
+
+def test_compute_budget_usage_fields_never_counted():
+    """Design constraint (P2.4): budgets count TEXT only and must never
+    ingest provider usage — a cached context that re-reads 100k cacheRead
+    tokens must not exhaust the budget early. A usage dict on a message
+    (or a top-level one) is telemetry, not context, and is ignored."""
+    plain = [
+        {'role': 'user', 'content': 'hello'},
+        {'role': 'assistant', 'content': 'hi there'},
+    ]
+    withUsage = [
+        {'role': 'user', 'content': 'hello', 'usage': {'cacheReadTokens': 99_999}},
+        {'role': 'assistant', 'content': 'hi there', 'usage': {'cacheReadTokens': 99_999}},
+    ]
+    b1 = computeBudget(plain)
+    b2 = computeBudget(withUsage)
+    assert b2['total_tokens'] == b1['total_tokens']
+    assert b2['context_used_pct'] == b1['context_used_pct']
+    assert b2['attention_pressure'] == b1['attention_pressure']

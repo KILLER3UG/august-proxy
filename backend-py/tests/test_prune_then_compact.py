@@ -116,13 +116,15 @@ class TestSchemaSummarize:
     def testAllSectionsPresent(self):
         msgs = [_userMsg('fix the login bug'), _assistantText('looking')]
         out = cc.schemaSummarize(msgs, goalHint='Fix login')
+        # Part 18 P2.2: fixed handoff shape — Goal / State / Context / Next /
+        # Pitfalls (Zed pattern) replaces the old Progress/Key Decisions/
+        # Next Steps/Critical Context set.
         for section in (
             '## Goal',
-            '## Constraints',
-            '## Progress',
-            '## Key Decisions',
-            '## Next Steps',
-            '## Critical Context',
+            '## State',
+            '## Context',
+            '## Next',
+            '## Pitfalls',
             '<read-files>',
             '</read-files>',
             '<modified-files>',
@@ -189,7 +191,7 @@ class TestSchemaSummarize:
         read, modified = cc._parseLedgerTags(out)
         assert 'z.py' in read and 'new.py' in read
         assert modified == ['w.py']
-        assert 'Earlier context:' in out  # prior prose carried in Critical Context
+        assert 'Earlier context:' in out  # prior prose carried in the Context section
 
     def testSummaryCappedAtTokenBudget(self):
         msgs = [_userMsg('u' * 50000), _assistantText('a' * 50000)]

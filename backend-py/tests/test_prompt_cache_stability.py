@@ -238,3 +238,141 @@ def test_session_state_tail_block_shape(isolatedData):
     assert 'plan:' in block
     assert 'execution: phase=investigate' in block
     assert block.rstrip().endswith('</session_state>')
+
+
+# ── Part 18 P1.2: scenario extensions (per-turn volatility confinement) ────
+
+
+def test_memory_nudge_does_not_touch_system_prompt(isolatedData):
+    """The memory-habit nudge rides the per-turn tail, never the system
+    prompt: queueing and consuming it must leave prompt bytes identical."""
+    from app.services.workbench import workbench as wb
+
+    session = wb.createWorkbenchSession()
+    tools = [{'name': 'remember'}]
+    prompt1 = _build(session, tools=tools)
+
+    wb.queue_memory_habit_nudge(
+        session, rounds=5, rememberOffered=True, memWritesOn=True
+    )
+    prompt2 = _build(session, tools=tools)
+    assert prompt2 == prompt1, 'queueing a memory nudge changed the system prompt'
+
+    tail = wb.memory_nudge_block(session, True)
+    assert '<memory_nudge>' in tail
+    prompt3 = _build(session, tools=tools)
+    assert prompt3 == prompt1, 'consuming a memory nudge changed the system prompt'
+
+
+def test_tool_profile_downgrade_confined_to_tool_sections(isolatedData):
+    """A tool-profile downgrade must not disturb the prompt's byte-stable
+    prefix: everything up to the intake ``- Tools:`` line (and the non-tool
+    blocks) stays byte-identical; only the tool-intake line + capabilities
+    tool index change."""
+    from app.services.workbench import workbench as wb
+
+    session = wb.createWorkbenchSession()
+    full = [{'name': 'read_file'}, {'name': 'run_command'}, {'name': 'write_file'}]
+    downgraded = [{'name': 'read_file'}]
+
+    pFull = _build(session, tools=full)
+    pDown = _build(session, tools=downgraded)
+
+    iFull = pFull.index('- Tools:')
+    iDown = pDown.index('- Tools:')
+    assert pFull[:iFull] == pDown[:iDown], 'prefix before the tool intake line drifted'
+    # The non-tool blocks (workspace/session/policy) stay identical.
+    for block in ('harness_guide', 'workspace', 'session', 'agent'):
+        tag = f'<{block}>'
+        if tag in pFull:
+            segFull = pFull[pFull.index(tag):pFull.index(tag) + 200]
+            segDown = pDown[pDown.index(tag):pDown.index(tag) + 200]
+            assert segFull == segDown, f'{tag} block drifted under a downgrade'
+    # The downgraded surface drops the tools it no longer offers — scoped to
+    # the tool_read BUCKET slice (the bulk-note boilerplate legitimately
+    # lists write_files etc. regardless of the offered surface).
+    toolsFull = pFull.split('<tools>', 1)[1].split('</tools>', 1)[0]
+    toolsDown = pDown.split('<tools>', 1)[1].split('</tools>', 1)[0]
+
+    def _bucket(toolsBody: str, bucketName: str) -> str:
+        import re as _re
+
+        start = toolsBody.index(f'{bucketName} (')
+        m = _re.search(r'\n(tool_(?:write|shell|destructive|agent|skill|bridge|other))\s*\(', toolsBody[start:])
+        end = start + m.start() if m else len(toolsBody)
+        return toolsBody[start:end]
+
+    # Full surface: each tool renders in its bucket.
+    assert 'read_file' in _bucket(toolsFull, 'tool_read')
+    assert 'run_command' in _bucket(toolsFull, 'tool_shell')
+    assert 'write_file' in _bucket(toolsFull, 'tool_write')
+    # Downgraded surface: the read bucket keeps read_file; the buckets it no
+    # longer holds are omitted entirely.
+    assert 'read_file' in _bucket(toolsDown, 'tool_read')
+    assert 'tool_shell (' not in toolsDown and 'tool_write (' not in toolsDown
+
+
+def test_skill_catalogue_change_confined_to_skills_sections(isolatedData, monkeypatch, tmp_path):
+    """A skill-creation catalogue change busts the prompt caches (rare,
+    deliberate) and must be CONFINED to the skills surface: the byte-stable
+    prefix up to the intake ``- Skills:`` line, the blocks between that line
+    and <capabilities>, and the tools section all stay identical."""
+    import time as _t
+
+    from app.services import skill_service
+    from app.services.workbench import workbench as wb
+
+    skill_service._flat_migrate_done = True
+    monkeypatch.setattr(skill_service, '_agentSkillsDir', lambda: tmp_path / 'agent-skills')
+    (tmp_path / 'agent-skills').mkdir(parents=True, exist_ok=True)
+
+    session = wb.createWorkbenchSession()
+    tools = [{'name': 'load_skill'}, {'name': 'read_file'}]
+    p1 = _build(session, tools=tools)
+
+    _t.sleep(0.02)  # distinct SKILL.md mtime for the memo key
+    skill_service.createSkill(
+        'stability-new-skill', 'A brand new described skill', 'Body.', created_by='human'
+    )
+    p2 = _build(session, tools=tools)
+
+    i1 = p1.index('- Skills:')
+    i2 = p2.index('- Skills:')
+    assert p1[:i1] == p2[:i2], 'prefix before the skills intake line drifted'
+    assert 'stability-new-skill' in p2
+    cap1 = p1[p1.index('<capabilities>'):]
+    cap2 = p2[p2.index('<capabilities>'):]
+    tools1 = cap1[cap1.index('<tools>'):cap1.index('</tools>')]
+    tools2 = cap2[cap2.index('<tools>'):cap2.index('</tools>')]
+    assert tools1 == tools2, 'tools section changed when only the skills catalogue grew'
+
+
+def test_skill_in_place_description_edit_system_prompt_stable(isolatedData, monkeypatch, tmp_path):
+    """P1.4 wire-through from the prompt: the main-agent skills index is
+    NAME-ONLY, so an in-place description edit (a catalogue mutation that
+    busts the prompt caches) must leave the system prompt byte-identical —
+    descriptions ride in <relevant_skills> per turn, not the cached index."""
+    import time as _t
+
+    from app.services import skill_service
+    from app.services.workbench import workbench as wb
+
+    skill_service._flat_migrate_done = True
+    monkeypatch.setattr(skill_service, '_agentSkillsDir', lambda: tmp_path / 'agent-skills')
+    (tmp_path / 'agent-skills').mkdir(parents=True, exist_ok=True)
+
+    session = wb.createWorkbenchSession()
+    tools = [{'name': 'load_skill'}, {'name': 'read_file'}]
+    p1 = _build(session, tools=tools)
+    assert p1 == _build(session, tools=tools), 'consecutive builds of the same session diverged'
+
+    _t.sleep(0.02)
+    skill_service.createSkill('stable-desc-skill', 'first description', 'Body.', created_by='human')
+    p2 = _build(session, tools=tools)
+    assert 'stable-desc-skill' in p2
+
+    _t.sleep(0.02)
+    skill_service.patchSkill('stable-desc-skill', description='second description')
+    p3 = _build(session, tools=tools)
+    assert p3 == p2, 'an in-place description edit changed the cached system prefix'
+    assert 'second description' not in p3.split('<capabilities>', 1)[1].split('</skills>', 1)[0]

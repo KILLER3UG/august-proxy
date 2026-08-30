@@ -41,6 +41,12 @@ SUMMARY_CAP_TOKENS = 8192
 # Compaction lock TTL: a mid-compaction crash must not block compaction
 # forever — an orphaned lock older than the TTL is treated as released.
 LOCK_TTL_S = 300.0
+# Part 18 P2.2: verbatim replay budget for the newest USER messages after a
+# summary (whole messages only, never a mid-message cut). The summary
+# inevitably loses nuance the user already paid for; replaying the most
+# recent user turns under this byte budget (12 KiB, within the plan's
+# 8–16 KB range) lets the next agent act without re-asking.
+REPLAY_USER_BUDGET_BYTES = 12 * 1024
 
 
 def isFeatureEnabled() -> bool:
@@ -387,13 +393,16 @@ def schemaSummarize(
     goalHint: str = '',
     maxChars: int = SUMMARY_CAP_TOKENS * 4,
 ) -> str:
-    """Fixed-schema markdown summary (deterministic, no LLM).
+    """Fixed-handoff markdown summary (deterministic, no LLM).
 
-    Sections: Goal / Constraints / Progress (Done·In-Progress·Blocked) /
-    Key Decisions / Next Steps / Critical Context / <read-files> /
-    <modified-files>. The file ledger is carried forward across repeated
-    compactions by merging prior summaries' ledger tags with freshly
-    observed tool calls.
+    Part 18 P2.2: the shape is a handoff contract — Goal / State / Context /
+    Next / Pitfalls — so a compacted session hands the next agent (or the
+    next LLM call) enough to act without re-asking the user, with the file
+    ledger carried forward as trailing tags across repeated compactions.
+    Mapping from the pre-P2.2 schema: Progress → State, Key Decisions /
+    Constraints / earlier-summary prose → Context, Next Steps → Next, the
+    latest failing receipt + update_state blockers were split into Pitfalls
+    (they were previously buried in Critical Context).
     """
     goal = ' '.join((goalHint or '').split())[:400] or _firstUserText(messages)[:400] or '(not recorded)'
 
@@ -416,9 +425,9 @@ def schemaSummarize(
         if latestBlockers:
             blockers = latestBlockers
 
-    # Critical context: the latest failing receipt (first line), if any,
-    # plus the carried-forward prose of earlier summaries (capped) so
-    # repeated compactions don't silently drop older context.
+    # Pitfalls: the latest failing receipt (first line), if any, plus the
+    # carried-forward prose of earlier summaries (capped) so repeated
+    # compactions don't silently drop older context.
     critical = ''
     for m in reversed(messages):
         if m.get('role') != 'tool':
@@ -429,18 +438,17 @@ def schemaSummarize(
         if 'error:' in low or 'failed' in low or 'exit code: 1' in low:
             critical = ' '.join(text.split())[:300]
             break
+    earlier = ''
     if priorSummaryTexts:
         import re as _re
 
         # Strip the ledger blocks from the carried-forward prose — leaving
-        # them in would plant fake <read-files> tags inside Critical Context
-        # that a later ledger parse would match first.
-        earlier = '\n---\n'.join(priorSummaryTexts)
-        earlier = _re.sub(r'<read-files>.*?</read-files>', '', earlier, flags=_re.DOTALL)
-        earlier = _re.sub(r'<modified-files>.*?</modified-files>', '', earlier, flags=_re.DOTALL)
-        earlier = ' '.join(earlier.split())[:600]
-        if earlier:
-            critical = (critical + '\n' if critical else '') + f'Earlier context: {earlier}'
+        # them in would plant fake <read-files> tags inside the Context
+        # section that a later ledger parse would match first.
+        earlierProse = '\n---\n'.join(priorSummaryTexts)
+        earlierProse = _re.sub(r'<read-files>.*?</read-files>', '', earlierProse, flags=_re.DOTALL)
+        earlierProse = _re.sub(r'<modified-files>.*?</modified-files>', '', earlierProse, flags=_re.DOTALL)
+        earlier = ' '.join(earlierProse.split())[:600]
 
     # Ledger: prior summaries first, then fresh observations (deduped).
     priorRead: list[str] = []
@@ -468,22 +476,24 @@ def schemaSummarize(
         '## Goal',
         goal,
         '',
-        '## Constraints',
-        '(not recorded)',
-        '',
-        '## Progress',
+        '## State',
         '- Done: ' + ('; '.join(done[:20]) if done else '(none recorded)'),
         f'- In progress: {inProgress}',
         '- Blocked: ' + ('; '.join(blockers[:10]) if blockers else '(none)'),
         '',
-        '## Key Decisions',
+        '## Context',
+        '- Key decisions: (not recorded)',
+        '- Constraints: (not recorded)',
+    ]
+    if earlier:
+        lines.append(f'- Earlier context: {earlier}')
+    lines += [
+        '',
+        '## Next',
         '(not recorded)',
         '',
-        '## Next Steps',
-        '(not recorded)',
-        '',
-        '## Critical Context',
-        critical or '(none recorded)',
+        '## Pitfalls',
+        f'- Latest failure: {critical}' if critical else '(none recorded)',
         '',
         '<read-files>',
         *priorRead[:100],
@@ -618,6 +628,7 @@ async def compressMessages(
     summaryCapTokens: int = SUMMARY_CAP_TOKENS,
     goalHint: str = '',
     schema: bool = False,
+    replayUserBytes: int = 0,
 ) -> list[dict[str, object]]:
     """Compress messages to fit within a token threshold by summarizing the middle.
 
@@ -632,11 +643,18 @@ async def compressMessages(
     Boundaries are tool-pair-safe: an assistant tool-call message and its
     tool results form one atomic unit, so a tool result is never orphaned
     from its call (wire-format safety). With ``schema=True`` the summary
-    uses the fixed markdown schema (Goal/Constraints/Progress/Key
-    Decisions/Next Steps/Critical Context/<read-files>/<modified-files>) and
-    carries the file ledger forward across repeated compactions; the summary
-    text is capped at ``summaryCapTokens`` (≈4 chars/token), splitting the
-    middle into two summaries and merging when one alone would exceed it.
+    uses the fixed handoff schema (Goal/State/Context/Next/Pitfalls +
+    <read-files>/<modified-files>) and carries the file ledger forward
+    across repeated compactions; the summary text is capped at
+    ``summaryCapTokens`` (≈4 chars/token), splitting the middle into two
+    summaries and merging when one alone would exceed it.
+
+    Part 18 P2.2: ``replayUserBytes`` > 0 replays the newest whole USER
+    messages from the summarized middle VERBATIM right after the summary
+    (budget-bounded, never a mid-message cut). User messages that get
+    replayed are excluded from the summary so they are not duplicated.
+    Tool results are never replayed and never separated from their call
+    (unit split).
 
     Args:
         messages: Full conversation messages.
@@ -654,7 +672,8 @@ async def compressMessages(
         retainRatio: Fraction of the window retained verbatim (tail).
         summaryCapTokens: Hard cap for the summary text, in tokens.
         goalHint: Session goal forwarded to the schema summarizer.
-        schema: Use the fixed markdown schema for deterministic summaries.
+        schema: Use the fixed handoff schema for deterministic summaries.
+        replayUserBytes: Byte budget for verbatim user-message replay (0 = off).
 
     Returns:
         Compressed message list (may be unchanged if already under threshold).
@@ -730,6 +749,37 @@ async def compressMessages(
             return list(messages)
         return compressed
 
+    # Part 18 P2.2: verbatim replay of the newest USER messages from the
+    # summarized middle (whole messages only — never a mid-message cut; a
+    # tool result is never replayed, and tool-pair-safe unit splitting
+    # already keeps every result with its call).
+    import json as _json
+
+    replayed: list[dict[str, object]] = []
+    if replayUserBytes > 0 and middle:
+        selected: list[dict[str, object]] = []
+        acc = 0
+        for m in reversed(middle):
+            if m.get('role') != 'user' or _isToolResultMsg(m) or _isSummaryMessage(m):
+                continue
+            cost = len(_json.dumps(m, default=str, sort_keys=True))
+            if selected and acc + cost > replayUserBytes:
+                break
+            selected.append(m)
+            acc += cost
+        if selected:
+            selected.reverse()
+            replayed = selected
+            removedIds = {id(m) for m in selected}
+            middle = [m for m in middle if id(m) not in removedIds]
+    if not middle:
+        # The whole middle was pinned or replayed — no summary needed.
+        compressed = otherSystem + head + pinned + replayed + tail
+        compressedTokens = estimateTokens(compressed)
+        if compressedTokens >= currentTokens:
+            return list(messages)
+        return compressed
+
     summaryMaxChars = summaryCapTokens * 4
 
     async def _summarize(chunk: list[dict[str, object]]) -> str:
@@ -775,7 +825,7 @@ async def compressMessages(
             }
     except Exception:
         pass
-    compressed = otherSystem + head + pinned + [summaryMsg] + tail
+    compressed = otherSystem + head + pinned + [summaryMsg] + replayed + tail
     compressedTokens = estimateTokens(compressed)
     if compressedTokens >= currentTokens:
         return list(messages)
