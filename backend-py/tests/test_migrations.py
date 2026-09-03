@@ -173,3 +173,78 @@ def test_migration_025_purges_dead_state_and_keeps_live(conn):
     kv2 = {r[0] for r in conn.execute('SELECT key FROM memory_store').fetchall()}
     assert kv2 == kv
     assert _tables(conn) == tables
+
+
+# ── Part 21 M-2 (032) + OQ1 retire (033) ───────────────────────────────────
+
+
+def test_fresh_schema_has_no_auto_memories(conn):
+    """OQ1 retire: create_core_schema no longer creates auto_memories."""
+    from app.services.memory_schema import ensure_schema
+
+    ensure_schema(conn)
+    tables = _tables(conn)
+    assert 'auto_memories' not in tables
+    assert 'auto_memories_fts' not in tables
+
+
+def test_migration_032_adds_facts_scope(conn):
+    """M-2: the scope column + (scope, status) index land on a facts table
+    that predates them, and existing rows default to 'global'."""
+    from app.services.memory_schema import ensure_schema
+
+    ensure_schema(conn)
+    # ensure_schema's fast path already ensures the column; simulate a legacy
+    # DB by dropping it is not possible in SQLite — instead un-record 032 and
+    # confirm re-applying is a graceful no-op (ALTER fails → recorded, index
+    # already present), and that the column + index exist either way.
+    cols = {r['name'] for r in conn.execute('PRAGMA table_info(facts)').fetchall()}
+    assert 'scope' in cols
+    idx = {
+        r['name']
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='facts'"
+        ).fetchall()
+    }
+    assert 'idx_facts_scope' in idx
+    conn.execute('DELETE FROM schema_migrations WHERE version = 32')
+    conn.commit()
+    run_migrations(conn)  # must not raise despite the duplicate-column ALTER
+    cols2 = {r['name'] for r in conn.execute('PRAGMA table_info(facts)').fetchall()}
+    assert 'scope' in cols2
+
+
+def test_migration_033_drops_legacy_auto_memories(conn):
+    """OQ1: migration 033 removes the retired store from a legacy DB."""
+    from app.services.memory_schema import ensure_schema
+
+    ensure_schema(conn)
+    # Recreate the legacy store exactly as old installs had it.
+    conn.execute(
+        'CREATE TABLE auto_memories ('
+        'id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, content TEXT,'
+        " category TEXT DEFAULT 'auto', source_session_id TEXT)"
+    )
+    conn.execute(
+        "CREATE VIRTUAL TABLE auto_memories_fts USING fts5("
+        "key, content, content='auto_memories', content_rowid='rowid')"
+    )
+    conn.execute(
+        "INSERT INTO auto_memories (key, content) VALUES ('conv_summary_wb_1', 'junk')"
+    )
+    conn.commit()
+    assert 'auto_memories' in _tables(conn)
+
+    conn.execute('DELETE FROM schema_migrations WHERE version = 33')
+    conn.commit()
+    run_migrations(conn)
+
+    tables = _tables(conn)
+    assert 'auto_memories' not in tables
+    assert 'auto_memories_fts' not in tables
+
+    # Idempotent: re-applying 033 on a DB that never had it is a no-op.
+    conn.execute('DELETE FROM schema_migrations WHERE version = 33')
+    conn.commit()
+    run_migrations(conn)
+    assert 'auto_memories' not in _tables(conn)

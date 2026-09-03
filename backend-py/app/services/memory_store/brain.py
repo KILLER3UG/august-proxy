@@ -29,7 +29,7 @@ _BRAINStores: dict[str, dict[str, object]] = {
         'fts': None,
         'columns': (
             'id, fact_key, fact_value, title, kind, category, source, confidence, '
-            'use_count, last_used_at, status, expires_at, created_at, updated_at'
+            'use_count, last_used_at, status, expires_at, scope, created_at, updated_at'
         ),
         'search_cols': ['fact_key', 'fact_value', 'title'],
         'label': 'structured semantic facts',
@@ -255,17 +255,22 @@ def _brain_query_facts_ranked(query: str, filters: dict | None, limit: int) -> s
     """
     q = (query or '').strip()
     cap = max(1, min(limit, 100))
+    from app.services import session_scope as _scope
+
+    turnScope = _scope.resolve_scope()
+    # M-2 union: this session may see global facts + its own scope's notes.
+    visibleScopes = {_scope.GLOBAL_SCOPE, turnScope}
     # Exact-key fast path: a point query must not depend on tokenization.
     conn = _conn()
     exact = conn.execute(
         'SELECT * FROM facts WHERE fact_key = ?', (q,)
     ).fetchone()
-    if exact is not None:
+    if exact is not None and str(exact['scope'] or 'global') in visibleScopes:
         return json.dumps([_row_as_wire(exact)], default=str, ensure_ascii=False)
     try:
         from app.services.memory_store.fact_retrieval import retrieve_relevant_facts
 
-        facts = retrieve_relevant_facts(q, k=cap)
+        facts = retrieve_relevant_facts(q, k=cap, scope=turnScope)
     except Exception as exc:
         return json.dumps({'error': f'brain_query(facts): ranked retrieval failed: {exc}'})
     if not facts:
@@ -352,6 +357,14 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
         sql = f'SELECT {cols} FROM {info["table"]}'
         params: list[object] = []
         whereClauses: list[str] = []
+        if store == 'facts':
+            # M-2 union: the LIKE fallback honors the same scope visibility
+            # as the ranked path — a bot never sees another bot's notes
+            # through a narrow query that misses BM25.
+            from app.services import session_scope as _ss
+
+            whereClauses.append("(scope IS NULL OR scope = 'global' OR scope = ?)")
+            params.append(_ss.resolve_scope())
         if query:
             fts = info.get('fts')
             if fts:

@@ -7,7 +7,7 @@ to summarize, export, and delete that data. Every destructive action is
 opt-in and returns the number of rows it removed.
 
 Tables (from app/services/memory_schema.py + migrations):
-  facts, auto_memories, learned_heuristics, proposals, episodic_timeline,
+  facts, learned_heuristics, proposals, episodic_timeline,
   memory_store (system KV — memory purge keeps only live agent keys),
   sessions, messages,
   session_topics, usage_events, lifecycle (audit), config_audit,
@@ -30,9 +30,10 @@ from app.services.post_observation import count_observations
 router = APIRouter(prefix='/api/privacy')
 
 # Tables that hold *user-visible* data (used for counts + export).
+# auto_memories removed (Part 21 OQ1 retire, migration 033) — the table no
+# longer exists; the export shape drops the key along with the store.
 _COUNT_TABLES = [
     ('facts', 'facts'),
-    ('auto_memories', 'autoMemories'),
     ('learned_heuristics', 'heuristics'),
     ('proposals', 'proposals'),
     ('episodic_timeline', 'timeline'),
@@ -48,7 +49,6 @@ _COUNT_TABLES = [
 # Tables cleared by the "erase memory" action (the agent's knowledge of you).
 _MEMORY_TABLES = [
     'facts',
-    'auto_memories',
     'learned_heuristics',
     'proposals',
     'episodic_timeline',
@@ -105,7 +105,6 @@ async def privacyExport():
         'exportedAt': time.time(),
         'app': 'august-proxy',
         'facts': _select_all(conn, 'facts'),
-        'autoMemories': _select_all(conn, 'auto_memories'),
         'heuristics': _select_all(conn, 'learned_heuristics'),
         'timeline': _select_all(conn, 'episodic_timeline'),
         'usageByModel': _usage_by_model(conn),
@@ -183,13 +182,9 @@ async def purgeMemories():
         conn.commit()
     except Exception:
         deleted['memoryStoreKv'] = 0
-    try:
-        # FTS shadow tables (auto_memories_fts) are trigger-maintained; a
-        # straight DELETE already cleans them, but reindex is cheap insurance.
-        conn.execute("INSERT INTO auto_memories_fts(auto_memories_fts) VALUES('rebuild')")
-        conn.commit()
-    except Exception:
-        pass
+    # auto_memories_fts rebuild removed (Part 21 OQ1 retire, migration 033):
+    # the store no longer exists. memory_store_fts is trigger-maintained and
+    # repair_fts_sync() self-heals any desync at boot.
     return {'deleted': deleted}
 
 

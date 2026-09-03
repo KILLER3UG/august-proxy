@@ -122,24 +122,12 @@ _CORE_SCHEMA_SQL = """
             updated_at TEXT DEFAULT (datetime('now'))
         );
 
-        CREATE TABLE IF NOT EXISTS auto_memories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key TEXT,
-            content TEXT,
-            category TEXT DEFAULT 'auto',
-            importance REAL DEFAULT 0.5,
-            source TEXT DEFAULT '',
-            pinned INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now')),
-            expires_at TEXT,
-            confidence REAL DEFAULT 0.7,
-            ttl_days INTEGER
-        );
-
-        CREATE VIRTUAL TABLE IF NOT EXISTS auto_memories_fts USING fts5(
-            key, content, content='auto_memories', content_rowid='rowid'
-        );
+        -- auto_memories RETIRED (Part 21 OQ1 ruling, 2026-09-04): the table
+        -- + its FTS + triggers are no longer created. Migration 033 drops
+        -- them from legacy DBs. No live writer existed; the privacy export is
+        -- the documented preservation path; production's rows were stale
+        -- conv_summary junk. Fresh DBs never have it; every reader is
+        -- table-existence guarded.
 
         -- FTS5 triggers — CRITICAL — without these FTS indexes stay empty
         -- memory_store_fts triggers
@@ -156,22 +144,6 @@ _CORE_SCHEMA_SQL = """
             VALUES('delete', old.rowid, old.key, old.value);
             INSERT INTO memory_store_fts(rowid, key, value)
             VALUES (new.rowid, new.key, new.value);
-        END;
-
-        -- auto_memories_fts triggers
-        CREATE TRIGGER IF NOT EXISTS auto_memories_ai AFTER INSERT ON auto_memories BEGIN
-            INSERT INTO auto_memories_fts(rowid, key, content)
-            VALUES (new.id, new.key, new.content);
-        END;
-        CREATE TRIGGER IF NOT EXISTS auto_memories_ad AFTER DELETE ON auto_memories BEGIN
-            INSERT INTO auto_memories_fts(auto_memories_fts, rowid, key, content)
-            VALUES('delete', old.id, old.key, old.content);
-        END;
-        CREATE TRIGGER IF NOT EXISTS auto_memories_au AFTER UPDATE ON auto_memories BEGIN
-            INSERT INTO auto_memories_fts(auto_memories_fts, rowid, key, content)
-            VALUES('delete', old.id, old.key, old.content);
-            INSERT INTO auto_memories_fts(rowid, key, content)
-            VALUES (new.id, new.key, new.content);
         END;
 
         -- messages_fts triggers (rowid = messages.id)
@@ -249,16 +221,12 @@ def create_core_schema(conn: sqlite3.Connection) -> None:
             )
     conn.commit()
     try:
-        cols = [r['name'] for r in conn.execute('PRAGMA table_info(auto_memories)').fetchall()]
-        if 'updated_at' not in cols:
-            conn.execute('ALTER TABLE auto_memories ADD COLUMN updated_at TEXT')
-        if 'pinned' not in cols:
-            conn.execute('ALTER TABLE auto_memories ADD COLUMN pinned INTEGER DEFAULT 0')
+        # auto_memories column migration removed (Part 21 OQ1 retire, 033).
         hcols = [r['name'] for r in conn.execute('PRAGMA table_info(learned_heuristics)').fetchall()]
         if 'confidence' not in hcols:
             conn.execute('ALTER TABLE learned_heuristics ADD COLUMN confidence REAL DEFAULT 0.5')
     except Exception as exc:
-        logging.warning('auto_memories/heuristics column migration failed: %s', exc)
+        logging.warning('heuristics column migration failed: %s', exc)
 
 
 def create_extended_tables(conn: sqlite3.Connection) -> None:
@@ -406,13 +374,7 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     conn.execute('CREATE INDEX IF NOT EXISTS idx_daemons_session ON daemons(session_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_daemons_workspace ON daemons(workspace_path)')
     conn.commit()
-    # auto_memories.source_session_id is written by saveAutoMemory and read by
-    # the project-memories view — ensure it exists on fresh installs (the
-    # CREATE TABLE predates the column).
-    ensure_column(conn, 'auto_memories', 'source_session_id', 'TEXT')
-    ensure_column(conn, 'auto_memories', 'expires_at', 'TEXT')
-    ensure_column(conn, 'auto_memories', 'confidence', 'REAL DEFAULT 0.7')
-    ensure_column(conn, 'auto_memories', 'ttl_days', 'INTEGER')
+    # auto_memories ensure-columns removed (Part 21 OQ1 retire, migration 033).
     # facts.expires_at backs the `remember` tool's optional TTL and the boot
     # sweep that purges expired model-written facts (memory-humanization batch).
     ensure_column(conn, 'facts', 'expires_at', 'TEXT')
@@ -423,21 +385,6 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     ensure_column(conn, 'facts', 'use_count', 'INTEGER DEFAULT 0')
     ensure_column(conn, 'facts', 'last_used_at', 'TEXT')
     ensure_column(conn, 'facts', 'status', "TEXT DEFAULT 'active'")
-    # auto_memories.key must be UNIQUE: saveAutoMemory's check-then-insert was
-    # non-transactional, so concurrent writers inserted twin rows under one
-    # key (audit finding). Dedup any historical twins (keep the OLDEST row)
-    # before the unique index lands.
-    try:
-        conn.execute(
-            """
-            DELETE FROM auto_memories WHERE id NOT IN (
-                SELECT MIN(id) FROM auto_memories GROUP BY key
-            )
-            """
-        )
-        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_auto_memories_key ON auto_memories(key)')
-    except sqlite3.OperationalError:
-        pass
     ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
     ensure_column(conn, 'usage_events', 'cache_hit_tokens', 'INTEGER DEFAULT 0')
     ensure_column(conn, 'usage_events', 'cache_miss_tokens', 'INTEGER DEFAULT 0')
@@ -519,7 +466,6 @@ def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
 
 _FTS_SYNC_MAP: tuple[tuple[str, str], ...] = (
     ('memory_store_fts', 'memory_store'),
-    ('auto_memories_fts', 'auto_memories'),
     ('messages_fts', 'messages'),
 )
 
@@ -607,16 +553,20 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
             ensure_column(conn, 'subagent_runs', 'todos_json', "TEXT DEFAULT ''")
-            ensure_column(conn, 'auto_memories', 'pinned', 'INTEGER DEFAULT 0')
-            ensure_column(conn, 'auto_memories', 'expires_at', 'TEXT')
-            ensure_column(conn, 'auto_memories', 'confidence', 'REAL DEFAULT 0.7')
-            ensure_column(conn, 'auto_memories', 'ttl_days', 'INTEGER')
             ensure_column(conn, 'facts', 'expires_at', 'TEXT')
             ensure_column(conn, 'facts', 'title', "TEXT DEFAULT ''")
             ensure_column(conn, 'facts', 'kind', "TEXT DEFAULT 'fact'")
             ensure_column(conn, 'facts', 'use_count', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'facts', 'last_used_at', 'TEXT')
             ensure_column(conn, 'facts', 'status', "TEXT DEFAULT 'active'")
+            # M-2 (Part 21, 032): scope axis. The ensure_column runs before
+            # migration 032 on the fast path, so the migration's ALTER fails
+            # (recorded, swallowed) — the index is created here to stay
+            # guaranteed on legacy DBs regardless of that failure.
+            ensure_column(conn, 'facts', 'scope', "TEXT DEFAULT 'global'")
+            conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_facts_scope ON facts(scope, status)'
+            )
             ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
             ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
             ensure_column(conn, 'learned_heuristics', 'confidence', 'REAL DEFAULT 0.5')

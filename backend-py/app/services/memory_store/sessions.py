@@ -341,25 +341,9 @@ def delete_session_cascade(
             except sqlite3.DatabaseError:
                 # Non-fatal: continue so parent + other children still clean up.
                 pass
-        # Conversation auto-memories keyed by full session id.
-        try:
-            cur = conn.execute(
-                "DELETE FROM auto_memories WHERE key = ? OR key LIKE ?",
-                (f'conv_summary_{sid}', f'conv_summary_{sid}%'),
-            )
-            if cur.rowcount:
-                children['auto_memories'] = int(cur.rowcount)
-        except sqlite3.OperationalError:
-            pass
-        # Other auto-memories (e.g. `remembered_*`) keep source_session_id
-        # pointing at the deleted session — null it so folder-scoped listings
-        # (LEFT JOIN sessions) don't silently drop them (audit finding).
-        try:
-            conn.execute(
-                'UPDATE auto_memories SET source_session_id = NULL WHERE source_session_id = ?', (sid,)
-            )
-        except sqlite3.OperationalError:
-            pass
+        # auto_memories cascade removed (Part 21 OQ1 retire, migration 033):
+        # the store no longer exists, so a session delete has nothing to
+        # clean up there.
         # Pending skill drafts attributed to this session.
         try:
             cur = conn.execute(

@@ -109,9 +109,11 @@ def _sweep_episodic() -> int:
 
     The table was unbounded — every session event appended forever. The
     retention window comes from brain-config ``episodicRetentionDays``
-    (default 90). The FTS/index half of M-4 is gated on OQ2 (whether the
-    table stays or is declared redundant vs ``episodes`` + ``messages_fts``);
-    the hygiene sweep is needed under either ruling, so it lands now.
+    (default 90). OQ2 (ruled 2026-09-04): the table stays (``brain_index_snippet``
+    reads it) but M-4's FTS/index half is CLOSED AS WON'T-BUILD — LIKE over
+    ≤hundreds of rows is instant and the two readers never rank, so an FTS5
+    mirror + triggers would be pure maintenance for no recall gain. Only the
+    hygiene sweep lands (and already had to, under either ruling).
     """
     days = 90
     try:
@@ -135,6 +137,144 @@ def _sweep_episodic() -> int:
     except Exception:
         # Table absent (fresh store pre-migration) — nothing to sweep.
         return 0
+
+
+def _retire_stale_preferences() -> tuple[int, list[str]]:
+    """OQ5 (Part 21, 2026-09-04): propose-only preference retire.
+
+    A ``preference`` fact that has been untouched for ``preferenceRetireDays``
+    (default 180) AND never quoted (``use_count`` 0) is a stale guess about
+    what the user likes. The ruling is PROPOSE-ONLY: this writes a
+    ``retire-preference`` proposal per candidate and flips NOTHING — a human
+    decides via ``decide_proposal`` (approve → the fact's status goes
+    'retired'; reject → it stays). Non-destructive by construction, so it can
+    ride the scheduled consolidation pass safely.
+
+    Deduped: a key with an already-open proposal is skipped, so a pass that
+    runs daily does not stack duplicates. Returns ``(proposed, notes)``.
+    """
+    from app.services.brain_config_service import getRuntimeConfig
+    from app.services.memory_store import save_proposal
+
+    try:
+        cfg = getRuntimeConfig()
+    except Exception:
+        cfg = {}
+    if not bool(cfg.get('preferenceRetireEnabled', True)):
+        return 0, []
+    try:
+        days = int(float(str(cfg.get('preferenceRetireDays', 180))))
+    except (TypeError, ValueError):
+        days = 180
+    days = max(1, min(3650, days))
+
+    conn = _conn()
+    notes: list[str] = []
+    proposed = 0
+    try:
+        cutoff = f'-{days} days'
+        # Never quoted (use_count 0 / NULL) + untouched since before the
+        # cutoff (last touch = last_used_at, else updated_at, else created_at).
+        rows = conn.execute(
+            'SELECT fact_key, title, '
+            "  COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) AS last_touch "
+            'FROM facts '
+            "WHERE kind = 'preference' AND (status IS NULL OR status = 'active') "
+            'AND COALESCE(use_count, 0) = 0 '
+            'AND julianday('
+            "  COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at)"
+            ") IS NOT NULL "
+            "AND julianday(COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at)) "
+            "  < julianday('now', ?)",
+            (cutoff,),
+        ).fetchall()
+        if not rows:
+            return 0, []
+        # Open proposals for this type → skip keys already proposed.
+        openKeys: set[str] = set()
+        try:
+            for pr in conn.execute(
+                "SELECT content FROM proposals WHERE proposal_type = 'retire-preference' "
+                "AND status = 'pending'"
+            ).fetchall():
+                raw = pr['content']
+                try:
+                    data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+                except (json.JSONDecodeError, TypeError):
+                    data = {}
+                if isinstance(data, dict) and data.get('key'):
+                    openKeys.add(str(data['key']))
+                elif isinstance(data, dict) and data.get('fact_key'):
+                    openKeys.add(str(data['fact_key']))
+        except Exception:
+            logger.debug('retire-proposal dedupe scan failed', exc_info=True)
+        for r in rows:
+            key = str(r['fact_key'] or '')
+            if not key or key in openKeys:
+                continue
+            title = str(r['title'] or '') or key
+            reason = (
+                f'preference untouched for {days}+ days and never quoted — '
+                'proposed for retirement (approve to retire, reject to keep)'
+            )
+            try:
+                save_proposal(
+                    'consolidation',
+                    'retire-preference',
+                    {'key': key, 'title': title, 'reason': reason, 'lastTouch': str(r['last_touch'] or '')},
+                )
+                proposed += 1
+                notes.append(f'retirement proposed: {title}')
+            except Exception:
+                logger.debug('retire-preference proposal failed', exc_info=True)
+    except Exception:
+        logger.debug('preference retire scan failed', exc_info=True)
+        return 0, notes
+    return proposed, notes
+
+
+def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'user') -> dict[str, Any]:
+    """Act on a ``retire-preference`` proposal decision (OQ5).
+
+    The scan is propose-only; THIS is the decide half that makes a proposal
+    actionable. Approve → the fact's ``status`` flips to ``'retired'`` (the
+    row survives — retrieval excludes it, a later restore is a status flip);
+    reject → the proposal closes, the fact stays active. Either way the
+    proposal itself is stamped via ``decide_proposal``.
+    """
+    from app.services.memory_store import decide_proposal, get_proposal
+
+    prop = get_proposal(proposal_id)
+    if prop is None:
+        return {'ok': False, 'error': f'no proposal {proposal_id}'}
+    ptype = str(prop.get('proposalType') or prop.get('proposal_type') or '')
+    if ptype != 'retire-preference':
+        return {'ok': False, 'error': f'proposal {proposal_id} is not a retire-preference'}
+    status = 'approved' if approve else 'rejected'
+    decide_proposal(proposal_id, status, decidedBy=decidedBy)
+    if not approve:
+        return {'ok': True, 'decision': status, 'retired': False}
+    raw = prop.get('content')
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except (json.JSONDecodeError, TypeError):
+        data = {}
+    key = str(data.get('key') or data.get('fact_key') or '') if isinstance(data, dict) else ''
+    if not key:
+        return {'ok': True, 'decision': status, 'retired': False, 'error': 'proposal missing key'}
+    conn = _conn()
+    cur = conn.execute(
+        "UPDATE facts SET status = 'retired', updated_at = datetime('now') WHERE fact_key = ?",
+        (key,),
+    )
+    conn.commit()
+    try:
+        from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+        invalidate_fact_index()
+    except Exception:
+        pass
+    return {'ok': True, 'decision': status, 'retired': bool(cur.rowcount), 'key': key}
 
 
 def _load_active_facts() -> list[dict[str, Any]]:
@@ -347,6 +487,13 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
         superseded, superNotes = _supersede_contradictions()
         summary['superseded'] = superseded
         notes.extend(superNotes)
+        # OQ5 (Part 21): propose-only preference retire (non-destructive).
+        try:
+            retiredProposed, retireNotes = _retire_stale_preferences()
+            summary['preferencesProposed'] = retiredProposed
+            notes.extend(retireNotes)
+        except Exception:
+            logger.debug('preference retire pass failed', exc_info=True)
         summary['outcomesSwept'] = sweep_old_outcomes()
         # M-4 (Part 21): episodic_timeline retention sweep (table was unbounded).
         try:

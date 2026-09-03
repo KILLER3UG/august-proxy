@@ -238,6 +238,20 @@ export function useChatSend(opts: UseChatSendOptions) {
         const gitContext = await buildGitContextBlock(sessionId);
         if (gitContext) requestText = `${latestText}\n\n${gitContext}`;
       }
+      // Bot Mode @-mention middleware (Phase C, OQ8): annotation ONLY. Resolve
+      // @handles against the live roster and append an identification note to
+      // the OUTGOING text (request-only; the bubble stays clean). The current
+      // agent decides whether to call message_agent — user text is never
+      // piped into another Bot. Unknown handles pass through untouched.
+      if (/@[\w.-]+/.test(requestText)) {
+        try {
+          const mentions = await import('../composer-mentions');
+          const roster = await mentions.getBotRoster();
+          requestText = mentions.annotateBotMentions(requestText, roster);
+        } catch {
+          /* roster unavailable — send the clean text, no annotation */
+        }
+      }
 
       const streamPromise = startChatStream(turnSessionId, {
         message: applyWorkbenchGuardMode(workbenchMode, requestText),

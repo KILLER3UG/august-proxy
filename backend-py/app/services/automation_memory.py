@@ -179,8 +179,12 @@ def delete_note(job_id: str, key: str) -> str:
 # ── incidents ───────────────────────────────────────────────────────────────
 
 
-def record_incident(job_id: str, error_sig: str) -> None:
-    """Upsert the open incident for this signature (bump occurrences)."""
+def record_incident(job_id: str, error_sig: str) -> bool:
+    """Upsert the open incident for this signature (bump occurrences).
+
+    Returns True when a NEW incident row was created (first detection),
+    False on a bump or failure — callers use that to fire one-time notices.
+    """
     sig = error_sig or 'unknown'
     try:
         c = _conn()
@@ -189,16 +193,20 @@ def record_incident(job_id: str, error_sig: str) -> None:
             "WHERE job_id = ? AND error_signature = ? AND state != 'closed'",
             (_now(), job_id, sig),
         )
-        if not cur.rowcount:
-            c.execute(
-                "INSERT OR IGNORE INTO automation_incidents "
-                "(job_id, error_signature, first_seen_at, last_seen_at, state, occurrences) "
-                "VALUES (?, ?, ?, ?, 'detected', 1)",
-                (job_id, sig, _now(), _now()),
-            )
+        if cur.rowcount:
+            defer_commit(c)
+            return False
+        cur = c.execute(
+            "INSERT OR IGNORE INTO automation_incidents "
+            "(job_id, error_signature, first_seen_at, last_seen_at, state, occurrences) "
+            "VALUES (?, ?, ?, ?, 'detected', 1)",
+            (job_id, sig, _now(), _now()),
+        )
         defer_commit(c)
+        return bool(cur.rowcount)
     except Exception:
         logger.debug('record_incident failed', exc_info=True)
+        return False
 
 
 def close_incident(job_id: str) -> None:
@@ -213,6 +221,43 @@ def close_incident(job_id: str) -> None:
         defer_commit(c)
     except Exception:
         logger.debug('close_incident failed', exc_info=True)
+
+
+def record_blocked_step(
+    *, job_id: str, tool: str, reason: str, session_id: str = ''
+) -> None:
+    """S-1 rider: an approval that could never be answered in an unattended run.
+
+    Writes a deduped ``blocked-step`` incident (the M-11 ledger row for the
+    denial — visible in the RoutinesPane incident badge like any failure) and,
+    on FIRST detection, appends a passive notice to the owning Bot's canonical
+    chat so the user sees why a routine stopped short. Never raises into the
+    turn; interactive and job-less headless sessions record nothing.
+    """
+    if not job_id:
+        return
+    new = record_incident(job_id, f'blocked-step: {tool}')
+    if not new:
+        return
+    try:
+        from app.services import automations_store
+
+        job = automations_store.get_job(job_id)
+        if not job:
+            return
+        deliver_to_bot_chat(
+            job,
+            result_text=(
+                f'Step blocked: {tool} — {reason}. No approver is available in an '
+                'unattended run, so the routine continued without this step. '
+                'Re-run it interactively (or approve the command in chat) if the '
+                'step is essential.'
+            ),
+            trigger='blocked-step',
+            respond=False,
+        )
+    except Exception:
+        logger.debug('blocked-step notice failed', exc_info=True)
 
 
 def open_incidents(job_id: str = '') -> list[dict[str, object]]:

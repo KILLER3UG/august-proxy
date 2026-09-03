@@ -54,6 +54,7 @@ boolKeys: tuple[str, ...] = (
     'memorySensitiveTopics',
     'cameraAccess',
     'consolidationModelSummarize',
+    'preferenceRetireEnabled',
 )
 numKeys: tuple[str, ...] = (
     'maxAgentDepth',
@@ -62,6 +63,7 @@ numKeys: tuple[str, ...] = (
     'consolidationIntervalHours',
     'escalationBudgetPerDay',
     'episodicRetentionDays',
+    'preferenceRetireDays',
 )
 floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap', 'flagRateCap')
 strKeys: tuple[str, ...] = ('titleModel', 'skillLearning', 'skillLearningJudgeModel')
@@ -119,6 +121,13 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # M-4 (Part 21): episodic_timeline retention window in days — the sweep
     # in consolidation._sweep_episodic prunes rows older than this.
     ('episodicRetentionDays', 'episodic_retention_days', 90, 'num'),
+    # OQ5 (Part 21, 2026-09-04): preference-retire propose-only pass. A
+    # preference fact untouched for this many days AND never quoted
+    # (use_count 0) is proposed for retirement (non-destructive — a human
+    # decides via the proposal). Default on, 180 d harmonizes with the 30 d
+    # usage-decay half-life / 90 d episodic / 30 d automation-run windows.
+    ('preferenceRetireEnabled', 'preference_retire_enabled', True, 'bool'),
+    ('preferenceRetireDays', 'preference_retire_days', 180, 'num'),
     # M7 item 3: optional cheap model for session titling. Empty string =
     # fall back to the turn's own model (existing behavior).
     ('titleModel', 'title_model', '', 'str'),

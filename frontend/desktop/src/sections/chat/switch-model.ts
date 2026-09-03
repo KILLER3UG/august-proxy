@@ -32,6 +32,17 @@ export interface SwitchChatModelOptions {
 export interface SwitchChatModelResult {
   /** True when a running turn was interrupted (caller may auto-continue). */
   interrupted: boolean;
+  /**
+   * Resolves once the server-computed handoff has settled (upgraded the
+   * pending summary + dropped the notice card) or failed to the local
+   * fallback. The auto-continue MUST await this before re-sending: the
+   * handoff POST used to be fire-and-forget while the caller's auto-continue
+   * ran on setTimeout(0), so the new turn started against a stale/missing
+   * handoff and the notice card landed mid-turn (the switch race). Awaiting
+   * removes the race; the caller caps it so a slow summary never hangs the
+   * switch.
+   */
+  handoffReady: Promise<void>;
 }
 
 export async function switchChatModel(
@@ -70,12 +81,15 @@ export async function switchChatModel(
   }
 
   // 2) Server-computed handoff for ANY model change with prior messages —
-  //    non-blocking, upgrades the pending summary and drops a notice card.
+  //    upgrades the pending summary and drops a notice card. The returned
+  //    promise lets the caller sequence its auto-continue AFTER this settles
+  //    (the switch race fix); it never rejects (falls back to local on error).
+  let handoffReady: Promise<void> = Promise.resolve();
   if (modelChanged && msgs.length > 0 && sessionId) {
     const sid = sessionId;
     const fromLabel = prev?.name || prev?.id || '';
     opts.onHandoffPreparingChange?.(true);
-    void (async () => {
+    handoffReady = (async () => {
       try {
         const { requestSessionHandoff } = await import('@/api/workbench');
         const record = await requestSessionHandoff(sid, prev?.id ?? '', nextModel.id);
@@ -100,5 +114,5 @@ export async function switchChatModel(
 
   // 3) Apply the selection (next turn / auto-continue uses the new model).
   opts.onModelApplied(nextModel);
-  return { interrupted };
+  return { interrupted, handoffReady };
 }

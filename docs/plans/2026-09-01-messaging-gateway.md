@@ -1,13 +1,20 @@
 # Part 20 — Messaging Gateway: August present in chat platforms
 
-Status: **Phase 0 (trust gate) IMPLEMENTED 2026-09-02** — allowlist
+Status: **Phase 0 (trust gate) IMPLEMENTED 2026-09-02 (committed cb626b40)** — allowlist
 (`gateway.allowedUsers` config + `{PLATFORM}_ALLOWED_USERS` env, default-deny),
 pairing codes (8-char CSPRNG, salted-SHA-256 storage, 1 h TTL, rate limits,
 per-platform lockout after 5 failed approvals), group silence, and the
 `/api/gateway/pairing*` endpoints (`app/services/gateway/pairing.py`, gate in
 `base.dispatch` before the bypass-command check, `tests/test_gateway_pairing.py`
-13 tests). The remaining phases (streaming edits, chunking, media, UI) are
-still **awaiting ruling on OQ1–OQ5**. Written 2026-08-31/09-01 against the
+13 tests). **Rulings recorded 2026-09-04 (§6): OQ1–OQ5 all approved as recommended.**
+Per the dossier: OQ1 = Telegram only for v1; OQ2 = long-polling default, webhook opt-in —
+**already the shipped behavior** (`telegram.py:102-162`), no action; OQ3 = mentionOnly;
+OQ4 = `full` guard in paired-owner DMs + Phase 6 `reduced` toolSurface + plan-mode in
+groups, **never `ask` until remote approval cards exist** (desktop-only approval prompts
+would soft-lock remote turns), plus the cheap hardening of stamping `neverAsk` approval
+metadata on gateway sessions (landed with the 2026-09-04 S-1 rider — headless/DM run
+contexts consult the unattended policy); OQ5 = `/tts` per-chat opt-in. Written 2026-08-31/09-01
+against the
 installed reference implementation (Appendix A, file:line) and this repo's
 tree. **Implementation status (corrected 2026-09-02):** the skeleton + platform
 adapters + tests are already live and green (`backend-py/app/services/gateway/
@@ -268,17 +275,24 @@ bot, one pairing, one streamed reply.
 
 ## 6. Open questions — need rulings
 
-- **OQ1 · v1 platforms**: Telegram only (recommended — polling works behind NAT, richest media
-  API, reference parity), or Telegram + Discord in v1?
-- **OQ2 · Transport default**: long-polling as the desktop default (webhook only when
-  `baseUrl` is configured — already the behavior, `telegram.py:102-115`). Confirm.
-- **OQ3 · Group policy**: respond only when @mentioned or replying to the bot (recommended
-  default `mentionOnly`), vs every message in opted-in groups?
-- **OQ4 · Guard mode for bot sessions**: `full` (bot can run tools unattended — powerful,
-  risky) vs `plan`-style approval via `/approve` from paired owner only (recommended:
-  `full` for DMs with the owner, `reduced` surface per Phase 6, plan-approval in groups)?
-- **OQ5 · Voice replies**: `/tts` per-chat opt-in (recommended) vs auto-TTS replies to voice
-  notes?
+> **RULING RECORD (2026-09-04) — user approved the OQ dossier
+> (`2026-09-04-oq-recommendations.md`) as recommended.**
+>
+> - **OQ1 — Ruled: Telegram only** for v1 (the only unconditionally-registered adapter,
+>   `routers/gateway.py:27-38`; Slack/Discord need the optional `[gateway]` extra).
+> - **OQ2 — ALREADY THE SHIPPED BEHAVIOR**: long-polling default, webhook opt-in when
+>   `baseUrl` is set (`telegram.py:102-162`). No action. Hardening note carried: the poll
+>   loop hard-stops after 5 consecutive failures (`telegram.py:159-161`) — adopt a resilient
+>   restart if that bites in dogfood.
+> - **OQ3 — Ruled: mentionOnly** group policy (respond only to @mention / reply-to-bot /
+>   slash command; matches Phase 0's fail-closed posture, `pairing.py:224-236`).
+> - **OQ4 — Ruled: `full` in paired-owner DMs** (the allowlist IS the authz boundary) +
+>   Phase 6 `reduced` toolSurface + plan-mode in groups. **Never `ask` until remote approval
+>   cards exist.** The cheap hardening (stamp `neverAsk`/unattended approval metadata on
+>   gateway run contexts) landed with the 2026-09-04 S-1 rider (`_approval_never_ask` now
+>   consults headless run contexts).
+> - **OQ5 — Ruled: `/tts` per-chat opt-in**, persisted per chat id; mp3-as-document first,
+>   Ogg/Opus when ffmpeg is present.
 
 ## 7. Verification / measurement
 

@@ -47,6 +47,9 @@ _ALLCamelKeys = {
     'consolidationIntervalHours',
     'episodicRetentionDays',
     'consolidationModelSummarize',
+    # Part 21 OQ5: propose-only preference-retire pass (toggle + window).
+    'preferenceRetireEnabled',
+    'preferenceRetireDays',
     # M7 titling target override (plan §3.7).
     'titleModel',
     # Part 16/17 skill-learning judge mode (off | extract-only | full).

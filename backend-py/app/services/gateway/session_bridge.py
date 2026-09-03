@@ -115,7 +115,15 @@ class SessionBridge:
             except Exception:
                 log.debug('gateway: blob scan for gatewayKey failed', exc_info=True)
         if not sid:
-            session = self._sessionFactory(provider=self._provider, agentId=self._agentId, guardMode=self._guardMode)
+            # S-1 rider: gateway runs are unattended — the paired owner is
+            # remote and has no desktop ApprovalBanner to answer, so the
+            # session must consult the never-ask (deny-with-receipt) policy.
+            session = self._sessionFactory(
+                provider=self._provider,
+                agentId=self._agentId,
+                guardMode=self._guardMode,
+                headless=True,
+            )
             sid = getattr(session, 'id', None) or str(session)
             try:
                 session_meta = getattr(session, 'metadata', None)

@@ -32,7 +32,9 @@ def _agentSkillsDir() -> Path:
     return base / 'skills'
 
 
-def _skillRoots(workspace: str | Path | None = None) -> list[tuple[str, Path]]:
+def _skillRoots(
+    workspace: str | Path | None = None, agent_id: str = ''
+) -> list[tuple[str, Path]]:
     """Search roots in precedence order — earlier roots win on name clash.
 
     Part 17 Phase B: with a non-home ``workspace`` the project root
@@ -41,11 +43,24 @@ def _skillRoots(workspace: str | Path | None = None) -> list[tuple[str, Path]]:
     overrides August's defaults). Home is deliberately NOT a project root:
     the Tasks home anchors folderless chats, not authored skills.
 
+    M-2 (Part 21, ruling OQ5): with a bot ``agent_id`` the Bot's private
+    root ``<dataDir>/bots/<agentId>/skills`` is FIRST — a Bot's own skills
+    shadow project/agent/bundled ones for that Bot's sessions only. The
+    scope rule is shared with the facts store via ``session_scope`` so the
+    two doors can't drift.
+
     Returns (scope, path) PAIRS so the label can never drift from the root
     list (a bare list made home/no-workspace lists mislabel the agent root
     as 'project' once the optional root is absent).
     """
     roots: list[tuple[str, Path]] = []
+    if agent_id:
+        try:
+            from app.services.session_scope import bot_skills_root
+
+            roots.append(('bot', bot_skills_root(agent_id)))
+        except Exception:
+            pass
     ws = str(workspace or '').strip()
     if ws:
         try:
@@ -268,9 +283,11 @@ def isEnabled(name: str, workspace: str | Path | None = None) -> bool:
 
 
 
-def list_all(workspace: str | Path | None = None) -> list[dict[str, object]]:
-    """Discover all skills from the project (optional), agent, and bundled
-    roots — earlier roots shadow same-named later ones.
+def list_all(
+    workspace: str | Path | None = None, agent_id: str = ''
+) -> list[dict[str, object]]:
+    """Discover all skills from the bot (optional), project (optional), agent,
+    and bundled roots — earlier roots shadow same-named later ones.
 
     M6 item 5: entries whose names fail the authoring-name rule are skipped
     and logged at discovery — invalid folders (e.g. leftover ``pending-*``
@@ -291,7 +308,7 @@ def list_all(workspace: str | Path | None = None) -> list[dict[str, object]]:
     # name → every root scope that contains it, in precedence order —
     # used after the loop to badge which root each kept entry shadows (C-2).
     scopesByName: dict[str, list[str]] = {}
-    for scope, root in _skillRoots(workspace):
+    for scope, root in _skillRoots(workspace, agent_id):
         if not root.is_dir():
             continue
         for entry in sorted(root.iterdir()):
@@ -333,9 +350,10 @@ def search(
     category: str = '',
     enabledOnly: bool = True,
     workspace: str | Path | None = None,
+    agent_id: str = '',
 ) -> list[dict[str, object]]:
     """Search skills by name, description, trigger, or category."""
-    allSkills = list_all(workspace)
+    allSkills = list_all(workspace, agent_id)
     q = query.lower().strip()
     results = []
     for s in allSkills:
@@ -355,9 +373,11 @@ def search(
     return results
 
 
-def get(name: str, workspace: str | Path | None = None) -> Optional[dict[str, object]]:
-    """Get a single skill by name (project > agent > bundled precedence)."""
-    for s in list_all(workspace):
+def get(
+    name: str, workspace: str | Path | None = None, agent_id: str = ''
+) -> Optional[dict[str, object]]:
+    """Get a single skill by name (bot > project > agent > bundled precedence)."""
+    for s in list_all(workspace, agent_id):
         if s['name'] == name:
             return s
     return None
@@ -394,7 +414,9 @@ def load_bodies(
     return '\n\n'.join(parts)
 
 
-def catalogue(workspace: str | Path | None = None) -> list[dict[str, object]]:
+def catalogue(
+    workspace: str | Path | None = None, agent_id: str = ''
+) -> list[dict[str, object]]:
     """Compact metadata for every usable skill — the skill catalogue.
 
     Following the Claude-Code progressive-disclosure pattern: only this
@@ -424,17 +446,17 @@ def catalogue(workspace: str | Path | None = None) -> list[dict[str, object]]:
     global _cat_cache, _cat_cache_key
     wsKey = str(workspace or '')
     try:
-        pairs = _skillRoots(workspace)
+        pairs = _skillRoots(workspace, agent_id)
         roots = tuple(f'{scope}:{r}' for scope, r in pairs)
         marks = tuple(_root_mtime(r) for _scope, r in pairs) + _skillMdMarks(pairs)
-        key: tuple | None = (wsKey, roots, marks)
+        key: tuple | None = (wsKey, agent_id, roots, marks)
     except Exception:
         key = None
     if key is not None and _cat_cache is not None and _cat_cache_key == key:
         return _cat_cache
-    byName = {as_str(s['name'], ''): s for s in list_all()}
+    byName = {as_str(s['name'], ''): s for s in list_all(workspace, agent_id)}
     entries: list[dict[str, object]] = []
-    for s in list_all(workspace):
+    for s in list_all(workspace, agent_id):
         if not s.get('enabled'):
             continue
         name = as_str(s['name'], '')
@@ -724,8 +746,37 @@ def _agentSkillDir(name: str) -> Path:
     return _agentSkillsDir() / name
 
 
+def botRootFor(agent_id: str) -> Path:
+    """Phase E: the Bot's private skill root (created on demand). The write
+    target for a learned skill authored by a bot-scoped session — the mirror
+    of the ``('bot', …)`` read root in ``_skillRoots``."""
+    from app.services.session_scope import bot_skills_root
+
+    root = bot_skills_root(agent_id)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _currentWriteRoot() -> Path:
+    """Where an agent-authored/learned skill lands for the CURRENT session:
+    the Bot's own folder when the session is bot-scoped (Phase E), else the
+    shared agent root. One resolution point so the write door matches the
+    read door (``_skillRoots``) and the rule can't drift."""
+    try:
+        from app.services import session_scope
+
+        scope = session_scope.resolve_scope()
+        if session_scope.is_bot_scope(scope):
+            return botRootFor(session_scope.bot_agent_id(scope))
+    except Exception:
+        pass
+    return _agentSkillsDir()
+
+
 def _ensureAgentRoot() -> Path:
-    root = _agentSkillsDir()
+    """The writable skill root for the current session (agent root, or the
+    Bot's own root when the authoring session is bot-scoped — Phase E)."""
+    root = _currentWriteRoot()
     root.mkdir(parents=True, exist_ok=True)
     return root
 

@@ -36,6 +36,7 @@ def save_fact(
     expires_at: str | None = None,
     title: str = '',
     kind: str = '',
+    scope: str = 'global',
 ) -> None:
     """Save a structured fact. ``expires_at`` (ISO-8601 TEXT) is optional; the
     cognitive boot sweep purges facts whose expiry has passed.
@@ -43,15 +44,23 @@ def save_fact(
     Upsert over the unique ``fact_key``: an update keeps the row id,
     ``created_at`` and usage counters, and only overwrites ``title``/``kind``
     when the caller actually supplies them (plan §3.3 — facts are titled,
-    typed entries)."""
+    typed entries).
+
+    M-2 (Part 21): ``scope`` ('global' | 'bot:<agentId>' | 'project:<path>')
+    stamps the row's memory home on INSERT. An update never rewrites scope —
+    a fact keeps the home it was born in (a bot touching an existing global
+    key edits that global fact, same as any session does today).
+    """
+    from app.services.session_scope import normalize_scope
+
     conn = _conn()
     # '' = unspecified: fresh inserts default to 'fact', updates keep the
     # existing kind (a remember-without-kind must not downgrade a lesson).
     kindParam = kind if kind in _FACT_KINDS else ''
     conn.execute(
         """
-        INSERT INTO facts (fact_key, fact_value, title, kind, category, source, confidence, expires_at, updated_at)
-        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, datetime('now'))
+        INSERT INTO facts (fact_key, fact_value, title, kind, category, source, confidence, expires_at, scope, updated_at)
+        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(fact_key) DO UPDATE SET
             fact_value = excluded.fact_value,
             title = CASE WHEN excluded.title != '' THEN excluded.title ELSE facts.title END,
@@ -62,7 +71,17 @@ def save_fact(
             expires_at = excluded.expires_at,
             updated_at = datetime('now')
         """,
-        (factKey, _json(factValue), (title or '').strip(), kindParam, category, source, confidence, expires_at),
+        (
+            factKey,
+            _json(factValue),
+            (title or '').strip(),
+            kindParam,
+            category,
+            source,
+            confidence,
+            expires_at,
+            normalize_scope(scope),
+        ),
     )
     conn.commit()
     try:

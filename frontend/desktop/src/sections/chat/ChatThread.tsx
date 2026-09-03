@@ -975,7 +975,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         // Shared stop → handoff → apply flow (single source of truth with the
         // composer model menu).
         const { switchChatModel } = await import('./switch-model');
-        const { interrupted } = await switchChatModel({
+        const { interrupted, handoffReady } = await switchChatModel({
           sessionId: sid,
           prevModel: prev,
           nextModel: model,
@@ -988,6 +988,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           onModelApplied: (m) => {
             setSelectedModel(m);
             userSelectedRef.current = m.id;
+            // Set the request-model ref synchronously: the auto-continue below
+            // can otherwise fire on a setTimeout(0) before the setSelectedModel
+            // re-render propagates the new model through props into the send
+            // hook's own ref — the "wrong model name after switch" race.
+            modelForRequestRef.current = m;
             try {
               localStorage.setItem('august_last_model', JSON.stringify(m));
             } catch {
@@ -1009,6 +1014,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             setChatMessagesRef.current(trimmed);
             const wbId = resolveWorkbenchSessionId(sid);
             void truncateWorkbenchSession(wbId, lastUserIdx).catch(() => undefined);
+            // Sequence AFTER the server handoff settles so the re-send carries
+            // the upgraded summary + the notice card is placed before the new
+            // turn (the switch race). Capped so a slow summary never hangs the
+            // switch — past the cap we continue with whatever is pending.
+            await Promise.race([
+              handoffReady.catch(() => undefined),
+              new Promise<void>((r) => window.setTimeout(r, 8000)),
+            ]);
             // Guard: if the user typed + sent a new message in the interim,
             // do not clobber it with a stale auto-continue of the old prompt.
             const expectedLen = trimmed.length;

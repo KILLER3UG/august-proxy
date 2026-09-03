@@ -21,11 +21,11 @@ def test_touch_does_not_invalidate_index_but_boost_still_applies(isolatedData):
     first = fact_retrieval.retrieve_relevant_facts(query, k=2)
     assert [f['key'] for f in first] == ['a:plain', 'b:boosted']
 
-    index_before = fact_retrieval._cache
+    index_before = fact_retrieval._caches.get('global')
     assert index_before is not None
     assert touch_fact_usage(['b:boosted']) == 1
     # THE FIX: a usage touch must NOT drop the cached corpus (rebuild cliff).
-    assert fact_retrieval._cache is index_before
+    assert fact_retrieval._caches.get('global') is index_before
 
     # Max boost (+1.0 after 20 touches) still flips the weaker lexical match
     # to #1 — usage is fetched fresh per query, not from the cached corpus.
@@ -34,7 +34,7 @@ def test_touch_does_not_invalidate_index_but_boost_still_applies(isolatedData):
     ranked = fact_retrieval.retrieve_relevant_facts(query, k=2)
     assert ranked and ranked[0]['key'] == 'b:boosted'
     # The cache survives the whole loop — zero rebuilds after the first.
-    assert fact_retrieval._cache is index_before
+    assert fact_retrieval._caches.get('global') is index_before
 
 
 def test_content_writes_still_invalidate_index(isolatedData):
@@ -42,11 +42,11 @@ def test_content_writes_still_invalidate_index(isolatedData):
 
     save_fact('x:one', {'fact': 'stable body'}, title='One')
     fact_retrieval.retrieve_relevant_facts('stable body', k=1)
-    assert fact_retrieval._cache is not None
+    assert fact_retrieval._caches.get('global') is not None
     save_fact('x:two', {'fact': 'another body'}, title='Two')
-    assert fact_retrieval._cache is None, 'content writes must still rebuild'
+    assert not fact_retrieval._caches, 'content writes must still rebuild'
     delete_fact('x:two')
-    assert fact_retrieval._cache is None
+    assert not fact_retrieval._caches
 
 
 def test_manage_endpoint_ttl_wiring(isolatedData):

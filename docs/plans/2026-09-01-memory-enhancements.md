@@ -1,11 +1,17 @@
 # Part 21 — Memory enhancements (schema + retrieval + hygiene)
 
-Status: **P1 + M-11 LANDED 2026-09-02** (M-1 usage-decoupling half + M-10 ttl
-wiring in `tests/test_memory_part21_p1.py`; M-11 runs ledger + notepad +
+Status: **P1 + M-11 LANDED 2026-09-02 (committed cb626b40)** (M-1 usage-decoupling half +
+M-10 ttl wiring in `tests/test_memory_part21_p1.py`; M-11 runs ledger + notepad +
 incidents in `031_automation_memory.sql` + `automation_memory.py`, 19 tests;
 M-6 pollution guard partial; M-4 episodic retention sweep landed 2026-09-02 —
-the FTS/index half stays gated on OQ2). **M-2, M-3, M-5, M-7..M-9, M-12 and
-OQ1–OQ7 still await ruling.** Written 2026-09-01 after mapping the current memory
+the FTS/index half is **closed as won't-build per the OQ2 ruling, 2026-09-04**).
+**Rulings recorded 2026-09-04 (§4) — OQ1–OQ7 all approved as recommended.** Landed with the
+ruling batch: **M-2** (`facts.scope` column, migration 032 — unblocks Part 19 Phase E),
+**OQ1** (`auto_memories` retired — discard-after-export, migration 033, NOT migrate:
+production's 7 rows are all stale `conv_summary_wb_*` junk and `facts` is empty),
+**OQ5** (180d-untouched + never-quoted preference retire as a propose-only consolidation
+pass). M-3, M-5 (bounded-view half), M-7..M-9, M-12 remain open candidates. Written
+2026-09-01 after mapping the current memory
 subsystem end-to-end (all file:line verified against the tree); amended same day with M-11/M-12
 from the capability research pass (`2026-09-01-capability-research.md` §5/§7 — the reference's
 v0.21.0 release validates the remembering-cron shape). SQL changes are in scope per
@@ -298,25 +304,39 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_auto_incident_open
 
 ## 4. Open questions — need rulings
 
-- **OQ1 · `auto_memories` vs `facts`:** two overlapping stores. Migrate remaining
-  `auto_memories` rows into `facts` (`source='auto'`, importance→confidence) and retire the
-  table, or keep both? (Recommended: migrate + retire — one door, one UI.)
-- **OQ2 · `episodic_timeline` future:** retention + FTS (M-4 as written) vs declare it
-  redundant with `episodes` + `messages_fts` and drop after a retention window?
-- **OQ3 · Contradiction UX (M-8):** `contested` status with UI resolve (recommended) vs
-  keep today's silent same-title supersede?
-- **OQ4 · Embeddings:** `fact_retrieval.py:10` says BM25 suffices for a few hundred facts.
-  With M-1's candidate re-rank, do we commit to never needing vectors (recommended), or
-  reserve a `fact_vectors` table now? (Reserving an empty table is cheap; wiring an
-  embedding provider is not — recommend not.)
-- **OQ5 · Preference retire threshold:** 180 d untouched + never quoted (recommended) vs
-  different numbers?
-- **OQ6 · Notepad write door (M-11):** dedicated `job_notes` tool restricted to
-  automation-run sessions (recommended — notepad is machine state, kept out of the facts
-  door entirely) vs routing through `remember` with a special kind?
-- **OQ7 · Continuity default (M-11):** `continuity: true` opt-in per job (recommended —
-  briefing-style jobs want it, monitor-style jobs would double-pay context) vs on by
-  default?
+> **RULING RECORD (2026-09-04) — user approved the OQ dossier
+> (`2026-09-04-oq-recommendations.md`) as recommended.**
+>
+> - **OQ1 — Ruled: DISCARD-AFTER-EXPORT + retire the table, NOT migrate.** Production's 7
+>   `auto_memories` rows are all stale `conv_summary_wb_*` junk; no live writer exists; the
+>   table already 404s through `_BRAINStores` (`brain.py:499-501`). Migrating would seed BM25
+>   with noise; the privacy export already preserves rows on demand. Landed as migration 033
+>   (drop table + FTS + triggers; swallow-and-warn for legacy DBs missing it) in the ruling
+>   batch. **This corrects the plan's original "migrate + retire" recommendation** — the
+>   retire half was the real value.
+> - **OQ2 — Ruled: retention-only.** The 90-day sweep already shipped; **M-4's FTS half is
+>   closed as won't-build** (LIKE over ≤hundreds of rows is instant; two readers never rank).
+>   Keep the table while `brain_index_snippet` reads it (`brain.py:596-606`).
+> - **OQ3 — Ruled: `contested` status + UI resolve** (keep A / keep B / merge), detection
+>   limited to today's same-title-different-body case (`consolidation.py:229-261`). Item M-8
+>   becomes the landed design; build remains open.
+> - **OQ4 — Ruled: commit to no vectors, reserve nothing.** Decisive precedent: production
+>   has an orphaned `vector_entries` table (12 rows, zero code references) — reserved schema
+>   that outlived its feature. Adding later is purely additive. Committed via a docstring note
+>   in `fact_retrieval.py` in the ruling batch.
+> - **OQ5 — Ruled: 180 d untouched + never quoted, propose-only** via a `proposals` row
+>   (non-destructive by construction). Landed as a propose-only consolidation pass in the
+>   ruling batch (rides `save_proposal`/`decide_proposal`, `rest.py:163-204`) + config keys.
+> - **OQ6 — ALREADY SETTLED IN CODE**: keep the landed dedicated `job_notes` tool
+>   (`routines.py:180-231`, session-gated) — never route through `remember`. No action.
+> - **OQ7 — ALREADY SETTLED IN CODE**: keep opt-in (`continuity: false` default) —
+>   landed (`automations.py:65`, `automation_memory.py:307-310`). No action.
+>
+> **Plan corrections surfaced by the dossier research (2026-09-04):**
+> (1) §0's "episodic_timeline has no live writer" note (via F-6) is STALE — it writes per
+> turn (`workbench.py:4827,4847`).
+> (2) OQ1's original "migrate" recommendation would have imported 7 worthless rows; the
+> verdict is discard-after-export (recorded above).
 
 ## 5. Verification
 

@@ -1,6 +1,7 @@
 # Part 22 — Capability research: the next expansion batch
 
-Status: **RESEARCH + recommendations — awaiting ruling.** Written 2026-09-01. Every August
+Status: **RESEARCH + recommendations — RULINGS RECORDED 2026-09-04 (§9); user approved the
+OQ dossier (`2026-09-04-oq-recommendations.md`) as recommended.** Written 2026-09-01. Every August
 claim is file:line-verified against this tree; reference mechanics come from an installed
 open-source desktop agent scanned the same day (Appendix A.1 — provenance only, not needed to
 implement). Web research: Appendix A.2.
@@ -425,6 +426,38 @@ Ruling asks: (a) approve Part 21 amendments (M-11/M-12, §below); (b) charter Pa
 (agent control plane) with T/D/B items; (c) charter Part 24 (Microsoft) with device-code
 vs auth-code flow OQ; (d) Part 19 Phase D amendment G-1/G-2; (e) S-1 as gate for Part 19
 Phase B.
+
+> **RULING RECORD (2026-09-04) — user approved the OQ dossier
+> (`2026-09-04-oq-recommendations.md`) as recommended. Verdicts per ask:**
+>
+> - **(a) Part 21 amendments — APPROVED with a split:** M-11 already landed (cb626b40),
+>   acknowledged, no ruling needed. M-12: approved, land together with S-2 (shared corpus
+>   write path; one migration, not two). Note: no `source` stamp on episodes/turn_outcomes
+>   yet (`turn_outcomes.py:101-122`) — that stamp ships with the M-12+S-2 batch.
+> - **(b) Part 23 — CHARTERED SLIM** as `2026-09-04-part23-control-plane.md`: build list =
+>   T-2 micro-compaction, T-3-residual (cache-split aggregates in `routers/usage.py:39-110`),
+>   T-4 web-result TTL cache, B-1 browser dialog handling (`browser/session_manager.py:96`
+>   has only a console listener), B-2 persistent browser profile (after S-1; unattended
+>   contexts keep the isolated profile). **Dropped as already landed (cb626b40):** T-1
+>   spillover (`_spillToolResult` `workbench.py:361`), D-1 (`subagent_orchestrator.py:604-614`),
+>   D-2 (`:617-641`). **Deferred with recorded triggers:** D-4 delegation ledger, B-3 vision.
+> - **(c) Part 24 — CHARTERED with auth-code + PKCE as the resolved flow**
+>   (`2026-09-04-part24-microsoft.md`), mirroring the Google auth layer (loopback callback
+>   `service_connections.py:595-609`, refresh rotation `:571-573`, degraded-on-invalid_grant
+>   `:489-584`); authority `login.microsoftonline.com/consumers`; `offline_access` mandatory;
+>   refresh tokens rotate on use; redirect URI = `http://localhost` loopback variant;
+>   device-code recorded as a non-goal headless fallback. No MS code exists yet (build is L).
+> - **(d) G-1/G-2 — APPROVED into the Phase D charter text now** (Phase D was unbuilt at
+>   ruling time): review rounds count against the 3-round cap (+1 allowance); escalation
+>   reuses the `@user` badge; two consecutive same-cause blocks flip the room to needs-you.
+>   Landed with Phase D on 2026-09-04.
+> - **(e) S-1 — APPROVED as a rider, not a gate** (Phase B already shipped). The verified
+>   hole: `_approval_never_ask` (`workbench.py:5429-5446`) never consulted
+>   `session.headless` and `setDaemonContext` had zero callers, so unattended routine runs
+>   executed under the interactive ask policy. **Landed 2026-09-04, before any Phase C/D
+>   surface:** `_approval_never_ask` consults the session's headless flag; denied asks
+>   become blocked-step rows in the M-11 ledger + a Bot Chat notice; denial extended to the
+>   mutation-gate path (`permissions.py:467-474` conversion seam).
 
 ---
 

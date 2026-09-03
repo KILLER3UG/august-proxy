@@ -477,6 +477,13 @@ export function ComposerToolbar({
                 onHandoffPreparingChange: setHandoffPreparing,
               });
               if (result.interrupted && sessionId) {
+                // Sequence the auto-continue AFTER the server handoff settles
+                // (the skipSwitch re-dispatch below runs it) so the re-send
+                // carries the upgraded summary — the switch race fix. Capped.
+                await Promise.race([
+                  result.handoffReady.catch(() => undefined),
+                  new Promise<void>((r) => window.setTimeout(r, 8000)),
+                ]);
                 window.dispatchEvent(
                   new CustomEvent('august:model-selected', {
                     detail: { modelId: m.id, provider: m.provider, skipSwitch: true, interrupted: true },

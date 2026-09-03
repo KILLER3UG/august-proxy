@@ -1247,6 +1247,41 @@ def buildSystemPrompt(
             memWritesOn = True
         if memWritesOn:
             parts.append(_seg_cache.MEMORY_BLOCK)
+    # Phase C: the Bot roster + messaging protocol, offered ONLY where the
+    # message_agent tool is (canonical Bot Chats — offeredTools already
+    # reflects the filter_dm_tools gate, so bytes stay stable elsewhere).
+    if 'message_agent' in offeredTools:
+        try:
+            from app.services.bot_mode import dm as _dm
+
+            _messaging = _dm.messaging_hint(as_str(getattr(session, 'agentId', '') or ''))
+            if _messaging:
+                parts.append(_messaging)
+        except Exception:
+            logger.debug('prompt: agent-messaging block failed', exc_info=True)
+    # Phase E guard (prompt layer 1): a bot-scoped session is told its memory
+    # + skills are its own. Deterministic + stable per session (cache-safe).
+    try:
+        from app.services import session_scope as _ss
+
+        _scope = _ss.resolve_scope(session)
+        if _ss.is_bot_scope(_scope):
+            _agent_id = _ss.bot_agent_id(_scope)
+            try:
+                from app.services.bot_mode import roster as _roster
+
+                _bot = _roster.get_bot(_agent_id)
+                _handle = as_str(_bot.get('name')) if _bot else _agent_id
+            except Exception:
+                _handle = _agent_id
+            parts.append(
+                f'You are Bot @{_handle}. Your skills live in your own folder and '
+                'your memory is scoped to you plus the shared global store; other '
+                "Bots' private skills and notes are not visible to you. Do not "
+                'write into another Bot\'s scope.'
+            )
+    except Exception:
+        logger.debug('prompt: bot-scope guard line failed', exc_info=True)
     # T15 versioned refine store: active prompt-note/memory entries ride along
     # as ADDITIONAL context — the immutable base system prompt is never edited.
     try:
@@ -1654,6 +1689,14 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         tools = filter_circuit_tools(tools, session)
     except Exception:
         pass
+    # Phase C gate: message_agent only in a Bot's canonical chat (the tool
+    # executor re-checks, so a forged call from elsewhere fails closed).
+    try:
+        from app.services.bot_mode.dm import filter_dm_tools
+
+        tools = filter_dm_tools(tools, session)
+    except Exception:
+        pass
     return _finalize_session_tools(session, tools)
 
 
@@ -1821,6 +1864,13 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
 
         if session is None or not is_circuit_mode(session):
             tools = [t for t in tools if not _is_circuit_gate_tool(_circuit_gate_name(t))]
+    except Exception:
+        pass
+    # Phase C gate (OpenAI path): same visibility rule as toolDefinitions.
+    try:
+        from app.services.bot_mode.dm import filter_dm_tools
+
+        tools = filter_dm_tools(tools, session)
     except Exception:
         pass
     return _finalize_session_tools(session, tools)
@@ -2905,6 +2955,7 @@ async def _sendWorkbenchMessageStreamImpl(
     # Working-copy only (never persisted, never in the system prompt) so the
     # provider prefix cache stays stable (Q14).
     try:
+        from app.services import session_scope as _session_scope
         from app.services.capabilities_prompt import build_relevant_skills_block
         from app.services.memory_store.fact_retrieval import build_memory_block
 
@@ -2934,16 +2985,24 @@ async def _sendWorkbenchMessageStreamImpl(
                 if isinstance(_pm2, dict) and _pm2.get('role') == 'user':
                     _priorTurn = as_str(_pm2.get('content'), '')
                     break
+            # M-2 (Part 21): one scope resolution per turn feeds both the
+            # facts corpus union and the skills catalogue (bot private root).
+            _turnScope = _session_scope.resolve_scope(session)
+            # Phase A (Part 17): with a non-home workspace the memory tail
+            # also carries the project's md-file entries (tagged section).
+            # Hoisted above the read gate so the skills block (which shares
+            # the workspace scope) can't NameError when memory read is off.
+            _wsForTail = session.workspacePath if session.workspacePath else ''
             if _memReadOn:
-                # Phase A (Part 17): with a non-home workspace the memory tail
-                # also carries the project's md-file entries (tagged section).
-                _wsForTail = session.workspacePath if session.workspacePath else ''
                 _recalledRows: list[dict[str, object]] = []
                 _memoryBlock, _injectedFacts = build_memory_block(
                     _userText,
                     workspace=_wsForTail,
                     recalled=_recalledRows,
                     prior_turn=_priorTurn,
+                    # M-2 (Part 21): Bot home chats recall global ∪ own notes;
+                    # every other session stays on the plain global corpus.
+                    scope=_turnScope,
                 )
                 # Phase D item 4 (Part 17): recall metrics — one internal_state
                 # counter row per turn (before/after instrument for every
@@ -3006,7 +3065,7 @@ async def _sendWorkbenchMessageStreamImpl(
             except Exception:
                 _memWritesOn = True
             _skillsBlock = build_relevant_skills_block(
-                _userText, _wsForTail or None
+                _userText, _wsForTail or None, _session_scope.bot_agent_id(_turnScope)
             )
             _nudgeBlock = memory_nudge_block(session, _memWritesOn)
             # Phase L (Part 17): per-turn <session_state> carries the volatile
@@ -5428,9 +5487,20 @@ def _loadApprovalPolicy(session: WorkbenchSession) -> _ApprovalPolicy:
     return policy_from_dict(None)
 
 
-def _approval_never_ask(policy: _ApprovalPolicy) -> bool:
-    """Never-ask stance: headless/unattended runs must never hang on a prompt."""
+def _approval_never_ask(
+    policy: _ApprovalPolicy, session: WorkbenchSession | None = None
+) -> bool:
+    """Never-ask stance: headless/unattended runs must never hang on a prompt.
+
+    S-1 rider (2026-09-04): the per-session ``headless`` flag is the primary
+    signal — automation runs (``automations_store``) and gateway bridges stamp
+    it at creation. Before the rider only the process-wide env var and the
+    daemon context were consulted, so unattended routine runs silently used
+    the interactive ask policy and soft-locked on desktop-only prompts.
+    """
     if policy.never_ask:
+        return True
+    if session is not None and bool(getattr(session, 'headless', False)):
         return True
     if os.environ.get('AUGUST_HEADLESS', '').strip().lower() in ('1', 'true', 'yes'):
         return True
@@ -5442,6 +5512,44 @@ def _approval_never_ask(policy: _ApprovalPolicy) -> bool:
     except Exception:
         pass
     return False
+
+
+def _record_unattended_denial(
+    session: WorkbenchSession, toolName: str, reason: str
+) -> None:
+    """Best-effort M-11 blocked-step ledger row for an unattended denial.
+
+    Only automation runs carry ``automationJobId`` (stamped in
+    ``automations_store._run_workbench_stream``); interactive and ad-hoc
+    headless sessions record nothing. Never raises into the turn.
+    """
+    try:
+        meta = as_dict(session.metadata) if session.metadata else {}
+        job_id = as_str(meta.get('automationJobId'))
+        if not job_id:
+            return
+        from app.services import automation_memory
+
+        automation_memory.record_blocked_step(
+            job_id=job_id, tool=toolName, reason=reason, session_id=session.id
+        )
+    except Exception:
+        logger.debug('unattended denial ledger record failed', exc_info=True)
+
+
+def _unattended_mutation_denial(toolName: str) -> str:
+    """Deny receipt for a mutation-gate ask in an unattended run.
+
+    Mirrors ``permissions.unattended_denial`` (the command-axis seam) for the
+    guard-mode axis: the model gets a terminal answer now instead of a
+    "waiting for approval" stall no human will ever clear.
+    """
+    return (
+        f"Tool '{toolName}' requires approval, but this is an unattended run — "
+        'no approver is available, so the step was blocked and recorded. '
+        'Do not retry it. Choose a non-mutating approach, or finish the turn '
+        'and tell the user which step needs manual approval.'
+    )
 
 
 def _resolveCommandApproval(
@@ -5474,7 +5582,8 @@ def _resolveCommandApproval(
     if decision.action == 'deny':
         return decision.feedback
     # action == 'ask'
-    if _approval_never_ask(policy):
+    if _approval_never_ask(policy, session):
+        _record_unattended_denial(session, toolName, decision.reason)
         return _perm_unattended(command, decision)
     # A prior one-shot/session/always grant covers exactly this command.
     if has_tool_grant(session, toolName, args):
@@ -5616,6 +5725,11 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
     if mode == 'edit' and is_shell_mutation(toolName, args):
         if has_tool_grant(session, toolName, args):
             return None
+        # S-1 rider: an unattended run has no one to answer the banner — deny
+        # with a receipt instead of queueing a pending mutation that soft-locks.
+        if _approval_never_ask(_loadApprovalPolicy(session), session):
+            _record_unattended_denial(session, toolName, 'shell mutation in edit mode')
+            return _unattended_mutation_denial(toolName)
         key = _mutation_grant_key(toolName, args)
         for pm in session.pendingMutations:
             if not isinstance(pm, dict):
@@ -5643,6 +5757,11 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
     if mode == 'ask' and isPlanModeBlocked(toolName, args):
         if has_tool_grant(session, toolName, args):
             return None
+        # S-1 rider: same unattended denial as the edit-mode shell path —
+        # routines ship with guardMode 'ask', so this is the live hang path.
+        if _approval_never_ask(_loadApprovalPolicy(session), session):
+            _record_unattended_denial(session, toolName, 'mutating tool in ask mode')
+            return _unattended_mutation_denial(toolName)
         # Avoid stacking duplicate pending mutations for the same tool+path
         key = _mutation_grant_key(toolName, args)
         for pm in session.pendingMutations:

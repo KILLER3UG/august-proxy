@@ -89,13 +89,16 @@ interface ProjectList {
 /** Store scope per Memory-hub sub-tab (section id → stores shown). Ids are
  *  immutable (settings-registry audit) — only the blurbs change.
  *  Part 15.2: the Timeline + Sessions sub-tabs were deleted — the
- *  episodic_timeline table has no live writer, and the sessions/messages/
- *  exams stores duplicate the sidebar, chat, and exam UIs. */
+ *  episodic_timeline table IS written per turn (workbench.py:4827,4847 — the
+ *  old "no live writer" note was stale, corrected 2026-09-04), but the
+ *  sessions/messages/exams stores duplicate the sidebar, chat, and exam UIs.
+ *  Part 21 OQ1 (2026-09-04): auto_memories retired — the phantom store entry
+ *  is gone (migration 033 drops the table). */
 const SCOPES: Record<string, { title: string; blurb: string; stores: string[] }> = {
   'memory-knowledge': {
     title: 'Memories',
-    blurb: 'KV notes plus legacy auto-memories (read-only).',
-    stores: ['autoMemories', 'memory'],
+    blurb: 'KV notes the agent keeps about you.',
+    stores: ['memory'],
   },
   'memory-facts': {
     title: 'Facts & Rules',
@@ -183,15 +186,6 @@ const STORE_META: Record<string, StoreMeta> = {
     updated: (r) => str(r.updated_at),
     editable: ['value'],
     deletable: true,
-  },
-  autoMemories: {
-    idField: 'id',
-    title: (r) => str(r.key),
-    summary: (r) => str(r.content),
-    category: (r) => str(r.category),
-    updated: (r) => str(r.created_at),
-    legacy: true,
-    readOnly: true,
   },
   // C-11: heuristics is legacy (no live writer) but DELETABLE — brain.py's
   // _ROW_DELETABLE includes it, so the UI stops suppressing the button.

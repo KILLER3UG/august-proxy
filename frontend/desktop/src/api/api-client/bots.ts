@@ -86,3 +86,48 @@ export function getBotAvatar(name: string, salt = ''): Promise<{ svg: string }> 
     `/api/agents/bots/avatar?name=${encodeURIComponent(name)}&salt=${encodeURIComponent(salt)}`,
   );
 }
+
+/* ── Group rooms (Phase D) ─────────────────────────────────────────────── */
+
+export interface Room {
+  id: number;
+  name: string;
+  members: string[];
+  needs_you?: boolean;
+  created_at?: string;
+}
+
+export interface RoomMessage {
+  id: number;
+  room_id: number;
+  sender_agent: string;
+  body: string;
+  kind: string; // message | pass | review | verdict | escalation
+  created_at?: string;
+}
+
+export function listRooms(): Promise<{ rooms: Room[] }> {
+  return api.get<{ rooms: Room[] }>('/api/agents/rooms');
+}
+
+export function getRoom(id: number): Promise<{ room: Room; log: RoomMessage[] }> {
+  return api.get<{ room: Room; log: RoomMessage[] }>(`/api/agents/rooms/${id}`);
+}
+
+export function createRoom(name: string, members: string[]): Promise<{ status: string; roomId: number }> {
+  return api.post<{ status: string; roomId: number }>('/api/agents/rooms', { name, members });
+}
+
+export function sendToRoom(
+  id: number,
+  message: string,
+): Promise<{ summary: Record<string, unknown>; log: RoomMessage[] }> {
+  return api.post<{ summary: Record<string, unknown>; log: RoomMessage[] }>(
+    `/api/agents/rooms/${id}/send`,
+    { message },
+  );
+}
+
+export function deleteRoom(id: number): Promise<{ status: string; deleted: number }> {
+  return api.delete<{ status: string; deleted: number }>(`/api/agents/rooms/${id}`);
+}

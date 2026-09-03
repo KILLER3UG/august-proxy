@@ -65,6 +65,23 @@ class UiMetaUpdate(CamelModel):
     groups: list[str] | None = None
 
 
+class DmSend(CamelModel):
+    """A UI-initiated DM into a Bot's chat (Phase C). ``fromAgent`` is the
+    sending Bot (defaults to the roster's default assistant)."""
+
+    message: str
+    from_agent: str = ''
+
+
+class RoomCreate(CamelModel):
+    name: str
+    members: list[str]
+
+
+class RoomSend(CamelModel):
+    message: str
+
+
 class AgentJob(CamelModel):
     agent_id: str
     goal: str
@@ -189,6 +206,100 @@ async def ensureBotChat(agentId: str):
 
     chat = roster.ensure_canonical_bot_chat(agentId)
     return {'sessionId': chat.id, 'title': chat.title, 'agentId': agentId}
+
+
+@router.post('/bots/{agentId}/dm')
+async def sendBotDm(agentId: str, body: DmSend):
+    """Deliver one DM into a Bot's canonical chat (Phase C, UI-initiated).
+
+    Reuses the SAME inbox + delivery path as the message_agent tool (one send
+    path, one audit trail); the UI is a trusted actor so it skips the
+    canonical-chat gate the tool enforces. Fire-and-forget: enqueues, spawns
+    the recipient turn, acks with the dm id.
+    """
+    from app.services.bot_mode import dm, roster
+
+    message = (body.message or '').strip()
+    if not message:
+        raise HTTPException(status_code=400, detail='message is required')
+    if len(message) > dm.protocol.MAX_DM_BODY:
+        raise HTTPException(status_code=400, detail='message too long')
+    if roster.get_bot(agentId) is None:
+        raise HTTPException(status_code=404, detail='No such Bot')
+    from_agent = body.from_agent or ''
+    if not from_agent:
+        default = roster.get_default_bot()
+        from_agent = str(default.get('id')) if default else 'user'
+    chat = roster.ensure_canonical_bot_chat(agentId)
+    to_session = str(getattr(chat, 'id', '') or '')
+    attributed = f'Message from 🤖 {dm._handle_for(from_agent)} (@{dm._handle_for(from_agent)}):\n{message}'
+    dm_id = dm.enqueue(
+        from_agent=from_agent,
+        to_agent=agentId,
+        body=attributed,
+        from_session='',
+        to_session=to_session,
+    )
+    if dm_id <= 0:
+        raise HTTPException(status_code=500, detail='could not enqueue the message')
+    dm._spawn(dm.deliver(dm_id))
+    return {'status': 'queued', 'dmId': dm_id, 'to': agentId, 'sessionId': to_session}
+
+
+@router.post('/rooms')
+async def createRoom(body: RoomCreate):
+    """Create a group room (2-6 member Bots deliberate in deterministic rounds)."""
+    from app.services.bot_mode import rooms
+
+    try:
+        room_id = rooms.create_room(body.name, body.members)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if room_id <= 0:
+        raise HTTPException(status_code=500, detail='could not create room')
+    return {'status': 'ok', 'roomId': room_id, 'name': body.name, 'members': body.members}
+
+
+@router.get('/rooms')
+async def listRooms():
+    from app.services.bot_mode import rooms
+
+    return {'rooms': rooms.list_rooms()}
+
+
+@router.get('/rooms/{room_id}')
+async def getRoom(room_id: int):
+    from app.services.bot_mode import rooms
+
+    room = rooms.get_room(room_id)
+    if room is None:
+        raise HTTPException(status_code=404, detail='no such room')
+    return {'room': room, 'log': rooms.room_log(room_id)}
+
+
+@router.post('/rooms/{room_id}/send')
+async def sendToRoom(room_id: int, body: RoomSend):
+    """Post a user message and run the deterministic round driver (≤3 rounds /
+    ≤10 messages, G-1 review rounds, G-2 escalation). Returns the summary +
+    the fresh log so the UI renders without a second fetch."""
+    from app.services.bot_mode import rooms
+
+    if rooms.get_room(room_id) is None:
+        raise HTTPException(status_code=404, detail='no such room')
+    message = (body.message or '').strip()
+    if not message:
+        raise HTTPException(status_code=400, detail='message is required')
+    summary = await rooms.run_room(room_id, message)
+    return {'summary': summary, 'log': rooms.room_log(room_id)}
+
+
+@router.delete('/rooms/{room_id}')
+async def deleteRoom(room_id: int):
+    from app.services.bot_mode import rooms
+
+    if not rooms.delete_room(room_id):
+        raise HTTPException(status_code=404, detail='no such room')
+    return {'status': 'ok', 'deleted': room_id}
 
 
 @router.delete('/bots/{agentId}')

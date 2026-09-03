@@ -321,10 +321,17 @@ async def _remember(
     value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
     exp = (expires_at or '').strip() or None
     before = memory_store.get_fact(factKey)  # type: ignore[assignment]
+    # M-2 (Part 21): the facts-store scope is stamped server-side from the
+    # current session — a Bot's home chat writes 'bot:<agentId>' rows, every
+    # other session writes 'global'. (The tool's own ``scope`` argument is
+    # the Part 17 project/global md-file axis — a different concept.)
+    from app.services import session_scope as _ss
+
+    factScope = _ss.resolve_scope()
     try:
         memory_store.save_fact(
             factKey, value, category=cat, source='model', confidence=0.7,
-            expires_at=exp, title=factTitle, kind=factKind,
+            expires_at=exp, title=factTitle, kind=factKind, scope=factScope,
         )
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'remember failed: {exc}'})
@@ -463,6 +470,20 @@ async def _forget(key: str) -> str:
                 'ok': False,
                 'policy': f'refused: "{factKey}" is system-owned (source="{source}"); '
                 'only model/user/imported facts can be forgotten.',
+            }
+        )
+    # M-2 (Part 21): a session may only forget facts inside its visible union
+    # (global ∪ own scope) — a bot cannot delete another bot's private notes,
+    # and a regular chat cannot reach into a bot's home memory.
+    from app.services import session_scope as _ss
+
+    rowScope = str(before.get('scope') or 'global')
+    if rowScope != _ss.GLOBAL_SCOPE and rowScope != _ss.resolve_scope():
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': f'refused: "{factKey}" belongs to another memory scope; '
+                'it is not visible to this session and cannot be forgotten from here.',
             }
         )
     try:

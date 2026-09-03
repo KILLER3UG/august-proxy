@@ -41,6 +41,11 @@ PLAN_MODE_BLOCKED = {'enter_plan_mode', 'request_plan_mode'}
 # and covered positively by TestCircuitGateVisibility below. The gate owns
 # the circuit_* names PLUS the firmware/HDL/VCD/FPGA/KiCad families.
 CIRCUIT_MODE_PREFIX = 'circuit_'
+# Phase C: message_agent is visibility-gated per session (only present in a
+# Bot's canonical chat — see bot_mode.dm.filter_dm_tools), so the default
+# (non-bot) session correctly omits it. Covered positively by
+# tests/test_bot_mode_phase_c.py::TestGate.
+DM_GATED = {'message_agent'}
 
 
 def _is_circuit_gate_tool(name: str) -> bool:
@@ -61,6 +66,8 @@ class TestAnthropicFormat:
                 continue  # session fixture runs in full mode
             if _is_circuit_gate_tool(expected):
                 continue  # gated behind /circuit mode; covered below
+            if expected in DM_GATED:
+                continue  # gated to canonical Bot Chats; covered in phase C
             assert expected in names, f'{expected} missing from anthropic tool list'
 
     def testAnthropicShape(self, session):
@@ -86,6 +93,8 @@ class TestOpenAIFormat:
                 continue  # session fixture runs in full mode
             if _is_circuit_gate_tool(expected):
                 continue  # gated behind /circuit mode; covered below
+            if expected in DM_GATED:
+                continue  # gated to canonical Bot Chats; covered in phase C
             assert expected in names
 
     def testOpenaiShape(self, session):

@@ -8,6 +8,11 @@ message at the tail of the turn context — never into the system prompt, so
 the provider prefix cache stays stable (cache-stability rule, §8 Q14).
 
 No embeddings/vector store: BM25 over a few hundred facts is exact enough.
+OQ4 (ruled 2026-09-04): August commits to NO vectors and reserves no schema
+for them — the decisive precedent is the orphaned ``vector_entries`` table
+(12 rows, zero code references) that a reserved schema outlived its feature
+by; it is now dropped. Adding embeddings later is purely additive, so
+reserving anything now would only recreate that dead weight.
 """
 
 from __future__ import annotations
@@ -32,14 +37,16 @@ _MIN_QUERY_CHARS = 8
 _DECAY_HALF_LIFE_DAYS = 30.0
 
 _lock = threading.Lock()
-_cache: dict[str, Any] | None = None
+# M-2 (Part 21): one cached corpus PER SCOPE. A bot-scope corpus is the
+# global ∪ bot union, so the union rule is baked into the index and queries
+# stay O(1) cache hits. Keyed by normalized scope ('global' = plain store).
+_caches: dict[str, dict[str, Any]] = {}
 
 
 def invalidate_fact_index() -> None:
-    """Drop the cached index (called on fact write/delete)."""
-    global _cache
+    """Drop every cached index (called on fact write/delete)."""
     with _lock:
-        _cache = None
+        _caches.clear()
 
 
 def _fact_body_text(value_raw: object) -> str:
@@ -65,12 +72,21 @@ def _fact_body_text(value_raw: object) -> str:
     return ' '.join(text.split())
 
 
-def _load_index() -> dict[str, Any]:
-    """Build the BM25 corpus from active, unexpired facts (cached)."""
-    global _cache
+def _load_index(scope: str = 'global') -> dict[str, Any]:
+    """Build the BM25 corpus for one scope (cached per scope).
+
+    M-2 union rule: a scope's corpus is ``global ∪ this-scope`` — a Bot sees
+    the user's shared memory plus its own notes, never another Bot's. The
+    'global' scope degenerates to global-only (the pre-M-2 behavior, and
+    every legacy row carries DEFAULT 'global').
+    """
+    from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
+
+    scope = normalize_scope(scope)
     with _lock:
-        if _cache is not None:
-            return _cache
+        cached = _caches.get(scope)
+        if cached is not None:
+            return cached
     from app.services.tools.retrieval import BM25, _tokenize
 
     rows: list[dict[str, object]] = []
@@ -82,10 +98,18 @@ def _load_index() -> dict[str, Any]:
         # candidate set (see _usage_for), so touch_fact_usage no longer
         # invalidates this cache and the per-turn full-corpus rebuild cliff
         # is gone (Part 21 M-1).
+        if scope == GLOBAL_SCOPE:
+            scopeClause = "AND (scope IS NULL OR scope = 'global')"
+            params: tuple[object, ...] = ()
+        else:
+            scopeClause = "AND (scope IS NULL OR scope = 'global' OR scope = ?)"
+            params = (scope,)
         factRows = conn.execute(
             "SELECT fact_key, fact_value, title, kind, category FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
-            "AND (status IS NULL OR status = 'active')"
+            "AND (status IS NULL OR status = 'active') "
+            f"{scopeClause}",
+            params,
         ).fetchall()
         for r in factRows:
             body = _fact_body_text(r['fact_value'])
@@ -112,24 +136,28 @@ def _load_index() -> dict[str, Any]:
         rows, corpus = [], []
     index = {'rows': rows, 'tokens': corpus, 'bm25': BM25(corpus) if corpus else None}
     with _lock:
-        _cache = index
+        _caches[scope] = index
     return index
 
 
-def find_similar_facts(text: str, k: int = 3) -> list[tuple[float, str, str]]:
+def find_similar_facts(
+    text: str, k: int = 3, *, scope: str = 'global'
+) -> list[tuple[float, str, str]]:
     """Top-k existing facts similar to ``text`` as ``(ratio, key, title)``.
 
     ``ratio = BM25(text→doc) / BM25(doc→doc)`` ∈ (0, 1] — a scale-free
     similarity suited to near-duplicate detection (M5 lesson dedupe, M4
     merge detection). Unlike ``retrieve_relevant_facts`` there is no usage
     boost and no minimum-query gate: callers compare ratios to thresholds.
+    M-2: compared within the caller's scope union (a bot dedupes against
+    global + its own notes, not other bots).
     """
     from app.services.tools.retrieval import _tokenize
 
     queryTokens = _tokenize((text or '').strip())
     if not queryTokens:
         return []
-    index = _load_index()
+    index = _load_index(scope)
     bm25 = index.get('bm25')
     rows = index.get('rows')
     tokens = index.get('tokens')
@@ -203,6 +231,7 @@ def retrieve_relevant_facts(
     k: int = 5,
     *,
     prior_turn: str = '',
+    scope: str = 'global',
 ) -> list[dict[str, object]]:
     """Top-k active facts relevant to ``query``, usage-boosted.
 
@@ -214,11 +243,14 @@ def retrieve_relevant_facts(
     single-message myopic. Cheap: no extra calls, no history payload; the
     current message's tokens still dominate because they are scored
     separately and summed.
+
+    M-2 (Part 21): ``scope`` selects the corpus union — 'global' (default,
+    the pre-M-2 behavior) or 'bot:<id>' = global ∪ that bot's notes.
     """
     q = (query or '').strip()
     if len(q) < _MIN_QUERY_CHARS:
         return []
-    index = _load_index()
+    index = _load_index(scope)
     bm25 = index.get('bm25')
     rows = index.get('rows')
     if bm25 is None or not rows:
@@ -260,6 +292,7 @@ def build_memory_block(
     workspace: str = '',
     recalled: list[dict[str, object]] | None = None,
     prior_turn: str = '',
+    scope: str = 'global',
 ) -> tuple[str, list[tuple[str, str]]]:
     """Render the `<memory>` injection block for one turn.
 
@@ -278,8 +311,12 @@ def build_memory_block(
 
     Phase D item 2: ``prior_turn`` (the previous user message) expands the
     facts query — see :func:`retrieve_relevant_facts`.
+
+    M-2 (Part 21): ``scope`` selects the facts corpus union for this turn —
+    a Bot Chat passes ``'bot:<agentId>'`` so its `<memory>` block carries
+    global ∪ own notes; regular sessions keep 'global'.
     """
-    facts = retrieve_relevant_facts(query, k=k, prior_turn=prior_turn)
+    facts = retrieve_relevant_facts(query, k=k, prior_turn=prior_turn, scope=scope)
     projectSection = ''
     projectRows: list[dict[str, object]] = []
     if workspace:

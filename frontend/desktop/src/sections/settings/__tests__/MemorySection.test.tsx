@@ -15,7 +15,8 @@ const isoInDays = (days: number) =>
 
 /* Fixture rows per store. facts: one user-category (→ pref) with expiry,
  * one project-category (→ fact). heuristics: one lesson (legacy). memory:
- * one KV note. autoMemories: one legacy note. */
+ * one KV note. (autoMemories retired 2026-09-04, Part 21 OQ1 — no longer a
+ * store the Memories scope renders.) */
 const rowsByStore: Record<string, { rows: Array<Record<string, unknown>>; total: number }> = {
   facts: {
     rows: [
@@ -47,10 +48,6 @@ const rowsByStore: Record<string, { rows: Array<Record<string, unknown>>; total:
   },
   memory: {
     rows: [{ key: 'user:plant', value: 'My plant is named Gerald', updated_at: iso(10) }],
-    total: 1,
-  },
-  autoMemories: {
-    rows: [{ id: 5, key: 'auto:note', content: 'Legacy note', category: 'general', created_at: iso(300) }],
     total: 1,
   },
   timeline: {
@@ -283,8 +280,9 @@ describe('MemorySection — unified flat list (§5.1)', () => {
 
   it('dropped the Timeline + Sessions sub-tabs (Part 15.2)', () => {
     renderSection('memory-knowledge');
-    // The Memories scope merges only autoMemories + memory into the flat
-    // list; rows from the deleted timeline/sessions scopes must not leak in.
+    // The Memories scope renders the KV memory store (autoMemories retired
+    // 2026-09-04); rows from the deleted timeline/sessions scopes must not
+    // leak in.
     const rows = screen.getAllByTestId('memory-flat-row');
     expect(rows.length).toBeGreaterThan(0);
     expect(screen.queryByText('Edited workbench.py')).not.toBeInTheDocument();

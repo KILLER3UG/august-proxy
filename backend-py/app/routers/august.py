@@ -683,6 +683,45 @@ async def import_memory(body: MemoryImportBody):
     return {'ok': True, 'count': written, 'total': len(raw_items), 'results': results, 'failed': failed}
 
 
+class ProposalDecideBody(CamelModel):
+    decision: str = ''  # approve | reject
+
+
+@router.get('/memory/proposals')
+async def list_memory_proposals(status: str = 'pending'):
+    """Pending memory proposals (OQ5 preference-retire, and any future
+    propose-only consolidation pass). Returns the raw proposal rows with the
+    JSON ``content`` parsed for the UI."""
+    import json as _json
+
+    from app.services import memory_store
+
+    rows = memory_store.list_proposals('consolidation', status=status)
+    out: list[dict[str, object]] = []
+    for r in rows:
+        content: object = r.get('content')
+        if isinstance(content, str):
+            try:
+                content = _json.loads(content)
+            except (ValueError, TypeError):
+                content = {}
+        out.append({**r, 'content': content})
+    return {'ok': True, 'proposals': out}
+
+
+@router.post('/memory/proposals/{proposal_id}/decide')
+async def decide_memory_proposal(proposal_id: int, body: ProposalDecideBody):
+    """Approve/reject a memory proposal. For a retire-preference proposal,
+    approving flips the fact's status to 'retired' (reversible — the row
+    survives); rejecting keeps it. See consolidation.apply_retire_decision."""
+    from app.services.memory_store import consolidation
+
+    decision = (body.decision or '').strip().lower()
+    if decision not in ('approve', 'reject'):
+        return {'ok': False, 'error': "decision must be 'approve' or 'reject'"}
+    return consolidation.apply_retire_decision(proposal_id, approve=decision == 'approve')
+
+
 @router.post('/tools/manage')
 async def manage_tools(body: ActionBody):
     from app.json_narrowing import as_dict, as_list, as_str

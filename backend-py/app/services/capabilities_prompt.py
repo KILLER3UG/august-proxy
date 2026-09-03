@@ -570,7 +570,7 @@ def skill_relevance_enabled() -> bool:
 
 
 def build_relevant_skills_block(
-    query: str, workspace: str | Path | None = None
+    query: str, workspace: str | Path | None = None, agent_id: str = ''
 ) -> str:
     """Render the per-turn ``<relevant_skills>`` block (M6 item 6).
 
@@ -584,6 +584,9 @@ def build_relevant_skills_block(
 
     Part 17 Phase B: ``workspace`` scopes the catalogue — project skills
     (and their shadowing of global names) join the ranking.
+
+    M-2 (Part 21): ``agent_id`` adds the Bot's private skill root for bot
+    home sessions (empty = global catalogue, the pre-M-2 behavior).
     """
     q = (query or '').strip()
     if len(q) < _RELEVANT_SKILLS_MIN_QUERY or not skill_relevance_enabled():
@@ -592,7 +595,7 @@ def build_relevant_skills_block(
         from app.services import skill_service
         from app.services.tools.retrieval import BM25, _tokenize
 
-        catalogue = skill_service.catalogue(workspace)
+        catalogue = skill_service.catalogue(workspace, agent_id)
         if not catalogue:
             return ''
         queryTokens = _tokenize(q)
