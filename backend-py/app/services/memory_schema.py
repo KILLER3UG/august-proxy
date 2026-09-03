@@ -444,6 +444,8 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     # Full workbench session JSON + last-update time (primary session store).
     ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
     ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
+    # Per-agent todo list (JSON) for sub-agent runs — drawer parity.
+    ensure_column(conn, 'subagent_runs', 'todos_json', "TEXT DEFAULT ''")
     conn.execute(
         'CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at)'
     )
@@ -455,10 +457,9 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
 # v10: vector/graph tables removed (025_memory_state_separation drops them).
 # v11: knowledge-base redesign — internal_state + turn_outcomes tables (026),
 #      facts title/kind/use_count/last_used_at/status columns.
-# v11: knowledge-base redesign — internal_state + turn_outcomes tables (026),
-#      facts title/kind/use_count/last_used_at/status columns.
 # v12: turn latency telemetry (027) — turn_outcomes ttft_ms + cache hit/miss.
-_SCHEMA_USER_VERSION = 12
+# v13: early-dispatch telemetry (030) — turn_outcomes.tool_args_ready_to_stream_end_ms.
+_SCHEMA_USER_VERSION = 13
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
@@ -605,6 +606,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'usage_events', 'cache_miss_tokens', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
+            ensure_column(conn, 'subagent_runs', 'todos_json', "TEXT DEFAULT ''")
             ensure_column(conn, 'auto_memories', 'pinned', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'auto_memories', 'expires_at', 'TEXT')
             ensure_column(conn, 'auto_memories', 'confidence', 'REAL DEFAULT 0.7')
@@ -622,6 +624,11 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'turn_outcomes', 'ttft_ms', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'turn_outcomes', 'cache_hit_tokens', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'turn_outcomes', 'cache_miss_tokens', 'INTEGER DEFAULT 0')
+            # P3.1 (Part 18, 030): early-dispatch measurement — trailing
+            # stream tail after the last tool call's arguments arrived.
+            ensure_column(
+                conn, 'turn_outcomes', 'tool_args_ready_to_stream_end_ms', 'INTEGER DEFAULT 0'
+            )
             _ensure_messages_fts(conn)
             repair_fts_sync(conn)
             _run_migrations_safe(conn)

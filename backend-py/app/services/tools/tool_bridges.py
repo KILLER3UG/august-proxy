@@ -114,6 +114,11 @@ async def handleToolCall(name: str, arguments: str) -> str:
     """Invoke a deferred tool by name.
 
     ``arguments`` should be a JSON string matching the tool's schema.
+
+    Guard parity: the bridge dispatches straight through the registry, so it
+    must re-apply the session's guard-mode / sandbox check itself — otherwise
+    ``tool_call(name='write_file')`` is a plan-mode / read-only-sandbox
+    bypass around the turn loop's ``_checkToolGuard`` (audit finding).
     """
     from app.services.tool_registry import dispatch
 
@@ -123,6 +128,24 @@ async def handleToolCall(name: str, arguments: str) -> str:
             return 'Invalid arguments JSON: expected an object.'
     except json.JSONDecodeError as e:
         return f'Invalid arguments JSON: {e}'
+    try:
+        from app.services.workbench.workbench import _checkToolGuard, get_session
+
+        session = get_session()
+        if session is not None:
+            reason = _checkToolGuard(session, name, args)
+            if reason:
+                return f'[Blocked] {reason}'
+    except Exception:
+        # Guard resolution must never crash the bridge, but a FAILURE to
+        # resolve the guard on a mutating tool fails closed.
+        try:
+            from app.services.tool_policy import is_mutating
+
+            if is_mutating(name, args):
+                return '[Blocked] tool_call could not verify the session guard for a mutating tool.'
+        except Exception:
+            pass
     try:
         # dispatch(name, args: dict) — previously called with **args, which
         # passed the argument VALUES as the `args` parameter (a string for

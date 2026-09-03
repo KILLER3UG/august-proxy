@@ -163,14 +163,14 @@ async def listRuns(sessionId: Optional[str] = None, limit: int = 50):
         if sessionId:
             rows = conn.execute(
                 'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, result_full, error, '
-                'started_at, finished_at, last_activity_at, api_calls, created_at FROM subagent_runs '
+                'started_at, finished_at, last_activity_at, api_calls, created_at, todos_json FROM subagent_runs '
                 'WHERE session_id = ? ORDER BY id DESC LIMIT ?',
                 (sessionId, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 'SELECT id, task_id, session_id, agent_id, goal, status, result_summary, result_full, error, '
-                'started_at, finished_at, last_activity_at, api_calls, created_at FROM subagent_runs '
+                'started_at, finished_at, last_activity_at, api_calls, created_at, todos_json FROM subagent_runs '
                 'ORDER BY id DESC LIMIT ?',
                 (limit,),
             ).fetchall()

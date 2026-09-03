@@ -393,3 +393,59 @@ class TestF7UnpooledJudgeClient:
         # the factory must be the UNPOOLED one — pooled clients bind their
         # keep-alive connections to the throwaway per-pass loop (F-7)
         assert fake_factory is not realFactory or made[0] is not None
+
+
+class TestD4ResolutionOnCadence:
+    def test_consolidation_pass_runs_resolution_check(self, brain, monkeypatch):
+        """D-4: §3.5 monitoring must ride the consolidation cadence, not only
+        the manual /api/curator/run endpoint — a resolved fingerprint that
+        recurs between manual runs would otherwise never re-flag."""
+        from app.services.memory_store import consolidation
+
+        calls: list[bool] = []
+
+        def fake_resolution(windowDays: int = 30) -> dict[str, object]:
+            calls.append(True)
+            return {'resolved': 0, 'recurred': 0, 'demotion_drafts': 0}
+
+        monkeypatch.setattr(
+            'app.services.episode_miner.run_resolution_check', fake_resolution
+        )
+        out = consolidation._skill_learning_pass()
+        assert calls, 'resolution check must run on the consolidation cadence'
+        assert 'resolution' in out, 'result should surface resolution counters'
+
+
+class TestD3ReportMetrics:
+    """D-3: /api/curator/report carries the §3.5 skillLearningReport blob —
+    drafts, approval rate, demotions, recurred — not just episode counters."""
+
+    def test_report_includes_skill_learning_metrics(self, brain, agentRootForF5, monkeypatch):
+        import asyncio
+
+        from app.routers import curator
+
+        # One applied skill_create + one rejected demotion in the proposals dir.
+        from app.services import harness_self_improve as hsi
+
+        row1 = hsi.save_proposal(
+            problem='p', evidence='e', proposal='create_skill: fix-x', rollback='r',
+            kind='skill_create',
+            payload={'name': 'fix-x', 'description': 'd', 'body': 'b',
+                     'action': 'create_skill', 'target': 'fix-x', 'origin': 'distilled'},
+        )
+        hsi.decide_proposal(row1['id'], 'approve')
+        row2 = hsi.save_proposal(
+            problem='p', evidence='e', proposal='demote dead-skill', rollback='r',
+            kind='skill_delete',
+            payload={'name': 'dead-skill', 'action': 'skill_delete', 'target': 'dead-skill',
+                     'origin': 'resolution'},
+        )
+        hsi.decide_proposal(row2['id'], 'reject')
+
+        rep = asyncio.run(curator.curatorReport())
+        m = rep['skillLearning']
+        assert m['drafts'] == 2
+        assert m['approved'] == 1 and m['rejected'] == 1
+        assert abs(m['approvalRate'] - 0.5) < 0.01
+        assert m['demotions'] == 1

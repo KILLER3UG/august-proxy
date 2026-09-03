@@ -90,12 +90,51 @@ def _model_summarize(text: str) -> str:
 
 def _expire_facts() -> int:
     conn = _conn()
+    # julianday, not string compare: the column mixes writer formats (date-only
+    # from the distiller, ISO-T+offset, model-verbatim strings) and a plain
+    # 'expires_at <= datetime("now")' mis-orders 'T'-separated values on the
+    # expiry day itself — julianday() parses every ISO-8601 shape (and
+    # applies the offset) so one format can't silently outlive its window.
     cur = conn.execute(
         "DELETE FROM facts WHERE expires_at IS NOT NULL AND expires_at != '' "
-        "AND expires_at <= datetime('now')"
+        "AND julianday(expires_at) IS NOT NULL "
+        "AND julianday(expires_at) <= julianday('now')"
     )
     conn.commit()
     return cur.rowcount or 0
+
+
+def _sweep_episodic() -> int:
+    """M-4 (Part 21): episodic_timeline retention sweep.
+
+    The table was unbounded — every session event appended forever. The
+    retention window comes from brain-config ``episodicRetentionDays``
+    (default 90). The FTS/index half of M-4 is gated on OQ2 (whether the
+    table stays or is declared redundant vs ``episodes`` + ``messages_fts``);
+    the hygiene sweep is needed under either ruling, so it lands now.
+    """
+    days = 90
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        rawDays = getRuntimeConfig().get('episodicRetentionDays', 90)
+        days = int(float(str(rawDays)))
+    except (TypeError, ValueError):
+        pass
+    days = max(1, min(3650, days))
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "DELETE FROM episodic_timeline "
+            "WHERE julianday(timestamp) IS NOT NULL "
+            "AND julianday(timestamp) < julianday('now', ?)",
+            (f'-{days} days',),
+        )
+        conn.commit()
+        return cur.rowcount or 0
+    except Exception:
+        # Table absent (fresh store pre-migration) — nothing to sweep.
+        return 0
 
 
 def _load_active_facts() -> list[dict[str, Any]]:
@@ -103,7 +142,7 @@ def _load_active_facts() -> list[dict[str, Any]]:
     rows = conn.execute(
         'SELECT id, fact_key, fact_value, title, kind, updated_at FROM facts '
         "WHERE (status IS NULL OR status = 'active') "
-        "AND (expires_at IS NULL OR expires_at = '' OR expires_at > datetime('now')) "
+        "AND (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
         'ORDER BY updated_at DESC'
     ).fetchall()
     return [
@@ -267,6 +306,13 @@ def _skill_learning_pass() -> dict[str, object]:
             pass
         out['flagged'] = flag_top_slice(flagRateCap=flagRateCap, budgetPerDay=budgetPerDay)['flagged']
         out['episodesPruned'] = prune_old_episodes()
+        # §3.5 Phase E monitoring rides the same cadence (D-4): resolution /
+        # recurrence / demotion suggestions must not wait for a manual
+        # /api/curator/run — a resolved fingerprint that recurs between
+        # manual clicks would never re-flag.
+        from app.services.episode_miner import run_resolution_check
+
+        out['resolution'] = run_resolution_check()
         if mode in ('extract-only', 'full'):
             from app.services.skill_distiller import run_distiller_pass
 
@@ -302,6 +348,19 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
         summary['superseded'] = superseded
         notes.extend(superNotes)
         summary['outcomesSwept'] = sweep_old_outcomes()
+        # M-4 (Part 21): episodic_timeline retention sweep (table was unbounded).
+        try:
+            summary['episodicSwept'] = _sweep_episodic()
+        except Exception:
+            logger.debug('episodic sweep failed', exc_info=True)
+        # M-11: automation ledger/notepad/incidents retention rides the same
+        # maintenance window (runs 30 d, closed incidents 90 d).
+        try:
+            from app.services import automation_memory
+
+            summary['automationSwept'] = automation_memory.sweep()
+        except Exception:
+            logger.debug('automation_memory sweep failed', exc_info=True)
         summary['vacuumed'] = _maybe_vacuum()
         summary.update(_skill_learning_pass())
         summary['notes'] = notes

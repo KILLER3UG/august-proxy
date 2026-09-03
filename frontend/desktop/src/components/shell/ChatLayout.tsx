@@ -503,8 +503,24 @@ export function ChatLayout() {
   // Use a ref to avoid stale closure — handleNewSession captures active/sessions state.
   const handleNewSessionRef = useRef(handleNewSession);
   handleNewSessionRef.current = handleNewSession;
+  // Bot Mode: inside a canonical Bot Chat, /new is /compact — the
+  // forever-chat never forks. workbenchSession is polled live, so read the
+  // flag through a ref to avoid re-binding the listener each poll.
+  const workbenchSessionRef = useRef(workbenchSession);
+  workbenchSessionRef.current = workbenchSession;
   useEffect(() => {
-    const onNew = () => handleNewSessionRef.current();
+    const onNew = () => {
+      const ws = workbenchSessionRef.current;
+      if (ws?.canonicalBotChat && ws.id) {
+        void import('@/api/workbench').then(({ compactWorkbenchSession }) =>
+          compactWorkbenchSession(ws.id)
+            .then((res) => toast.success(res.message || 'Bot Chat compacted'))
+            .catch(() => toast.error('Could not compact Bot Chat')),
+        );
+        return;
+      }
+      handleNewSessionRef.current();
+    };
     window.addEventListener('august:new-session', onNew);
     return () => window.removeEventListener('august:new-session', onNew);
   }, []);

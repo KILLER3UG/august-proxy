@@ -278,6 +278,33 @@ def _isBundledSkill(name: str) -> bool:
         return False
 
 
+def _learnedSkillText(name: str) -> tuple[str, str] | None:
+    """(description, current body) of a LEARNED skill — the amend_body
+    target. None when the skill doesn't exist (bundled skills are handled
+    by the caller before this)."""
+    try:
+        from app.services.skill_service import _agentSkillsDir
+
+        md = _agentSkillsDir() / name / 'SKILL.md'
+        if not md.exists():
+            return None
+        text = md.read_text('utf-8')
+    except Exception:
+        return None
+    description = ''
+    body = text
+    if text.startswith('---'):
+        try:
+            _, fm, rest = text.split('---', 2)
+            for line in fm.split('\n'):
+                if line.strip().startswith('description:'):
+                    description = line.partition(':')[2].strip().strip('"').strip("'")
+            body = rest.lstrip('\n')
+        except ValueError:
+            body = text
+    return description, body
+
+
 def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extract-only') -> str:
     """Apply one judge verdict. Returns a short result label.
 
@@ -314,6 +341,20 @@ def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extrac
             title=title,
         )
         return 'memory-saved'
+
+    if action in ('create_skill', 'amend_trigger', 'amend_body'):
+        # §3.3 denylist: applies to EVERY drafted text before persist —
+        # description/body/trigger of skill drafts and amend patches, not just
+        # memory verdicts. A health/ID/belief detail must not survive inside a
+        # skill file just because the verdict's action was skill-shaped.
+        from app.services.sensitive_topics import isSensitiveMemory
+
+        _sensitive_blob = ' '.join(
+            str(verdict.get(k, '') or '')
+            for k in ('description', 'body_markdown', 'trigger', 'patch_markdown')
+        )
+        if isSensitiveMemory(_sensitive_blob):
+            return 'rejected-denylist'
 
     if action in ('create_skill', 'amend_trigger'):
         # Bundled skills are never amended in place — an amend against one
@@ -389,12 +430,11 @@ def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extrac
         # ship bar is met. §12 F-5: the downgrade MUST NOT file an
         # approvable skill_patch — its payload has no body, and approving
         # that used to overwrite the target SKILL.md with placeholder
-        # canonical text. Downgrades are review-only observations; a real
-        # patch comes back as a full skill_patch once the bar is met.
+        # canonical text. Downgrades are review-only observations.
         state = precision_state()
+        skill = str(verdict.get('skill', '')).strip()
         if not state['amendBodyEnabled']:
-            skill = str(verdict.get('skill', '')).strip()
-            if skill and not _draftExists(fingerprint, 'amend_trigger', skill):
+            if skill and not _draftExists(fingerprint, 'amend_body_downgrade', skill):
                 from app.services.harness_self_improve import save_proposal
 
                 save_proposal(
@@ -407,14 +447,93 @@ def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extrac
                     payload={
                         'name': skill,
                         'fingerprint': fingerprint,
-                        'action': 'amend_trigger',
+                        # Distinct dedupe key from a GENUINE amend_trigger: the
+                        # observation is review-only and must never consume
+                        # (fp, 'amend_trigger', skill) — a later real amend
+                        # verdict for the same fingerprint+skill would read as
+                        # duplicate and be silently dropped. 'amend_body_downgrade'
+                        # dedupes this observation against ITSELF across passes
+                        # (F-8 re-file suppression preserved).
+                        'action': 'amend_body_downgrade',
                         'target': skill,
                         'origin': 'distilled',
                         'note': 'amend_body downgraded — judge precision below ship bar',
                     },
                 )
             return 'downgraded-proposal'
-        return 'amend_body-not-enabled-v1'
+        # Ship bar MET (plan §3.3): file a REAL skill_patch — still
+        # human-approved, never auto-applied. The judge never sees skill
+        # bodies, so ``patch_markdown`` is an amendment to APPEND, not a
+        # replacement: the parent merges it onto the current body
+        # deterministically (nothing is lost on approval).
+        if not skill:
+            return 'amend_body-no-target'
+        if _isBundledSkill(skill):
+            # Bundled skills are never amended in place — fresh draft with
+            # supersession lineage, same rule as amend_trigger.
+            return apply_verdict(
+                {
+                    **verdict,
+                    'action': 'create_skill',
+                    'name': f'{skill}-revised',
+                    'supersedes': skill,
+                },
+                fingerprint,
+                mode,
+            )
+        if _draftExists(fingerprint, 'amend_body', skill):
+            return 'duplicate-draft'
+        current = _learnedSkillText(skill)
+        if current is None:
+            return 'amend_body-target-missing'
+        desc, body = current
+        patch = str(verdict.get('patch_markdown', '')).strip()
+        if not patch:
+            return 'amend_body-empty-patch'
+        merged = f'{body}\n\n{patch}'.strip()
+        from app.services.harness_self_improve import save_proposal
+        from app.services.skill_service import (
+            SkillValidationError,
+            _ensure_canonical_body,
+            _validateName,
+        )
+
+        try:
+            _validateName(skill)
+        except SkillValidationError as exc:
+            logger.info('amend_body refused: %s', exc)
+            return 'rejected-name'
+        normalized = _ensure_canonical_body(merged, name=skill, description=desc or skill, is_learned=True)
+        try:
+            save_proposal(
+                problem=f'amend_body for {skill!r} (episode {episodeId}, precision '
+                f"{state['precision']} over {state['labeled']} labels)",
+                evidence=f'flagged fingerprint {fingerprint}',
+                proposal=f'amend_body: {skill} — appends the amended section to the current body',
+                rollback='reject the patch; the current SKILL.md body is untouched until approval.',
+                kind='skill_patch',
+                expected_metric='recurrence stops within 30 days of approval',
+                payload={
+                    'name': skill,
+                    'description': desc or skill,
+                    'body': normalized,
+                    'fingerprint': fingerprint,
+                    'action': 'amend_body',
+                    'target': skill,
+                    'origin': 'distilled',
+                    'episodeIds': [episodeId] if episodeId is not None else [],
+                },
+            )
+        except ValueError as exc:
+            logger.info('amend_body proposal refused: %s', exc)
+            return 'refused'
+        try:
+            from app.services.episode_miner import set_fingerprint_status
+
+            set_fingerprint_status(fingerprint, 'skill_drafted')
+        except Exception:
+            pass
+        return 'patch-proposal-filed'
 
     return 'none'
 

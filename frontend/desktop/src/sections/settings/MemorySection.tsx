@@ -318,6 +318,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const [search, setSearch] = useState('');
   const [addText, setAddText] = useState('');
   const [addCategory, setAddCategory] = useState('general');
+  // M-10 (Part 21): the add-box TTL actually reaches the store again —
+  // ttl_days rides the manage call and lands as expires_at on the fact.
+  const [addTtlDays, setAddTtlDays] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [kindFilter, setKindFilter] = useState<'all' | EntryKind | 'expiring'>('all');
   const [unifiedShown, setUnifiedShown] = useState(UNIFIED_RENDER);
@@ -658,6 +661,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
       value: text,
       category: addCategory,
       source: 'user',
+      ...(addTtlDays > 0 ? { ttl_days: addTtlDays } : {}),
     });
   };
 
@@ -877,6 +881,20 @@ export function MemorySection({ active }: { active: { id: string } }) {
                 >
                   {['general', 'user', 'project', 'workflow', 'preference'].map((c) => (
                     <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              )}
+              {!wsScope && (
+                <select
+                  value={addTtlDays}
+                  onChange={(e) => setAddTtlDays(Number(e.target.value))}
+                  className="rounded-lg border border-border/60 bg-card/60 px-2 py-2 text-xs text-foreground outline-none"
+                  data-testid="memory-add-ttl"
+                  aria-label="Expiry for the new memory"
+                >
+                  <option value={0}>never expires</option>
+                  {[7, 30, 90].map((d) => (
+                    <option key={d} value={d}>{`expires in ${d}d`}</option>
                   ))}
                 </select>
               )}

@@ -51,6 +51,12 @@ interface Report {
     flaggedFingerprints?: number;
     resolvedFingerprints?: number;
   };
+  skillsIndexOverflow?: {
+    budgetBytes?: number;
+    listedSkills?: number;
+    totalSkills?: number;
+    omittedSkills?: number;
+  } | null;
 }
 
 export function LearningPanel() {
@@ -169,6 +175,17 @@ export function LearningPanel() {
             {reportQ.data?.mode === 'off' && (
               <span className="text-[10.5px] text-muted-foreground">
                 skillLearning is off — enable it in Brain settings
+              </span>
+            )}
+            {reportQ.data?.skillsIndexOverflow && (
+              <span
+                data-testid="learning-skills-index-overflow"
+                className="text-[10.5px] text-amber-600 dark:text-amber-400"
+                title="The skills catalogue outgrew the prompt byte budget; some skills are packed out of the descriptive index."
+              >
+                Skills index over budget —{' '}
+                {reportQ.data.skillsIndexOverflow.omittedSkills ?? 0} skill(s) not listed in
+                prompts
               </span>
             )}
           </div>

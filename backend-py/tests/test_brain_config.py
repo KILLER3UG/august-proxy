@@ -45,6 +45,7 @@ _ALLCamelKeys = {
     'cameraAccess',
     # M4 consolidation v2 cadence + model-summarize toggle (plan §3.5).
     'consolidationIntervalHours',
+    'episodicRetentionDays',
     'consolidationModelSummarize',
     # M7 titling target override (plan §3.7).
     'titleModel',
@@ -54,6 +55,9 @@ _ALLCamelKeys = {
     'skillLearningJudgeModel',
     'escalationBudgetPerDay',
     'flagRateCap',
+    # Part 17: per-project memory + workspace skills toggles.
+    'projectMemory',
+    'projectSkills',
 }
 
 

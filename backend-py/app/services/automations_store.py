@@ -554,6 +554,14 @@ async def _run_workbench_stream(job_id: str, job_snapshot: dict[str, object], *,
     started_at = _now()
     session_id = ''
     events: list[dict[str, object]] = []
+    from app.services import automation_memory
+
+    ledger_id = automation_memory.start_run(
+        job_id=job_id,
+        trigger=trigger,
+        agent_id=as_str(job_snapshot.get('agentId')),
+    )
+    started_monotonic = time.monotonic()
 
     if not prompt:
         await _finish_run(
@@ -564,6 +572,13 @@ async def _run_workbench_stream(job_id: str, job_snapshot: dict[str, object], *,
             output='workbench job missing prompt',
             trigger=trigger,
             session_id=None,
+        )
+        automation_memory.finish_run(
+            ledger_id,
+            status='failed',
+            result_excerpt='workbench job missing prompt',
+            error_sig=automation_memory.error_signature('workbench job missing prompt'),
+            duration_ms=int((time.monotonic() - started_monotonic) * 1000),
         )
         return
 
@@ -583,6 +598,15 @@ async def _run_workbench_stream(job_id: str, job_snapshot: dict[str, object], *,
             headless=True,
         )
         session_id = sess.id
+        # M-11 notepad door: the run session is marked with its job id so the
+        # job_notes tool (and any future in-run surface) can resolve the job
+        # without trusting an explicit argument.
+        try:
+            meta = dict(sess.metadata or {})
+            meta['automationJobId'] = job_id
+            sess.metadata = meta
+        except Exception:
+            pass
         # Title for UI
         try:
             if hasattr(sess, 'title'):
@@ -614,9 +638,14 @@ async def _run_workbench_stream(job_id: str, job_snapshot: dict[str, object], *,
             if isinstance(ev, dict):
                 events.append(ev)
 
+        # M-11 wake-up context: last run + notepad prepended so the job is
+        # not amnesiac. Empty on first run — the prompt stays byte-identical
+        # (prompt-cache safe: the block is a prefix only when history exists).
+        context = automation_memory.wake_context(job_snapshot)
+        turn_prompt = f'{context}\n\n{prompt}' if context else prompt
         await wb.sendWorkbenchMessageStream(
             session_id,
-            prompt,
+            turn_prompt,
             provider=as_str(job_snapshot.get('provider') or job_snapshot.get('modelProvider')),
             agentId=as_str(job_snapshot.get('agentId'), 'build') or 'build',
             model=as_str(job_snapshot.get('model')),
@@ -640,25 +669,73 @@ async def _run_workbench_stream(job_id: str, job_snapshot: dict[str, object], *,
                 pass
         if snippet.strip() == '[SILENT]':
             snippet = ''
+        # A turn that ends in a stream `error` event (provider 4xx/5xx, retry
+        # exhaustion) still returns normally — the ledger must record the
+        # failure or the incident table never sees chronic model errors.
+        err_event = next(
+            (e for e in events if isinstance(e, dict) and e.get('type') == 'error'),
+            None,
+        )
+        # M-11: a stream error must reach the runs ledger's outputSnippet too —
+        # lastError is DERIVED from it, so an error-only turn used to derive ''.
+        err_text = (
+            as_str(err_event.get('error') or err_event.get('body') or '') if err_event else ''
+        )
+        # status='error' (not 'idle') when the turn ended in a stream error:
+        # the derived lastError reads the run row, and 'idle' would derive ''.
         await _finish_run(
             job_id,
             run_id=run_id,
             started_at=started_at,
-            status='idle',
-            output=snippet[:4000],
+            status='error' if err_event is not None else 'idle',
+            output=(snippet or err_text)[:4000],
             trigger=trigger,
             session_id=session_id,
         )
+        automation_memory.finish_run(
+            ledger_id,
+            status='failed' if err_event is not None else 'succeeded',
+            result_excerpt=snippet
+            or (as_str(err_event.get('error') or err_event.get('body') or '')[:500] if err_event else ''),
+            error_sig=(
+                automation_memory.error_signature(
+                    as_str(err_event.get('error') or err_event.get('body') or 'turn error')
+                )
+                if err_event is not None
+                else ''
+            ),
+            duration_ms=int((time.monotonic() - started_monotonic) * 1000),
+        )
+        # Phase B delivery: routines (deliver='bot-chat') land their result in
+        # the Bot's canonical chat — passively, or as a responding turn.
+        if as_str(job_snapshot.get('deliver')) == 'bot-chat':
+            try:
+                automation_memory.deliver_to_bot_chat(
+                    job_snapshot,
+                    result_text=snippet,
+                    trigger=trigger,
+                    respond=as_bool(job_snapshot.get('respond'), True),
+                )
+            except Exception:
+                logger.debug('bot-chat delivery failed for %s', job_id, exc_info=True)
     except Exception as exc:
         logger.exception('workbench automation %s failed', job_id)
+        err = str(exc)
         await _finish_run(
             job_id,
             run_id=run_id,
             started_at=started_at,
             status='error',
-            output=str(exc)[:4000],
+            output=err[:4000],
             trigger=trigger,
             session_id=session_id or None,
+        )
+        automation_memory.finish_run(
+            ledger_id,
+            status='failed',
+            result_excerpt=err,
+            error_sig=automation_memory.error_signature(err),
+            duration_ms=int((time.monotonic() - started_monotonic) * 1000),
         )
 
 
@@ -715,6 +792,22 @@ async def _finish_run(
         if as_bool(job.get('enabled'), True) and not as_bool(job.get('paused'), False):
             job['nextRunAt'] = compute_next_run_at(
                 as_str(job.get('schedule')), as_str(job.get('timezone'))
+            )
+        # M-11: lastRunAt / lastResult / lastError are DERIVED from the runs
+        # ledger, not written independently — one source of truth, so a run
+        # row can never disagree with the summary fields the UI reads.
+        finished_runs = [
+            r
+            for r in as_list(job.get('runs'))
+            if isinstance(r, dict) and as_str(r.get('status')) not in ('running',)
+        ]
+        if finished_runs:
+            last = finished_runs[-1]
+            job['lastRunAt'] = as_str(last.get('finishedAt')) or as_str(last.get('startedAt'))
+            job['lastResult'] = as_str(last.get('outputSnippet'), '')[:1000]
+            job['lastError'] = (
+                '' if as_str(last.get('status')) in ('idle', 'succeeded', 'cancelled')
+                else as_str(last.get('outputSnippet'), '')[:500]
             )
         # Run limit reached: auto-disable so the job stops firing, and
         # surface the state to the UI (audit fix: limits behave reliably).
@@ -816,6 +909,15 @@ async def run_job_async(
         )
         return {'status': 'ok', 'id': job_id, 'job': get_job(job_id)}
 
+    from app.services import automation_memory
+
+    ledger_id = automation_memory.start_run(
+        job_id=job_id,
+        trigger=trigger,
+        agent_id=as_str(snap.get('agentId')),
+    )
+    started_monotonic = time.monotonic()
+
     try:
         if job_type == 'shell':
             status, out, code = await _run_shell(snap)
@@ -836,6 +938,24 @@ async def run_job_async(
         session_id=None,
         exit_code=code,
     )
+    automation_memory.finish_run(
+        ledger_id,
+        status='succeeded' if status == 'idle' else 'failed',
+        result_excerpt=out,
+        error_sig='' if status == 'idle' else automation_memory.error_signature(out),
+        duration_ms=int((time.monotonic() - started_monotonic) * 1000),
+    )
+    # Phase B: non-workbench jobs can deliver into the Bot's chat too.
+    if as_str(snap.get('deliver')) == 'bot-chat' and out:
+        try:
+            automation_memory.deliver_to_bot_chat(
+                snap,
+                result_text=out,
+                trigger=trigger,
+                respond=as_bool(snap.get('respond'), True),
+            )
+        except Exception:
+            logger.debug('bot-chat delivery failed for %s', job_id, exc_info=True)
     return {'status': 'ok', 'id': job_id, 'job': get_job(job_id)}
 
 

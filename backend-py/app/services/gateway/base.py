@@ -17,6 +17,7 @@ listeners). ``dispatch`` is concrete here.
 from __future__ import annotations
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
@@ -25,6 +26,8 @@ from app.json_narrowing import as_bool
 
 if TYPE_CHECKING:
     from app.services.gateway.session_bridge import SessionBridge
+
+log = logging.getLogger(__name__)
 BYPASS_COMMANDS = {'stop', 'new', 'reset', 'approve', 'deny', 'status'}
 
 
@@ -111,6 +114,19 @@ class BasePlatformAdapter(ABC):
         await self.dispatch(event)
 
     async def dispatch(self, event: MessageEvent) -> None:
+        # Trust gate (Part 20 Phase 0): allowlist check BEFORE anything else —
+        # including the /approve /deny bypass set. Unauthorized DMs may get a
+        # pairing code (when gateway.pairing is on); unauthorized group
+        # messages are silently ignored.
+        from app.services.gateway.pairing import gateDecision
+
+        decision = gateDecision(event.source.platform, event.source.user_id, event.source.chat_type)
+        if decision == 'ignore':
+            log.debug('gateway: ignored unauthorized %s message from %s', event.source.platform, event.source.user_id)
+            return
+        if decision == 'pair':
+            await self._handlePairingRequest(event)
+            return
         sessionKey = buildSessionKey(event.source, groupPerUser=as_bool(self.config.get('groupPerUser'), True))
         cmd = event.getCommand()
         if shouldBypassActiveSession(cmd):
@@ -124,6 +140,21 @@ class BasePlatformAdapter(ABC):
                 self._pending.setdefault(sessionKey, []).append(event)
                 return
         self._spawnTurn(sessionKey, event)
+
+    async def _handlePairingRequest(self, event: MessageEvent) -> None:
+        """Unknown DM sender: issue (or wait on) a pairing code."""
+        from app.services.gateway.pairing import getStore
+
+        code = getStore().request(event.source.platform, event.source.user_id, event.source.chat_id)
+        if code:
+            try:
+                await self.sendMessage(
+                    event.source.chat_id,
+                    f'Pairing code {code} — approve it in August → Settings → Gateway '
+                    '(expires in 1 hour). Until then I stay silent.',
+                )
+            except Exception:
+                pass
 
     def _spawnTurn(self, sessionKey: str, event: MessageEvent) -> None:
         task = asyncio.create_task(self._turnAndDrain(sessionKey, event))

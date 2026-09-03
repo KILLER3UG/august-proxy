@@ -1,6 +1,6 @@
 # August Circuit Workbench — EDA Ecosystem Deep-Dive & Feature Plan
 
-**Date:** 2026-08-28 · **Status:** DRAFT — awaiting ruling (§8 open questions) · **Scope:** `backend-py` circuit/HDL tools + desktop Circuit panel + FPGA flow
+**Date:** 2026-08-28 · **Status:** IMPLEMENTED 2026-08-28/29 — Phases 0–4 committed (`884506bd`, `25e1bb7b`: circuit_env/test/inject_fault/export_vcd, traces/sweep, golden tests). **Exception: the ModelSim driver + hardened GHDL resolver (`hdl_tools.py`) and its test (`test_hdl_modelsim_driver.py`) are still UNCOMMITTED in the working tree as of 2026-09-03** — they are NOT part of those two commits. Phases 5–6 (Quartus flow, advanced EDA tools) pending · **Scope:** `backend-py` circuit/HDL tools + desktop Circuit panel + FPGA flow
 
 **Review pass (2026-08-28, post-`471482a1`):** re-verified against the tree after the five commits that landed since this plan was written (workbench kernel split, `/verbose`, R-C billing, skill-template work, 7-bug batch + right-panel). Findings: `circuit_tools.py` / `artifact_tools.py` / the circuit frontend components are byte-identical, so every Part-2 anchor there still holds; the policy-table row mislabeled `_PROMPT_SHELL` as `_SHELL_EXACT` (corrected below); all planned tools remain greenfield; skills moved to root `skills/` (user correction folded in); and §5 now covers the new harness layer (`kernel.py` tool bridge, `edit_verification.py`, `read_before_edit.py`, `shadow_git.py`) that postdates the plan.
 

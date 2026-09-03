@@ -78,7 +78,9 @@ def touch_fact_usage(factKeys: list[str]) -> int:
 
     M3 usage feedback: an injected fact the model quotes (or updates via
     ``remember``) is marked as used; BM25 retrieval gives a small rank boost
-    to high-use entries. Returns the number of rows touched.
+    to high-use entries. Returns the number of rows touched. Since M-1's
+    usage decoupling this does NOT touch the cached BM25 corpus — ranking
+    reads fresh usage per query.
     """
     if not factKeys:
         return 0
@@ -96,14 +98,10 @@ def touch_fact_usage(factKeys: list[str]) -> int:
         touched += max(0, int(cur.rowcount))
     if touched:
         conn.commit()
-        try:
-            from app.services.memory_store.fact_retrieval import invalidate_fact_index
-
-            # use_count feeds the BM25 usage boost — the cached index must
-            # rebuild or touches never affect ranking.
-            invalidate_fact_index()
-        except Exception:
-            pass
+        # M-1 usage decoupling (Part 21): NO invalidate_fact_index here.
+        # The cached corpus no longer carries use_count/last_used_at —
+        # ranking fetches fresh usage per query for the candidate set — so
+        # a touch no longer triggers the full-corpus rebuild cliff.
     return touched
 
 
@@ -208,12 +206,16 @@ def decide_proposal(proposalId: int, status: str, decidedBy: str = '') -> bool:
 
 def record_lifecycle(sessionId: str, eventType: str, detail: JsonValue = None) -> int:
     """Record a lifecycle event."""
+    from app.services.deferred_writes import defer_commit
+
     conn = _conn()
     cursor = conn.execute(
         'INSERT INTO lifecycle (session_id, event_type, detail) VALUES (?, ?, ?)',
         (sessionId, eventType, _json(detail) if detail else None),
     )
-    conn.commit()
+    # P4.2 (Part 18): lifecycle rows are diagnostics, not read back
+    # cross-thread within the turn — debounce the commit (≤2s).
+    defer_commit(conn)
     return as_int(cursor.lastrowid)
 
 

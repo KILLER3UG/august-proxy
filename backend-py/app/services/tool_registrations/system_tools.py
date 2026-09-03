@@ -269,6 +269,47 @@ async def _submitPlanFallback(planPath: str = '') -> str:
     return 'submit_plan is handled by the workbench turn loop; this fallback should never run.'
 
 
+_TODOS_SCHEMA: dict[str, object] = {
+    'type': 'object',
+    'properties': {
+        'todos': {
+            'type': 'array',
+            'description': 'The todo items.',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'content': {'type': 'string', 'description': 'What the step involves.'},
+                    'status': {
+                        'type': 'string',
+                        'enum': ['pending', 'in_progress', 'completed'],
+                        'description': 'Step status. Exactly one step should be in_progress.',
+                    },
+                },
+                'required': ['content', 'status'],
+            },
+        },
+        'title': {'type': 'string', 'description': 'Optional short list title.'},
+    },
+    'required': ['todos'],
+}
+
+
+async def _submitTodosFallback(todos: list | None = None, title: str = '') -> str:
+    """Fallback for dispatch paths outside the workbench turn loop (proxy
+    adapter, text-tool protocol): route through routeTodos so a worker-side
+    call lands on its own handle, not the parent session."""
+    from app.services.workbench.workbench import routeTodos
+
+    if not isinstance(todos, list) or not todos:
+        return 'Error: todos must be a non-empty array of {content, status}.'
+    return routeTodos(todos, title=title or '')
+
+
+async def _updateTodosFallback(todos: list | None = None, title: str = '') -> str:
+    """Fallback twin of submit_todos — replaces the caller's todo list."""
+    return await _submitTodosFallback(todos, title)
+
+
 def register() -> None:
     """Register system and workbench-state tools."""
     tool_registry.register(
@@ -300,6 +341,28 @@ def register() -> None:
             },
             'required': ['phase'],
         },
+    )
+    # Todo-list doors. The workbench turn loop intercepts these names before
+    # dispatch (T7 re-injection); the registrations below exist so the tools
+    # are VISIBLE to native tool-calling models and covered by the validator,
+    # policy buckets, and the fallbacks above (previously the loop handled
+    # names no schema ever advertised — only text-protocol models could find
+    # them, and the drawer's todo list was effectively main-agent-only by
+    # accident).
+    tool_registry.register(
+        'submit_todos',
+        'Create or replace the todo checklist for the current task. Use for multi-step work: '
+        'one item per step, exactly one in_progress. The list renders in the Tasks panel and '
+        'survives compaction. Update it with update_todos as steps finish.',
+        _submitTodosFallback,
+        _TODOS_SCHEMA,
+    )
+    tool_registry.register(
+        'update_todos',
+        'Update the todo checklist statuses as work progresses (same shape as submit_todos; '
+        'replaces the list). Mark a step completed the moment it is verified done, never in advance.',
+        _updateTodosFallback,
+        _TODOS_SCHEMA,
     )
     tool_registry.register(
         'write_scratchpad',

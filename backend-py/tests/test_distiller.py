@@ -88,6 +88,50 @@ class TestMemoryAction:
 
 
 class TestSkillActions:
+    def test_denylist_covers_skill_draft_text(self, brain, noProposals):
+        """§3.3: the denylist applies to EVERY drafted body — create_skill and
+        amend_body payloads used to persist unchecked (memory verdicts only)."""
+        label = sd.apply_verdict(
+            {
+                'episode': 3,
+                'action': 'create_skill',
+                'name': 'med-reminder-skill',
+                'description': 'Remind about medication schedules.',
+                'trigger': 'when the user mentions medication',
+                'body_markdown': '## How to Run\n\nTrack prescription refills.',
+            },
+            'user-correction:meds',
+            mode='full',
+        )
+        assert label == 'rejected-denylist'
+        assert list(noProposals.glob('prop_*.json')) == []
+
+    def test_denylist_covers_amend_body_patch(self, brain, noProposals, monkeypatch, tmp_path):
+        from app.services import skill_service
+
+        skill_dir = tmp_path / 'agent-skills' / 'med-tracker'
+        skill_dir.mkdir(parents=True)
+        (skill_dir / 'SKILL.md').write_text(
+            '---\nname: med-tracker\ndescription: tracker.\n---\n\n## What It Does\n\nTracks tasks.\n',
+            encoding='utf-8',
+        )
+        monkeypatch.setattr(sd, '_learnedSkillText', lambda name: ('tracker.', '## What It Does\n\nTracks tasks.'))
+        monkeypatch.setattr(
+            skill_service, '_agentSkillsDir', lambda: tmp_path / 'agent-skills'
+        )
+        label = sd.apply_verdict(
+            {
+                'episode': 9,
+                'action': 'amend_body',
+                'skill': 'med-tracker',
+                'patch_markdown': '## Notes\n\nUser takes antidepressant medication daily.',
+            },
+            'user-correction:meds',
+            mode='full',
+        )
+        assert label == 'rejected-denylist'
+        assert list(noProposals.glob('prop_*.json')) == []
+
     def test_create_skill_files_normalized_proposal(self, brain, noProposals):
         label = sd.apply_verdict(
             {
@@ -147,7 +191,10 @@ class TestSkillActions:
         assert label == 'downgraded-proposal'
         proposals = [json.loads(p.read_text('utf-8')) for p in noProposals.glob('prop_*.json')]
         assert len(proposals) == 1
-        assert proposals[0]['payload']['action'] == 'amend_trigger'
+        # 2026-09-02: the downgrade observation files under its OWN dedupe key
+        # ('amend_body_downgrade') so it can never consume the genuine
+        # (fp, 'amend_trigger', skill) key a later real amend verdict needs.
+        assert proposals[0]['payload']['action'] == 'amend_body_downgrade'
         assert 'precision' in proposals[0]['payload']['note']
 
     def test_amend_body_gated_on_precision_state(self, brain, monkeypatch, tmp_path):
@@ -159,6 +206,121 @@ class TestSkillActions:
             sd, 'precision_state', lambda: {'labeled': 10, 'correct': 9, 'precision': 0.9, 'amendBodyEnabled': False}
         )
         assert sd.precision_state()['amendBodyEnabled'] is False
+
+
+class TestAmendBodyEnabledPath:
+    """Once the precision ship bar is MET, amend_body files a REAL skill_patch
+    (human-approved, never auto-applied). The judge never sees skill bodies,
+    so the patch is APPENDED to the current body — approval must preserve
+    every line that was already there (audit finding 4: the enabled branch
+    was a stub returning 'amend_body-not-enabled-v1')."""
+
+    @pytest.fixture()
+    def learnedSkill(self, monkeypatch, tmp_path):
+        from app.services import skill_service
+
+        root = tmp_path / 'agent-skills'
+        root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(skill_service, '_agentSkillsDir', lambda: root)
+        (root / 'run-sims').mkdir()
+        (root / 'run-sims' / 'SKILL.md').write_text(
+            '---\nname: run-sims\ndescription: Run circuit sims.\n---\n'
+            '# What this skill is\n\nRun ngspice sims.\n\n## How to Run\n\n1. ngspice -b a.cir\n',
+            'utf-8',
+        )
+        return root
+
+    def test_bar_met_files_real_patch_appending_to_body(self, brain, monkeypatch, tmp_path, learnedSkill):
+        from app.services import harness_self_improve as hsi
+
+        monkeypatch.setattr(
+            sd,
+            'precision_state',
+            lambda: {'labeled': 30, 'correct': 25, 'precision': 0.8333, 'amendBodyEnabled': True},
+        )
+        label = sd.apply_verdict(
+            {
+                'episode': 9,
+                'action': 'amend_body',
+                'skill': 'run-sims',
+                'patch_markdown': '## Pitfalls\n\nAlways pass -b or ngspice opens the GUI.',
+            },
+            'tool-error:sims',
+            mode='full',
+        )
+        assert label == 'patch-proposal-filed', label
+        props = hsi.list_proposals(status='open')
+        assert len(props) == 1 and props[0]['kind'] == 'skill_patch'
+        payload = props[0]['payload']
+        assert payload['action'] == 'amend_body' and payload['target'] == 'run-sims'
+        # The merged body carries the CURRENT prose plus the amendment.
+        assert 'Run ngspice sims.' in payload['body']
+        assert '## Pitfalls' in payload['body']
+
+    def test_bar_met_approval_writes_merged_body_to_disk(self, brain, monkeypatch, tmp_path, learnedSkill):
+        from app.services import harness_self_improve as hsi
+
+        monkeypatch.setattr(
+            sd,
+            'precision_state',
+            lambda: {'labeled': 30, 'correct': 25, 'precision': 0.8333, 'amendBodyEnabled': True},
+        )
+        sd.apply_verdict(
+            {
+                'episode': 9,
+                'action': 'amend_body',
+                'skill': 'run-sims',
+                'patch_markdown': '## Pitfalls\n\nAlways pass -b.',
+            },
+            'tool-error:sims2',
+            mode='full',
+        )
+        props = hsi.list_proposals(status='open')
+        res = hsi.decide_proposal(props[0]['id'], 'approve')
+        assert res.get('applyResult', {}).get('ok') is True
+        on_disk = (learnedSkill / 'run-sims' / 'SKILL.md').read_text('utf-8')
+        # Nothing lost: the original prose survives the amendment.
+        assert 'Run ngspice sims.' in on_disk
+        assert 'Always pass -b.' in on_disk
+        assert '## Pitfalls' in on_disk
+
+    def test_bar_met_bundled_target_becomes_revised_draft(self, brain, monkeypatch, tmp_path):
+        from app.services import harness_self_improve as hsi
+
+        monkeypatch.setattr(
+            sd,
+            'precision_state',
+            lambda: {'labeled': 30, 'correct': 25, 'precision': 0.8333, 'amendBodyEnabled': True},
+        )
+        monkeypatch.setattr(sd, '_isBundledSkill', lambda name: name == 'august-tools')
+        label = sd.apply_verdict(
+            {
+                'episode': 11,
+                'action': 'amend_body',
+                'skill': 'august-tools',
+                'patch_markdown': '## Pitfalls\n\nWatch the budget.',
+            },
+            'tool-error:bundled',
+            mode='full',
+        )
+        assert label == 'proposal-filed', label
+        props = hsi.list_proposals(status='open')
+        assert len(props) == 1 and props[0]['kind'] == 'skill_create'
+        assert props[0]['payload']['name'] == 'august-tools-revised'
+        assert props[0]['payload']['supersedes'] == 'august-tools'
+
+    def test_bar_met_missing_target_is_not_filed(self, brain, monkeypatch, tmp_path, learnedSkill):
+        monkeypatch.setattr(
+            sd,
+            'precision_state',
+            lambda: {'labeled': 30, 'correct': 25, 'precision': 0.8333, 'amendBodyEnabled': True},
+        )
+        label = sd.apply_verdict(
+            {'episode': 12, 'action': 'amend_body', 'skill': 'no-such-skill', 'patch_markdown': 'x'},
+            'tool-error:missing',
+            mode='full',
+        )
+        assert label == 'amend_body-target-missing'
 
 
 class TestJudgeFailureCooldown:

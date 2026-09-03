@@ -74,15 +74,18 @@ def test_delay_exponential_backoff_with_jitter():
 def test_policy_defaults_and_overrides(monkeypatch):
     from app.services import config_service
 
-    assert wb._modelRetryPolicy() == {'maxRetries': 10, 'baseDelayMs': 1000, 'maxDelayMs': 30000}
+    # Speed audit 2026-08-31: default 10 → 3. The loop budget stacks on the
+    # client's own 3 retries × ≤30 s Retry-After waits; 10 loop retries
+    # kept a rate-limited "hello" waiting for many silent minutes.
+    assert wb._modelRetryPolicy() == {'maxRetries': 3, 'baseDelayMs': 1000, 'maxDelayMs': 30000}
 
     monkeypatch.setattr(
         config_service,
         'getConfig',
-        lambda: {'workbench': {'retry': {'maxRetries': 3, 'baseDelayMs': 500}}},
+        lambda: {'workbench': {'retry': {'maxRetries': 6, 'baseDelayMs': 500}}},
     )
     policy = wb._modelRetryPolicy()
-    assert policy['maxRetries'] == 3
+    assert policy['maxRetries'] == 6
     assert policy['baseDelayMs'] == 500
     assert policy['maxDelayMs'] == 30000  # untouched default
 

@@ -164,8 +164,10 @@ class SessionBridge:
             owned = False
             trace = current_trace()
             if trace is None:
-                # force=True so gateway turns appear even without AUGUST_PERF_TIMING
-                # when callers start an outer trace; with force they always record.
+                # force stays False: spans/ring/logging remain env-gated
+                # (AUGUST_PERF_TIMING). The trace is still installed so
+                # ungated telemetry (mark_ttft / tool-args-ready) records on
+                # gateway turns without the env var.
                 trace = start_trace(
                     'gateway_invoke', force=False, sessionKey=sessionKey, channel='gateway'
                 )

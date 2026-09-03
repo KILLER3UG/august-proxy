@@ -484,9 +484,20 @@ async def manage_memory(body: ActionBody):
         before = copy.deepcopy(before_fact) if before_fact else None
         value_text = body.value if isinstance(body.value, str) else ''
         fact_title = (body.title or '').strip() or memory_store.derive_fact_title(value_text)
+        # M-10 (Part 21): the UI's ttl_days was accepted but silently ignored —
+        # a TTL selection now reaches the facts store as expires_at.
+        expires_param: str | None = None
+        ttl = body.ttl_days
+        if isinstance(ttl, int) and not isinstance(ttl, bool) and ttl > 0:
+            from datetime import datetime, timedelta, timezone
+
+            expires_param = (datetime.now(timezone.utc) + timedelta(days=ttl)).isoformat(
+                timespec='seconds'
+            )
         memory_store.save_fact(
             key, cast(JsonValue, body.value), category=body.category or 'general',
             source=source, title=fact_title, kind=(body.kind or '').strip().lower(),
+            expires_at=expires_param,
         )
         try:
             record_rollback(

@@ -85,9 +85,14 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
         if table:
             cols = {r['name'] for r in c.execute('PRAGMA table_info(facts)').fetchall()}
             if 'expires_at' in cols:
+                # julianday, not string compare — the column mixes writer
+                # formats (date-only, ISO-T+offset, model-verbatim); a 'T'
+                # separator sorts above datetime('now')'s space on the expiry
+                # day itself, so same-day expiries would survive the day.
                 cursor = c.execute(
                     "DELETE FROM facts WHERE expires_at IS NOT NULL "
-                    "AND expires_at != '' AND expires_at <= datetime('now')"
+                    "AND expires_at != '' AND julianday(expires_at) IS NOT NULL "
+                    "AND julianday(expires_at) <= julianday('now')"
                 )
                 c.commit()
                 purged = cursor.rowcount

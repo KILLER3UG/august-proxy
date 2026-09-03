@@ -134,6 +134,15 @@ async def runJobNow(jobId: str) -> dict[str, object]:
     if not job:
         return {'error': 'Job not found'}
     job['status'] = 'running'
+    # M-11: legacy cron jobs write the same run ledger automations use, so
+    # the RoutinesPane/incidents view sees one history for both schedulers.
+    run_id = 0
+    try:
+        from app.services.automation_memory import start_run
+
+        run_id = start_run(job_id=jobId, trigger='cron-legacy')
+    except Exception:
+        run_id = 0
     try:
         from app.services.sandbox.policy import SandboxPolicy
         from app.services.sandbox.runner import run_sandboxed
@@ -152,10 +161,28 @@ async def runJobNow(jobId: str) -> dict[str, object]:
         if result.exit_code != 0:
             job['lastError'] = result.as_tool_text()[:500]
         _saveJobs()
+        try:
+            from app.services.automation_memory import error_signature, finish_run
+
+            finish_run(
+                run_id,
+                status='succeeded' if result.exit_code == 0 else 'failed',
+                result_excerpt=result.as_tool_text()[:1000],
+                error_sig='' if result.exit_code == 0 else error_signature(result.as_tool_text()),
+                duration_ms=int(result.elapsed_ms or 0),
+            )
+        except Exception:
+            pass
         return job
     except Exception as exc:
         job['status'] = 'error'
         job['lastError'] = str(exc)
+        try:
+            from app.services.automation_memory import error_signature, finish_run
+
+            finish_run(run_id, status='failed', error_sig=error_signature(str(exc)))
+        except Exception:
+            pass
         return job
 
 

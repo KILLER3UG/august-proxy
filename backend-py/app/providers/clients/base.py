@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
 import time
 from typing import TYPE_CHECKING, AsyncIterator, Callable
@@ -26,6 +27,30 @@ if TYPE_CHECKING:
     import httpx
 
 from app.json_narrowing import as_dict, as_list, as_str
+
+# Speed-audit knobs (2026-08-31): a basic "hello" on a flaky gateway used to
+# read as "the model is slow" because nothing bounded the pre-first-token
+# window below the full 300 s request timeout.
+_CONNECT_TIMEOUT_DEFAULT_S = 10.0
+_TTFB_DEFAULT_S = 45.0
+
+
+def _envFloat(name: str, default: float) -> float:
+    """Read a float env knob (seconds); malformed values fall back."""
+    val = os.environ.get(name)
+    if val is None or str(val).strip() == '':
+        return default
+    try:
+        return max(0.0, float(val))
+    except ValueError:
+        return default
+
+
+class _FirstByteTimeout(Exception):
+    """The streaming TTFB watchdog fired: the upstream sent no bytes before
+    the deadline. Pre-first-token by definition — nothing was generated or
+    billed — so the same replay-safe retry rule as a refused connection
+    applies."""
 
 
 class SseStreamParser:
@@ -287,10 +312,25 @@ class BaseProviderClient:
 
     apiFormat: str = ''
 
-    def __init__(self, providerConfig: dict[str, object], *, timeout: float = 300.0, maxRetries: int = 3) -> None:
+    def __init__(
+        self,
+        providerConfig: dict[str, object],
+        *,
+        timeout: float = 300.0,
+        maxRetries: int = 3,
+        connectTimeout: float | None = None,
+        ttfbTimeout: float | None = None,
+    ) -> None:
         self.config = providerConfig
         self.timeout = timeout
         self.maxRetries = maxRetries
+        # Connect is capped low: a dead host must fail in seconds, not at
+        # the full request timeout. The TTFB watchdog bounds the pre-first-
+        # token window on streaming requests (0 disables it).
+        self.connectTimeout = (
+            connectTimeout if connectTimeout is not None else _envFloat('AUGUST_CONNECT_TIMEOUT_S', _CONNECT_TIMEOUT_DEFAULT_S)
+        )
+        self.ttfbTimeoutS = ttfbTimeout if ttfbTimeout is not None else _envFloat('AUGUST_TTFB_TIMEOUT_S', _TTFB_DEFAULT_S)
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -300,7 +340,10 @@ class BaseProviderClient:
             # only needed once a provider call actually runs.
             import httpx
 
-            self._client = httpx.AsyncClient(timeout=self.timeout, follow_redirects=True)
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self.timeout, connect=self.connectTimeout),
+                follow_redirects=True,
+            )
         return self._client
 
     async def close(self) -> None:
@@ -573,7 +616,20 @@ class BaseProviderClient:
                     feedTask = asyncio.create_task(_feed())
                     try:
                         while True:
-                            item = await queue.get()
+                            if not emittedAny and self.ttfbTimeoutS > 0:
+                                # TTFB watchdog (speed audit 2026-08-31):
+                                # bounded only pre-first-token — once any
+                                # event was yielded, chunk gaps mid-
+                                # generation are never interrupted.
+                                try:
+                                    item = await asyncio.wait_for(queue.get(), timeout=self.ttfbTimeoutS)
+                                except asyncio.TimeoutError:
+                                    raise _FirstByteTimeout(
+                                        f'no first byte from upstream within {self.ttfbTimeoutS:g}s '
+                                        '(AUGUST_TTFB_TIMEOUT_S)'
+                                    ) from None
+                            else:
+                                item = await queue.get()
                             if item is None:
                                 break
                             emittedAny = True
@@ -585,7 +641,7 @@ class BaseProviderClient:
                         except asyncio.CancelledError:
                             pass
                     return
-            except httpx.HTTPError as exc:
+            except (_FirstByteTimeout, httpx.HTTPError) as exc:
                 lastExc = exc
                 if emittedAny:
                     # Tokens were already generated (and possibly billed) —

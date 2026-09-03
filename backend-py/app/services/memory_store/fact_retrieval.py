@@ -77,9 +77,14 @@ def _load_index() -> dict[str, Any]:
     corpus: list[list[str]] = []
     try:
         conn = _conn()
+        # M-1 usage decoupling: the cached corpus carries tokens + text only
+        # — never use_count/last_used_at. Usage is fetched per query for the
+        # candidate set (see _usage_for), so touch_fact_usage no longer
+        # invalidates this cache and the per-turn full-corpus rebuild cliff
+        # is gone (Part 21 M-1).
         factRows = conn.execute(
-            "SELECT fact_key, fact_value, title, kind, category, use_count, last_used_at FROM facts "
-            "WHERE (expires_at IS NULL OR expires_at = '' OR expires_at > datetime('now')) "
+            "SELECT fact_key, fact_value, title, kind, category FROM facts "
+            "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active')"
         ).fetchall()
         for r in factRows:
@@ -99,8 +104,6 @@ def _load_index() -> dict[str, Any]:
                     'body': body,
                     'kind': str(r['kind'] or 'fact'),
                     'category': str(r['category'] or 'general'),
-                    'use_count': int(r['use_count'] or 0),
-                    'last_used_at': str(r['last_used_at'] or ''),
                 }
             )
             corpus.append(tokens)
@@ -169,6 +172,32 @@ def _usage_decay(last_used_at: str) -> float:
         return 1.0
 
 
+def _usage_for(keys: list[str]) -> dict[str, tuple[int, str]]:
+    """Fresh ``(use_count, last_used_at)`` for a candidate key set.
+
+    M-1 usage decoupling: usage no longer lives in the cached corpus, so
+    ranking fetches it per query with one cheap SELECT over the candidates
+    (≤200 — far above the k=5 window, so the boost can only reshuffle
+    within the BM25-strongest set).
+    """
+    out: dict[str, tuple[int, str]] = {}
+    uniq = [k for k in dict.fromkeys(keys) if k][:200]
+    if not uniq:
+        return out
+    try:
+        placeholders = ','.join('?' for _ in uniq)
+        rows = _conn().execute(
+            f'SELECT fact_key, use_count, last_used_at FROM facts '
+            f'WHERE fact_key IN ({placeholders})',
+            uniq,
+        ).fetchall()
+        for r in rows:
+            out[str(r['fact_key'])] = (int(r['use_count'] or 0), str(r['last_used_at'] or ''))
+    except Exception as exc:
+        logging.debug('candidate usage fetch failed: %s', exc)
+    return out
+
+
 def retrieve_relevant_facts(
     query: str,
     k: int = 5,
@@ -209,15 +238,19 @@ def retrieve_relevant_facts(
             s += 0.5 * bm25.score(priorTokens, i)
         if s <= 0:
             continue
-        # Phase D item 3: the usage boost decays with idle time (halved at
-        # 30 days unused) so often-quoted stale facts stop crowding out
-        # fresh ones.
-        s += 0.05 * min(int(row.get('use_count') or 0), 20) * _usage_decay(
-            str(row.get('last_used_at') or '')
-        )
         scored.append((s, row))
     scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [dict(row) for _, row in scored[: max(1, k)]]
+    # Phase D item 3 + M-1 decoupling: the usage boost decays with idle
+    # time (halved at 30 days unused); usage values are fetched fresh for
+    # the candidate set — not from the (usage-free) cached corpus.
+    usage = _usage_for([str(row.get('key')) for _, row in scored])
+    boosted: list[tuple[float, dict[str, object]]] = []
+    for s, row in scored:
+        use_count, last_used_at = usage.get(str(row.get('key')), (0, ''))
+        s += 0.05 * min(use_count, 20) * _usage_decay(last_used_at)
+        boosted.append((s, row))
+    boosted.sort(key=lambda pair: pair[0], reverse=True)
+    return [dict(row) for _, row in boosted[: max(1, k)]]
 
 
 def build_memory_block(

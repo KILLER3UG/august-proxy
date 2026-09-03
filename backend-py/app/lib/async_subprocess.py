@@ -23,7 +23,12 @@ from typing import Any
 # credential-shaped suffixes/substrings, case-insensitively. `AUTH` requires
 # a trailing underscore/end so benign vars like GIT_AUTHOR_NAME survive.
 _CREDENTIAL_ENV_RE = re.compile(
-    r'^(?:AUGUST_|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$',
+    # `AUGUST_*` prefix (config / data-root pointers — any of them tells the
+    # child where the brain DB lives) OR credential-shaped names. P3.2 warm-
+    # kernel testing found the old exact-`AUGUST_` branch anchored both ends
+    # (`^AUGUST_$`), so AUGUST_BRAIN_SQLITE_FILE / AUGUST_DATA_DIR leaked
+    # into cold-spawned children too. The prefix must match anywhere-forward.
+    r'^(?:AUGUST_\w*.*|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$',
     re.IGNORECASE,
 )
 

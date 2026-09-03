@@ -22,6 +22,16 @@ from app.services.gateway.base import (
 from app.services.gateway.session_bridge import SessionBridge, TurnResult
 
 
+@pytest.fixture(autouse=True)
+def _allowAllSenders(monkeypatch):
+    """The Phase-0 trust gate is default-deny; these adapter-queueing tests
+    are about dispatch mechanics, not authz. Allow everything here and keep
+    the gate's own behavior under test in test_gateway_pairing.py."""
+    import app.services.gateway.pairing as pairing
+
+    monkeypatch.setattr(pairing, 'gateDecision', lambda platform, user_id, chat_type: 'allow')
+
+
 class StubRunner:
     """Injected workbench runner: blocks on a gate until released."""
 

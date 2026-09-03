@@ -51,7 +51,13 @@ def _skillRoots(workspace: str | Path | None = None) -> list[tuple[str, Path]]:
         try:
             wsPath = Path(ws).resolve()
             if wsPath != Path.home().resolve():
-                roots.append(('project', wsPath / '.aug' / 'skills'))
+                # Part 17 §2 projectSkills toggle: off = the workspace root
+                # drops out of the search order entirely (catalogue falls
+                # back to agent+bundled). Default on.
+                from app.services.brain_config_service import getRuntimeConfig
+
+                if bool(getRuntimeConfig().get('projectSkills', True)):
+                    roots.append(('project', wsPath / '.aug' / 'skills'))
         except Exception:
             pass
     roots.append(('agent', _agentSkillsDir()))

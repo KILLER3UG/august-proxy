@@ -88,8 +88,14 @@ async def runSubagent(
         # Forward only LIVE output events to the parent stream. Start/done
         # are owned by the spawn tool (keyed by taskId); executeSubAgent
         # emits them with its own job_xxx id, so they must stay dropped.
+        # (subagentRetry / subagentWarning carry the worker's jobId and ARE
+        # handled by the frontend — dropping them hid retry backoff and stall
+        # nudges from the live transcript.)
         evType = as_str(ev.get('type'), '')
-        if evType not in ('subagentText', 'subagentToolCall', 'subagentToolResult'):
+        if evType not in (
+            'subagentText', 'subagentToolCall', 'subagentToolResult',
+            'subagentTodos', 'subagentRetry', 'subagentWarning',
+        ):
             return
         # Rewrite jobId → taskId so the events match the sub-agent blocks the
         # spawn tool seeded (the UI keys subagent state by jobId/taskId).
@@ -133,6 +139,7 @@ async def runSubagent(
             harness_job_id=harness_job_id,
             auto_hop=auto_hop,
             capability=capability,
+            task_id=taskId,
         )
         status = as_str(subResult.get('status'), 'completed')
         if status != 'completed':

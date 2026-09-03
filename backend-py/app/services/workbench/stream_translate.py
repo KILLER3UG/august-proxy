@@ -150,6 +150,12 @@ class AnthropicWorkbenchStreamAggregator:
                 self.tool_uses.append(self.current_tool_block)
                 self.current_tool_block = None
                 self.current_tool_input_parts = []
+                # P3.1: this tool block's arguments just finished arriving —
+                # the loop diffs this against stream-end (early-dispatch
+                # telemetry; measurement only, no behavior change).
+                from app.lib.perf_timing import mark_tool_args_ready
+
+                mark_tool_args_ready()
         elif event_type == 'message_start':
             self._absorb_usage(as_dict(as_dict(event.get('message')).get('usage')))
         elif event_type == 'message_delta':

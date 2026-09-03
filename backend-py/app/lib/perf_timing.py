@@ -1,8 +1,10 @@
 """Workbench performance timing helpers — measurement only, no behaviour change.
 
-Enable recording with env ``AUGUST_PERF_TIMING=1`` (or force=True in tests).
-Traces accumulate spans (prompt_build, llm_wait, tool_exec, sse_emit proxy,
-persist) and TTFT (time from trace start to first content emit).
+Spans/ring/logging enable with env ``AUGUST_PERF_TIMING=1`` (or force=True in
+tests). TTFT and the tool-args-ready mark always record — they feed persisted
+turn telemetry. Traces accumulate spans (prompt_build, llm_wait, tool_exec,
+sse_emit proxy, persist) and TTFT (time from trace start to first content
+emit).
 
 Ring buffer of recent traces is available for tests / debug dumps.
 """
@@ -69,8 +71,10 @@ class PerfTrace:
         return (time.perf_counter() - self.t0) * 1000.0
 
     def mark_ttft(self) -> None:
-        if not self._enabled:
-            return
+        # Ungated on purpose (same rationale as mark_tool_args_ready):
+        # ttft feeds persisted turn telemetry (turn_outcomes.ttft_ms and the
+        # turnTelemetry SSE event) which must record in production, where the
+        # env var is not set; spans/ring/logging stay behind _enabled.
         if self.ttft_ms is None:
             self.ttft_ms = (time.perf_counter() - self.t0) * 1000.0
 
@@ -133,6 +137,39 @@ def start_trace(name: str, *, force: bool = False, **meta: Any) -> PerfTrace:
 
 def current_trace() -> PerfTrace | None:
     return _current.get()
+
+
+def mark_tool_args_ready() -> None:
+    """P3.1: record when the last tool call's arguments finished arriving.
+
+    Called from the provider-layer parse sites (OpenAI argument decode /
+    Anthropic ``content_block_stop``). Ungated on purpose — a single
+    ``perf_counter`` write per tool block — because unlike the spans this
+    value feeds persisted turn telemetry: the turn loop diffs it against
+    stream-end to fill ``toolArgsReadyToStreamEndMs`` (the trailing stream
+    tail that early tool dispatch could save; measure-then-decide).
+    """
+    tr = _current.get()
+    if tr is not None:
+        tr.meta['toolArgsReadyPerf'] = time.perf_counter()
+
+
+def tool_args_ready_to_stream_end_ms() -> int:
+    """P3.1: trailing stream-tail ms after the last tool args arrived.
+
+    Diff the ``toolArgsReadyPerf`` mark against NOW (stream end). The mark
+    is per ROUND (the trace meta is overwritten by later rounds), so the
+    loop snapshots this after EACH model call — the value surfaced for the
+    turn is the LAST round that had a tool call, i.e. the tail early
+    dispatch could actually save. 0 = no tool call arrived this turn.
+    """
+    tr = _current.get()
+    if tr is None:
+        return 0
+    ready = tr.meta.get('toolArgsReadyPerf')
+    if not isinstance(ready, (int, float)):
+        return 0
+    return max(0, int((time.perf_counter() - ready) * 1000.0))
 
 
 def clear_current() -> None:

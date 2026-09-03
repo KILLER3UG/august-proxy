@@ -33,6 +33,9 @@ class AgentCreate(CamelModel):
     model_alias: str = ''
     role: str = ''
     description: str = ''
+    # Bot Mode Phase A: presentation fields stored as uiMeta on the record.
+    title: str = ''
+    clone_from: str = ''
 
 
 class AgentUpdate(CamelModel):
@@ -46,6 +49,20 @@ class AgentUpdate(CamelModel):
     model_alias: str | None = None
     role: str | None = None
     description: str | None = None
+    # uiMeta leaf fields (merged, not replaced).
+    title: str | None = None
+    avatar: str | None = None
+    hidden: bool | None = None
+    groups: list[str] | None = None
+
+
+class UiMetaUpdate(CamelModel):
+    """Dedicated uiMeta payload for the Bots roster (Bot Mode Phase A)."""
+
+    title: str | None = None
+    avatar: str | None = None
+    hidden: bool | None = None
+    groups: list[str] | None = None
 
 
 class AgentJob(CamelModel):
@@ -63,7 +80,25 @@ async def listAgents():
 
 @router.post('')
 async def createAgent(body: AgentCreate):
-    """Register a new agent (persisted)."""
+    """Register a new agent (persisted).
+
+    Bot Mode Phase A: creating through this route also creates the Bot's
+    canonical chat + intro turn (``title``/``clone_from`` map to uiMeta).
+    """
+    if body.title or body.clone_from:
+        from app.services.bot_mode import roster
+
+        return roster.create_bot(
+            name=body.name,
+            title=body.title,
+            description=body.description,
+            role=body.role,
+            model=body.model,
+            provider=body.provider,
+            toolsets=body.toolsets,
+            clone_from=body.clone_from,
+            actor='ui',
+        )
     return agent_registry.createAgent(
         name=body.name,
         parentId=body.parent_id,
@@ -84,6 +119,85 @@ async def createAgent(body: AgentCreate):
 async def getTree(root: str = '', maxDepth: int = Query(4)):
     """Return a recursive agent tree (frontend AgentTree)."""
     return agent_registry.getAgentTreeRooted(root=root, maxDepth=maxDepth)
+
+
+# ── Bot Mode Phase A: Bots roster endpoints ────────────────────────────────
+
+
+@router.get('/bots')
+async def listBots():
+    """Bots roster: every registry record with normalized uiMeta (hidden
+    included — display filtering is the client's job)."""
+    from app.services.bot_mode import roster
+
+    return {'bots': roster.list_bots()}
+
+
+@router.post('/bots/ensure-default')
+async def ensureDefaultBot():
+    """Boot backfill: create the default assistant Bot if missing."""
+    from app.services.bot_mode import roster
+
+    return roster.ensure_default_bot(actor='ui')
+
+
+@router.get('/bots/avatar')
+async def botAvatar(name: str = Query(...), salt: str = Query('')):
+    """Deterministic identicon SVG for a Bot name (inline-renderable)."""
+    from app.services.bot_mode import roster
+
+    return {'svg': roster.avatar_svg(name, salt=salt)}
+
+
+@router.get('/bots/{agentId}')
+async def getBot(agentId: str):
+    from app.services.bot_mode import roster
+
+    bot = roster.get_bot(agentId)
+    if not bot:
+        raise HTTPException(status_code=404, detail='Bot not found')
+    return bot
+
+
+@router.put('/bots/{agentId}/ui-meta')
+async def updateBotUiMeta(agentId: str, body: UiMetaUpdate):
+    """Merge uiMeta fields (title/avatar/hidden/groups)."""
+    from app.services.bot_mode import roster
+
+    updates = {k: v for k, v in body.model_dump(by_alias=True).items() if v is not None}
+    bot = roster.update_bot(agentId, updates, actor='ui')
+    if not bot:
+        raise HTTPException(status_code=404, detail='Bot not found')
+    return bot
+
+
+@router.get('/bots/{agentId}/chat')
+async def getBotChat(agentId: str):
+    """Resolve (not create) the Bot's canonical chat session id."""
+    from app.services.bot_mode import roster
+
+    chat = roster.find_canonical_bot_chat(agentId)
+    if chat is None:
+        raise HTTPException(status_code=404, detail='Canonical Bot Chat not found')
+    return {'sessionId': chat.id, 'title': chat.title, 'agentId': agentId}
+
+
+@router.post('/bots/{agentId}/chat')
+async def ensureBotChat(agentId: str):
+    """Create-if-missing the Bot's canonical chat (idempotent)."""
+    from app.services.bot_mode import roster
+
+    chat = roster.ensure_canonical_bot_chat(agentId)
+    return {'sessionId': chat.id, 'title': chat.title, 'agentId': agentId}
+
+
+@router.delete('/bots/{agentId}')
+async def deleteBot(agentId: str):
+    from app.services.bot_mode import roster
+
+    if not roster.delete_bot(agentId, actor='ui'):
+        raise HTTPException(status_code=400, detail='Bot cannot be deleted (default bot)')
+    return {'status': 'ok', 'deleted': agentId}
 
 
 def _record_api_job_run(
@@ -283,17 +397,43 @@ async def getAgent(agentId: str):
 async def updateAgent(agentId: str, body: AgentUpdate):
     """Update an existing agent's configuration."""
     # Service layer stores camelCase keys (parentId, modelAlias, …).
-    updates = {k: v for k, v in body.model_dump(by_alias=True).items() if v is not None}
-    agent = agent_registry.updateAgent(agentId, updates, actor='ui')
-    if not agent:
+    dumped = body.model_dump(by_alias=True)
+    # The uiMeta leaf fields MERGE into uiMeta (roster-owned) — writing them
+    # as top-level record keys would be invisible to the roster view.
+    ui_leaves = {
+        k: dumped.pop(k)
+        for k in ('title', 'avatar', 'hidden', 'groups')
+        if dumped.get(k) is not None
+    }
+    updates = {k: v for k, v in dumped.items() if v is not None}
+    if ui_leaves:
+        from app.services.bot_mode import roster
+
+        if roster.update_bot(agentId, ui_leaves, actor='ui') is None:
+            raise HTTPException(status_code=404, detail='Agent not found')
+    if updates:
+        agent = agent_registry.updateAgent(agentId, updates, actor='ui')
+        if not agent:
+            raise HTTPException(status_code=404, detail='Agent not found')
+        return agent
+    updated = agent_registry.getAgent(agentId)
+    if not updated:
         raise HTTPException(status_code=404, detail='Agent not found')
-    return agent
+    return updated
 
 
 @router.delete('/{agentId}')
 async def deleteAgent(agentId: str):
-    if not agent_registry.deleteAgent(agentId, actor='ui'):
+    """Delete an agent (== Bot). Routed through the roster so the default
+    assistant Bot is undeletable from EVERY surface, not just /bots — the
+    legacy path used to bypass roster.delete_bot's guard and leave the
+    Bot's canonical chat orphaned."""
+    from app.services.bot_mode import roster
+
+    if not agent_registry.getAgent(agentId):
         raise HTTPException(status_code=404, detail='Agent not found')
+    if not roster.delete_bot(agentId, actor='ui'):
+        raise HTTPException(status_code=400, detail='Bot cannot be deleted (default bot)')
     return {'status': 'ok', 'deleted': agentId}
 
 

@@ -24,6 +24,11 @@ _GHDL_INSTALL_HINT = (
     '(scoop install ghdl, apt install ghdl, or brew install ghdl) for VHDL '
     'analysis/elaboration/simulation.'
 )
+_MODELSIM_INSTALL_HINT = (
+    'No VHDL engine found. GHDL: https://ghdl.github.io/ghdl/ (scoop install '
+    'ghdl, apt install ghdl, brew install ghdl). ModelSim-Altera (ships with '
+    'Quartus kits; also fine): point AUGUST_MODELSIM at its win32aloem/vsim.exe.'
+)
 _ICARUS_INSTALL_HINT = (
     'Icarus Verilog is not installed. Install it from '
     'https://bleyer.org/icarus/ (scoop install iverilog, apt install '
@@ -66,13 +71,53 @@ def _workspace(session: object | None = None) -> str:
 # ── engine resolution ─────────────────────────────────────────────────────
 
 async def resolve_ghdl() -> str | None:
-    """GHDL exe: PATH, then common install roots. None → absent."""
+    """GHDL exe: AUGUST_GHDL override → PATH → common install roots
+    (incl. the winget package tree — `winget install ghdl.ghdl.ucrt64.mcode`
+    lands there, not in any of the classic roots). None → absent."""
+    env_exe = os.environ.get('AUGUST_GHDL', '').strip()
+    if env_exe and os.path.isfile(env_exe):
+        return env_exe
+    winget = os.path.expandvars(
+        r'%LOCALAPPDATA%\Microsoft\WinGet\Packages')
+    extra: list[str] = [
+        r'C:\ghdl\bin', r'C:\Program Files\GHDL\bin',
+        r'C:\msys64\mingw64\bin', r'C:\msys64\ucrt64\bin',
+    ]
+    if os.path.isdir(winget):
+        # winget installs land in <Packages>\<pkg-id>_<source>\bin
+        for entry in os.listdir(winget):
+            if 'ghdl' in entry.lower():
+                extra.append(os.path.join(winget, entry, 'bin'))
     r = await _probe_binary(
         ('ghdl',), ('--version',), r'GHDL\s+([0-9][^\s(]*)',
-        extra_dirs=(
-            r'C:\ghdl\bin', r'C:\Program Files\GHDL\bin',
-            r'C:\msys64\mingw64\bin', r'C:\msys64\ucrt64\bin',
-        ))
+        extra_dirs=tuple(extra))
+    return str(r.get('path', '')) if r.get('installed') else None
+
+
+async def resolve_modelsim() -> str | None:
+    """ModelSim-Altera ``vsim`` exe (vcom sits in the same bindir), or None.
+
+    Quartus kits ship ModelSim (modelsim_ase) in versioned intelFPGA
+    trees that are never on PATH — the same shape as resolve_quartus_sh.
+    When present it serves as the VHDL fallback engine for hdl_lint /
+    hdl_simulate (GHDL stays preferred)."""
+    env_exe = os.environ.get('AUGUST_MODELSIM', '').strip()
+    if env_exe and os.path.isfile(env_exe):
+        return env_exe
+    roots: list[str] = []
+    for root in (r'C:\intelFPGA', r'C:\intelFPGA_lite', r'C:\altera'):
+        try:
+            versions = os.listdir(root)
+        except OSError:
+            continue
+        for v in sorted(versions, reverse=True):
+            d = os.path.join(root, v, 'modelsim_ase', 'win32aloem')
+            if os.path.isfile(os.path.join(d, 'vsim.exe')):
+                roots.append(d)
+    # PATH first (some kit installers add win32aloem), then versioned roots.
+    r = await _probe_binary(
+        ('vsim',), ('-version',), r'ModelSim[^0-9]*([0-9][^\s]*)',
+        extra_dirs=tuple(roots))
     return str(r.get('path', '')) if r.get('installed') else None
 
 
@@ -112,6 +157,25 @@ def _is_vhdl(text: str) -> bool:
 
 def _sanitize_stem(name: str) -> str:
     return re.sub(r'[^A-Za-z0-9_\-]', '_', (name or 'hdl').strip()) or 'hdl'
+
+
+def _top_unit(text: str, language: str, stem: str) -> str:
+    """The elaboratable top unit name: the first VHDL entity / Verilog
+    module in the source. GHDL/vsim load BY UNIT NAME (``cannot find
+    entity or configuration <stem>`` when the file stem isn't a unit) —
+    the file stem is only a fallback."""
+    if language == 'vhdl':
+        m = re.search(r'\bentity\s+(\w+)\s+is\b', text, re.I)
+        if m:
+            return m.group(1)
+        m = re.search(r'\barchitecture\s+\w+\s+of\s+(\w+)\b', text, re.I)
+        if m:
+            return m.group(1)
+    else:
+        m = re.search(r'\bmodule\s+(\w+)\b', text, re.I)
+        if m:
+            return m.group(1)
+    return stem
 
 
 async def _run(argv: list[str], timeout: float, cwd: str | None = None):
@@ -230,10 +294,25 @@ async def hdl_lint(
         src = _materialize(text, language, stem, tmpdir)
         if language == 'vhdl':
             ghdl = await resolve_ghdl()
-            if ghdl is None:
-                return {'installed': False, 'error': _GHDL_INSTALL_HINT}
-            rc, out = await _run([ghdl, '-a', '--std=08', src.name], 60.0, cwd=tmpdir)
-            engine = 'ghdl'
+            if ghdl is not None:
+                rc, out = await _run([ghdl, '-a', '--std=08', src.name], 60.0, cwd=tmpdir)
+                engine = 'ghdl'
+            else:
+                ms = await resolve_modelsim()
+                if ms is None:
+                    return {'installed': False, 'error': _MODELSIM_INSTALL_HINT}
+                vlib = _vlib_for(ms)
+                vcom = _vcom_for(ms)
+                # vcom needs a `work` library to exist first (vlib-66).
+                rc_l, out_l = await _run([vlib, 'work'], 60.0, cwd=tmpdir)
+                if rc_l != 0:
+                    return {
+                        'installed': True, 'ok': False, 'stage': 'analyze',
+                        'logTail': '\n'.join(out_l.splitlines()[-20:]),
+                    }
+                rc, out = await _run(
+                    [vcom, '-quiet', '-2008', src.name], 60.0, cwd=tmpdir)
+                engine = 'modelsim'
         else:
             ver = await resolve_verilator()
             if ver is not None:
@@ -305,24 +384,68 @@ async def hdl_simulate(
         timeout = 60.0
         if language == 'vhdl':
             ghdl = await resolve_ghdl()
-            if ghdl is None:
-                return {'installed': False, 'error': _GHDL_INSTALL_HINT}
-            # Analyze → elaborate+run with waveform capture.
-            rc_a, out_a = await _run(
-                [ghdl, '-a', '--std=08', src.name], 60.0, cwd=tmpdir)
-            if rc_a != 0:
-                return {
-                    'installed': True, 'ok': False,
-                    'stage': 'analyze',
-                    'diagnostics': _parse_hdl_diagnostics(out_a),
-                    'logTail': '\n'.join(out_a.splitlines()[-20:]),
-                }
-            top_name = (top or '').strip() or stem
-            rc, out = await _run(
-                [ghdl, '--elab-run', '--std=08',
-                 '--wave=wave.vcd', top_name],
-                timeout, cwd=tmpdir)
-            engine = 'ghdl'
+            if ghdl is not None:
+                # Analyze → elaborate+run with waveform capture.
+                rc_a, out_a = await _run(
+                    [ghdl, '-a', '--std=08', src.name], 60.0, cwd=tmpdir)
+                if rc_a != 0:
+                    return {
+                        'installed': True, 'ok': False,
+                        'stage': 'analyze',
+                        'diagnostics': _parse_hdl_diagnostics(out_a),
+                        'logTail': '\n'.join(out_a.splitlines()[-20:]),
+                    }
+                top_name = (top or '').strip() or _top_unit(text, language, stem)
+                # GHDL 6.0: --wave writes GHW (binary) — the .vcd the
+                # workbench consumes needs --vcd=. Both are simulation
+                # options and must come after the toplevel unit (before
+                # it: "unknown command option").
+                rc, out = await _run(
+                    [ghdl, '--elab-run', '--std=08', top_name,
+                     '--vcd=wave.vcd'],
+                    timeout, cwd=tmpdir)
+                engine = 'ghdl'
+            else:
+                ms = await resolve_modelsim()
+                if ms is None:
+                    return {'installed': False, 'error': _MODELSIM_INSTALL_HINT}
+                vlib = _vlib_for(ms)
+                vcom = _vcom_for(ms)
+                # vcom needs a `work` library to exist first (vlib-66).
+                rc_l, out_l = await _run([vlib, 'work'], 60.0, cwd=tmpdir)
+                if rc_l != 0:
+                    return {
+                        'installed': True, 'ok': False, 'stage': 'analyze',
+                        'logTail': '\n'.join(out_l.splitlines()[-20:]),
+                    }
+                rc_a, out_a = await _run(
+                    [vcom, '-quiet', '-2008', src.name], 60.0, cwd=tmpdir)
+                if rc_a != 0:
+                    return {
+                        'installed': True, 'ok': False,
+                        'stage': 'analyze',
+                        'diagnostics': _parse_hdl_diagnostics(out_a),
+                        'logTail': '\n'.join(out_a.splitlines()[-20:]),
+                    }
+                top_name = (top or '').strip() or _top_unit(text, language, stem)
+                # Batch vsim: -c (CLI), transcript to stdout, VCD via a .do
+                # script (modelsim's dump commands), then quit.
+                do = Path(tmpdir) / 'aug_run.do'
+                do.write_text(
+                    'vcd file wave.vcd\n'
+                    # -r: recursive — plain `vcd add /top/*` captures
+                    # nothing on flat testbenches (verified on 10.5b).
+                    f'vcd add -r /{top_name}/*\n'
+                    'run -all\n'
+                    'quit -f\n',
+                    encoding='utf-8')
+                rc, out = await _run(
+                    [ms, '-c', '-quiet', '-l', 'transcript',
+                     '-do', str(do), top_name],
+                    timeout, cwd=tmpdir)
+                # vsim transcripts append the .do echo — keep the tail as
+                # the sim log; rc is vsim's exit status.
+                engine = 'modelsim'
         else:
             iv = await resolve_iverilog()
             if iv is None:
@@ -369,6 +492,20 @@ def _vvp_for(iverilog_path: str) -> str:
     p = Path(iverilog_path)
     vvp = p.with_name('vvp.exe' if os.name == 'nt' else 'vvp')
     return str(vvp) if vvp.is_file() else 'vvp'
+
+
+def _vcom_for(vsim_path: str) -> str:
+    """The vcom compiler sitting next to vsim (same bindir)."""
+    p = Path(vsim_path)
+    vcom = p.with_name('vcom.exe' if os.name == 'nt' else 'vcom')
+    return str(vcom) if vcom.is_file() else 'vcom'
+
+
+def _vlib_for(vsim_path: str) -> str:
+    """The vlib library-creator sitting next to vsim (same bindir)."""
+    p = Path(vsim_path)
+    vlib = p.with_name('vlib.exe' if os.name == 'nt' else 'vlib')
+    return str(vlib) if vlib.is_file() else 'vlib'
 
 
 # ── P4.3: vcd_parse — pure-Python VCD reader ───────────────────────────────
@@ -472,9 +609,12 @@ def vcd_summary(text: str) -> dict[str, object]:
     """Header + activity summary of a VCD: timescale, duration, per-signal
     edge counts and min/max pulse widths."""
     timescale_sec = 1e-9
-    m = re.search(r'\$timescale\s+([^\s$]+)', text)
+    # GHDL writes "$timescale 1 fs" (number and unit separated by a
+    # space); a single-token capture would read just "1" and the unit
+    # would silently default to ns — 10^6x inflated durations.
+    m = re.search(r'\$timescale\s+([\d.]+)\s*([fpnum]?)[a-z]*', text, re.I)
     if m:
-        timescale_sec = _parse_timescale(m.group(1))
+        timescale_sec = _parse_timescale((m.group(1) + (m.group(2) or 'n')))
     duration = 0.0
     dm = re.findall(r'^#(\d+)', text, re.M)
     if dm:

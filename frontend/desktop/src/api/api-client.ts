@@ -18,3 +18,4 @@ export * from './api-client/observability';
 export * from './api-client/external-access';
 export * from './api-client/feature-flow';
 export * from './api-client/ui-customization';
+export * from './api-client/bots';

@@ -58,6 +58,35 @@ class _SseByteStream(httpx._content.AsyncByteStream):
         pass
 
 
+class _SilentByteStream(httpx._content.AsyncByteStream):
+    """Simulates a stalled upstream: headers sent, then NO bytes for hangS."""
+
+    def __init__(self, hangS: float) -> None:
+        self._hangS = hangS
+
+    async def __aiter__(self):
+        await asyncio.sleep(self._hangS)
+        yield b''
+        return
+
+    async def aclose(self) -> None:
+        pass
+
+
+class _GapByteStream(httpx._content.AsyncByteStream):
+    """Wraps an async generator of byte chunks as an httpx response body."""
+
+    def __init__(self, gen) -> None:
+        self._gen = gen
+
+    async def __aiter__(self):
+        async for chunk in self._gen:
+            yield chunk
+
+    async def aclose(self) -> None:
+        pass
+
+
 class TestRequestJsonIdempotency:
     @pytest.mark.asyncio
     async def testConnectErrorRetriesThenSucceeds(self, fastSleep):
@@ -286,3 +315,94 @@ class TestUpstreamRetryVisibility:
         events = [e async for e in client.streamSse('http://upstream.test/x', {}, {})]
         assert not any(e.get('type') == 'upstreamRetry' for e in events)
         await client.close()
+
+
+# ── TTFB watchdog + connect timeout (2026-08-31 speed audit) ────────────
+
+
+class TestTtfbWatchdog:
+    """A stalled upstream (connection accepted, no bytes) used to hold a
+    turn open for the full 300 s request timeout — reading to the user as
+    "the model is slow". The watchdog bounds the PRE-first-token window
+    only; once events flow, chunk gaps are never interrupted."""
+
+    @pytest.mark.asyncio
+    async def test_stalled_upstream_fails_fast_and_retries(self):
+        import time as _time
+
+        # Simulate a STALLED first attempt: headers OK, zero bytes — the
+        # first queue item never arrives within the watchdog window. The
+        # retry then succeeds instantly (retry-safe: nothing was generated
+        # — no bytes were received). Real timing, no sleep patching: the
+        # watchdog (0.2s) + one real 1s backoff + instant retry ≈ 1.2s.
+        calls = {'n': 0}
+        stalled = {'arm': True}
+
+        def stallingHandler(request: httpx.Request) -> httpx.Response:
+            calls['n'] += 1
+            if stalled['arm'] and calls['n'] == 1:
+                return httpx.Response(
+                    200,
+                    headers={'content-type': 'text/event-stream'},
+                    content=_SilentByteStream(hangS=5.0),
+                )
+            stalled['arm'] = False
+            return httpx.Response(
+                200,
+                headers={'content-type': 'text/event-stream'},
+                content=_SseByteStream([b'data: {"ok": 1}\n\n', b'data: [DONE]\n\n']),
+            )
+
+        client2 = _clientWithHandler(stallingHandler)
+        client2.ttfbTimeoutS = 0.2
+        t0 = _time.monotonic()
+        events = [e async for e in client2.streamSse('http://upstream.test/x', {}, {})]
+        elapsed = _time.monotonic() - t0
+        assert elapsed < 2.5, f'watchdog did not fail fast: {elapsed:.1f}s'
+        types = [e.get('type') for e in events]
+        assert 'upstreamRetry' in types, f'expected a retry after the watchdog trip: {types}'
+        assert not any(e.get('type') == 'error' for e in events), f'retry should have recovered: {events}'
+        assert any(e.get('ok') == 1 for e in events), events
+        await client2.close()
+
+    @pytest.mark.asyncio
+    async def test_watchdog_never_trips_midstream(self):
+        """After the first event, a long chunk gap must NOT be interrupted."""
+        import time as _time
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            async def gen():
+                yield b'data: {"n": 1}\n\n'
+                await asyncio.sleep(1.2)  # a "thinking" pause mid-generation
+                yield b'data: {"n": 2}\n\n'
+                yield b'data: [DONE]\n\n'
+
+            return httpx.Response(
+                200,
+                headers={'content-type': 'text/event-stream'},
+                content=_GapByteStream(gen()),
+            )
+
+        client = _clientWithHandler(handler)
+        client.ttfbTimeoutS = 0.3
+        t0 = _time.monotonic()
+        events = [e async for e in client.streamSse('http://upstream.test/x', {}, {})]
+        elapsed = _time.monotonic() - t0
+        payloads = [e.get('n') for e in events if isinstance(e.get('n'), int)]
+        assert payloads == [1, 2], f'mid-stream gap was interrupted: {events}'
+        assert elapsed >= 1.0, 'the mid-stream pause was not actually waited out'
+        assert not any(e.get('type') == 'error' for e in events)
+        await client.close()
+
+    def test_env_knobs_feed_the_client(self, monkeypatch):
+        monkeypatch.setenv('AUGUST_TTFB_TIMEOUT_S', '12.5')
+        monkeypatch.setenv('AUGUST_CONNECT_TIMEOUT_S', '3')
+        c = BaseProviderClient({'name': 't'})
+        assert c.ttfbTimeoutS == 12.5
+        assert c.connectTimeout == 3.0
+        # 0 disables the watchdog entirely.
+        monkeypatch.setenv('AUGUST_TTFB_TIMEOUT_S', '0')
+        assert BaseProviderClient({'name': 't'}).ttfbTimeoutS == 0.0
+        # Malformed values fall back to the default.
+        monkeypatch.setenv('AUGUST_TTFB_TIMEOUT_S', 'nonsense')
+        assert BaseProviderClient({'name': 't'}).ttfbTimeoutS == 45.0

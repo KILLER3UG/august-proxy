@@ -127,11 +127,70 @@ async def flaggedEpisodes(limit: int = 20):
 
 @router.get('/report')
 async def curatorReport():
-    from app.services.episode_miner import learning_report
+    import asyncio
+
+    from app.services.episode_miner import learning_report, run_resolution_check
+    from app.services.memory_store import get_internal_state
     from app.services.skill_distiller import precision_state
 
+    # P2.1 (Part 18): a skills-index budget overflow is a persisted issue —
+    # surfaced here so the Learning header can show it (None when never).
+    overflow = get_internal_state('skillsIndexOverflow')
+    # D-3 (§3.5): the metric blob is multi-file IO (proposals dir) + a DB
+    # recurrence query — keep it off the event loop like /run does.
+    skill_learning = await asyncio.to_thread(_skillLearningMetrics, run_resolution_check())
     return {
         'mode': _mode(),
         'learning': learning_report(),
         'precision': precision_state(),
+        'skillLearning': skill_learning,
+        'skillsIndexOverflow': overflow if isinstance(overflow, dict) else None,
+    }
+
+
+def _skillLearningMetrics(resolution: dict[str, object]) -> dict[str, object]:
+    """§3.5 skillLearningReport blob: proposal pipeline + resolution counters.
+
+    draft = every distiller-filed proposal (origin 'distilled'); approval
+    rate covers DECIDED proposals only (open ones don't dilute it);
+    demotions = decided skill_delete filings; recurred = fingerprints that
+    re-flagged after resolution (run_resolution_check's counter).
+    """
+    from app.services.harness_self_improve import list_proposals
+
+    drafts = approved = rejected = demotions = 0
+    try:
+        for p in list_proposals():
+            payloadRaw = p.get('payload')
+            payload: dict[str, object] = payloadRaw if isinstance(payloadRaw, dict) else {}
+            kind = str(p.get('kind') or '')
+            is_demotion = kind == 'skill_delete'
+            origin = str(payload.get('origin') or p.get('origin') or '')
+            if origin != 'distilled' and not is_demotion:
+                continue
+            status = str(p.get('status') or 'open')
+            drafts += 1
+            if status == 'applied':
+                approved += 1
+            elif status == 'rejected':
+                rejected += 1
+                if is_demotion:
+                    demotions += 1
+    except Exception:
+        pass
+    decided = approved + rejected
+
+    def _resInt(key: str) -> int:
+        v = resolution.get(key)
+        return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+
+    return {
+        'drafts': drafts,
+        'approved': approved,
+        'rejected': rejected,
+        'approvalRate': round(approved / decided, 3) if decided else None,
+        'demotions': demotions,
+        'recurred': _resInt('recurred'),
+        'resolved': _resInt('resolved'),
+        'demotionSuggestions': _resInt('demotionSuggestions'),
     }

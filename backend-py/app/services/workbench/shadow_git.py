@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 from app.json_narrowing import as_str
@@ -32,6 +33,25 @@ logger = logging.getLogger(__name__)
 
 _GIT_TIMEOUT_S = 60.0
 PRE_REVERT_MARKER = '[pre-revert] '
+
+# Latency fix (2026-09-02): the turn-start baseline snapshot now runs on a
+# WORKER THREAD while the turn's step snapshots run on the loop — two git
+# processes on the same shadow dir race on index.lock and one silently
+# fails. A process-wide per-repo mutex serializes every snapshot regardless
+# of the thread it starts on. (Cross-process safety is unchanged: only this
+# backend owns the shadow dir.)
+_REPO_LOCKS: dict[str, threading.Lock] = {}
+_REPO_LOCKS_GUARD = threading.Lock()
+
+
+def _repo_lock(git_dir: Path) -> threading.Lock:
+    key = str(git_dir).lower()
+    with _REPO_LOCKS_GUARD:
+        lock = _REPO_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _REPO_LOCKS[key] = lock
+        return lock
 
 # Heavy/derived dirs never worth snapshotting (written to info/exclude).
 _EXCLUDES = (
@@ -58,6 +78,16 @@ _EXCLUDES = (
     '*.pof',
     '*.glb',
     '*.hex',
+    # Brain SQLite files (P3.2 warm-kernel testing exposed this): when the
+    # data dir lives inside the workspace (AUGUST_DATA_DIR override, or a
+    # user pointing the workspace at the data root), `git add -A` would
+    # try to index the live WAL database — the -shm file is locked by the
+    # open connection, so the add fails with "Permission denied" and the
+    # whole turn snapshot silently dies. Databases are never snapshot meat.
+    'test_brain.sqlite',
+    'test_brain.sqlite-*',
+    'august_brain.sqlite',
+    'august_brain.sqlite-*',
 )
 
 
@@ -129,11 +159,20 @@ def init_shadow(session_id: str, workspace: str) -> Path | None:
 
 def commit_snapshot(session_id: str, workspace: str, message: str) -> str | None:
     """Commit the current workspace state; returns the sha ('' → None when
-    there is nothing new to snapshot)."""
+    there is nothing new to snapshot).
+
+    Takes the per-repo mutex for the WHOLE snapshot: with the baseline now
+    running on a worker thread, a concurrent step snapshot on the loop must
+    wait, not race on git's index.lock.
+    """
     git_dir = init_shadow(session_id, workspace)
     if git_dir is None:
         return None
     ws = Path(workspace)
+    lock = _repo_lock(git_dir)
+    if not lock.acquire(timeout=_GIT_TIMEOUT_S):
+        logger.debug('shadow-git lock busy; skipping snapshot')
+        return None
     try:
         add = _git(git_dir, ws, 'add', '-A', '--', '.')
         if add.returncode != 0:
@@ -151,6 +190,8 @@ def commit_snapshot(session_id: str, workspace: str, message: str) -> str | None
     except (OSError, subprocess.SubprocessError):
         logger.debug('shadow-git snapshot failed', exc_info=True)
         return None
+    finally:
+        lock.release()
 
 
 def list_snapshots(session_id: str, workspace: str, limit: int = 50) -> list[dict[str, str]]:

@@ -1233,8 +1233,11 @@ def test_hdl_lint_validates_source_and_degrades():
     except ValueError:
         pass
     # No engine installed → install guidance, never an error wall.
-    orig_ghdl, orig_iv, orig_ver = (
-        ht.resolve_ghdl, ht.resolve_iverilog, ht.resolve_verilator)
+    # (ModelSim now serves as the VHDL fallback — stub it too, or a
+    # machine with ModelSim would legitimately run vcom here.)
+    orig_ghdl, orig_iv, orig_ver, orig_ms = (
+        ht.resolve_ghdl, ht.resolve_iverilog, ht.resolve_verilator,
+        ht.resolve_modelsim)
 
     async def _none():
         return None
@@ -1242,6 +1245,7 @@ def test_hdl_lint_validates_source_and_degrades():
     ht.resolve_ghdl = _none
     ht.resolve_iverilog = _none
     ht.resolve_verilator = _none
+    ht.resolve_modelsim = _none
     try:
         r = asyncio.run(ht.hdl_lint(VHDL_TB))
         assert r['installed'] is False and 'GHDL' in r['error']
@@ -1251,6 +1255,7 @@ def test_hdl_lint_validates_source_and_degrades():
         ht.resolve_ghdl = orig_ghdl
         ht.resolve_iverilog = orig_iv
         ht.resolve_verilator = orig_ver
+        ht.resolve_modelsim = orig_ms
 
 
 def test_hdl_simulate_validates_and_degrades():
@@ -1258,19 +1263,22 @@ def test_hdl_simulate_validates_and_degrades():
 
     from app.services.tools import hdl_tools as ht
 
-    orig_ghdl, orig_iv = ht.resolve_ghdl, ht.resolve_iverilog
+    orig_ghdl, orig_iv, orig_ms = (
+        ht.resolve_ghdl, ht.resolve_iverilog, ht.resolve_modelsim)
 
     async def _none():
         return None
 
     ht.resolve_ghdl = _none
     ht.resolve_iverilog = _none
+    ht.resolve_modelsim = _none
     try:
         r = asyncio.run(ht.hdl_simulate(VHDL_TB))
         assert r['installed'] is False and 'GHDL' in r['error']
     finally:
         ht.resolve_ghdl = orig_ghdl
         ht.resolve_iverilog = orig_iv
+        ht.resolve_modelsim = orig_ms
     # Empty source raises.
     try:
         asyncio.run(ht.hdl_simulate(''))

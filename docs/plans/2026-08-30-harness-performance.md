@@ -1,10 +1,14 @@
 # Part 18 — Harness Performance & Smoothness
 
-**Status:** DRAFT — awaiting ruling. Written 2026-08-30 from a performance
-lens over two deep-scanned external harnesses (see §7 provenance record)
-plus a hot-path audit of the August working tree. Citation verification
-against the post-Part-16 tree: §8 — P1.1 and P1.4 are ALREADY SHIPPED
-(cut), P2.1/P2.4 need re-scoping, P3.3 cites a wrong identifier.
+**Status:** IMPLEMENTED 2026-08-31 — all remaining items landed test-first
+(P1.2/P1.3/P2.1/P2.2/P2.4 in `07d87d75`; P3.1 early-dispatch telemetry,
+P3.2 warm interpreter, P4.1 off-load gates, P4.2 debounced persistence in
+the working tree). Originally written 2026-08-30 from a performance lens over
+two deep-scanned external harnesses (see §7 provenance record) plus a
+hot-path audit of the August working tree. Citation verification against the
+post-Part-16 tree: §8 — P1.1 and P1.4 were ALREADY SHIPPED (cut), P2.1/P2.4
+re-scoped as noted, P3.3 cited a wrong identifier (event is `retrying`).
+See §9 for the implementation changelog and §8 for the citation record.
 **Series:** Part 16 = self-improvement engine (sibling plan). This plan is
 the speed/smoothness twin: every item here either cuts tokens (→ TTFT and
 cost), cuts wall-clock work per turn, or keeps background work off the hot
@@ -154,6 +158,63 @@ speculated.
   TTFT p50/p95 and total tokens (Phase L telemetry fields) — the plan
   claims no number it hasn't measured.
 
+**Measurement record (2026-08-31, gate executed).** Two live backends, each
+with an isolated `AUGUST_DATA_DIR` and the real providers.json, drove the
+same scripted 10-turn session (alternating plain-chat and `update_state`
+tool turns; model `stepfun/step-3.7-flash:free` on KiloCode, streaming):
+"after" = the Part 18 working tree; "before" = commit `73c0e898`
+(pre-Part-18; Phase L telemetry only) booted from a throwaway worktree.
+Numbers from the `turn_outcomes` table (10 rows per run):
+
+| metric | before (73c0e898) | after (Part 18 tree) |
+|---|---|---|
+| TTFT p50 / p95 | 10 658 / 45 570 ms | 33 470 / 47 784 ms |
+| duration p50 / p95 | 15 487 / 47 716 ms | 41 818 / 49 920 ms |
+| cache hit / miss tokens | 208 768 / 209 794 | 176 512 / 240 968 |
+| cache hit rate | 0.499 | 0.423 |
+| `toolArgsReadyToStreamEndMs` | (field absent) | p50 15.5 ms, max 21 ms, 2/10 turns |
+
+Read honestly: **the upstream free-tier model dominates these numbers.**
+Within-run TTFT swung 8–70 s in the same session, so the before/after
+deltas are NOT attributable to Part 18 — they are the noise floor of a
+free gateway whose queueing varies by the minute. What the gate does
+establish:
+
+* The Phase L + P3.1 telemetry pipeline works end-to-end live: every turn
+  wrote a `turn_outcomes` row (ttft, cache split, tool-tail) and emitted a
+  `turnTelemetry` SSE event.
+* The P3.1 tool-tail on this gateway is **~0–21 ms** (p50 15.5 ms): after
+  the last tool-call arguments arrive, the tooled round's stream ends
+  almost immediately. Early dispatch (P3.1's candidate optimization) has
+  essentially nothing to save against THIS upstream — measured, so
+  measure-then-decide is decided: P3.1 stays telemetry-only. Note the tail
+  measures the TOOLED round's stream end, not tool→done — the 9–13 s
+  tool-to-done gaps in the event log are the final text round streaming
+  after the tool round (the toolCall SSE event is emitted at tool
+  execution, not at args arrival, by design).
+* `ttft_ms` can exceed `duration_ms` on turn 1 (51.8 s vs 49.9 s observed):
+  the trace t0 anchors at `start_trace` (workbench.py:2335, before the
+  impl) while `duration_ms` anchors at `_turnStartMs` (workbench.py:3014,
+  inside the impl) — ttft legitimately includes pre-impl setup.
+* `AUGUST_PERF_TIMING=1` is REQUIRED for real ttft values — without it
+  `mark_ttft` is a no-op (perf_timing.py:73) and every row records
+  `ttft_ms=0` (found live: three zero-ttft runs before the flag was set
+  on the measurement backend). The desktop app does not set this env by
+  default, so production rows will show `ttft_ms=0` unless it is set.
+  Follow-up worth a ruling (force the trace on for telemetry, or accept
+  zeros).
+
+  **Ruled + implemented (2026-09-01):** ttft now records WITHOUT the env
+  var. `mark_ttft` (perf_timing.py) is ungated the same way
+  `mark_tool_args_ready` already is — both feed persisted turn telemetry
+  (`turn_outcomes.ttft_ms` + the `turnTelemetry` SSE event), which must
+  record in production; spans/ring/logging stay behind `AUGUST_PERF_TIMING`
+  (forcing spans on every production turn would drag ring churn + an INFO
+  log line per turn). Guarded by `tests/test_ttft_always_on.py` (unit
+  contract + live turn without the env). The gateway's stale
+  force=True-comment (session_bridge.py) was corrected in passing — its
+  `force=False` code was already the right behavior.
+
 ## 7. Provenance record area (external names)
 
 > Record area per the plans directive. Every adopted technique above is
@@ -251,5 +312,94 @@ should cover router doors too), P4.2 debounced persistence.
 
 **Net:** of the plan's 12 items, 2 are already shipped (P1.1, P1.4), 2
 need re-scoping (P2.1, P2.4), 1 has a wrong identifier (P3.3 — shipped
-regardless), and the rest are genuine open work. Awaiting user ruling;
-nothing implemented.
+regardless), and the rest are genuine open work. ~~Awaiting user ruling;
+nothing implemented.~~ — superseded by §9 below (all remaining items
+landed 2026-08-31).
+
+---
+
+## 9. Implementation changelog (2026-08-31) — remaining items landed test-first
+
+Validation for the whole batch: ruff clean, mypy clean (306 files), the 18
+touched suites = 219 tests green (cache-sentinel, skills budget, compaction,
+serialization, token budget, prune-then-compact, warm kernel, early
+dispatch, off-load gates, deferred writes, kernel T13, code runner x2,
+async subprocess, sandbox policy + hardline, workbench tool loop, shadow
+git).
+
+* **P1.2/P1.3/P2.1/P2.2/P2.4** — landed in commit `07d87d75` (cache-sentinel
+  scenario extensions, sort_keys serialization audit, 24 KiB skills-index
+  budget with deterministic stop-packing, compaction handoff schema
+  Goal/State/Context/Next/Pitfalls + verbatim user replay, budget
+  cacheRead-exclusion guard). P2.1's overflow issue is now also PERSISTED
+  (`skillsIndexOverflow` internal_state, written on first overflow and on
+  shape changes only) and surfaced in the curator report / Learning header.
+* **P3.1 early-dispatch telemetry** — measure-then-decide, no behavior
+  change. `mark_tool_args_ready` (perf_timing) fires at the provider parse
+  sites (OpenAI argument decode in providers.py; Anthropic
+  content_block_stop in stream_translate.py); the turn loop snapshots the
+  trailing stream tail after each model call (`_toolArgsTailMs`,
+  workbench.py) — the value surfaced is the last tooled round. Persisted as
+  `turn_outcomes.tool_args_ready_to_stream_end_ms` (migration
+  `030_early_dispatch_telemetry.sql`, schema v13, warm-path ensure_column)
+  and emitted as `toolArgsReadyToStreamEndMs` in the turnTelemetry SSE
+  event. 0 = no tool call this turn. Tests:
+  `tests/test_early_dispatch_telemetry.py` (10) — primitives, column,
+  SSE shape, plus a scripted-stream end-to-end through the real loop
+  asserting SSE == persisted row, and text-only turns staying 0.
+* **P3.2 warm interpreter for code mode** — `kernel.py` gains a
+  per-(workspace, session) persistent `python -I` child (WarmKernel)
+  serving cells over stdin (line-delimited JSON, one result line per
+  cell). Each cell executes the SAME runner source the cold path writes
+  to disk (`build_runner_source`: embedded hardline guard,
+  workspace-bound tool API, sandbox-mode flags, bridge client, restore /
+  snapshot pickle tails) in a fresh namespace — the security posture is
+  identical BY CONSTRUCTION, not re-implemented. Parent-side parity:
+  `preflight_warm_cell` runs the same soft preflight the cold boot
+  command would get, per cell, against the session's CURRENT sandbox
+  mode (read-only refuses interpreters exactly like the cold path).
+  `sys.exit` in a cell is captured as its exit code and the worker keeps
+  serving; worker death is detected and respawned transparently; idle
+  kernels self-reap (WARM_KERNEL_IDLE_S = 15 min);
+  `AUGUST_WARM_KERNEL_OFF=1` forces the cold-spawn fallback, which
+  remains fully intact. Plan acceptance proven
+  (`test_warm_kernel.py::TestWarmBootCost`): a second warm cell skips
+  interpreter boot — measured warm-cell wall-clock < identical cold
+  spawn. 20 tests: lifecycle, state-via-pickle, exit/exception capture,
+  cwd binding, env scrub, hardline + read-only enforcement inside the
+  warm child, boot-cost, idle reap, preflight gates, and source-wiring
+  of `_runFencedCodeBlock` (warm preferred, cold fallback).
+* **P4.1 off-load guarantee** — `tests/test_offload_guarantee.py`: AST
+  gates proving (1) the workbench turn-loop package never imports the
+  learning engine (episode_miner / skill_distiller / consolidation), and
+  (2) the curator router routes every engine call (mine_sessions /
+  run_distiller_pass / run_resolution_check) through `asyncio.to_thread`
+  — the Part 16 §12 F-4 violation class can never silently return.
+* **P4.2 debounced persistence** — `app/services/deferred_writes.py`:
+  turn_outcomes, lifecycle, and internal_state writes commit through
+  `defer_commit` (≤2s debounce window, ≤10s max hold, deferral only on
+  loop threads, flush-on-shutdown via `flush_thread_pending` in the
+  lifespan teardown). Writes still execute immediately (same-connection
+  readers see them uncommitted, exactly as before); sync contexts and
+  `asyncio.to_thread` workers commit immediately. Tests:
+  `tests/test_deferred_writes.py`.
+* **Pre-existing bugs fixed en route (P3.2's tests exposed them):**
+  1. `_CREDENTIAL_ENV_RE` (async_subprocess.py) and the mirrored env
+     scrub in the code_runner preamble had a double-anchored `AUGUST_`
+     branch matching only the exact literal — `AUGUST_BRAIN_SQLITE_FILE`
+     / `AUGUST_DATA_DIR` leaked into EVERY agent child process, cold
+     path included (the brain DB location is not a secret per se, but
+     the documented scrub contract was silently broken). Now
+     `AUGUST_\w*.*`; regression test in test_async_subprocess.py.
+  2. `shadow_git._EXCLUDES` did not exclude the brain SQLite files —
+     when the data dir lives inside the workspace (AUGUST_DATA_DIR
+     override, tests, or a user workspace pointing at the data root),
+     `git add -A` tried to index the live WAL `-shm` file (locked by the
+     open connection) and the whole turn snapshot failed silently.
+     `test_brain.sqlite*` / `august_brain.sqlite*` are now excluded;
+     the previously-failing workbench tool-loop suite is green again.
+
+**Deliberately left open:** the P2.3 follow-up (byte-stable omitted-bytes
+marker) — evaluated and left as-is; the marker rides in tool results
+(message tail), not the system prefix, so its cache impact is limited to
+re-sent history, and changing the marker text would itself bust caches.

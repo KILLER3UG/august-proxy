@@ -183,6 +183,7 @@ async def executeSubAgent(
     harness_job_id: str = '',
     auto_hop: bool = False,
     capability: str = 'standard',
+    task_id: str = '',
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``.
 
@@ -520,7 +521,10 @@ async def executeSubAgent(
     systemText = (
         f'{agentCtx}\n\n'
         'You are a focused sub-agent. Complete the assigned goal using the available tools, '
-        'then return a concise episode handoff. Do not spawn further sub-agents.\n\n'
+        'then return a concise episode handoff. Do not spawn further sub-agents.\n'
+        'For multi-step goals, track your plan with submit_todos (one item per step, exactly '
+        'one in_progress) and keep it current with update_todos — the list is yours alone and '
+        'the user watches it live. Advance update_state as you work.\n\n'
         f'{caps}'
     )
     if contract:
@@ -570,6 +574,14 @@ async def executeSubAgent(
     messages: list[dict[str, object]] = [{'role': 'user', 'content': '\n\n'.join(user_parts)}]
     finalText = ''
     token = currentSessionId.set(getattr(session, 'id', 'default'))
+    # Task-scoped id for per-agent state routing (todo lists). ContextVars are
+    # copied per asyncio task, so concurrent workers each see their OWN value
+    # — unlike the session-attribute hack below, which races (the last
+    # spawned worker overwrote it for all).
+    from app.services.workbench.context import currentSubagentTaskId
+
+    _workerTaskId = task_id or as_str(getattr(session, '_current_subagent_task_id', ''), '')
+    tidToken = currentSubagentTaskId.set(_workerTaskId)
     _subagentTask = _register_current_subagent(getattr(session, 'id', '') or '')
     try:
         toolRound = 0
@@ -602,14 +614,20 @@ async def executeSubAgent(
         stallMessageSent = False
         lastExecSig: tuple[object, object] | None = None
         capReached = False
+        # Worker-local execution state (update_state is intercepted below):
+        # the parent session's _execution_state is shared by every concurrent
+        # worker, so reading it for stall detection cross-talks.
+        localPhase = 'research'
+        localStep = 0
         while True:
             toolRound += 1
             try:
                 from app.services.runtime_services import get_orchestrator
 
                 orch = get_orchestrator()
-                tid = as_str(getattr(session, '_current_subagent_task_id', ''), '')
-                inbox = orch.drainMailbox(tid) if tid else []
+                # Race-free: the session attribute is shared across concurrent
+                # workers (last spawn wins); the task-scoped id is this worker's.
+                inbox = orch.drainMailbox(_workerTaskId) if _workerTaskId else []
                 for note in inbox:
                     messages.append(
                         {'role': 'user', 'content': f'[STEER / parent message]\n{note}'}
@@ -759,6 +777,7 @@ async def executeSubAgent(
                     )
                 continue
             assistantMsg: dict[str, object]
+            contentBlocks: list[dict[str, object]] = []
             if isAnthropic:
                 contentBlocks = [as_dict(b) for b in as_list(response.get('content'), [])]
                 assistantMsg = {'role': 'assistant', 'content': contentBlocks}
@@ -785,61 +804,85 @@ async def executeSubAgent(
             if textContent:
                 finalText += textContent
             if not toolUses:
+                # Text tool protocol (parent-loop parity): a toolSurface='text'
+                # model calls tools via `[TOOLCALL] name|json` lines. Without
+                # this the worker could not call ANY tool.
+                if getattr(session, '_text_tool_protocol', False) and textContent:
+                    from app.services.workbench.workbench import (
+                        _parseTextToolCalls,
+                        _setAssistantText,
+                        _stripTextToolCallLines,
+                    )
+
+                    textCalls = _parseTextToolCalls(textContent)
+                    if textCalls:
+                        cleaned = _stripTextToolCallLines(textContent)
+                        _setAssistantText(
+                            assistantMsg,
+                            cleaned,
+                            isAnthropic,
+                            contentBlocks if isAnthropic else None,
+                        )
+                        toolUses = [
+                            {
+                                'type': 'tool_use',
+                                'id': f'text_{toolRound}_{i}',
+                                'name': name,
+                                'input': args,
+                            }
+                            for i, (name, args) in enumerate(textCalls)
+                        ]
+            if not toolUses:
                 break
             # Stall detection (parent-loop parity): a sub-agent that never
             # advances its execution phase/step is spinning — nudge once,
             # hard-stop shortly after if it ignores the nudge.
             if toolRound >= MIN_ROUNDS_BEFORE_STALL_CHECK:
-                try:
-                    est = as_dict(getattr(session, '_execution_state', None), {})
-                    sig = (as_str(est.get('phase'), ''), as_int(est.get('step'), 0))
-                except Exception:
-                    sig = None
-                if sig is not None:
-                    if sig != lastExecSig:
-                        lastExecSig = sig
-                        stalledRounds = 0
-                    else:
-                        stalledRounds += 1
-                        if stalledRounds >= MAX_STALLED_ROUNDS and not stallMessageSent:
-                            stallMessageSent = True
-                            messages.append(
+                sig: tuple[object, object] = (localPhase, localStep)
+                if sig != lastExecSig:
+                    lastExecSig = sig
+                    stalledRounds = 0
+                else:
+                    stalledRounds += 1
+                    if stalledRounds >= MAX_STALLED_ROUNDS and not stallMessageSent:
+                        stallMessageSent = True
+                        messages.append(
+                            {
+                                'role': 'user',
+                                'content': (
+                                    f'[Proxy Self-Heal] {toolRound} tool rounds have elapsed without '
+                                    'advancing your execution phase/step. Reflect on what is blocking '
+                                    'you, record where you are with update_state(phase=..., step=...), '
+                                    'then either take a different approach or finish with a final answer.'
+                                ),
+                            }
+                        )
+                        if emit:
+                            emit(
                                 {
-                                    'role': 'user',
-                                    'content': (
-                                        f'[Proxy Self-Heal] {toolRound} tool rounds have elapsed without '
-                                        'advancing your execution phase/step. Reflect on what is blocking '
-                                        'you, record where you are with update_state(phase=..., step=...), '
-                                        'then either take a different approach or finish with a final answer.'
+                                    'type': 'subagentWarning',
+                                    'agentId': resolvedAgentId,
+                                    'jobId': jobId,
+                                    'message': (
+                                        'Sub-agent made no progress across many tool rounds — '
+                                        'nudged it to reflect.'
                                     ),
                                 }
                             )
-                            if emit:
-                                emit(
-                                    {
-                                        'type': 'subagentWarning',
-                                        'agentId': resolvedAgentId,
-                                        'jobId': jobId,
-                                        'message': (
-                                            'Sub-agent made no progress across many tool rounds — '
-                                            'nudged it to reflect.'
-                                        ),
-                                    }
-                                )
-                        elif stallMessageSent and stalledRounds >= MAX_STALLED_ROUNDS + 2:
-                            err = 'Sub-agent stopped: it did not recover after the stall warning.'
-                            if emit:
-                                emit(
-                                    {
-                                        'type': 'subagentDone',
-                                        'agentId': resolvedAgentId,
-                                        'jobId': jobId,
-                                        'status': 'error',
-                                        'error': err,
-                                    }
-                                )
-                            updateJob(jobId, {'status': 'failed', 'error': err})
-                            return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
+                    elif stallMessageSent and stalledRounds >= MAX_STALLED_ROUNDS + 2:
+                        err = 'Sub-agent stopped: it did not recover after the stall warning.'
+                        if emit:
+                            emit(
+                                {
+                                    'type': 'subagentDone',
+                                    'agentId': resolvedAgentId,
+                                    'jobId': jobId,
+                                    'status': 'error',
+                                    'error': err,
+                                }
+                            )
+                        updateJob(jobId, {'status': 'failed', 'error': err})
+                        return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
             messages.append(assistantMsg)
             toolResults: list[dict[str, object]] = []
             for tu in toolUses:
@@ -847,7 +890,74 @@ async def executeSubAgent(
                 tName = as_str(tu.get('name'), '')
                 tInput = as_dict(tu.get('input'), {})
                 tId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
-                if not _toolAllowed(agent, tName) or tName in SUBAGENT_BLOCKED_TOOLS:
+                if tName == 'update_state' and _toolAllowed(agent, tName):
+                    # Per-worker execution state (multi-agent parity): the
+                    # registered handler writes session._execution_state — the
+                    # PARENT's, shared by every concurrent worker, so one
+                    # worker's phase advance reset another's stall detector
+                    # (and clobbered the parent's state shown in the UI).
+                    # Inside a worker the state is kept LOCAL to this loop.
+                    phase = as_str(tInput.get('phase'), '') or localPhase
+                    stepVal = as_int(tInput.get('step'), 1)
+                    localPhase = phase
+                    localStep = stepVal
+                    result = (
+                        f'State updated: phase={phase}, step={stepVal} '
+                        '(worker-local progress tracking).'
+                    )
+                    status = 'done'
+                    if emit:
+                        emit(
+                            {
+                                'type': 'subagentToolCall',
+                                'agentId': resolvedAgentId,
+                                'jobId': jobId,
+                                'id': tId,
+                                'name': tName,
+                                'input': tInput,
+                            }
+                        )
+                        emit(
+                            {
+                                'type': 'subagentToolResult',
+                                'agentId': resolvedAgentId,
+                                'jobId': jobId,
+                                'id': tId,
+                                'name': tName,
+                                'content': result,
+                                'status': status,
+                            }
+                        )
+                    toolResults.append({'tool_use_id': tId, 'role': 'tool', 'content': result})
+                    continue
+                if tName in ('submit_todos', 'update_todos', 'submitTodos', 'updateTodos') and _toolAllowed(agent, tName):
+                    # Per-agent todo list (main-loop parity): routeTodos stores
+                    # on THIS worker's handle (task-scoped ContextVar) and
+                    # emits subagentTodos — never the parent session's list.
+                    todosPayload = tInput.get('todos') or tInput.get('items') or []
+                    if not isinstance(todosPayload, list):
+                        todosPayload = [todosPayload] if todosPayload else []
+                    todoTitle = as_str(tInput.get('title'), '')
+                    from app.services.workbench.workbench import routeTodos
+
+                    if emit:
+                        emit(
+                            {
+                                'type': 'subagentToolCall',
+                                'agentId': resolvedAgentId,
+                                'jobId': jobId,
+                                'id': tId,
+                                'name': tName,
+                                'input': tInput,
+                            }
+                        )
+                    result = routeTodos(
+                        cast('list[dict[str, object]]', todosPayload),
+                        title=todoTitle,
+                        emit=emit,
+                    )
+                    status = 'done'
+                elif not _toolAllowed(agent, tName) or tName in SUBAGENT_BLOCKED_TOOLS:
                     result = f"[Blocked] Sub-agent not permitted to use '{tName}'."
                     status = 'blocked'
                 else:
@@ -889,14 +999,46 @@ async def executeSubAgent(
                     else:
                         try:
                             from app.services.harness_mode import is_mutating_tool
+                            from app.services.workbench.workbench import _checkToolGuard
 
-                            if is_mutating_tool(tName):
-                                mutated = True
-                            result = await dispatchTool(tName, tInput)
+                            # Guard parity with the parent loop: the worker
+                            # shares the parent session, so plan-mode /
+                            # read-only-sandbox / ask-approval rules must bind
+                            # here too — otherwise spawn_subagents is a
+                            # plan-mode escape (workers may edit/shell while
+                            # the parent is blocked from doing it directly).
+                            guardReason = _checkToolGuard(
+                                cast('WorkbenchSession', session), tName, tInput
+                            )
+                            if guardReason:
+                                result = f'[Blocked] {guardReason}'
+                                status = 'blocked'
+                            else:
+                                if is_mutating_tool(tName):
+                                    mutated = True
+                                result = await dispatchTool(tName, tInput)
+                                status = 'done'
                         except Exception as exc:
                             result = f'Error executing {tName}: {exc}'
-                        status = 'done'
+                            status = 'done'
                 resultStr = str(result)
+                # Parity with the parent loop: cap what enters the worker's
+                # message history (per-model profile cap, default 64 KiB).
+                # Without it, one giant grep/test dump can blow the worker's
+                # context window before compaction gets a chance.
+                try:
+                    from app.services.workbench.workbench import _toolResultCap, _truncateToolOutput
+
+                    cap = _toolResultCap(cast('WorkbenchSession', session))
+                    trimmed, wasTruncated = _truncateToolOutput(resultStr, cap)
+                    if wasTruncated:
+                        resultStr = (
+                            trimmed
+                            + f'\n\n[... Tool result truncated at {cap // 1024} KB '
+                            + f'— full length: {len(resultStr)} bytes]'
+                        )
+                except Exception:
+                    pass
                 if emit:
                     emit(
                         {
@@ -1039,4 +1181,5 @@ async def executeSubAgent(
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': str(exc)}
     finally:
         _unregister_current_subagent(getattr(session, 'id', '') or '', _subagentTask)
+        currentSubagentTaskId.reset(tidToken)
         currentSessionId.reset(token)

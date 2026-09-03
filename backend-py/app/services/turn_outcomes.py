@@ -19,6 +19,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
+from app.services.deferred_writes import defer_commit
 from app.services.memory_conn import conn as _conn
 
 logger = logging.getLogger(__name__)
@@ -84,20 +85,25 @@ def record_turn_outcome(
     ttft_ms: int = 0,
     cache_hit_tokens: int = 0,
     cache_miss_tokens: int = 0,
+    tool_args_ready_to_stream_end_ms: int = 0,
 ) -> None:
     """Append one telemetry row. Best-effort: never raises into the turn.
 
     Phase L (Part 17): ``ttft_ms`` + the prompt-cache token split make
     latency regressions measurable per turn — "chat feels slow" becomes
     "first token 42 s, cache hit 0 / miss 29k" instead of a vibe.
+    P3.1 (Part 18): ``tool_args_ready_to_stream_end_ms`` measures the
+    trailing stream tail AFTER the last tool call's arguments arrived —
+    the time early tool dispatch could save. 0 = no tool call this turn.
     """
     try:
         conn = _conn()
         conn.execute(
             'INSERT INTO turn_outcomes '
             '(model, provider, task_type, ok, error_class, duration_ms, session_id, '
-            ' ttft_ms, cache_hit_tokens, cache_miss_tokens) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            ' ttft_ms, cache_hit_tokens, cache_miss_tokens, '
+            ' tool_args_ready_to_stream_end_ms) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 model or '',
                 provider or '',
@@ -109,9 +115,12 @@ def record_turn_outcome(
                 int(ttft_ms or 0),
                 int(cache_hit_tokens or 0),
                 int(cache_miss_tokens or 0),
+                int(tool_args_ready_to_stream_end_ms or 0),
             ),
         )
-        conn.commit()
+        # P4.2 (Part 18): telemetry rows are never read back within the turn —
+        # the commit is debounced (≤2s) instead of syncing per turn.
+        defer_commit(conn)
     except Exception:
         logger.debug('record_turn_outcome failed', exc_info=True)
 

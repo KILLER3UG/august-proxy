@@ -2,7 +2,7 @@
  * Built-in slash commands. Importing this file (once, from main.tsx)
  * registers the command set on the singleton registry.
  *
- * The surface is intentionally tiny: /compact, /init, /btw, /goal,
+ * The surface is intentionally tiny: /new, /compact, /init, /btw, /goal,
  * /circuit, /verbose.
  */
 
@@ -10,6 +10,17 @@ import { voiceCommandRegistry } from './registry';
 import { voiceCommandEvents } from './registry-events';
 
 // ── Built-ins ──────────────────────────────────────────────────────────────
+
+voiceCommandRegistry.register({
+  id: 'new-chat',
+  triggers: ['new', 'new chat', 'new session', 'start over'],
+  slashCommand: '/new',
+  category: 'core',
+  description: 'Start a new chat (Bot Chats compact instead — forever-chat)',
+  handler: () => {
+    voiceCommandEvents.emit({ type: 'new-session' });
+  },
+});
 
 voiceCommandRegistry.register({
   id: 'compact',

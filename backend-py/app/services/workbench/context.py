@@ -18,3 +18,12 @@ currentSessionId: ContextVar[str] = ContextVar('workbench_session_id', default='
 # so tool handlers (e.g. the subagent spawner) can stamp their emitted events
 # with the parent tool call — the UI nests sub-agent blocks under it.
 currentToolUseId: ContextVar[str] = ContextVar('workbench_tool_use_id', default='')
+
+# Id of the sub-agent task whose loop is currently executing (set by
+# ``workbench.subagent.executeSubAgent``). asyncio tasks copy the context at
+# creation, so concurrent workers each see their OWN value — unlike the
+# session-attribute hack (``_current_subagent_task_id``), which races across
+# workers sharing one parent session. Todo tools use it to store per-agent
+# lists on the worker's orchestrator handle instead of clobbering the parent
+# session's list.
+currentSubagentTaskId: ContextVar[str] = ContextVar('workbench_subagent_task_id', default='')

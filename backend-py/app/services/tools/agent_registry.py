@@ -278,4 +278,14 @@ def renderAgentContext(agentId: str) -> str:
     model_alias = as_str(agent.get('modelAlias'))
     if model_alias:
         parts.append(f'Model alias: {model_alias}')
+    # Bot Mode Phase B: one-line routines hint (only when the Bot actually has
+    # routines — stable bytes otherwise, keeps the prefix cache intact).
+    try:
+        from app.services.bot_mode.routines import routines_hint
+
+        hint = routines_hint(agentId)
+        if hint:
+            parts.append(hint)
+    except Exception:
+        pass
     return '\n'.join(parts)

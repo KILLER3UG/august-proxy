@@ -42,6 +42,7 @@ import { api } from "@/api/client";
 import { openExternal } from "@/lib/tauri-shell";
 import { SessionListNav } from "./SessionListNav";
 import { SessionRow } from "./SessionRow";
+import { BotsRail } from "./BotsRail";
 import { Section, FolderHeader, UncategorizedHeader } from "./FolderTree";
 import {
   UserDropdown,
@@ -506,6 +507,21 @@ export function SessionList({
               </AnimatePresence>
             </LayoutGroup>
           </Section>
+          )}
+
+          {/* Bot Mode Phase A: Bots roster (vertical rail — identicon avatars,
+              presence dot, one canonical chat per Bot). */}
+          {!searching && (
+            <BotsRail
+              activeSessionId={
+                sessions.find((s) => s.id === activeId || s.workbenchSessionId === activeId)
+                  ?.workbenchSessionId
+              }
+              onOpenSession={(sid) => {
+                const ui = sessions.find((s) => s.workbenchSessionId === sid);
+                if (ui) onSelect(ui);
+              }}
+            />
           )}
 
           <Section

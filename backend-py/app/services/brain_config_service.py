@@ -61,6 +61,7 @@ numKeys: tuple[str, ...] = (
     'autoRouteMinSamples',
     'consolidationIntervalHours',
     'escalationBudgetPerDay',
+    'episodicRetentionDays',
 )
 floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap', 'flagRateCap')
 strKeys: tuple[str, ...] = ('titleModel', 'skillLearning', 'skillLearningJudgeModel')
@@ -115,6 +116,9 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # merge costs one cheap-model call).
     ('consolidationIntervalHours', 'consolidation_interval_hours', 24, 'num'),
     ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),
+    # M-4 (Part 21): episodic_timeline retention window in days — the sweep
+    # in consolidation._sweep_episodic prunes rows older than this.
+    ('episodicRetentionDays', 'episodic_retention_days', 90, 'num'),
     # M7 item 3: optional cheap model for session titling. Empty string =
     # fall back to the turn's own model (existing behavior).
     ('titleModel', 'title_model', '', 'str'),
@@ -130,6 +134,13 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # scored episodes flagged to tier 2 (episode_miner.flag_top_slice).
     ('escalationBudgetPerDay', 'escalation_budget_per_day', 2, 'num'),
     ('flagRateCap', 'flag_rate_cap', 0.05, 'float'),
+    # Part 17: per-project memory md files + auto-project write door.
+    # Off = session_tools' remember/forget stay global-only and workbench
+    # stops injecting the <project_memory> block.
+    ('projectMemory', 'project_memory', True, 'bool'),
+    # Part 17 Phase B: workspace-scoped skills root (.aug/skills shadowing
+    # bundled + agent skills). Off = catalogue falls back to agent+bundled.
+    ('projectSkills', 'project_skills', True, 'bool'),
 )
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}

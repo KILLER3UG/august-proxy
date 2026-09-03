@@ -807,11 +807,25 @@ async def call_openai_workbench(
                             'type': 'function',
                             'function': {'name': fn.get('name', ''), 'arguments': fn.get('arguments', '')},
                         }
+                        if fn.get('arguments'):
+                            # P3.1 single-chunk tool call (some gateways emit
+                            # the whole call in one delta) — same mark as the
+                            # streamed-args case below.
+                            from app.lib.perf_timing import mark_tool_args_ready
+
+                            mark_tool_args_ready()
                     else:
                         fn = as_dict(tc.get('function', {}))
                         existing = as_dict(toolCallsAccum[idx]['function'])
                         if fn.get('arguments'):
                             existing['arguments'] = as_str(existing.get('arguments')) + as_str(fn.get('arguments'))
+                            # P3.1: arguments are still streaming in — this
+                            # chunk is the latest moment dispatch COULD have
+                            # started. Post-loop marking would measure ~0
+                            # (the tail after the loop is parse-only).
+                            from app.lib.perf_timing import mark_tool_args_ready
+
+                            mark_tool_args_ready()
                         if fn.get('name'):
                             existing['name'] = as_str(existing.get('name')) + as_str(fn.get('name'))
                 if choice.get('finish_reason'):

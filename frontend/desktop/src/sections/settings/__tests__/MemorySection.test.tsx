@@ -7,6 +7,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const now = Date.now();
 const iso = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
+// Dynamic expiry: an absolute date silently flipped from "expiring soon" to
+// "expired" when the calendar rolled past it (found live 2026-09-02) — keep
+// every expiry relative to the run time.
+const isoInDays = (days: number) =>
+  new Date(now + days * 86_400_000).toISOString().replace('T', ' ').slice(0, 19);
 
 /* Fixture rows per store. facts: one user-category (→ pref) with expiry,
  * one project-category (→ fact). heuristics: one lesson (legacy). memory:
@@ -29,7 +34,7 @@ const rowsByStore: Record<string, { rows: Array<Record<string, unknown>>; total:
         category: 'project',
         source: 'extracted',
         updated_at: iso(120),
-        expires_at: '2026-09-01 00:00:00',
+        expires_at: isoInDays(7),
       },
     ],
     total: 2,
@@ -372,11 +377,27 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     });
   });
 
+  // M-10 (Part 21): the add-box TTL selection rides the manage call.
+  it('add-box posts ttl_days when an expiry is chosen (M-10)', async () => {
+    renderSection('memory-facts');
+    fireEvent.change(screen.getByTestId('memory-add-ttl'), { target: { value: '30' } });
+    fireEvent.change(screen.getByTestId('memory-add-input'), { target: { value: 'Temporary note' } });
+    fireEvent.click(screen.getByTestId('memory-add-button'));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/august/memory/manage',
+        expect.objectContaining({ action: 'set', value: 'Temporary note', ttl_days: 30 }),
+      );
+    });
+  });
+
   // C-8: expired rows are visually separated with an absolute date.
   it('badges expired rows with the absolute expiry date, dimmed (C-8)', () => {
     renderSection('memory-facts');
-    // The project:stack fixture expires 2026-09-01 (a future date at
-    // fixture-authoring time) — it must render as "expiring", not expired.
+    // The project:stack fixture expires 7 days from NOW (dynamic — an
+    // absolute date silently flipped from "expiring soon" to "expired" when
+    // the calendar rolled past it) — it must render as "expiring", not
+    // expired.
     expect(screen.getByTestId('memory-expiring-badge')).toBeInTheDocument();
     expect(screen.queryByTestId('memory-expired-badge')).not.toBeInTheDocument();
   });

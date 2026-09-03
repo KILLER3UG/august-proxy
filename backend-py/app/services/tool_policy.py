@@ -76,6 +76,9 @@ _PROMPT_WRITE = frozenset({
     'rename_sessions', 'setup_provider', 'connect_github', 'connect_google',
     'connect_slack', 'install_mcp_server', 'customize_ui', 'enter_plan_mode',
     'submit_plan', 'update_alias', 'update_state',
+    # Todo-list doors (session-state writes, like update_state; the workbench
+    # turn loop intercepts both, the registry fallback stores on the session).
+    'submit_todos', 'update_todos',
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad', 'edit_lines',
     'pptx_comment',
     # Memory write door — saves a durable fact (gated by modelMemoryWrites).
@@ -101,6 +104,9 @@ _PROMPT_WRITE = frozenset({
     # Harness self-improvement: files proposals for human review (no direct
     # application from the model — approval runs a deterministic applier).
     'harness_propose',
+    # M-11 notepad door — persists per-job machine state between automation
+    # runs (gated to automation-run sessions in the handler).
+    'job_notes',
     # Unified-diff patch application — a file write (plan-blocked via markers).
     'apply_patch',
 })
@@ -109,6 +115,8 @@ _PROMPT_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',
     'delete_folder', 'delete_session', 'delete_sessions', 'kill_daemon',
     'kill_daemons',
+    # Bot Mode routines: removes a Bot-owned scheduled job.
+    'delete_routine',
     # Circuit workbench: removes a netlist file from the workspace.
     'circuit_delete_netlist',
 })
@@ -119,6 +127,8 @@ _PROMPT_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
             'spawn_subagents', 'update_agent', 'set_agent_mode',
             'list_workstreams', 'send_subagent_message', 'interrupt_subagent',
+            # Bot Mode routines: Bot-owned scheduled jobs.
+            'create_routine', 'list_routines',
 })
 
 _PROMPT_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills'})
@@ -148,6 +158,10 @@ _PLAN_BLOCKED_EXACT = frozenset({
     'browser_click', 'browser_type', 'browser_select', 'browser_evaluate',
     'create_agent', 'update_agent', 'delete_agent', 'create_alias',
     'update_alias', 'delete_alias', 'configure_fallback',
+    # Bot Mode routines — create/delete persists a scheduled job that fires
+    # later (create_agent precedent: persistent mutations are plan-blocked;
+    # delete_routine is also caught by the 'delete' marker below).
+    'create_routine',
     # Integration tools (explicit list added in the security fix).
     'connect_github', 'connect_slack', 'connect_google', 'install_mcp_server',
     'disconnect_integration',

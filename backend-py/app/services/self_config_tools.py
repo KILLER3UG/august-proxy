@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 from typing import cast
 
+from app.json_narrowing import as_str
+
 
 def _ok(**fields: object) -> str:
     return json.dumps({'status': 'success', **fields}, default=str)
@@ -105,19 +107,34 @@ async def createAgent(
     model_alias: str = '',
     parent_agent: str = '',
 ) -> str:
-    from app.services.tools import agent_registry
+    # Bot Mode (one agent concept): agent creation goes through the roster
+    # so every agent is a Bot with a canonical chat. Idempotent on name.
+    from app.services.bot_mode import roster
 
     try:
-        agent = agent_registry.createAgent(
+        agent = roster.create_bot(
             name=name,
             description=description,
             role=role,
-            tools=tools,
-            permissions=permissions,
-            model_alias=model_alias,
-            parent_agent=parent_agent,
             actor='agent',
         )
+        if tools or permissions or model_alias or parent_agent:
+            from app.services.tools import agent_registry
+
+            agent_registry.updateAgent(
+                as_str(agent.get('id')),
+                {
+                    k: v
+                    for k, v in {
+                        'tools': tools or [],
+                        'permissions': permissions or [],
+                        'modelAlias': model_alias,
+                        'parentId': parent_agent or None,
+                    }.items()
+                    if v
+                },
+                actor='agent',
+            )
         return _ok(agent=agent)
     except Exception as exc:
         return _err(f'Failed to create agent: {exc}')

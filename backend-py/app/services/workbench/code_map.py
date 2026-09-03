@@ -97,13 +97,16 @@ def build_code_map(workspace_path: str | None) -> str:
     except OSError:
         return ''
 
-    # Deterministic tree: dirs sorted, files sorted.
+    # Deterministic tree: dirs sorted, files sorted. Cap 90 entries (was 120
+    # — latency fix 2026-09-02: the tree is navigational, not exhaustive;
+    # list_directory covers the rest, and every prompt char is per-request
+    # cost).
     tree_lines: list[str] = []
     for rel_dir in sorted(tree):
         prefix = '' if not rel_dir else f'{rel_dir}/'
         for name in sorted(tree[rel_dir]):
             tree_lines.append(f'{prefix}{name}')
-    tree_block = '\n'.join(tree_lines[:120])
+    tree_block = '\n'.join(tree_lines[:90])
 
     # Signatures for the largest files (code density > size).
     files.sort(key=lambda kv: (-kv[0], kv[1].name))

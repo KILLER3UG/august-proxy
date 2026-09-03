@@ -5,7 +5,7 @@
 /* bar, no goal cards, no api-call/iteration counters, no raw event      */
 /* dumps, no "Persisted final response" labels.                          */
 
-import { CheckCircle2, CircleAlert, Loader2, Square } from 'lucide-react';
+import { CheckCircle2, CircleAlert, Check, Circle, ArrowRight, ListTodo, Loader2, Square } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,7 @@ import {
   listWorkbenchSessionAgents,
   type SessionAgentRow,
 } from '@/api/workbench';
+import type { WorkbenchTodo } from '@/types/workbench';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
 import { useSessionStreamStore } from '@/sections/chat/stream/session-stream-store';
 import { SubagentTimeline } from '@/components/chat/SubagentTimeline';
@@ -34,6 +35,17 @@ interface AgentRunRecord {
   error?: string;
   /** Full persisted final output (markdown, rendered like chat text). */
   resultText: string;
+  /** Per-agent todo list persisted with the run (drawer parity). */
+  todos?: WorkbenchTodo[];
+}
+
+function parseTodos(raw: unknown): WorkbenchTodo[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out = raw.filter(
+    (t): t is WorkbenchTodo =>
+      !!t && typeof t === 'object' && typeof (t as WorkbenchTodo).content === 'string',
+  );
+  return out.length > 0 ? out : undefined;
 }
 
 function normalizeRun(r: Record<string, unknown>): AgentRunRecord {
@@ -44,6 +56,17 @@ function normalizeRun(r: Record<string, unknown>): AgentRunRecord {
     }
     return '';
   };
+  let todos: WorkbenchTodo[] | undefined;
+  const rawTodos = r.todos ?? r.todosJson ?? r.todos_json;
+  if (typeof rawTodos === 'string' && rawTodos.trim()) {
+    try {
+      todos = parseTodos(JSON.parse(rawTodos));
+    } catch {
+      todos = undefined;
+    }
+  } else {
+    todos = parseTodos(rawTodos);
+  }
   return {
     taskId: str('taskId', 'task_id'),
     agentId: str('agentId', 'agent_id') || 'general',
@@ -51,6 +74,7 @@ function normalizeRun(r: Record<string, unknown>): AgentRunRecord {
     status: str('status') || 'completed',
     error: str('error') || undefined,
     resultText: str('resultFull', 'result_full', 'resultSummary', 'result_summary'),
+    todos,
   };
 }
 
@@ -83,6 +107,48 @@ function StatusGlyph({ status }: { status: string }) {
         status === 'queued' && 'text-muted-foreground/60',
       )}
     />
+  );
+}
+
+/** Compact per-agent todo progress (drawer parity: workers own their lists). */
+function TodoProgress({ todos }: { todos: WorkbenchTodo[] }) {
+  const done = todos.filter((t) => t.status === 'completed').length;
+  return (
+    <div
+      className="mb-3 rounded-md border border-border/40 bg-card/40 px-2.5 py-2"
+      data-testid="subagent-todo-progress"
+    >
+      <div className="mb-1.5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+        <ListTodo className="size-3" />
+        Worker plan
+        <span className="ml-auto font-mono tabular-nums normal-case tracking-normal">
+          {done}/{todos.length}
+        </span>
+      </div>
+      <ul className="space-y-1" role="list">
+        {todos.map((t, i) => (
+          <li key={t.id || i} className="flex min-w-0 items-start gap-1.5 text-[12.5px] leading-5">
+            {t.status === 'completed' ? (
+              <Check className="mt-0.5 size-3 shrink-0 text-emerald-400/80" />
+            ) : t.status === 'in_progress' ? (
+              <ArrowRight className="mt-0.5 size-3 shrink-0 text-primary/80" />
+            ) : (
+              <Circle className="mt-0.5 size-3 shrink-0 text-muted-foreground/40" />
+            )}
+            <span
+              className={cn(
+                'min-w-0',
+                t.status === 'completed' && 'text-muted-foreground/60 line-through',
+                t.status === 'in_progress' && 'text-foreground',
+                t.status === 'pending' && 'text-muted-foreground/80',
+              )}
+            >
+              {t.content}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -139,6 +205,28 @@ export function RightDrawerSubagentsSection({
   );
   const runByTask = new Map((runsQuery.data ?? []).map((r) => [r.taskId, r]));
 
+  /** Disambiguate same-role workers (two `general` agents): append an index
+   *  so tab / row labels never collapse into identical text. */
+  const roleLabels = (() => {
+    const counts = new Map<string, number>();
+    for (const e of query.data?.agents ?? []) {
+      counts.set(e.agentId, (counts.get(e.agentId) ?? 0) + 1);
+    }
+    const seen = new Map<string, number>();
+    const out = new Map<string, string>();
+    for (const e of query.data?.agents ?? []) {
+      const base = getAgentRoleLabel(e.agentId);
+      if ((counts.get(e.agentId) ?? 0) > 1) {
+        const n = (seen.get(e.agentId) ?? 0) + 1;
+        seen.set(e.agentId, n);
+        out.set(e.taskId, `${base} ${n}`);
+      } else {
+        out.set(e.taskId, base);
+      }
+    }
+    return out;
+  })();
+
   /** Unified transcript entries, chronological: live first, then finished. */
   const entries: Array<{ key: string; agent: SessionAgentRow }> = (() => {
     const seen = new Set<string>();
@@ -151,7 +239,16 @@ export function RightDrawerSubagentsSection({
     for (const r of runsQuery.data ?? []) {
       if (seen.has(r.taskId)) continue;
       seen.add(r.taskId);
-      out.push({ key: r.taskId, agent: r as unknown as SessionAgentRow });
+      out.push({
+        key: r.taskId,
+        agent: {
+          taskId: r.taskId,
+          agentId: r.agentId,
+          goal: r.goal,
+          status: r.status,
+          todos: r.todos,
+        } as SessionAgentRow,
+      });
     }
     for (const [jobId, block] of subagentBlocks ?? []) {
       if (seen.has(jobId)) continue;
@@ -204,7 +301,7 @@ export function RightDrawerSubagentsSection({
             const agent = entries.find((e) => e.key === taskId)?.agent;
             if (!agent) return taskId === selectedTaskId ? (
               <span key={taskId} className="rounded-md bg-primary/10 px-2 py-1 text-xs text-foreground">
-                {getAgentRoleLabel(selectedAgent.agentId)}
+                {roleLabels.get(taskId) ?? getAgentRoleLabel(selectedAgent.agentId)}
               </span>
             ) : null;
             return (
@@ -222,7 +319,7 @@ export function RightDrawerSubagentsSection({
                   onClick={() => setSelectedTaskId(taskId)}
                   className="min-w-0 truncate text-left"
                 >
-                  {getAgentRoleLabel(agent.agentId)}
+                  {roleLabels.get(taskId) ?? getAgentRoleLabel(agent.agentId)}
                 </button>
                 <button
                   type="button"
@@ -246,7 +343,7 @@ export function RightDrawerSubagentsSection({
           <div className="mb-3 flex items-center gap-2">
             <StatusGlyph status={selectedAgent.status} />
             <h3 className="truncate text-sm font-medium text-foreground">
-              {getAgentRoleLabel(selectedAgent.agentId)}
+              {roleLabels.get(selectedTaskId) ?? getAgentRoleLabel(selectedAgent.agentId)}
             </h3>
             <span className="text-xs text-muted-foreground/70">
               {statusWord(selectedAgent.status)}
@@ -258,6 +355,14 @@ export function RightDrawerSubagentsSection({
               {run.goal}
             </p>
           ) : null}
+
+          {(() => {
+            // Live handle todos (2s poll) are fresher than the persisted run
+            // row (10s poll); prefer whichever has content.
+            const agentTodos = (selectedAgent as { todos?: WorkbenchTodo[] }).todos;
+            const list = agentTodos?.length ? agentTodos : run?.todos;
+            return list?.length ? <TodoProgress todos={list} /> : null;
+          })()}
 
           {selectedBlock ? (
             <>
@@ -339,10 +444,12 @@ export function RightDrawerSubagentsSection({
               >
                 <StatusGlyph status={agent.status} />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/90">
-                  {agent.goal || getAgentRoleLabel(agent.agentId) || 'Agent'}
+                  {agent.goal || roleLabels.get(key) || getAgentRoleLabel(agent.agentId) || 'Agent'}
                 </span>
                 <span className="shrink-0 text-xs text-muted-foreground/55">
-                  {statusWord(agent.status)}
+                  {agent.status === 'queued' && agent.queuePosition
+                    ? `queued #${agent.queuePosition}${agent.queueTotal && agent.queueTotal > 1 ? `/${agent.queueTotal}` : ''}`
+                    : statusWord(agent.status)}
                 </span>
               </button>
               {(ACTIVE_STATUSES.has(agent.status) || agent.status === 'queued') && (

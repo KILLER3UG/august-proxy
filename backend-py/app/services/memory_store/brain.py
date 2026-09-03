@@ -582,7 +582,7 @@ def brain_index_snippet() -> str:
     try:
         factRows = conn.execute(
             "SELECT fact_key, title, category FROM facts "
-            "WHERE (expires_at IS NULL OR expires_at = '' OR expires_at > datetime('now')) "
+            "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
             "ORDER BY updated_at DESC LIMIT 15"
         ).fetchall()

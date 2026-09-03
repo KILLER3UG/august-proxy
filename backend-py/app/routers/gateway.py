@@ -6,6 +6,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
+from app.models.camel_base import CamelModel
 from app.services.gateway.base import BasePlatformAdapter
 from app.services.gateway.runner import GatewayRunner, registerAdapter
 
@@ -113,3 +114,47 @@ async def gatewayStatus(request: Request) -> dict[str, object]:
         'platforms': platforms,
         'installHint': 'pip install -e ".[gateway]"  # discord.py + slack_sdk',
     }
+
+
+# ── Pairing / allowlist (Part 20 Phase 0 trust gate) ────────────────────
+
+
+@router.get('/pairing')
+async def pairingList() -> dict[str, object]:
+    """Pending pairing codes + the live allowlist (desktop UI only)."""
+    from app.services.gateway.pairing import configAllowedUsers, getStore, pairingEnabled
+
+    return {
+        'pairingEnabled': pairingEnabled(),
+        'pending': getStore().listPending(),
+        'allowedUsers': configAllowedUsers(),
+    }
+
+
+class PairingApproveBody(CamelModel):
+    platform: str = 'telegram'
+    code: str = ''
+
+
+@router.post('/pairing/approve')
+async def pairingApprove(body: PairingApproveBody) -> dict[str, object]:
+    """Consume a pairing code → append its user to the allowlist (live)."""
+    from app.services.gateway.pairing import getStore, grantUser
+
+    if not body.code.strip():
+        raise HTTPException(status_code=400, detail='code is required')
+    user_id = getStore().approve(body.platform.strip().lower(), body.code)
+    if not user_id:
+        raise HTTPException(status_code=404, detail='Unknown, expired, or already-used code.')
+    grantUser(body.platform.strip().lower(), user_id)
+    return {'status': 'paired', 'platform': body.platform, 'userId': user_id}
+
+
+@router.delete('/pairing/users/{platform}/{user_id}')
+async def pairingRevoke(platform: str, user_id: str) -> dict[str, object]:
+    """Remove a user from the allowlist."""
+    from app.services.gateway.pairing import revokeUser
+
+    if not revokeUser(platform.strip().lower(), user_id):
+        raise HTTPException(status_code=404, detail='User is not on the allowlist.')
+    return {'status': 'revoked', 'platform': platform, 'userId': user_id}

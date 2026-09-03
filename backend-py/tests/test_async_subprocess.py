@@ -170,3 +170,27 @@ def test_prefix_line_buffering_unavailable_platforms(
     _with_platform(monkeypatch, 'posix', None)
     assert prefix_line_buffering('npm install') == 'npm install'
     assert prefix_line_buffering('') == ''
+
+
+def test_noninteractive_env_scrubs_august_prefix_and_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P3.2 audit fix: the AUGUST_* prefix branch must scrub FULL AUGUST_
+    variable names (AUGUST_BRAIN_SQLITE_FILE / AUGUST_DATA_DIR), not just the
+    exact literal `AUGUST_` — the old double-anchored pattern leaked the
+    data-root pointers into every agent child process."""
+    from app.lib.async_subprocess import noninteractive_env
+
+    monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', 'x')
+    monkeypatch.setenv('AUGUST_DATA_DIR', 'y')
+    monkeypatch.setenv('MYPROVIDER_API_KEY', 'key-123')
+    monkeypatch.setenv('SOME_TOKEN', 't')
+    monkeypatch.setenv('UNRELATED_VAR', 'keep-me')
+    env = noninteractive_env()
+    assert 'AUGUST_BRAIN_SQLITE_FILE' not in env
+    assert 'AUGUST_DATA_DIR' not in env
+    assert 'MYPROVIDER_API_KEY' not in env
+    assert 'SOME_TOKEN' not in env
+    # Benign vars survive; noninteractive flags ride along.
+    assert env['UNRELATED_VAR'] == 'keep-me'
+    assert env['PYTHONUNBUFFERED'] == '1'

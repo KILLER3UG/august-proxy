@@ -127,6 +127,10 @@ def _record_run(handle: SubagentHandle) -> None:
             'SELECT id FROM subagent_runs WHERE task_id = ?', (handle.taskId,)
         ).fetchone()
         full = summary  # full blob for perfect drawer rendering (up to 20k)
+        try:
+            todos_json = _json.dumps(getattr(handle, 'todos', []) or [], ensure_ascii=False)[:20000]
+        except Exception:
+            todos_json = ''
         now_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         last_act_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(handle.lastActivityAt)) if getattr(handle, 'lastActivityAt', None) else now_iso
         api_calls = int(getattr(handle, 'apiCalls', 0) or 0)
@@ -134,7 +138,7 @@ def _record_run(handle: SubagentHandle) -> None:
             try:
                 conn.execute(
                     'UPDATE subagent_runs SET status = ?, result_summary = ?, result_full = ?, error = ?, '
-                    "finished_at = COALESCE(?, finished_at), last_activity_at = ?, api_calls = ? WHERE task_id = ?",
+                    "finished_at = COALESCE(?, finished_at), last_activity_at = ?, api_calls = ?, todos_json = ? WHERE task_id = ?",
                     (
                         status,
                         summary[:4000],
@@ -143,6 +147,7 @@ def _record_run(handle: SubagentHandle) -> None:
                         time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(handle.finishedAt)) if handle.finishedAt else None,
                         last_act_iso,
                         api_calls,
+                        todos_json,
                         handle.taskId,
                     ),
                 )
@@ -166,8 +171,8 @@ def _record_run(handle: SubagentHandle) -> None:
             try:
                 conn.execute(
                     'INSERT INTO subagent_runs '
-                    '(task_id, session_id, agent_id, goal, status, started_at, result_summary, result_full, last_activity_at, api_calls) '
-                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    '(task_id, session_id, agent_id, goal, status, started_at, result_summary, result_full, last_activity_at, api_calls, todos_json) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
                         handle.taskId,
                         handle.sessionId,
@@ -179,6 +184,7 @@ def _record_run(handle: SubagentHandle) -> None:
                         full[:20000],
                         last_act_iso,
                         api_calls,
+                        todos_json,
                     ),
                 )
             except Exception as e:
@@ -238,6 +244,11 @@ class SubagentHandle:
         self.finishedAt: float | None = None
         self.workstream: str = ''
         self.skills: list[str] = []
+        # Per-agent todo list (submit_todos/update_todos from inside the
+        # worker). Unique per handle, so parallel workers never clobber each
+        # other or the parent session's list. Surfaced to the drawer via
+        # toDict() and the runs endpoint.
+        self.todos: list[dict[str, object]] = []
         self._future: asyncio.Future | None = None
         # Hermes-style: track liveness for stall detection + live-transcript
         self.lastActivityAt: float = time.time()
@@ -278,6 +289,7 @@ class SubagentHandle:
             'lastActivityAt': self.lastActivityAt,
             'apiCalls': self.apiCalls,
             'iterations': self.iterations,
+            'todos': self.todos,
         }
         # Surface raw status too for callers that need to distinguish stalling vs running
         if self.isStalling:
@@ -589,8 +601,48 @@ class SubagentOrchestrator:
         msgs = self._mailboxes.pop(taskId, [])
         return list(msgs)
 
+    def _collectMissedSteer(self, taskId: str) -> str:
+        """D-1 (Part 22): steering that arrived after the worker's final
+        mailbox drain must not vanish silently — surface it on the result so
+        the parent sees what the worker never got to act on."""
+        try:
+            leftover = self._mailboxes.pop(taskId, [])
+        except Exception:
+            return ''
+        if not leftover:
+            return ''
+        return '\n'.join(leftover)
+
+    @staticmethod
+    def _partial_from_transcript(taskId: str, limit: int = 6000) -> str:
+        """D-2 (Part 22): reconstruct the worker's partial findings from its
+        live transcript (text deltas + tool-call names) for stop/cancel."""
+        try:
+            events = _read_transcript(taskId, limit=200)
+        except Exception:
+            return ''
+        parts: list[str] = []
+        for ev in events:
+            et = ev.get('type')
+            if et == 'subagentText':
+                txt = str(ev.get('content') or '').strip()
+                if txt:
+                    parts.append(txt)
+            elif et == 'subagentToolCall':
+                parts.append(f"[ran {ev.get('name') or 'tool'}]")
+        text = '\n'.join(parts).strip()
+        if len(text) > limit:
+            text = text[:limit] + '\n…[truncated]'
+        return text
+
     async def terminate(self, taskId: str) -> bool:
-        """Terminate a running or queued sub-agent by taskId. Returns True if found."""
+        """Terminate a running or queued sub-agent by taskId. Returns True if found.
+
+        D-2 (Part 22): a stopped worker's work is not wasted — its partial
+        transcript is collected into ``handle.result`` (persisted with the
+        run row, rendered by the drawer) and the completion notice the parent
+        receives carries it with a ``stopped`` marker.
+        """
         task = self._tasks.get(taskId)
         handle = self._handles.get(taskId)
         if not task or not handle:
@@ -598,6 +650,12 @@ class SubagentOrchestrator:
         task.cancel()
         handle.status = 'cancelled'
         handle.finishedAt = time.time()
+        partial = self._partial_from_transcript(taskId)
+        if partial and not handle.result:
+            handle.result = {
+                'status': 'stopped',
+                'result': f'[stopped by user — partial work follows]\n{partial}',
+            }
         _append_transcript(taskId, {"type": "subagentDone", "taskId": taskId, "jobId": taskId, "status": "cancelled", "ts": time.time()})
         _record_run(handle)
         try:
@@ -679,6 +737,17 @@ class SubagentOrchestrator:
                 )
                 handle.result = result
                 handle.finishedAt = time.time()
+                # D-1 (Part 22): steering queued after the worker's final
+                # mailbox drain would otherwise vanish — attach it to the
+                # result so the parent sees what the worker never acted on.
+                missed = self._collectMissedSteer(handle.taskId)
+                if missed and isinstance(handle.result, dict):
+                    handle.result = {
+                        **handle.result,
+                        'missedSteer': missed,
+                        'result': str(handle.result.get('result') or '')
+                        + f'\n\n[STEER the worker never received]\n{missed}',
+                    }
                 # runSubagent always returns a dict (truthy). Never use `if result`
                 # alone — a failed worker returns {status: 'failed', ...} which is
                 # still truthy and used to be mis-marked completed (B27).

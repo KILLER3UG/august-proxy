@@ -168,6 +168,13 @@ class WorkbenchSession:
             'status': self.status,
             'turnOpen': self.turnOpen,
             'metadata': self.metadata,
+            # Bot Mode: canonical Bot Chats reroute /new → compact
+            # (forever-chat). Top-level (not just inside metadata) so the
+            # session-detail endpoint the chat shell polls sees the flag —
+            # summarize_session carries the same field for list views.
+            'canonicalBotChat': bool(
+                isinstance(self.metadata, dict) and self.metadata.get('canonicalBotChat')
+            ),
             # Agent mode + turn counter survive restarts (set_agent_mode is a
             # session-level behavior switch; a restart must not silently
             # re-enable tools in a chat-mode session).
@@ -1091,7 +1098,19 @@ def delete_workbench_session(session_id: str) -> bool:
 def reset_workbench_session(
     session_id: str, provider: str = '', agentId: str = ''
 ) -> WorkbenchSession | None:
-    """Delete and recreate a session."""
+    """Delete and recreate a session.
+
+    Bot Mode guard: a canonical Bot Chat (metadata.canonicalBotChat set) is
+    a forever-chat — reset reroutes to compaction instead of forking, so the
+    Bot's identity surface (routines, DM history) is never deleted.
+    """
+    session = get_workbench_session(session_id)
+    if session is not None and isinstance(session.metadata, dict):
+        if str(session.metadata.get('canonicalBotChat') or ''):
+            from app.services.bot_mode import roster
+
+            roster.reroute_new_for_canonical_chat(session_id)
+            return get_workbench_session(session_id)
     delete_workbench_session(session_id)
     return create_workbench_session(provider=provider, agentId=agentId)
 
@@ -1447,6 +1466,32 @@ def format_session_handoff(record: dict[str, object]) -> str:
     return f'{header}\n{summary}'
 
 
+def _session_last_preview(session: WorkbenchSession, cap: int = 100) -> str:
+    """Display-safe tail preview of the session's last message (Bot Mode
+    Phase A roster rows: avatar + preview + timestamp). Dict payloads (the
+    workbench persistence shape) are flattened; non-text tails fall back to
+    the last message that HAS text so tool-result endings don't blank rows.
+    """
+    for m in reversed(session.messages):
+        if not isinstance(m, dict):
+            continue
+        role = m.get('role')
+        content = m.get('content', '')
+        text = ''
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = ' '.join(
+                str(b.get('text', '')) for b in content if isinstance(b, dict) and b.get('type') == 'text'
+            )
+        elif isinstance(content, dict):
+            text = str(content.get('content', ''))
+        text = ' '.join(text.split())
+        if text and role != 'tool':
+            return text[:cap] + ('…' if len(text) > cap else '')
+    return ''
+
+
 def summarize_session(session: WorkbenchSession) -> dict[str, object]:
     """Return a lightweight summary of a session."""
     return {
@@ -1468,6 +1513,13 @@ def summarize_session(session: WorkbenchSession) -> dict[str, object]:
         'updatedAt': session.updatedAt,
         'startedAt': session.startedAt,
         'workspacePath': session.workspacePath,
+        # Bot Mode: canonical Bot Chats reroute /new → compact (forever-chat).
+        'canonicalBotChat': bool(
+            isinstance(session.metadata, dict) and session.metadata.get('canonicalBotChat')
+        ),
+        # Bot Mode Phase A roster rows: last-message preview (display-safe,
+        # truncated) + the timestamp drives the "Active now" presence strip.
+        'lastPreview': _session_last_preview(session),
         # Usage roll-ups — feed the Runs view's stat strip (tokens/cost per run).
         'totalInputTokens': session.totalInputTokens,
         'totalOutputTokens': session.totalOutputTokens,

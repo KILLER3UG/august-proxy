@@ -104,11 +104,15 @@ _TOOL_WRITE: frozenset[str] = frozenset(
         'submit_plan',
         'update_alias',
         'update_state',
+        # Todo-list doors (session-state writes; mirrors tool_policy._PROMPT_WRITE).
+        'submit_todos',
+        'update_todos',
         'write_blackboard',
         'write_file',
         'write_files',
         'write_scratchpad',
         'edit_lines',
+        'job_notes',  # M-11 notepad door — persists per-job machine state
         'pptx_comment',
         # Memory write door — saves a durable fact (gated by modelMemoryWrites).
         'remember',
@@ -120,6 +124,7 @@ _TOOL_DESTRUCTIVE: frozenset[str] = frozenset(
         'clear_blackboard',
         'delete_agent',
         'delete_alias',
+        'delete_routine',
         'disconnect_integration',
         'delete_folder',
         'delete_session',
@@ -134,8 +139,10 @@ _TOOL_SHELL: frozenset[str] = frozenset({'run_command'})
 _TOOL_AGENT: frozenset[str] = frozenset(
     {
         'create_agent',
+        'create_routine',
         'list_agents',
         'list_daemons',
+        'list_routines',
         'spawn_daemon',
         'spawn_subagents',
         'update_agent',
@@ -280,6 +287,36 @@ def format_tools_by_bucket(
 # cut would render a partial description as if it were the full one).
 _SKILLS_INDEX_BYTE_BUDGET = 24 * 1024
 
+# The persisted overflow issue: surfaced in the curator report / Learning
+# header so "the catalogue outgrew the budget" is a visible event, not just
+# a log line. Written when overflow FIRST happens and whenever the listed /
+# total skill counts change (cheap internal_state upsert, never per turn).
+_SKILLS_OVERFLOW_STATE_KEY = 'skillsIndexOverflow'
+
+
+def _recordSkillsIndexOverflow(*, budget: int, packed: int, total: int) -> None:
+    try:
+
+        from app.services.memory_store import get_internal_state, set_internal_state
+
+        signature = [budget, packed, total]
+        raw = get_internal_state(_SKILLS_OVERFLOW_STATE_KEY)
+        if isinstance(raw, dict) and raw.get('signature') == signature:
+            return  # already recorded for exactly this shape — no churn
+        set_internal_state(
+            _SKILLS_OVERFLOW_STATE_KEY,
+            {
+                'signature': signature,
+                'budgetBytes': budget,
+                'listedSkills': packed,
+                'totalSkills': total,
+                'omittedSkills': max(0, total - packed),
+                'firstSeen': raw.get('firstSeen') if isinstance(raw, dict) else None,
+            },
+        )
+    except Exception:
+        pass  # diagnostics must never break prompt assembly
+
 
 def format_skills_by_category(
     catalogue: list[dict[str, object]] | None = None,
@@ -368,6 +405,9 @@ def format_skills_by_category(
             max_bytes,
             packedCount,
             total,
+        )
+        _recordSkillsIndexOverflow(
+            budget=max_bytes, packed=packedCount, total=total
         )
         body.append(
             f'... (skills index truncated at the {max_bytes}-byte budget: '

@@ -64,6 +64,13 @@ def resolve_tz(name: str | None) -> tzinfo:
     """Resolve a stored label to a tzinfo usable without requiring tzdata."""
     raw = (name or '').strip()
     if raw:
+        # Bare UTC/GMT/Z must resolve even when the tzdata package is
+        # absent (Windows venvs) — the fixed-offset branch below requires a
+        # ≥6-char label and would otherwise fall back to host-local wall
+        # time, silently shifting every "daily HH:MM" job by the host
+        # offset (found live: 'daily 09:00' @ UTC → 01:00Z on a UTC+8 host).
+        if raw.upper() in ('UTC', 'GMT', 'Z'):
+            return timezone.utc
         try:
             return ZoneInfo(raw)
         except (ZoneInfoNotFoundError, ModuleNotFoundError, Exception):
@@ -87,10 +94,45 @@ def resolve_tz(name: str | None) -> tzinfo:
     return local or timezone.utc
 
 
+_WEEKDAY_NAMES = {
+    'sun': 0, 'sunday': 0,
+    'mon': 1, 'monday': 1,
+    'tue': 2, 'tues': 2, 'tuesday': 2,
+    'wed': 3, 'weds': 3, 'wednesday': 3,
+    'thu': 4, 'thur': 4, 'thurs': 4, 'thursday': 4,
+    'fri': 5, 'friday': 5,
+    'sat': 6, 'saturday': 6,
+}
+
+_DAILY_RE = re.compile(r'^daily\s+(?:at\s+)?(\d{1,2}):(\d{2})$', re.IGNORECASE)
+_WEEKLY_RE = re.compile(
+    r'^weekly\s+([a-z]+)\s+(?:at\s+)?(\d{1,2}):(\d{2})$', re.IGNORECASE
+)
+
+
+def _hh_mm_to_cron(hh_s: str, mm_s: str) -> str:
+    """Validate an HH:MM wall-clock time and render the cron time fields.
+
+    Raises ValueError on out-of-range times (25:00, 09:99) so typos fail at
+    creation instead of producing jobs that never fire.
+    """
+    hh, mm = int(hh_s), int(mm_s)
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        raise ValueError(f'invalid time of day: {hh_s}:{mm_s}')
+    return f'{mm} {hh}'
+
+
 def parse_schedule(schedule: str) -> dict[str, object]:
     """Normalize a schedule string into a structured descriptor.
 
     Returns ``{kind: 'cron'|'interval'|'empty', ...}``.
+
+    Accepted forms (Bot Mode Phase B — the RoutinesPane picker and the
+    ``create_routine`` tool both advertise these):
+      * ``every Nm|Nh|Nd`` — interval
+      * 5-field cron expression
+      * ``daily [at] HH:MM`` → cron ``M H * * *``
+      * ``weekly <day> [at] HH:MM`` → cron ``M H * * D`` (day = mon..sun)
     """
     s = (schedule or '').strip()
     if not s:
@@ -106,6 +148,20 @@ def parse_schedule(schedule: str) -> dict[str, object]:
         else:
             seconds = n * 86400
         return {'kind': 'interval', 'everySeconds': seconds, 'raw': s}
+    m = _DAILY_RE.match(s)
+    if m:
+        return {'kind': 'cron', 'expr': f'{_hh_mm_to_cron(m.group(1), m.group(2))} * * *', 'raw': s}
+    m = _WEEKLY_RE.match(s)
+    if m:
+        day_raw = m.group(1).lower()
+        dow = _WEEKDAY_NAMES.get(day_raw)
+        if dow is None:
+            raise ValueError(f'unknown weekday in schedule: {schedule!r}')
+        return {
+            'kind': 'cron',
+            'expr': f'{_hh_mm_to_cron(m.group(2), m.group(3))} * * {dow}',
+            'raw': s,
+        }
     parts = s.split()
     if len(parts) == 5:
         # Validate field values up front so typo'd crons (e.g. hour 99)

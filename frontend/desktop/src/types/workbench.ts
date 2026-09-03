@@ -68,6 +68,12 @@ export interface WorkbenchSession {
    *  the estimated cumulative cost reaches the ceiling. */
   costCeiling?: number;
   workspacePath?: string;
+  /** Bot Mode: true when this session is a Bot's canonical chat — the
+   *  sidebar rail owns it and /new reroutes to /compact (forever-chat). */
+  canonicalBotChat?: boolean;
+  /** Bot Mode Phase A roster rows: display-safe preview of the last message
+   *  (drives the rail's per-Bot preview) + updatedAt drives "Active now". */
+  lastPreview?: string;
   /** True only when `submit_plan` (the `planProposed` SSE event) ran this
    *  session. Drives the banner off the event instead of hydrated session
    *  state, so a restored pending plan doesn't re-show the banner. */

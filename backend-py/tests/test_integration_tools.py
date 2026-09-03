@@ -48,7 +48,16 @@ def mock_github_validation(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(scope='module', autouse=True)
 def _register_under_test():
+    # Snapshot + restore (test_tool_policy_parity pattern): these tools leak
+    # into the global registry otherwise and inflate the tool surface for
+    # every later test module (e.g. test_prompt_slim's 20k budget asserts on
+    # the real registered surface, and ~10 leaked tools blow it).
+    before = {t['name'] for t in listRaw()}
     integration_tools.register()
+    yield
+    for entry in listRaw():
+        if entry['name'] not in before:
+            unregister(entry['name'])
 
 
 @pytest.fixture(autouse=True)

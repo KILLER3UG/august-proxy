@@ -10,6 +10,7 @@ import type {
   WorkbenchEventHandlers,
   WorkbenchGuardMode,
   WorkbenchSandboxMode,
+  WorkbenchTodo,
 } from '@/types/workbench';
 import type { FileAttachment } from '@/types/chat';
 import { workbenchClient } from './workbench/WorkbenchClient';
@@ -360,6 +361,11 @@ export interface SessionAgentRow {
   elapsed?: number;
   error?: string;
   workstream?: string;
+  /** Per-agent todo list (unique to this worker; from the orchestrator handle). */
+  todos?: WorkbenchTodo[];
+  /** 1-based position among queued workers when status === 'queued'. */
+  queuePosition?: number;
+  queueTotal?: number;
 }
 
 export async function listWorkbenchSessionAgents(sessionId: string): Promise<{

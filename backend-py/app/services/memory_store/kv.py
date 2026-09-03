@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 
+from app.services.deferred_writes import defer_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_schema import ensure_schema
 from app.services.memory_store.wire import _json
@@ -55,7 +56,9 @@ def set_internal_state(key: str, value: JsonValue) -> None:
         'ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
         (key, _json(value)),
     )
-    conn.commit()
+    # P4.2 (Part 18): internal_state is machine bookkeeping, not read back
+    # cross-thread within the turn — debounce the commit (≤2s).
+    defer_commit(conn)
 
 
 def get_internal_state(key: str) -> JsonValue | None:

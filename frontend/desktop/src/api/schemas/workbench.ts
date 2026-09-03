@@ -299,6 +299,7 @@ export const WorkbenchUserMessageQueueEventSchema = WorkbenchBaseSchema.extend({
 export const WorkbenchMiscLifecycleEventSchema = WorkbenchBaseSchema.extend({
   type: z.enum([
     'todosUpdated',
+    'subagentTodos',
     'checkpoint',
     'aborted',
     'retrying',

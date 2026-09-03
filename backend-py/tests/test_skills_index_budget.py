@@ -79,3 +79,49 @@ def test_no_mid_entry_cut():
     assert 'ccc' not in out
     assert 'C' * 100 not in out
     assert 'truncated' in out
+
+
+def test_overflow_persisted_and_deduped(isolatedData):
+    """P2.1 surfacing: the first overflow (and only shape changes) records a
+    persisted issue via internal_state; identical re-overflows don't churn."""
+    from app.services.memory_store import get_internal_state
+    from app.services.memory_store import init as init_store
+
+    init_store()
+    catalogue = [_entry(f'skill-{i:03d}', 'D' * 2000) for i in range(20)]
+    cp.format_skills_by_category(catalogue)
+    first = get_internal_state(cp._SKILLS_OVERFLOW_STATE_KEY)
+    assert isinstance(first, dict)
+    assert first['budgetBytes'] == cp._SKILLS_INDEX_BYTE_BUDGET
+    assert first['listedSkills'] < first['totalSkills']
+    assert first['omittedSkills'] == first['totalSkills'] - first['listedSkills']
+
+    # Same shape again → no churn (same record).
+    cp.format_skills_by_category(catalogue)
+    again = get_internal_state(cp._SKILLS_OVERFLOW_STATE_KEY)
+    assert again == first
+
+    # Different shape (more skills) → re-recorded with updated counts.
+    catalogue.append(_entry('skill-zzz', 'D' * 2000))
+    cp.format_skills_by_category(catalogue)
+    grown = get_internal_state(cp._SKILLS_OVERFLOW_STATE_KEY)
+    assert isinstance(grown, dict)
+    assert grown['totalSkills'] == first['totalSkills'] + 1
+    assert grown['listedSkills'] == first['listedSkills']
+
+
+def test_curator_report_surfaces_overflow(isolatedData):
+    """The persisted overflow reaches GET /api/curator/report for the
+    Learning header (None when the catalogue never overflowed)."""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        clean = client.get('/api/curator/report').json()
+        assert clean.get('skillsIndexOverflow') is None
+        cp.format_skills_by_category(
+            [_entry(f'skill-{i:03d}', 'D' * 2000) for i in range(20)]
+        )
+        marked = client.get('/api/curator/report').json()
+        assert isinstance(marked.get('skillsIndexOverflow'), dict)
+        assert marked['skillsIndexOverflow']['omittedSkills'] > 0

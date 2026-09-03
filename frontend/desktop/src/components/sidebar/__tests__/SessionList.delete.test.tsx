@@ -12,6 +12,13 @@ vi.mock('@/api/workbench', () => ({
 }));
 vi.mock('@/api/api-client', () => ({
   deleteManageSession: vi.fn().mockResolvedValue(undefined),
+  // SessionList now renders the Bots rail, which imports these; an empty
+  // roster keeps the rows (and the chats lookup) out of the delete tests.
+  listBots: vi.fn().mockResolvedValue({ bots: [] }),
+  ensureBotChat: vi.fn(),
+  createBot: vi.fn(),
+  deleteBot: vi.fn(),
+  updateBotUiMeta: vi.fn(),
 }));
 vi.mock('@/hooks/useAppUpdate', () => ({
   useAppUpdate: () => ({ available: false }),

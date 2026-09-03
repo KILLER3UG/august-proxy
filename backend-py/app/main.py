@@ -176,6 +176,14 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(refreshMcpTools())
     except Exception:
         pass
+    # Bot Mode Phase A boot backfill: the default assistant Bot (and its
+    # canonical chat) always exists — no model call, registry + session only.
+    try:
+        from app.services.bot_mode import roster as _bot_roster
+
+        _bot_roster.ensure_default_bot(actor='boot')
+    except Exception:
+        logger.warning('Default Bot backfill skipped', exc_info=True)
     # Cognitive layers: cron scheduler, daemon manager, facts-expiry sweep.
     try:
         from app.services.cognitive_boot import start_cognitive_services
@@ -236,6 +244,15 @@ async def lifespan(app: FastAPI):
         from app.services.workbench.sessions import flush_pending_saves
 
         flush_pending_saves()
+    except Exception:
+        pass
+    # Flush debounced telemetry commits (P4.2): turn outcomes / lifecycle /
+    # internal_state inside the ≤2s window would otherwise be lost on
+    # shutdown. Runs on the loop thread — the deferred conns' owner.
+    try:
+        from app.services.deferred_writes import flush_thread_pending
+
+        flush_thread_pending()
     except Exception:
         pass
     # Drain the async event-log persistence queue — buffered SSE events

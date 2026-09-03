@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
+  CalendarClock,
   ClipboardList,
   Columns,
   Cpu,
@@ -42,6 +44,8 @@ import { RightDrawerSubagentsSection } from './RightDrawerSubagentsSection';
 import { RightDrawerTrajectorySection } from './RightDrawerTrajectorySection';
 import { RightDrawerArtifactsSection } from './RightDrawerArtifactsSection';
 import { RightDrawerCircuitSection } from './RightDrawerCircuitSection';
+import { RoutinesPane } from '@/components/sidebar/RoutinesPane';
+import { getBot } from '@/api/api-client';
 import type { WorkbenchSession } from '@/types/workbench';
 import { useRightDrawer } from './RightDrawerState';
 import { getFileIcon } from '@/lib/file-icon';
@@ -286,6 +290,7 @@ const TAB_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileD
   artifacts: { label: 'Artifacts', Icon: GalleryVertical },
   circuit: { label: 'Circuit', Icon: Cpu },
   file: { label: 'File', Icon: FileDiff },
+  routines: { label: 'Routines', Icon: CalendarClock },
 };
 
 /** Menu order for the "+" picker (workbench-first, mirrors launcher). */
@@ -301,6 +306,7 @@ const SECTION_ADD_ORDER: RightDrawerSectionId[] = [
   'trajectory',
   'artifacts',
   'circuit',
+  'routines',
 ];
 
 function DrawerTab({ sectionId, active }: { sectionId: RightDrawerSectionId; active: boolean }) {
@@ -468,7 +474,34 @@ function renderSection(
       return <RightDrawerArtifactsSection sessionId={ctx.sessionId} />;
     case 'circuit':
       return <RightDrawerCircuitSection sessionId={ctx.sessionId} />;
+    case 'routines':
+      // Bot Mode Phase B: routines are a Bot-chat surface — render only
+      // inside a canonical Bot Chat (the pane derives the Bot handle).
+      if (!ctx.workbenchSession?.canonicalBotChat || !ctx.workbenchSession.agentId) {
+        return (
+          <p className="px-4 py-6 text-xs text-muted-foreground/60">
+            Routines live in a Bot&apos;s chat — open a Bot from the sidebar rail.
+          </p>
+        );
+      }
+      return <RoutinesDrawerSection agentId={ctx.workbenchSession.agentId} />;
   }
+}
+
+/** Resolve the Bot handle then mount the pane (the [bot:<name>] namespace). */
+function RoutinesDrawerSection({ agentId }: { agentId: string }) {
+  const botQ = useQuery({
+    queryKey: ['bots', 'one', agentId],
+    queryFn: () => getBot(agentId),
+    staleTime: 60_000,
+  });
+  const bot = botQ.data;
+  if (!bot) return <p className="px-4 py-6 text-xs text-muted-foreground/60">Loading Bot…</p>;
+  return (
+    <div className="p-2">
+      <RoutinesPane agentId={agentId} botName={bot.name} />
+    </div>
+  );
 }
 
 function DrawerSectionCard({

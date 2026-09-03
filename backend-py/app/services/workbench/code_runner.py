@@ -34,7 +34,11 @@ import os as _os
 # Case-insensitive + credential-shaped names (mirrors async_subprocess).
 import re as _os_re
 for _k in list(_os.environ):
-    if _os_re.match(r'^(?:AUGUST_|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$', _k, _os_re.IGNORECASE):
+    # Same shape as app.lib.async_subprocess._CREDENTIAL_ENV_RE: AUGUST_*
+    # prefix OR credential-suffixed (case-insensitive). The old bare `AUGUST_`
+    # branch only matched the exact literal, so AUGUST_BRAIN_SQLITE_FILE /
+    # AUGUST_DATA_DIR leaked — fixed with the prefix wildcard (P3.2 audit).
+    if _os_re.match(r'^(?:AUGUST_\w*.*|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$', _k, _os_re.IGNORECASE):
         _os.environ.pop(_k, None)
 import subprocess
 from pathlib import Path

@@ -130,4 +130,62 @@ describe('RightDrawerSubagentsSection', () => {
     expect(view.textContent).not.toContain('Persisted final response');
     expect(view.textContent).not.toContain('No final response recorded.');
   });
+
+  it('renders the worker\'s own todo list in the detail view', async () => {
+    listAgentsMock.mockResolvedValue({
+      agents: [
+        {
+          taskId: 'general-1',
+          agentId: 'general',
+          goal: 'Audit modules',
+          status: 'running',
+          todos: [
+            { id: '1', content: 'read routers', status: 'completed' },
+            { id: '2', content: 'read services', status: 'in_progress' },
+            { id: '3', content: 'write report', status: 'pending' },
+          ],
+        },
+      ],
+      meta: {},
+    });
+    renderSection();
+    fireEvent.click(await screen.findByTestId('right-drawer-subagent-general-1'));
+    const progress = await screen.findByTestId('subagent-todo-progress');
+    expect(progress.textContent).toContain('read routers');
+    expect(progress.textContent).toContain('write report');
+    expect(progress.textContent).toContain('1/3');
+  });
+
+  it('disambiguates multiple workers with the same role', async () => {
+    listAgentsMock.mockResolvedValue({
+      agents: [
+        { taskId: 'g-1', agentId: 'general', goal: '', status: 'running' },
+        { taskId: 'g-2', agentId: 'general', goal: '', status: 'running' },
+      ],
+      meta: {},
+    });
+    renderSection();
+    await screen.findByTestId('right-drawer-subagent-g-1');
+    const rows = await screen.findAllByText(/^General [12]$/);
+    expect(rows.length).toBe(2);
+  });
+
+  it('shows queue position for queued workers', async () => {
+    listAgentsMock.mockResolvedValue({
+      agents: [
+        {
+          taskId: 'q-1',
+          agentId: 'explore',
+          goal: 'Later task',
+          status: 'queued',
+          queuePosition: 2,
+          queueTotal: 2,
+        },
+      ],
+      meta: {},
+    });
+    renderSection();
+    const row = await screen.findByTestId('right-drawer-subagent-q-1');
+    expect(row.textContent).toContain('queued #2/2');
+  });
 });

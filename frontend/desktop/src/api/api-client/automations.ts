@@ -48,6 +48,10 @@ export interface AutomationJob {
   url?: string;
   method?: string;
   body?: string;
+  /* Part 19 Phase B (routines): delivery + memory knobs. */
+  deliver?: string;
+  respond?: boolean;
+  continuity?: boolean;
 }
 
 export interface AutomationListResponse {
@@ -76,6 +80,10 @@ export type AutomationUpsertInput = {
   url?: string;
   method?: string;
   body?: string;
+  /* Part 19 Phase B (routines): delivery + memory knobs. */
+  deliver?: string;
+  respond?: boolean;
+  continuity?: boolean;
 };
 
 export function getAutomations(): Promise<AutomationListResponse> {
@@ -103,4 +111,37 @@ export function rotateAutomationToken(id: string): Promise<AutomationJob> {
 
 export function deleteAutomation(id: string): Promise<{ deleted: boolean }> {
   return api.delete<{ deleted: boolean }>(`/api/automations/${encodeURIComponent(id)}`);
+}
+
+/* ── M-11 run ledger + incidents ─────────────────────────────────────────── */
+
+export interface AutomationRunRow {
+  id: number;
+  jobId: string;
+  status: string;
+  trigger?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  errorSignature?: string;
+  sessionId?: string;
+  outputDigest?: string;
+}
+
+export interface AutomationIncident {
+  jobId: string;
+  signature?: string;
+  state?: string;
+  count?: number;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+}
+
+export function getAutomationRuns(jobId: string): Promise<{ runs: AutomationRunRow[] }> {
+  return api.get<{ runs: AutomationRunRow[] }>(
+    `/api/automations/${encodeURIComponent(jobId)}/runs`,
+  );
+}
+
+export function getAutomationIncidents(): Promise<{ incidents: AutomationIncident[] }> {
+  return api.get<{ incidents: AutomationIncident[] }>('/api/automations/incidents');
 }

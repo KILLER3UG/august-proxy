@@ -55,6 +55,14 @@ class UpsertBody(CamelModel):
     method: str = 'GET'
     body: str = ''
     max_runs: int = 0
+    # Part 19 Phase B (routines): delivery + memory knobs. The runner path
+    # already honors these (automations_store._run_workbench_stream +
+    # automation_memory) — surfaced here so the RoutinesPane (and any API
+    # client) can create routine jobs that land their output in the Bot's
+    # canonical chat. Empty deliver = a plain automation (no chat routing).
+    deliver: str = ''
+    respond: bool = True
+    continuity: bool = False
 
 
 class PatchBody(CamelModel):
@@ -69,6 +77,11 @@ class PatchBody(CamelModel):
     model_provider: str | None = None
     agent_id: str | None = None
     max_runs: int | None = None
+    # Part 19 Phase B: routine fields are patchable (pause the response turn,
+    # toggle the notepad continuity, repoint delivery).
+    deliver: str | None = None
+    respond: bool | None = None
+    continuity: bool | None = None
 
 
 def _wire(job: dict[str, object], *, include_token: bool = False) -> dict[str, object]:
@@ -102,9 +115,17 @@ def _wire(job: dict[str, object], *, include_token: bool = False) -> dict[str, o
         'maxRuns': job.get('maxRuns') or 0,
         'limitReached': job.get('limitReached', False),
         'lastOutput': job.get('lastOutput'),
+        # M-11: derived from the runs ledger by _finish_run (legacy alias for
+        # the old lastResult/lastError fields the scheduler used to own).
+        'lastResult': job.get('lastResult'),
+        'lastError': job.get('lastError'),
         'sessionId': job.get('sessionId'),
         'runs': job.get('runs') or [],
         'createdAt': job.get('createdAt'),
+        # Part 19 Phase B routine fields (echo for the RoutinesPane).
+        'deliver': job.get('deliver', ''),
+        'respond': bool(job.get('respond', True)),
+        'continuity': bool(job.get('continuity', False)),
         'updatedAt': job.get('updatedAt'),
         'url': job.get('url'),
         'method': job.get('method'),
@@ -148,6 +169,10 @@ async def upsert_automation(body: UpsertBody):
         'method': body.method,
         'body': body.body,
         'maxRuns': body.max_runs or 0,
+        # Part 19 Phase B routine fields (pass through to the runner).
+        'deliver': body.deliver,
+        'respond': body.respond,
+        'continuity': body.continuity,
     }
     try:
         job = await store.upsert_job_async(payload)
@@ -183,6 +208,13 @@ async def patch_automation(job_id: str, body: PatchBody):
         updates['agentId'] = body.agent_id
     if body.max_runs is not None:
         updates['maxRuns'] = body.max_runs
+    # Part 19 Phase B: routine field patches.
+    if body.deliver is not None:
+        updates['deliver'] = body.deliver
+    if body.respond is not None:
+        updates['respond'] = body.respond
+    if body.continuity is not None:
+        updates['continuity'] = body.continuity
     if body.paused is not None and len(updates) == 2:
         job = await store.pause_job(job_id, paused=body.paused)
         if not job:
@@ -262,6 +294,51 @@ async def cancel_automation(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail='Automation not found')
     return _wire(job)
+
+
+@router.get('/incidents')
+async def list_incidents():
+    """M-11: open incidents across all jobs (state != 'closed')."""
+    from app.services import automation_memory
+
+    raw = automation_memory.open_incidents()
+    return {
+        'incidents': [
+            {
+                'jobId': r.get('job_id'),
+                'signature': r.get('signature'),
+                'state': r.get('state'),
+                'count': r.get('count', 0),
+                'firstSeenAt': r.get('first_seen_at'),
+                'lastSeenAt': r.get('last_seen_at'),
+            }
+            for r in raw
+        ]
+    }
+
+
+@router.get('/{job_id}/runs')
+async def list_runs(job_id: str, limit: int = 10):
+    """M-11: the run ledger for one job (newest first)."""
+    from app.services import automation_memory
+
+    rows = automation_memory.runs_for_job(job_id, limit=limit)
+    return {
+        'runs': [
+            {
+                'id': r.get('id'),
+                'jobId': r.get('job_id'),
+                'status': r.get('status'),
+                'trigger': r.get('trigger'),
+                'startedAt': r.get('started_at'),
+                'finishedAt': r.get('finished_at'),
+                'errorSignature': r.get('error_signature'),
+                'sessionId': r.get('session_id'),
+                'outputDigest': r.get('output_digest'),
+            }
+            for r in rows
+        ]
+    }
 
 
 @router.delete('/{job_id}')
