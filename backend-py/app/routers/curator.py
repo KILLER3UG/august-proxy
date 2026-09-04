@@ -129,7 +129,7 @@ async def flaggedEpisodes(limit: int = 20):
 async def curatorReport():
     import asyncio
 
-    from app.services.episode_miner import learning_report, run_resolution_check
+    from app.services.episode_miner import learning_report
     from app.services.memory_store import get_internal_state
     from app.services.skill_distiller import precision_state
 
@@ -137,8 +137,11 @@ async def curatorReport():
     # surfaced here so the Learning header can show it (None when never).
     overflow = get_internal_state('skillsIndexOverflow')
     # D-3 (§3.5): the metric blob is multi-file IO (proposals dir) + a DB
-    # recurrence query — keep it off the event loop like /run does.
-    skill_learning = await asyncio.to_thread(_skillLearningMetrics, run_resolution_check())
+    # recurrence query — keep it off the event loop like /run does. The
+    # resolution check must run INSIDE the offloaded function, not as a
+    # to_thread argument (evaluating it on the loop was the Part 25 offload-gate
+    # violation).
+    skill_learning = await asyncio.to_thread(_skillLearningBundle)
     return {
         'mode': _mode(),
         'learning': learning_report(),
@@ -146,6 +149,14 @@ async def curatorReport():
         'skillLearning': skill_learning,
         'skillsIndexOverflow': overflow if isinstance(overflow, dict) else None,
     }
+
+
+def _skillLearningBundle() -> dict[str, object]:
+    """Offloaded (Part 25): runs the resolution check + metric build together
+    on a worker thread so neither touches the event loop."""
+    from app.services.episode_miner import run_resolution_check
+
+    return _skillLearningMetrics(run_resolution_check())
 
 
 def _skillLearningMetrics(resolution: dict[str, object]) -> dict[str, object]:
