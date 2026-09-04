@@ -1,7 +1,7 @@
 /* ── Message bubble + tool cards ─────────────────────────────────────── */
 /* Renders a single chat message: text, thinking, tool calls, and badges. */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, memo } from 'react';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import type { ChatMessage } from '@/types/chat';
 import type { ModelItem } from './model-display';
@@ -22,7 +22,7 @@ import { useVerboseMode } from '@/lib/verbose-mode';
 export { ReasoningBlock } from './message/ReasoningBlock';
 export { ToolCallCard, ToolBlock } from './message/ToolCallCard';
 
-export function MessageBubble({
+function MessageBubbleInner({
   message,
   isLast,
   streaming,
@@ -374,3 +374,14 @@ export function MessageBubble({
     </div>
   );
 }
+
+/**
+ * Memoized export (Part 26 7.4): the pane re-renders on every ~32ms stream
+ * flush; a memo on the message identity keeps completed rows from re-running
+ * their full block pipeline. Note the render site still passes fresh inline
+ * callbacks each render, so memo compares them by reference and will
+ * re-render when the PANE's props change — this specifically short-circuits
+ * re-renders triggered by ANOTHER row's content updates flowing through the
+ * same parent state.
+ */
+export const MessageBubble = memo(MessageBubbleInner);

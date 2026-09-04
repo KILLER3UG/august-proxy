@@ -2195,6 +2195,11 @@ def enqueueUserMessage(
     """
     session = _sessions.get(sessionId)
     if not session:
+        # Part 26 3.10: _sessions is a 60-slot recency window — a background
+        # subagent's parent can legitimately fall out of it; reload from the
+        # durable store instead of silently dropping the completion notice.
+        session = getWorkbenchSession(sessionId)
+    if not session:
         return None
     if not hasattr(session, 'queuedUserMessages') or session.queuedUserMessages is None:
         session.queuedUserMessages = []
@@ -2212,6 +2217,18 @@ def enqueueUserMessage(
     # group in the drain formatter (steer → subagent → queue), but within a
     # group the user's order must hold — front-inserting here made three
     # steers drain as 3,2,1 (both to the model and to the injected bubbles).
+    # Part 26 3.10: hard cap with drop-oldest — the queue is unbounded
+    # otherwise, and a model that keeps spawning subagents grows it every
+    # completion (each _enqueue_completion lands here as kind='subagent').
+    MAX_QUEUE_ENTRIES = 50
+    if len(session.queuedUserMessages) >= MAX_QUEUE_ENTRIES:
+        dropped = session.queuedUserMessages.pop(0)
+        logger.warning(
+            'workbench queue cap (%d) reached for %s — dropping oldest entry %s',
+            MAX_QUEUE_ENTRIES,
+            sessionId,
+            dropped.get('id'),
+        )
     session.queuedUserMessages.append(entry)
     session.updatedAt = _now()
     saveSessions()
