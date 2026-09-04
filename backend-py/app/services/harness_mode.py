@@ -81,5 +81,17 @@ def proxy_orchestrator_enabled() -> bool:
     return os.environ.get('AUGUST_PROXY_ORCHESTRATOR', '').strip().lower() in ('1', 'true', 'yes')
 
 
-def is_mutating_tool(name: str) -> bool:
-    return name in MUTATING_TOOLS
+def is_mutating_tool(name: str, args: dict[str, object] | None = None) -> bool:
+    """Checkpoint/observation "did this call mutate" authority (Part 26 4.2).
+
+    Delegates to the args-aware ``tool_policy.is_mutating`` so both
+    classification authorities agree: the old frozenset here missed
+    ``bulk``-operation writes, circuit netlist edits, and session mutations —
+    a worker editing through those was never flagged as having mutated.
+    """
+    try:
+        from app.services.tool_policy import is_mutating as _policyMutating
+
+        return _policyMutating(name, args)
+    except Exception:
+        return name in MUTATING_TOOLS

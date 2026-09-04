@@ -7,6 +7,7 @@ JSON from the frontend stays camelCase.
 
 from __future__ import annotations
 
+import re
 from typing import cast
 
 from fastapi import APIRouter, HTTPException
@@ -139,12 +140,44 @@ async def updateProviderDetails(body: ProviderDetailsUpdate):
     raise HTTPException(status_code=404, detail='Provider not found')
 
 
+_SENSITIVE_KEY_RE = re.compile(
+    r'(?:api[_-]?key|secret|token|password|authorization|credential)', re.IGNORECASE
+)
+
+
+def _redactSecrets(value: object) -> object:
+    """Deep-copy with secret-bearing values replaced by a marker (Part 26 5.2).
+
+    ``GET /api/config/safe`` served the raw config.json to the renderer —
+    including every stored provider API key. No UI consumer reads secrets
+    from this endpoint (ChatThread reads model fields only), so anything
+    matching a credential-shaped key is masked; custom headers keep their
+    keys but their values are masked too (Authorization carriers).
+    """
+    if isinstance(value, dict):
+        out: dict[object, object] = {}
+        for k, v in value.items():
+            keyStr = str(k)
+            if _SENSITIVE_KEY_RE.search(keyStr):
+                out[k] = '•••••••• (redacted)'
+            elif keyStr.lower() in ('headers', 'extraheaders') and isinstance(v, dict):
+                out[k] = {hk: '•••••••• (redacted)' for hk in v}
+            else:
+                out[k] = _redactSecrets(v)
+        return out
+    if isinstance(value, list):
+        return [_redactSecrets(v) for v in value]
+    return value
+
+
 @router.get('/safe')
 async def configSafe():
-    """Get full config (safe endpoint — returns everything the UI needs).
+    """Get full config with secrets redacted (safe endpoint — everything the
+    UI needs, nothing it can leak).
 
     Used by the frontend to read the active provider and its model settings.
-    Returns the full config dict from config.json.
+    Returns the config dict from config.json with credential-shaped fields
+    masked (Part 26 5.2: the old endpoint returned API keys verbatim).
     """
     import json
 
@@ -152,7 +185,7 @@ async def configSafe():
 
     cfgPath = dataPath('config.json')
     cfg = json.loads(cfgPath.read_text('utf-8')) if cfgPath.exists() else {}
-    return cfg
+    return cast(object, _redactSecrets(cfg))
 
 
 @router.get('/model-aliases')

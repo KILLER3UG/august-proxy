@@ -1014,7 +1014,7 @@ async def executeSubAgent(
                                 result = f'[Blocked] {guardReason}'
                                 status = 'blocked'
                             else:
-                                if is_mutating_tool(tName):
+                                if is_mutating_tool(tName, tInput):
                                     mutated = True
                                 result = await dispatchTool(tName, tInput)
                                 status = 'done'
