@@ -23,6 +23,7 @@ import { stopChatStream, startChatStream } from '../chat-stream-manager';
 import {
   $sessionStreamStates,
   getOrInitSessionStreamState,
+  peekSessionStreamState,
 } from '../stream/session-stream-store';
 import { resolveWorkbenchSessionId } from '../stream/session-id-map';
 import { getWorkbenchSession, truncateWorkbenchSession, createWorkbenchSession } from '@/api/workbench';
@@ -73,7 +74,10 @@ export function ArenaView() {
     if (!run) return new Map<string, string>();
     const out = new Map<string, string>();
     for (const lane of run.lanes) {
-      const msgs = getOrInitSessionStreamState(lane.uiSessionId).messages ?? [];
+      // peek (non-mutating) — this runs during render; getOrInit would write
+      // the store on a not-yet-initialized/evicted lane and trip React's
+      // "cannot update a component while rendering a different component."
+      const msgs = peekSessionStreamState(lane.uiSessionId).messages ?? [];
       const last = [...msgs].reverse().find((m) => m.role === 'assistant');
       const body = last?.blocks?.find((b) => b.type === 'finalOutput')?.content || last?.content || '';
       if (body.trim()) out.set(lane.uiSessionId, body);

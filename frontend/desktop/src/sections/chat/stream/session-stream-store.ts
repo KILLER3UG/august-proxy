@@ -253,6 +253,21 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
   return state;
 }
 
+/**
+ * Non-mutating read for RENDER paths. Unlike getOrInitSessionStreamState this
+ * never writes the store, touches the LRU order, or evicts — so it is safe to
+ * call from a component's render body. getOrInit calls useSessionStreamStore.
+ * setState on first init, which React rejects as "Cannot update a component
+ * while rendering a different component" when a render-phase caller (e.g.
+ * ArenaView reading its lanes' transcripts) hits a not-yet-initialized or
+ * evicted session. Returns the live state if present, else a throwaway empty
+ * state (the caller only reads it; the stream's own handlers init on write).
+ */
+export function peekSessionStreamState(sessionId: string | null): SessionStreamState {
+  if (!sessionId) return emptyStreamState();
+  return useSessionStreamStore.getState().bySession[sessionId] ?? emptyStreamState();
+}
+
 export function updateSessionStreamState(
   sessionId: string,
   updater: (prev: SessionStreamState) => Partial<SessionStreamState>

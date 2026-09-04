@@ -7,6 +7,7 @@ import type { WorkbenchSession } from '@/types/workbench';
 import {
   $sessionStreamStates,
   getOrInitSessionStreamState,
+  peekSessionStreamState,
   updateSessionStreamState,
   type SessionStreamState,
 } from '../chat-stream-manager';
@@ -118,8 +119,12 @@ export class SessionStreamController {
 }
 
 export function useSessionStream(sessionId: string | null) {
+  // peek (non-mutating): the useState initializer runs during the mount
+  // render, and getOrInit would write the store on a not-yet-initialized
+  // session → "cannot update a component while rendering." The subscribe
+  // effect below delivers the real state once mounted.
   const [streamState, setStreamState] = useState(() =>
-    getOrInitSessionStreamState(sessionId),
+    peekSessionStreamState(sessionId),
   );
 
   useEffect(() => {

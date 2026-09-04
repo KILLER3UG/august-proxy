@@ -20,6 +20,7 @@ export {
   $sessionStreamStates,
   loadMessagesForSession,
   getOrInitSessionStreamState,
+  peekSessionStreamState,
   updateSessionStreamState,
   appendBlockEvent,
   applySubagentEvent,

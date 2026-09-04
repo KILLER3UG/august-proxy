@@ -19,6 +19,7 @@ export {
   loadMessagesForSession,
   persistMessages,
   getOrInitSessionStreamState,
+  peekSessionStreamState,
   updateSessionStreamState,
   applyUpdater,
 } from './session-stream-store';
