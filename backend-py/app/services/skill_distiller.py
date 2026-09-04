@@ -305,11 +305,16 @@ def _learnedSkillText(name: str) -> tuple[str, str] | None:
     return description, body
 
 
-def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extract-only') -> str:
+def apply_verdict(
+    verdict: dict[str, Any], fingerprint: str, mode: str = 'extract-only', scope: str = ''
+) -> str:
     """Apply one judge verdict. Returns a short result label.
 
     ``mode``: extract-only (ship default) applies memory verdicts only —
-    skill drafting requires ``full``; ``off`` never reaches here."""
+    skill drafting requires ``full``; ``off`` never reaches here.
+    ``scope``: the M-2 scope of the source episode (Part 26 6.4) — a Bot's
+    distilled lessons land in the Bot's own memory home instead of global.
+    """
     action = str(verdict.get('action', 'none') or 'none').strip().lower()
     episodeId = verdict.get('episode')
 
@@ -319,11 +324,13 @@ def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extrac
     if action == 'memory':
         from app.services.memory_store import save_fact
         from app.services.sensitive_topics import isSensitiveMemory
+        from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
 
         summary = str(verdict.get('summary', '')).strip()
         title = str(verdict.get('title', '')).strip()
         if not summary or isSensitiveMemory(summary, title):
             return 'rejected-denylist'
+        factScope = normalize_scope(scope) if (scope or '').strip() else GLOBAL_SCOPE
         expiresDays = verdict.get('expires_days')
         expiresAt = (
             (datetime.now(timezone.utc) + timedelta(days=int(expiresDays))).date().isoformat()
@@ -339,6 +346,7 @@ def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extrac
             kind='lesson',
             expires_at=expiresAt,
             title=title,
+            scope=factScope,
         )
         return 'memory-saved'
 
@@ -480,6 +488,7 @@ def apply_verdict(verdict: dict[str, Any], fingerprint: str, mode: str = 'extrac
                 },
                 fingerprint,
                 mode,
+                scope=scope,
             )
         if _draftExists(fingerprint, 'amend_body', skill):
             return 'duplicate-draft'
@@ -582,10 +591,13 @@ def run_distiller_pass(dryRun: bool = False) -> dict[str, Any]:
         for v in verdicts.get('verdicts', []):
             epId = v.get('episode')
             fpRow = _conn().execute(
-                'SELECT fingerprint_id FROM episodes WHERE id = ?', (epId,)
+                'SELECT fingerprint_id, scope FROM episodes WHERE id = ?', (epId,)
             ).fetchone()
             fp = str(fpRow['fingerprint_id']) if fpRow and fpRow['fingerprint_id'] else 'unknown'
-            label = apply_verdict(v, fp, mode)
+            # Part 26 6.4: the distilled fact lands in the episode's scope —
+            # bot-private episodes must not leak lessons into global memory.
+            epScope = str(fpRow['scope'] or '') if fpRow and 'scope' in fpRow.keys() else ''
+            label = apply_verdict(v, fp, mode, scope=epScope)
             if epId is not None:
                 set_judge_verdict(int(epId), json.dumps(v, ensure_ascii=False)[:2000])
             results.append({'episode': epId, 'label': label})

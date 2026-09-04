@@ -392,8 +392,8 @@ def save_episode(episode: dict[str, Any]) -> int:
     cur = conn.execute(
         """
         INSERT INTO episodes (session_id, kind, start_message_id, end_message_id,
-                              events, outcome, fingerprint_id, tier, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+                              events, outcome, fingerprint_id, tier, scope, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         """,
         (
             str(episode.get('session_id', '')),
@@ -403,6 +403,7 @@ def save_episode(episode: dict[str, Any]) -> int:
             json.dumps(episode.get('events') or [], ensure_ascii=False),
             str(episode.get('outcome', 'unresolved')),
             str(episode.get('fingerprint_id', '')),
+            str(episode.get('scope', '') or ''),
             now,
         ),
     )
@@ -662,8 +663,23 @@ def mine_sessions(sinceDays: int = 30) -> dict[str, int]:
     existing = _existingFingerprintTexts(limit=1000)
     extracted = 0
     for r in rows:
+        # Part 26 6.4: stamp each episode with the source session's M-2 scope
+        # ('' = global). A Bot's private home-chat episodes must not later
+        # surface as globally injected <memory> lessons in every session —
+        # the leak class the remember/forget doors closed, via the side door.
+        scope = ''
+        try:
+            from app.services import session_scope as _ss
+            from app.services.workbench.sessions import get_workbench_session
+
+            sess = get_workbench_session(str(r['sid']))
+            if sess is not None:
+                scope = str(_ss.resolve_scope(sess) or '')
+        except Exception:
+            scope = ''
         for episode in extract_episodes(str(r['sid'])):
             episode['session_id'] = str(r['sid'])
+            episode['scope'] = scope
             isNew = not _episodeExists(episode)
             record_episode(episode, existingFingerprints=existing)
             if isNew:
