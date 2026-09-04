@@ -25,15 +25,15 @@ sign-off evidence; do not treat them as the product feature list.
 | [**REFACTOR_PROGRESS.md**](REFACTOR_PROGRESS.md) | Closed tracker — phases, bug ledger, residual debt |
 | [**REFACTOR_HANDOFF_PROMPT.md**](REFACTOR_HANDOFF_PROMPT.md) | Historical handoff prompt |
 | [**FEATURE_INVENTORY_TEST_MATRIX.md**](FEATURE_INVENTORY_TEST_MATRIX.md) | Phase 7 inventory → coverage map |
-| [**PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md**](PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md) | Schema rename — **CLOSED** |
-| [**PHASE_PERF_AND_FLEXIBILITY_PLAN.md**](PHASE_PERF_AND_FLEXIBILITY_PLAN.md) | Phase P — **CLOSED** |
-| [**PHASE8_FINAL_DELIVERABLES.md**](PHASE8_FINAL_DELIVERABLES.md) | Final deliverables + sign-off |
+| [**PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md**](archive/PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md) | Schema rename — **CLOSED** |
+| [**PHASE_PERF_AND_FLEXIBILITY_PLAN.md**](archive/PHASE_PERF_AND_FLEXIBILITY_PLAN.md) | Phase P — **CLOSED** |
+| [**PHASE8_FINAL_DELIVERABLES.md**](archive/PHASE8_FINAL_DELIVERABLES.md) | Final deliverables + sign-off |
 
 ### Product history (not current how-to)
 
 | Path | Contents |
 |------|----------|
-| [`design/`](design/) | Cognitive architecture and UI harness design notes |
+| [`archive/design/`](archive/design/) | Cognitive architecture and UI harness design notes (archived) |
 | [`releases/`](releases/) | Release notes by version |
 | [`superpowers/`](superpowers/) | Historical feature plans and specs |
 

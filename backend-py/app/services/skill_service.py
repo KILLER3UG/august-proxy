@@ -520,12 +520,7 @@ def _bust_prompt_skills_cache() -> None:
             prompt_segments_cache.clear()
         except Exception:
             pass
-        try:
-            from app.services.workbench.prompt_cache import getCache
 
-            getCache().clear()
-        except Exception:
-            pass
 
 
 def migrate_flat_skills(*, bundled_root: Path | None = None, agent_root: Path | None = None) -> list[str]:

@@ -12,7 +12,7 @@ import {
 import type { Bot } from '@/api/api-client/bots';
 
 const bot = (name: string, title: string): Bot =>
-  ({ id: `ag_${name}`, name, description: '', uiMeta: { title, avatar: '', hidden: false, groups: [] } }) as Bot;
+  ({ id: `ag_${name}`, name, description: '', uiMeta: { title, avatar: '', hidden: false, groups: [] } });
 
 const roster: Bot[] = [bot('researcher', 'Research Buddy'), bot('coder', 'Coder')];
 

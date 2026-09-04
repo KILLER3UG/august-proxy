@@ -31,7 +31,7 @@ function KindIcon({ kind, href }: { kind: ArtifactKind; href: string }) {
 
 export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string | null }) {
   const stream = useSessionStream(sessionId);
-  const messages = (stream?.messages ?? []) as Parameters<typeof collectArtifacts>[0];
+  const messages = (stream?.messages ?? []);
   const artifacts = useMemo(() => collectArtifacts(messages), [messages]);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');

@@ -173,7 +173,7 @@ export function DebateView({
   const isRunning = run.phase === 'running';
   const debater = isRunning ? nextDebater(run) : null;
   const finished =
-    !isRunning && run.round >= run.maxRounds && (!!run.judge ? !!run.judgeSent : true);
+    !isRunning && run.round >= run.maxRounds && (run.judge ? !!run.judgeSent : true);
 
   const start = () => {
     const fresh: DebateRun = {

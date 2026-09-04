@@ -99,7 +99,7 @@ export async function confirmWorkbenchMutation(
   // `executed === false` or a truthy `executeError` means the mutation did
   // NOT run (the old `blocked`/`error` flags are never sent).
   const executed = data.executed !== false;
-  const executeError = data.executeError as unknown;
+  const executeError = data.executeError;
   handlers.onToolResult?.({
     id: token,
     content: JSON.stringify({ type: 'mutation_confirmation_result', result: data }, null, 2),

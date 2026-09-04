@@ -324,7 +324,7 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
   // C-1: scope selector lists Global + one entry per known workspace.
   it('shows the scope selector with the known workspaces (C-1)', () => {
     renderSection('memory-facts');
-    const select = screen.getByTestId('memory-scope-select') as HTMLSelectElement;
+    const select = screen.getByTestId('memory-scope-select');
     const options = Array.from(select.querySelectorAll('option'));
     expect(options.map((o) => o.textContent)).toEqual([
       'Global (all workspaces)',

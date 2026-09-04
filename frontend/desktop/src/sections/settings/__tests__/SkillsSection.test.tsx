@@ -109,7 +109,7 @@ beforeEach(() => {
 describe('SkillsSection — scope selector + badges (Part 17 C-1/C-2)', () => {
   it('shows the scope selector with Global + known workspaces (C-1)', () => {
     renderSection();
-    const select = screen.getByTestId('skills-scope-select') as HTMLSelectElement;
+    const select = screen.getByTestId('skills-scope-select');
     const options = Array.from(select.querySelectorAll('option'));
     expect(options.map((o) => o.textContent)).toEqual([
       'Global (all skills)',
@@ -154,7 +154,7 @@ describe('SkillsSection — scope selector + badges (Part 17 C-1/C-2)', () => {
     await screen.findByTestId('skill-detail');
     // The scope row only renders in list mode; return first, then switch.
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    const select = screen.getByTestId('skills-scope-select') as HTMLSelectElement;
+    const select = screen.getByTestId('skills-scope-select');
     fireEvent.change(select, { target: { value: 'C:\\Dev\\sheesh' } });
     expect(screen.queryByTestId('skill-detail')).not.toBeInTheDocument();
     expect(screen.getByTestId('skills-grid')).toBeInTheDocument();

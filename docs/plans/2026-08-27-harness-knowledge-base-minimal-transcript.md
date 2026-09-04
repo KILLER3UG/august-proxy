@@ -266,7 +266,7 @@ This is a small CSS + a few `width: 0` / `right: 0` swaps; the section registry 
 1. **August frontmatter export** — split on `---`/`***`/`___` rules, parse a leading `field: value` block (`name/description/type/updated/key/category/source/fact/details`), value = body → description → fact, key = slugified `name`/`key` else derived from the first six words of the value.
 2. **Claude plain-sentence bullets** — `-`/`*`/`•` or `1.`/`1)` numbered lines with no colon get a key derived from the first six words (`prefers-concise-answers-without-preamble`).
 3. **`key: value` bullets** — still split, guarded so times (`at 3:00 pm`) and long leads don't false-split.
-4. **Link bullets** `- [Title](file) — hook` — title → key, hook → value.
+4. **Link bullets** \`- [Title]\` + \`(file)\` + \`— hook\` — title → key, hook → value.
 
 Plus: heading lines (`# …`) set a category hint for the bullets under them, indented continuation lines append to the previous entry, code fences + horizontal rules are skipped, and the whole result is deduped by key (last wins — matching the upsert semantics of the import endpoint). Exported as `parseMemoryImportEntries(text, source)` with 14 unit tests in `ImportMemoryDialog.test.ts`.
 

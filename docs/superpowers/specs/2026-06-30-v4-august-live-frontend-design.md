@@ -5,7 +5,7 @@
 **Scope:** Full-window `/live` route in the desktop app: animated orb, rolling captions, tool activity rail, approval cards, controls (mute / end / push-to-talk / handoff), Tauri mic capability. STT/TTS via a pluggable client (Web Speech API default + provider stubs). Backend integration hits the existing `/api/live/*` stubs.
 **Reference:** `docs/design/cognitive-architecture-v1.md` §14, `docs/design/tracker-v4.md`.
 **Out of scope this iteration:** real provider wiring, command-exec safety plumbing, mandatory security review (gate that lands with §14 backend).
-**Previous files:** [`2026-06-29-v3-brain-dashboard-design.md`](2026-06-29-v3-brain-dashboard-design.md), [`tracker-v3.md`](../../design/tracker-v3.md).
+**Previous files:** [`2026-06-29-v3-brain-dashboard-design.md`](2026-06-29-v3-brain-dashboard-design.md), [`tracker-v3.md`](../../plans/2026-08-27-harness-knowledge-base-minimal-transcript.md).
 
 ---
 

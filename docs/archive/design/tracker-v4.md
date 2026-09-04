@@ -2,20 +2,20 @@
 
 > **Historical completion record — not a live status doc.** Phase checkboxes
 > reflect the state at sign-off. For current runtime behavior see
-> [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and the code under
+> [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) and the code under
 > `backend-py/app/routers/live.py` and `frontend/desktop/src/sections/live/`.
 >
 > **Still open (correctly unchecked):** the **Mandatory security review (HARD
 > GATE)** below remains unsigned. August Live shipped in desktop 0.12.x
 > without the recorded sign-off the design requires — see
-> [`../GAPS_AND_BUGS.md`](../GAPS_AND_BUGS.md).
+> [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md).
 >
 > **v4.4.2 / v4.4.3 rollback:** the floating brain-popup features referenced
 > below (`v4.4.3-portal-fix`, `v4.4.4-popup-image-like-resize`) were later
 > **rolled back** — source files (`BrainPopup`, `ResizeHandles`,
 > `usePopupDrag`, `popupGeometry`, `brain-indicator/`) and their tests were
 > deleted in commit `1b796ffe`. The corresponding release notes
-> (`v4.4.2`, `v4.4.3`) were never written. See [`../GAPS_AND_BUGS.md`](../GAPS_AND_BUGS.md).
+> (`v4.4.2`, `v4.4.3`) were never written. See [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md).
 
 > **Spec:** [`cognitive-architecture-v1.md`](./cognitive-architecture-v1.md) — Sections 14, 15, 16
 > **Scope:** A Gemini-Live-style voice mode that can execute commands (§14), a

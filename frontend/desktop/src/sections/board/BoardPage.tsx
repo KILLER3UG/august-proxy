@@ -47,7 +47,7 @@ export function BoardPage() {
     queryKey: ['subagent-runs'],
     queryFn: () => api.get<{ runs: RunRecord[] }>('/api/subagents/runs?limit=50'),
     refetchInterval: (query) => {
-      const list = (query.state.data as { runs: RunRecord[] } | undefined)?.runs ?? [];
+      const list = (query.state.data)?.runs ?? [];
       return list.some((r) => r.status === 'pending' || r.status === 'running') ? 3_000 : 15_000;
     },
     staleTime: 2_000,

@@ -60,6 +60,21 @@ export default tseslint.config(
       // Phase 2: no-explicit-any is error. Existing usages were fixed.
       '@typescript-eslint/no-explicit-any': 'error',
 
+      // Part 26 9.1 deliberate ratchet: the type-STYLE rules below fired on
+      // ~126 pre-existing sites at error level, which had red-gated every CI
+      // run (alarm fatigue — real regressions merged unseen). They demote to
+      // WARN so genuine errors still gate `npm run lint`; the warning count
+      // (currently ~160) is the ratchet to drive down in dedicated passes.
+      '@typescript-eslint/require-await': 'warn',
+      '@typescript-eslint/no-misused-promises': 'warn',
+      '@typescript-eslint/no-base-to-string': 'warn',
+      '@typescript-eslint/no-floating-promises': 'warn',
+      '@typescript-eslint/no-redundant-type-constituents': 'warn',
+      '@typescript-eslint/restrict-template-expressions': 'warn',
+      '@typescript-eslint/await-thenable': 'warn',
+      '@typescript-eslint/unbound-method': 'warn',
+      'camelcase': 'warn',
+
       // Surface unsafe uses of typed slots.
       '@typescript-eslint/no-unsafe-assignment': 'warn',
       '@typescript-eslint/no-unsafe-call': 'warn',
@@ -133,6 +148,13 @@ export default tseslint.config(
             'web_fetch', 'web_search', 'write_file',
             // BackendMonitorSection category keys
             'auto_memory',
+            // Part 26 9.1: wire-protocol identifiers (rooms/DM payloads,
+            // model-fleet roles, memory TTL field) emitted literally by the
+            // backend.
+            'needs_you', 'room_id', 'sender_agent', 'result_full', 'task_id', 'agent_id',
+            'repo_path', 'apply_failed', 'ttl_days',
+            'chat_default', 'chat_smol', 'chat_slow', 'chat_plan', 'chat_vision',
+            'chat_chain', 'chat_context_promotion',
             // Tool names / wire identifiers emitted literally by providers
             // (tool-label maps, classifiers, model-route fields).
             'brain_query', 'clear_blackboard', 'configure_fallback', 'context_read', 'delegate_task', 'delete_file',

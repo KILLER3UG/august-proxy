@@ -25,7 +25,7 @@ async function toggleTodoStatus(
       ? {
           ...t,
           status:
-            t.status === 'completed' ? 'pending' : ('completed' as WorkbenchTodo['status']),
+            t.status === 'completed' ? 'pending' : ('completed'),
         }
       : t,
   );
@@ -76,7 +76,7 @@ export function RightDrawerTasksSection({
                   status:
                     t.status === 'completed'
                       ? 'pending'
-                      : ('completed' as WorkbenchTodo['status']),
+                      : ('completed'),
                 }
               : t,
           ),

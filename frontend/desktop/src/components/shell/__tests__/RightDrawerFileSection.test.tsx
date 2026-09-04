@@ -71,7 +71,7 @@ describe('RightDrawerFileSection fullscreen preview', () => {
     openOverlay();
     // Two canvases now (drawer + overlay); bump zoom once.
     fireEvent.click(
-      document.querySelectorAll('[data-testid="file-preview-zoom-in"]')[0]!,
+      document.querySelectorAll('[data-testid="file-preview-zoom-in"]')[0],
     );
     const levels = Array.from(
       document.querySelectorAll('[data-testid="file-preview-zoom-level"]'),

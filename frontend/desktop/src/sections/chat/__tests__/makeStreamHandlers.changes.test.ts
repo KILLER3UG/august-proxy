@@ -60,7 +60,7 @@ function makeHarness(diffImpl: (sessionId: string) => Promise<GitDiffResult>) {
     sessionId: 'sess-1',
     assistantMsgId: 'a1',
     initialMessages: [],
-    setMessages: setMessages as never,
+    setMessages: setMessages,
     persistMessages: vi.fn(),
     setSessionStatus: vi.fn(),
     setWorkbenchSession: vi.fn(),

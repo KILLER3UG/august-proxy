@@ -226,7 +226,7 @@ export function dispatchWorkbenchEvent(
     case 'info':
       handlers.onInfo?.({
         message: typeof p?.message === 'string' ? p.message : undefined,
-        extras: p as Record<string, unknown>,
+        extras: p,
       });
       break;
     case 'subagentText':
@@ -359,7 +359,7 @@ export function dispatchWorkbenchEvent(
     case 'contextPressure': {
       const pressureLevel =
         typeof p?.attentionPressure === 'string' ? p.attentionPressure : '';
-      const pc = p?.promptCache as unknown as { hitTokens?: number; missTokens?: number; hitRate?: number } | undefined;
+      const pc = p?.promptCache as { hitTokens?: number; missTokens?: number; hitRate?: number } | undefined;
       handlers.onContextPressure?.({
         contextUsedPct: typeof p?.contextUsedPct === 'number' ? p.contextUsedPct : undefined,
         attentionPressure: ['low', 'medium', 'high', 'critical'].includes(pressureLevel)

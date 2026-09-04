@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from app.adapters.anthropic import apply_prompt_caching, buildAnthropicUpstreamRequest
-from app.services.workbench.prompt_cache import PromptCache
 
 
 def test_system_string_becomes_cached_block():
@@ -132,14 +131,3 @@ def test_persistent_ttl_opt_in_uses_1h_shape(monkeypatch):
     assert body['tools'][-1]['cache_control'] == marker
     assert body['messages'][-1]['content'][0]['cache_control'] == marker
 
-
-def test_prompt_cache_stats():
-    cache = PromptCache(maxSessions=4, ttlSeconds=60)
-    cache.set('k1', 'v1')
-    assert cache.get('k1') == 'v1'
-    assert cache.get('k1') == 'v1'
-    assert cache.get('missing') is None
-    stats = cache.stats()
-    assert stats['hits'] == 2
-    assert stats['misses'] == 1
-    assert stats['hit_rate'] == pytest.approx(2 / 3, abs=0.001)

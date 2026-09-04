@@ -7,7 +7,7 @@
 > `dispatch.ts` (real: `api/voice/registry.ts`, `builtins.ts`,
 > `registry-events.ts`). Open items are tracked in
 > [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md) and
-> [`../../design/tracker-v4.md`](../../design/tracker-v4.md).
+> [`../../plans/2026-08-27-harness-knowledge-base-minimal-transcript.md`](../../plans/2026-08-27-harness-knowledge-base-minimal-transcript.md).
 
 **Date:** June 30, 2026  
 **Status:** ✅ PRODUCTION READY — All v1 features complete and verified *(as claimed 2026-06-30; see caveat above)*

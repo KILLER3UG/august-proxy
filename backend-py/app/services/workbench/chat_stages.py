@@ -1,7 +1,7 @@
 """Named chat-loop stages used by the workbench orchestrator.
 
 Keeps ``workbench.py`` as orchestration only: prompt → model → tools → persist.
-Heavy logic stays in tool_executor / sessions / memory; this module holds the
+Heavy logic stays in the turn loop / sessions / memory; this module holds the
 stage boundaries that parallel tool runs and post-turn side effects hang off.
 """
 

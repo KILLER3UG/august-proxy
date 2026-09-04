@@ -175,9 +175,9 @@ export function SettingsPage() {
           className="h-full min-h-0"
         >
           <div className="min-h-0">
-            <SectionHeader active={active!} />
+            <SectionHeader active={active} />
             <React.Suspense fallback={<SettingsSectionLoader />}>
-              <SectionComponent active={active!} />
+              <SectionComponent active={active} />
             </React.Suspense>
           </div>
         </motion.div>

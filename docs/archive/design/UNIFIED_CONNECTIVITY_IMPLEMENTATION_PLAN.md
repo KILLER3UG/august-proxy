@@ -2,8 +2,8 @@
 
 > **Historical implementation plan** (2026-07-14). Much of this shipped into
 > runtime code; for **current** session/memory/MCP/Live SoT see
-> [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and
-> [`../CONFIGURATION.md`](../CONFIGURATION.md). Do not treat unchecked boxes
+> [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) and
+> [`../../CONFIGURATION.md`](../../CONFIGURATION.md). Do not treat unchecked boxes
 > here as the only product backlog without re-verifying against the repo.
 >
 > **Status (at write time):** Active — partially implemented (see § Progress snapshot)  

@@ -2,9 +2,9 @@
 
 > **Historical completion record — not a live status doc.** Phase checkboxes
 > reflect the state at sign-off. For current runtime behavior see
-> [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and the code under
+> [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) and the code under
 > `backend-py/app/services/`. Reopened or later-discovered items are tracked in
-> [`../GAPS_AND_BUGS.md`](../GAPS_AND_BUGS.md).
+> [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md).
 
 > **Spec:** [`cognitive-architecture-v1.md`](./cognitive-architecture-v1.md)
 > **Scope:** Core cognitive loop — data unification, prompt restructure, cognitive

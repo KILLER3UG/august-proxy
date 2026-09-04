@@ -365,7 +365,6 @@ process env.
 | `AUGUST_P1_TOOL_CACHE` | on | `0` disables tool def cache |
 | `AUGUST_P1_PROMPT_CACHE` | removed | never read in code (Part 25 Phase 7.2) — the segment/skills cache has no env kill-switch |
 | `AUGUST_P1_PARALLEL_TOOLS` | on | `0` forces serial tools |
-| `AUGUST_DB_WRITER_LOW_DROP_S` | ~2s | Low-pri queue age drop |
 | `AUGUST_SQLITE_CACHE_KB` | unset | Opt-in SQLite page cache |
 | `AUGUST_SQLITE_MMAP_MB` | unset | Opt-in mmap |
 | `AUGUST_SQLITE_SYNC` | unset | Opt-in `NORMAL`/`FULL`/`OFF` |

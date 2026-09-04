@@ -722,7 +722,7 @@ describe('recalledMemories renderer (Part 17 A.4)', () => {
             scope: 'project',
           },
         ],
-      } as MessageBlock,
+      },
     ]);
 
     expandActivitySummary();
@@ -739,7 +739,7 @@ describe('recalledMemories renderer (Part 17 A.4)', () => {
 
   it('skips empty memories rows (no chip for a nothing-recalled turn)', () => {
     renderTimeline([
-      { id: 'b_recall_2', type: 'recalledMemories', memories: [] } as MessageBlock,
+      { id: 'b_recall_2', type: 'recalledMemories', memories: [] },
     ]);
     // A recall-only block with zero rows contributes no activity — no pack,
     // no chip (the reducer skips the event entirely for empty rows).
@@ -757,7 +757,7 @@ describe('recalledMemories renderer (Part 17 A.4)', () => {
         memories: [
           { id: 'r1', key: 'build-cmd', category: 'project', snippet: 'npm run build', scope: 'project' },
         ],
-      } as MessageBlock,
+      },
     ]);
     expandActivitySummary();
     const chip = document.querySelector('[data-testid="recalled-memories-block"]');

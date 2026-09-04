@@ -283,7 +283,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
       connectedRef.current = false;
       setSocketReady(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeId]);
 
   useEffect(() => {

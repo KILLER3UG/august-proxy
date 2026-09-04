@@ -46,6 +46,7 @@ const _SECTION = [
   '',
   'Inline math $E = mc^2$ and display math:',
   '',
+  // eslint-disable-next-line no-useless-escape -- literal LaTeX source
   '$$\sum_{i=1}^n i = \frac{n(n+1)}{2}$$',
   '',
   '```python',

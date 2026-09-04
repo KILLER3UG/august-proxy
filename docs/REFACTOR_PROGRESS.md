@@ -14,7 +14,7 @@
 **Verification baseline:**
 pytest **748** · vitest **547** · Phase 7 gate · indexes `ALL_SIX_PRESENT` · isolation autouse
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
-**Sign-off pack:** [`docs/PHASE8_FINAL_DELIVERABLES.md`](./PHASE8_FINAL_DELIVERABLES.md)
+**Sign-off pack:** [`docs/PHASE8_FINAL_DELIVERABLES.md`](archive/PHASE8_FINAL_DELIVERABLES.md)
 
 ### Feature workstreams (shipped)
 
@@ -37,7 +37,7 @@ pytest **748** · vitest **547** · Phase 7 gate · indexes `ALL_SIX_PRESENT` ·
 | 5 Deps / tooling / docs | **DONE** |
 | 6 Bug ledger | **DONE** (B27 partial by design) |
 | 7 Feature inventory testing | **DONE — fully automated E2E proven** (gate + vitest + mobile in CI) |
-| **8 Final deliverables** | **SIGNED OFF** — [`PHASE8_FINAL_DELIVERABLES.md`](./PHASE8_FINAL_DELIVERABLES.md) |
+| **8 Final deliverables** | **SIGNED OFF** — [`PHASE8_FINAL_DELIVERABLES.md`](archive/PHASE8_FINAL_DELIVERABLES.md) |
 
 ---
 
@@ -479,7 +479,7 @@ Not the same as “100% of entire multi-phase handoff” (B16 residual params, o
 
 ## Phase P — scope decision (user 2026-07-14)
 
-Plan doc: [`docs/PHASE_PERF_AND_FLEXIBILITY_PLAN.md`](./PHASE_PERF_AND_FLEXIBILITY_PLAN.md)
+Plan doc: [`docs/PHASE_PERF_AND_FLEXIBILITY_PLAN.md`](archive/PHASE_PERF_AND_FLEXIBILITY_PLAN.md)
 
 | Decision | Status |
 |---|---|

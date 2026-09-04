@@ -127,11 +127,6 @@ def _reset_module_singletons():
         _registry_snapshot, _generation_snapshot = None, None
     yield
     try:
-        from app.services.workbench.prompt_cache import getCache
-        getCache().clear()
-    except Exception:
-        pass
-    try:
         from app.services.tools import mcp_client
         mcp_client._servers.clear()
     except Exception:

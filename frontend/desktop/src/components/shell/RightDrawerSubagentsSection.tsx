@@ -247,7 +247,7 @@ export function RightDrawerSubagentsSection({
           goal: r.goal,
           status: r.status,
           todos: r.todos,
-        } as SessionAgentRow,
+        },
       });
     }
     for (const [jobId, block] of subagentBlocks ?? []) {
@@ -260,7 +260,7 @@ export function RightDrawerSubagentsSection({
           agentId: block.agentId,
           goal: block.task || '',
           status: block.status,
-        } as SessionAgentRow,
+        },
       });
     }
     return out;

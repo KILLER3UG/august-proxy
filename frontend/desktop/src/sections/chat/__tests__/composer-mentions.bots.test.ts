@@ -20,7 +20,7 @@ const bot = (name: string, title: string, hidden = false): Bot =>
     name,
     description: '',
     uiMeta: { title, avatar: '', hidden, groups: [] },
-  }) as Bot;
+  });
 
 describe('fetchBotMentions', () => {
   it('maps the roster to kind:bot items, filters by query, hides hidden bots, and caches', async () => {

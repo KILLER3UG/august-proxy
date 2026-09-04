@@ -166,7 +166,7 @@ Live Slack/Discord *network* bots and real LLM soaks stay env-gated (optional se
 
 ## Phase 8 — Final Deliverables (**SIGNED OFF**)
 
-Pack: [`docs/PHASE8_FINAL_DELIVERABLES.md`](./PHASE8_FINAL_DELIVERABLES.md).
+Pack: [`docs/PHASE8_FINAL_DELIVERABLES.md`](archive/PHASE8_FINAL_DELIVERABLES.md).
 
 ### Definition of Done (final)
 

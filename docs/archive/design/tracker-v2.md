@@ -2,9 +2,9 @@
 
 > **Historical completion record — not a live status doc.** Phase checkboxes
 > reflect the state at sign-off. For current runtime behavior see
-> [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and the code under
+> [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) and the code under
 > `backend-py/app/services/`. Later-discovered caveats are tracked in
-> [`../GAPS_AND_BUGS.md`](../GAPS_AND_BUGS.md).
+> [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md).
 
 > **Reconciliation note (2026-07-25):** an earlier
 > `superpowers/specs/2026-06-30-implementation-gaps.md` flagged Phase 10.2 /

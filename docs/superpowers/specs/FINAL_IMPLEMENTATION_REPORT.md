@@ -11,7 +11,7 @@
 >   that the desktop app still did not boot reliably (health/WS path breakers).
 > - Open items (unsigned security review, v4.4.x rollbacks) are tracked in
 >   [`../../GAPS_AND_BUGS.md`](../../GAPS_AND_BUGS.md) and
->   [`../../design/tracker-v4.md`](../../design/tracker-v4.md).
+>   [`../../plans/2026-08-27-harness-knowledge-base-minimal-transcript.md`](../../plans/2026-08-27-harness-knowledge-base-minimal-transcript.md).
 > Treat the body below as a historical record, not a live status claim.
 
 **Date:** June 30, 2026  

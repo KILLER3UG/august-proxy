@@ -185,16 +185,12 @@ Start with [`AGENTS.md`](AGENTS.md) and [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOP
 ### Chat UI map (desktop)
 
 Composer sits at the bottom of [`ChatThread.tsx`](frontend/desktop/src/sections/chat/ChatThread.tsx).
-Above it, in order: memory-save chips, **Brain review**
-([`BrainReviewBar.tsx`](frontend/desktop/src/sections/chat/BrainReviewBar.tsx)),
-curator / sub-agent proposal bars, then the composer island. Run chrome is
-[`ChatRunHeader.tsx`](frontend/desktop/src/components/chat/ChatRunHeader.tsx).
-Worker lanes: [`SubagentLaunchList.tsx`](frontend/desktop/src/components/chat/SubagentLaunchList.tsx)
+Above it, in order: memory-save chips, curator / sub-agent proposal bars,
+then the composer island. Worker lanes:
+[`SubagentLaunchList.tsx`](frontend/desktop/src/components/chat/SubagentLaunchList.tsx)
 → right drawer `subagents`.
 
-Memory review: `POST /api/memory/review` (plan only) and
-`POST /api/memory/review/apply` (user-accepted actions). Implementation:
-[`memory_review.py`](backend-py/app/services/memory/memory_review.py).
+
 
 ### Settings
 

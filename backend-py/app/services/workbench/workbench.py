@@ -951,12 +951,6 @@ def clear_skill_prompt_caches() -> None:
         prompt_segments_cache.clear()
     except Exception:
         pass
-    try:
-        from app.services.workbench.prompt_cache import getCache
-
-        getCache().clear()
-    except Exception:
-        pass
 
 
 _MEMORY_NUDGE_MIN_ROUNDS = 3

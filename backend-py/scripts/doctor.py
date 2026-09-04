@@ -68,7 +68,7 @@ def check_port() -> bool:
     return check(
         f'Port {PORT} available',
         not in_use,
-        f'Another process is using port {PORT}. Kill it or change AUGUST_PORT.',
+        f'Another process is using port {PORT}. Kill it or change AUGUST_PROXY_PORT.',
     )
 
 

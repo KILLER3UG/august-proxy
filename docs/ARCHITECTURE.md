@@ -273,7 +273,7 @@ strings).
 
 ## Memory & learning subsystem
 
-[`services/memory/`](../backend-py/app/services/memory/) is a layered memory
+[`services/memory_store/`](../backend-py/app/services/memory_store/) is a layered memory
 system backed by `data/august_brain.sqlite` (via
 [`services/memory_store/`](../backend-py/app/services/memory_store/) and
 [`memory_conn.py`](../backend-py/app/services/memory_conn.py)):
@@ -340,7 +340,7 @@ Skills are markdown directories (`SKILL.md` + optional support files) from:
 [`services/skill_service.py`](../backend-py/app/services/skill_service.py)
 handles discovery, authoring, copy-on-write patch of bundled skills, and delete.
 
-[`services/skills/curator.py`](../backend-py/app/services/skills/curator.py)
+[`routers/curator.py`](../backend-py/app/routers/curator.py)
 manages agent-authored lifecycle: usage sidecar, `active → stale → archived`,
 physical move into `.archive/`, pin exemption, hourly background loop.
 
@@ -485,7 +485,7 @@ Paths resolve through [`app/lib/paths.py`](../backend-py/app/lib/paths.py)
 [`memory_conn.py`](../backend-py/app/services/memory_conn.py): WAL,
 `busy_timeout=10000`, `foreign_keys=ON`.
 
-[`db_writer.py`](../backend-py/app/services/db_writer.py): one worker, **FIFO**
+[`deferred_writes.py`](../backend-py/app/services/deferred_writes.py): one worker, **FIFO**
 shared queue; low-priority items age-dropped at dequeue; high priority does
 **not** jump the queue. Primary production caller: consolidation daemon. Do not
 design new hot-path features as if `priority=` were a latency scheduler.

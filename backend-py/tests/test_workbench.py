@@ -2,8 +2,6 @@
 
 import pytest
 from app.services.workbench.managed_tool_policy import isManagedToolParallelSafe, parseOpenaiToolArgs
-from app.services.workbench.selfheal import applySelfHealToMessages, buildHints, detectError, enhanceToolResult
-from app.services.workbench.tool_executor import executeToolBatch
 from app.services.workbench.validator import buildValidationErrorToolMessage, validateToolArguments
 from app.services.workbench.workbench import (
     approveWorkbenchPlan,
@@ -300,47 +298,6 @@ class TestManagedToolPolicy:
 
 
 @pytest.mark.asyncio
-class TestToolExecutor:
-    async def testSequential(self):
-
-        async def execOne(tu):
-            return {'tool_call_id': tu['id'], 'content': 'done'}
-
-        results = await executeToolBatch([{'id': '1'}, {'id': '2'}], execOne)
-        assert len(results) == 2
-
-    async def testParallel(self):
-
-        async def execOne(tu):
-            return {'tool_call_id': tu['id'], 'content': 'done'}
-
-        results = await executeToolBatch(
-            [{'id': 'a'}, {'id': 'b'}], execOne, {'parallel': True, 'can_run_in_parallel': lambda x: True}
-        )
-        assert len(results) == 2
-
-
-class TestSelfHeal:
-    def testDetectError(self):
-        assert detectError('Error: file not found') is True
-        assert detectError('command not found: ls') is True
-        assert detectError('permission denied') is True
-        assert detectError('All good') is False
-
-    def testBuildHints(self):
-        hints = buildHints('command not found: ls')
-        assert 'Hint' in hints
-        hints2 = buildHints('Error: permission denied')
-        assert 'Hint' in hints2
-
-    def testEnhanceResult(self):
-        enhanced = enhanceToolResult('Error: something broke')
-        assert 'Hint' in enhanced
-
-    def testApplyToMessages(self):
-        msgs = [{'role': 'tool', 'content': 'Error: failed'}]
-        healed = applySelfHealToMessages(msgs)
-        assert 'Hint' in healed[0]['content']
 
 
 class TestValidator:

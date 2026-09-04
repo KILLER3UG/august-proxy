@@ -265,7 +265,7 @@ describe('ModelEffortMenu dropdown anchoring (bottom-edge-hugs-chip)', () => {
       if (!el) throw new Error(`missing chip ${sel}`);
       el.getBoundingClientRect = () =>
         ({ top, bottom: top + 32, left: right - 180, right, width: 180, height: 32,
-           x: right - 180, y: top, toJSON: () => ({}) }) as DOMRect;
+           x: right - 180, y: top, toJSON: () => ({}) });
     }
   }
 

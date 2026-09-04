@@ -29,7 +29,7 @@ OpenAPI is available when the server is running at `/docs` and `/openapi.json`.
 10. [Gateway](#gateway)
 11. [MCP & service connections](#mcp--service-connections)
 12. [Terminal, browser, desktop](#terminal-browser-desktop)
-13. [Automations, cron, exam, calendar](#automations-cron-exam-calendar)
+13. [Automations, exam, calendar](#automations-cron-exam-calendar)
 14. [August manage / security / preview](#august-manage--security--preview)
 15. [AUG.md / plans](#augmd--plans)
 16. [Realtime & feature flow](#realtime--feature-flow)
@@ -394,7 +394,6 @@ Enablement: `config.json → gateway` + platform bot tokens.
 | Prefix | Purpose |
 |--------|---------|
 | `/api/automations` | List/create/run/delete automation jobs |
-| `/api/cron` | Cron jobs CRUD, toggle, run |
 | `/api/exam` | Generate exam, questions, answer, help |
 | `/api/calendar/internal` | Internal calendar helper |
 

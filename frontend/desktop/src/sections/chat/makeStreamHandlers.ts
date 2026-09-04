@@ -781,7 +781,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // window is nearly full. The prompt-cache split always feeds the
       // ContextRing live store (before the pressure gate — low pressure is
       // the common case and still carries fresh cache stats).
-      setPromptCacheLive(sessionId, promptCache as { hitTokens?: number; missTokens?: number; hitRate?: number } | undefined);
+      setPromptCacheLive(sessionId, promptCache);
       // Only surface the warning when the budget is actually stressed (see
       // isContextPressured); low/medium pressure is a silent no-op and the
       // composer's ContextRing shows the gauge instead.

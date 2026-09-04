@@ -204,7 +204,7 @@ export function useChatSend(opts: UseChatSendOptions) {
       // Read the model from the ref: this callback is invoked from captured
       // closures (drain effect, generateRef) whose prop snapshot can be one
       // model-switch stale.
-      let useModel = modelForRequestRef.current;
+      const useModel = modelForRequestRef.current;
       if (!useModel?.id) {
         toast.error('Select a model first (e.g. a free OpenCode model)');
         releaseSendLatch();

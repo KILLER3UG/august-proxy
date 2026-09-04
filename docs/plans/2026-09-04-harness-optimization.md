@@ -1,6 +1,6 @@
 # Part 25 — Harness Optimization & Repo Hygiene (2026-09-04)
 
-**Status: DRAFT — recommendations included; awaiting ruling before implementation.**
+**Status: IMPLEMENTED — Phases 0-7 landed in commits 6ce693a4..90de0a21 (Part 25). Follow-up round: `2026-09-04-harness-optimization-v2.md` (Part 26).**
 
 Method: four parallel deep-scan audits (backend harness loop / memory-learning-skills-bot-mode /
 frontend desktop / cross-cutting routers-config-docs), executed against working tree `eb084dec`

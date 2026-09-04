@@ -1,7 +1,7 @@
 # Phase 8 — Final Deliverables & Refactor Sign-Off
 
 > **Status:** **SIGNED OFF** 2026-07-14  
-> **Authority:** This pack + live tracker [`REFACTOR_PROGRESS.md`](./REFACTOR_PROGRESS.md)  
+> **Authority:** This pack + live tracker [`REFACTOR_PROGRESS.md`](../REFACTOR_PROGRESS.md)  
 > **HEAD at sign-off:** verify with `git rev-parse HEAD` (must include Phase 7 gate + this pack)
 
 ---

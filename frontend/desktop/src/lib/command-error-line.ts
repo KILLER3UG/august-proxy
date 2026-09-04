@@ -32,6 +32,9 @@ function truncate(line: string, max: number): string {
  */
 export function commandErrorOneLiner(raw: string | null | undefined, max = 120): string | null {
   if (!raw) return null;
+  // \x1b is the ANSI escape byte — stripping those sequences IS the point,
+  // so the no-control-regex warning is a false positive here.
+  // eslint-disable-next-line no-control-regex
   const text = raw.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '').trim();
   if (!text) return null;
 

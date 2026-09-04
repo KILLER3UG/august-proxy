@@ -102,7 +102,7 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
         </div>
       ) : hasText ? (
         <TextPreview content={file.content ?? ''} />
-      ) : !!(file.dataUrl || file.previewUrl) ? (
+      ) : file.dataUrl || file.previewUrl ? (
         <iframe
           src={file.dataUrl || file.previewUrl}
           title={`Preview of ${file.name}`}

@@ -90,7 +90,7 @@ describe('useChatSend — fresh model via ref (Bug 2)', () => {
   it('sends with the newest model even through a stale generateAIResponse closure', async () => {
     const { result, rerender } = renderHook(
       ({ model }: { model: ModelItem | null }) => useChatSend(makeOpts(model)),
-      { wrapper, initialProps: { model: modelA as ModelItem | null } },
+      { wrapper, initialProps: { model: modelA } },
     );
 
     // Capture the callback produced while model A was selected.
