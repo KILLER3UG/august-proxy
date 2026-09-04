@@ -220,7 +220,11 @@ def provider_accepts_reasoning_effort(
     api_mode = as_str(
         provider.get('apiMode') or provider.get('api_mode') or provider.get('apiFormat')
     )
-    if api_mode == 'openaiResponses':
+    # Part 26 1.3: normalize instead of a raw == against one spelling — the
+    # old check missed the openai-responses / codex alias family entirely.
+    from app.providers.api_format import normalize_api_format
+
+    if normalize_api_format(api_mode) == 'openaiResponses':
         return True
     # OpenCode proxies many upstreams; don't infer from model id alone.
     if 'opencode' in pname or 'open-code' in pname:

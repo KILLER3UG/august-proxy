@@ -20,6 +20,29 @@ class OpenAIClient(BaseProviderClient):
 
     apiFormat = 'openaiChat'
 
+    async def responses_stream(  # type: ignore[override]
+        self,
+        body: dict[str, object],
+        apiKey: str | None = None,
+    ) -> AsyncIterator[dict[str, object]]:
+        """Streaming call to POST /responses (``stream: true``).
+
+        Yields raw SSE ``data:`` chunks as parsed dicts. Named Responses
+        events (``response.output_text.delta`` …) carry their event name in
+        ``_event_type`` (the SSE parser's convention); the workbench
+        Responses aggregator branches on those. Ground truth 0.B-2 (Part 26):
+        the workbench previously had NO streaming Responses path — a model
+        set to openaiResponses got a chat-completions call against the
+        /responses endpoint and deterministic 400/500s.
+        """
+        if apiKey is None:
+            apiKey = self.resolveApiKey()
+        headers = self.buildAuthHeaders(apiKey)
+        url = self._endpoint('responses')
+        body['stream'] = True
+        async for event in self.streamSse(url, headers, body):
+            yield event
+
     def buildAuthHeaders(self, apiKey: str | None) -> dict[str, str]:
         """Build headers for OpenAI-compatible APIs.
 

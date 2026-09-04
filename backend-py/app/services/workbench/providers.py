@@ -344,6 +344,20 @@ def is_openai_provider(provider: dict[str, object] | None) -> bool:
     return is_openai_api_format(provider.get('apiMode') or provider.get('apiFormat'))
 
 
+def is_responses_provider(provider: dict[str, object] | None) -> bool:
+    """True when the provider speaks the OpenAI Responses wire format.
+
+    Part 26 1.3: the workbench previously branched only anthropic/openai-chat
+    and sent Responses-format models a chat-completions body against the
+    /responses endpoint — deterministic 400/500s on OpenAI-proper.
+    """
+    if provider is None:
+        return False
+    from app.providers.api_format import normalize_api_format
+
+    return normalize_api_format(provider.get('apiMode') or provider.get('apiFormat')) == 'openaiResponses'
+
+
 def extract_text(content_blocks: list[dict[str, object]]) -> str:
     """Extract text from Anthropic content blocks."""
     parts: list[str] = []
@@ -925,6 +939,322 @@ async def call_openai_workbench(
     }
 
 
+def _responses_tools(tools: list[dict[str, object]]) -> list[dict[str, object]]:
+    """OpenAI chat function defs → flat Responses function defs.
+
+    Chat nests under ``function``; Responses flattens
+    ``{type: 'function', name, description, parameters}``.
+    """
+    out: list[dict[str, object]] = []
+    for t in tools:
+        fn = as_dict(t.get('function'), {})
+        name = as_str(t.get('name') or fn.get('name'), '')
+        if not name:
+            continue
+        out.append(
+            {
+                'type': 'function',
+                'name': name,
+                'description': as_str(t.get('description') or fn.get('description'), ''),
+                'parameters': as_dict(t.get('parameters') or fn.get('parameters'), {}),
+            }
+        )
+    return out
+
+
+async def call_responses_workbench(
+    messages: list[dict[str, object]],
+    system_text: str,
+    model: str,
+    tools: list[dict[str, object]],
+    effort: str,
+    provider: dict[str, object] | None = None,
+    emit: Callable[[dict[str, object]], None] | None = None,
+    thinking_enabled: bool = True,
+) -> dict[str, object]:
+    """Call an OpenAI **Responses**-format model with progressive streaming.
+
+    Same contract as ``call_openai_workbench``: emits ``thinking`` /
+    ``finalOutput`` deltas, returns the aggregated response dict the turn
+    loop consumes (``choices``/``text``/``thinking``/``tool_uses``/``usage``).
+    Part 26 1.3: before this existed, a model configured with
+    ``openaiResponses`` was sent a chat-completions body against the
+    /responses endpoint (ground truth 0.B-2).
+
+    Body translation reuses the proxy's shared translator
+    (``translate_chat_to_responses_body``); SSE events are the named
+    Responses events (``response.output_text.delta`` …).
+    """
+    from app.adapters.anthropic import translateMessages
+    from app.adapters.openai import translate_chat_to_responses_body
+    from app.providers.clients import getClient
+
+    if not provider:
+        provider = resolve_workbench_provider('', model)
+    if not provider:
+        return {'error': 'No provider available'}
+    client = getClient(provider)
+    if not client:
+        return {'error': f'No client for {provider.get("name")}'}
+    apiKey = client.resolveApiKey()
+    if not apiKey:
+        return {'error': 'API key not configured'}
+
+    # Normalize the internal history to OpenAI chat shape first (the
+    # translator consumes role/content/tool_calls — translateMessages handles
+    # both internal block shapes), then translate to Responses items.
+    openaiMessages = translateMessages(messages)
+    openaiMessages.insert(0, {'role': 'system', 'content': system_text})
+    body: dict[str, object] = {'model': model}
+    body.update(translate_chat_to_responses_body({'messages': openaiMessages}))
+    model_out = model_max_output_tokens(provider, model)
+    if thinking_enabled:
+        _budget, max_tokens = resolve_completion_limits(effort, max_output_tokens=model_out)
+    else:
+        max_tokens = model_out
+    body['max_output_tokens'] = max_tokens
+    respTools = _responses_tools(tools)
+    if respTools:
+        body['tools'] = respTools
+    if thinking_enabled:
+        _model_entry: dict[str, object] | None = None
+        for _m in as_list(provider.get('models', [])):
+            if isinstance(_m, dict) and as_str(_m.get('id')).lower() == model.lower():
+                _model_entry = _m
+                break
+        reasoning = effort_to_openai_reasoning_effort(effort)
+        if _model_entry:
+            reasoning = cap_reasoning_effort(reasoning, as_str(_model_entry.get('maxReasoningEffort')) or None)
+        if reasoning and provider_accepts_reasoning_effort(provider, model, model_entry=_model_entry):
+            # Responses API carries effort under a nested `reasoning` object.
+            body['reasoning'] = {'effort': reasoning}
+            body['temperature'] = 1
+
+    from app.lib.async_subprocess import current_subprocess_cancel
+
+    _cancel_event = current_subprocess_cancel.get()
+    _retried_reasoning = False
+    for _stream_attempt in range(2):
+        contentText = ''
+        thinkingText = ''
+        preservedReasoning = ''
+        toolCallsAccum: dict[str, dict[str, object]] = {}
+        toolOrder: list[str] = []
+        usage: dict[str, int] = {}
+        finishReason: str | None = None
+        _retry_stream = False
+        _stream_rule_hit: str | None = None
+        try:
+            responsesStream = getattr(client, 'responses_stream', None)
+            if responsesStream is None:
+                return {'error': f'Client for {provider.get("name")} does not support the Responses wire format'}
+            async for event in responsesStream(body):
+                if _cancel_event is not None and _cancel_event.is_set():
+                    break
+                if as_str(event.get('type')) == 'upstreamRetry':
+                    if emit is not None:
+                        emit(
+                            {
+                                'type': 'upstreamRetry',
+                                'attempt': event.get('attempt', 1),
+                                'maxRetries': event.get('maxRetries', 3),
+                                'delayMs': event.get('delayMs', 0),
+                                'status': event.get('status', 0),
+                            }
+                        )
+                    continue
+                if as_str(event.get('type')) == 'error' or event.get('error') is not None:
+                    msg = _extract_upstream_error_message(event)
+                    status = event.get('status')
+                    if (
+                        not _retried_reasoning
+                        and 'reasoning' in body
+                        and not contentText
+                        and not thinkingText
+                        and _reasoning_effort_rejected(status, msg)
+                    ):
+                        body.pop('reasoning', None)
+                        _retried_reasoning = True
+                        _retry_stream = True
+                        break
+                    errResp: dict[str, object] = {'error': msg or 'Upstream provider error'}
+                    if isinstance(status, int):
+                        errResp['errorStatus'] = status
+                    retryAfter = event.get('retryAfterMs')
+                    if isinstance(retryAfter, int) and retryAfter > 0:
+                        errResp['retryAfterMs'] = retryAfter
+                    return errResp
+
+                eventType = as_str(event.get('_event_type'), '') or as_str(event.get('type'), '')
+                if eventType == 'response.output_text.delta':
+                    textDelta = as_str(as_dict(event.get('delta'), {}).get('text') or event.get('delta'), '')
+                    if textDelta:
+                        contentText += textDelta
+                        if emit:
+                            emit({'type': 'finalOutput', 'content': textDelta})
+                        if tools and _stream_rule_hit is None:
+                            _stream_rule_hit = _match_stream_rule(contentText)
+                elif eventType in (
+                    'response.reasoning_summary_text.delta',
+                    'response.reasoning_text.delta',
+                ):
+                    rDelta = as_str(as_dict(event.get('delta'), {}).get('text') or event.get('delta'), '')
+                    if rDelta:
+                        preservedReasoning += rDelta
+                        if thinking_enabled:
+                            thinkingText += rDelta
+                            if emit:
+                                emit({'type': 'thinking', 'content': rDelta})
+                elif eventType == 'response.output_item.added':
+                    item = as_dict(event.get('item'), {})
+                    if as_str(item.get('type')) == 'function_call':
+                        callId = as_str(item.get('call_id') or item.get('id'), '')
+                        if callId and callId not in toolCallsAccum:
+                            toolCallsAccum[callId] = {
+                                'id': callId,
+                                'type': 'function',
+                                'function': {'name': as_str(item.get('name'), ''), 'arguments': ''},
+                            }
+                            toolOrder.append(callId)
+                        if _stream_rule_hit is not None:
+                            # A real tool call followed narration — cancel the hit.
+                            _stream_rule_hit = None
+                elif eventType == 'response.function_call_arguments.delta':
+                    deltaObj = as_dict(event.get('delta'), {})
+                    callId = as_str(
+                        event.get('call_id') or event.get('item_id') or deltaObj.get('call_id'), ''
+                    )
+                    tc = toolCallsAccum.get(callId)
+                    if tc is None:
+                        # Some gateways stream argument deltas before the
+                        # output_item.added lands — synthesize the shell.
+                        tc = {
+                            'id': callId or f'call_{uuid.uuid4().hex[:12]}',
+                            'type': 'function',
+                            'function': {'name': '', 'arguments': ''},
+                        }
+                        toolCallsAccum[callId] = tc
+                        toolOrder.append(callId)
+                    chunk = as_str(deltaObj.get('text') or deltaObj.get('arguments') or event.get('delta'), '')
+                    if chunk:
+                        fn = as_dict(tc['function'])
+                        fn['arguments'] = as_str(fn.get('arguments')) + chunk
+                        from app.lib.perf_timing import mark_tool_args_ready
+
+                        mark_tool_args_ready()
+                elif eventType == 'response.output_item.done':
+                    item = as_dict(event.get('item'), {})
+                    if as_str(item.get('type')) == 'function_call':
+                        callId = as_str(item.get('call_id') or item.get('id'), '')
+                        tc = toolCallsAccum.get(callId)
+                        if tc is None:
+                            tc = {
+                                'id': callId,
+                                'type': 'function',
+                                'function': {'name': '', 'arguments': ''},
+                            }
+                            toolCallsAccum[callId] = tc
+                            toolOrder.append(callId)
+                        fn = as_dict(tc['function'])
+                        # `done` carries the complete call — authoritative.
+                        if as_str(item.get('name')):
+                            fn['name'] = as_str(item.get('name'))
+                        argsStr = as_str(item.get('arguments'), '')
+                        if argsStr:
+                            fn['arguments'] = argsStr
+                elif eventType == 'response.completed':
+                    resp = as_dict(event.get('response'), {})
+                    respUsage = as_dict(resp.get('usage'), {})
+                    if respUsage:
+                        usage['input_tokens'] = as_int(respUsage.get('input_tokens', 0))
+                        usage['output_tokens'] = as_int(respUsage.get('output_tokens', 0))
+                        cached = as_dict(respUsage.get('input_tokens_details'), {}).get('cached_tokens')
+                        if cached is not None:
+                            usage['cached_tokens'] = as_int(cached, 0)
+                    status = as_str(resp.get('status'), '')
+                    if status:
+                        finishReason = 'tool_calls' if toolCallsAccum else status
+                elif eventType in ('response.failed', 'error'):
+                    respErr = as_dict(event.get('response'), {}).get('error') or event.get('error')
+                    msg = as_str(as_dict(respErr, {}).get('message') if isinstance(respErr, dict) else respErr, '')
+                    if not msg:
+                        msg = _extract_upstream_error_message(event)
+                    return {'error': msg or 'Upstream provider error'}
+        except Exception as exc:
+            if (
+                not _retried_reasoning
+                and 'reasoning' in body
+                and not contentText
+                and not thinkingText
+                and _reasoning_effort_rejected(None, str(exc))
+            ):
+                body.pop('reasoning', None)
+                _retried_reasoning = True
+                _retry_stream = True
+            else:
+                return {'error': str(exc)}
+        if _retry_stream:
+            continue
+        if _stream_rule_hit and not toolCallsAccum:
+            return {
+                'stream_rule': _stream_rule_hit,
+                'text': contentText,
+                'usage': usage,
+                'finish_reason': finishReason or 'stop',
+            }
+        break
+
+    if not contentText and not toolCallsAccum and not thinkingText and not preservedReasoning:
+        return {
+            'error': (
+                f'Provider returned an empty response for model "{model}". '
+                'Check API key, billing/credits, and that the model id is valid on this provider.'
+            )
+        }
+
+    assistantMessage: dict[str, object] = {'role': 'assistant', 'content': contentText}
+    from app.adapters.reasoning_policy import attach_openai_reasoning
+
+    attach_openai_reasoning(assistantMessage, preservedReasoning or thinkingText)
+    toolUses: list[dict[str, object]] = []
+    if toolCallsAccum:
+        tcList = []
+        for callId in toolOrder:
+            tc = toolCallsAccum[callId]
+            fn = as_dict(tc['function'])
+            argsRaw = as_str(fn.get('arguments'))
+            try:
+                parsedArgs = json.loads(argsRaw) if argsRaw else {}
+                if not isinstance(parsedArgs, dict):
+                    raise ValueError('arguments must be an object')
+            except (json.JSONDecodeError, TypeError, ValueError):
+                from app.services.workbench.json_salvage import salvage_json_object
+
+                saved = salvage_json_object(argsRaw) if argsRaw else None
+                if saved is not None:
+                    parsedArgs = saved
+                else:
+                    parsedArgs = {'_invalid_json': argsRaw[:2000]}
+            tcList.append(
+                {
+                    'id': tc['id'],
+                    'type': 'function',
+                    'function': {'name': fn['name'], 'arguments': json.dumps(parsedArgs)},
+                }
+            )
+            toolUses.append({'type': 'tool_use', 'id': tc['id'], 'name': fn['name'], 'input': parsedArgs})
+            assistantMessage['tool_calls'] = tcList
+    return {
+        'choices': [{'index': 0, 'message': assistantMessage, 'finish_reason': finishReason or 'stop'}],
+        'text': contentText,
+        'thinking': thinkingText,
+        'tool_uses': toolUses,
+        'usage': usage,
+        'finish_reason': finishReason or 'stop',
+        'stop_reason': finishReason or 'stop',
+    }
+
+
 # Private camelCase aliases for back-compat (tests / workbench / subagent)
 _backgroundTaskModel = background_task_model
 _makeReviewLlmClient = make_review_llm_client
@@ -937,3 +1267,4 @@ _extractThinking = extract_thinking
 _supportsThinking = supports_thinking
 _callAnthropicWorkbench = call_anthropic_workbench
 _callOpenaiWorkbench = call_openai_workbench
+_callResponsesWorkbench = call_responses_workbench

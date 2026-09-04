@@ -710,6 +710,84 @@ def _openaiContentToText(content: object) -> str:
     return '\n'.join(out)
 
 
+def translate_chat_to_responses_body(
+    chat_body: dict[str, object],
+) -> dict[str, object]:
+    """Translate a chat-completions body into a Responses-API body.
+
+    Shared by the /v1 proxy path and the workbench Responses path (Part 26
+    1.3 — the workbench previously had no Responses translation and misrouted
+    chat-completions bodies at /responses endpoints).
+
+    Contract (mirrors the proxy's inline translation at handleChatCompletions):
+      - ``messages`` → ``input`` items; system messages fold into
+        ``instructions`` (a ``role: 'system'`` item is invalid in input);
+      - assistant ``tool_calls`` → ``function_call`` items with parsed
+        ``arguments`` (object, not string);
+      - ``role: 'tool'`` → ``function_call_output`` items;
+      - assistant ``content: null`` (the norm when tool_calls are present) is
+        not forwarded; a null top-level value is dropped entirely.
+    """
+    upstream_body: dict[str, object] = {
+        k: v for k, v in chat_body.items() if k not in ('messages', '_endpoint')
+    }
+    msgs = as_list(chat_body.get('messages'), [])
+    if not msgs:
+        return cast('dict[str, object]', strip_none_deep(cast(JsonValue, upstream_body)))
+    input_items: list[dict[str, object]] = []
+    instructions: list[str] = []
+    for m in msgs:
+        if not isinstance(m, dict):
+            continue
+        role = as_str(m.get('role'), 'user')
+        content = m.get('content')
+        if role == 'system':
+            instructions.append(_openaiContentToText(content))
+            continue
+        if role == 'tool':
+            input_items.append(
+                {
+                    'type': 'function_call_output',
+                    'call_id': as_str(m.get('tool_call_id'), ''),
+                    'output': _openaiContentToText(content),
+                }
+            )
+            continue
+        if role == 'assistant':
+            tool_calls = as_list(m.get('tool_calls'), [])
+            text = _openaiContentToText(content)
+            if text:
+                input_items.append({'role': 'assistant', 'content': text})
+            for tc in tool_calls:
+                tcd = as_dict(tc, {})
+                fn = as_dict(tcd.get('function'), {})
+                args_raw = as_str(fn.get('arguments'), '')
+                args: object = {}
+                if args_raw:
+                    try:
+                        parsed = json.loads(args_raw)
+                        if isinstance(parsed, dict):
+                            args = parsed
+                    except (TypeError, ValueError):
+                        args = {}
+                input_items.append(
+                    {
+                        'type': 'function_call',
+                        'call_id': as_str(tcd.get('id'), ''),
+                        'name': as_str(fn.get('name'), ''),
+                        'arguments': args,
+                    }
+                )
+            continue
+        text = _openaiContentToText(content)
+        if text:
+            input_items.append({'role': role, 'content': text})
+    if instructions:
+        upstream_body['instructions'] = '\n\n'.join(instructions)
+    upstream_body['input'] = input_items
+    return cast('dict[str, object]', strip_none_deep(cast(JsonValue, upstream_body)))
+
+
 def _openaiContentToAnthropic(content: object) -> object:
     """OpenAI message content → Anthropic content (string or text/image blocks)."""
     if isinstance(content, str):

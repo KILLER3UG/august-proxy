@@ -146,6 +146,20 @@ async def handleToolCall(name: str, arguments: str) -> str:
                 return '[Blocked] tool_call could not verify the session guard for a mutating tool.'
         except Exception:
             pass
+    # Part 26 4.1: dispatch through the turn loop's real executor (hooks,
+    # read-before-edit observation gate, spill, mutation log) instead of a
+    # raw registry dispatch — the bridge previously re-implemented a
+    # diminished dispatch that skipped those invariants.
+    try:
+        from app.services.workbench.workbench import _executeTool
+        from app.services.workbench.workbench import get_session as _get_session2
+
+        session = _get_session2()
+        if session is not None:
+            result = await _executeTool(name, args, session)
+            return str(result)
+    except Exception:
+        pass  # fall through to the raw registry dispatch (no session bound)
     try:
         # dispatch(name, args: dict) — previously called with **args, which
         # passed the argument VALUES as the `args` parameter (a string for

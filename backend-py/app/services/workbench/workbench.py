@@ -186,11 +186,13 @@ _resolveModel = _providers_mod.resolve_model
 _resolveChatLlm = _providers_mod.resolve_chat_llm
 _isAnthropicProvider = _providers_mod.is_anthropic_provider
 _isOpenaiProvider = _providers_mod.is_openai_provider
+_isResponsesProvider = _providers_mod.is_responses_provider
 _extractText = _providers_mod.extract_text
 _extractThinking = _providers_mod.extract_thinking
 _supportsThinking = _providers_mod.supports_thinking
 _callAnthropicWorkbench = _providers_mod.call_anthropic_workbench
 _callOpenaiWorkbench = _providers_mod.call_openai_workbench
+_callResponsesWorkbench = _providers_mod.call_responses_workbench
 
 
 def normalizeGuardMode(mode: str) -> str:
@@ -3033,11 +3035,16 @@ async def _sendWorkbenchMessageStreamImpl(
         # (each a registry walk + BM25 assembly over the transcript).
         isAnthropic = _isAnthropicProvider(resolvedProvider)
         isOpenai = _isOpenaiProvider(resolvedProvider)
+        # Part 26 1.3: Responses-format models previously fell into the
+        # openai branch and got a chat-completions body at /responses.
+        isOpenaiResponses = not isAnthropic and _isResponsesProvider(resolvedProvider)
         tools: list[dict[str, object]] = []
         openaiTools: list[dict[str, object]] = []
         if isAnthropic:
             tools = toolDefinitions(session)
-        elif isOpenai:
+        elif isOpenai or isOpenaiResponses:
+            # Responses consumes the same function defs flattened at wire time
+            # (_responses_tools) — build the OpenAI list once.
             openaiTools = openaiToolDefinitions(session)
         # buildSystemPrompt's name extraction handles both wire shapes — pass
         # whichever list the resolved format built so the intake manifest and
@@ -3571,11 +3578,12 @@ async def _sendWorkbenchMessageStreamImpl(
                 # provider, not the turn's first model.
                 isAnthropic = _isAnthropicProvider(resolvedProvider)
                 isOpenai = _isOpenaiProvider(resolvedProvider)
+                isOpenaiResponses = not isAnthropic and _isResponsesProvider(resolvedProvider)
                 # The skipped builder ran for a different format — build the
                 # missing list now so the chain model sees its full tool set.
                 if isAnthropic and not tools:
                     tools = toolDefinitions(session)
-                elif isOpenai and not openaiTools:
+                elif (isOpenai or isOpenaiResponses) and not openaiTools:
                     openaiTools = openaiToolDefinitions(session)
                 chainUsedAt = resolvedModel
                 logger.warning('workbench falling back to chain model %s', resolvedModel)
@@ -3667,6 +3675,19 @@ async def _sendWorkbenchMessageStreamImpl(
                             systemText,
                             resolvedModel,
                             _wireTools,
+                            effectiveEffort,
+                            provider=resolvedProvider,
+                            emit=_attemptEmit,
+                            thinking_enabled=thinking_enabled,
+                        )
+                    elif isOpenaiResponses:
+                        # Part 26 1.3: native Responses wire format — the same
+                        # flattened OpenAI function defs.
+                        response = await _callResponsesWorkbench(
+                            _attemptMessages,
+                            systemText,
+                            resolvedModel,
+                            _wireOpenaiTools,
                             effectiveEffort,
                             provider=resolvedProvider,
                             emit=_attemptEmit,
@@ -3841,9 +3862,10 @@ async def _sendWorkbenchMessageStreamImpl(
                     # promoted model may be served on a different format.
                     isAnthropic = _isAnthropicProvider(resolvedProvider)
                     isOpenai = _isOpenaiProvider(resolvedProvider)
+                    isOpenaiResponses = not isAnthropic and _isResponsesProvider(resolvedProvider)
                     if isAnthropic and not tools:
                         tools = toolDefinitions(session)
-                    elif isOpenai and not openaiTools:
+                    elif (isOpenai or isOpenaiResponses) and not openaiTools:
                         openaiTools = openaiToolDefinitions(session)
                     chainUsedAt = resolvedModel
                     logger.warning('workbench context overflow — promoting to %s', resolvedModel)
@@ -3860,7 +3882,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     continue
             if chainIndex >= len(chainModels):
                 break
-        if not isAnthropic and not isOpenai:
+        if not isAnthropic and not isOpenai and not isOpenaiResponses:
             if emit:
                 emit({'type': 'error', 'message': f'Unknown provider format for {resolvedProvider}'})
             turnError = turnError or f'Unknown provider format for {resolvedProvider}'
