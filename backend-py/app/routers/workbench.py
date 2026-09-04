@@ -1858,11 +1858,12 @@ async def undoLastTurn(sessionId: str):
 
 @router.post('/sessions/{sessionId}/truncate')
 async def truncateSession(sessionId: str, request: Request):
-    """Truncate the session in place up to (and including) ``upToIndex``.
+    """Truncate the session in place, KEEPING messages before ``upToIndex``.
 
-    Body: ``{ "upToIndex": int }`` — the message index to keep up to
-    (inclusive); everything after is removed. Used by the chat UI's
-    revert/edit/regenerate actions so backend history matches the thread.
+    Body: ``{ "upToIndex": int }`` — exclusive: ``messages[:upToIndex]`` is
+    kept and everything from that index on is removed (all frontend callers
+    pass exclusive semantics). Used by the chat UI's revert/edit/regenerate
+    actions so backend history matches the thread.
     """
     _require_turn_not_in_flight(sessionId)
     from app.services.workbench.sessions import truncate_session

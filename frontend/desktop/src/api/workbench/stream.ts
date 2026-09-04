@@ -60,8 +60,9 @@ export async function streamWorkbenchChat(
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     const msg = `Workbench chat failed: ${res.status} ${errText}`;
-    handlers.onError?.({ message: msg });
-    // Throw so callers do NOT open an SSE subscriber for a turn that never started.
+    // Part 26 7.4: fire onError ONCE — throwing ALSO propagates the error to
+    // the caller's catch, which fires handlers.onError again (double
+    // "Turn failed" toast/banner). Throwing without calling is enough.
     throw new Error(msg);
   }
 

@@ -22,10 +22,13 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
-          if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) return 'react';
-          if (id.includes('framer-motion')) return 'motion';
+          // Part 26 7.4: specific vendor matches FIRST — the broad 'react'
+          // substring also hits lucide-react / @tanstack/react-*, which
+          // defeated their dedicated buckets.
           if (id.includes('lucide-react')) return 'icons';
           if (id.includes('@tanstack')) return 'query';
+          if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) return 'react';
+          if (id.includes('framer-motion')) return 'motion';
           if (id.includes('sonner') || id.includes('cmdk') || id.includes('recharts')) return 'ui';
           // Heavy single-purpose libs get their own cached chunks so the
           // main entry (chat thread) doesn't carry them: xlsx (~1 MB),

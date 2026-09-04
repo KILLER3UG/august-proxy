@@ -20,12 +20,12 @@ async function toggleTodoStatus(
   todos: WorkbenchTodo[],
   id: string,
 ): Promise<WorkbenchTodo[]> {
-  const next = todos.map((t) =>
+  const next = todos.map((t): WorkbenchTodo =>
     t.id === id
       ? {
           ...t,
           status:
-            t.status === 'completed' ? 'pending' : ('completed'),
+            t.status === 'completed' ? ('pending' as const) : ('completed' as const),
         }
       : t,
   );

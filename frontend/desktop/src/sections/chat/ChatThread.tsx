@@ -77,6 +77,7 @@ import {
 import { resolveWorkbenchSessionId } from './stream/session-id-map';
 import { launchArenaRun } from './arena/launchArenaRun';
 import { ArenaView } from './arena/ArenaView';
+import { useArenaStore } from './arena/arena-store';
 import { setDebateRun, type DebateRun as DebateRunType } from './debate/debate-store';
 import { DebateView } from './debate/DebateView';
 import {
@@ -1394,11 +1395,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       ? approvalBanner
       : composerSlot;
 
+  // Part 26 7.4: the Arena overlay is conditionally mounted — the store
+  // subscription is 2 booleans (negligible) while ArenaView's own
+  // useSyncExternalStore subscribes to ALL session streams + a poll.
+  const arenaActive = useArenaStore((s) => !!s.run || !!s.archiveOpen);
+
   return (
     <div className="august-chat-thread flex h-full min-h-0 relative w-full">
       <ChatCheckpoints messages={messages} scrollRef={scrollRef} />
-      {/* Split-pane arena overlay — null when no run is active. */}
-      <ArenaView />
+      {/* Split-pane arena overlay — null when no run is active. Part 26
+          7.4: conditionally mounted — the unmounted tree costs nothing,
+          vs. running subscribe-all-streams + a 30 s poll on every chat. */}
+      {arenaActive && <ArenaView />}
       {/* Debate overlay — null when no debate is active. */}
       <DebateView ensureWorkbenchSession={ensureWorkbenchSession} />
       <div className="august-chat-surface flex-1 flex flex-col min-w-0 bg-chat-area h-full overflow-hidden relative">

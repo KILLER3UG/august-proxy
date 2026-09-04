@@ -111,7 +111,7 @@ export interface MakeStreamHandlersOptions {
 
 export interface StreamHandlers {
   handlers: WorkbenchEventHandlers;
-  finalize: (status: 'done' | 'error' | 'aborted') => void;
+  finalize: (status: 'done' | 'error' | 'aborted' | 'queued') => void;
   getState: () => {
     streamBlocks: MessageBlock[];
     assistantContent: string;
@@ -270,7 +270,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     }
   };
 
-  const finalize = (status: 'done' | 'error' | 'aborted') => {
+  const finalize = (status: 'done' | 'error' | 'aborted' | 'queued') => {
     if (finished) return;
     finished = true;
     cancelPendingUpdate();
@@ -307,6 +307,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       if (isTurnVisible(sessionId)) setSessionStatus(sessionId, status === 'done' ? 'done' : 'error');
     }
     // Receive chime when the reply finishes (matches gradient-chat-input).
+    // 'queued' finalizes silently — nothing completed yet.
     if (status === 'done') playReceiveChime();
     // OS notification when the reply finishes (General → Notifications →
     // Response completions). Only fires while the window is unfocused —
@@ -319,7 +320,9 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         });
       }
     }
-    finishTurn(turn, status);
+    // 'queued' is a cleanup-only finalize — the turn record stays 'done'
+    // (its real reply comes from the queued turn that follows).
+    finishTurn(turn, status === 'queued' ? 'done' : status);
 
   };
 

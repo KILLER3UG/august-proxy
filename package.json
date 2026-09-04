@@ -31,9 +31,6 @@
     "check:naming": "node scripts/check-naming.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "node-pty": "^1.1.0",
-    "turndown": "^7.2.4",
     "zod": "^3.25.76"
   }
 }

@@ -65,9 +65,7 @@ export function ArenaView() {
 
   // Re-render whenever ANY lane's stream state changes (new tokens, done…),
   // so finished-lane counts and the diff button stay live.
-  useSyncExternalStore($sessionStreamStates.subscribe, $sessionStreamStates.get);
-
-  // Lane answers: read from the subscribed store snapshot EVERY render —
+  useSyncExternalStore($sessionStreamStates.subscribe, $sessionStreamStates.get);  // Lane answers: read from the subscribed store snapshot EVERY render —
   // a useMemo keyed on `run` would freeze the diff button at the mount
   // snapshot (the store re-renders via useSyncExternalStore but the memo
   // deps never change — audit finding: 'Diff answers' was dead).
@@ -88,10 +86,14 @@ export function ArenaView() {
 
   // Arena archive: recent verdicts (results used to vanish when the overlay
   // closed — the routing_evidence arena rows are the durable record).
+  // Part 26 7.4: poll only while the overlay is actually open — the
+  // always-on 30 s poll + subscribe-all-streams ran on every chat even when
+  // no arena was ever opened.
   const historyQ = useQuery<{ results: ArenaHistoryRow[] }>({
     queryKey: ['arena-history'],
     queryFn: () => api.get<{ results: ArenaHistoryRow[] }>('/api/brain/routing/arena'),
     refetchInterval: 30_000,
+    enabled: !!run || archiveOpen,
   });
 
   // Group per verdict (session) so one archive entry = one arena/debate,
