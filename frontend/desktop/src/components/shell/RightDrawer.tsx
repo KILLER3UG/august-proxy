@@ -41,7 +41,6 @@ import { RightDrawerBrowserSection } from './RightDrawerBrowserSection';
 import { RightDrawerNotesSection } from './RightDrawerNotesSection';
 import { RightDrawerFileSection } from './RightDrawerFileSection';
 import { RightDrawerSubagentsSection } from './RightDrawerSubagentsSection';
-import { RightDrawerTrajectorySection } from './RightDrawerTrajectorySection';
 import { RightDrawerArtifactsSection } from './RightDrawerArtifactsSection';
 import { RightDrawerCircuitSection } from './RightDrawerCircuitSection';
 import { RoutinesPane } from '@/components/sidebar/RoutinesPane';
@@ -286,7 +285,6 @@ const TAB_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileD
   browser: { label: 'Browser', Icon: Globe },
   notes: { label: 'Notepad', Icon: StickyNote },
   subagents: { label: 'Subagents', Icon: Users },
-  trajectory: { label: 'Trajectory', Icon: Activity },
   artifacts: { label: 'Artifacts', Icon: GalleryVertical },
   circuit: { label: 'Circuit', Icon: Cpu },
   file: { label: 'File', Icon: FileDiff },
@@ -303,7 +301,6 @@ const SECTION_ADD_ORDER: RightDrawerSectionId[] = [
   'browser',
   'notes',
   'subagents',
-  'trajectory',
   'artifacts',
   'circuit',
   'routines',
@@ -468,8 +465,6 @@ function renderSection(
           workbenchSessionId={ctx.workbenchSession?.id ?? null}
         />
       );
-    case 'trajectory':
-      return <RightDrawerTrajectorySection sessionId={ctx.sessionId} />;
     case 'artifacts':
       return <RightDrawerArtifactsSection sessionId={ctx.sessionId} />;
     case 'circuit':

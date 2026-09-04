@@ -663,6 +663,18 @@ export function MemorySection({ active }: { active: { id: string } }) {
       });
       return;
     }
+    // Part 26 7.3: the Memories tab lists the KV `memory` store — write to
+    // THAT store so the entry actually appears in the list (it previously
+    // landed in Facts & Rules via the facts door and never showed up).
+    if (active.id === 'memory-knowledge') {
+      addMut.mutate({
+        action: 'set',
+        store: 'memory',
+        key: text.split('\n')[0].slice(0, 80),
+        value: text,
+      });
+      return;
+    }
     addMut.mutate({
       action: 'set',
       key: `user:${slugify(text)}`,

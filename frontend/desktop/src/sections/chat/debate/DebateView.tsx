@@ -28,13 +28,32 @@ function laneUserMessage(run: DebateRun, text: string): ChatMessage {
   };
 }
 
-/** Send one debate turn on the session with the debater's model override. */
-async function sendDebateTurn(
+/**
+ * Dispatch one debate turn on the session with the given lane's model
+ * override. The turn's `done` SSE event fires while this await is still
+ * pending, so round/awaitingTurn/judgeSent are marked SYNCHRONOUSLY before
+ * the stream starts — the old post-await marking let the done handler
+ * re-enter with stale state (Part 26 7.1: the opening prompt re-sent to the
+ * same model and the judge summary double-dispatched).
+ */
+async function dispatchDebateTurn(
   run: DebateRun,
   text: string,
   ensureWorkbenchSession: () => Promise<WorkbenchSession | null>,
+  lane: DebateLane,
+  opts: { judge?: boolean } = {},
 ): Promise<void> {
-  const lane = nextDebater(run);
+  const pre = useDebateStore.getState().run;
+  if (pre && pre.runId === run.runId) {
+    useDebateStore.setState({
+      run: {
+        ...pre,
+        round: opts.judge ? pre.round : pre.round + 1,
+        awaitingTurn: true,
+        judgeSent: opts.judge ? true : pre.judgeSent,
+      },
+    });
+  }
   const msgs = getOrInitSessionStreamState(run.sessionId).messages ?? [];
   const userMsg = laneUserMessage(run, text);
   const chatHistory = [...msgs, userMsg];
@@ -49,18 +68,15 @@ async function sendDebateTurn(
     provider: lane.provider,
     ensureWorkbenchSession,
   });
-  const current = useDebateStore.getState().run;
-  if (!current) return;
+  // The debate may have been closed while the turn ran — never resurrect a
+  // run object by spreading a null (the old `{...run!}` crash, Part 26 7.1).
+  const after = useDebateStore.getState().run;
+  if (!after) return;
   if (result === 'error') {
     useDebateStore.setState({
-      run: { ...current, phase: 'done', awaitingTurn: false },
+      run: { ...after, phase: 'done', awaitingTurn: false },
     });
-    return;
   }
-  // Turn dispatched — the `done` SSE event advances the debate.
-  useDebateStore.setState({
-    run: { ...current, round: current.round + 1, awaitingTurn: true },
-  });
 }
 
 export function DebateView({
@@ -107,42 +123,46 @@ export function DebateView({
       void (async () => {
         const current = useDebateStore.getState().run;
         if (!current || current.phase !== 'running') return;
+        // Consume the in-flight flag FIRST — a duplicate done event for the
+        // same turn must not advance twice (Part 26 7.1 re-entry guard).
+        useDebateStore.setState({
+          run: { ...current, awaitingTurn: false },
+        });
 
-        const judgeRound = current.round >= current.maxRounds && !!current.judge;
-        if (judgeRound && !current.judgeSent) {
-          // Judge summary turn
-          await sendDebateTurn(
+        const judged = current.round >= current.maxRounds && !!current.judge;
+        if (judged && !current.judgeSent) {
+          // Judge summary turn — dispatched on the JUDGE's lane (the old
+          // code picked the lane via nextDebater, so a debater answered).
+          await dispatchDebateTurn(
             current,
             debateJudgeMessage(current),
             ensureRef.current,
+            current.judge!,
+            { judge: true },
           );
-          useDebateStore.setState({
-            run: {
-              ...useDebateStore.getState().run!,
-              judgeSent: true,
-              awaitingTurn: true,
-            },
-          });
           return;
         }
-        if (judgeRound || current.round >= current.maxRounds) {
+        if (judged || current.round >= current.maxRounds) {
           // Finished (judge turn already sent, or rounds exhausted)
           useDebateStore.setState({
-            run: { ...current, phase: 'done', awaitingTurn: false },
+            run: { ...useDebateStore.getState().run ?? current, phase: 'done', awaitingTurn: false },
           });
           return;
         }
         if (!current.auto) {
           // Manual pause — wait for the user to press "Next round".
           useDebateStore.setState({
-            run: { ...current, phase: 'done', awaitingTurn: false },
+            run: { ...useDebateStore.getState().run ?? current, phase: 'done', awaitingTurn: false },
           });
           return;
         }
-        await sendDebateTurn(
+        // Round counter increments synchronously inside dispatchDebateTurn;
+        // the message + lane are computed from the pre-increment state.
+        await dispatchDebateTurn(
           current,
           debateRoundMessage(current, current.round),
           ensureRef.current,
+          nextDebater(current),
         );
       })();
     });
@@ -156,21 +176,18 @@ export function DebateView({
     !isRunning && run.round >= run.maxRounds && (!!run.judge ? !!run.judgeSent : true);
 
   const start = () => {
-    useDebateStore.setState({
-      run: {
-        ...run,
-        phase: 'running',
-        round: 0,
-        judgeSent: false,
-        auto: true,
-        awaitingTurn: true,
-      },
-    });
-    void sendDebateTurn(
-      { ...run, phase: 'running', round: 0, judgeSent: false, awaitingTurn: true },
-      debateRoundMessage({ ...run, phase: 'running' }, 0),
-      ensureRef.current,
-    );
+    const fresh: DebateRun = {
+      ...run,
+      phase: 'running',
+      round: 0,
+      judgeSent: false,
+      auto: true,
+      awaitingTurn: true,
+    };
+    useDebateStore.setState({ run: fresh });
+    // Round 0's message is the opening prompt; the lane is the first debater
+    // (computed from the pre-dispatch round — dispatch increments it).
+    void dispatchDebateTurn(fresh, debateRoundMessage(fresh, 0), ensureRef.current, nextDebater(fresh));
   };
 
   const nextRound = () => {
@@ -180,7 +197,12 @@ export function DebateView({
     useDebateStore.setState({
       run: { ...current, phase: 'running', awaitingTurn: true },
     });
-    void sendDebateTurn(current, debateRoundMessage(current, current.round), ensureRef.current);
+    void dispatchDebateTurn(
+      current,
+      debateRoundMessage(current, current.round),
+      ensureRef.current,
+      nextDebater(current),
+    );
   };
 
   const toggleAuto = () => {

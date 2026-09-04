@@ -23,6 +23,7 @@ import { stopChatStream, startChatStream } from '../chat-stream-manager';
 import {
   $sessionStreamStates,
   getOrInitSessionStreamState,
+  updateSessionStreamState,
   peekSessionStreamState,
 } from '../stream/session-stream-store';
 import { resolveWorkbenchSessionId } from '../stream/session-id-map';
@@ -256,11 +257,15 @@ export function ArenaView() {
   };
 
   const restartLane = async (lane: ArenaRunLane) => {
-    // Truncate the lane back to before the prompt, then re-send it as a
-    // fresh turn with the lane's model and the run's original settings.
+    // Truncate the lane back to before the ARENA PROMPT — the LAST user
+    // message. Lanes are seeded with the source-session prefix, so the first
+    // user message is the source conversation's opener, not ours: truncating
+    // from it wiped the source context server-side while the UI kept showing
+    // it (Part 26 7.3). The local transcript is replaced with the truncated
+    // list so the view matches the backend again.
     const msgs = getOrInitSessionStreamState(lane.uiSessionId).messages ?? [];
-    const firstUserIdx = msgs.findIndex((m) => m.role === 'user');
-    const base = firstUserIdx >= 0 ? msgs.slice(0, firstUserIdx) : msgs;
+    const lastUserIdx = msgs.map((m) => m.role).lastIndexOf('user');
+    const base = lastUserIdx >= 0 ? msgs.slice(0, lastUserIdx) : msgs;
     const userMsg = {
       id: `m${Date.now()}_r`,
       role: 'user' as const,
@@ -268,9 +273,10 @@ export function ArenaView() {
       timestamp: new Date().toISOString(),
     };
     const chatHistory = [...base, userMsg];
+    updateSessionStreamState(lane.uiSessionId, () => ({ messages: chatHistory }));
     const wbId = resolveWorkbenchSessionId(lane.uiSessionId);
-    if (firstUserIdx >= 0) {
-      void truncateWorkbenchSession(wbId, firstUserIdx).catch(() => undefined);
+    if (lastUserIdx >= 0) {
+      void truncateWorkbenchSession(wbId, lastUserIdx).catch(() => undefined);
     }
     let session = null;
     try {

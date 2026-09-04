@@ -32,11 +32,10 @@ _ALLCamelKeys = {
     'skillRelevanceMatch',
     'maxAgentDepth',
     'maxWorkbenchToolLoops',
-    # Evidence-driven auto-routing (surpass #1 closed loop).
-    'autoRoute',
+    # Routing introspection (Part 26 7.2): autoRoute/MinWinRate/WinGap are
+    # removed — no turn-loop reader ever existed; MinSamples stays for the
+    # harness flow map.
     'autoRouteMinSamples',
-    'autoRouteMinWinRate',
-    'autoRouteWinGap',
     # Memory read gate (Bug 8a) + write door + sensitive-topic toggle.
     'modelMemoryRead',
     'modelMemoryWrites',

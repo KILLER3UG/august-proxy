@@ -13,7 +13,6 @@ export type RightDrawerSectionId =
   | 'browser'
   | 'notes'
   | 'subagents'
-  | 'trajectory'
   | 'artifacts'
   | 'circuit'
   | 'file'
@@ -43,7 +42,6 @@ const SECTION_ORDER: RightDrawerSectionId[] = [
   'browser',
   'notes',
   'subagents',
-  'trajectory',
   'artifacts',
   'circuit',
 ];

@@ -149,10 +149,7 @@ export function useChatSend(opts: UseChatSendOptions) {
   };
 
   const generateAIResponse = useCallback(
-    async (
-      chatHistory: ChatMessage[],
-      opts?: { autoRouteModel?: { id: string; provider: string } | null },
-    ) => {
+    async (chatHistory: ChatMessage[]) => {
       const turnSessionId = sessionId;
       if (!turnSessionId) {
         releaseSendLatch();
@@ -204,28 +201,10 @@ export function useChatSend(opts: UseChatSendOptions) {
         return;
       }
 
-      // Auto-routing (D1): strong evidence may override the model for this
-      // turn — opt-in via the local flag, requires ≥5 samples and ≥66% win
-      // rate for the classified task type. Off by default: never answer on
-      // a model the user didn't pick unless they explicitly enabled it.
-      let autoRouteOn = false;
-      try {
-        autoRouteOn = localStorage.getItem('august_auto_route') === '1';
-      } catch {
-        autoRouteOn = false;
-      }
       // Read the model from the ref: this callback is invoked from captured
       // closures (drain effect, generateRef) whose prop snapshot can be one
       // model-switch stale.
       let useModel = modelForRequestRef.current;
-      try {
-        const candidate = opts?.autoRouteModel;
-        if (autoRouteOn && candidate?.id && candidate.provider) {
-          useModel = { ...modelForRequestRef.current, ...candidate } as ModelItem;
-        }
-      } catch {
-        /* keep selected model */
-      }
       if (!useModel?.id) {
         toast.error('Select a model first (e.g. a free OpenCode model)');
         releaseSendLatch();
@@ -601,68 +580,17 @@ export function useChatSend(opts: UseChatSendOptions) {
       setMessages(nextMessages);
       persistMessages(sessionId, nextMessages);
       playSendChime();
-      // Auto-routing (D1): with strong evidence, let the winning model take
-      // this turn — only when the user opted in. Fetch is bounded (1.5s) —
-      // any failure keeps the pick.
-      let autoRouteModel: { id: string; provider: string } | null = null;
-      let autoRouteOn = false;
-      try {
-        autoRouteOn = localStorage.getItem('august_auto_route') === '1';
-      } catch {
-        autoRouteOn = false;
-      }
-      if (autoRouteOn) {
-        try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 1500);
-          const res = await fetch(
-            `/api/brain/routing/suggestions?prompt=${encodeURIComponent(text.slice(0, 400))}`,
-            { signal: ctrl.signal },
-          );
-          clearTimeout(timer);
-          if (res.ok) {
-            const data = (await res.json()) as {
-              suggestions?: Array<{
-                model: string;
-                provider: string;
-                wins: number;
-                total: number;
-                winRate: number;
-              }>;
-            };
-            const top = data.suggestions?.[0];
-            if (
-              top &&
-              top.total >= 5 &&
-              top.winRate >= 0.66 &&
-              top.model !== modelForRequest?.id
-            ) {
-              autoRouteModel = { id: top.model, provider: top.provider };
-              toast.message(`Auto-routed to ${top.model}`, {
-                description: `${top.wins}/${top.total} wins on this task type`,
-                action: {
-                  label: 'Disable auto-route',
-                  onClick: () => {
-                    try {
-                      localStorage.setItem('august_auto_route', '0');
-                    } catch {
-                      /* ignore */
-                    }
-                  },
-                },
-              });
-            }
-          }
-        } catch {
-          /* keep the selected model */
-        }
-      }
+      // Part 26 7.2: the dormant per-turn auto-route fetch is gone (AGENTS.md:
+      // there is NO automatic turn rerouting — the backend loop never existed
+      // and the opt-in flag could only ever be written '0'). Arena/Debate
+      // remain the model-comparison surfaces; routing_evidence is read by the
+      // Arena launcher hints.
       // Pass the FULL message history — generateAIResponse builds the new
       // messages state from this argument, so passing only `[userMsg]` would
       // overwrite the existing list with just two entries and wipe the prior
       // conversation from view and from localStorage.
       try {
-        await generateAIResponse(nextMessages, { autoRouteModel });
+        await generateAIResponse(nextMessages);
       } catch {
         // generateAIResponse releases the latch itself once the turn is
         // registered; this catch only guards pre-registration throws so a

@@ -38,7 +38,13 @@ const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 function scheduleFromPick(freq: Freq, detail: { time: string; day: string; everyN: string; unit: string }): string {
   if (freq === 'daily') return `daily ${detail.time}`;
   if (freq === 'weekly') return `weekly ${detail.day} ${detail.time}`;
-  if (freq === 'hourly') return `0 ${detail.time}: * * *`.replace(': *', ' *');
+  if (freq === 'hourly') {
+    // Part 26 7.3: the picker value is a MINUTE (:00/:15/:30/:45) — the old
+    // template bound it into the HOUR field, so "hourly at :30" produced the
+    // invalid cron `0 30 * * *` (creation 400) and ":00" produced daily-
+    // at-midnight. Hourly form is `<minute> * * * *`.
+    return `${parseInt(detail.time || '0', 10) || 0} * * * *`;
+  }
   return `every ${detail.everyN || '1'}${detail.unit || 'h'}`;
 }
 

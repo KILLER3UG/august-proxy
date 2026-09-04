@@ -47,7 +47,6 @@ boolKeys: tuple[str, ...] = (
     'adapterParallelTools',
     'parallelReadTools',
     'reviewLearnedGuidelines',
-    'autoRoute',
     'skillRelevanceMatch',
     'modelMemoryRead',
     'modelMemoryWrites',
@@ -67,14 +66,12 @@ numKeys: tuple[str, ...] = (
     'episodicRetentionDays',
     'preferenceRetireDays',
 )
-floatKeys: tuple[str, ...] = ('autoRouteMinWinRate', 'autoRouteWinGap', 'flagRateCap')
+floatKeys: tuple[str, ...] = ('flagRateCap',)
 strKeys: tuple[str, ...] = ('titleModel', 'skillLearning', 'skillLearningJudgeModel')
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys + floatKeys + strKeys)
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
 minSamplesRange = (1, 20)
-minWinRateRange = (0.05, 1.0)
-winGapRange = (0.0, 0.9)
 consolidationIntervalRange = (1, 168)
 escalationBudgetRange = (0, 50)
 flagRateCapRange = (0.0, 0.5)
@@ -95,12 +92,13 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # The documented default is 25 tool rounds (MAX_MANAGED_TOOL_ROUNDS);
     # the stale 100 seed made that constant dead on every fresh install.
     ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 25), 'num'),
-    # Evidence-driven auto-routing (surpass #1 closed loop): opt-in per
-    # config, with threshold knobs the Reliability dashboard exposes.
-    ('autoRoute', 'auto_route', False, 'bool'),
+    # Evidence-driven routing introspection (Part 26 7.2): `autoRoute` /
+    # `autoRouteMinWinRate` / `autoRouteWinGap` are REMOVED — no turn-loop
+    # reader ever existed (the "auto-routing" claim was corrected in Part 25
+    # Phase 4) and the frontend opt-in ghost is deleted with them.
+    # `autoRouteMinSamples` stays: harness_self_improve prints it in the
+    # flow map.
     ('autoRouteMinSamples', 'auto_route_min_samples', 3, 'num'),
-    ('autoRouteMinWinRate', 'auto_route_min_win_rate', 0.6, 'float'),
-    ('autoRouteWinGap', 'auto_route_win_gap', 0.15, 'float'),
     # Memory read gate: when off, no <memory> block is injected into the
     # turn and the intake stops advertising auto-injected facts. Explicit
     # brain_query lookups stay available (sessions/messages, not the facts
@@ -253,9 +251,7 @@ def validatePatch(patch: object) -> tuple[bool, str]:
         elif kind == 'float':
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return (False, f'{key!r} must be a number (got {type(value).__name__})')
-            lo, hi = minWinRateRange if key == 'autoRouteMinWinRate' else winGapRange
-            if key == 'flagRateCap':
-                lo, hi = flagRateCapRange
+            lo, hi = flagRateCapRange
             if value < lo or value > hi:
                 return (False, f'{key!r} must be between {lo} and {hi} (got {value})')
         else:

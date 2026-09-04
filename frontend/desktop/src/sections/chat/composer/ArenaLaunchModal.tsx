@@ -51,8 +51,10 @@ export function ArenaLaunchModal({
   const [templates, setTemplates] = useState<ArenaTemplate[]>(loadTemplates);
   const [templateName, setTemplateName] = useState('');
   // Routing-evidence hint (surpass #1): "for 'tests' tasks, X wins 7/9".
+  // Backend sends `modelId` (Part 26 7.2 — the old `.model` reads rendered
+  // blank chips and React duplicate-key warnings).
   const [suggestions, setSuggestions] = useState<
-    Array<{ model: string; wins: number; total: number; winRate: number; avgTokens: number }>
+    Array<{ modelId: string; wins: number; total: number; winRate: number; avgTokens: number }>
   >([]);
 
   // Escape closes (Phase 4 — modal keyboard coverage).
@@ -74,7 +76,7 @@ export function ArenaLaunchModal({
         .get<{
           taskType: string;
           suggestions: Array<{
-            model: string;
+            modelId: string;
             wins: number;
             total: number;
             winRate: number;
@@ -232,11 +234,11 @@ export function ArenaLaunchModal({
             <Sparkles className="size-3 text-primary" />
             {suggestions.slice(0, 2).map((s) => (
               <span
-                key={s.model}
+                key={s.modelId}
                 className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary"
                 title={`${s.wins}/${s.total} wins · ${s.avgTokens} avg tokens`}
               >
-                {s.model} wins {s.wins}/{s.total} · {s.avgTokens} tok avg
+                {s.modelId} wins {s.wins}/{s.total} · {s.avgTokens} tok avg
               </span>
             ))}
           </div>

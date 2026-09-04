@@ -117,6 +117,7 @@ class ModelSelectBody(CamelModel):
 
 class ActionBody(CamelModel):
     action: str = ''
+    store: str | None = None
     id: str | None = None
     title: str | None = None
     updates: dict[str, object] | None = None
@@ -479,6 +480,20 @@ async def manage_memory(body: ActionBody):
     # Provenance for the facts store: the Memory UI add-box sends source='user';
     # default to 'user' since this endpoint is the human-facing write door.
     source = (body.source or 'user').strip() or 'user'
+    # Part 26 7.3: the Memories tab lists the KV `memory` store, but its
+    # add-box posted to the facts door — entries "saved" from that tab landed
+    # in Facts & Rules and never appeared. Route by the requested store.
+    if (body.store or '').strip() == 'memory' and key:
+        if action in ('set', 'upsert'):
+            from app.services.memory_store.kv import save_internal
+
+            save_internal(key, cast(JsonValue, body.value))
+            return {'ok': True, 'store': 'memory', 'key': key}
+        if action in ('delete', 'forget'):
+            conn_kv = memory_store._conn()  # noqa: SLF001
+            cur = conn_kv.execute('DELETE FROM memory_store WHERE key = ?', (key,))
+            conn_kv.commit()
+            return {'ok': cur.rowcount > 0, 'store': 'memory', 'key': key}
     if action in ('set', 'upsert') and key:
         before_fact = memory_store.get_fact(key)
         before = copy.deepcopy(before_fact) if before_fact else None

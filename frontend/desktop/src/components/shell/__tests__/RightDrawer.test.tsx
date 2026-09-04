@@ -8,14 +8,6 @@ import {
   toggleRightDrawerSection,
   $rightDrawer,
 } from '../RightDrawerState';
-import { RightDrawerTrajectorySection } from '../RightDrawerTrajectorySection';
-import * as harness from '@/api/harness';
-import type { HarnessTrace } from '@/api/harness';
-
-vi.mock('@/api/harness', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/api/harness')>();
-  return { ...actual, listSessionTraces: vi.fn() };
-});
 
 function setupDrawer() {
   const qc = new QueryClient({
@@ -68,7 +60,7 @@ describe('RightDrawer section chooser (ZCode "Open tab")', () => {
     expect(screen.getByText('Open tab')).toBeTruthy();
     expect(screen.getByText('Choose a tab to open in the side pane.')).toBeTruthy();
     // Card grid offers the workbench sections…
-    for (const label of ['Terminal (bottom)', 'Diffs', 'Notepad', 'Trajectory']) {
+    for (const label of ['Terminal (bottom)', 'Diffs', 'Notepad', 'Artifacts']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
     // …as cards (icon above label).
@@ -148,7 +140,7 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
   it('renders one tab per open section with icon, label and a close button', () => {
     act(() => {
       toggleRightDrawerSection('tasks');
-      toggleRightDrawerSection('trajectory');
+      toggleRightDrawerSection('artifacts');
     });
     setupDrawer();
     const strip = document.querySelector('[data-testid="drawer-tab-strip"]');
@@ -156,10 +148,12 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
     const tabs = document.querySelectorAll('[data-testid^="drawer-tab-"][role="tab"]');
     expect(tabs.length).toBe(2);
     expect(screen.getByText('Tasks')).toBeTruthy();
-    expect(screen.getByText('Trajectory')).toBeTruthy();
+    expect(
+      document.querySelector('[data-testid="drawer-tab-artifacts"]'),
+    ).toBeTruthy();
     // Per-tab close affordance…
     expect(
-      document.querySelector('[data-testid="drawer-tab-close-trajectory"]'),
+      document.querySelector('[data-testid="drawer-tab-close-artifacts"]'),
     ).toBeTruthy();
     // …and the plain "Workbench" title is replaced by the tabs.
     expect(screen.queryByText('Workbench')).toBeNull();
@@ -168,21 +162,21 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
   it('clicking a tab makes it the active section', () => {
     act(() => {
       toggleRightDrawerSection('tasks');
-      toggleRightDrawerSection('trajectory');
+      toggleRightDrawerSection('artifacts');
     });
     setupDrawer();
-    // The most recently opened section (trajectory) starts active.
-    const trajectoryTab = document.querySelector(
-      '[data-testid="drawer-tab-trajectory"]',
+    // The most recently opened section (artifacts) starts active.
+    const artifactsTab = document.querySelector(
+      '[data-testid="drawer-tab-artifacts"]',
     ) as HTMLElement;
-    expect(trajectoryTab.getAttribute('aria-selected')).toBe('true');
+    expect(artifactsTab.getAttribute('aria-selected')).toBe('true');
     fireEvent.click(document.querySelector('[data-testid="drawer-tab-tasks"]')!);
     expect(
       document
         .querySelector('[data-testid="drawer-tab-tasks"]')!
         .getAttribute('aria-selected'),
     ).toBe('true');
-    expect(trajectoryTab.getAttribute('aria-selected')).toBe('false');
+    expect(artifactsTab.getAttribute('aria-selected')).toBe('false');
   });
 
   it('closing a tab via its ✕ removes just that section', () => {
@@ -199,12 +193,14 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
   it('shows ONLY the active section — tabs switch the single view', () => {
     act(() => {
       toggleRightDrawerSection('tasks');
-      toggleRightDrawerSection('trajectory');
+      toggleRightDrawerSection('artifacts');
     });
     setupDrawer();
     // Two tabs exist but only ONE body renders — the active section's…
     expect(document.querySelectorAll('[data-testid="drawer-tab-tasks"]').length).toBe(1);
-    expect(screen.getByText('Trajectory')).toBeTruthy();
+    expect(
+      document.querySelector('[data-testid="drawer-tab-artifacts"]'),
+    ).toBeTruthy();
     // …and the inactive tab's content is NOT stacked underneath.
     expect(document.querySelector('.august-drawer-card')).toBeNull();
     // Switching tabs swaps the entire body.
@@ -229,7 +225,7 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
   it('offers an inline + section picker listing only closed sections', () => {
     act(() => {
       toggleRightDrawerSection('tasks');
-      toggleRightDrawerSection('trajectory');
+      toggleRightDrawerSection('artifacts');
     });
     setupDrawer();
     const add = document.querySelector('[data-testid="drawer-tab-add"]');
@@ -356,72 +352,3 @@ describe('RightDrawer overlay layout (Part 15.4 — content stays in the middle)
   });
 });
 
-const TRACE: HarnessTrace = {
-  id: 41,
-  turn_seq: 7,
-  outcome: 'ok',
-  model: 'deepseek-v4-flash',
-  provider: 'OpenCode Zen',
-  duration_ms: 2300,
-  input_tokens: 1200,
-  output_tokens: 210,
-  rounds: 4,
-  prompt_preview: 'fix the flaky test',
-  tool_calls: ['terminal', 'read_file'],
-  evidence_state: '',
-  self_heal_events: {},
-  error: null,
-} as unknown as HarnessTrace;
-
-describe('RightDrawerTrajectorySection activity-log rows', () => {
-  beforeEach(() => {
-    vi.mocked(harness.listSessionTraces).mockReset();
-  });
-
-  function mountWith(traces: HarnessTrace[]) {
-    vi.mocked(harness.listSessionTraces).mockResolvedValue(traces);
-    const qc = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
-    return render(
-      <QueryClientProvider client={qc}>
-        <RightDrawerTrajectorySection sessionId="sess_tab" />
-      </QueryClientProvider>,
-    );
-  }
-
-  it('renders each turn as a single icon·label·meta activity row', async () => {
-    mountWith([TRACE]);
-    const row = await screen.findByTestId('trajectory-row-41');
-    // One leading outcome icon (the log glyph)…
-    expect(row.querySelector('svg')).toBeTruthy();
-    // …a human label…
-    expect(row.textContent).toContain('Turn 7');
-    // …and trailing meta: rounds + duration.
-    expect(row.textContent).toContain('4 rounds');
-    expect(row.textContent).toContain('2.3s');
-    // Tool chips stay available.
-    expect(row.textContent).toContain('terminal');
-  });
-
-  it('keeps self-heal chips and error lines on the compact row', async () => {
-    mountWith([
-      {
-        ...TRACE,
-        id: 42,
-        outcome: 'error',
-        error: 'upstream 500',
-        self_heal_events: { parse_failures: 2 } as HarnessTrace['self_heal_events'],
-      },
-    ]);
-    const row = await screen.findByTestId('trajectory-row-42');
-    expect(row.textContent).toContain('parse ×2');
-    expect(row.textContent).toContain('upstream 500');
-  });
-
-  it('shows a live marker on a turn that has no outcome yet', async () => {
-    mountWith([{ ...TRACE, id: 43, outcome: '' }]);
-    const row = await screen.findByTestId('trajectory-row-43');
-    expect(row.querySelector('[data-testid="trajectory-live"]')).toBeTruthy();
-  });
-});
