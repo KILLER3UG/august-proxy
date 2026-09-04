@@ -326,8 +326,8 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
                         # OpenAI-compatible upstreams report prompt_tokens/
                         # completion_tokens — capture both so chat-completions
                         # streams get token accounting too.
-                        mIn = re.search(r'"(?:input_tokens|prompt_tokens)"[:\\s]+(\\d+)', lower)
-                        mOut = re.search(r'"(?:output_tokens|completion_tokens)"[:\\s]+(\\d+)', lower)
+                        mIn = re.search(r'"(?:input_tokens|prompt_tokens)"\s*:\s*(\d+)', lower)
+                        mOut = re.search(r'"(?:output_tokens|completion_tokens)"\s*:\s*(\d+)', lower)
                         if mIn:
                             inT = max(inT, int(mIn.group(1)))
                         if mOut:
