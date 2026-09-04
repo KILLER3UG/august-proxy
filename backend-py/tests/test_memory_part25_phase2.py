@@ -86,7 +86,11 @@ class TestKeyNamespacing:
         assert g.startswith('model:') and ':bot' not in g
         assert a.startswith('model:bot-alpha:')  # scope-namespaced
 
-    def test_explicit_cross_scope_collision_refused(self, store, monkeypatch):
+    def test_explicit_cross_scope_collision_policy(self, store, monkeypatch):
+        """Part 26 6.2: ONE scope rule for remember/forget — rows inside the
+        session's visible union (global + own scope) are UPDATABLE (the
+        <memory> block explicitly invites a bot to update a global fact by
+        key), while a row from a DIFFERENT private scope is still refused."""
         import asyncio
         import json
 
@@ -95,8 +99,8 @@ class TestKeyNamespacing:
 
         # A global fact exists under key 'shared-key'.
         store.save_fact('shared-key', {'fact': 'global value'}, title='G', source='user')
-        # A bot session trying to remember the SAME explicit key is refused
-        # (not silently overwriting the global row).
+        # A bot session updating the same explicit key now EDITS the global
+        # row in place (scope stays 'global' — never rewritten).
         monkeypatch.setattr(session_scope, 'resolve_scope', lambda *a, **k: 'bot:alpha')
         res = json.loads(
             asyncio.run(
@@ -106,10 +110,25 @@ class TestKeyNamespacing:
                 )
             )
         )
-        assert res.get('ok') is False
-        assert 'another memory scope' in res.get('policy', '')
-        # The global row is untouched.
-        assert store.get_fact('shared-key') is not None
+        assert res.get('ok') is True
+        row = store.get_fact('shared-key')
+        assert row is not None
+        assert str(row.get('scope') or 'global') == 'global'
+
+        # A row from ANOTHER private scope is still refused — never silently
+        # overwritten by a session that cannot even see it.
+        store.save_fact('bot-beta-key', {'fact': 'beta private'}, title='B', scope='bot:beta')
+        res2 = json.loads(
+            asyncio.run(
+                session_tools._remember(
+                    fact='a long enough bot preference note about tooling choices here',
+                    key='bot-beta-key',
+                )
+            )
+        )
+        assert res2.get('ok') is False
+        assert 'another memory scope' in res2.get('policy', '')
+        assert 'beta private' in str(store.get_fact('bot-beta-key').get('factValue'))
 
 
 # ── 2.5 consolidation never folds across scopes ──────────────────────────────

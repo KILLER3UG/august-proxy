@@ -3314,6 +3314,12 @@ async def _sendWorkbenchMessageStreamImpl(
             if _tailBlocks:
                 _patched = dict(_userMsg)
                 _patched['content'] = f'{_userText}\n\n{_tailBlocks}'
+                # Part 26 6.3: mark the patch so every persist path can strip
+                # the volatile tail before it rides in history forever
+                # (bloat + stale <session_state>/<memory_nudge> blocks the
+                # model may trust + phantom "user_correction" episodes in the
+                # miner, whose injection filter is prefix-only).
+                _patched['_tailPatched'] = True
                 currentMessages[_lastUserIdx] = _patched
             if _memoryBlock:
                 session._injected_facts = _injectedFacts
@@ -5166,7 +5172,11 @@ async def _sendWorkbenchMessageStreamImpl(
         logger.debug('turn telemetry failed (non-fatal)', exc_info=True)
     try:
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
-        session.messages = list(currentMessages)
+        from app.services.workbench.durability import strip_tail_patches as _stripTails
+
+        # Part 26 6.3: the tail-patched last-user message is request-scoped —
+        # persist the clean text (the barrier flushes already strip).
+        session.messages = _stripTails(list(currentMessages))
         # T18: close the turn — the persist below records turnOpen=False so a
         # later load does not mistake this session for an orphaned open turn.
         session.turnOpen = False

@@ -494,11 +494,17 @@ async def manage_memory(body: ActionBody):
             expires_param = (datetime.now(timezone.utc) + timedelta(days=ttl)).isoformat(
                 timespec='seconds'
             )
-        memory_store.save_fact(
-            key, cast(JsonValue, body.value), category=body.category or 'general',
-            source=source, title=fact_title, kind=(body.kind or '').strip().lower(),
-            expires_at=expires_param,
-        )
+        try:
+            memory_store.save_fact(
+                key, cast(JsonValue, body.value), category=body.category or 'general',
+                source=source, title=fact_title, kind=(body.kind or '').strip().lower(),
+                expires_at=expires_param,
+            )
+        except ValueError as exc:
+            # Part 26 6.5: the row belongs to a non-global scope this write
+            # does not carry — refuse loudly instead of silently rewriting
+            # another scope's private value under its original scope.
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         try:
             record_rollback(
                 type='restore_memory_item',

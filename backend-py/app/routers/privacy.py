@@ -47,11 +47,19 @@ _COUNT_TABLES = [
 ]
 
 # Tables cleared by the "erase memory" action (the agent's knowledge of you).
+# Part 26 5.1: the learning corpus belongs here too — episodes carry raw
+# user-message excerpts mined from every session, and leaving them (plus the
+# fingerprints/outcomes derived from them) alive means the next 24h
+# consolidation pass re-mines the surviving transcripts and re-writes NEW
+# facts about the user after the purge.
 _MEMORY_TABLES = [
     'facts',
     'learned_heuristics',
     'proposals',
     'episodic_timeline',
+    'episodes',
+    'failure_fingerprints',
+    'turn_outcomes',
 ]
 
 # memory_store KV keys that survive the memory purge — the only keys with a
@@ -167,8 +175,9 @@ def _delete_rows(conn, tables: list[str]) -> dict[str, int]:
 
 @router.post('/purge-memories')
 async def purgeMemories():
-    """Erase the agent's memory of you: facts, auto-memories, heuristics,
-    proposals, the episodic timeline, and memory-adjacent KV residue.
+    """Erase the agent's memory of you: facts, heuristics, proposals, the
+    episodic timeline, the learning corpus (episodes, failure fingerprints,
+    turn outcomes), and memory-adjacent KV residue.
     The KV purge keeps only the live agent registry/jobs keys."""
     conn = memory_store._conn()  # noqa: SLF001
     deleted = _delete_rows(conn, _MEMORY_TABLES)

@@ -37,6 +37,7 @@ def save_fact(
     title: str = '',
     kind: str = '',
     scope: str = 'global',
+    allow_scope_override: bool = False,
 ) -> None:
     """Save a structured fact. ``expires_at`` (ISO-8601 TEXT) is optional; the
     cognitive boot sweep purges facts whose expiry has passed.
@@ -48,15 +49,33 @@ def save_fact(
 
     M-2 (Part 21): ``scope`` ('global' | 'bot:<agentId>' | 'project:<path>')
     stamps the row's memory home on INSERT. An update never rewrites scope —
-    a fact keeps the home it was born in (a bot touching an existing global
-    key edits that global fact, same as any session does today).
+    a fact keeps the home it was born in (Part 26 6.2: a bot may update a
+    GLOBAL fact through the model doors — the <memory> block invites it —
+    while a row from a DIFFERENT private scope is refused).
+
+    Part 26 6.5: a write whose caller scope differs from the existing row's
+    NON-GLOBAL scope is refused (raises ``ValueError``) instead of silently
+    overwriting another bot's private value under its original scope —
+    reachable from the Settings-UI manage endpoint, bulk import, and rollback
+    restore. Callers that legitimately move/merge rows across scopes
+    (consolidation) pass ``allow_scope_override=True``.
 
     2.4 (Part 25): an upsert resets ``status`` to 'active' — re-remembering a
     key that consolidation had superseded/retired must revive it, or the model
     believes it saved while retrieval keeps filtering the stale row out.
     """
-    from app.services.session_scope import normalize_scope
+    from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
 
+    if not allow_scope_override:
+        existing = get_fact(factKey)
+        if existing is not None:
+            existingScope = str(existing.get('scope') or GLOBAL_SCOPE)
+            requested = normalize_scope(scope)
+            if existingScope != GLOBAL_SCOPE and requested != existingScope:
+                raise ValueError(
+                    f'fact "{factKey}" belongs to scope "{existingScope}"; '
+                    f'refusing a write from scope "{requested}"'
+                )
     conn = _conn()
     # '' = unspecified: fresh inserts default to 'fact', updates keep the
     # existing kind (a remember-without-kind must not downgrade a lesson).

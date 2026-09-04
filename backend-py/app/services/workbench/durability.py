@@ -29,6 +29,39 @@ BARRIER_MODEL_DISPATCH = 'model-dispatch'
 BARRIER_TOOL_SIDE_EFFECT = 'tool-side-effect'
 BARRIER_STEP_BOUNDARY = 'step-boundary'
 
+# Part 26 6.3: the per-turn tail blocks (<memory>, <relevant_skills>,
+# <session_state>, <memory_nudge>) are patched onto the last user message for
+# THIS request only — they must not ride in persisted history (bloat, stale
+# state the model may later trust, phantom mining episodes: the miner's
+# injection filter is prefix-only and <memory_nudge> contains correction
+# vocabulary). Marked at patch time; stripped before every persist.
+_TAIL_PATCH_FLAG = '_tailPatched'
+_TAIL_MARKERS = (
+    '\n\n<memory',
+    '\n\n<relevant_skills',
+    '\n\n<session_state',
+    '\n\n<memory_nudge',
+)
+
+
+def strip_tail_patches(messages: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Return the list with tail-patched messages reverted to their base text."""
+    changed = False
+    out: list[dict[str, object]] = []
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get(_TAIL_PATCH_FLAG):
+            changed = True
+            clean = {k: v for k, v in msg.items() if k != _TAIL_PATCH_FLAG}
+            content = clean.get('content')
+            if isinstance(content, str):
+                cuts = [content.find(m) for m in _TAIL_MARKERS]
+                cuts = [c for c in cuts if c > 0]
+                if cuts:
+                    clean = {**clean, 'content': content[: min(cuts)].rstrip()}
+            msg = clean
+        out.append(msg)
+    return out if changed else messages
+
 
 def flush_session_barrier(
     session: 'WorkbenchSession',
@@ -44,7 +77,7 @@ def flush_session_barrier(
     """
     try:
         if messages is not None:
-            session.messages = list(messages)
+            session.messages = strip_tail_patches(list(messages))
             session.messageCount = len(session.messages)
         session.turnOpen = True
         from app.services import memory_store

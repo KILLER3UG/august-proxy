@@ -337,11 +337,14 @@ async def _remember(
     value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
     exp = (expires_at or '').strip() or None
     before = memory_store.get_fact(factKey)  # type: ignore[assignment]
-    # 2.3 (Part 25): an EXPLICIT key that already exists under a different
-    # scope must not be silently overwritten (derived keys are namespaced, so
-    # only explicit collisions reach here). Refuse instead of editing another
-    # Bot's (or the global store's) private fact.
-    if before and str(before.get('scope') or 'global') != factScope:
+    # Part 26 6.2: ONE scope rule for remember/forget (mirrors the forget
+    # door below). Rows inside the session's visible union (global ∪ own
+    # scope) are updatable — a Bot can edit or re-affirm a global fact, which
+    # the <memory> block explicitly invites it to do — but a row belonging to
+    # a DIFFERENT private scope is refused, never silently overwritten.
+    if before and str(before.get('scope') or 'global') != factScope and str(
+        before.get('scope') or 'global'
+    ) != _ss.GLOBAL_SCOPE:
         return _json.dumps(
             {
                 'ok': False,

@@ -258,14 +258,18 @@ def _brain_query_facts_ranked(query: str, filters: dict | None, limit: int) -> s
     from app.services import session_scope as _scope
 
     turnScope = _scope.resolve_scope()
-    # M-2 union: this session may see global facts + its own scope's notes.
-    visibleScopes = {_scope.GLOBAL_SCOPE, turnScope}
-    # Exact-key fast path: a point query must not depend on tokenization.
+    # Part 26 6.1: the exact-key fast path honors the same visibility policy
+    # as list_facts/search_facts — a superseded or expired row must not come
+    # back verbatim through the model's memory-search tool while every other
+    # door hides it (reproduced live during the scan).
+    from app.services.memory_store.rest import _visibility_where
+
+    visSql, visParams = _visibility_where(turnScope)
     conn = _conn()
     exact = conn.execute(
-        'SELECT * FROM facts WHERE fact_key = ?', (q,)
+        f'SELECT * FROM facts WHERE fact_key = ? AND {visSql}', (q, *visParams)
     ).fetchone()
-    if exact is not None and str(exact['scope'] or 'global') in visibleScopes:
+    if exact is not None:
         return json.dumps([_row_as_wire(exact)], default=str, ensure_ascii=False)
     try:
         from app.services.memory_store.fact_retrieval import retrieve_relevant_facts
@@ -358,13 +362,17 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
         params: list[object] = []
         whereClauses: list[str] = []
         if store == 'facts':
-            # M-2 union: the LIKE fallback honors the same scope visibility
-            # as the ranked path — a bot never sees another bot's notes
-            # through a narrow query that misses BM25.
+            # M-2 union + Part 26 6.1: the LIKE fallback honors the SAME
+            # visibility policy as the ranked path and list/search — active,
+            # unexpired, scope union. A bot never sees another bot's notes
+            # (or a superseded/expired row) through a narrow query that
+            # misses BM25.
             from app.services import session_scope as _ss
+            from app.services.memory_store.rest import _visibility_where
 
-            whereClauses.append("(scope IS NULL OR scope = 'global' OR scope = ?)")
-            params.append(_ss.resolve_scope())
+            visSql2, visParams2 = _visibility_where(_ss.resolve_scope())
+            whereClauses.append(visSql2)
+            params.extend(visParams2)
         if query:
             fts = info.get('fts')
             if fts:

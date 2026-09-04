@@ -226,6 +226,11 @@ def undo_entry(entry_id: str) -> dict[str, object]:
                 key = as_str(before.get('factKey') or before.get('key') or target)
                 value = before.get('factValue') if 'factValue' in before else before.get('value')
                 category = as_str(before.get('category') or 'general') or 'general'
+                # Part 26 6.5: restore the row to the home it was born in — a
+                # bot-scoped fact resurrected without its scope leaked into
+                # the global store. The snapshot IS the source of truth, so
+                # the restore is allowed across scopes.
+                rowScope = as_str(before.get('scope') or 'global')
                 try:
                     memory_store.save_fact(
                         key,
@@ -236,12 +241,25 @@ def undo_entry(entry_id: str) -> dict[str, object]:
                         expires_at=as_str(before.get('expiresAt') or '') or None,
                         title=as_str(before.get('title') or ''),
                         kind=as_str(before.get('kind') or ''),
+                        scope=rowScope,
+                        allow_scope_override=True,
                     )
                 except (TypeError, ValueError):
-                    memory_store.save_fact(key, cast(JsonValue, value), category=category)
+                    memory_store.save_fact(
+                        key,
+                        cast(JsonValue, value),
+                        category=category,
+                        scope=rowScope,
+                        allow_scope_override=True,
+                    )
                 message = f'Restored memory {key}'
             else:
-                memory_store.save_fact(target, cast(JsonValue, before), category='general')
+                memory_store.save_fact(
+                    target,
+                    cast(JsonValue, before),
+                    category='general',
+                    allow_scope_override=True,
+                )
                 message = f'Restored memory {target}'
         else:
             # Generic: if target looks like a dotted config path, restore before.

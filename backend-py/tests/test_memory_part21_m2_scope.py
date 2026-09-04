@@ -128,9 +128,18 @@ class TestWriteDoor:
         from app.services.memory_conn import conn
 
         store.save_fact('k:one', {'fact': 'v1'}, title='One', scope='bot:alpha')
-        store.save_fact('k:one', {'fact': 'v2'}, title='One', scope='global')
+        # Part 26 6.5: a cross-scope write from a DIFFERENT non-global scope
+        # is refused (ValueError) instead of silently rewriting the private
+        # value under its original scope; an explicit override (consolidation,
+        # rollback restore) updates in place and still never rewrites scope.
+        import pytest as _pytest
+
+        with _pytest.raises(ValueError):
+            store.save_fact('k:one', {'fact': 'v2'}, title='One', scope='bot:beta')
+        store.save_fact('k:one', {'fact': 'v2'}, title='One', scope='global', allow_scope_override=True)
         row = conn().execute('SELECT scope FROM facts WHERE fact_key = ?', ('k:one',)).fetchone()
         assert str(row['scope']) == 'bot:alpha'
+        assert 'v2' in str(row[0] if False else conn().execute('SELECT fact_value FROM facts WHERE fact_key = ?', ('k:one',)).fetchone()['fact_value'])
 
     def test_normalize_scope_rejects_junk(self):
         from app.services.session_scope import normalize_scope
