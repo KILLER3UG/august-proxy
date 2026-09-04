@@ -466,6 +466,11 @@ async def executeSubAgent(
             deriveChildPermissions(parentId, resolvedAgentId)
         except Exception:
             pass
+    # Part 26 2.6/Phase 8: reuse the parent's already-assembled tool lists —
+    # each builder here re-ran assembleToolDefs (a BM25 walk over the whole
+    # transcript), so a 5-wave spawn copied the parent transcript through
+    # assembly 10× on the event loop. Both builders cache per session
+    # (tool_defs_cache + the memo keys), so the parent turn already paid.
     fullTools = toolDefinitions(cast(WorkbenchSession, session))
     fullOpenaiTools = openaiToolDefinitions(cast(WorkbenchSession, session))
     skill_names = [str(s).strip() for s in (skills or []) if str(s).strip()] if isinstance(skills, list) else []

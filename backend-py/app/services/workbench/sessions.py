@@ -535,6 +535,10 @@ _save_pending = False
 _save_timer: threading.Timer | None = None
 _save_thread_lock = threading.Lock()
 _persist_io_lock = threading.Lock()
+# Part 26 3.10: sessions dirtied since the last successful snapshot — the
+# debounced writer used to re-serialize ALL kept sessions per pass
+# (O(60 × transcript) on one thread per enqueue/grant save).
+_dirty_sids: set[str] = set()
 # Optional external probe "is this session mid-turn?" — routers/workbench.py
 # registers it so the snapshot prune never evicts a session whose chat turn
 # is still writing to the in-memory object.
@@ -609,6 +613,13 @@ def _persist_sessions_snapshot() -> None:
                 except Exception:
                     pass
                 del _sessions[sid]
+            # Part 26 3.10: only sessions whose state changed since the last
+            # pass are serialized; the JSON export (admin one-shot surface)
+            # keeps writing the full window.
+            dirty_snapshots = [
+                s.toDict() for s in sorted_sessions if s.id in _dirty_sids
+            ]
+            _dirty_sids.clear()
             snapshots = [s.toDict() for s in sorted_sessions]
             export_json = is_session_json_export_enabled()
 
@@ -617,7 +628,7 @@ def _persist_sessions_snapshot() -> None:
             from app.services.memory_store import save_workbench_session_sot
 
             memory_store.init()
-            for blob in snapshots:
+            for blob in dirty_snapshots:
                 save_workbench_session_sot(blob)
         except Exception:
             logger.exception('SQLite session write failed')
@@ -640,6 +651,10 @@ def save_sessions_now() -> None:
     global _save_pending, _save_timer
     with _save_thread_lock:
         _save_pending = False
+        # Immediate saves must write everything (create/delete/rename/shutdown
+        # semantics — the caller observes the write before returning).
+        with _sessions_lock:
+            _dirty_sids.update(_sessions.keys())
         timer = _save_timer
         _save_timer = None
     if timer is not None:
@@ -663,6 +678,9 @@ def flush_pending_saves() -> None:
         timer = _save_timer
         _save_timer = None
         _save_pending = False
+        if pending:
+            with _sessions_lock:
+                _dirty_sids.update(_sessions.keys())
     if timer is not None:
         try:
             timer.cancel()
@@ -706,6 +724,11 @@ def save_sessions(*, immediate: bool = False) -> None:
             logger.exception('debounced save_sessions failed')
 
     with _save_thread_lock:
+        # Mark everything currently in memory dirty — the caller mutated
+        # session state without telling us which ids; the writer intersects
+        # with the recency window anyway.
+        with _sessions_lock:
+            _dirty_sids.update(_sessions.keys())
         _save_pending = True
         if _save_timer is not None:
             return
