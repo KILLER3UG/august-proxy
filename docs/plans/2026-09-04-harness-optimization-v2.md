@@ -1,14 +1,19 @@
 # Harness Optimization Plan v2 (2026-09-04) — consolidated round-2 scan
 
-**Status: PARTIALLY IMPLEMENTED (2026-09-04) — validated 2026-09-04: backend 2302 passed /
-0 failed, frontend 985/985, naming + doc-links + version-sync gates green, eslint 0 errors
-(254-warning ratchet). All P0/P1 items landed in commits
+**Status: IMPLEMENTED (2026-09-04/05) — waves 1-7 + A-E landed; final validation 2026-09-05:
+backend 2302 passed / 0 failed, frontend 985/985, naming + doc-links + version-sync + ruff +
+mypy gates green, eslint 0 errors (254-warning ratchet), web build clean after the dep purge.
+All P0/P1 items landed in commits
 `bd0cb732` (Wave 1: 3.1/3.2/3.3/2.1/2.2/3.5 + 1.5/1.6), `abe4a642` (Wave 2: 1.1/1.2/1.4),
 `b58ede02` (Wave 3: 6.1/6.2/6.3/6.5/5.1), `e1f5d9c2` (Wave 4: 7.1/7.2/7.3), `39aa3002`
 (Wave 5: 5.2 /safe + 4.2), `2f609dfc` (Wave 6: 7.4 memo + 3.10 queue), `324e1a40`
-(Wave 7: 9.1/9.2/9.4). Remaining: Phase 10, the 6.4 learning-scope migration, 6.9 import
-track, 1.3 Responses support, 4.1 bridge approval, 4.3-4.5 sandbox/MCP/PTY batch, the
-remainder of 2.3-2.5/3.7/6.6-6.8 tuning items, and the npm/dependency cleanup (9.3).**
+(Wave 7: 9.1/9.2/9.4). Rounds 2+ landed d50ced50 (1.3 Responses workbench + 4.1 bridge),
+0af7d3ae (6.4 learning scope + migration 036), 8091a0e3 (2.3/2.4/2.5/4.3/4.4),
+d3ebdae1 (6.6/6.7), 422fb142 (3.10 dirty-set + 2.6), 337d3736 (7.4/7.5/9.3).
+Remaining (deferred by design): 3.7 per-worker snapshot tallies, 4.5 policy-regex
+parity audit, 6.8 self-heal/JSON-salvage tuning, 6.9 memory-import track (new
+importers = feature work), Phase 10 ops items (scheduler nextRunAt cache,
+usage single-pass SQL, release-notes backlog).**
 
 Method: two independent round-2 scans, merged into this one plan. **Scan A** — five parallel
 deep-scan audits (model/provider wire path · multi-session & multi-subagent concurrency ·
