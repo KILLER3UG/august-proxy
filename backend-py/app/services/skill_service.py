@@ -85,8 +85,12 @@ _NAMEMax = 64
 _flat_migrate_done = False
 # Catalogue memoization (latency pass 0.16.8): keyed on skill-root dir mtimes
 # so create/patch/delete invalidates automatically without explicit busts.
-_cat_cache: list[dict[str, object]] | None = None
-_cat_cache_key: tuple | None = None
+# Part 26 6.6: keyed dict instead of a single slot — a bot chat and a
+# workspace chat alternating turns thrashed the old single-entry memo and
+# forced a full ~84-file rebuild every turn. Bounded (sessions in play are
+# few); the mtime key still auto-invalidates on create/patch/delete.
+_cat_cache: dict[tuple, list[dict[str, object]]] = {}
+_CAT_CACHE_MAX = 16
 
 
 def _root_mtime(root: Path) -> float:
@@ -123,9 +127,7 @@ def _bust_catalogue_cache() -> None:
     INSIDE a skill folder does not touch the root — so mutations call this
     explicitly.
     """
-    global _cat_cache, _cat_cache_key
-    _cat_cache = None
-    _cat_cache_key = None
+    _cat_cache.clear()
 
 
 _DESCRIPTIONMax = 60
@@ -443,7 +445,6 @@ def catalogue(
     entries carry ``scope: 'project'`` and an ``overrides`` label when they
     shadow a global/bundled name.
     """
-    global _cat_cache, _cat_cache_key
     wsKey = str(workspace or '')
     try:
         pairs = _skillRoots(workspace, agent_id)
@@ -452,8 +453,8 @@ def catalogue(
         key: tuple | None = (wsKey, agent_id, roots, marks)
     except Exception:
         key = None
-    if key is not None and _cat_cache is not None and _cat_cache_key == key:
-        return _cat_cache
+    if key is not None and key in _cat_cache:
+        return _cat_cache[key]
     # byName is the NON-project baseline (agent/bundled, plus the bot root when
     # agent_id is set) so a project entry's shadowing of a lower root stays
     # detectable below. Passing `workspace` here collapses the shadowed entry
@@ -484,8 +485,9 @@ def catalogue(
         entries.append(entry)
     out = sorted(entries, key=lambda e: as_str(e.get('name'), ''))
     if key is not None:
-        _cat_cache = out
-        _cat_cache_key = key
+        if len(_cat_cache) >= _CAT_CACHE_MAX:
+            _cat_cache.pop(next(iter(_cat_cache)))
+        _cat_cache[key] = out
     return out
 
 
@@ -504,9 +506,7 @@ def _bust_prompt_skills_cache() -> None:
     single entry point so a mutation can never leak a stale ``<capabilities>``
     block (the audit found setEnabled busted only some layers).
     """
-    global _cat_cache, _cat_cache_key
-    _cat_cache = None
-    _cat_cache_key = None
+    _cat_cache.clear()
     try:
         from app.services.workbench.workbench import clear_skill_prompt_caches
 

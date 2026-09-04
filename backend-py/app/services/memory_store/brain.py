@@ -505,6 +505,7 @@ def brain_browse(
     category: str = '',
     source: str = '',
     confidence: str = '',
+    scope: str = '',
 ) -> dict[str, object]:
     """Paginated browse over a brain store for the settings UI.
 
@@ -515,6 +516,9 @@ def brain_browse(
     Part 17 Phase C: ``sort`` (newest|oldest|updated|confidence) picks the
     ORDER BY; ``category``/``source``/``confidence`` are server-side
     equality filters (gap 3-4) so filtering works past the fetch cap.
+    Part 26 6.7: optional ``scope`` equality filter (the UI lists all
+    scopes by design — the human door — but a per-scope view was
+    impossible).
     """
     conn = _conn()
     resolved = _resolve_store(store)
@@ -533,6 +537,14 @@ def brain_browse(
             return {'store': resolved, 'rows': [], 'total': 0, 'limit': lim, 'offset': off}
         whereParts: list[str] = []
         params: list[object] = []
+        colInfo = conn.execute(f'PRAGMA table_info({table})').fetchall()
+        colNames = {c['name'] for c in colInfo}
+        scopeVal = (scope or '').strip()
+        if scopeVal and 'scope' in colNames:
+            whereParts.append(
+                "(scope IS NULL AND ? = 'global') OR (scope = ?) OR (scope = '' AND ? = 'global')"
+            )
+            params.extend([scopeVal, scopeVal, scopeVal])
         q = (query or '').strip()
         if q:
             searchCols = as_list(info['search_cols'])
@@ -541,8 +553,6 @@ def brain_browse(
                 params.extend([f'%{q}%'] * len(searchCols))
         # Server-side equality filters (only columns the table actually has,
         # so a filter on one store never 500s another).
-        colInfo = conn.execute(f'PRAGMA table_info({table})').fetchall()
-        colNames = {c['name'] for c in colInfo}
         for key, val in (('category', category), ('source', source), ('confidence', confidence)):
             v = (val or '').strip()
             if not v:

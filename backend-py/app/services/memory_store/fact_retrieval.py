@@ -105,7 +105,7 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
             scopeClause = "AND (scope IS NULL OR scope = 'global' OR scope = ?)"
             params = (scope,)
         factRows = conn.execute(
-            "SELECT fact_key, fact_value, title, kind, category FROM facts "
+            "SELECT fact_key, fact_value, title, kind, category, COALESCE(scope, 'global') AS scope FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
             f"{scopeClause}",
@@ -128,6 +128,10 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
                     'body': body,
                     'kind': str(r['kind'] or 'fact'),
                     'category': str(r['category'] or 'general'),
+                    # Part 26 6.7: carry the row's true scope — recall metrics
+                    # and the transcript chip mislabeled bot-private recalls
+                    # as 'global' (the hardcoded label).
+                    'scope': str(r['scope'] or 'global'),
                 }
             )
             corpus.append(tokens)
@@ -323,9 +327,15 @@ def build_memory_block(
         try:
             from app.services import project_memory as _pm
 
-            projectSection = _pm.build_project_memory_tail(workspace, query)
+            # Part 26 6.6: ONE search pass — the ranked entries feed both the
+            # tail section and the recalled rows (they used to re-run the
+            # identical md-read + BM25 scan twice per turn).
+            ranked = _pm.search_entries(workspace, query, k=3)
+            projectSection = _pm.build_project_memory_tail(
+                workspace, query, ranked_entries=ranked
+            )
             if projectSection and recalled is not None:
-                for e in _pm.search_entries(workspace, query, k=3):
+                for e in ranked:
                     projectRows.append(
                         {
                             'key': f'project:{e.title}',
@@ -380,7 +390,7 @@ def build_memory_block(
                     'key': str(f.get('key')),
                     'category': str(f.get('category') or 'general'),
                     'snippet': str(f.get('body') or '')[:120],
-                    'scope': 'global',
+                    'scope': str(f.get('scope') or 'global'),
                 }
             )
     return '\n'.join(lines), injected

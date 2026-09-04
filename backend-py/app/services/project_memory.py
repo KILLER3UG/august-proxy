@@ -343,14 +343,22 @@ def project_block(workspace: str | Path, cap: int = 1200) -> str:
 
 
 def build_project_memory_tail(
-    workspace: str | Path, query: str, k: int = 3, block_cap: int = 800
+    workspace: str | Path,
+    query: str,
+    k: int = 3,
+    block_cap: int = 800,
+    ranked_entries: list[ProjectEntry] | None = None,
 ) -> str:
     """Project entries section for the per-turn `<memory>` tail block:
     BM25-ranked, tagged `project:` so the model can tell scopes apart.
     The caller splices this INSIDE the global `<memory>` block (one tail,
     several tagged sections — not a parallel mechanism); ``block_cap`` is
-    the project section's share of the tail budget."""
-    entries = search_entries(workspace, query, k=k)
+    the project section's share of the tail budget.
+
+    Part 26 6.6: pass ``ranked_entries`` (the entries you already have from
+    search_entries) to skip a second full md-read + BM25 pass — the
+    per-turn <memory> builder used to run the identical search twice."""
+    entries = ranked_entries if ranked_entries is not None else search_entries(workspace, query, k=k)
     if not entries:
         return ''
     lines: list[str] = ['project:']

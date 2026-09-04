@@ -251,6 +251,11 @@ _SESSION_CHILD_TABLES: tuple[str, ...] = (
     'scratchpad',
     'tool_guardrail_log',
     'blackboard',
+    # Part 26 6.7: learning rows carry raw user-message excerpts keyed by
+    # session_id — deleting a session used to orphan them (still queryable in
+    # the Curator UI after "delete this chat").
+    'episodes',
+    'turn_outcomes',
 )
 
 

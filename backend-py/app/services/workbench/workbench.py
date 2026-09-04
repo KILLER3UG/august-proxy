@@ -1147,11 +1147,18 @@ def buildSystemPrompt(
     nowLabel = _dt.now().astimezone().strftime('%Y-%m-%d (%Z)')
     skillNames: list[str] = []
     try:
+        from app.services import session_scope as _scope_svc
         from app.services import skill_service as _skill_service
 
+        # Part 26 6.7: thread the session's resolved scope — a Bot's private
+        # skills belong in the intake list too (the <relevant_skills> tail and
+        # load_skill already see them; the Tier-1 surfaces were half-wired).
+        _tierScope = _scope_svc.resolve_scope(session)
         skillNames = sorted(
             str(s.get('name') or '')
-            for s in _skill_service.catalogue(workspacePath or None)
+            for s in _skill_service.catalogue(
+                workspacePath or None, agent_id=_scope_svc.bot_agent_id(_tierScope)
+            )
             if s.get('name')
         )
     except Exception:
@@ -1350,17 +1357,21 @@ def buildSystemPrompt(
         caps = _caps_block_cache.get(capsKey)
         if caps is None:
             try:
-                from app.services import skill_service as _sk_svc
-                from app.services.capabilities_prompt import build_capabilities_block
-
                 # Part 18 P1.2/P2.1: the main-agent Tier-1 index is NAME-ONLY
                 # (compact_skills) — descriptions ride in the per-turn
                 # <relevant_skills> tail instead, so name-only catalog grows
                 # without re-reading the cached prefix and in-place
                 # description edits keep the system prompt byte-stable.
+                from app.services import session_scope as _ss_caps
+                from app.services import skill_service as _sk_svc
+                from app.services.capabilities_prompt import build_capabilities_block
+
+                _capsScope = _ss_caps.resolve_scope(session)
                 caps = build_capabilities_block(
                     tool_names,
-                    catalogue=_sk_svc.catalogue(workspacePath or None),
+                    catalogue=_sk_svc.catalogue(
+                        workspacePath or None, agent_id=_ss_caps.bot_agent_id(_capsScope)
+                    ),
                     compact_skills=True,
                 )
             except Exception:
