@@ -182,20 +182,22 @@ def search_facts(query: str, category: str = '', scope: str = 'global') -> list[
     return [cast(FactDict, _row_as_wire(r)) for r in rows]
 
 
-def list_facts(category: str = '', scope: str = 'global') -> list[FactDict]:
+def list_facts(category: str = '', scope: str = 'global', limit: int = 500) -> list[FactDict]:
     """List facts visible to ``scope`` (active + unexpired — 2.2), optionally
-    filtered by category."""
+    filtered by category. 5.3 (Part 25): the bound is pushed into SQL (was an
+    unbounded fetch capped only in Python)."""
     conn = _conn()
     vis, visParams = _visibility_where(scope)
+    lim = max(1, min(int(limit or 500), 2000))
     if category:
         rows = conn.execute(
-            f'SELECT * FROM facts WHERE category = ? AND {vis} ORDER BY updated_at DESC',
-            (category, *visParams),
+            f'SELECT * FROM facts WHERE category = ? AND {vis} ORDER BY updated_at DESC LIMIT ?',
+            (category, *visParams, lim),
         ).fetchall()
     else:
         rows = conn.execute(
-            f'SELECT * FROM facts WHERE {vis} ORDER BY updated_at DESC',
-            tuple(visParams),
+            f'SELECT * FROM facts WHERE {vis} ORDER BY updated_at DESC LIMIT ?',
+            (*visParams, lim),
         ).fetchall()
     return [cast(FactDict, _row_as_wire(r)) for r in rows]
 
@@ -489,7 +491,7 @@ def get_usage(sessionId: str) -> dict[str, object]:
             'createdAt': e['created_at'],
         }
         for e in conn.execute(
-            'SELECT id, model, input_tokens, output_tokens, context_tokens, cache_hit_tokens, cache_miss_tokens, created_at FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC',
+            'SELECT id, model, input_tokens, output_tokens, context_tokens, cache_hit_tokens, cache_miss_tokens, created_at FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT 500',
             (sessionId,),
         ).fetchall()
     ]

@@ -2968,9 +2968,15 @@ async def _sendWorkbenchMessageStreamImpl(
         currentMessages = list(session.messages)
     # M3 memory injection (plan §3.4) + Tier-3 <relevant_skills> (M6 item 6):
     # BM25-retrieve the facts and skill descriptions relevant to the current
-    # user message and append them to it — the tail of the turn context.
-    # Working-copy only (never persisted, never in the system prompt) so the
-    # provider prefix cache stays stable (Q14).
+    # user message and append them to it — the tail of the turn context. Never
+    # in the SYSTEM prompt (the provider prefix cache stays stable, Q14).
+    # 5.4 (Part 25) honesty note: the tail-patched last-user message IS
+    # persisted into history by the step-boundary barrier flush (it rides an
+    # older message, so it stays cache-stable), but each turn re-injects a
+    # FRESH tail on the current last-user message — the persisted copy of a
+    # past turn's <session_state>/<memory> is stale context the model should
+    # not trust. Trimming it at persist is the follow-up; the comment here used
+    # to claim "never persisted", which was wrong.
     try:
         from app.services import session_scope as _session_scope
         from app.services.capabilities_prompt import build_relevant_skills_block
@@ -3219,6 +3225,14 @@ async def _sendWorkbenchMessageStreamImpl(
     # turns never pay the join — and the snapshot itself runs OFF the loop
     # while the model streams.
     session._pendingBaselineSnapshot = _baselineSnapshotFut  # type: ignore[attr-defined]
+    # 5.2 (Part 25): these are config/fleet walks — hoisted out of the round
+    # loop so they run once per turn, not once per round. `promotionUsed` moves
+    # up too, so "promote to a larger-context model once" is genuinely once per
+    # turn (it previously reset every round).
+    retryPolicy = _modelRetryPolicy()
+    chainModels = _chatFallbackChain()
+    promotionModel = _chatContextPromotionModel()
+    promotionUsed = False
     while True:
         toolRound += 1
         mutationsBeforeRound = getattr(session, 'mutationCount', 0)
@@ -3310,13 +3324,11 @@ async def _sendWorkbenchMessageStreamImpl(
                 else [as_dict(t.get('function', {})).get('name') for t in openaiTools]
             )
             logger.debug('workbench presenting %d tools to model: %s', len(toolNames), toolNames)
-        retryPolicy = _modelRetryPolicy()
+        # retryPolicy / chainModels / promotionModel / promotionUsed are hoisted
+        # above the round loop (5.2, Part 25) — computed once per turn.
         # Fallback chain + context promotion (surpass #3): after retries are
         # exhausted on the primary model, the turn continues on the next
         # configured chain model (or a larger-context sibling on overflow).
-        chainModels = _chatFallbackChain()
-        promotionModel = _chatContextPromotionModel()
-        promotionUsed = False
         for chainIndex in range(len(chainModels) + 1):
             if chainIndex > 0:
                 nextModel = chainModels[chainIndex - 1]
