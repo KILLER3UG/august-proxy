@@ -129,6 +129,8 @@ _PROMPT_AGENT = frozenset({
             'list_workstreams', 'send_subagent_message', 'interrupt_subagent',
             # Bot Mode routines: Bot-owned scheduled jobs.
             'create_routine', 'list_routines',
+            # Bot Mode Phase C: the single agent-to-agent DM send path.
+            'message_agent',
 })
 
 _PROMPT_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills'})

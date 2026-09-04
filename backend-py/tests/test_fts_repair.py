@@ -99,8 +99,10 @@ def test_repair_match_query_works_after_fix(brain_conn):
 
 def test_repair_handles_missing_fts_table_gracefully(brain_conn):
     """If an FTS table doesn't exist, repair skips it without error."""
-    # Drop auto_memories_fts to simulate a fresh/partial DB
-    brain_conn.execute('DROP TABLE IF EXISTS auto_memories_fts')
+    # Drop a LIVE fts table to simulate a fresh/partial DB (auto_memories_fts
+    # was retired by migration 033, so it no longer exercises this path —
+    # Part 25 Phase 7.4 switched to memory_store_fts).
+    brain_conn.execute('DROP TABLE IF EXISTS memory_store_fts')
     brain_conn.commit()
 
     # Should not raise

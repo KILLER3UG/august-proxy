@@ -48,12 +48,8 @@ KNOWN_FTS: dict[str, dict[str, object]] = {
         'content_table': 'memory_store',
         'sample_token': 'agent',
     },
-    'auto_memories_fts': {
-        'columns': ('key', 'content'),
-        'bad_select_extra': ('category', 'importance', 'created_at'),
-        'content_table': 'auto_memories',
-        'sample_token': 'tool',
-    },
+    # auto_memories_fts removed (Part 21 OQ1 / migration 033 retired the
+    # store; Part 25 Phase 7.4 dropped it from the hygiene KNOWN_FTS map).
 }
 
 # Static anti-patterns (applied to app/ only — tests may intentionally use bad SQL).

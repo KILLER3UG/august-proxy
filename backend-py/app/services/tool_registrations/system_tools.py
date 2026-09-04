@@ -326,7 +326,7 @@ def register() -> None:
     )
     tool_registry.register(
         'update_state',
-        "Track execution state across a multi-step task. Call this when you start, progress through, or complete a phase. The state is injected into the next turn's system prompt so you know where you left off.",
+        "Track execution state across a multi-step task. Call this when you start, progress through, or complete a phase. The state is re-injected each turn in the <session_state> block on the latest user message (Phase L moved it out of the system prompt) so you know where you left off.",
         _updateState,
         {
             'type': 'object',

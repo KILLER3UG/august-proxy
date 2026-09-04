@@ -1,62 +1,13 @@
-"""Tests for Phase 4: Product Features (readiness, health, errors, envelope)."""
+"""Tests for Phase 4: Product Features (health, errors, envelope).
+
+(The project_readiness tests were removed with Part 25 Phase 6 — the
+project_readiness/guidance/automation_gate/provider_detect/august_api service
+cluster had zero production importers and was deleted.)"""
 
 import pytest
 from app.lib.api_envelope import error, paginated, success
 from app.lib.error_messages import map_provider_error
 from app.services.health_monitor import HealthMonitor, ProbeResult, ProviderHealth
-from app.services.project_readiness import _detect_project_type, score_project_readiness
-
-# ─── Project Readiness (4.1 + 4.6) ───────────────────────────────────────────
-
-
-class TestProjectReadiness:
-    def test_empty_directory(self, tmp_path):
-        result = score_project_readiness(str(tmp_path))
-        assert result['overall'] <= 5  # Nearly empty — at most 1 point from inherited .git
-        assert result['projectType'] == 'general'
-        assert len(result['capabilities']) == 5
-
-    def test_invalid_path(self):
-        result = score_project_readiness('/nonexistent/path')
-        assert result['overall'] == 0
-        assert 'error' in result
-
-    def test_basic_python_project(self, tmp_path):
-        (tmp_path / 'pyproject.toml').write_text('[project]\nname = "test"\n')
-        (tmp_path / 'README.md').write_text('# Test Project')
-        (tmp_path / 'conftest.py').write_text('')
-        result = score_project_readiness(str(tmp_path))
-        assert result['overall'] > 0
-        ctx = next(c for c in result['capabilities'] if c['name'] == 'Context Map')
-        assert ctx['level'] >= 1  # README exists
-        fb = next(c for c in result['capabilities'] if c['name'] == 'Fast Feedback')
-        assert fb['level'] >= 1  # conftest.py = test framework
-
-    def test_full_project_scores_high(self, tmp_path):
-        (tmp_path / 'README.md').write_text('# Project')
-        (tmp_path / 'AGENTS.md').write_text('# Agent notes')
-        (tmp_path / 'package.json').write_text('{"scripts": {"test": "vitest", "lint": "eslint"}}')
-        (tmp_path / '.github' / 'workflows').mkdir(parents=True)
-        (tmp_path / '.github' / 'workflows' / 'ci.yml').write_text('on: push')
-        (tmp_path / '.pre-commit-config.yaml').write_text('repos: []')
-        (tmp_path / '.git').mkdir()
-        result = score_project_readiness(str(tmp_path))
-        assert result['overall'] >= 10  # At least L2 across most capabilities
-        assert result['percentage'] >= 40
-
-    def test_project_type_detection_frontend(self, tmp_path):
-        (tmp_path / 'package.json').write_text('{"dependencies": {"react": "^19"}}')
-        assert _detect_project_type(str(tmp_path)) == 'frontend'
-
-    def test_project_type_detection_backend(self, tmp_path):
-        (tmp_path / 'pyproject.toml').write_text('[project]\ndependencies = ["fastapi"]')
-        assert _detect_project_type(str(tmp_path)) == 'backend'
-
-    def test_recommendations_present_for_low_score(self, tmp_path):
-        result = score_project_readiness(str(tmp_path))
-        all_recs = [r for c in result['capabilities'] for r in c['recommendations']]
-        assert len(all_recs) > 0  # Empty project should have recommendations
-
 
 # ─── Health Monitor (4.2) ─────────────────────────────────────────────────────
 

@@ -77,7 +77,8 @@ _EXPECTED_SNAKE_TABLES = (
     'config_audit',
     # learned_heuristics is created then dropped while empty (plan §3.3 M2)
     # — a fresh DB must NOT retain it; asserted below instead.
-    'auto_memories',
+    # auto_memories retired (Part 21 OQ1 / migration 033) — a fresh DB must
+    # NOT have it; removed from the expected-tables list (Part 25 Phase 7.4).
     'episodic_timeline',
     'exam_questions',
     'exam_attempts',

@@ -327,16 +327,13 @@ from app.routers import browser as browserRoutes  # noqa: E402
 from app.routers import calendar as calendarRoutes  # noqa: E402
 from app.routers import code_review as codeReviewRoutes  # noqa: E402
 from app.routers import config as configRoutes  # noqa: E402
-from app.routers import cron as cronRoutes  # noqa: E402
 from app.routers import curator as curatorRoutes  # noqa: E402
-from app.routers import daemons as daemonsRoutes  # noqa: E402
 from app.routers import desktop_automation as desktopAutomationRoutes  # noqa: E402
 from app.routers import exam as examRoutes  # noqa: E402
 from app.routers import gateway as gatewayRoutes  # noqa: E402
 from app.routers import git as gitRoutes  # noqa: E402
 from app.routers import harness_mcp as harnessMcpRoutes  # noqa: E402
 from app.routers import harness_proposals as harnessProposalsRoutes  # noqa: E402
-from app.routers import hooks as hooksRoutes  # noqa: E402
 from app.routers import live as liveRoutes  # noqa: E402
 from app.routers import manage as manageRoutes  # noqa: E402
 from app.routers import mcp as mcpRoutes  # noqa: E402
@@ -349,13 +346,11 @@ from app.routers import providers as providersRoutes  # noqa: E402
 from app.routers import proxy as proxyRoutes  # noqa: E402
 from app.routers import realtime as realtimeRoutes  # noqa: E402
 from app.routers import recurring_tasks as recurringTasksRoutes  # noqa: E402
-from app.routers import refine_store as refineStoreRoutes  # noqa: E402
 from app.routers import security as securityRoutes  # noqa: E402
 from app.routers import service_connections as serviceConnectionsRoutes  # noqa: E402
 from app.routers import sessions as sessionsRoutes  # noqa: E402
 from app.routers import skills as skillsRoutes  # noqa: E402
 from app.routers import subagent as subagentRoutes  # noqa: E402
-from app.routers import terminal as terminalRoutes  # noqa: E402
 from app.routers import terminal_routes as terminalWsRoutes  # noqa: E402
 from app.routers import usage as usageRoutes  # noqa: E402
 from app.routers import whats_new as whatsNewRoutes  # noqa: E402
@@ -363,11 +358,9 @@ from app.routers import workbench as workbenchRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
 app.include_router(curatorRoutes.router)
-app.include_router(hooksRoutes.router)
 app.include_router(providersRoutes.router)
 app.include_router(privacyRoutes.router)
 app.include_router(skillsRoutes.router)
-app.include_router(cronRoutes.router)
 app.include_router(modelsRoutes.router)
 app.include_router(proxyRoutes.router)
 app.include_router(workbenchRoutes.router)
@@ -382,7 +375,6 @@ app.include_router(usageRoutes.router)
 # terminal_routes (literal /sessions, /buffer, …) must be registered before
 # terminal's /{sessionId} catch-all, or "sessions" is treated as an id.
 app.include_router(terminalWsRoutes.router)
-app.include_router(terminalRoutes.router)
 app.include_router(manageRoutes.router)
 app.include_router(monitoringRoutes.router)
 app.include_router(monitorFeatureFlowRoutes.router)
@@ -396,10 +388,8 @@ app.include_router(calendarRoutes.router)
 app.include_router(subagentRoutes.router)
 app.include_router(harnessMcpRoutes.router)
 app.include_router(harnessProposalsRoutes.router)
-app.include_router(refineStoreRoutes.router)
 app.include_router(codeReviewRoutes.router)
 app.include_router(recurringTasksRoutes.router)
-app.include_router(daemonsRoutes.router)
 app.include_router(serviceConnectionsRoutes.router)
 app.include_router(automationsRoutes.router)
 app.include_router(previewRoutes.router)

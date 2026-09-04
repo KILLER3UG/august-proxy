@@ -515,7 +515,7 @@ safety review.
 |---|---|
 | `AUGUST_PERF_TIMING=1` | Backend workbench span/TTFT logging + ring buffer |
 | `AUGUST_P1_TOOL_CACHE=0` | Disable tool-definition list cache |
-| `AUGUST_P1_PROMPT_CACHE=0` | Disable skills/prompt-segment cache |
+| `AUGUST_P1_PROMPT_CACHE=0` | (removed — never read; Part 25 Phase 7.2) |
 | `AUGUST_P1_PARALLEL_TOOLS=0` | Force serial tool execution |
 | `AUGUST_SESSION_JSON_EXPORT=1` | Enable continuous JSON session backup |
 | `localStorage.august_stream_perf=1` | Frontend stream TTFT/flush marks |

@@ -65,15 +65,18 @@ never wired into the loop and have been removed (Part 25 Phase 4). Sub-agents
 inherit the parent retry policy, compact mid-run, and support `yieldSchema` for
 structured results.
 
-**Agent modes (0.12.55+)** — `set_agent_mode(chat|agent|code)` switches the
+**Agent modes (0.12.55+)** — `set_agent_mode(chat|agent|code|orchestrator)`
+(`planner` is an alias for `orchestrator`) switches the
 session: `chat` blocks tool calls (text only), `agent` is native tool calling
 (default), `code` executes a fenced ```python block through the existing
 sandboxed `run_command` with a workspace-bound tool API (`read_file`,
 `write_file`, `run_command`, `list_files` — see
-`app/services/workbench/code_runner.py`).
+`app/services/workbench/code_runner.py`), `orchestrator` dispatches workstreams
+with no shell/edit.
 `/v1/responses` supports `stream: true` via upstream-native pass-through.
-Loop-level golden evals live in `tests/test_harness_evals.py` (scripted-model
-scenarios against the real loop); results feed `GET /api/brain/harness/evals`.
+(The former "loop-level golden evals in `tests/test_harness_evals.py` feeding
+`GET /api/brain/harness/evals`" were removed; that file and endpoint no longer
+exist — corrected Part 25 Phase 7.1.)
 
 ## Directory map & validation routing
 

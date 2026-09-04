@@ -135,7 +135,13 @@ class TestFlagCap:
         assert out['flagged'] == 2
         assert len(em.flagged_episodes()) == 2
 
-    def test_zero_score_never_flagged(self, brain):
+    def test_tiny_cap_still_escalates_one_scoring_episode(self, brain):
+        # 2.14 (Part 25): the old `int(len*cap)` floored to 0 for any small
+        # batch, so a 1-episode pass at cap 0.05 escalated NOTHING (the tier-2
+        # review queue was permanently starved on typical installs). The cap is
+        # now floored to 1 when there are candidates, so this scoring episode IS
+        # escalated. (A genuinely zero-score episode is still skipped by the
+        # `score <= 0` guard in flag_top_slice.)
         em.save_episode(
             {
                 'session_id': 'sx',
@@ -148,4 +154,4 @@ class TestFlagCap:
             }
         )
         out = em.flag_top_slice(flagRateCap=0.05, budgetPerDay=10)
-        assert out['flagged'] == 0
+        assert out['flagged'] == 1

@@ -353,7 +353,7 @@ Note: prefer direct `memory_store` transactions for user-facing SoT.
 |---|---|
 | `AUGUST_PERF_TIMING=1` | Structured workbench timings + `/api/perf/recent` |
 | `AUGUST_P1_TOOL_CACHE=0` | Disable tool definition list cache |
-| `AUGUST_P1_PROMPT_CACHE=0` | Disable prompt segment / skills catalogue cache |
+| `AUGUST_P1_PROMPT_CACHE=0` | (removed — never read; Part 25 Phase 7.2) |
 | `AUGUST_P1_PARALLEL_TOOLS=0` | Force serial tool execution |
 | `AUGUST_SQLITE_CACHE_KB` | Opt-in page cache KiB |
 | `AUGUST_SQLITE_MMAP_MB` | Opt-in mmap MiB |

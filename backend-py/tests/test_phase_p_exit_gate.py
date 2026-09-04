@@ -23,7 +23,9 @@ def test_fts_hygiene_script_importable_and_known_tables():
     from scripts._check_fts_query_hygiene import KNOWN_FTS
 
     assert 'memory_store_fts' in KNOWN_FTS
-    assert 'auto_memories_fts' in KNOWN_FTS
+    # auto_memories_fts retired (Part 21 OQ1 / migration 033) — no longer a
+    # known FTS table (Part 25 Phase 7.4).
+    assert 'auto_memories_fts' not in KNOWN_FTS
 
 
 def test_workbench_emit_types_include_finalOutput_not_only_snake():
@@ -71,8 +73,10 @@ def test_developer_guide_documents_phase_p_knobs():
     guide = (root / 'docs' / 'DEVELOPER_GUIDE.md').read_text(encoding='utf-8')
     for needle in (
         'AUGUST_P1_TOOL_CACHE',
-        'AUGUST_P1_PROMPT_CACHE',
         'AUGUST_P1_PARALLEL_TOOLS',
         'AUGUST_SQLITE_SYNC',
     ):
+        # AUGUST_P1_PROMPT_CACHE dropped from the required-docs list (Part 25
+        # Phase 7.2): it is never read in the code, so it should not be
+        # documented as a live knob (removed from the guides too).
         assert needle in guide, f'missing knob/docs: {needle}'

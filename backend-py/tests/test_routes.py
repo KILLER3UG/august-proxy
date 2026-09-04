@@ -117,22 +117,14 @@ async def testApiAudit(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
-async def testApiCron(client):
-    resp = await client.get('/api/cron')
-    assert resp.status_code == 200
-
+# testApiCron / testApiTerminal removed (Part 25 Phase 6): the cron + legacy
+# terminal REST routers had zero callers and were deleted; the live terminal
+# surface is terminal_routes.py (websocket/session), covered elsewhere.
 
 @pytest.mark.asyncio
 async def testApiGitStatus(client):
     resp = await client.get('/api/git/status')
     assert resp.status_code in (200, 400, 500)
-
-
-@pytest.mark.asyncio
-async def testApiTerminal(client):
-    resp = await client.get('/api/terminal')
-    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
