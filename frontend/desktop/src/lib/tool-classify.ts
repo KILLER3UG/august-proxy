@@ -88,6 +88,7 @@ const EDIT_NAMES = new Set([
   'write_to_file',
   'edit_file',
   'edit',
+  'edit_lines',
   'replace_file',
   'replace_file_content',
   'multi_replace_file_content',

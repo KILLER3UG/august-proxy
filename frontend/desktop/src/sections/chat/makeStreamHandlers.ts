@@ -170,7 +170,20 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   let retryNotice: string | undefined;
   const beforeMutationCount = initialMutationCount ?? 0;
   let latestMutationCount = 0;
+  // The backend never emits a `session` event, so `latestMutationCount` (its
+  // sole writer) stays 0 and the post-turn git-diff gate below would never
+  // fire. Track edit-class tool results directly: every successful file/tool
+  // mutation observed this turn increments this counter, which is what the
+  // diff fetch keys off now.
+  let editToolsThisTurn = 0;
   let latestWorkbenchTodos: NonNullable<ChatMessage['todos']> = [];
+  // 3.2: `retrying` fires inside the per-round retry loop, so a round-2+
+  // transient failure must NOT wipe earlier rounds' committed prose. Snapshot
+  // the accumulator lengths + block count at each attempt boundary (turn start
+  // and every tool result, which is where a new round's model call begins) and
+  // roll back only to that snapshot — i.e. drop just the failed attempt's
+  // partial stream, mirroring how onUpstreamRetry does no rollback at all.
+  let attemptSnapshot = { a: 0, t: 0, b: 0 };
   const thinkingStart = Date.now();
   let thinkingEnd: number | null = null;
   let finished = false;
@@ -520,6 +533,27 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         providerSetup: providerSetupResult,
         integrationSetup: integrationSetupResult,
       });
+      // 3.1: a successful edit-class tool result is a real mutation. Count it
+      // so the post-turn git-diff fetch fires even though the `session` event
+      // (the old mutationCount source) is never emitted. Pending-confirmation
+      // mutations are not applied yet, and failures changed nothing — skip
+      // both.
+      if (
+        toolEntry &&
+        classifyTool(toolEntry.name) === 'edit' &&
+        !blockFailed &&
+        parsedResult?.type !== 'mutation_pending_confirmation'
+      ) {
+        editToolsThisTurn += 1;
+      }
+      // A tool result closes this round's model call; the next round starts a
+      // fresh attempt. Commit the current stream as the rollback floor so a
+      // later `retrying` only undoes the next attempt's partial output.
+      attemptSnapshot = {
+        a: assistantContent.length,
+        t: thinkingContent.length,
+        b: streamBlocks.length,
+      };
       scheduleUpdate();
     },
     onSession: (sessionState) => {
@@ -840,7 +874,10 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // leaving the tail of the response unpainted under the streaming mask.
       finalize('done');
       void (async () => {
-        if (latestMutationCount > beforeMutationCount && sessionId) {
+        // Fetch the git diff when this turn ran any edit-class tool (the real
+        // signal now) — or, as a legacy fallback, when a `session` event ever
+        // raised the mutation count above the turn-start snapshot.
+        if ((editToolsThisTurn > 0 || latestMutationCount > beforeMutationCount) && sessionId) {
           try {
             const diff = await gitApi.diff(sessionId);
             if (diff.files.length > 0) {
@@ -863,15 +900,21 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // upstream message is noise once the retry count is visible.
       const shortReason = reason.length > 80 ? `${reason.slice(0, 77)}…` : reason;
       retryNotice = `⏳ ${shortReason} — retrying ${attempt}/${maxRetries} in ${Math.max(1, Math.ceil(delayMs / 1000))}s…`;
-      // Roll back the failed attempt's partial stream: the backend now emits
-      // text/thinking per delta, so drop the streaming text/thinking blocks
-      // and reset the accumulators before the retry re-streams. Tool history
-      // is preserved — the retry only re-runs the current round's model call.
-      assistantContent = '';
-      thinkingContent = '';
-      streamBlocks = streamBlocks.filter(
-        (b) => b.type !== 'thinking' && b.type !== 'finalOutput',
-      );
+      // Roll back ONLY the failed attempt's partial stream: truncate the
+      // accumulators and the block list back to the snapshot taken when this
+      // round's model call began (turn start or the last tool result). Earlier
+      // rounds' committed prose and tool cards are preserved — the retry only
+      // re-runs the current round's model call.
+      assistantContent = assistantContent.slice(0, attemptSnapshot.a);
+      thinkingContent = thinkingContent.slice(0, attemptSnapshot.t);
+      streamBlocks = streamBlocks.slice(0, attemptSnapshot.b);
+      // Re-snapshot at the rolled-back floor so consecutive retries of the
+      // same round each drop only their own new partial output.
+      attemptSnapshot = {
+        a: assistantContent.length,
+        t: thinkingContent.length,
+        b: streamBlocks.length,
+      };
       scheduleUpdate();
     },
     onUpstreamRetry: ({ attempt, maxRetries, delayMs, status }) => {

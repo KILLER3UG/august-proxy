@@ -10,9 +10,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const requestSessionHandoff = vi.fn();
 const markHandoffPending = vi.fn();
-const peekHandoffPending = vi.fn(() => false);
-const buildHandoffSummary = vi.fn(() => 'local summary');
-const buildHandoffNoticeMessage = vi.fn(() => ({ role: 'system', content: 'notice' }));
+const peekHandoffPending = vi.fn((..._a: unknown[]) => false);
+const buildHandoffSummary = vi.fn((..._a: unknown[]) => 'local summary');
+const buildHandoffNoticeMessage = vi.fn((..._a: unknown[]) => ({ role: 'system', content: 'notice' }));
 
 vi.mock('@/api/workbench', () => ({
   requestSessionHandoff: (...a: unknown[]) => requestSessionHandoff(...a),

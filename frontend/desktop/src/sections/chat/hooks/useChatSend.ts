@@ -131,6 +131,12 @@ export function useChatSend(opts: UseChatSendOptions) {
   const modelForRequestRef = useRef(modelForRequest);
   modelForRequestRef.current = modelForRequest;
 
+  // 3.3: the "Chat failed → Retry" action lives inside generateAIResponse's
+  // closure, but `send` is defined after it and is NOT in generateAIResponse's
+  // dep array — calling `send` directly would capture a stale callback. Route
+  // the retry through a ref that always points at the latest `send`.
+  const sendRef = useRef<(textOverride?: string) => Promise<void>>(async () => {});
+
   // (b) Double-Enter latch: the second send in the same frame sees a stale
   // `input`/`streaming` closure and would append a duplicate user bubble
   // (then the backend queues a duplicate turn). The latch is held from
@@ -283,7 +289,11 @@ export function useChatSend(opts: UseChatSendOptions) {
           description: 'The backend or model provider rejected the request.',
           action: {
             label: 'Retry',
-            onClick: () => void send(requestText),
+            // Retry the CLEAN user text, not `requestText` — requestText
+            // already carries the @git block and the Bot-Mode @mentions note,
+            // and send() re-runs both annotators, so passing it would stack a
+            // second git block + a second bot note on every retry.
+            onClick: () => void sendRef.current(latestText),
           },
           cancel: {
             label: 'Provider settings',
@@ -680,6 +690,10 @@ export function useChatSend(opts: UseChatSendOptions) {
       generateAIResponse,
     ],
   );
+
+  // Keep the retry ref pointed at the freshest `send` (assigned during render,
+  // same pattern as messagesRef / modelForRequestRef above).
+  sendRef.current = send;
 
   return { send, generateAIResponse };
 }

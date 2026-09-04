@@ -18,7 +18,7 @@ import { api } from '@/api/client';
 import { useSessionsStore } from '@/store/sessions';
 import { voiceCommandEvents } from '@/api/voice/registry-events';
 import { getDisplayCommands } from '@/api/voice/registry';
-import { COMPOSER_TOOLS as TOOLS, fetchFileMentions, fetchMcpMentions, parseAtMention, type MentionItem , fetchConversationMentions, fetchHarnessMentions } from '../composer-mentions';
+import { COMPOSER_TOOLS as TOOLS, fetchFileMentions, fetchMcpMentions, parseAtMention, type MentionItem , fetchConversationMentions, fetchHarnessMentions, fetchBotMentions } from '../composer-mentions';
 
 /** Closers useChatSend calls after a send so open popovers dismiss. */
 export type ComposerDropdownApi = {
@@ -100,6 +100,7 @@ export function useComposerPopovers({
   const [fileMentions, setFileMentions] = useState<MentionItem[]>([]);
   const [conversationMentions, setConversationMentions] = useState<MentionItem[]>([]);
   const [harnessMentions, setHarnessMentions] = useState<MentionItem[]>([]);
+  const [botMentions, setBotMentions] = useState<MentionItem[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
 
@@ -214,6 +215,19 @@ export function useComposerPopovers({
     };
   }, [mentionQuery, workbenchSessionId]);
 
+  // Bot Mode @-mentions: the live roster (cached via getBotRoster) so typing
+  // `@` surfaces bots as suggestions, not just manual handles.
+  useEffect(() => {
+    if (mentionQuery === null) return;
+    let cancelled = false;
+    void fetchBotMentions(mentionQuery.trim()).then((items) => {
+      if (!cancelled) setBotMentions(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mentionQuery]);
+
   const mentionItems: MentionItem[] = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
@@ -233,8 +247,9 @@ export function useComposerPopovers({
     const files = fileMentions.filter(matches);
     const conversations = conversationMentions.filter(matches);
     const harness = harnessMentions.filter(matches);
-    return [...harness, ...skills, ...tools, ...mcp, ...files, ...conversations];
-  }, [mentionQuery, skillMentions, mcpMentions, fileMentions, conversationMentions, harnessMentions]);
+    const bots = botMentions.filter(matches);
+    return [...harness, ...bots, ...skills, ...tools, ...mcp, ...files, ...conversations];
+  }, [mentionQuery, skillMentions, mcpMentions, fileMentions, conversationMentions, harnessMentions, botMentions]);
 
   const closeAllPopovers = useCallback(() => {
     setShowComposerActionsDropdown(false);

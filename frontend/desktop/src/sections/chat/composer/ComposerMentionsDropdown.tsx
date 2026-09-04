@@ -94,7 +94,9 @@ export function ComposerMentionsDropdown({
                 ? `lane · ${item.desc}`
                 : item.kind === 'routine'
                   ? `routine · ${item.desc}`
-                  : item.desc}
+                  : item.kind === 'bot'
+                    ? `bot · ${item.desc}`
+                    : item.desc}
           </span>
         </button>
       ))}

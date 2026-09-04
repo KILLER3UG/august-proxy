@@ -148,7 +148,19 @@ function str(v: unknown): string {
   }
 }
 
-/** facts.fact_value is stored as JSON; the remember tool writes
+/* The /api/brain/stores/{name} endpoint serializes rows through the backend
+ * `_row_as_wire` helper, which snake→camel-cases every column. The read
+ * mappers below therefore key off the camelCase wire names (factKey,
+ * factValue, updatedAt, expiresAt, createdAt, eventSummary). The `editable`
+ * arrays and the PATCH body stay snake_case — that is the write path, which
+ * the backend whitelists by column name. `toCamel` bridges the two: it maps a
+ * snake editable/field key to the camelCase key present on the wire row so the
+ * inline-edit draft can pre-populate from the row. */
+function toCamel(key: string): string {
+  return key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+/** facts.factValue is stored as JSON; the remember tool writes
  * {"fact","details"} when details are present. Unwrap for display. */
 function parseFactValue(raw: unknown): { summary: string; details?: string } {
   const s = str(raw);
@@ -170,12 +182,12 @@ function parseFactValue(raw: unknown): { summary: string; details?: string } {
 const STORE_META: Record<string, StoreMeta> = {
   facts: {
     idField: 'id',
-    title: (r) => str(r.fact_key),
-    summary: (r) => parseFactValue(r.fact_value).summary,
-    details: (r) => parseFactValue(r.fact_value).details,
+    title: (r) => str(r.factKey),
+    summary: (r) => parseFactValue(r.factValue).summary,
+    details: (r) => parseFactValue(r.factValue).details,
     category: (r) => str(r.category),
     source: (r) => str(r.source),
-    updated: (r) => str(r.updated_at),
+    updated: (r) => str(r.updatedAt),
     editable: ['fact_value', 'category', 'confidence', 'expires_at'],
     deletable: true,
   },
@@ -183,7 +195,7 @@ const STORE_META: Record<string, StoreMeta> = {
     idField: 'key',
     title: (r) => str(r.key),
     summary: (r) => str(r.value),
-    updated: (r) => str(r.updated_at),
+    updated: (r) => str(r.updatedAt),
     editable: ['value'],
     deletable: true,
   },
@@ -194,7 +206,7 @@ const STORE_META: Record<string, StoreMeta> = {
     title: (r) => str(r.rule),
     summary: (r) => str(r.source),
     category: (r) => str(r.category),
-    updated: (r) => str(r.updated_at),
+    updated: (r) => str(r.updatedAt),
     legacy: true,
     readOnly: true,
     deletable: true,
@@ -223,13 +235,13 @@ function deriveKind(store: string, r: Row): EntryKind {
 }
 
 function hasExpiry(r: Row): boolean {
-  return str(r.expires_at).trim() !== '';
+  return str(r.expiresAt).trim() !== '';
 }
 
-/** C-8: a fact whose expires_at is in the past — visually separated from
+/** C-8: a fact whose expiresAt is in the past — visually separated from
  *  live expiring rows (which still have time left). */
 function isExpired(r: Row): boolean {
-  const t = Date.parse(str(r.expires_at).replace(' ', 'T'));
+  const t = Date.parse(str(r.expiresAt).replace(' ', 'T'));
   return Number.isFinite(t) && t < Date.now();
 }
 
@@ -479,10 +491,10 @@ export function MemorySection({ active }: { active: { id: string } }) {
       const m = STORE_META[store];
       for (const row of page?.rows ?? []) {
         // Facts read human-first in the flat list: the fact text, not the
-        // slug-like fact_key, is the row title (key stays the detail header).
+        // slug-like factKey, is the row title (key stays the detail header).
         const baseTitle = m?.title(row) || '(untitled)';
         const title =
-          store === 'facts' ? parseFactValue(row.fact_value).summary || baseTitle : baseTitle;
+          store === 'facts' ? parseFactValue(row.factValue).summary || baseTitle : baseTitle;
         out.push({
           store,
           row,
@@ -544,7 +556,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const startEdit = () => {
     if (!selected || !meta?.editable) return;
     const draft: Record<string, string> = {};
-    for (const f of meta.editable) draft[f] = str(selected[f]);
+    // editable keys are snake_case (the PATCH/write path); the row is the
+    // camelCase wire shape, so read the converted key while seeding the draft.
+    for (const f of meta.editable) draft[f] = str(selected[toCamel(f)]);
     setEditDraft(draft);
     setEditing(true);
   };
@@ -743,7 +757,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
                   setSearch(e.target.value);
                   setUnifiedOffset(0);
                   setUnifiedShown(UNIFIED_RENDER);
-                  setUnifiedOffset(0);
                 }}
                 placeholder="Search memory…"
                 className="w-full rounded-lg border border-border/60 bg-card/60 py-1.5 pl-8 pr-3 text-xs text-foreground outline-none transition focus:border-primary/40"
@@ -755,7 +768,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
               value={catFilter}
               onChange={(e) => {
                 setCatFilter(e.target.value);
-                setUnifiedOffset(0);
                 setUnifiedOffset(0);
               }}
               className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
@@ -771,7 +783,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
               value={srcFilter}
               onChange={(e) => {
                 setSrcFilter(e.target.value);
-                setUnifiedOffset(0);
                 setUnifiedOffset(0);
               }}
               className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
@@ -804,7 +815,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
               value={sort}
               onChange={(e) => {
                 setSort(e.target.value);
-                setUnifiedOffset(0);
                 setUnifiedOffset(0);
               }}
               className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
@@ -1046,7 +1056,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                         const m = STORE_META[e.store];
                         if (m?.editable) {
                           const draft: Record<string, string> = {};
-                          for (const f of m.editable) draft[f] = str(e.row[f]);
+                          for (const f of m.editable) draft[f] = str(e.row[toCamel(f)]);
                           setEditDraft(draft);
                           setEditing(true);
                         }
@@ -1255,15 +1265,15 @@ function FlatEntryRow({
         // C-8: expired rows show the absolute date, dimmed.
         <span
           className="shrink-0 rounded border border-destructive/30 bg-destructive/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-destructive"
-          title={`Expired: ${str(entry.row.expires_at)}`}
+          title={`Expired: ${str(entry.row.expiresAt)}`}
           data-testid="memory-expired-badge"
         >
-          expired {str(entry.row.expires_at).slice(0, 10)}
+          expired {str(entry.row.expiresAt).slice(0, 10)}
         </span>
       ) : entry.expiring ? (
         <span
           className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-warning"
-          title={`Expires: ${str(entry.row.expires_at)}`}
+          title={`Expires: ${str(entry.row.expiresAt)}`}
           data-testid="memory-expiring-badge"
         >
           expiring
@@ -1664,9 +1674,9 @@ function DetailView({
   const category = meta.category?.(row);
   const source = meta.source?.(row);
   const updated = meta.updated?.(row);
-  const created = str(row.created_at);
+  const created = str(row.createdAt);
   const confidence = str(row.confidence);
-  const expiresAt = str(row.expires_at);
+  const expiresAt = str(row.expiresAt);
   const expired = isExpired(row);
 
   return (

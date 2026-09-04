@@ -213,7 +213,7 @@ export function PrivacySection() {
             <ActionRow
               icon={Eraser}
               title="Purge memory"
-              description={`Erase ${(c.facts ?? 0) + (c.heuristics ?? 0) + (c.timeline ?? 0) + (c.proposals ?? 0)} memory entries — facts, heuristics, proposals, timeline. System config is kept.`}
+              description={`Erase ${(c.facts ?? 0) + (c.heuristics ?? 0) + (c.timeline ?? 0) + (c.proposals ?? 0)} memory entries — facts, heuristics, proposals, timeline — plus every KV "Memories" note (only the live agent registry/jobs keys survive). System config is kept.`}
               buttonLabel="Purge"
               destructive
               pending={purgeMemories.isPending}

@@ -96,10 +96,6 @@ export function ChatLayout() {
     setShowRightSidebar(true);
   };
 
-  useEffect(() => {
-    localStorage.removeItem("august-show-right-sidebar");
-  }, []);
-
   // Ensure global realtime bridge is up (idempotent). Reconcile is only a
   // safety net — live creates/deletes/status arrive via /api/realtime/stream.
   useEffect(() => {

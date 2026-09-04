@@ -13,45 +13,47 @@ const iso = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOStr
 const isoInDays = (days: number) =>
   new Date(now + days * 86_400_000).toISOString().replace('T', ' ').slice(0, 19);
 
-/* Fixture rows per store. facts: one user-category (→ pref) with expiry,
- * one project-category (→ fact). heuristics: one lesson (legacy). memory:
- * one KV note. (autoMemories retired 2026-09-04, Part 21 OQ1 — no longer a
- * store the Memories scope renders.) */
+/* Fixture rows per store, in the camelCase WIRE shape the real
+ * /api/brain/stores/{name} endpoint returns (rows pass through the backend
+ * `_row_as_wire` snake→camel converter). facts: one user-category (→ pref)
+ * with expiry, one project-category (→ fact). heuristics: one lesson (legacy).
+ * memory: one KV note. (autoMemories retired 2026-09-04, Part 21 OQ1 — no
+ * longer a store the Memories scope renders.) */
 const rowsByStore: Record<string, { rows: Array<Record<string, unknown>>; total: number }> = {
   facts: {
     rows: [
       {
         id: 1,
-        fact_key: 'user:editor',
-        fact_value: JSON.stringify({ fact: 'Prefers dark mode' }),
+        factKey: 'user:editor',
+        factValue: JSON.stringify({ fact: 'Prefers dark mode' }),
         category: 'user',
         source: 'remember',
-        updated_at: iso(5),
+        updatedAt: iso(5),
       },
       {
         id: 2,
-        fact_key: 'project:stack',
-        fact_value: 'FastAPI backend',
+        factKey: 'project:stack',
+        factValue: 'FastAPI backend',
         category: 'project',
         source: 'extracted',
-        updated_at: iso(120),
-        expires_at: isoInDays(7),
+        updatedAt: iso(120),
+        expiresAt: isoInDays(7),
       },
     ],
     total: 2,
   },
   heuristics: {
     rows: [
-      { id: 9, rule: 'Run tests after edits', source: 'lesson', category: 'workflow', updated_at: iso(60) },
+      { id: 9, rule: 'Run tests after edits', source: 'lesson', category: 'workflow', updatedAt: iso(60) },
     ],
     total: 1,
   },
   memory: {
-    rows: [{ key: 'user:plant', value: 'My plant is named Gerald', updated_at: iso(10) }],
+    rows: [{ key: 'user:plant', value: 'My plant is named Gerald', updatedAt: iso(10) }],
     total: 1,
   },
   timeline: {
-    rows: [{ id: 7, event_summary: 'Edited workbench.py', session_id: 'sess_1', category: 'edit', timestamp: iso(2) }],
+    rows: [{ id: 7, eventSummary: 'Edited workbench.py', sessionId: 'sess_1', category: 'edit', timestamp: iso(2) }],
     total: 1,
   },
   blackboard: { rows: [], total: 0 },

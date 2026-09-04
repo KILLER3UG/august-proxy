@@ -1,7 +1,7 @@
-/* Dispatcher tests for workbench/streamEvents — toolResult error mapping
- * (backend sends `status`, never `isError`) and the formerly-dead event
- * cases (memoryUpdated / subagentRetry / subagentWarning / evidenceState /
- * modelProfileSuggestion). */
+/* Dispatcher tests for workbench/streamEvents — toolResult / subagentToolResult
+ * error mapping (backend sends `status`, never `isError`) and the formerly-dead
+ * event cases this file exercises (memoryUpdated / subagentRetry /
+ * subagentWarning). */
 import { describe, it, expect, vi } from 'vitest';
 import { dispatchWorkbenchEvent } from './streamEvents';
 import type { WorkbenchEventHandlers } from '@/types/workbench';

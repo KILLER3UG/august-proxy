@@ -160,7 +160,10 @@ export function resolveBotMentions(text: string, bots: Bot[]): ResolvedBotMentio
   const out: ResolvedBotMention[] = [];
   for (const m of text.matchAll(/(^|[\s(])@([\w.-]+)/g)) {
     const handle = (m[2] || '').toLowerCase();
-    if (!handle || handle.includes('@')) continue; // emails pass through
+    // The capture class `[\w.-]+` can never contain '@', so an email like
+    // a@b.com only ever yields the `b` segment here — unknown handles simply
+    // miss the roster lookup below and pass through untouched.
+    if (!handle) continue;
     const bot = byKey.get(handle);
     if (!bot) continue;
     if (seen.has(bot.id)) continue;
@@ -191,24 +194,22 @@ export function annotateBotMentions(text: string, bots: Bot[]): string {
   return note ? `${text}\n\n${note}` : text;
 }
 
-/** Bot roster for the @ picker. */
+/** Bot roster for the @ picker. Reads through `getBotRoster` so the picker
+ *  and the send-path annotator share one short-lived cache (no extra round
+ *  trip per keystroke). */
 export async function fetchBotMentions(query: string): Promise<MentionItem[]> {
   const q = (query || '').toLowerCase();
-  try {
-    const { bots } = await listBots();
-    return bots
-      .filter((b) => b.name && !b.uiMeta?.hidden)
-      .filter((b) => !q || b.name.toLowerCase().includes(q) || (b.uiMeta?.title || '').toLowerCase().includes(q))
-      .slice(0, 12)
-      .map((b) => ({
-        kind: 'bot' as const,
-        name: `@${b.name}`,
-        desc: b.uiMeta?.title && b.uiMeta.title !== b.name ? b.uiMeta.title : b.description || 'Bot',
-        insert: `@${b.name} `,
-      }));
-  } catch {
-    return [];
-  }
+  const bots = await getBotRoster();
+  return bots
+    .filter((b) => b.name && !b.uiMeta?.hidden)
+    .filter((b) => !q || b.name.toLowerCase().includes(q) || (b.uiMeta?.title || '').toLowerCase().includes(q))
+    .slice(0, 12)
+    .map((b) => ({
+      kind: 'bot' as const,
+      name: `@${b.name}`,
+      desc: b.uiMeta?.title && b.uiMeta.title !== b.name ? b.uiMeta.title : b.description || 'Bot',
+      insert: `@${b.name} `,
+    }));
 }
 
 // Short-lived roster cache so the send path annotates without a per-send
