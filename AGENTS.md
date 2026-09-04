@@ -56,10 +56,14 @@ call arrives, and only a narration with NO tool call triggers the
 reminder + retry. Per-model capability profiles
 (`toolSurface` full/reduced/bare, `maxTools`, `maxToolResultChars` in Model
 settings) are honored by both tool-definition paths and result truncation.
-Routing evidence records real outcomes (`ok` = no turn error); with ≥3 samples
-a better model for the task type emits `routingSuggestion` (SSE) or auto-routes
-with `AUGUST_AUTO_ROUTE=1`. Sub-agents inherit the parent retry policy,
-compact mid-run, and support `yieldSchema` for structured results.
+Routing evidence (`routing_evidence`) is written by the Arena/Debate verdict
+endpoint (`POST /api/brain/routing/arena`, `source='arena'`) and read back by
+`GET /api/brain/routing/arena` (archive) + `GET /api/brain/routing/suggestions`
+(per-model win-rate ranking). There is NO automatic turn rerouting — the old
+`AUGUST_AUTO_ROUTE` / `routingSuggestion`-SSE / per-turn auto-route claims were
+never wired into the loop and have been removed (Part 25 Phase 4). Sub-agents
+inherit the parent retry policy, compact mid-run, and support `yieldSchema` for
+structured results.
 
 **Agent modes (0.12.55+)** — `set_agent_mode(chat|agent|code)` switches the
 session: `chat` blocks tool calls (text only), `agent` is native tool calling

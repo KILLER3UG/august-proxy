@@ -370,7 +370,7 @@ process env.
 | `AUGUST_SQLITE_MMAP_MB` | unset | Opt-in mmap |
 | `AUGUST_SQLITE_SYNC` | unset | Opt-in `NORMAL`/`FULL`/`OFF` |
 | `AUGUST_HOST_AGENT_URL` | unset | External host-agent URL |
-| `AUGUST_AUTO_ROUTE` | unset | `1` forces evidence-driven auto-routing on (equivalent to brain config `autoRoute: true`) |
+| `AUGUST_AUTO_ROUTE` | removed | was: force evidence-driven auto-routing on — never wired into the turn loop (removed Part 25 Phase 4) |
 | `AUGUST_VERIFIER_REVIEWER` | removed | was: one-shot reviewer critique for the verifier gate (feature removed 2026-08-24) |
 | `AUGUST_ANTHROPIC_PERSISTENT_CACHE` | unset | `1` swaps the Anthropic `cache_control: {type:"ephemeral"}` markers for the 1h-TTL variant so long sessions hold hits across longer gaps between turns. Off by default — 1h cache writes are billed at a premium upstream |
 | `AUGUST_NGSPICE_EXE` | auto | Explicit ngspice executable for the circuit workbench (PATH probe + versioned install dirs by default) |
@@ -380,27 +380,27 @@ process env.
 | `AUGUST_AVR_GCC` | auto | Explicit avr-gcc path for plain-C `firmware_compile` |
 | `AUGUST_NODE_EXE` | auto | Explicit Node runtime for the avr8js/wavedrom sidecar (defaults to the bundled Tauri node binary, then PATH) |
 
-### Evidence-driven auto-routing
+### Arena & Debate routing evidence
 
-The routing-evidence loop picks the best model per task type from recorded
-turn outcomes. With **auto-routing** on (Settings → Activity Log / Reliability,
-or `AUGUST_AUTO_ROUTE=1`), a turn whose task type has enough
-samples is automatically switched to the evidence-best model; otherwise the
-candidate is surfaced as a suggestion only (shown in the model picker).
+The Arena and Debate views run several models on one prompt and record the
+user's pick. Each verdict is persisted to the `routing_evidence` table
+(`source='arena'`: one winner row `ok=1` + one loser row `ok=0` per model) and
+served back:
 
-Thresholds (brain config, `PUT /api/brain/config`, defaults in parens):
+- `POST /api/brain/routing/arena` — record a verdict `{sessionId, prompt,
+  winner:{modelId,provider}, losers:[…]}`.
+- `GET /api/brain/routing/arena` — the durable archive (recent verdicts, grouped
+  per session in the UI).
+- `GET /api/brain/routing/suggestions?prompt=…` — models ranked by recorded win
+  rate (`wins`/`total`/`winRate`/`avgTokens`), surfaced in the composer's arena
+  launcher.
 
-| Key | Default | Meaning |
-|-----|---------|---------|
-| `autoRoute` | `false` | Master switch (UI toggle in the Reliability dashboard) |
-| `autoRouteMinSamples` | `3` | Minimum evidence turns for a task type before routing |
-| `autoRouteMinWinRate` | `0.6` | Candidate must win ≥ this share of its turns |
-| `autoRouteWinGap` | `0.15` | Candidate must beat the current model's win rate by ≥ this much (flap guard) |
-
-Routed turns are recorded with `source='auto-route'` (still counting toward
-model win rates) and every decision is logged — see
-`GET /api/brain/routing/decisions` and the Reliability dashboard's
-"Recent auto-route decisions".
+There is **no automatic turn rerouting**: the earlier `AUGUST_AUTO_ROUTE` /
+`autoRoute` "switch the model for you" design was never wired into the loop and
+has been removed (Part 25 Phase 4). The `autoRouteMinSamples` brain-config key
+remains (read by the harness self-improvement pass); the `autoRoute`,
+`autoRouteMinWinRate`, and `autoRouteWinGap` keys are inert and slated for
+removal with the dead-code purge.
 
 ### Anthropic prompt-cache 1h TTL (`AUGUST_ANTHROPIC_PERSISTENT_CACHE`)
 

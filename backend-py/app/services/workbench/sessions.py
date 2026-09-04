@@ -105,10 +105,9 @@ class WorkbenchSession:
     _execution_state: object | None = None
     _working_memory: object | None = None
     _state_lock: asyncio.Lock | None = None
-    # True when this turn's model was chosen by the evidence-driven auto-
-    # router (surpass #1) — the turn's routing_evidence row is then tagged
-    # source='auto-route' so the decision is measurable. Reset per turn.
-    _auto_routed: bool = False
+    # (Removed Part 25 Phase 4: `_auto_routed` was never set or read — the
+    # evidence-driven auto-router it described was never wired into the turn
+    # loop; routing_evidence is written by the Arena/Debate verdict endpoint.)
     # Auto-memories that getRelevantMemories() prefetched into the last
     # buildSystemPrompt() call — surfaced to the frontend as a `recalledMemories`
     # SSE event (see workbench.chatTurn). Cleared/replaced every turn.

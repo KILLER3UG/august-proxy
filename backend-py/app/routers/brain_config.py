@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.models.camel_base import CamelModel
 from app.services import brain_config_service
 
 router = APIRouter(prefix='/api/brain', tags=['brain-config'])
@@ -302,3 +303,111 @@ async def getStateLookup(key: str = Query(..., min_length=1)):
                 'updatedAt': row['updated_at'],
             }
     return {'key': k, 'found': False, 'source': None, 'value': None, 'updatedAt': None}
+
+
+# ── Routing evidence: Arena / Debate verdicts (Part 25 Phase 4) ──────────────
+# The Arena + Debate UIs are live and POST a winner/losers verdict to
+# /api/brain/routing/arena and read history back; the endpoints never existed,
+# so every recorded verdict toasted "Could not record verdict". These thin
+# routes persist verdicts into the existing routing_evidence table (source
+# 'arena') and serve the archive + a win-rate suggestion list.
+
+
+class _ArenaModel(CamelModel):
+    model_id: str = ''
+    provider: str = ''
+
+
+class _ArenaVerdict(CamelModel):
+    session_id: str = ''
+    prompt: str = ''
+    task_type: str = 'arena'
+    winner: _ArenaModel | None = None
+    losers: list[_ArenaModel] = []
+
+
+@router.post('/routing/arena')
+async def recordArenaVerdict(body: _ArenaVerdict):
+    """Record one arena/debate verdict: a winner row (ok=1) + one loser row
+    (ok=0) per competing model, all tagged source='arena'."""
+    from app.services.memory_conn import conn
+
+    winner = body.winner
+    if winner is None or not winner.model_id:
+        raise HTTPException(status_code=400, detail='winner.modelId is required')
+    c = conn()
+    recorded = 0
+    c.execute(
+        "INSERT INTO routing_evidence (session_id, task_type, model, provider, ok, source, prompt) "
+        "VALUES (?, ?, ?, ?, 1, 'arena', ?)",
+        (body.session_id, body.task_type or 'arena', winner.model_id, winner.provider, body.prompt),
+    )
+    recorded += 1
+    for loser in body.losers:
+        if not loser.model_id:
+            continue
+        c.execute(
+            "INSERT INTO routing_evidence (session_id, task_type, model, provider, ok, source, prompt) "
+            "VALUES (?, ?, ?, ?, 0, 'arena', ?)",
+            (body.session_id, body.task_type or 'arena', loser.model_id, loser.provider, body.prompt),
+        )
+        recorded += 1
+    c.commit()
+    return {'ok': True, 'recorded': recorded}
+
+
+@router.get('/routing/arena')
+async def getArenaHistory(limit: int = Query(100, ge=1, le=500)):
+    """Recent arena verdicts (the durable archive the UI groups per session)."""
+    from app.services.memory_conn import conn
+
+    rows = conn().execute(
+        "SELECT session_id, task_type, model, provider, ok, input_tokens, output_tokens, "
+        "duration_ms, created_at, prompt FROM routing_evidence WHERE source = 'arena' "
+        'ORDER BY id DESC LIMIT ?',
+        (limit,),
+    ).fetchall()
+    return {
+        'results': [
+            {
+                'sessionId': str(r['session_id'] or ''),
+                'taskType': str(r['task_type'] or 'arena'),
+                'model': str(r['model'] or ''),
+                'provider': str(r['provider'] or ''),
+                'won': bool(r['ok']),
+                'tokens': int(r['input_tokens'] or 0) + int(r['output_tokens'] or 0),
+                'durationMs': int(r['duration_ms'] or 0),
+                'at': str(r['created_at'] or ''),
+                'prompt': str(r['prompt'] or ''),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get('/routing/suggestions')
+async def getRoutingSuggestions(prompt: str = Query('', max_length=2000), limit: int = Query(5, ge=1, le=25)):
+    """Per-model win-rate suggestions from arena evidence (surpass #1 loop):
+    models ranked by win rate over ≥1 recorded verdict, for the composer's
+    'which model wins this kind of prompt' affordance."""
+    from app.services.memory_conn import conn
+
+    rows = conn().execute(
+        "SELECT model, provider, SUM(ok) AS wins, COUNT(*) AS total, "
+        "AVG(input_tokens + output_tokens) AS avg_tokens FROM routing_evidence "
+        "WHERE source = 'arena' AND model != '' GROUP BY model, provider "
+        'ORDER BY wins * 1.0 / total DESC, total DESC LIMIT ?',
+        (limit,),
+    ).fetchall()
+    suggestions = [
+        {
+            'modelId': str(r['model'] or ''),
+            'provider': str(r['provider'] or ''),
+            'wins': int(r['wins'] or 0),
+            'total': int(r['total'] or 0),
+            'winRate': round(int(r['wins'] or 0) / max(1, int(r['total'] or 0)), 3),
+            'avgTokens': int(r['avg_tokens'] or 0),
+        }
+        for r in rows
+    ]
+    return {'prompt': prompt, 'suggestions': suggestions}
