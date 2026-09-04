@@ -349,10 +349,24 @@ async def _mcp_initialize(proc: asyncio.subprocess.Process) -> bool:
 
 
 async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | None:
-    """Start an MCP server subprocess (stdio) with initialize handshake."""
+    """Start an MCP server subprocess (stdio) with initialize handshake.
+
+    Part 26 4.4: serialized per server id — two concurrent discover/call
+    passes both passed the ``serverId in _processes`` check and each spawned
+    a child; the second ``_processes[serverId] = proc`` orphaned the first
+    (two children writing one tool list, one leaked process per race).
+    """
     server = _servers.get(serverId)
     if not server:
         return None
+    lock = _session_locks.setdefault(f'start:{serverId}', asyncio.Lock())
+    async with lock:
+        return await _startServerProcessLocked(serverId, server)
+
+
+async def _startServerProcessLocked(
+    serverId: str, server: dict[str, object]
+) -> asyncio.subprocess.Process | None:
     if serverId in _processes:
         return _processes[serverId]
     transport = as_str(server.get('transport'), 'stdio')

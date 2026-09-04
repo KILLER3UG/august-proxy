@@ -115,7 +115,10 @@ def service_turn_in_flight(sessionId: str) -> bool:
 # this many consecutive rounds (and the turn is already deep), stop and ask
 # the model to reflect instead of letting it spin on repeated tool calls.
 MAX_STALLED_ROUNDS = 8
-MIN_ROUNDS_BEFORE_STALL_CHECK = 12
+# Part 26 2.3: 12 + 8 (nudge at 20, hard-stop 22) nearly consumed the default
+# 25-round cap before stall protection engaged. Fire the check from round 8:
+# nudge at 16, hard-stop at 18 — real self-correction room stays.
+MIN_ROUNDS_BEFORE_STALL_CHECK = 8
 # Code-mode (fenced python) execution cap.
 _CODE_RUN_TIMEOUT_S = 60
 # Tool dispatch cap: a hung MCP server or registry handler must not hold a
@@ -283,6 +286,13 @@ _DETERMINISTIC_400_MARKERS = (
     'unexpected role',
     'invalid role',
     'unrecognized role',
+    # Part 26 2.5: these are request-shape rejections — the identical retry
+    # fails identically, so classifying them as deterministic stops the
+    # useless retry storm (each one verified against real upstream text).
+    'budget_tokens',
+    'thinking',
+    'schema',
+    'model not found',
 )
 
 
@@ -3393,6 +3403,11 @@ async def _sendWorkbenchMessageStreamImpl(
     # cripple the rest of the turn (web_search/browser may still be needed).
     surfaceDowngraded = False
     cleanRoundsSinceDowngrade = 0
+    # Part 26 2.3: self-heal retries (narration/refusal reminders) don't
+    # consume the round budget — bounded so a hopeless model still hits the
+    # loop cap instead of narrating forever.
+    _SELFHEAL_EXEMPT_ROUNDS = 4
+    _selfHealRetries = 0
     # Set when the turn ends on an error path — the done-event block below
     # still runs (to flush usage/evidence), and routing evidence must record
     # ok=False for error turns, not a hardcoded win.
@@ -3439,6 +3454,10 @@ async def _sendWorkbenchMessageStreamImpl(
                 _emitSessionStatus(sessionId)
                 if emit:
                     emit({'type': 'done', 'sessionId': sessionId})
+                # Part 26 2.4: this return exits BEFORE the turn's try/finally —
+                # the ContextVar token must be reset here or the cancel signal
+                # leaks onto every later turn in this session.
+                current_subprocess_cancel.reset(_cancel_token)
                 return
         except Exception:
             logger.debug('cost ceiling check failed', exc_info=True)
@@ -3744,6 +3763,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         _isContextOverflowError(response)
                         and not overflowReducedThisRound
                         and not _isCancelled()
+                        and not attemptEmittedContent
                         and retryAttempt < retryPolicy['maxRetries']
                     ):
                         overflowReducedThisRound = True
@@ -3854,9 +3874,12 @@ async def _sendWorkbenchMessageStreamImpl(
             # Context promotion: overflow → larger-context sibling once,
             # before walking the normal fallback chain.
             if not promotionUsed and promotionModel and _isContextOverflowError(response):
-                promotionUsed = True
                 pProvider, pModel = _resolveChatLlm(model=promotionModel)
                 if pProvider and pModel:
+                    # Part 26 2.3: consume the one-shot promotion only on a
+                    # successful resolve — a failed resolve must not burn it
+                    # (the fallback chain may still carry a promotable sibling).
+                    promotionUsed = True
                     resolvedProvider, resolvedModel = pProvider, pModel
                     # Same wire-format caveat as the fallback chain: the
                     # promoted model may be served on a different format.
@@ -3905,7 +3928,10 @@ async def _sendWorkbenchMessageStreamImpl(
         if response.get('stream_rule'):
             # Stream rule fired mid-generation (the model narrated a tool call
             # instead of emitting one) — inject a reminder and retry from this
-            # point instead of wasting the round.
+            # point instead of wasting the round. Part 26 2.3: the self-heal
+            # retry does NOT consume the round budget (bounded — after
+            # _SELFHEAL_EXEMPT_ROUNDS retries the round counts normally, so a
+            # model stuck narrating forever still hits the loop cap).
             ruleName = as_str(response.get('stream_rule'))
             if emit:
                 emit(
@@ -3927,6 +3953,9 @@ async def _sendWorkbenchMessageStreamImpl(
                     ),
                 }
             )
+            if _selfHealRetries < _SELFHEAL_EXEMPT_ROUNDS:
+                _selfHealRetries += 1
+                toolRound -= 1
             continue
         respUsage = as_dict(response.get('usage'), {})
         if respUsage:
@@ -4111,6 +4140,11 @@ async def _sendWorkbenchMessageStreamImpl(
                                 ),
                             }
                         )
+                    # Part 26 2.3: the (bounded, ≤2) refusal reminder does not
+                    # consume the round budget.
+                    if _selfHealRetries < _SELFHEAL_EXEMPT_ROUNDS:
+                        _selfHealRetries += 1
+                        toolRound -= 1
                     continue
                 logger.warning(
                     'workbench model refused tool use %d times; accepting the text answer',
@@ -4462,6 +4496,9 @@ async def _sendWorkbenchMessageStreamImpl(
         # the assistant message must not be persisted with dangling calls
         # (strict gateways reject tool_use/tool_calls that lack results).
         cancelledMidRound = _isCancelled()
+        # Part 26 2.4: set when a mid-round cancel strips the assistant
+        # message to empty — the append is skipped below.
+        skipEmptyAssistantAppend = False
         # Regular tools: chat_stages runs them in parallel when all are read-only.
         from app.services.workbench.chat_stages import run_regular_tools_stage
 
@@ -4985,6 +5022,10 @@ async def _sendWorkbenchMessageStreamImpl(
                     openaiTools = openaiToolDefinitions(session)
                     surfaceDowngraded = False
                     cleanRoundsSinceDowngrade = 0
+                    # Part 26 2.5: the system prompt enumerates the offered
+                    # tools — rebuild it so the restored surface is advertised
+                    # (the old prompt listed the bare set only).
+                    systemText = _buildSystemText(session, tools if isAnthropic else openaiTools)
                     if emit:
                         emit(
                             {
@@ -5008,6 +5049,9 @@ async def _sendWorkbenchMessageStreamImpl(
                 ]
                 surfaceDowngraded = True
                 cleanRoundsSinceDowngrade = 0
+                # Part 26 2.5: rebuild the system prompt — it still advertised
+                # the full tool list, dead the moment the surface shrank.
+                systemText = _buildSystemText(session, tools if isAnthropic else openaiTools)
                 if emit:
                     emit(
                         {
@@ -5044,7 +5088,16 @@ async def _sendWorkbenchMessageStreamImpl(
                     if not (isinstance(b, dict) and b.get('type') == 'tool_use')
                 ]
             assistantMsg.pop('tool_calls', None)
-        currentMessages.append(assistantMsg)
+            # Part 26 2.4: if stripping left NOTHING (the round was pure tool
+            # calls), skip the append entirely — an empty assistant bubble
+            # between two user turns breaks Anthropic's alternation and
+            # renders as a blank message in the transcript.
+            if not as_str(assistantMsg.get('content')) and isinstance(
+                assistantMsg.get('content'), list
+            ):
+                skipEmptyAssistantAppend = True
+        if not skipEmptyAssistantAppend:
+            currentMessages.append(assistantMsg)
         # 0.4 (Part 25): on a mid-round cancel every tool_use block was just
         # stripped from the assistant message, so this round's tool_results are
         # all dangling — appending them yields a tool_result with no matching

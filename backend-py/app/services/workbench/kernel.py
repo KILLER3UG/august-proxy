@@ -168,12 +168,9 @@ class WarmKernel:
             import time as _t
 
             if _t.monotonic() - self.last_used >= WARM_KERNEL_IDLE_S:
-                self._shutdown = True
-                if self.proc is not None:
-                    try:
-                        self.proc.kill()
-                    except ProcessLookupError:
-                        pass
+                # kill() reaps + closes pipes (Part 26 4.3) — the old bare
+                # proc.kill() left the child unwaited and pipes leaked.
+                self.kill()
 
         self._idle_handle = loop.call_later(WARM_KERNEL_IDLE_S, _idle_exit)
 
@@ -182,14 +179,38 @@ class WarmKernel:
         return not self._shutdown and (self.proc is None or self.proc.returncode is None)
 
     def kill(self) -> None:
+        """Kill the child and drain its pipes (Part 26 4.3).
+
+        ``proc.kill()`` alone leaks: on Windows the child becomes a zombie
+        until someone reaps it, and the stdin/stdout pipes stay open (each
+        holds an OS handle) until GC. ``await proc.wait()`` can't run in this
+        sync method, so reap via a fire-and-forget task and close the pipes
+        here.
+        """
         self._shutdown = True
         if self._idle_handle is not None:
             self._idle_handle.cancel()
-        if self.proc is not None and self.proc.returncode is None:
+        proc = self.proc
+        if proc is not None and proc.returncode is None:
             try:
-                self.proc.kill()
+                proc.kill()
             except ProcessLookupError:
                 pass
+            for pipe in (proc.stdin, proc.stdout, proc.stderr):
+                if pipe is None:
+                    continue
+                try:
+                    pipe.close()  # type: ignore[union-attr]
+                except Exception:
+                    pass
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_reap_process(proc))
+            except RuntimeError:
+                # No running loop (sync teardown) — reap in a daemon thread.
+                import threading
+
+                threading.Thread(target=proc.wait, daemon=True).start()
 
     def shutdown(self) -> None:
         """Kill the child and drop the registry entry."""
@@ -297,6 +318,14 @@ def reap_idle_warm_kernels() -> int:
     for key in dead:
         _WARM_KERNELS.pop(key, None)
     return len(dead)
+
+
+async def _reap_process(proc: asyncio.subprocess.Process) -> None:
+    """Await an already-killed child so it does not linger as a zombie."""
+    try:
+        await asyncio.wait_for(proc.wait(), 10.0)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
