@@ -77,7 +77,14 @@ def test_policy_defaults_and_overrides(monkeypatch):
     # Speed audit 2026-08-31: default 10 → 3. The loop budget stacks on the
     # client's own 3 retries × ≤30 s Retry-After waits; 10 loop retries
     # kept a rate-limited "hello" waiting for many silent minutes.
-    assert wb._modelRetryPolicy() == {'maxRetries': 3, 'baseDelayMs': 1000, 'maxDelayMs': 30000}
+    # Part 26 1.1: toolsFallback defaults ON (the stripped retry that rescues
+    # gateways that 500 on the tool surface).
+    assert wb._modelRetryPolicy() == {
+        'maxRetries': 3,
+        'baseDelayMs': 1000,
+        'maxDelayMs': 30000,
+        'toolsFallback': 1,
+    }
 
     monkeypatch.setattr(
         config_service,

@@ -123,6 +123,10 @@ _ORACLE_AGENT = frozenset({
     'list_workstreams', 'send_subagent_message', 'interrupt_subagent',
     # Bot Mode routines: Bot-owned scheduled jobs.
     'create_routine', 'list_routines',
+    # Bot Mode Phase C: the single agent-to-agent DM send path (policy had
+    # this bucketed; the oracle drifted until a full-suite order registered
+    # dm tools and surfaced it — Part 26 wave fix).
+    'message_agent',
 })
 _ORACLE_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills'})
 _ORACLE_BRIDGE = frozenset({'tool_call', 'tool_describe', 'tool_search'})

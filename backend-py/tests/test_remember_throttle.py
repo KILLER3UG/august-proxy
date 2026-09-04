@@ -71,7 +71,9 @@ async def testBudgetResetRestoresWrites():
     # ContextVar default key here is 'default'.
     st.reset_remember_turn_budget('default')
     out = json.loads(await st._remember(fact='fresh turn gets a fresh budget'))
-    assert out['ok'] is True
+    # Surface the refusal reason — an order-dependent leak (config knob,
+    # leaked scope) previously surfaced as a bare ok=False here.
+    assert out['ok'] is True, out
 
 
 @pytest.mark.asyncio

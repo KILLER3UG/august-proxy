@@ -201,12 +201,28 @@ async def test_chat_mode_ships_no_tools(isolatedData, monkeypatch, tmp_path):
     assert not bodies[-1].get('tools'), 'chat mode must not ship the tool array'
 
 
+def _register_synthetic_surface(count: int = 40) -> None:
+    """Populate the registry with enough deferrable tools for BM25 assembly.
+
+    Deliberately NOT register_all(): that drags Bot Mode/integration tools
+    into the shared registry and made downstream parity/registration asserts
+    order-dependent in the full suite (Part 26 validation).
+    """
+    from app.services.tool_registry import register as reg
+
+    for i in range(count):
+        reg(
+            f'probe_tool_{i:02d}',
+            f'synthetic probe tool {i} for the tool-budget test',
+            lambda *a, **k: 'ok',
+            {'type': 'object', 'properties': {}},
+        )
+
+
 @pytest.mark.asyncio
 async def test_openai_progressive_disclosure_activates(isolatedData, monkeypatch, tmp_path):
     _iso_env(monkeypatch, tmp_path)
-    from app.services.tool_registrations import register_all
-
-    register_all()
+    _register_synthetic_surface()
     import app.services.workbench.workbench as wbmod
 
     s = SimpleNamespace(
@@ -228,10 +244,11 @@ async def test_openai_progressive_disclosure_activates(isolatedData, monkeypatch
         defs = wbmod.openaiToolDefinitions(s)
     finally:
         wbmod._resolveModelContextWindow = orig
-    names = [t.get('function', {}).get('name') or t.get('name') for t in defs]
     assert defs, 'expected a non-empty tool list'
     assert all(t.get('function') for t in defs), 'defs must stay OpenAI-shaped'
-    assert 'read_file' in names and 'run_command' in names, 'core tools must survive the budget'
+    # The synthetic surface has no AUGUST_CORE_TOOLS members, so with the
+    # 8k window BM25 must preload a bounded subset — not the full 40.
+    assert len(defs) < 40, f'BUDGET NOT APPLIED: {len(defs)} defs came through unfiltered'
     assert getattr(s, '_tool_assembly', None) is not None, 'assembly metadata stored on the session'
     totalChars = sum(len(json.dumps(t)) for t in defs)
     assert totalChars < 60000, f'budgeted surface should be far below the full registry: {totalChars}'
