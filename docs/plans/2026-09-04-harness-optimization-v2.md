@@ -1,6 +1,14 @@
 # Harness Optimization Plan v2 (2026-09-04) — consolidated round-2 scan
 
-**Status: DRAFT — awaiting ruling before implementation.**
+**Status: PARTIALLY IMPLEMENTED (2026-09-04) — validated 2026-09-04: backend 2302 passed /
+0 failed, frontend 985/985, naming + doc-links + version-sync gates green, eslint 0 errors
+(254-warning ratchet). All P0/P1 items landed in commits
+`bd0cb732` (Wave 1: 3.1/3.2/3.3/2.1/2.2/3.5 + 1.5/1.6), `abe4a642` (Wave 2: 1.1/1.2/1.4),
+`b58ede02` (Wave 3: 6.1/6.2/6.3/6.5/5.1), `e1f5d9c2` (Wave 4: 7.1/7.2/7.3), `39aa3002`
+(Wave 5: 5.2 /safe + 4.2), `2f609dfc` (Wave 6: 7.4 memo + 3.10 queue), `324e1a40`
+(Wave 7: 9.1/9.2/9.4). Remaining: Phase 10, the 6.4 learning-scope migration, 6.9 import
+track, 1.3 Responses support, 4.1 bridge approval, 4.3-4.5 sandbox/MCP/PTY batch, the
+remainder of 2.3-2.5/3.7/6.6-6.8 tuning items, and the npm/dependency cleanup (9.3).**
 
 Method: two independent round-2 scans, merged into this one plan. **Scan A** — five parallel
 deep-scan audits (model/provider wire path · multi-session & multi-subagent concurrency ·
