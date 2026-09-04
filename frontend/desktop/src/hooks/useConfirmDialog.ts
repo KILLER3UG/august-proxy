@@ -7,7 +7,7 @@
  *   if (ok) doDelete();
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface ConfirmDialogOptions {
   title: string;
@@ -48,6 +48,18 @@ export function useConfirmDialog() {
     resolveRef.current?.(false);
     resolveRef.current = null;
     setState((s) => ({ ...s, open: false, resolve: null }));
+  }, []);
+
+  // Safety net: if the owning component unmounts while a confirm is still
+  // open (e.g. a delete navigates away mid-dialog), resolve the pending
+  // promise as `false` so an awaiting caller's continuation completes instead
+  // of hanging forever on a dialog that is gone. Without this, a stranded
+  // `await confirm()` can leave the delete flow half-run.
+  useEffect(() => {
+    return () => {
+      resolveRef.current?.(false);
+      resolveRef.current = null;
+    };
   }, []);
 
   return { state, confirm, handleConfirm, handleCancel };
