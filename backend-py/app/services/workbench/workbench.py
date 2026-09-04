@@ -318,6 +318,105 @@ def _retryBlockedByPartialEmission(response: dict[str, object], emitted_content:
     return bool(emitted_content) and _isRetryableModelError(response)
 
 
+# ── Tools-fallback retry (Part 26 1.1) ────────────────────────────────────
+# A gateway that rejects the request WITH tools (deterministic 500s on
+# unknown/aggregator models — the reported "always 500 while other harnesses
+# work" class) will reject every identical retry too. One stripped retry
+# gives the turn a way out. The model is told why tools vanished so it
+# answers in plain text instead of narrating calls it cannot make.
+
+_TOOLS_FALLBACK_NOTE = (
+    '[Proxy Self-Heal] The tool transport failed upstream for this model, so tools '
+    'are unavailable for this reply. Answer in plain text; if action is needed, '
+    'describe the exact commands or edits for the user to run.'
+)
+
+
+def _toolBlockText(content: object) -> str:
+    """Best-effort flat text for a tool result's inner content."""
+    if isinstance(content, list):
+        parts = [
+            as_str(b.get('text'), '')
+            for b in content
+            if isinstance(b, dict) and b.get('type') == 'text'
+        ]
+        return '\n'.join(p for p in parts if p) or json.dumps(content, default=str)
+    if isinstance(content, str):
+        return content
+    return json.dumps(content, default=str) if content is not None else ''
+
+
+def _stripToolsFromHistory(messages: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Flatten tool-call history for a tools-fallback retry (Part 26 1.1).
+
+    Strict gateways reject tool-role messages / tool_use blocks when no
+    ``tools`` array is declared, so the stripped request must carry a
+    tool-less history too: tool results become user-role text, assistant
+    ``tool_calls``/``tool_use`` blocks are dropped. The original working list
+    is not mutated — the flattened copy feeds the wire request only. The
+    self-heal note is merged into the last user message (Anthropic requires
+    strict role alternation; a trailing user note must not sit beside another).
+    """
+    out: list[dict[str, object]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = as_str(msg.get('role'), '')
+        content = msg.get('content')
+        if role == 'tool':
+            toolId = as_str(msg.get('tool_use_id'), '') or as_str(msg.get('tool_call_id'), '') or 'tool'
+            out.append(
+                {
+                    'role': 'user',
+                    'content': f"[tool result for {toolId}]\n{_toolBlockText(content)}",
+                }
+            )
+            continue
+        if role == 'assistant':
+            if msg.get('tool_calls'):
+                cleaned = {k: v for k, v in msg.items() if k != 'tool_calls'}
+                cleaned['content'] = as_str(content, '')
+                out.append(cleaned)
+                continue
+            if isinstance(content, list):
+                kept = [
+                    b
+                    for b in content
+                    if isinstance(b, dict) and as_str(b.get('type'), '') not in ('tool_use', 'tool_result')
+                ]
+                out.append({**msg, 'content': kept})
+                continue
+            out.append(dict(msg))
+            continue
+        if role == 'user' and isinstance(content, list):
+            if any(
+                isinstance(b, dict) and as_str(b.get('type'), '') == 'tool_result'
+                for b in content
+            ):
+                texts: list[str] = []
+                for b in content:
+                    if not isinstance(b, dict):
+                        continue
+                    if as_str(b.get('type'), '') == 'tool_result':
+                        texts.append(f"[tool result]\n{_toolBlockText(b.get('content'))}")
+                    elif as_str(b.get('type'), '') == 'text':
+                        texts.append(as_str(b.get('text'), ''))
+                out.append({'role': 'user', 'content': '\n\n'.join(t for t in texts if t) or '[tool result]'})
+                continue
+        out.append(dict(msg))
+    for m in reversed(out):
+        if as_str(m.get('role')) == 'user':
+            c = m.get('content')
+            if isinstance(c, list):
+                m['content'] = [*c, {'type': 'text', 'text': _TOOLS_FALLBACK_NOTE}]
+            else:
+                m['content'] = f"{as_str(c, '')}\n\n{_TOOLS_FALLBACK_NOTE}"
+            break
+    else:
+        out.append({'role': 'user', 'content': _TOOLS_FALLBACK_NOTE})
+    return out
+
+
 def _truncateToolOutput(text: str, cap: int) -> tuple[str, bool]:
     """Bounded head+tail tool-output truncation (plan §10.3 R-C metering).
 
@@ -513,7 +612,7 @@ def _modelRetryPolicy() -> dict[str, int]:
     retries × visible `retrying` pills keeps the worst case ~1-2 min and
     still rides out transient 429/503 bursts. Override per config.json
     workbench.retry.maxRetries when a provider genuinely needs more."""
-    policy = {'maxRetries': 3, 'baseDelayMs': 1000, 'maxDelayMs': 30000}
+    policy = {'maxRetries': 3, 'baseDelayMs': 1000, 'maxDelayMs': 30000, 'toolsFallback': 1}
     try:
         from app.services import config_service
 
@@ -1879,6 +1978,56 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         return tools
 
     tools = tool_defs_cache.get_or_build('openai', _build_base)
+    # Part 26 1.2: run the same BM25-budgeted progressive disclosure as the
+    # Anthropic builder. The OpenAI path previously shipped the full registry
+    # (~80 KB JSON, ≈20k tokens) to every model without a capability profile —
+    # the dominant trigger of deterministic gateway 500s while a few-KB chat
+    # body from other harnesses succeeds on the same model+provider.
+    try:
+        from app.services.tools.model_tools import assembleToolDefs
+
+        messages = getattr(session, 'messages', None) or []
+        contextMsgs = list(messages) if isinstance(messages, list) else []
+        # Budget against the session model's REAL window (same as the
+        # Anthropic builder) — a 32k model must not be offered a 200k budget.
+        contextWindow = 128000
+        try:
+            modelId = as_str(getattr(session, 'model', ''), '')
+            providerCfg = as_dict(getattr(session, 'provider', None), {})
+            if modelId:
+                contextWindow = _resolveModelContextWindow(modelId, providerCfg or None)
+        except Exception:
+            logger.debug('tool-defs context window resolve failed', exc_info=True)
+        # assembleToolDefs ranks by top-level `name` (Anthropic shape) — shim
+        # the OpenAI defs into that shape for ranking, then map the selected
+        # names back onto the original OpenAI-format definitions.
+        byName: dict[str, dict[str, object]] = {}
+        anthShim: list[dict[str, object]] = []
+        for t in tools:
+            name = _toolDefName(t)
+            if not name or name in byName:
+                continue
+            byName[name] = t
+            fn = as_dict(t.get('function'), {})
+            anthShim.append(
+                {
+                    'name': name,
+                    'description': as_str(t.get('description') or fn.get('description'), ''),
+                    'input_schema': as_dict(t.get('parameters') or fn.get('parameters'), {}),
+                }
+            )
+        result = assembleToolDefs(
+            all_tool_defs=anthShim, context_messages=contextMsgs, contextLength=contextWindow
+        )
+        if result.activated:
+            session._tool_assembly = result
+            tools = [
+                byName[as_str(td.get('name'), '')]
+                for td in result.tool_defs
+                if as_str(td.get('name'), '') in byName
+            ]
+    except Exception:
+        logger.debug('openai progressive tool disclosure failed', exc_info=True)
     mode = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
     if mode == 'full':
         blocked = {'submit_plan', 'submitPlan', 'approve_plan', 'reject_plan'}
@@ -2868,11 +3017,21 @@ async def _sendWorkbenchMessageStreamImpl(
 
     with _trace.span('prompt_build'):
         # Build tool defs once and pass into system prompt (no double conversion).
-        tools = toolDefinitions(session)
-        openaiTools = openaiToolDefinitions(session)
-        systemText = _buildSystemText(session, tools)
-    isAnthropic = _isAnthropicProvider(resolvedProvider)
-    isOpenai = _isOpenaiProvider(resolvedProvider)
+        # Part 26 1.2/Phase 8: only the wire format the resolved provider
+        # actually speaks is built — both builders previously ran every turn
+        # (each a registry walk + BM25 assembly over the transcript).
+        isAnthropic = _isAnthropicProvider(resolvedProvider)
+        isOpenai = _isOpenaiProvider(resolvedProvider)
+        tools: list[dict[str, object]] = []
+        openaiTools: list[dict[str, object]] = []
+        if isAnthropic:
+            tools = toolDefinitions(session)
+        elif isOpenai:
+            openaiTools = openaiToolDefinitions(session)
+        # buildSystemPrompt's name extraction handles both wire shapes — pass
+        # whichever list the resolved format built so the intake manifest and
+        # tool-gated prompt sections still render on the OpenAI path.
+        systemText = _buildSystemText(session, tools if isAnthropic else openaiTools)
 
     def _isCancelled() -> bool:
         return signal is not None and signal.is_set()
@@ -3395,6 +3554,12 @@ async def _sendWorkbenchMessageStreamImpl(
                 # provider, not the turn's first model.
                 isAnthropic = _isAnthropicProvider(resolvedProvider)
                 isOpenai = _isOpenaiProvider(resolvedProvider)
+                # The skipped builder ran for a different format — build the
+                # missing list now so the chain model sees its full tool set.
+                if isAnthropic and not tools:
+                    tools = toolDefinitions(session)
+                elif isOpenai and not openaiTools:
+                    openaiTools = openaiToolDefinitions(session)
                 chainUsedAt = resolvedModel
                 logger.warning('workbench falling back to chain model %s', resolvedModel)
                 if emit:
@@ -3408,6 +3573,9 @@ async def _sendWorkbenchMessageStreamImpl(
                         }
                     )
             response: dict[str, object] = {}
+            # Tools-fallback bookkeeping: once per chain model (Part 26 1.1).
+            toolsFallbackUsed = False
+            toolsFallbackMessages: list[dict[str, object]] | None = None
             # T18 barrier 1: durable flush before the model request is
             # dispatched — fail-closed: a flush failure aborts the turn
             # rather than letting trajectory state silently diverge.
@@ -3461,12 +3629,27 @@ async def _sendWorkbenchMessageStreamImpl(
                             break
                     except Exception:
                         logger.debug('PRE_MODEL_CALL hook failed (non-fatal)', exc_info=True)
+                    # Part 26 1.4: chat/code mode never executes tools, so the
+                    # full tool array rode upstream for zero benefit — the
+                    # dominant 500-aggravator on weak gateways. Ship none.
+                    _wireTools = tools
+                    _wireOpenaiTools = openaiTools
+                    if as_str(getattr(session, 'agent_mode', '') or '') in ('chat', 'code'):
+                        _wireTools = []
+                        _wireOpenaiTools = []
+                    _attemptMessages = currentMessages
+                    if toolsFallbackUsed:
+                        # Part 26 1.1: the stripped request — no tools array,
+                        # tool-call history flattened to text.
+                        _wireTools = []
+                        _wireOpenaiTools = []
+                        _attemptMessages = toolsFallbackMessages or currentMessages
                     if isAnthropic:
                         response = await _callAnthropicWorkbench(
-                            currentMessages,
+                            _attemptMessages,
                             systemText,
                             resolvedModel,
-                            tools,
+                            _wireTools,
                             effectiveEffort,
                             provider=resolvedProvider,
                             emit=_attemptEmit,
@@ -3474,10 +3657,10 @@ async def _sendWorkbenchMessageStreamImpl(
                         )
                     elif isOpenai:
                         response = await _callOpenaiWorkbench(
-                            currentMessages,
+                            _attemptMessages,
                             systemText,
                             resolvedModel,
-                            openaiTools,
+                            _wireOpenaiTools,
                             effectiveEffort,
                             provider=resolvedProvider,
                             emit=_attemptEmit,
@@ -3563,6 +3746,50 @@ async def _sendWorkbenchMessageStreamImpl(
                         as_str(response.get('error')),
                     )
                     break
+                # Part 26 1.1: tools-fallback — a gateway that rejects the
+                # request WITH tools (deterministic 500s, or any >=500 that
+                # survives its own retries) will reject every identical
+                # retry too. Retry ONCE per chain model with tools stripped
+                # and tool history flattened before burning the remaining
+                # identical-body attempts.
+                errStatus = response.get('errorStatus')
+                _statusInt = errStatus if isinstance(errStatus, int) else None
+                _isQuotaLike = _statusInt in _QUOTA_STATUSES or any(
+                    m in as_str(response.get('error'), '').lower() for m in _QUOTA_MARKERS
+                )
+                _isDeterministic400 = _statusInt == 400 and any(
+                    m in as_str(response.get('error'), '').lower()
+                    for m in _DETERMINISTIC_400_MARKERS
+                )
+                _hasToolsNow = bool(_wireTools or _wireOpenaiTools)
+                if (
+                    retryPolicy.get('toolsFallback', 1)
+                    and not toolsFallbackUsed
+                    and _hasToolsNow
+                    and not attemptEmittedContent
+                    and not _isCancelled()
+                    and not _isQuotaLike
+                    and not _isDeterministic400
+                    and (_statusInt is not None and _statusInt >= 500 or not _statusInt)
+                ):
+                    toolsFallbackUsed = True
+                    toolsFallbackMessages = _stripToolsFromHistory(currentMessages)
+                    logger.warning(
+                        'workbench upstream rejected the request with tools (%s) — retrying once without tools',
+                        as_str(response.get('error'))[:200],
+                    )
+                    if emit:
+                        emit(
+                            {
+                                'type': 'warning',
+                                'message': (
+                                    'Upstream rejected the request with tools — retrying once '
+                                    'without tools. If this keeps happening, set the model\'s '
+                                    'wire tool surface to reduced/text in Model settings.'
+                                ),
+                            }
+                        )
+                    continue
                 delayMs = _modelRetryDelayMs(retryAttempt + 1, response, retryPolicy)
                 logger.warning(
                     'workbench model call failed (retry %d/%d in %dms): %s',
@@ -3597,6 +3824,10 @@ async def _sendWorkbenchMessageStreamImpl(
                     # promoted model may be served on a different format.
                     isAnthropic = _isAnthropicProvider(resolvedProvider)
                     isOpenai = _isOpenaiProvider(resolvedProvider)
+                    if isAnthropic and not tools:
+                        tools = toolDefinitions(session)
+                    elif isOpenai and not openaiTools:
+                        openaiTools = openaiToolDefinitions(session)
                     chainUsedAt = resolvedModel
                     logger.warning('workbench context overflow — promoting to %s', resolvedModel)
                     if emit:
