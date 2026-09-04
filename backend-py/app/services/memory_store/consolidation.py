@@ -101,6 +101,15 @@ def _expire_facts() -> int:
         "AND julianday(expires_at) <= julianday('now')"
     )
     conn.commit()
+    # 2.6 (Part 25): a TTL delete must drop the cached BM25 corpus, or expired
+    # facts keep being injected until an unrelated write clears it.
+    if cur.rowcount:
+        try:
+            from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+            invalidate_fact_index()
+        except Exception:
+            pass
     return cur.rowcount or 0
 
 
@@ -190,12 +199,14 @@ def _retire_stale_preferences() -> tuple[int, list[str]]:
         ).fetchall()
         if not rows:
             return 0, []
-        # Open proposals for this type → skip keys already proposed.
+        # Open OR decided proposals for this type → skip keys already proposed.
+        # 2.19 (Part 25): dedupe across ALL statuses, not just pending — a
+        # human-rejected retire must not re-file on every pass (the §12 F-8
+        # pattern the distiller already fixed).
         openKeys: set[str] = set()
         try:
             for pr in conn.execute(
-                "SELECT content FROM proposals WHERE proposal_type = 'retire-preference' "
-                "AND status = 'pending'"
+                "SELECT content FROM proposals WHERE proposal_type = 'retire-preference'"
             ).fetchall():
                 raw = pr['content']
                 try:
@@ -280,7 +291,7 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
 def _load_active_facts() -> list[dict[str, Any]]:
     conn = _conn()
     rows = conn.execute(
-        'SELECT id, fact_key, fact_value, title, kind, updated_at FROM facts '
+        'SELECT id, fact_key, fact_value, title, kind, scope, updated_at FROM facts '
         "WHERE (status IS NULL OR status = 'active') "
         "AND (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
         'ORDER BY updated_at DESC'
@@ -292,6 +303,10 @@ def _load_active_facts() -> list[dict[str, Any]]:
             'value': r['fact_value'],
             'title': str(r['title'] or ''),
             'kind': str(r['kind'] or 'fact'),
+            # 2.5 (Part 25): consolidation must never fold a global fact into
+            # a bot-scoped row (or across two bots) — the merge/supersede
+            # passes partition by this so a scope's memory stays its own.
+            'scope': str(r['scope'] or 'global'),
             'updated_at': str(r['updated_at'] or ''),
         }
         for r in rows
@@ -309,9 +324,11 @@ def _merge_duplicates(modelSummarize: bool = False) -> tuple[int, list[str]]:
         return 0, [f'pair scan skipped ({len(facts)} facts > {_PAIR_SCAN_CAP})']
     merged = 0
     removedKeys: set[str] = set()
-    bySlug: dict[str, list[dict[str, Any]]] = {}
+    # 2.5: partition by (scope, slug) — a global fact and a bot fact that share
+    # a slug must never be folded together.
+    bySlug: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for f in facts:
-        bySlug.setdefault(_slug(f['key']), []).append(f)
+        bySlug.setdefault((str(f['scope']), _slug(f['key'])), []).append(f)
     conn = _conn()
     # Facts are ordered newest-first: for each duplicate pair the later
     # (older) entry is folded into the earlier (newer) one.
@@ -324,18 +341,22 @@ def _merge_duplicates(modelSummarize: bool = False) -> tuple[int, list[str]]:
             seenPairs.add(sig)
             pairs.append((newer, older))
 
-    for slug, group in bySlug.items():
+    for (_scope, slug), group in bySlug.items():
         if slug and len(group) > 1:
             for older in group[1:]:
                 _addPair(group[0], older)
     if not pairs:
         # Only run the BM25 pass when key-slugs found nothing — it is the
         # expensive path and key-equality catches the common re-import case.
+        scopeByKey = {str(f['key']): str(f['scope']) for f in facts}
         for i, f in enumerate(facts):
             body = _fact_body_text(f['value'])
-            similar = find_similar_facts(f"{f['title']} {body}", k=2)
+            similar = find_similar_facts(f"{f['title']} {body}", k=2, scope=str(f['scope']))
             for ratio, key, _title in similar:
                 if key == f['key'] or key in removedKeys:
+                    continue
+                # 2.5: same-scope only — never fold across global/bot.
+                if scopeByKey.get(str(key)) != str(f['scope']):
                     continue
                 if ratio >= _MERGE_SIMILARITY:
                     other = next((g for g in facts[i + 1 :] if g['key'] == key), None)
@@ -370,15 +391,17 @@ def _supersede_contradictions() -> tuple[int, list[str]]:
     """(c) same-title entries with different bodies: keep the newest, mark
     older rows ``superseded`` (kept, not deleted — plan §3.5-c)."""
     facts = _load_active_facts()
-    byTitle: dict[str, list[dict[str, Any]]] = {}
+    # 2.5: partition by (scope, normalized-title) — a global fact and a bot
+    # fact with the same title are not a contradiction to resolve together.
+    byTitle: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for f in facts:
         norm = ' '.join(f['title'].lower().split())
         if len(norm) >= 8:
-            byTitle.setdefault(norm, []).append(f)
+            byTitle.setdefault((str(f['scope']), norm), []).append(f)
     conn = _conn()
     superseded = 0
     notes: list[str] = []
-    for norm, group in byTitle.items():
+    for (_scope, norm), group in byTitle.items():
         if len(group) < 2:
             continue
         bodies = {_fact_body_text(f['value']) for f in group}

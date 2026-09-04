@@ -360,6 +360,10 @@ async def run_room(
     review: tuple[str, str] | None = None  # (reviewer_id, summary)
     review_requester = ''                  # member who asked for the review
     revision: str = ''                     # member owed a revision turn
+    # 2.10 (Part 25): the reviewer speaks in the NEXT round, so the verdict
+    # marker must survive the round boundary — `review` is cleared when we
+    # schedule the round, so track the pending reviewer separately.
+    pending_verdict_for = ''
     rounds_run = 0
 
     for _round in range(rounds_cap):
@@ -391,8 +395,10 @@ async def run_room(
             consecutive_blocks[agent] = 0
             round_productive = True
             messages_used += 1
-            is_verdict = review is not None and agent == review[0]
+            is_verdict = bool(pending_verdict_for) and agent == pending_verdict_for
             add_message(room_id, agent, out, 'verdict' if is_verdict else 'message')
+            if is_verdict:
+                pending_verdict_for = ''
             verdict_wants_changes = is_verdict and 'changes' in out.lower()
             pulled += [m for m in parse_mentions(out, members) if m != agent]
             if review_req and review is None:
@@ -407,6 +413,7 @@ async def run_room(
         if review is not None:
             reviewer = review[0]
             review = None
+            pending_verdict_for = reviewer  # 2.10: mark the review round's turn
             speakers = [reviewer]
         elif revision:
             who = revision

@@ -619,7 +619,12 @@ def flag_top_slice(
     conn.commit()
 
     scored.sort(key=lambda pair: (-pair[0], -int(pair[1].get('id', 0))))
+    # 2.14 (Part 25): floor at 1 when there are candidates — int(len*cap)
+    # rounded to 0 for any pass with <20 unscored episodes, so typical desktop
+    # installs NEVER escalated anything to tier-2 review.
     capCount = int(len(scored) * max(0.0, min(1.0, flagRateCap)))
+    if scored and capCount < 1:
+        capCount = 1
     flaggedCount = 0
     for score, ep in scored:
         if flaggedCount >= budgetPerDay or flaggedCount >= capCount:
@@ -643,10 +648,14 @@ def flag_top_slice(
 def mine_sessions(sinceDays: int = 30) -> dict[str, int]:
     """Extract episodes from recent sessions (the scheduled Phase A pass)."""
     since = (datetime.now(timezone.utc) - timedelta(days=sinceDays)).isoformat()
+    # 2.17 (Part 25): created_at is stored space-separated (datetime('now'))
+    # while `since` is ISO with a 'T'; a raw string compare sorts ' ' (0x20)
+    # before 'T' and drops the whole cutoff day. julianday() parses both.
     rows = _conn().execute(
         """
         SELECT DISTINCT session_id AS sid FROM messages
-        WHERE created_at >= ?
+        WHERE julianday(created_at) IS NOT NULL
+          AND julianday(created_at) >= julianday(?)
         """,
         (since,),
     ).fetchall()

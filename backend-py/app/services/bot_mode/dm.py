@@ -338,7 +338,6 @@ async def deliver(dm_id: int, *, runner: object = None) -> str:
     guard in ``messageAgent`` stops concurrent ping-pong.
     """
     from app.services.bot_mode import roster
-    from app.services.workbench import sessions as sessions_mod
 
     row = get_dm(dm_id)
     if not row:
@@ -358,25 +357,18 @@ async def deliver(dm_id: int, *, runner: object = None) -> str:
             return REASON_NO_CHAT
         reply = await _run_turn(to_session, body, to_agent, runner)
         mark_delivered(dm_id)
-        # Sender wake: append the reply as a user-role turn in the sender's
-        # chat, then run ONE turn there so the sender relays it (OQ4).
+        # Sender wake: run ONE turn in the sender's chat carrying the reply, so
+        # the sender relays it to the user (OQ4). 2.9 (Part 25): do NOT append
+        # the wake message manually — sendWorkbenchMessageStream appends the
+        # user message itself (workbench.py:2560), so a manual append here
+        # double-wrote it (mirrors automation_memory.deliver_to_bot_chat).
         if from_session:
-            sender = sessions_mod.get_workbench_session(from_session)
-            if sender is not None:
-                wake = (
-                    f'Message from 🤖 {_handle_for(to_agent)} '
-                    f'(@{_handle_for(to_agent)}) in reply to your message:\n'
-                    + (reply or '(the recipient Bot sent no text reply)')
-                )
-                sender.messages.append({'role': 'user', 'content': wake})
-                sender.messageCount += 1
-                sender.updatedAt = _now()
-                sessions_mod.save_sessions()
-                try:
-                    sessions_mod._emit_session_status(from_session)
-                except Exception:
-                    pass
-                await _run_turn(from_session, wake, from_agent, runner)
+            wake = (
+                f'Message from 🤖 {_handle_for(to_agent)} '
+                f'(@{_handle_for(to_agent)}) in reply to your message:\n'
+                + (reply or '(the recipient Bot sent no text reply)')
+            )
+            await _run_turn(from_session, wake, from_agent, runner)
         return 'delivered'
     except Exception:
         logger.debug('dm deliver failed for %s', dm_id, exc_info=True)

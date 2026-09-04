@@ -87,7 +87,7 @@ def parse_memory_md(text: str) -> ProjectFile:
             if um:
                 entry.updated = (um.group(1) or um.group(2) or '').strip()
                 lines = lines[1:]
-        entry.body = '\n'.join(lines).strip('\n')
+        entry.body = re.sub(r'^\\##(\s)', r'##\1', '\n'.join(lines), flags=re.MULTILINE).strip('\n')
         entries.append(entry)
     return ProjectFile(preamble=preamble, entries=entries)
 
@@ -178,11 +178,15 @@ def _sanitizeTitle(title: str) -> str:
 
 def _sanitizeBody(body: str) -> str:
     """§9 F-4: escape body lines that look like `## ` headings so a body can
-    never inject a new entry on re-parse (writer-side; parser stays simple)."""
+    never inject a new entry on re-parse (writer-side; parser stays simple).
+
+    2.16 (Part 25): the old replacement `r'\\\1'` DELETED the two hashes
+    (`## x` → `\\ x`) — silent content loss. Prefix a backslash instead
+    (`## x` → `\\## x`); the parser un-escapes on read."""
     if not body or '##' not in body:
         return body
     return '\n'.join(
-        re.sub(r'^##(\s)', r'\\\1', ln, count=1) for ln in body.splitlines()
+        re.sub(r'^##(\s)', r'\\##\1', ln, count=1) for ln in body.splitlines()
     )
 
 

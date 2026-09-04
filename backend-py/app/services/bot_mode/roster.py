@@ -163,11 +163,60 @@ def update_bot_by_name(name: str, ui_meta: dict[str, object], actor: str = 'ui')
 
 
 def delete_bot(agent_id: str, actor: str = 'ui') -> bool:
-    """Delete a Bot record. The default assistant Bot is undeletable."""
+    """Delete a Bot record + cascade its private data (2.13, Part 25). The
+    default assistant Bot is undeletable."""
     default = get_default_bot()
     if default and as_str(default.get('id')) == agent_id:
         return False
-    return agent_registry.deleteAgent(agent_id, actor=actor)
+    ok = agent_registry.deleteAgent(agent_id, actor=actor)
+    if ok:
+        _cascade_delete_bot_data(agent_id)
+    return ok
+
+
+def _cascade_delete_bot_data(agent_id: str) -> None:
+    """Remove a deleted Bot's private footprint so it doesn't linger in the DB:
+    its ``bot:<id>`` facts, its DM rows, its room memberships (dropping rooms
+    that fall below the 2-member minimum), and its canonical Bot Chat session.
+    Best-effort — a failure here never blocks the delete."""
+    import json
+
+    from app.services.memory_conn import conn as _conn
+
+    scope = f'bot:{agent_id}'
+    try:
+        c = _conn()
+        c.execute('DELETE FROM facts WHERE scope = ?', (scope,))
+        c.execute('DELETE FROM bot_dm WHERE from_agent = ? OR to_agent = ?', (agent_id, agent_id))
+        # Drop the Bot from every room; delete rooms left under 2 members.
+        for row in c.execute('SELECT id, members FROM bot_room').fetchall():
+            try:
+                members = json.loads(str(row['members'] or '[]'))
+            except (json.JSONDecodeError, TypeError):
+                members = []
+            if agent_id not in members:
+                continue
+            remaining = [m for m in members if m != agent_id]
+            if len(remaining) < 2:
+                c.execute('DELETE FROM bot_room_message WHERE room_id = ?', (row['id'],))
+                c.execute('DELETE FROM bot_room WHERE id = ?', (row['id'],))
+            else:
+                c.execute(
+                    'UPDATE bot_room SET members = ? WHERE id = ?',
+                    (json.dumps(remaining), row['id']),
+                )
+        c.commit()
+    except Exception:
+        logger.debug('bot cascade delete (db) failed for %s', agent_id, exc_info=True)
+    # Canonical Bot Chat session.
+    try:
+        chat = find_canonical_bot_chat(agent_id)
+        if chat is not None:
+            from app.services.workbench import sessions as sessions_mod
+
+            sessions_mod.delete_workbench_session(chat.id)
+    except Exception:
+        logger.debug('bot cascade delete (chat) failed for %s', agent_id, exc_info=True)
 
 
 # ── canonical Bot Chat ─────────────────────────────────────────────────────

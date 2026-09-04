@@ -185,6 +185,15 @@ async def purgeMemories():
     # auto_memories_fts rebuild removed (Part 21 OQ1 retire, migration 033):
     # the store no longer exists. memory_store_fts is trigger-maintained and
     # repair_fts_sync() self-heals any desync at boot.
+    # 2.7 (Part 25): the facts DELETE must drop the cached BM25 corpus, or
+    # purged facts keep being injected until an unrelated write clears it —
+    # a privacy hole ("erase my memory" that doesn't erase recall).
+    try:
+        from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+        invalidate_fact_index()
+    except Exception:
+        pass
     return {'deleted': deleted}
 
 

@@ -454,7 +454,11 @@ def catalogue(
         key = None
     if key is not None and _cat_cache is not None and _cat_cache_key == key:
         return _cat_cache
-    byName = {as_str(s['name'], ''): s for s in list_all(workspace, agent_id)}
+    # byName is the NON-project baseline (agent/bundled, plus the bot root when
+    # agent_id is set) so a project entry's shadowing of a lower root stays
+    # detectable below. Passing `workspace` here collapses the shadowed entry
+    # into the kept one and drops the `overrides` label (Part 25 regression).
+    byName = {as_str(s['name'], ''): s for s in list_all(None, agent_id)}
     entries: list[dict[str, object]] = []
     for s in list_all(workspace, agent_id):
         if not s.get('enabled'):

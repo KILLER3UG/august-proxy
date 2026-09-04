@@ -130,6 +130,14 @@ class TestDelivery:
 
         async def fake_runner(*, sessionId, message, agentId, emit=None):
             calls.append((sessionId, message))
+            # Mimic sendWorkbenchMessageStream: the turn loop appends the user
+            # message itself (workbench.py:2560). 2.9 regression guard — the
+            # wake must be appended EXACTLY once, not also by deliver().
+            from app.services.workbench import sessions as sessions_mod
+
+            sess = sessions_mod.get_workbench_session(sessionId)
+            if sess is not None:
+                sess.messages.append({'role': 'user', 'content': message})
             if emit:
                 emit({'type': 'finalOutput', 'content': f'[{agentId}] reply'})
 
@@ -147,7 +155,7 @@ class TestDelivery:
         assert 'reply' in calls[1][1]
 
         assert dm.get_dm(dm_id)['status'] == 'delivered'
-        # The sender chat carries the attributed reply as a user-role turn.
+        # The sender chat carries the attributed reply EXACTLY once (2.9).
         from app.services.workbench import sessions as sessions_mod
 
         reloaded = sessions_mod.get_workbench_session(alpha_chat.id)
@@ -155,7 +163,7 @@ class TestDelivery:
             m for m in reloaded.messages
             if isinstance(m, dict) and 'reply' in str(m.get('content', '')) and m.get('role') == 'user'
         ]
-        assert wake_msgs, 'sender chat must carry the attributed reply'
+        assert len(wake_msgs) == 1, f'wake must be appended exactly once, got {len(wake_msgs)}'
 
     def test_inflight_guard_blocks_second_dm(self, bots, monkeypatch):
         alpha_chat = _canonical(bots['alpha'])

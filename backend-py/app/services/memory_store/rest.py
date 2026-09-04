@@ -50,6 +50,10 @@ def save_fact(
     stamps the row's memory home on INSERT. An update never rewrites scope —
     a fact keeps the home it was born in (a bot touching an existing global
     key edits that global fact, same as any session does today).
+
+    2.4 (Part 25): an upsert resets ``status`` to 'active' — re-remembering a
+    key that consolidation had superseded/retired must revive it, or the model
+    believes it saved while retrieval keeps filtering the stale row out.
     """
     from app.services.session_scope import normalize_scope
 
@@ -69,6 +73,7 @@ def save_fact(
             source = excluded.source,
             confidence = excluded.confidence,
             expires_at = excluded.expires_at,
+            status = 'active',
             updated_at = datetime('now')
         """,
         (
@@ -133,34 +138,65 @@ def get_fact(factKey: str) -> FactDict | None:
     return cast(FactDict, _row_as_wire(row))
 
 
-def search_facts(query: str, category: str = '') -> list[FactDict]:
-    """Search facts by key or value."""
+def _visibility_where(scope: str) -> tuple[str, list[object]]:
+    """2.2 (Part 25): the shared read-visibility clause for the facts store —
+    active + unexpired + the M-2 scope union (global ∪ this-scope). Every
+    non-ranked facts read (list_facts / search_facts) must apply it, or a Bot
+    sees every other Bot's private keys plus superseded/retired/expired rows.
+    """
+    from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
+
+    s = normalize_scope(scope)
+    parts = [
+        "(status IS NULL OR status = 'active')",
+        "(expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now'))",
+    ]
+    params: list[object] = []
+    if s == GLOBAL_SCOPE:
+        parts.append("(scope IS NULL OR scope = 'global')")
+    else:
+        parts.append("(scope IS NULL OR scope = 'global' OR scope = ?)")
+        params.append(s)
+    return ' AND '.join(parts), params
+
+
+def search_facts(query: str, category: str = '', scope: str = 'global') -> list[FactDict]:
+    """Search facts by key or value (visible-to-``scope`` only — 2.2)."""
     conn = _conn()
     # Escape LIKE wildcards so `100%` / `my_note` don't over-match.
     escaped = (query or '').replace('%', r'\%').replace('_', r'\_')
     like = f'%{escaped}%'
+    vis, visParams = _visibility_where(scope)
     if category:
         rows = conn.execute(
-            "SELECT * FROM facts WHERE (fact_key LIKE ? ESCAPE '\\' OR fact_value LIKE ? ESCAPE '\\') AND category = ? ORDER BY updated_at DESC LIMIT 20",
-            (like, like, category),
+            "SELECT * FROM facts WHERE (fact_key LIKE ? ESCAPE '\\' OR fact_value LIKE ? ESCAPE '\\') "
+            f"AND category = ? AND {vis} ORDER BY updated_at DESC LIMIT 20",
+            (like, like, category, *visParams),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM facts WHERE fact_key LIKE ? ESCAPE '\\' OR fact_value LIKE ? ESCAPE '\\' ORDER BY updated_at DESC LIMIT 20",
-            (like, like),
+            "SELECT * FROM facts WHERE (fact_key LIKE ? ESCAPE '\\' OR fact_value LIKE ? ESCAPE '\\') "
+            f"AND {vis} ORDER BY updated_at DESC LIMIT 20",
+            (like, like, *visParams),
         ).fetchall()
     return [cast(FactDict, _row_as_wire(r)) for r in rows]
 
 
-def list_facts(category: str = '') -> list[FactDict]:
-    """List facts, optionally filtered by category."""
+def list_facts(category: str = '', scope: str = 'global') -> list[FactDict]:
+    """List facts visible to ``scope`` (active + unexpired — 2.2), optionally
+    filtered by category."""
     conn = _conn()
+    vis, visParams = _visibility_where(scope)
     if category:
         rows = conn.execute(
-            'SELECT * FROM facts WHERE category = ? ORDER BY updated_at DESC', (category,)
+            f'SELECT * FROM facts WHERE category = ? AND {vis} ORDER BY updated_at DESC',
+            (category, *visParams),
         ).fetchall()
     else:
-        rows = conn.execute('SELECT * FROM facts ORDER BY updated_at DESC').fetchall()
+        rows = conn.execute(
+            f'SELECT * FROM facts WHERE {vis} ORDER BY updated_at DESC',
+            tuple(visParams),
+        ).fetchall()
     return [cast(FactDict, _row_as_wire(r)) for r in rows]
 
 

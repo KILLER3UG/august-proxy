@@ -175,7 +175,35 @@ class TestReviewRound:
         log = rooms.room_log(rid)
         verdicts = [m for m in log if m['kind'] == 'verdict']
         assert verdicts, 'the reviewer turn must be a verdict row'
+        # 2.10 (Part 25): the verdict must be the REVIEWER's turn in a dedicated
+        # review round (>= 2 rounds), not an incidental same-round message.
+        members = [str(m) for m in (rooms.get_room(rid) or {}).get('members', [])]
+        assert verdicts[0]['sender_agent'] == members[1]  # bob, the reviewer
+        assert summary['rounds'] >= 2
         assert summary['messages'] >= 2
+
+    def test_changes_verdict_grants_revision_turn(self, bots):
+        rid = _room(bots, 'alice', 'bob')
+
+        async def runner(*, agentId, emit=None, **kw):
+            members = [str(m) for m in (rooms.get_room(rid) or {}).get('members', [])]
+            alice = members[0]
+            if emit:
+                if agentId == alice:
+                    emit({'type': 'finalOutput', 'content': 'draft. request_review(@bob, schema)'})
+                else:
+                    emit({'type': 'finalOutput', 'content': 'changes: rename the column'})
+
+        summary = asyncio.run(rooms.run_room(rid, 'build', runner=runner, max_rounds=3))
+        log = rooms.room_log(rid)
+        # alice (requester) gets a revision turn after the changes: verdict.
+        alice_msgs = [m for m in log if m['sender_agent'] == members0(rid)]
+        assert len(alice_msgs) >= 2  # draft + revision
+        assert summary['rounds'] >= 3
+
+
+def members0(rid):
+    return str((rooms.get_room(rid) or {}).get('members', [''])[0])
 
 
 # ── session-per-member isolation ──────────────────────────────────────────────

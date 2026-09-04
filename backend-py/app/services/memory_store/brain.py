@@ -581,7 +581,7 @@ def brain_browse(
         return {'error': f'brain_browse({store}): {exc}', 'rows': [], 'total': 0}
 
 
-def brain_index_snippet() -> str:
+def brain_index_snippet(scope: str = 'global') -> str:
     """Compact boot index of durable memory for intake injection (B3).
 
     Lists the top-15 facts (by ``updated_at``, skipping expired rows) as
@@ -589,15 +589,30 @@ def brain_index_snippet() -> str:
     capped near 250 tokens. Injected at intake so the model can pull
     relevant memory by name via ``brain_query`` instead of blind-scanning
     raw tables. Returns '' when there is nothing worth injecting.
+
+    2.1 (Part 25): the facts selection is scope-filtered (global ∪ this-scope)
+    — otherwise a Bot's private fact names ride into every other session's
+    frozen boot index and vice versa.
     """
+    from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
+
     conn = _conn()
     lines: list[str] = []
+    s = normalize_scope(scope)
+    if s == GLOBAL_SCOPE:
+        scopeClause = "AND (scope IS NULL OR scope = 'global')"
+        scopeParams: tuple[object, ...] = ()
+    else:
+        scopeClause = "AND (scope IS NULL OR scope = 'global' OR scope = ?)"
+        scopeParams = (s,)
     try:
         factRows = conn.execute(
             "SELECT fact_key, title, category FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
-            "ORDER BY updated_at DESC LIMIT 15"
+            f"{scopeClause} "
+            "ORDER BY updated_at DESC LIMIT 15",
+            scopeParams,
         ).fetchall()
         if factRows:
             lines.append('Facts:')
@@ -679,9 +694,24 @@ def brain_delete_row(store: str, row_id: object) -> dict[str, object]:
         conn.commit()
         if cursor.rowcount > 0:
             _record_row_rollback(resolved, str(row_id), beforeWire, None)
+            _invalidate_fact_cache_if_facts(resolved)  # 2.6 (Part 25)
         return {'ok': cursor.rowcount > 0, 'store': resolved}
     except Exception as exc:
         return {'ok': False, 'error': f'brain_delete_row({store}): {exc}'}
+
+
+def _invalidate_fact_cache_if_facts(resolved: str) -> None:
+    """2.6 (Part 25): a Settings-UI edit/delete of a fact must drop the cached
+    BM25 corpus, or the stale row keeps being injected until an unrelated
+    write clears it."""
+    if resolved != 'facts':
+        return
+    try:
+        from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+        invalidate_fact_index()
+    except Exception:
+        pass
 
 
 def brain_update_row(store: str, row_id: object, patch: dict[str, object]) -> dict[str, object]:
@@ -722,6 +752,7 @@ def brain_update_row(store: str, row_id: object, patch: dict[str, object]) -> di
         after = conn.execute(f'SELECT * FROM {table} WHERE {idCol} = ?', (row_id,)).fetchone()
         afterWire = _row_as_wire(after) if after is not None else None
         _record_row_rollback(resolved, str(row_id), beforeWire, afterWire)
+        _invalidate_fact_cache_if_facts(resolved)  # 2.6 (Part 25)
         return {'ok': True, 'store': resolved, 'row': afterWire}
     except Exception as exc:
         return {'ok': False, 'error': f'brain_update_row({store}): {exc}'}

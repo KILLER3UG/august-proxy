@@ -27,12 +27,25 @@ def _currentWorkspacePath() -> str:
         return ''
 
 
+def _currentBotAgentId() -> str:
+    """The current session's Bot agent id when it is bot-scoped, else '' — so
+    load_skill/list_skills resolve through the Bot's private skill root too
+    (2.15, Part 25: the per-turn <relevant_skills> block advertises bot skills,
+    so the load door must see the same root or it returns 'not found')."""
+    try:
+        from app.services import session_scope
+
+        return session_scope.bot_agent_id(session_scope.resolve_scope())
+    except Exception:
+        return ''
+
+
 async def _loadSkill(name: str) -> str:
     """Load a skill's full instructions."""
     from app.services import skill_service
 
     try:
-        skill = skill_service.get(name, _currentWorkspacePath() or None)
+        skill = skill_service.get(name, _currentWorkspacePath() or None, _currentBotAgentId())
         if not skill:
             return f"Error: Skill '{name}' not found."
         if not skill.get('enabled'):
@@ -53,11 +66,12 @@ async def _listSkills(query: str = '') -> str:
 
     try:
         ws = _currentWorkspacePath() or None
+        agent_id = _currentBotAgentId()
         if query:
             # search() defaults to enabledOnly=True.
-            skills = skill_service.search(query, workspace=ws)
+            skills = skill_service.search(query, workspace=ws, agent_id=agent_id)
         else:
-            skills = [s for s in skill_service.list_all(ws) if s.get('enabled')]
+            skills = [s for s in skill_service.list_all(ws, agent_id) if s.get('enabled')]
         if not skills:
             return 'No skills found.' if not query else f"No skills matching '{query}'."
         lines = [f'Available skills ({len(skills)}):\n']

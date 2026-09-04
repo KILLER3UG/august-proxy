@@ -88,10 +88,14 @@ async def capture_after_tool(tool_name: str, tool_result: str = '') -> dict[str,
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / f'{obs_id}.png'
         # takeScreenshot now writes the PNG to the data dir and returns the
-        # path (base64-in-tool-result was corrupting on truncation).
+        # path (base64-in-tool-result was corrupting on truncation). 2.12
+        # (Part 25): copy the source PNG to the observations dir — the old
+        # line read shot['path'] and wrote it back to itself, so `path` was
+        # never created and count_observations() stayed 0.
         from pathlib import Path
 
-        Path(str(shot['path'])).write_bytes(Path(str(shot['path'])).read_bytes())
+        src = Path(str(shot['path']))
+        path.write_bytes(src.read_bytes())
         meta: dict[str, object] = {
             'id': obs_id,
             'screenshotPath': str(path),

@@ -154,9 +154,15 @@ async def listRoutines(all: bool = False) -> str:
 
 
 async def deleteRoutine(routine: str) -> str:
-    """Delete a routine by job id or by ``[bot:<name>] <title>`` / bare title."""
+    """Delete a routine by job id or by ``[bot:<name>] <title>`` / bare title.
+
+    2.11 (Part 25): a BARE title only resolves within the CALLING Bot's own
+    ``[bot:<name>]`` namespace — Bot A cannot delete Bot B's same-titled
+    routine. An explicit job id or a full ``[bot:x] title`` string still works.
+    """
     from app.services import automations_store
 
+    caller_name = as_str(_current_bot().get('name'))
     jobs = automations_store.list_jobs()
     target = None
     for j in jobs:
@@ -166,8 +172,8 @@ async def deleteRoutine(routine: str) -> str:
         if as_str(j.get('id')) == routine or name == routine:
             target = j
             break
-        _bot, title = _parse_display_name(name)
-        if title == routine:
+        bot, title = _parse_display_name(name)
+        if title == routine and caller_name and bot == caller_name:
             target = j
             break
     if target is None:

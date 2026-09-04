@@ -180,23 +180,28 @@ class SessionBridge:
                     'gateway_invoke', force=False, sessionKey=sessionKey, channel='gateway'
                 )
                 owned = True
-            with trace.span('gateway_turn'):
-                await self._runner(
-                    sessionId=sessionId,
-                    message=text,
-                    provider=self._provider,
-                    agentId=self._agentId,
-                    model=self._model,
-                    modelProvider=self._modelProvider,
-                    guardMode=self._guardMode,
-                    emit=emit,
-                    signal=cancel,
-                )
-            if owned:
-                try:
-                    trace.finish()
-                finally:
-                    clear_current()
+            # 2.18 (Part 25): finish/clear the owned trace in a finally — if
+            # _runner raises, the old post-with code was skipped and a stale
+            # current-trace leaked on the thread.
+            try:
+                with trace.span('gateway_turn'):
+                    await self._runner(
+                        sessionId=sessionId,
+                        message=text,
+                        provider=self._provider,
+                        agentId=self._agentId,
+                        model=self._model,
+                        modelProvider=self._modelProvider,
+                        guardMode=self._guardMode,
+                        emit=emit,
+                        signal=cancel,
+                    )
+            finally:
+                if owned:
+                    try:
+                        trace.finish()
+                    finally:
+                        clear_current()
         finally:
             self._cancels.pop(sessionKey, None)
         return TurnResult(text=''.join(parts), cancelled=cancel.is_set())

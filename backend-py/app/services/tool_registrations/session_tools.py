@@ -79,12 +79,20 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
 # drafted summaries/bodies); this alias keeps the remember door unchanged.
 
 
-def _deriveFactKey(text: str) -> str:
+def _deriveFactKey(text: str, scope: str = 'global') -> str:
     """Stable fallback key from the fact text (identical text → same key, so a
     repeated save updates rather than duplicates). Models should pass `key`
-    explicitly when updating a known fact."""
-    slug = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')[:48]
-    return f'model:{slug or "note"}'
+    explicitly when updating a known fact.
+
+    2.3 (Part 21 M-2 follow-up): for a non-global scope the derived key is
+    namespaced with the scope, so two Bots saving the SAME text get distinct
+    keys instead of the second silently overwriting the first's private row
+    (``fact_key`` is globally UNIQUE). Global keys are unchanged (no prefix)."""
+    slug = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')[:48] or 'note'
+    if scope and scope != 'global':
+        ns = re.sub(r'[^a-z0-9]+', '-', scope.lower()).strip('-')[:40]
+        return f'model:{ns}:{slug}'
+    return f'model:{slug}'
 
 
 # Write-time quality gates for the remember door (plan 2026-08-28 Bug 8b):
@@ -315,12 +323,6 @@ async def _remember(
     cat = (category or 'general').strip().lower()
     if cat not in ('user', 'feedback', 'project', 'reference', 'general'):
         cat = 'general'
-    factKey = (key or '').strip() or _deriveFactKey(text)
-    factTitle = (title or '').strip() or memory_store.derive_fact_title(text)
-    factKind = (kind or '').strip().lower()
-    value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
-    exp = (expires_at or '').strip() or None
-    before = memory_store.get_fact(factKey)  # type: ignore[assignment]
     # M-2 (Part 21): the facts-store scope is stamped server-side from the
     # current session — a Bot's home chat writes 'bot:<agentId>' rows, every
     # other session writes 'global'. (The tool's own ``scope`` argument is
@@ -328,6 +330,25 @@ async def _remember(
     from app.services import session_scope as _ss
 
     factScope = _ss.resolve_scope()
+    explicitKey = (key or '').strip()
+    factKey = explicitKey or _deriveFactKey(text, factScope)
+    factTitle = (title or '').strip() or memory_store.derive_fact_title(text)
+    factKind = (kind or '').strip().lower()
+    value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
+    exp = (expires_at or '').strip() or None
+    before = memory_store.get_fact(factKey)  # type: ignore[assignment]
+    # 2.3 (Part 25): an EXPLICIT key that already exists under a different
+    # scope must not be silently overwritten (derived keys are namespaced, so
+    # only explicit collisions reach here). Refuse instead of editing another
+    # Bot's (or the global store's) private fact.
+    if before and str(before.get('scope') or 'global') != factScope:
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': f'refused: key "{factKey}" already exists in another memory '
+                'scope; pick a distinct key (this session cannot edit it).',
+            }
+        )
     try:
         memory_store.save_fact(
             factKey, value, category=cat, source='model', confidence=0.7,
@@ -532,8 +553,17 @@ async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> s
     lim = max(1, min(as_int(limit, 50), 50))
     cat = (category or '').strip().lower()
     q = (query or '').strip()
+    # 2.2 (Part 25): scope-filter the read so a Bot sees global ∪ its own
+    # notes, never another Bot's private keys/titles.
+    from app.services import session_scope as _ss
+
+    _readScope = _ss.resolve_scope()
     try:
-        rows = memory_store.search_facts(q, cat) if q else memory_store.list_facts(cat)
+        rows = (
+            memory_store.search_facts(q, cat, scope=_readScope)
+            if q
+            else memory_store.list_facts(cat, scope=_readScope)
+        )
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'list_facts failed: {exc}'})
     facts: list[dict[str, object]] = []

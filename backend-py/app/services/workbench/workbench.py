@@ -1073,9 +1073,10 @@ def buildSystemPrompt(
             frozen = getattr(session, '_frozen_mem_index', None)
             if frozen is None:
                 try:
+                    from app.services import session_scope as _ss
                     from app.services.memory_store import brain_index_snippet as _brain_index
 
-                    frozen = _brain_index().strip()
+                    frozen = _brain_index(_ss.resolve_scope(session)).strip()
                 except Exception:
                     frozen = ''
                 try:

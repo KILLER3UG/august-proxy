@@ -17,7 +17,12 @@
 -- Timeline 'user activity' heartbeat rows are deleted here too; the writer
 -- was a no-op'd function as of the same audit.
 
-DELETE FROM auto_memories;
+-- 2.8 (Part 25): the `DELETE FROM auto_memories;` that led this file is REMOVED.
+-- Part 21 OQ1 (migration 033) retired the table and create_core_schema no longer
+-- creates it, so on every FRESH DB this DELETE raised "no such table" and —
+-- because executescript aborts on the first error — silently skipped the three
+-- purges below. 033 drops the table (and its rows) outright, so purging it here
+-- is moot; removing the statement lets the KV/timeline/heuristic purges run.
 
 DELETE FROM memory_store
 WHERE key LIKE 'session_context:eval_%'
