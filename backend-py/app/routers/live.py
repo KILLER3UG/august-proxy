@@ -104,81 +104,98 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
     if session is None:
         raise HTTPException(status_code=404, detail='Session not found')
 
-    try:
-        from app.services.workbench.providers import (
-            call_anthropic_workbench,
-            call_openai_workbench,
-            extract_text,
-            is_anthropic_provider,
-            is_openai_provider,
-            resolve_chat_llm,
-        )
+    # Part 26 3.2: Live turns used to append to session.messages with no gate,
+    # racing a concurrent workbench turn's currentMessages copy (the next
+    # barrier flush resurrected the chat turn's version). Serialize on the
+    # same service-layer lock sendWorkbenchMessageStream holds for its turn —
+    # across the model call AND the append+persist.
+    from app.services.workbench.workbench import _sessionTurnLock
 
-        provider, model = resolve_chat_llm(
-            model=session.model or '',
-            model_provider=session.provider or body.provider or '',
-            session_provider=session.provider or body.provider or '',
-            session_model=session.model or '',
+    turnLock = _sessionTurnLock(session_id)
+    if turnLock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail='A workbench turn is in progress on this session — try again in a moment.',
         )
-        if not provider or not model:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    'No Live provider/model configured. '
-                    'Set an active provider with an API key, or use Workbench chat.'
-                ),
+    await turnLock.acquire()
+    try:
+        try:
+            from app.services.workbench.providers import (
+                call_anthropic_workbench,
+                call_openai_workbench,
+                extract_text,
+                is_anthropic_provider,
+                is_openai_provider,
+                resolve_chat_llm,
             )
-        session.model = model
-        pname = str(provider.get('name') or provider.get('id') or '')
-        if pname:
-            session.provider = pname
-        msgs: list[dict[str, object]] = []
-        for m in (session.messages or [])[-6:]:
-            if isinstance(m, dict) and m.get('role') in ('user', 'assistant') and m.get('content'):
-                msgs.append({'role': m['role'], 'content': str(m['content'])[:1500]})
-        msgs.append({'role': 'user', 'content': transcript})
-        system_text = (
-            'You are a voice assistant. Answer concisely for spoken delivery. '
-            'No tools. Prefer short sentences.'
-        )
-        if is_anthropic_provider(provider):
-            result = await call_anthropic_workbench(
-                messages=msgs, system_text=system_text, model=model,
-                tools=[], effort='low', provider=provider,
+
+            provider, model = resolve_chat_llm(
+                model=session.model or '',
+                model_provider=session.provider or body.provider or '',
+                session_provider=session.provider or body.provider or '',
+                session_model=session.model or '',
             )
-        elif is_openai_provider(provider):
-            result = await call_openai_workbench(
-                messages=msgs, system_text=system_text, model=model,
-                tools=[], effort='low', provider=provider,
-            )
-        else:
-            raise HTTPException(status_code=502, detail='Unsupported Live provider type')
-        if isinstance(result, dict) and result.get('error'):
-            raise HTTPException(status_code=502, detail=str(result.get('error')))
-        answer = ''
-        if isinstance(result, dict):
-            answer = str(result.get('text') or result.get('content') or '')
-            if not answer and isinstance(result.get('content'), list):
-                answer = extract_text(
-                    [b for b in as_list(result.get('content'), []) if isinstance(b, dict)]
+            if not provider or not model:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        'No Live provider/model configured. '
+                        'Set an active provider with an API key, or use Workbench chat.'
+                    ),
                 )
-        if not (answer or '').strip():
-            raise HTTPException(status_code=502, detail='Live model returned an empty reply')
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f'Live model call failed: {exc}') from exc
+            session.model = model
+            pname = str(provider.get('name') or provider.get('id') or '')
+            if pname:
+                session.provider = pname
+            msgs: list[dict[str, object]] = []
+            for m in (session.messages or [])[-6:]:
+                if isinstance(m, dict) and m.get('role') in ('user', 'assistant') and m.get('content'):
+                    msgs.append({'role': m['role'], 'content': str(m['content'])[:1500]})
+            msgs.append({'role': 'user', 'content': transcript})
+            system_text = (
+                'You are a voice assistant. Answer concisely for spoken delivery. '
+                'No tools. Prefer short sentences.'
+            )
+            if is_anthropic_provider(provider):
+                result = await call_anthropic_workbench(
+                    messages=msgs, system_text=system_text, model=model,
+                    tools=[], effort='low', provider=provider,
+                )
+            elif is_openai_provider(provider):
+                result = await call_openai_workbench(
+                    messages=msgs, system_text=system_text, model=model,
+                    tools=[], effort='low', provider=provider,
+                )
+            else:
+                raise HTTPException(status_code=502, detail='Unsupported Live provider type')
+            if isinstance(result, dict) and result.get('error'):
+                raise HTTPException(status_code=502, detail=str(result.get('error')))
+            answer = ''
+            if isinstance(result, dict):
+                answer = str(result.get('text') or result.get('content') or '')
+                if not answer and isinstance(result.get('content'), list):
+                    answer = extract_text(
+                        [b for b in as_list(result.get('content'), []) if isinstance(b, dict)]
+                    )
+            if not (answer or '').strip():
+                raise HTTPException(status_code=502, detail='Live model returned an empty reply')
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f'Live model call failed: {exc}') from exc
 
-    from datetime import datetime, timezone
+        from datetime import datetime, timezone
 
-    session.messages.append({'role': 'user', 'content': transcript})
-    session.messages.append({'role': 'assistant', 'content': answer})
-    session.messageCount = len(session.messages)
-    session.updatedAt = datetime.now(timezone.utc).isoformat()
-    try:
-        wb.saveSessions()
-    except Exception:
-        pass
+        session.messages.append({'role': 'user', 'content': transcript})
+        session.messages.append({'role': 'assistant', 'content': answer})
+        session.messageCount = len(session.messages)
+        session.updatedAt = datetime.now(timezone.utc).isoformat()
+        try:
+            wb.saveSessions()
+        except Exception:
+            pass
+    finally:
+        turnLock.release()
 
     return {
         'sessionId': session_id,

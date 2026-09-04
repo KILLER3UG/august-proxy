@@ -7,8 +7,9 @@ fields are typed and message content passes through unchanged.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import TypedDict, cast
 
+from app.adapters.case_converters import strip_none_deep
 from app.models.base import ExtraAllowBaseModel, JsonValue
 
 # ── Strict models (the proxy reads/constructs these) ──────────────────────
@@ -51,7 +52,9 @@ class AnthropicMessage(ExtraAllowBaseModel):
 
 
 # August routing / bookkeeping — never forward to Anthropic-compatible gateways.
-_AUGUST_ONLY_ANTHROPIC_KEYS = frozenset({'session_id', 'sessionId'})
+# `_endpoint` is the internal Responses-routing marker used on the OpenAI side;
+# stripped here too so no path can leak it to a strict Anthropic gateway.
+_AUGUST_ONLY_ANTHROPIC_KEYS = frozenset({'session_id', 'sessionId', '_endpoint'})
 
 
 def dump_anthropic_upstream_body(
@@ -61,7 +64,7 @@ def dump_anthropic_upstream_body(
     if isinstance(body, AnthropicRequest):
         dumped: dict[str, object] = body.model_dump(exclude_none=True)  # type: ignore[assignment]
     else:
-        dumped = {k: v for k, v in body.items() if v is not None}
+        dumped = cast('dict[str, object]', strip_none_deep(dict(body)))
     for key in _AUGUST_ONLY_ANTHROPIC_KEYS:
         dumped.pop(key, None)
     return dumped

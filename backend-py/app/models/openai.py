@@ -6,6 +6,9 @@ Loose (extra="allow") models for request/response shapes.
 
 from __future__ import annotations
 
+from typing import cast
+
+from app.adapters.case_converters import strip_none_deep
 from app.models.base import ExtraAllowBaseModel, JsonValue
 
 # ── Strict models (the proxy reads/constructs these) ──────────────────────
@@ -54,9 +57,10 @@ class ChatMessage(ExtraAllowBaseModel):
 
 # August routing / bookkeeping — never forward to OpenAI-compatible gateways.
 # OpenCode Console Zod-rejects ``session_id: null`` (expects string if present).
+# `_endpoint` is the internal Responses-routing marker (`handleChatCompletions`).
 # NOTE: `user` and `metadata` are legitimate OpenAI fields (abuse tracking,
 # project IDs) and must NOT be stripped — only August-internal routing keys.
-_AUGUST_ONLY_OPENAI_KEYS = frozenset({'session_id', 'sessionId'})
+_AUGUST_ONLY_OPENAI_KEYS = frozenset({'session_id', 'sessionId', '_endpoint'})
 
 
 def dump_openai_upstream_body(
@@ -66,7 +70,7 @@ def dump_openai_upstream_body(
     if isinstance(body, ChatCompletionRequest):
         dumped: dict[str, object] = body.model_dump(exclude_none=True)  # type: ignore[assignment]
     else:
-        dumped = {k: v for k, v in body.items() if v is not None}
+        dumped = cast('dict[str, object]', strip_none_deep(dict(body)))
     for key in _AUGUST_ONLY_OPENAI_KEYS:
         dumped.pop(key, None)
     return dumped

@@ -76,6 +76,41 @@ MAX_MANAGED_TOOL_ROUNDS = 25
 # cannot spawn an arbitrary number of model calls at once.
 MAX_RECURRING_SUBAGENT_CONCURRENCY = 3
 _recurringSubagentSlots = asyncio.Semaphore(MAX_RECURRING_SUBAGENT_CONCURRENCY)
+# One-turn-per-session invariant, enforced at the service layer (Part 26 3.1):
+# the router gate only covers POST /chat, but Bot DMs, room member turns,
+# routine respond-turns, Live calls, and automations call
+# sendWorkbenchMessageStream directly — two overlapping turns on one session
+# interleave session.messages appends and race barrier flushes. Default
+# behavior serializes (wait=True); unattended callers may pass wait=False to
+# get a structured busy instead of queuing behind a live turn.
+_turnLocks: dict[str, asyncio.Lock] = {}
+
+
+class SessionBusyError(RuntimeError):
+    """A turn is already live on this session and the caller passed wait=False."""
+
+    def __init__(self, sessionId: str) -> None:
+        super().__init__(f'Session {sessionId} is already running a turn')
+        self.sessionId = sessionId
+
+
+def _sessionTurnLock(sessionId: str) -> asyncio.Lock:
+    lock = _turnLocks.get(sessionId)
+    if lock is None:
+        lock = asyncio.Lock()
+        _turnLocks[sessionId] = lock
+    return lock
+
+
+def service_turn_in_flight(sessionId: str) -> bool:
+    """True while a sendWorkbenchMessageStream turn holds this session's gate.
+
+    Router-side probe (activeChats, snapshot-prune guard) so unattended turns
+    are visible outside the router's own _activeStreams map.
+    """
+    lock = _turnLocks.get(sessionId)
+    return lock is not None and lock.locked()
+
 # Stall detection: if the session's execution phase/step has not advanced for
 # this many consecutive rounds (and the turn is already deep), stop and ask
 # the model to reflect instead of letting it spin on repeated tool calls.
@@ -2400,6 +2435,7 @@ async def sendWorkbenchMessageStream(
     handoff_summary: str = '',
     emit: Callable[[dict[str, object]], None] | None = None,
     signal: asyncio.Event | None = None,
+    wait: bool = True,
 ) -> None:
     """The primary streaming entry point for workbench chat.
 
@@ -2410,6 +2446,10 @@ async def sendWorkbenchMessageStream(
     4. Calls the model's streaming endpoint
     5. Handles tool calls in a loop
     6. Emits events for the SSE stream
+
+    Serialized per session (Part 26 3.1): with ``wait=True`` (default) a
+    second caller queues behind the live turn; with ``wait=False`` it raises
+    ``SessionBusyError`` instead of overlapping it.
     """
     try:
         from app.services.harness_ops import touch_activity
@@ -2417,6 +2457,9 @@ async def sendWorkbenchMessageStream(
         touch_activity()
     except Exception:
         pass
+    if not sessionId:
+        # Empty ids would funnel every bad caller onto one shared lock.
+        raise ValueError('sendWorkbenchMessageStream: sessionId is required')
     # Perf tracing: spans/ring/logging need AUGUST_PERF_TIMING=1 (or a
     # forced outer trace); TTFT + tool-args-ready always record (persisted
     # turn telemetry).
@@ -2438,6 +2481,10 @@ async def sendWorkbenchMessageStream(
         )
         emit = _batched  # type: ignore[assignment]
 
+    turnLock = _sessionTurnLock(sessionId)
+    if not wait and turnLock.locked():
+        raise SessionBusyError(sessionId)
+    await turnLock.acquire()
     try:
         await _sendWorkbenchMessageStreamImpl(
             sessionId=sessionId,
@@ -2455,6 +2502,7 @@ async def sendWorkbenchMessageStream(
             trace=trace,
         )
     finally:
+        turnLock.release()
         if _batched is not None:
             _batched.flush()
         if _owned_trace:
@@ -2654,6 +2702,11 @@ async def _sendWorkbenchMessageStreamImpl(
                                     emit=emit,
                                     model_override=modelOverride or '',
                                 )
+                        except asyncio.CancelledError:
+                            # Session teardown cancelled this detached task:
+                            # executeSubAgent's own CancelledError branch marks
+                            # the job row; propagate instead of swallowing.
+                            raise
                         except Exception:
                             logger.debug('recurring-task subagent failed', exc_info=True)
                             return
@@ -3563,6 +3616,12 @@ async def _sendWorkbenchMessageStreamImpl(
             if emit:
                 emit({'type': 'error', 'message': f'Unknown provider format for {resolvedProvider}'})
             turnError = turnError or f'Unknown provider format for {resolvedProvider}'
+            break
+        if turnError and not response:
+            # Barrier-1 (durability flush) failure or unknown-format abort: the
+            # model call never ran this round — bail before the usage/assistant
+            # build below so no phantom empty assistant message is appended
+            # and persisted.
             break
         if response.get('error'):
             if toolRound > 1:

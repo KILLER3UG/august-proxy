@@ -1165,6 +1165,25 @@ async def executeSubAgent(
             )
         _commit_episode('completed', resultText, tool_count=total_tools_called)
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'completed', 'result': resultText}
+    except asyncio.CancelledError:
+        # CancelledError is a BaseException, so except Exception never saw it:
+        # the job row stayed status='running' forever and the parent got no
+        # completion notice (Part 26 3.5). Mark, notify, re-raise.
+        try:
+            updateJob(jobId, {'status': 'failed', 'error': 'cancelled'})
+        except Exception:
+            logger.debug('cancel-path job update failed for %s', jobId, exc_info=True)
+        if emit:
+            emit(
+                {
+                    'type': 'subagentDone',
+                    'agentId': resolvedAgentId,
+                    'jobId': jobId,
+                    'status': 'cancelled',
+                    'error': 'cancelled',
+                }
+            )
+        raise
     except Exception as exc:
         updateJob(jobId, {'status': 'failed', 'error': str(exc)})
         _flag_dirty(f'Worker mutated then crashed: {exc}')

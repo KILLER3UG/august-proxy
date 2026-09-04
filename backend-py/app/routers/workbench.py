@@ -30,7 +30,11 @@ _activeStreams: dict[str, asyncio.Task] = {}
 def _session_turn_in_flight(session_id: str) -> bool:
     """Probe for the session store's snapshot prune: is a chat turn live?"""
     task = _activeStreams.get(session_id)
-    return task is not None and not task.done()
+    if task is not None and not task.done():
+        return True
+    from app.services.workbench import workbench as wb
+
+    return bool(wb.service_turn_in_flight(session_id))
 
 
 # Register the probe so the debounced snapshot prune never evicts a session
@@ -106,6 +110,11 @@ def _startTurnTask(
                 session = wb.getWorkbenchSession(sessionId)
                 if session:
                     session.status = 'idle'
+                    # The cancelled turn's persist block never ran, so the last
+                    # barrier flush left turnOpen=True on disk — reset it here
+                    # or the next load fabricates a phantom "[interrupted]"
+                    # user message (Part 26 2.2).
+                    session.turnOpen = False
                     session.updatedAt = wb._now()
                     wb.saveSessions()
                     wb._emitSessionStatus(sessionId)
@@ -124,6 +133,7 @@ def _startTurnTask(
                 session = wb.getWorkbenchSession(sessionId)
                 if session:
                     session.status = 'idle'
+                    session.turnOpen = False
                     session.updatedAt = wb._now()
                     wb.saveSessions()
                     wb._emitSessionStatus(sessionId)
@@ -522,6 +532,9 @@ async def stopChat(request: Request):
         session = wb.getWorkbenchSession(sessionId)
         if session:
             session.status = 'idle'
+            # Stop cancelled the turn task: close the persisted open-turn flag
+            # (same phantom-"[interrupted]" hazard as the safeStream paths).
+            session.turnOpen = False
             session.updatedAt = wb._now()
             wb.saveSessions()
             wb._emitSessionStatus(sessionId)
@@ -1207,6 +1220,7 @@ async def listCheckpoints(sessionId: str):
 @router.post('/sessions/{sessionId}/checkpoints/{checkpointId}/restore')
 async def restoreCheckpointRoute(sessionId: str, checkpointId: str):
     """Restore files from a save point."""
+    _require_turn_not_in_flight(sessionId)
     from app.services.workbench.checkpoint_service import restore_checkpoint
 
     result = restore_checkpoint(sessionId, checkpointId)
@@ -1816,9 +1830,24 @@ async def createSessionWorktree(sessionId: str):
     return result
 
 
+def _require_turn_not_in_flight(sessionId: str) -> None:
+    """Reject transcript-mutating requests while a turn is streaming.
+
+    The turn loop keeps its own ``currentMessages`` copy and re-flushes it at
+    every barrier — a concurrent undo/truncate/checkpoint-restore is silently
+    resurrected by the next flush (Part 26 3.3).
+    """
+    if _session_turn_in_flight(sessionId):
+        raise HTTPException(
+            status_code=409,
+            detail='A turn is in progress — stop the session before changing its history.',
+        )
+
+
 @router.post('/sessions/{sessionId}/undo-last-turn')
 async def undoLastTurn(sessionId: str):
     """Remove the last user turn and all following messages from the session."""
+    _require_turn_not_in_flight(sessionId)
     from app.services.workbench.sessions import undo_last_turn
 
     result = undo_last_turn(sessionId)
@@ -1835,6 +1864,7 @@ async def truncateSession(sessionId: str, request: Request):
     (inclusive); everything after is removed. Used by the chat UI's
     revert/edit/regenerate actions so backend history matches the thread.
     """
+    _require_turn_not_in_flight(sessionId)
     from app.services.workbench.sessions import truncate_session
 
     body: dict = {}
