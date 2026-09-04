@@ -31,10 +31,24 @@ def _canonical(agent_id: str):
     return roster.ensure_canonical_bot_chat(agent_id)
 
 
-def _set_current(session) -> None:
+@pytest.fixture(autouse=True)
+def _resetSessionContext():
+    """Leaked currentSessionId re-keys the remember budget / scope resolution
+    in later test files (full-suite order dependency) — restore the default
+    after every test here."""
+    yield
     from app.services.workbench.context import currentSessionId
 
-    currentSessionId.set(session.id)
+    currentSessionId.set('')
+
+
+def _set_current(session):
+    """Set the session ContextVar and return the reset token — callers must
+    reset in finally, or the leaked session id re-keys the remember budget /
+    scope resolution in later test files (full-suite order dependency)."""
+    from app.services.workbench.context import currentSessionId
+
+    return currentSessionId.set(session.id)
 
 
 # ── gate matrix ──────────────────────────────────────────────────────────────

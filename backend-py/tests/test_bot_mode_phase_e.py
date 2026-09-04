@@ -28,6 +28,17 @@ def _canonical(agent_id: str):
     return roster.ensure_canonical_bot_chat(agent_id)
 
 
+@pytest.fixture(autouse=True)
+def _resetSessionContext():
+    """A leaked currentSessionId re-keys the remember budget / scope
+    resolution in later test files (full-suite order dependency) — restore
+    the default after every test here."""
+    yield
+    from app.services.workbench.context import currentSessionId
+
+    currentSessionId.set('')
+
+
 # ── prompt guard line ─────────────────────────────────────────────────────────
 
 
@@ -70,12 +81,15 @@ class TestBotSkillWriteRoot:
         from app.services.workbench.context import currentSessionId
 
         chat = _canonical(bots['alpha'])
-        currentSessionId.set(chat.id)
-        skill_service.createSkill(
-            'alpha-only-skill',
-            'A skill only alpha should have',
-            'body text',
-        )
+        token = currentSessionId.set(chat.id)
+        try:
+            skill_service.createSkill(
+                'alpha-only-skill',
+                'A skill only alpha should have',
+                'body text',
+            )
+        finally:
+            currentSessionId.reset(token)
         # The scope encodes the agent ID (stable across renames), so the bot
         # root is bots/<agentId>/skills.
         bot_dir = tmp_path / 'bots' / bots['alpha'] / 'skills' / 'alpha-only-skill' / 'SKILL.md'
