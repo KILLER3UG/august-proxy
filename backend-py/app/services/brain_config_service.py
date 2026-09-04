@@ -55,6 +55,8 @@ boolKeys: tuple[str, ...] = (
     'cameraAccess',
     'consolidationModelSummarize',
     'preferenceRetireEnabled',
+    'projectMemory',
+    'projectSkills',
 )
 numKeys: tuple[str, ...] = (
     'maxAgentDepth',

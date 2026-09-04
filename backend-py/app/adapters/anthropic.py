@@ -918,6 +918,11 @@ async def _streamAnthropicNative(
                 )
                 return
             eventTypePayload = as_str(event.get('type'), '')
+            # 1.5 (Part 25): August-internal retry signal — never forward it to
+            # /v1 API clients (SDKs reject a non-standard event). The workbench
+            # path surfaces it as a "provider busy" pill; the proxy must drop it.
+            if eventTypePayload == 'upstreamRetry':
+                continue
             if eventTypePayload == 'message_stop':
                 pendingStop = event
                 st.process_message_stop(event)

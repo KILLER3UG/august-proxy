@@ -826,8 +826,13 @@ async def call_openai_workbench(
                             from app.lib.perf_timing import mark_tool_args_ready
 
                             mark_tool_args_ready()
-                        if fn.get('name'):
-                            existing['name'] = as_str(existing.get('name')) + as_str(fn.get('name'))
+                        if fn.get('name') and not as_str(existing.get('name')):
+                            # 1.4 (Part 25): set-once, mirroring the proxy
+                            # accumulator (adapters/stream_state.py:50-54). The
+                            # name arrives in the FIRST fragment; some gateways
+                            # re-send it with every chunk, and appending yielded
+                            # `web_searchweb_search…` → unknown-tool failures.
+                            existing['name'] = as_str(fn.get('name'))
                 if choice.get('finish_reason'):
                     finishReason = as_str(choice.get('finish_reason'))
         except Exception as exc:

@@ -56,11 +56,14 @@ class TestIdenticalCallAdvisories:
         t = ToolCallTracker()
         for _ in range(3):
             t.check('read_file', {'path': 'a.py'})
+        # 1.3 (Part 25): only a call that ENDED IN FAILURE carries across the
+        # boundary for cross-turn strike counting.
+        t.record_failure('read_file', {'path': 'a.py'})
         t.record_user_message()
         # The 3/5/8 counters restart: a fresh call is silent again...
         assert t.check('read_file', {'path': 'other.py'})[0] == 'ok'
         assert t.check('read_file', {'path': 'other.py'})[0] == 'ok'
-        # ...while re-issuing the pre-boundary call is the cross-turn nudge.
+        # ...while re-issuing the pre-boundary FAILED call is the cross-turn nudge.
         status, msg = t.check('read_file', {'path': 'a.py'})
         assert status == 'warn'
         assert 'previous turn' in msg
@@ -70,6 +73,9 @@ class TestCrossTurnLoop:
     def testReissueAfterUserMessageNudgesThenBreaks(self):
         t = ToolCallTracker()
         assert t.check('run_command', {'command': 'npm test'})[0] == 'ok'
+        # The prior attempt failed (didn't advance) → it carries across the
+        # boundary; a SUCCESSFUL call would not (see test below).
+        t.record_failure('run_command', {'command': 'npm test'})
         t.record_user_message()
         # First re-issue across the boundary: advisory nudge, still runs.
         status, msg = t.check('run_command', {'command': 'npm test'})
@@ -80,12 +86,23 @@ class TestCrossTurnLoop:
         assert status == 'block'
         assert 'across' in msg
 
+    def testSuccessfulCallNeverStrikesAcrossTurns(self):
+        # 1.3 (Part 25): a stable command that keeps SUCCEEDING (pytest -q,
+        # git status) re-issued once per user turn must never be blocked — the
+        # old code struck it on turn 3 despite every run succeeding.
+        t = ToolCallTracker()
+        for _ in range(5):
+            assert t.check('run_command', {'command': 'pytest -q'})[0] == 'ok'
+            t.record_success('run_command', {'command': 'pytest -q'})
+            t.record_user_message()
+
     def testTextResponseAlsoHandsOffTurnHistory(self):
         t = ToolCallTracker()
         assert t.check('read_file', {'path': 'a.py'})[0] == 'ok'
+        t.record_failure('read_file', {'path': 'a.py'})
         t.record_text_response()
         status, _ = t.check('read_file', {'path': 'a.py'})
-        assert status == 'warn'  # cross-turn nudge
+        assert status == 'warn'  # cross-turn nudge (prior call failed)
 
     def testFreshCallAfterBoundaryIsUnaffected(self):
         t = ToolCallTracker()
@@ -102,6 +119,26 @@ class TestRetainedBlocks:
             statuses.append(t.check('read_file', {'path': 'a.py'})[0])
             statuses.append(t.check('write_file', {'path': 'a.py', 'content': 'x'})[0])
         assert 'block' in statuses
+
+    def testSameNameDifferentArgsPingPongBlocks(self):
+        # 1.2 (Part 25): read_file(a)/read_file(b)/read_file(a)… — same tool
+        # name, alternating args — is the motivating stuck loop the old
+        # name-only comparison could NEVER catch.
+        t = ToolCallTracker()
+        statuses = []
+        for _ in range(10):
+            statuses.append(t.check('read_file', {'path': 'a.py'})[0])
+            statuses.append(t.check('read_file', {'path': 'b.py'})[0])
+        assert 'block' in statuses
+
+    def testProductiveFreshArgsCycleNotBlocked(self):
+        # 1.2: a productive edit_file↔run_command cycle with FRESH args each
+        # time must not be miscounted as a stuck loop (the old name-only
+        # compare blocked the 5th such cycle).
+        t = ToolCallTracker()
+        for i in range(10):
+            assert t.check('edit_file', {'path': f'f{i}.py'})[0] == 'ok'
+            assert t.check('run_command', {'command': f'pytest f{i}.py'})[0] == 'ok'
 
     def testFailureSpiralStillBlocks(self):
         t = ToolCallTracker()

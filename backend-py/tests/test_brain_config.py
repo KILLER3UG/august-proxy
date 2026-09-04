@@ -127,6 +127,19 @@ async def testPutMergesAndAudits(client, isolatedData):
 
 
 @pytest.mark.asyncio
+async def testPutProjectMemoryAndSkillsKnobs(client, isolatedData):
+    """0.3 (Part 25): projectMemory/projectSkills are settable — they were in
+    fieldTable but missing from boolKeys, so validatePatch rejected them."""
+    resp = await client.put(
+        '/api/brain/config', json={'projectMemory': False, 'projectSkills': False}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body['config']['projectMemory'] is False
+    assert body['config']['projectSkills'] is False
+
+
+@pytest.mark.asyncio
 async def testPutRejectsUnknownKey(client, isolatedData):
     """Unknown field → 400, no save, no audit row."""
     resp = await client.put('/api/brain/config', json={'notARealKey': True})

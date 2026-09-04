@@ -982,3 +982,61 @@ class TestReactiveOverflowReduction:
         assert any('prompt is too long' in e for e in errors), errors
         assert 'done' in [e['type'] for e in events]
         assert stub.callCount == 1  # no retry when the surface cannot advance
+
+
+# ── Part 25 Phase 0 P1 hotfix regressions ────────────────────────────────────
+
+
+def _collect_ids(messages: list[dict]) -> tuple[set[str], set[str]]:
+    """(all tool_use ids, all tool_result ids) across a transcript."""
+    uses: set[str] = set()
+    results: set[str] = set()
+    for m in messages:
+        content = m.get('content')
+        if isinstance(content, list):
+            for b in content:
+                if not isinstance(b, dict):
+                    continue
+                if b.get('type') == 'tool_use':
+                    uses.add(str(b.get('id')))
+                elif b.get('type') == 'tool_result':
+                    results.add(str(b.get('tool_use_id')))
+    return uses, results
+
+
+class TestP1Hotfixes:
+    @pytest.mark.asyncio
+    async def testEmitNoneHeadlessTurnDoesNotCrash(self, _isolate):
+        # 0.1: the vestigial `turnBudget` was read unconditionally after an
+        # `if emit:` block, so every emit=None (headless/routine/intro) turn
+        # raised UnboundLocalError before the model call. Now it completes.
+        stub = StubClient(mode='text_once')
+        _isolate['client'] = stub
+        session = wb.createWorkbenchSession(provider='stub-anthropic')
+        await wb.sendWorkbenchMessageStream(
+            sessionId=session.id, message='hi', model='stub-claude', emit=None
+        )
+        assert any(m.get('role') == 'assistant' for m in session.messages)
+        assert stub.callCount >= 1
+
+    @pytest.mark.asyncio
+    async def testCancelMidRoundLeavesNoDanglingToolResults(self, _isolate):
+        # 0.4: a mid-round Stop stripped the assistant's tool_use blocks but
+        # still appended the round's tool_results → a tool_result with no
+        # matching tool_use, which strict gateways reject as a non-retryable
+        # 400, bricking the session. The results must be dropped with the calls.
+        stub = StubClient(mode='tool_forever', cancelAfter=1)
+        _isolate['client'] = stub
+        session = wb.createWorkbenchSession(provider='stub-anthropic')
+        cancel = asyncio.Event()
+        events = _capturedEvents()
+        await wb.sendWorkbenchMessageStream(
+            sessionId=session.id,
+            message='hi',
+            model='stub-claude',
+            emit=_emitTo(events),
+            signal=cancel,
+        )
+        uses, results = _collect_ids(session.messages)
+        orphans = results - uses
+        assert not orphans, f'dangling tool_results with no tool_use: {orphans}'

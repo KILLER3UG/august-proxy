@@ -325,11 +325,24 @@ class SubagentOrchestrator:
     def __init__(self, bus: AgentMessageBus, max_workers: int = MAX_CONCURRENT_WORKERS) -> None:
         self._bus = bus
         self._semaphore = asyncio.Semaphore(max_workers)
+        # 1.9 (Part 25): the global 5-slot semaphore ignored each session's
+        # delegation.maxConcurrent (a session set to 2 still ran 5; one set to
+        # 30 was capped at 5). A per-session semaphore, acquired alongside the
+        # global one, makes the effective gate min(per-session, global).
+        self._sessionSemaphores: dict[str, asyncio.Semaphore] = {}
         self._handles: dict[str, SubagentHandle] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._eventHandlers: dict[str, list[Handler]] = {}
         self._mailboxes: dict[str, list[str]] = {}
         self._closed = False
+
+    def _sessionSemaphore(self, sid: str, max_concurrent: int) -> asyncio.Semaphore:
+        """Per-session worker gate (created once per session id)."""
+        sem = self._sessionSemaphores.get(sid)
+        if sem is None:
+            sem = asyncio.Semaphore(max(1, max_concurrent))
+            self._sessionSemaphores[sid] = sem
+        return sem
 
     async def spawn(self, request: SubagentSpawnRequest) -> list[SubagentHandle]:
         """Spawn one or more sub-agents concurrently (Hermes-structured).
@@ -446,6 +459,7 @@ class SubagentOrchestrator:
                     harness_job_id=as_str(item.get('harness_job_id') or item.get('harnessJobId'), ''),
                     auto_hop=bool(item.get('autoHop') or item.get('auto_hop')),
                     capability=as_str(item.get('capability') or 'standard'),
+                    session_semaphore=self._sessionSemaphore(sid, max_concurrent),
                 )
             )
             self._tasks[taskId] = task
@@ -687,13 +701,29 @@ class SubagentOrchestrator:
         harness_job_id: str = '',
         auto_hop: bool = False,
         capability: str = 'standard',
+        session_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         # If queued, update to running on dequeue; touch for stall monitor
         handle.lastActivityAt = time.time()
+        # 1.9: per-session gate first (so a session at its own maxConcurrent
+        # waits without holding a global slot), then the global worker pool.
+        if session_semaphore is not None and session_semaphore is not self._semaphore:
+            try:
+                await asyncio.wait_for(session_semaphore.acquire(), timeout=SLOT_ACQUIRE_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                handle.status = 'failed'
+                handle.error = 'Timed out waiting for a per-session worker slot (maxConcurrent reached).'
+                handle.finishedAt = time.time()
+                _append_transcript(handle.taskId, {"type": "subagentDone", "taskId": handle.taskId, "jobId": handle.taskId, "status": "failed", "error": handle.error, "ts": time.time()})
+                _record_run(handle)
+                await self._fireEvent('subagentFailed', handle.toDict())
+                return
         try:
             await asyncio.wait_for(self._semaphore.acquire(), timeout=SLOT_ACQUIRE_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
+            if session_semaphore is not None and session_semaphore is not self._semaphore:
+                session_semaphore.release()
             handle.status = 'failed'
             handle.error = 'Timed out waiting for a worker slot (all sub-agent slots busy).'
             handle.finishedAt = time.time()
@@ -787,6 +817,8 @@ class SubagentOrchestrator:
                 await self._fireEvent('subagentFailed', handle.toDict())
         finally:
             self._semaphore.release()
+            if session_semaphore is not None and session_semaphore is not self._semaphore:
+                session_semaphore.release()
 
     @staticmethod
     def _result_payload_text(result: dict[str, Any]) -> str:

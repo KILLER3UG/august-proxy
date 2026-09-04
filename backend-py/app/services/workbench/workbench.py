@@ -84,8 +84,17 @@ MIN_ROUNDS_BEFORE_STALL_CHECK = 12
 # Code-mode (fenced python) execution cap.
 _CODE_RUN_TIMEOUT_S = 60
 # Tool dispatch cap: a hung MCP server or registry handler must not hold a
-# turn (and a sub-agent semaphore slot) forever. Env-overridable.
-_TOOL_EXEC_TIMEOUT_S = max(30, int(os.environ.get('AUGUST_TOOL_TIMEOUT_S', '300')))
+# turn (and a sub-agent semaphore slot) forever. Env-overridable. Guarded so a
+# non-numeric AUGUST_TOOL_TIMEOUT_S falls back to the default instead of
+# raising at module import and taking down the whole workbench (Part 25 1.7).
+def _envTimeoutSeconds(default: int = 300) -> int:
+    try:
+        return max(30, int(os.environ.get('AUGUST_TOOL_TIMEOUT_S', str(default))))
+    except (TypeError, ValueError):
+        return max(30, default)
+
+
+_TOOL_EXEC_TIMEOUT_S = _envTimeoutSeconds()
 # Clean rounds on the bare surface before the full tool set is restored
 # (reversible downgrade — A6).
 _DOWNGRADE_RECOVERY_ROUNDS = 3
@@ -2523,6 +2532,13 @@ async def _sendWorkbenchMessageStreamImpl(
         session.guardMode = normalizeGuardMode(guardMode)
     session.status = 'streaming'
     session.updatedAt = _now()
+    # 1.1 (Part 25): the text-tool-protocol flag was set-true-only, so a session
+    # that once ran a text-surface model (or hit the 2-refusal downgrade) kept
+    # emitting the <tool_protocol> block + [TOOLCALL] parsing on later turns
+    # even after switching to a native-tools model. Recompute per turn: the
+    # tool-def build sets it True only for a text surface; the mid-turn
+    # downgrade still sets it for the remainder of THIS turn.
+    setattr(session, '_text_tool_protocol', False)
     _emitSessionStatus(sessionId)
     # Fresh per-turn remember budget (Bug 8b): the model may save at most
     # _REMEMBER_PER_TURN_LIMIT facts this turn.
@@ -3103,7 +3119,6 @@ async def _sendWorkbenchMessageStreamImpl(
                 ),
             )
             if isinstance(_budget, dict):
-                turnBudget = _budget
                 _cHit = as_int(getattr(session, 'cacheHitTokens', 0), 0)
                 _cMiss = as_int(getattr(session, 'cacheMissTokens', 0), 0)
                 emit(
@@ -3127,7 +3142,6 @@ async def _sendWorkbenchMessageStreamImpl(
     lastExecSig: tuple[str, int] | None = None
     stalledRounds = 0
     stallMessageSent = False
-    _ = turnBudget  # assigned earlier by the contextPressure pass (mypy: keep alive)
     # Turn-scoped malformed-tool counter: accumulates ACROSS rounds (a reset
     # per round meant repeated malformed calls never triggered the downgrade).
     parseFailures = 0
@@ -3168,10 +3182,11 @@ async def _sendWorkbenchMessageStreamImpl(
                         session._tool_tracker.record_text_response()
                 except Exception:
                     pass
-                # Terminal-event protocol: the finally below emits the done
-                # event, but the post-loop persist block is skipped on this
-                # early return — reset the streaming status so the sidebar
-                # doesn't show a permanently "generating" chat (audit finding).
+                # Terminal-event protocol (1.6, Part 25): this early `return`
+                # bypasses the post-loop persist block AND the `finally` that
+                # emits `done` belongs to a different `try` — so emit the
+                # terminal `done` here (matching the circuit/other early exits)
+                # or the client waits forever on a stream that already errored.
                 session.status = 'idle'
                 session.updatedAt = _now()
                 try:
@@ -3179,6 +3194,8 @@ async def _sendWorkbenchMessageStreamImpl(
                 except Exception:
                     logger.exception('workbench save_sessions failed after ceiling block')
                 _emitSessionStatus(sessionId)
+                if emit:
+                    emit({'type': 'done', 'sessionId': sessionId})
                 return
         except Exception:
             logger.debug('cost ceiling check failed', exc_info=True)
@@ -4224,7 +4241,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 guardStatus, guardMsg = tracker.check(toolName, toolInput)
                 if guardStatus == 'block':
                     result = guardMsg
-                    tracker.record_failure(toolName)
+                    tracker.record_failure(toolName, toolInput)
                 else:
                     with _trace.span('tool_exec', tool=toolName):
                         if toolName in (
@@ -4411,7 +4428,11 @@ async def _sendWorkbenchMessageStreamImpl(
                                 except (asyncio.CancelledError, Exception):
                                     pass
                     if isinstance(result, str) and result.startswith('Error:'):
-                        tracker.record_failure(toolName)
+                        tracker.record_failure(toolName, toolInput)
+                    else:
+                        # 1.3 (Part 25): a clean result advanced the task, so
+                        # this call must not count as a cross-turn repeat.
+                        tracker.record_success(toolName, toolInput)
                     if guardStatus == 'warn':
                         result = guardMsg + '\n' + result
             except Exception:
@@ -4682,7 +4703,13 @@ async def _sendWorkbenchMessageStreamImpl(
                 ]
             assistantMsg.pop('tool_calls', None)
         currentMessages.append(assistantMsg)
-        currentMessages.extend(toolResults)
+        # 0.4 (Part 25): on a mid-round cancel every tool_use block was just
+        # stripped from the assistant message, so this round's tool_results are
+        # all dangling — appending them yields a tool_result with no matching
+        # tool_use, which Anthropic rejects as a NON-retryable 400 and bricks
+        # the session on the next turn. Drop them with the calls they answered.
+        if not cancelledMidRound:
+            currentMessages.extend(toolResults)
         # T18 barrier 3: durable flush at the step boundary — the completed
         # round (assistant message + tool results) is now replay-safe.
         # Fail-closed: abort the loop rather than keep mutating state that
@@ -6016,7 +6043,19 @@ def routeTodos(
                     )
                 except Exception:
                     pass
-            done = sum(1 for t in todosData if isinstance(t, dict) and t.get('status') == 'completed')
+            # 1.8 (Part 25): match the renderers' done-check (workbench.py:1463)
+            # — accept the `done` flag and done/complete statuses, not just
+            # 'completed', so workers using `done` don't get "0/N done".
+            def _isDone(t: object) -> bool:
+                if not isinstance(t, dict):
+                    return False
+                return bool(t.get('done')) or as_str(t.get('status') or '').lower() in (
+                    'done',
+                    'completed',
+                    'complete',
+                )
+
+            done = sum(1 for t in todosData if _isDone(t))
             return f'Todo list updated for this worker ({done}/{len(todosData)} done).'
     session = get_session()
     if not session:
