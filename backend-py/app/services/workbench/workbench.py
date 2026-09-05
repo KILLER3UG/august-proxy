@@ -1879,6 +1879,7 @@ _BARE_TOOL_ALLOW = frozenset(
         'run_command',
         'update_state',
         'submit_todos',
+        'update_todos',
         'write_scratchpad',
         'diagnose_proxy',
     }

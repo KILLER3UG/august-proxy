@@ -135,16 +135,27 @@ def set_needs_you(room_id: int, value: bool) -> None:
         logger.debug('set_needs_you failed', exc_info=True)
 
 
-def add_message(room_id: int, sender_agent: str, body: str, kind: str = 'message') -> int:
+def add_message(
+    room_id: int,
+    sender_agent: str,
+    body: str,
+    kind: str = 'message',
+    thread_id: int | None = None,
+) -> int:
+    """Append one log row. ``thread_id=None`` makes the row its own thread
+    root (its id becomes the thread_id); a given id joins that thread."""
     try:
         c = _conn()
         cur = c.execute(
-            'INSERT INTO bot_room_message (room_id, sender_agent, body, kind, created_at) '
-            'VALUES (?, ?, ?, ?, ?)',
-            (room_id, sender_agent, body, kind, _now()),
+            'INSERT INTO bot_room_message (room_id, sender_agent, body, kind, created_at, thread_id) '
+            'VALUES (?, ?, ?, ?, ?, ?)',
+            (room_id, sender_agent, body, kind, _now(), thread_id),
         )
+        mid = int(cur.lastrowid or 0)
+        if thread_id is None and mid:
+            c.execute('UPDATE bot_room_message SET thread_id = ? WHERE id = ?', (mid, mid))
         c.commit()
-        return int(cur.lastrowid or 0)
+        return mid
     except Exception:
         logger.debug('add_message failed', exc_info=True)
         return 0
@@ -161,22 +172,37 @@ def room_log(room_id: int, limit: int = 200) -> list[dict[str, object]]:
         return []
 
 
-def _last_message_id(room_id: int) -> int:
+def _last_message_id(room_id: int, thread_id: int | None = None) -> int:
     try:
-        row = _conn().execute(
-            'SELECT MAX(id) AS m FROM bot_room_message WHERE room_id = ?', (room_id,)
-        ).fetchone()
+        if thread_id is None:
+            row = _conn().execute(
+                'SELECT MAX(id) AS m FROM bot_room_message WHERE room_id = ?', (room_id,),
+            ).fetchone()
+        else:
+            row = _conn().execute(
+                'SELECT MAX(id) AS m FROM bot_room_message WHERE room_id = ? AND thread_id = ?',
+                (room_id, thread_id),
+            ).fetchone()
         return int(row['m'] or 0) if row and row['m'] is not None else 0
     except Exception:
         return 0
 
 
-def _new_messages_since(room_id: int, since_id: int) -> list[dict[str, object]]:
+def _new_messages_since(
+    room_id: int, since_id: int, thread_id: int | None = None
+) -> list[dict[str, object]]:
     try:
-        rows = _conn().execute(
-            'SELECT * FROM bot_room_message WHERE room_id = ? AND id > ? ORDER BY id ASC',
-            (room_id, since_id),
-        ).fetchall()
+        if thread_id is None:
+            rows = _conn().execute(
+                'SELECT * FROM bot_room_message WHERE room_id = ? AND id > ? ORDER BY id ASC',
+                (room_id, since_id),
+            ).fetchall()
+        else:
+            rows = _conn().execute(
+                'SELECT * FROM bot_room_message WHERE room_id = ? AND thread_id = ? AND id > ? '
+                'ORDER BY id ASC',
+                (room_id, thread_id, since_id),
+            ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -322,6 +348,7 @@ async def run_room(
     room_id: int,
     user_text: str,
     *,
+    thread_id: int | None = None,
     runner: object = None,
     max_rounds: int = 0,
     max_messages: int = 0,
@@ -348,7 +375,9 @@ async def run_room(
     rounds_cap = max_rounds or MAX_ROUNDS
     msgs_cap = max_messages or MAX_MESSAGES
 
-    add_message(room_id, 'user', (user_text or '').strip(), 'message')
+    # A reply joins an existing thread; a new post roots its own thread.
+    root_id = add_message(room_id, 'user', (user_text or '').strip(), 'message', thread_id=thread_id)
+    active_thread = thread_id if thread_id is not None else root_id
     messages_used = 0
     last_seen = {m: 0 for m in members}
     consecutive_blocks = {m: 0 for m in members}
@@ -376,8 +405,8 @@ async def run_room(
         for agent in list(speakers):
             if messages_used >= msgs_cap:
                 break
-            feed = _new_messages_since(room_id, last_seen.get(agent, 0))
-            last_seen[agent] = _last_message_id(room_id)
+            feed = _new_messages_since(room_id, last_seen.get(agent, 0), active_thread)
+            last_seen[agent] = _last_message_id(room_id, active_thread)
             try:
                 out = await _member_turn(room_id, agent, feed, runner)
             except Exception:
@@ -386,17 +415,23 @@ async def run_room(
             review_req = parse_request_review(out)
             if out.strip().lower() in _PASS_TOKENS:
                 consecutive_blocks[agent] += 1
-                add_message(room_id, agent, '(pass)', 'pass')
+                add_message(room_id, agent, '(pass)', 'pass', thread_id=active_thread)
                 if consecutive_blocks[agent] >= 2 and not escalated:
                     set_needs_you(room_id, True)
-                    add_message(room_id, agent, 'needs the user (blocked twice)', 'escalation')
+                    add_message(
+                        room_id, agent, 'needs the user (blocked twice)', 'escalation',
+                        thread_id=active_thread,
+                    )
                     escalated = True
                 continue
             consecutive_blocks[agent] = 0
             round_productive = True
             messages_used += 1
             is_verdict = bool(pending_verdict_for) and agent == pending_verdict_for
-            add_message(room_id, agent, out, 'verdict' if is_verdict else 'message')
+            add_message(
+                room_id, agent, out, 'verdict' if is_verdict else 'message',
+                thread_id=active_thread,
+            )
             if is_verdict:
                 pending_verdict_for = ''
             verdict_wants_changes = is_verdict and 'changes' in out.lower()

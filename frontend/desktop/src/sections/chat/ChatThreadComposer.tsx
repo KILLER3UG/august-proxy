@@ -439,7 +439,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
               aria-label="Chat message"
               placeholder={
                 streaming
-                  ? 'Add a direction while the assistant works…'
+                  ? 'Keep typing to queue follow-up changes'
                   : focusedSubagent
                     ? focusedSubagent.running === false && focusedSubagent.workstream
                       ? ghostNext || `Continue ${focusedSubagent.workstream}…`

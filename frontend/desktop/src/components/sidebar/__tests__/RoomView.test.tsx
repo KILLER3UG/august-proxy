@@ -18,7 +18,7 @@ vi.mock('@/api/api-client', () => ({
   listRooms: () => listRooms(),
   getRoom: (id: number) => getRoom(id),
   listBots: () => listBots(),
-  sendToRoom: (id: number, m: string) => sendToRoom(id, m),
+  sendToRoom: (id: number, m: string, t?: number) => sendToRoom(id, m, t),
   createRoom: (n: string, mem: string[]) => createRoom(n, mem),
   deleteRoom: (id: number) => deleteRoom(id),
 }));
@@ -47,9 +47,9 @@ beforeEach(() => {
   getRoom.mockResolvedValue({
     room: { id: 1, name: 'Design', members: ['a1', 'b2'] },
     log: [
-      { id: 1, room_id: 1, sender_agent: 'user', body: 'ship it?', kind: 'message' },
-      { id: 2, room_id: 1, sender_agent: 'a1', body: 'on it', kind: 'message' },
-      { id: 3, room_id: 1, sender_agent: 'b2', body: '(pass)', kind: 'pass' },
+      { id: 1, room_id: 1, sender_agent: 'user', body: 'ship it?', kind: 'message', thread_id: 1 },
+      { id: 2, room_id: 1, sender_agent: 'a1', body: 'on it', kind: 'message', thread_id: 1 },
+      { id: 3, room_id: 1, sender_agent: 'b2', body: '(pass)', kind: 'pass', thread_id: 1 },
     ],
   });
   sendToRoom.mockResolvedValue({ summary: { rounds: 1, messages: 1 }, log: [] });
@@ -73,13 +73,23 @@ describe('RoomView', () => {
     expect(screen.queryByText('(pass)')).not.toBeInTheDocument();
   });
 
-  it('sending runs the driver and clears the composer', async () => {
+  it('new-thread composer runs the driver (Part 27 F3/F4)', async () => {
     renderView();
     fireEvent.click(await screen.findByText('Design'));
     await screen.findByText('ship it?');
-    const input = screen.getByPlaceholderText(/Message the room/i);
+    const input = screen.getByPlaceholderText(/New thread in/i);
     fireEvent.change(input, { target: { value: '@alice review this' } });
-    fireEvent.click(screen.getByLabelText('Send'));
-    await waitFor(() => expect(sendToRoom).toHaveBeenCalledWith(1, '@alice review this'));
+    fireEvent.click(screen.getByRole('button', { name: 'New Thread' }));
+    await waitFor(() => expect(sendToRoom).toHaveBeenCalledWith(1, '@alice review this', undefined));
+  });
+
+  it('reply-in-thread scopes the send to that thread (Part 27 F4)', async () => {
+    renderView();
+    fireEvent.click(await screen.findByText('Design'));
+    // Root message id=1 → thread_id defaults to its own id (1).
+    const reply = await screen.findByPlaceholderText('Reply in thread');
+    fireEvent.change(reply, { target: { value: 'ping' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reply' }));
+    await waitFor(() => expect(sendToRoom).toHaveBeenCalledWith(1, 'ping', 1));
   });
 });

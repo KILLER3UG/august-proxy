@@ -80,7 +80,8 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'),
     ('failureLearning', 'failure_learning', DEFAULT_FEATURES.get('failure_learning', True), 'bool'),
     ('graphMemory', 'graph_memory', DEFAULT_FEATURES.get('graph_memory', True), 'bool'),
-    ('agentJobs', 'agent_jobs', DEFAULT_FEATURES.get('agent_jobs', True), 'bool'),
+    # agentJobs retired (Part 27 C4): the registry job ledger is an in-memory
+    # capped dict now; no feature flag ever gated it.
     ('hierarchicalAgents', 'hierarchical_agents', DEFAULT_FEATURES.get('hierarchical_agents', True), 'bool'),
     ('adapterParallelTools', 'adapter_parallel_tools', DEFAULT_FEATURES.get('adapter_parallel_tools', True), 'bool'),
     ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'),

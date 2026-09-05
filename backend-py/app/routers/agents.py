@@ -80,6 +80,7 @@ class RoomCreate(CamelModel):
 
 class RoomSend(CamelModel):
     message: str
+    thread_id: int | None = None
 
 
 class AgentJob(CamelModel):
@@ -289,7 +290,7 @@ async def sendToRoom(room_id: int, body: RoomSend):
     message = (body.message or '').strip()
     if not message:
         raise HTTPException(status_code=400, detail='message is required')
-    summary = await rooms.run_room(room_id, message)
+    summary = await rooms.run_room(room_id, message, thread_id=body.thread_id)
     return {'summary': summary, 'log': rooms.room_log(room_id)}
 
 

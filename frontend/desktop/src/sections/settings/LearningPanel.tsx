@@ -59,6 +59,34 @@ interface Report {
   } | null;
 }
 
+/** Part 27 D2: turn an internal episode fingerprint into a sentence a human
+ *  can read. The corpus stays model-facing; this panel translates it. */
+function prettify(s: string): string {
+  return s.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+const KIND_PHRASE: Record<string, string> = {
+  failure_recovery: 'Recovered from a failure',
+  correction_accepted: 'Adapted after your correction',
+  contested: 'Found a contradiction to resolve',
+};
+
+function describeEpisode(ep: FlaggedEpisode): string {
+  const [scope, ...rest] = ep.fingerprint.split(':');
+  const subject = prettify(rest.join(':'));
+  const kindPhrase =
+    KIND_PHRASE[ep.kind] ??
+    (scope === 'tool-error'
+      ? 'Recovered from a tool error'
+      : scope === 'user-correction'
+        ? 'Adapted after your correction'
+        : prettify(ep.kind));
+  const outcome = ep.outcome === 'resolved' ? 'resolved' : prettify(ep.outcome);
+  return subject
+    ? `${kindPhrase} — ${subject} · ${outcome}`
+    : `${kindPhrase} · ${outcome}`;
+}
+
 export function LearningPanel() {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
@@ -127,6 +155,15 @@ export function LearningPanel() {
     ],
   ];
 
+  // Part 27 D3: one plain-language line in the collapsed header; the raw
+  // telemetry chips move behind the expand ("Details").
+  const patterns = learning.fingerprints ?? 0;
+  const promoted = learning.judged ?? 0;
+  const summaryLine =
+    (learning.episodes ?? 0) === 0
+      ? 'August has not learned anything yet — run a learning pass after real sessions.'
+      : `August has learned from ${learning.episodes} recent session${learning.episodes === 1 ? '' : 's'} · ${patterns} pattern${patterns === 1 ? '' : 's'} tracked · ${promoted > 0 ? `${promoted} reviewed` : 'nothing promoted yet'}`;
+
   return (
     <div
       className="shrink-0 rounded-xl border border-border/60 bg-card/40"
@@ -145,21 +182,28 @@ export function LearningPanel() {
         )}
         <Brain className="size-3.5 text-primary" />
         <span className="text-sm font-medium text-foreground">Learning</span>
-        <span className="flex flex-1 flex-wrap items-center justify-end gap-1.5">
-          {metrics.map(([label, value]) => (
-            <span
-              key={label}
-              data-testid={`learning-metric-${label.toLowerCase()}`}
-              className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground"
-            >
-              {label} {value ?? '—'}
-            </span>
-          ))}
+        <span className="min-w-0 flex-1 truncate text-right text-[11.5px] text-muted-foreground">
+          {summaryLine}
         </span>
       </button>
 
       {expanded && (
         <div className="space-y-4 border-t border-border/60 px-4 py-3">
+          {/* Raw telemetry behind an explicit expand (D3). */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              Details
+            </span>
+            {metrics.map(([label, value]) => (
+              <span
+                key={label}
+                data-testid={`learning-metric-${label.toLowerCase()}`}
+                className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {label} {value ?? '—'}
+              </span>
+            ))}
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -208,14 +252,11 @@ export function LearningPanel() {
                     data-testid="learning-episode"
                     className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/60 px-3 py-1.5 text-xs"
                   >
-                    <span className="min-w-0">
-                      <span className="font-mono text-[11px] text-foreground">{ep.fingerprint}</span>
-                      <span className="ml-2 text-muted-foreground">
-                        {ep.kind} · {ep.outcome}
-                      </span>
+                    <span className="min-w-0 truncate text-foreground/90" title={ep.fingerprint}>
+                      {describeEpisode(ep)}
                     </span>
                     <span className="shrink-0 rounded-full bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground">
-                      score {typeof ep.rubric?.score === 'number' ? ep.rubric.score.toFixed(2) : '—'}
+                      confidence {typeof ep.rubric?.score === 'number' ? ep.rubric.score.toFixed(2) : '—'}
                     </span>
                   </li>
                 ))}

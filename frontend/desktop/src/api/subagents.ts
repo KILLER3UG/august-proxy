@@ -93,6 +93,18 @@ export async function resume(taskId: string): Promise<SpawnResult> {
   return api.post<SpawnResult>(`/api/subagents/${encodeURIComponent(taskId)}/resume`);
 }
 
+/** Persisted work transcript for one task (Part 27 A5) — the Hermes-style
+ *  jsonl the orchestrator mirrors every emit into. Lets a drawer tab replay
+ *  the full work log after a reload, when the live SSE blocks are gone. */
+export async function getSubagentTranscript(
+  taskId: string,
+  limit = 200,
+): Promise<{ taskId: string; events: Array<Record<string, unknown>> }> {
+  return api.get(
+    `/api/subagents/${encodeURIComponent(taskId)}/transcript?limit=${limit}`,
+  );
+}
+
 /** Approve or reject a proposed sub-agent breakdown. */
 export async function proposeBreakdown(
   proposalId: string,

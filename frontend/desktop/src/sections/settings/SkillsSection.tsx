@@ -122,6 +122,26 @@ export function SkillsSection() {
   const selected = detailQuery.data ?? null;
   const workspaces = workspacesQ.data?.workspaces ?? [];
 
+  // Part 27 D4: disambiguate same-basename workspaces with their parent dir
+  // (seven leaked "proj" entries used to collapse into identical labels) and
+  // carry the full path as the option title.
+  const scopeOptions = useMemo(() => {
+    const partsOf = (p: string) => p.replace(/\\/g, '/').split('/').filter(Boolean);
+    const nameCounts = new Map<string, number>();
+    for (const w of workspaces) nameCounts.set(w.name, (nameCounts.get(w.name) ?? 0) + 1);
+    return [
+      { value: '', label: 'Global (all skills)', title: undefined as string | undefined },
+      ...workspaces.map((w) => {
+        const parts = partsOf(w.path);
+        const parent = parts.length >= 2 ? parts[parts.length - 2] : '';
+        const dup = (nameCounts.get(w.name) ?? 0) > 1 && parent;
+        const label =
+          `${w.name}${dup ? ` (${parent})` : ''}${w.hasSkills ? ' · has project skills' : ''}`;
+        return { value: w.path, label, title: w.path };
+      }),
+    ];
+  }, [workspaces]);
+
   const openDetail = (name: string) => {
     setSelectedName(name);
     setSeeMore(false);
@@ -315,13 +335,7 @@ export function SkillsSection() {
             <WorkspaceSelect
               value={wsScope}
               onChange={(e) => setWsScope(e.target.value)}
-              options={[
-                { value: '', label: 'Global (all skills)' },
-                ...workspaces.map((w) => ({
-                  value: w.path,
-                  label: `${w.name}${w.hasSkills ? ' · has project skills' : ''}`,
-                })),
-              ]}
+              options={scopeOptions}
               data-testid="skills-scope-select"
               aria-label="Skills scope"
             />
@@ -370,7 +384,7 @@ export function SkillsSection() {
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="max-w-3xl space-y-4" data-testid="skill-detail">
+            <div className="mx-auto max-w-3xl space-y-4" data-testid="skill-detail">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">

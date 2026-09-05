@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
 interface Option {
   value: string;
   label: string;
+  /** Optional tooltip (full path for disambiguated workspace names). */
+  title?: string;
 }
 
 interface Props extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'children'> {
@@ -40,7 +42,7 @@ export const WorkspaceSelect = forwardRef<HTMLSelectElement, Props>(function Wor
           </option>
         )}
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-card text-foreground">
+          <option key={o.value} value={o.value} title={o.title} className="bg-card text-foreground">
             {o.label}
           </option>
         ))}

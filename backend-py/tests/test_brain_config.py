@@ -23,7 +23,6 @@ _ALLCamelKeys = {
     'adaptivePolicy',
     'failureLearning',
     'graphMemory',
-    'agentJobs',
     'hierarchicalAgents',
     'adapterParallelTools',
     'parallelReadTools',

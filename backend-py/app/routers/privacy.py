@@ -62,9 +62,10 @@ _MEMORY_TABLES = [
     'turn_outcomes',
 ]
 
-# memory_store KV keys that survive the memory purge — the only keys with a
-# live writer (agent registry). Everything else in the KV is residue.
-_KV_KEEP_KEYS = ('agent_registry', 'agent_jobs')
+# memory_store KV keys that survive the memory purge — the Bot roster is the
+# only key with a live writer. agent_jobs is gone (Part 27 C4: the registry
+# ledger is in-memory now; migration 037 purged the legacy blob).
+_KV_KEEP_KEYS = ('agent_registry',)
 
 # Tables cleared by the "clear activity logs" action (telemetry/audit).
 _LOG_TABLES = [

@@ -97,6 +97,13 @@ _STORE_ALIASES.update(
     }
 )
 
+# Part 27 C2: KV keys that are app plumbing, not user-visible memory. The
+# Memories browse filters these out (Raw state lookup still sees them).
+# agent_jobs itself was purged by migration 037; the entry stays as a guard
+# against a legacy DB re-seeding it before the migration runs.
+_KV_MACHINE_KEYS: tuple[str, ...] = ('agent_registry', 'agent_jobs')
+_KV_MACHINE_PREFIXES: tuple[str, ...] = ('diff_learn:', 'internal:', 'cognitive:')
+
 
 def _resolve_store(store: str) -> str:
     """Map wire/SQL aliases to a canonical ``_BRAINStores`` key."""
@@ -539,6 +546,17 @@ def brain_browse(
         params: list[object] = []
         colInfo = conn.execute(f'PRAGMA table_info({table})').fetchall()
         colNames = {c['name'] for c in colInfo}
+        # Part 27 C2: machine-state KV keys never render in the human-facing
+        # Memories browse — the registry roster and diff-learn cursors are
+        # app plumbing, not notes about the user. They stay reachable via
+        # Raw state lookup (GET /api/brain/state-lookup).
+        if resolved == 'memory' and 'key' in colNames:
+            whereParts.append(
+                'key NOT IN (' + ','.join('?' * len(_KV_MACHINE_KEYS)) + ') '
+                "AND " + ' AND '.join("key NOT LIKE ?" for _ in _KV_MACHINE_PREFIXES)
+            )
+            params.extend(_KV_MACHINE_KEYS)
+            params.extend(f'{p}%' for p in _KV_MACHINE_PREFIXES)
         scopeVal = (scope or '').strip()
         if scopeVal and 'scope' in colNames:
             whereParts.append(

@@ -4,14 +4,17 @@
  * sidebar (no horizontal pill tabs). Hidden Bots stay accessible via
  * the eye toggle in the row menu. */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { EyeOff, Eye, EllipsisVertical, Plus, Trash2, Copy, Shuffle } from 'lucide-react';
+import { EyeOff, Eye, EllipsisVertical, Plus, Trash2, Copy, Shuffle, Search, Bell, BellOff, Users, X, Bot as BotIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { sessionRow } from '@/lib/motion';
 import { botAvatarSvg } from '@/lib/bot-avatar';
+import { BotCreateModal } from '@/components/sidebar/BotCreateModal';
+import { RoomView } from '@/components/sidebar/RoomView';
+import { Backdrop } from '@/components/overlays/Backdrop';
 import {
   createBot,
   deleteBot,
@@ -203,11 +206,12 @@ interface BotRowProps {
   sessionId?: string;
   active: boolean;
   onOpenChat: (bot: Bot) => void;
+  onOpenProfile: (bot: Bot) => void;
   /** Summary of the Bot's canonical chat (preview + updatedAt for presence). */
   summary?: { lastPreview?: string; updatedAt?: string | null };
 }
 
-function BotRow({ bot, sessionId, active, onOpenChat, summary }: BotRowProps) {
+function BotRow({ bot, sessionId, active, onOpenChat, onOpenProfile, summary }: BotRowProps) {
   const streaming = useActiveChatStreamsStore((s) => (sessionId ? s.active[sessionId] : undefined));
   const title = bot.uiMeta?.title || bot.name;
   const recent = isRecent(summary?.updatedAt);
@@ -225,7 +229,7 @@ function BotRow({ bot, sessionId, active, onOpenChat, summary }: BotRowProps) {
     >
       <button
         type="button"
-        onClick={() => onOpenChat(bot)}
+        onClick={() => onOpenProfile(bot)}
         className="flex w-full items-center gap-2 px-2 py-1 text-left min-w-0"
         title={bot.description || title}
         data-testid={`bot-row-${bot.name}`}
@@ -270,24 +274,55 @@ export interface BotsRailProps {
   /** Open a workbench session by id (the canonical Bot Chat). */
   onOpenSession: (sessionId: string) => void;
   activeSessionId?: string;
+  /** Optional: open the group-room creator (New Group Chat menu item). */
+  onNewGroupChat?: () => void;
 }
 
 /** Vertical roster section: every Bot, hidden ones dimmed, presence dots live. */
-export function BotsRail({ onOpenSession, activeSessionId }: BotsRailProps) {
-  const queryClient = useQueryClient();
-  const [showNew, setShowNew] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newTitle, setNewTitle] = useState('');
+export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: BotsRailProps) {
+  // Part 27 F1: rail chrome — search, notification mute, "+" menu; F2: the
+  // New Bot flow is a modal with an avatar picker (replaces the inline form).
+  const [search, setSearch] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [showRooms, setShowRooms] = useState(false);
+  const [profileBot, setProfileBot] = useState<Bot | null>(null);
+  const [muted, setMuted] = useState(() => {
+    try {
+      return localStorage.getItem('august.bots.muted') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('august.bots.muted', muted ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+  }, [muted]);
 
   const botsQuery = useQuery({
     queryKey: ['bots'],
     queryFn: listBots,
   });
-  const bots = (botsQuery.data?.bots ?? []).slice().sort((a, b) => {
-    const ah = a.uiMeta?.hidden ? 1 : 0;
-    const bh = b.uiMeta?.hidden ? 1 : 0;
-    return ah - bh;
-  });
+  const bots = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (botsQuery.data?.bots ?? [])
+      .slice()
+      .sort((a, b) => {
+        const ah = a.uiMeta?.hidden ? 1 : 0;
+        const bh = b.uiMeta?.hidden ? 1 : 0;
+        return ah - bh;
+      })
+      .filter(
+        (b) =>
+          !q ||
+          b.name.toLowerCase().includes(q) ||
+          (b.uiMeta?.title || '').toLowerCase().includes(q) ||
+          (b.description || '').toLowerCase().includes(q),
+      );
+  }, [botsQuery.data, search]);
 
   // Resolve each Bot's canonical chat id once (for presence + open).
   const chatsQuery = useQuery({
@@ -320,20 +355,7 @@ export function BotsRail({ onOpenSession, activeSessionId }: BotsRailProps) {
     }
   };
 
-  const create = useMutation({
-    mutationFn: () => createBot({ name: newName.trim(), title: newTitle.trim() }),
-    onSuccess: () => {
-      toast.success(`Bot "${newTitle || newName}" created`);
-      setNewName('');
-      setNewTitle('');
-      setShowNew(false);
-      void queryClient.invalidateQueries({ queryKey: ['bots'] });
-      void queryClient.invalidateQueries({ queryKey: ['bots', 'chats'] });
-    },
-    onError: (e) => toast.error('Could not create Bot', { description: String(e) }),
-  });
-
-  const anyBots = bots.length > 0;
+  const anyBots = (botsQuery.data?.bots?.length ?? 0) > 0;
 
   // Session summaries power the roster rows (last-message preview +
   // timestamp) and the "Active now" strip (updatedAt within 90 s).
@@ -367,21 +389,98 @@ export function BotsRail({ onOpenSession, activeSessionId }: BotsRailProps) {
         <div className="flex items-center gap-1">
           <h3 className="text-[11px] text-sidebar-foreground/40 font-normal">Bots</h3>
           {anyBots && (
-            <span className="text-[10px] text-sidebar-foreground/25 tabular-nums">{bots.length}</span>
+            <span className="text-[10px] text-sidebar-foreground/25 tabular-nums">
+              {botsQuery.data?.bots.length ?? 0}
+            </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setShowNew((v) => !v)}
-          className="p-0.5 rounded text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors hover:bg-white/[0.03]"
-          title="New Bot"
-          aria-label="New Bot"
-        >
-          <Plus className="size-3" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => setShowRooms(true)}
+            className="p-0.5 rounded text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors hover:bg-white/[0.03]"
+            title="Group rooms"
+            aria-label="Group rooms"
+            data-testid="bots-open-rooms"
+          >
+            <Users className="size-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setMuted((v) => !v)}
+            className="p-0.5 rounded text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors hover:bg-white/[0.03]"
+            title={muted ? 'Unmute Bot activity' : 'Mute Bot activity'}
+            aria-label={muted ? 'Unmute Bot activity' : 'Mute Bot activity'}
+            aria-pressed={muted}
+          >
+            {muted ? <BellOff className="size-3" /> : <Bell className="size-3" />}
+          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="p-0.5 rounded text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors hover:bg-white/[0.03]"
+              title="New"
+              aria-label="New"
+              aria-expanded={menuOpen}
+            >
+              <Plus className="size-3" />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                <div
+                  role="menu"
+                  className="absolute right-0 top-5 z-50 w-40 rounded-md border border-border/50 bg-popover py-1 text-xs shadow-2xl"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShowModal(true);
+                    }}
+                    className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-foreground/90 hover:bg-white/5"
+                    data-testid="bots-menu-new-bot"
+                  >
+                    <BotIcon className="size-3" /> New Bot
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      if (onNewGroupChat) onNewGroupChat();
+                      else setShowRooms(true);
+                    }}
+                    className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-foreground/90 hover:bg-white/5"
+                    data-testid="bots-menu-new-group"
+                  >
+                    <Users className="size-3" /> New Group Chat
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
-      {activeNow.length > 0 && (
+      {anyBots && (
+        <div className="px-1.5 pb-1">
+          <div className="flex items-center gap-1.5 rounded-md border border-sidebar-border/50 bg-white/[0.03] px-2 py-1">
+            <Search className="size-3 shrink-0 text-sidebar-foreground/30" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search bots…"
+              aria-label="Search bots"
+              className="min-w-0 flex-1 bg-transparent text-[11.5px] text-sidebar-foreground/80 outline-none placeholder:text-sidebar-foreground/30"
+            />
+          </div>
+        </div>
+      )}
+
+      {!muted && activeNow.length > 0 && (
         <div
           className="mb-1 flex flex-wrap items-center gap-1 px-1.5"
           data-testid="bots-active-now"
@@ -403,32 +502,6 @@ export function BotsRail({ onOpenSession, activeSessionId }: BotsRailProps) {
         </div>
       )}
 
-      {showNew && (
-        <div className="px-1.5 pb-1.5 flex flex-col gap-1">
-          <input
-            autoFocus
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Name (handle)"
-            className="rounded-md bg-white/[0.04] border border-sidebar-border/50 px-2 py-1 text-xs text-sidebar-foreground/80 outline-none focus:border-sidebar-ring/70"
-          />
-          <input
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Display title"
-            className="rounded-md bg-white/[0.04] border border-sidebar-border/50 px-2 py-1 text-xs text-sidebar-foreground/80 outline-none focus:border-sidebar-ring/70"
-          />
-          <button
-            type="button"
-            disabled={!newName.trim() || create.isPending}
-            onClick={() => create.mutate()}
-            className="rounded-md bg-primary/15 border border-primary/30 px-2 py-1 text-xs text-primary hover:bg-primary/25 disabled:opacity-40 transition"
-          >
-            {create.isPending ? 'Creating…' : 'Create Bot'}
-          </button>
-        </div>
-      )}
-
       <div className="space-y-0.5">
         <AnimatePresence initial={false} mode="popLayout">
           {bots.map((bot) => (
@@ -438,16 +511,98 @@ export function BotsRail({ onOpenSession, activeSessionId }: BotsRailProps) {
               sessionId={botSessionIds[bot.id]}
               active={!!botSessionIds[bot.id] && botSessionIds[bot.id] === activeSessionId}
               onOpenChat={openChat}
+              onOpenProfile={setProfileBot}
               summary={summaries[bot.id]}
             />
           ))}
         </AnimatePresence>
-        {!anyBots && !showNew && (
+        {!anyBots && (
           <p className="px-2 py-1 text-[11px] text-sidebar-foreground/30 italic">
             No Bots yet — create one to give it a forever-chat.
           </p>
         )}
+        {anyBots && bots.length === 0 && (
+          <p className="px-2 py-1 text-[11px] text-sidebar-foreground/30 italic">
+            No Bots match “{search}”.
+          </p>
+        )}
       </div>
+
+      {showModal && <BotCreateModal onClose={() => setShowModal(false)} />}
+
+      {profileBot && (
+        <Backdrop onClose={() => setProfileBot(null)} className="z-[60]">
+          <div
+            className="relative w-[min(94vw,420px)] rounded-2xl border border-border/70 bg-card p-6 text-center shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={profileBot.uiMeta?.title || profileBot.name}
+            data-testid="bot-profile"
+          >
+            <button
+              type="button"
+              onClick={() => setProfileBot(null)}
+              className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="size-4" />
+            </button>
+            <div className="mx-auto mb-3 flex justify-center">
+              <BotAvatar bot={profileBot} size={72} />
+            </div>
+            <h2 className="text-lg font-semibold text-foreground">
+              {profileBot.uiMeta?.title || profileBot.name}
+            </h2>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
+              Bot · @{profileBot.name}
+            </p>
+            {profileBot.description && (
+              <p className="mx-auto mt-3 max-w-xs text-[12.5px] leading-relaxed text-muted-foreground/90">
+                {profileBot.description}
+              </p>
+            )}
+            <p className="mx-auto mt-4 max-w-xs text-[12px] text-muted-foreground/70">
+              Open this bot&apos;s continuous chat. Its background work keeps running when you
+              switch away.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const b = profileBot;
+                setProfileBot(null);
+                void openChat(b);
+              }}
+              className="mt-4 rounded-lg bg-primary px-4 py-1.5 text-[13px] font-medium text-primary-foreground transition hover:opacity-90"
+              data-testid="bot-profile-open-chat"
+            >
+              Open chat
+            </button>
+          </div>
+        </Backdrop>
+      )}
+
+      {showRooms && (
+        <Backdrop onClose={() => setShowRooms(false)} className="z-[60]">
+          <div
+            className="relative flex h-[min(88vh,820px)] w-[min(96vw,1040px)] overflow-hidden rounded-2xl border border-border/70 bg-background shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Group rooms"
+          >
+            <button
+              type="button"
+              onClick={() => setShowRooms(false)}
+              className="absolute right-3 top-2 z-10 rounded-md p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              aria-label="Close rooms"
+            >
+              <X className="size-4" />
+            </button>
+            <div className="min-h-0 flex-1 pt-8">
+              <RoomView />
+            </div>
+          </div>
+        </Backdrop>
+      )}
     </div>
   );
 }

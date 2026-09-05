@@ -155,7 +155,12 @@ export function ThoughtStep({
               <div
                 ref={proseRef}
                 id={panelId}
-                className="process-thought-prose thought-content chat-thought-text"
+                className={cn(
+                  'process-thought-prose thought-content chat-thought-text',
+                  // Part 27 G2: the same one-shot fade the answer's live tail
+                  // uses, so streamed reasoning inks in instead of hard-popping.
+                  isGenerating && 'md-live-tail',
+                )}
                 aria-live={isGenerating ? 'polite' : undefined}
               >
                 {text ? (

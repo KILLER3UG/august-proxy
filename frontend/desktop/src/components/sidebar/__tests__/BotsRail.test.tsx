@@ -122,11 +122,16 @@ describe('BotsRail', () => {
     expect(screen.getByText('Red Team')).toBeTruthy();
   });
 
-  it('opens the canonical Bot Chat on row click', async () => {
+  it('opens the Bot profile on row click, then the chat from the profile (Part 27 F5)', async () => {
     const onOpen = vi.fn();
     withProviders(<BotsRail onOpenSession={onOpen} />);
     await waitFor(() => expect(screen.getByText('Research Buddy')).toBeTruthy());
     fireEvent.click(screen.getByText('Research Buddy'));
+    // Row click now lands on the profile landing, not the chat directly.
+    const profile = await screen.findByTestId('bot-profile');
+    expect(profile.textContent).toContain('Research Buddy');
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('bot-profile-open-chat'));
     await waitFor(() => expect(onOpen).toHaveBeenCalledWith('wb_bot1'));
   });
 

@@ -50,6 +50,25 @@ export async function fetchMcpMentions(): Promise<MentionItem[]> {
   }
 }
 
+/** Part 27 G1: workspace files that are never useful as @-mentions — OS
+ *  registry artifacts, git internals, temp dirs. Home-anchored Task sessions
+ *  surfaced @ntuser.dat.LOG2 / @post-checkout / @NTUSER.DAT{…} in the picker. */
+const FILE_MENTION_JUNK = /(^|[/\\])(ntuser\.(dat|log)|usrclass\.dat|thumbs\.db|desktop\.ini)$/i;
+const FILE_MENTION_JUNK_PREFIX = /^(appdata[/\\]local[/\\]temp[/\\]|[/\\]\.git[/\\]|[/\\]node_modules[/\\])/i;
+const GIT_HOOK_NAMES = /^(pre|post|commit-msg|applypatch|update)-(commit|checkout|merge|rebase|push|applypatch|pre-merge)\b/i;
+
+function isJunkFileMention(rel: string): boolean {
+  const norm = rel.replace(/\\/g, '/');
+  const base = norm.split('/').pop() || norm;
+  return (
+    FILE_MENTION_JUNK.test(base) ||
+    FILE_MENTION_JUNK.test(norm) ||
+    FILE_MENTION_JUNK_PREFIX.test(norm) ||
+    GIT_HOOK_NAMES.test(base) ||
+    base.startsWith('.')
+  );
+}
+
 /** Workspace files for the @ picker — bounded backend listing. */
 export async function fetchFileMentions(
   sessionId: string | null | undefined,
@@ -61,12 +80,15 @@ export async function fetchFileMentions(
   if (query) qs.set('q', query);
   try {
     const res = await api.get<{ results: string[] }>(`/api/workbench/workspace/files?${qs.toString()}`);
-    return (res.results ?? []).slice(0, 12).map((rel) => ({
-      kind: 'file' as const,
-      name: `@${rel}`,
-      desc: 'Workspace file',
-      insert: `@${rel} `,
-    }));
+    return (res.results ?? [])
+      .filter((rel) => !isJunkFileMention(rel))
+      .slice(0, 12)
+      .map((rel) => ({
+        kind: 'file' as const,
+        name: `@${rel}`,
+        desc: 'Workspace file',
+        insert: `@${rel} `,
+      }));
   } catch {
     return [];
   }

@@ -459,12 +459,76 @@ def _load_sessions() -> None:
             if session.id:
                 _sessions[session.id] = session
         if _sessions:
+            _purge_leaked_sessions()
             return
     except Exception:
         logger.exception('SQLite session load failed; trying JSON fallback')
 
     # Older installs: import workbench-sessions.json into SQLite once, then retire file.
     migrate_json_sessions_to_sqlite(force=False)
+    _purge_leaked_sessions()
+
+
+# Part 27 E1: plan texts written by pytest fixtures that leaked into the live
+# store before conftest isolation was airtight (tests/test_workbench*.py).
+_FIXTURE_PLAN_TEXTS = frozenset({'test plan', 'my plan', 'test', '1. write the file'})
+
+
+def _under_temp(path: str) -> bool:
+    """True when `path` resolves inside the system temp dir (pytest workspaces)."""
+    import tempfile
+
+    try:
+        tmp = Path(tempfile.gettempdir()).resolve()
+        p = Path(path).resolve()
+        return tmp == p or tmp in p.parents
+    except Exception:
+        return False
+
+
+def _purge_leaked_sessions() -> None:
+    """One-shot sweep of leaked pytest fixture sessions (Part 27 E1).
+
+    Two conservative signatures:
+      * a fixture plan text on a session with <=1 message -> strip the plan
+        only (a real chat may have inherited the polluted field);
+      * a zero-message session bound to a temp dir -> delete it (pytest
+        workspace artifact; these produced the seven "proj" scope entries).
+    Idempotent — after the first sweep nothing matches. Never touches
+    sessions with real message counts or non-temp workspaces.
+    """
+    strip_ids: list[str] = []
+    delete_ids: list[str] = []
+    for sid, s in _sessions.items():
+        plan = s.plan if isinstance(s.plan, dict) else None
+        plan_text = str((plan or {}).get('plan') or '').strip().lower()
+        if plan_text in _FIXTURE_PLAN_TEXTS and s.messageCount <= 1:
+            strip_ids.append(sid)
+            continue
+        if s.messageCount == 0 and s.workspacePath and _under_temp(s.workspacePath):
+            delete_ids.append(sid)
+    touched = 0
+    for sid in strip_ids:
+        target = _sessions.get(sid)
+        if target is not None:
+            target.plan = None
+            target.planApproved = False
+            touched += 1
+    for sid in delete_ids:
+        _sessions.pop(sid, None)
+        try:
+            from app.services import memory_store
+
+            memory_store.delete_session_cascade(sid, notify=False)
+        except Exception:
+            logger.debug('leaked-session purge cascade failed for %s', sid, exc_info=True)
+        touched += 1
+    if touched:
+        logger.info('Purged %d leaked pytest fixture session(s)', touched)
+        try:
+            save_sessions_now()
+        except Exception:
+            logger.debug('leaked-session purge save failed', exc_info=True)
 
 
 def is_session_json_export_enabled() -> bool:

@@ -15,8 +15,15 @@ from app.services.memory_store import get_memory, record_config_audit, save_inte
 from app.type_aliases import JsonValue
 
 _AGENTSKey = 'agent_registry'
-_JOBSKey = 'agent_jobs'
 _MAXAgentDepth = 4
+
+# Part 27 C4: the job ledger used to live in the KV memory_store as ONE JSON
+# blob (every createJob re-serialized the whole history — it grew to 44 KB and
+# leaked pytest fixtures into the user's Memory tab). Jobs are ephemeral API
+# bookkeeping now: a capped in-memory dict. The durable run history is
+# subagent_runs (orchestrator + _record_api_job_run mirror every API job).
+_MAXJobs = 50
+_jobs: dict[str, dict[str, object]] = {}
 
 
 def _now() -> str:
@@ -194,16 +201,13 @@ def deriveChildPermissions(parentId: str, childId: str) -> list[str]:
 
 
 def listJobs(agentId: str = '') -> list[dict[str, object]]:
-    raw = get_memory(_JOBSKey) or []
-    jobs = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
+    jobs = list(_jobs.values())
     if agentId:
         return [j for j in jobs if as_str(j.get('agentId')) == agentId]
     return jobs
 
 
 def createJob(agentId: str, goal: str, context: str = '') -> dict[str, object]:
-    raw = get_memory(_JOBSKey) or []
-    jobs: list[dict[str, object]] = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     jobId = f'job_{uuid.uuid4().hex[:8]}'
     job: dict[str, object] = {
         'id': jobId,
@@ -213,20 +217,19 @@ def createJob(agentId: str, goal: str, context: str = '') -> dict[str, object]:
         'status': 'pending',
         'createdAt': _now(),
     }
-    jobs.append(job)
-    save_internal(_JOBSKey, cast(JsonValue, jobs))
+    _jobs[jobId] = job
+    # Cap: dict preserves insertion order, so the oldest job is first.
+    while len(_jobs) > _MAXJobs:
+        _jobs.pop(next(iter(_jobs)))
     return job
 
 
 def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | None:
-    raw = get_memory(_JOBSKey) or []
-    jobs: list[dict[str, object]] = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
-    for j in jobs:
-        if j['id'] == jobId:
-            j.update(updates)
-            save_internal(_JOBSKey, cast(JsonValue, jobs))
-            return j
-    return None
+    job = _jobs.get(jobId)
+    if job is None:
+        return None
+    job.update(updates)
+    return job
 
 
 async def executeSubAgent(agentId: str, goal: str, context: str = '') -> dict[str, object]:

@@ -19,6 +19,8 @@ import { RailDoneRow } from '@/components/chat/RailDoneRow';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
+import { SubagentDelegateRow } from '@/components/chat/SubagentDelegateRow';
+import { ExploreGroup } from '@/components/chat/ExploreGroup';
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
@@ -73,6 +75,25 @@ function extractSearchQuery(context?: string): string {
     /* not JSON */
   }
   return 'Search';
+}
+
+/** Best-effort task/agent extraction from a spawn_subagent tool's JSON args —
+ *  used by the inline delegate row when the live container is gone (reloaded
+ *  transcript). Returns '' task when the context isn't parseable. */
+function parseSubagentToolContext(context?: string): { task: string; agentId: string } {
+  if (!context) return { task: '', agentId: '' };
+  try {
+    const parsed = JSON.parse(context) as Record<string, unknown>;
+    const task = ['task', 'prompt', 'goal', 'description', 'userMessage', 'message']
+      .map((k) => parsed?.[k])
+      .find((v): v is string => typeof v === 'string' && !!v.trim());
+    const agent = ['agentId', 'agent_id', 'agent', 'role']
+      .map((k) => parsed?.[k])
+      .find((v): v is string => typeof v === 'string' && !!v.trim());
+    return { task: (task || '').trim().slice(0, 160), agentId: (agent || '').trim() };
+  } catch {
+    return { task: '', agentId: '' };
+  }
 }
 
 /** "6s" / "1m 06s" — total elapsed for a tool-execution sequence. */
@@ -205,7 +226,7 @@ export function AssistantBlockTimeline({
   showPendingThinking: boolean;
   toolProgress?: ToolProgressMap;
   subagentPrompts?: Map<string, SubagentPromptEntry>;
-  /** Keyed by sub-agent jobId; rendered inline via SubagentLaunchList
+  /** Keyed by sub-agent jobId; rendered inline via SubagentDelegateRow
    *  (and in the persistent right-drawer roster). */
   subagentBlocks?: Map<string, SubagentBlockState>;
   /** Parent session model id — shown as muted tag on subagent launch rows. */
@@ -532,21 +553,59 @@ export function AssistantBlockTimeline({
         const tool = block.tool;
         const isCommand = block.type === 'command';
         const isSubagentCall = !isCommand && isSubagentToolName(tool.name);
+        const toolId = tool.id || block.id || `tool_${ti}`;
 
-        // Subagent launches are **drawer-only** (simplicity pass):
-        // the thread header + right-drawer badge are the single source of
-        // truth; no inline pill in the transcript keeps the chat clean.
-        // Consume the tool-call blocks silently so they never render inline.
+        // Part 27 A1: subagent launches render one inline row per agent —
+        // the keystone of delegation visibility (reverses the 265ba24a
+        // "drawer-only" decision). Live containers drive rich rows; a spawn
+        // call whose workers already streamed out (reloaded transcript)
+        // still renders one settled row from the tool block itself.
         if (isSubagentCall) {
-          while (
-            ti < blocks.length &&
-            (blocks[ti].type === 'toolCall' || blocks[ti].type === 'command') &&
-            blocks[ti].tool &&
-            blocks[ti].type !== 'command' &&
-            isSubagentToolName(blocks[ti].tool!.name)
-          ) {
-            ti++;
+          const containers = subagentBlocks
+            ? Array.from(subagentBlocks.values())
+                .filter((s) => s.parentToolId === tool.id)
+                .sort((a, b) => a.startedAt - b.startedAt)
+            : [];
+          if (containers.length > 0) {
+            for (const c of containers) {
+              tagged.push({
+                kind: 'block',
+                node: (
+                  <SubagentDelegateRow
+                    key={c.jobId}
+                    jobId={c.jobId}
+                    agentId={c.agentId}
+                    task={c.task || ''}
+                    status={c.status}
+                    startedAt={c.startedAt}
+                    finishedAt={c.finishedAt}
+                    workstream={c.workstream}
+                  />
+                ),
+              });
+            }
+          } else {
+            const ctx = parseSubagentToolContext(tool.context);
+            tagged.push({
+              kind: 'block',
+              node: (
+                <SubagentDelegateRow
+                  key={toolId}
+                  agentId={ctx.agentId || 'general'}
+                  task={ctx.task}
+                  status={
+                    tool.status === 'error'
+                      ? 'failed'
+                      : tool.status === 'running'
+                        ? 'running'
+                        : 'completed'
+                  }
+                  startedAt={tool.startedAt}
+                />
+              ),
+            });
           }
+          ti++;
           continue;
         }
 
@@ -563,7 +622,84 @@ export function AssistantBlockTimeline({
           continue;
         }
 
-        const toolId = tool.id || block.id || `tool_${ti}`;
+        // Part 27 B1: a run of ≥2 consecutive read-only rows (file views +
+        // web searches, no errors) collapses into one Explore group. A lone
+        // read falls through to the existing ×N / single-row logic.
+        const isReadTool = (t: NonNullable<DisplayBlock['tool']>) =>
+          t.status !== 'error' &&
+          !isSubagentToolName(t.name) &&
+          (classifyTool(t.name) === 'view' ||
+            (t.searchHits?.length ?? 0) > 0 ||
+            normalizeToolName(t.name).includes('web_search'));
+        if (!isCommand && isReadTool(tool)) {
+          const run: NonNullable<DisplayBlock['tool']>[] = [];
+          let tj = ti;
+          while (tj < blocks.length) {
+            const nb = blocks[tj];
+            if (nb.type !== 'toolCall' || !nb.tool) break;
+            if (!isReadTool(nb.tool)) break;
+            run.push(nb.tool);
+            tj += 1;
+          }
+          if (run.length >= 2) {
+            const searches = run.filter(
+              (t) => (t.searchHits?.length ?? 0) > 0 || normalizeToolName(t.name).includes('web_search'),
+            ).length;
+            const fileSet = new Set(
+              run
+                .map((t) => extractFilename(t.context))
+                .filter((f): f is string => !!f)
+                .map((f) => f.toLowerCase()),
+            );
+            // A same-file-only run belongs to the ×N consolidation path below,
+            // not an Explore group — group only MIXED read runs (searches or
+            // more than one file).
+            const mixed = searches > 0 || fileSet.size > 1;
+            if (mixed) {
+              const anyRunning = run.some((t) => t.status === 'running');
+              const groupKey = `explore_${toolId}`;
+              const groupOpen = groupKey in expandOverrides ? expandOverrides[groupKey] : anyRunning;
+              tagged.push({
+                kind: 'block',
+                node: (
+                  <ExploreGroup
+                    key={groupKey}
+                    groupKey={groupKey}
+                    searches={searches}
+                    files={fileSet.size}
+                    running={anyRunning}
+                    expanded={groupOpen}
+                    onToggle={(next) => toggleExpand(groupKey, next)}
+                  >
+                    {run.map((rt) => {
+                      const rtId = rt.id || `explore_child_${ti}`;
+                      const rtFilename = extractFilename(rt.context);
+                      return (
+                        <ToolStepRow
+                          key={rtId}
+                          tool={rt}
+                          label={getToolLabel(rt.name, {
+                            filename: rtFilename ?? undefined,
+                            status: rt.status,
+                          })}
+                          isCommand={false}
+                          expanded={rtId in expandOverrides ? expandOverrides[rtId] : false}
+                          verbose={verbose}
+                          onToggle={(next) => toggleExpand(rtId, next)}
+                        >
+                          <ToolCallItemBody tool={rt} hideProgress verbose={verbose} />
+                        </ToolStepRow>
+                      );
+                    })}
+                  </ExploreGroup>
+                ),
+              });
+              ti = tj;
+              continue;
+            }
+          }
+        }
+
         const promptEntries =
           tool.id && subagentPrompts
             ? Array.from(subagentPrompts.entries())

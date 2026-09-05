@@ -104,6 +104,8 @@ export interface RoomMessage {
   body: string;
   kind: string; // message | pass | review | verdict | escalation
   created_at?: string;
+  /** Part 27 F4: the thread root this message belongs to. */
+  thread_id?: number;
 }
 
 export function listRooms(): Promise<{ rooms: Room[] }> {
@@ -121,10 +123,11 @@ export function createRoom(name: string, members: string[]): Promise<{ status: s
 export function sendToRoom(
   id: number,
   message: string,
+  threadId?: number,
 ): Promise<{ summary: Record<string, unknown>; log: RoomMessage[] }> {
   return api.post<{ summary: Record<string, unknown>; log: RoomMessage[] }>(
     `/api/agents/rooms/${id}/send`,
-    { message },
+    { message, thread_id: threadId ?? null },
   );
 }
 

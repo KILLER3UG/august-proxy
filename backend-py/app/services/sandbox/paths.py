@@ -137,6 +137,12 @@ def path_looks_outside_workspace(token: str, workspace: str | None) -> bool:
     cleaned = token.strip().strip('"').strip("'")
     if not cleaned or cleaned.startswith('-'):
         return False
+    # Windows-style single-letter flags (`find /c`, `/s`, `/q`) are slash +
+    # one letter with no further separator — the naive scan used to read `/c`
+    # as an absolute path outside the workspace and block legitimate commands.
+    # Real outside paths have more structure (`/etc/passwd`, `/usr`).
+    if re.fullmatch(r'/[A-Za-z]', cleaned):
+        return False
     # Expand env vars FIRST — `$HOME/x` and `%USERPROFILE%\x` are literal
     # tokens to the naive scan and previously resolved *under* the workspace
     # root, then the shell expanded them to real outside paths (audit finding).

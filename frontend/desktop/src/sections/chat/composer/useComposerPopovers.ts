@@ -244,11 +244,16 @@ export function useComposerPopovers({
     }));
     const skills = skillMentions.filter(matches);
     const mcp = mcpMentions.filter(matches);
-    const files = fileMentions.filter(matches);
+    // Part 27 G1: files only surface once the user has typed a path prefix —
+    // at a bare "@" the home-anchored workspace listing used to flood the
+    // picker with NTUSER.DAT / git-hook junk and bury skills/chats.
+    const files = q ? fileMentions.filter(matches) : [];
     const conversations = conversationMentions.filter(matches);
     const harness = harnessMentions.filter(matches);
     const bots = botMentions.filter(matches);
-    return [...harness, ...bots, ...skills, ...tools, ...mcp, ...files, ...conversations];
+    // Useful entities first; the list is grouped by kind so the dropdown can
+    // draw section headers where the kind changes.
+    return [...skills, ...tools, ...conversations, ...bots, ...harness, ...mcp, ...files];
   }, [mentionQuery, skillMentions, mcpMentions, fileMentions, conversationMentions, harnessMentions, botMentions]);
 
   const closeAllPopovers = useCallback(() => {

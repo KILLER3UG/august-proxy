@@ -124,7 +124,6 @@ class BrainConfigDict(TypedDict, total=False):
     adaptivePolicy: bool
     failureLearning: bool
     graphMemory: bool
-    agentJobs: bool
     hierarchicalAgents: bool
     adapterParallelTools: bool
     parallelReadTools: bool

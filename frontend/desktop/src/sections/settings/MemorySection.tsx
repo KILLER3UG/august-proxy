@@ -179,6 +179,24 @@ function parseFactValue(raw: unknown): { summary: string; details?: string } {
   }
 }
 
+/** Part 27 C3: a KV note's summary is its first line, clamped — never the
+ *  whole raw value (a legacy blob used to render 29 KB of JSON as one line).
+ *  The full value (pretty-printed when it parses as JSON) rides in details. */
+function summarizeKvValue(raw: unknown): { summary: string; details: string } {
+  const s = str(raw);
+  const firstLine = (s.split('\n')[0] || '').trim();
+  const summary =
+    firstLine.length > 160 ? `${firstLine.slice(0, 160).trimEnd()}…` : firstLine || '(empty)';
+  let details = s;
+  try {
+    const parsed = JSON.parse(s);
+    if (parsed && typeof parsed === 'object') details = JSON.stringify(parsed, null, 2);
+  } catch {
+    /* not JSON — keep raw */
+  }
+  return { summary, details };
+}
+
 const STORE_META: Record<string, StoreMeta> = {
   facts: {
     idField: 'id',
@@ -194,7 +212,8 @@ const STORE_META: Record<string, StoreMeta> = {
   memory: {
     idField: 'key',
     title: (r) => str(r.key),
-    summary: (r) => str(r.value),
+    summary: (r) => summarizeKvValue(r.value).summary,
+    details: (r) => summarizeKvValue(r.value).details,
     updated: (r) => str(r.updatedAt),
     editable: ['value'],
     deletable: true,

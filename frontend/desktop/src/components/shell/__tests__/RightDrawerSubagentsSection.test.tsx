@@ -131,7 +131,7 @@ describe('RightDrawerSubagentsSection', () => {
     expect(view.textContent).not.toContain('No final response recorded.');
   });
 
-  it('renders the worker\'s own todo list in the detail view', async () => {
+  it('renders the worker\'s own todo list behind the Progress popover', async () => {
     listAgentsMock.mockResolvedValue({
       agents: [
         {
@@ -150,10 +150,14 @@ describe('RightDrawerSubagentsSection', () => {
     });
     renderSection();
     fireEvent.click(await screen.findByTestId('right-drawer-subagent-general-1'));
-    const progress = await screen.findByTestId('subagent-todo-progress');
-    expect(progress.textContent).toContain('read routers');
-    expect(progress.textContent).toContain('write report');
-    expect(progress.textContent).toContain('1/3');
+    // Part 27 A4: the todo list is a header chip that opens a popover.
+    const chip = await screen.findByTestId('subagent-progress-chip');
+    expect(chip.textContent).toContain('1/3');
+    fireEvent.click(chip);
+    const popover = await screen.findByTestId('subagent-progress-popover');
+    expect(popover.textContent).toContain('read services');
+    expect(popover.textContent).toContain('write report');
+    expect(popover.textContent).toContain('1 completed');
   });
 
   it('disambiguates multiple workers with the same role', async () => {

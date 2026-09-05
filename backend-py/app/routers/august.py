@@ -359,11 +359,13 @@ async def list_memory_workspaces():
     ``hasMemory``/``hasSkills`` flags (does ``.aug/memory`` / ``.aug/skills``
     exist) so the UI can badge project roots that actually hold content.
     """
+    import tempfile
     from pathlib import Path
 
     from app.services.workbench.sessions import list_workbench_sessions
 
     home = Path.home().resolve()
+    tmpRoot = Path(tempfile.gettempdir()).resolve()
     seen: dict[str, dict[str, object]] = {}
     try:
         sessions = list_workbench_sessions()
@@ -377,7 +379,9 @@ async def list_memory_workspaces():
             p = Path(ws).resolve()
         except Exception:
             continue
-        if p == home or not p.is_dir():
+        # Part 27 D4: a temp dir is never a real project — pytest workspaces
+        # under %TEMP% produced the seven identical "proj" scope entries.
+        if p == home or p == tmpRoot or tmpRoot in p.parents or not p.is_dir():
             continue
         seen[ws] = {
             'path': ws,

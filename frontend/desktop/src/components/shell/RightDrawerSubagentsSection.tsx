@@ -1,19 +1,25 @@
 /* ── RightDrawerSubagentsSection — chat-style subagent transcript ──── */
-/* ZCode parity: each delegated worker reads like another conversation — */
-/* role label + status, then its result rendered with the SAME markdown  */
-/* formatting as the main chat. No debug furniture: no harness config    */
-/* bar, no goal cards, no api-call/iteration counters, no raw event      */
-/* dumps, no "Persisted final response" labels.                          */
+/* Part 27 A2–A5: each delegated worker reads like another conversation —
+   role label + status, then its result rendered with the SAME markdown
+   formatting as the main chat. The tab strip labels workers by TASK TITLE +
+   elapsed (not role), carries a search dropdown, and the selected view shows
+   a live "Working for …" header, a Progress popover, and — after a reload —
+   the full persisted work transcript replayed from the orchestrator jsonl.
+   No debug furniture: no harness config bar, no goal cards, no api-call /
+   iteration counters, no raw event dumps, no "Persisted final response" labels. */
 
-import { CheckCircle2, CircleAlert, Check, Circle, ArrowRight, ListTodo, Loader2, Square } from 'lucide-react';
+import { CheckCircle2, CircleAlert, Check, Circle, ArrowRight, ListTodo, Loader2, Square, Search, ChevronDown } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
   listWorkbenchSessionAgents,
   type SessionAgentRow,
 } from '@/api/workbench';
+import { getSubagentTranscript } from '@/api/subagents';
 import type { WorkbenchTodo } from '@/types/workbench';
+import type { MessageBlock, AppendBlockEvent } from '@/types/chat';
+import { appendBlockEvent } from '@/sections/chat/stream/append-block-event';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
 import { useSessionStreamStore } from '@/sections/chat/stream/session-stream-store';
 import { SubagentTimeline } from '@/components/chat/SubagentTimeline';
@@ -110,6 +116,40 @@ function StatusGlyph({ status }: { status: string }) {
   );
 }
 
+/** "31m 19s" / "42s" — the reference's tab + header elapsed format. */
+function fmtElapsed(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}m ${String(r).padStart(2, '0')}s`;
+}
+
+/** Map persisted orchestrator transcript events into chat blocks. The
+ *  workbench emit dicts use the same camelCase types the live SSE path feeds
+ *  appendBlockEvent, so replay is a filtered pass-through. Unknown event
+ *  types (started/done/heartbeat) are skipped. */
+const REPLAY_TYPES = new Set([
+  'thinking',
+  'text',
+  'content',
+  'finalOutput',
+  'toolCall',
+  'command',
+  'toolResult',
+  'error',
+]);
+
+function transcriptToBlocks(events: Array<Record<string, unknown>>): MessageBlock[] {
+  let blocks: MessageBlock[] = [];
+  for (const ev of events) {
+    const type = typeof ev.type === 'string' ? ev.type : '';
+    if (!REPLAY_TYPES.has(type)) continue;
+    blocks = appendBlockEvent(blocks, ev as unknown as AppendBlockEvent);
+  }
+  return blocks;
+}
+
 /** Compact per-agent todo progress (drawer parity: workers own their lists). */
 function TodoProgress({ todos }: { todos: WorkbenchTodo[] }) {
   const done = todos.filter((t) => t.status === 'completed').length;
@@ -148,6 +188,151 @@ function TodoProgress({ todos }: { todos: WorkbenchTodo[] }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** Part 27 A4: "Progress n/m" header chip opening a completed/current/pending
+ *  popover — replaces the always-inline Worker plan card with one affordance. */
+function ProgressPopover({ todos }: { todos: WorkbenchTodo[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const done = todos.filter((t) => t.status === 'completed').length;
+  const current = todos.find((t) => t.status === 'in_progress');
+  const pending = todos.filter((t) => t.status === 'pending');
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-0.5 text-[11px] text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+        data-testid="subagent-progress-chip"
+      >
+        <ListTodo className="size-3" />
+        Progress {done}/{todos.length}
+        <ChevronDown className={cn('size-2.5 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full z-20 mt-1 w-64 rounded-lg border border-border/60 bg-popover p-2 shadow-xl"
+          data-testid="subagent-progress-popover"
+        >
+          {done > 0 && (
+            <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <ChevronDown className="size-3 -rotate-90" />
+              {done} completed
+            </div>
+          )}
+          {current && (
+            <div className="flex items-start gap-1.5 py-0.5 text-[12px] text-foreground">
+              <ArrowRight className="mt-0.5 size-3 shrink-0 text-primary/80" />
+              <span className="min-w-0">{current.content}</span>
+            </div>
+          )}
+          {pending.map((t) => (
+            <div key={t.id} className="flex items-start gap-1.5 py-0.5 text-[12px] text-muted-foreground/80">
+              <Circle className="mt-0.5 size-3 shrink-0 text-muted-foreground/40" />
+              <span className="min-w-0">{t.content}</span>
+            </div>
+          ))}
+          {done === 0 && !current && pending.length === 0 && (
+            <p className="px-1 py-0.5 text-[11px] italic text-muted-foreground/60">No steps yet.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Part 27 A2: the tab strip's search dropdown — open tabs with title +
+ *  elapsed, filter-as-you-type, click to select. */
+function TabSearchDropdown({
+  tabs,
+  onSelect,
+}: {
+  tabs: Array<{ taskId: string; label: string; elapsed?: number }>;
+  onSelect: (taskId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const filtered = tabs.filter((t) =>
+    !q.trim() || t.label.toLowerCase().includes(q.trim().toLowerCase()),
+  );
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Search tabs"
+        className="rounded p-1 text-muted-foreground/70 transition hover:bg-white/[0.06] hover:text-foreground"
+        data-testid="subagent-tab-search"
+      >
+        <Search className="size-3.5" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded-lg border border-border/60 bg-popover p-1.5 shadow-xl">
+          <div className="mb-1 flex items-center gap-1.5 rounded-md bg-muted/30 px-2 py-1">
+            <Search className="size-3 text-muted-foreground/60" />
+            <input
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search tabs…"
+              className="min-w-0 flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground/50"
+            />
+          </div>
+          <p className="px-1.5 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+            Open tabs
+          </p>
+          <div className="max-h-64 overflow-y-auto">
+            {filtered.length === 0 && (
+              <p className="px-2 py-1.5 text-[11.5px] italic text-muted-foreground/60">No matching tabs.</p>
+            )}
+            {filtered.map((t) => (
+              <button
+                key={t.taskId}
+                type="button"
+                onClick={() => {
+                  onSelect(t.taskId);
+                  setOpen(false);
+                  setQ('');
+                }}
+                className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[12px] text-foreground/85 transition hover:bg-white/[0.05]"
+              >
+                <span className="min-w-0 flex-1 truncate">{t.label}</span>
+                {typeof t.elapsed === 'number' && (
+                  <span className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground/55">
+                    {fmtElapsed(t.elapsed)}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -205,30 +390,18 @@ export function RightDrawerSubagentsSection({
   );
   const runByTask = new Map((runsQuery.data ?? []).map((r) => [r.taskId, r]));
 
-  /** Disambiguate same-role workers (two `general` agents): append an index
-   *  so tab / row labels never collapse into identical text. */
-  const roleLabels = (() => {
-    const counts = new Map<string, number>();
-    for (const e of query.data?.agents ?? []) {
-      counts.set(e.agentId, (counts.get(e.agentId) ?? 0) + 1);
-    }
-    const seen = new Map<string, number>();
-    const out = new Map<string, string>();
-    for (const e of query.data?.agents ?? []) {
-      const base = getAgentRoleLabel(e.agentId);
-      if ((counts.get(e.agentId) ?? 0) > 1) {
-        const n = (seen.get(e.agentId) ?? 0) + 1;
-        seen.set(e.agentId, n);
-        out.set(e.taskId, `${base} ${n}`);
-      } else {
-        out.set(e.taskId, base);
-      }
-    }
-    return out;
-  })();
+  // Part 27 A3: live elapsed ticker for the "Working for …" header. Kept at
+  // the top level (hooks must not sit behind the selected-view branch).
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const anyRunning = activeAgents.length > 0;
+  useEffect(() => {
+    if (!anyRunning) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [anyRunning]);
 
   /** Unified transcript entries, chronological: live first, then finished. */
-  const entries: Array<{ key: string; agent: SessionAgentRow }> = (() => {
+  const entries: Array<{ key: string; agent: SessionAgentRow }> = useMemo(() => {
     const seen = new Set<string>();
     const out: Array<{ key: string; agent: SessionAgentRow }> = [];
     for (const a of [...activeAgents, ...(query.data?.agents ?? [])]) {
@@ -264,12 +437,52 @@ export function RightDrawerSubagentsSection({
       });
     }
     return out;
-  })();
+  }, [activeAgents, query.data?.agents, runsQuery.data, subagentBlocks]);
 
   const selectedAgent = selectedTaskId
     ? entries.find((e) => e.key === selectedTaskId)?.agent ?? null
     : null;
   const selectedBlock = selectedTaskId ? subagentBlocks?.get(selectedTaskId) ?? null : null;
+
+  /** Display label per entry: the task goal, falling back to the role. When
+   *  two workers share a label (e.g. two empty-goal "general" agents), append
+   *  an index so tabs/rows never collapse into identical text. */
+  const displayLabels = useMemo(() => {
+    const base = new Map<string, string>();
+    for (const e of entries) {
+      base.set(e.key, e.agent.goal?.trim() || getAgentRoleLabel(e.agent.agentId) || 'Agent');
+    }
+    const counts = new Map<string, number>();
+    for (const label of base.values()) counts.set(label, (counts.get(label) ?? 0) + 1);
+    const seen = new Map<string, number>();
+    const out = new Map<string, string>();
+    for (const e of entries) {
+      const label = base.get(e.key) ?? 'Agent';
+      if ((counts.get(label) ?? 0) > 1) {
+        const n = (seen.get(label) ?? 0) + 1;
+        seen.set(label, n);
+        out.set(e.key, `${label} ${n}`);
+      } else {
+        out.set(e.key, label);
+      }
+    }
+    return out;
+  }, [entries]);
+
+  // Part 27 A5: settled agent with no live blocks → replay the persisted
+  // work transcript so the tab keeps its full Thought/Terminal/Read log.
+  const settledNoLive =
+    !!selectedTaskId && !selectedBlock && !!selectedAgent && !ACTIVE_STATUSES.has(selectedAgent.status);
+  const replayQuery = useQuery({
+    queryKey: ['subagent-transcript', selectedTaskId],
+    queryFn: () => getSubagentTranscript(selectedTaskId!),
+    enabled: settledNoLive,
+    staleTime: 60_000,
+  });
+  const replayBlocks = useMemo<MessageBlock[] | null>(
+    () => (replayQuery.data ? transcriptToBlocks(replayQuery.data.events) : null),
+    [replayQuery.data],
+  );
 
   // Auto-dismiss an empty section shortly after activity ends (kept from the
   // previous behavior, minus the drawer-hijack feel — only when truly idle).
@@ -293,75 +506,94 @@ export function RightDrawerSubagentsSection({
 
   if (selectedTaskId && selectedAgent) {
     const run = runByTask.get(selectedTaskId);
+    const running = ACTIVE_STATUSES.has(selectedAgent.status);
+    const startedMs = selectedBlock?.startedAt
+      ? (selectedBlock.startedAt > 1e12 ? selectedBlock.startedAt : selectedBlock.startedAt * 1000)
+      : undefined;
+    const elapsedSec = running && startedMs
+      ? (nowMs - startedMs) / 1000
+      : selectedBlock?.finishedAt && startedMs
+        ? (selectedBlock.finishedAt - startedMs) / 1000
+        : typeof selectedAgent.elapsed === 'number'
+          ? selectedAgent.elapsed
+          : undefined;
+
+    const headerLabel = running
+      ? `Working for ${elapsedSec != null ? fmtElapsed(elapsedSec) : '…'}`
+      : elapsedSec != null
+        ? `Worked for ${fmtElapsed(elapsedSec)}`
+        : statusWord(selectedAgent.status);
+
+    const tabs = entries.map((e) => ({
+      taskId: e.key,
+      label: displayLabels.get(e.key) || getAgentRoleLabel(e.agent.agentId),
+      elapsed: typeof e.agent.elapsed === 'number' ? e.agent.elapsed : undefined,
+    }));
+
     return (
       <div className="flex h-full min-h-0 flex-col drawer-section-text">
-        {/* Open views — same tab strip language as the panel header */}
-        <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/40 px-2 py-1">
-          {[...new Set([selectedTaskId, ...entries.map((e) => e.key)])].map((taskId) => {
-            const agent = entries.find((e) => e.key === taskId)?.agent;
-            if (!agent) return taskId === selectedTaskId ? (
-              <span key={taskId} className="rounded-md bg-primary/10 px-2 py-1 text-xs text-foreground">
-                {roleLabels.get(taskId) ?? getAgentRoleLabel(selectedAgent.agentId)}
-              </span>
-            ) : null;
-            return (
-              <div
-                key={taskId}
-                className={cn(
-                  'group flex max-w-[11rem] shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs',
-                  taskId === selectedTaskId
-                    ? 'bg-primary/10 text-foreground'
-                    : 'text-muted-foreground hover:bg-white/[0.05]',
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSelectedTaskId(taskId)}
-                  className="min-w-0 truncate text-left"
+        {/* Open views — task-titled tabs + search dropdown (A2) */}
+        <div className="flex shrink-0 items-center gap-0.5 border-b border-border/40 px-2 py-1">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+            {tabs.map((t) => {
+              const agent = entries.find((e) => e.key === t.taskId)?.agent;
+              if (!agent) return null;
+              const active = t.taskId === selectedTaskId;
+              return (
+                <div
+                  key={t.taskId}
+                  className={cn(
+                    'group flex max-w-[12rem] shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs',
+                    active ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-white/[0.05]',
+                  )}
                 >
-                  {roleLabels.get(taskId) ?? getAgentRoleLabel(agent.agentId)}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTaskId((cur) => (cur === taskId ? null : cur))}
-                  className="shrink-0 rounded p-0.5 text-muted-foreground/60 hover:bg-white/[0.08] hover:text-foreground"
-                  aria-label="Remove subagent view"
-                  title="Remove view"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
+                  <StatusGlyph status={agent.status} />
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTaskId(t.taskId)}
+                    className="min-w-0 truncate text-left"
+                    title={t.label}
+                  >
+                    {t.label}
+                  </button>
+                  {typeof t.elapsed === 'number' && (
+                    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/50">
+                      {fmtElapsed(t.elapsed)}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTaskId((cur) => (cur === t.taskId ? null : cur))}
+                    className="shrink-0 rounded p-0.5 text-muted-foreground/60 hover:bg-white/[0.08] hover:text-foreground"
+                    aria-label="Remove subagent view"
+                    title="Remove view"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <TabSearchDropdown tabs={tabs} onSelect={(id) => setSelectedTaskId(id)} />
         </div>
 
         <div
           className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
           data-testid={`right-drawer-subagent-view-${selectedTaskId}`}
         >
-          {/* Chat-style header: who + status, nothing else. */}
+          {/* Chat-style header: who + live timer + progress chip. */}
           <div className="mb-3 flex items-center gap-2">
             <StatusGlyph status={selectedAgent.status} />
-            <h3 className="truncate text-sm font-medium text-foreground">
-              {roleLabels.get(selectedTaskId) ?? getAgentRoleLabel(selectedAgent.agentId)}
+            <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+              {displayLabels.get(selectedTaskId) || getAgentRoleLabel(selectedAgent.agentId)}
             </h3>
-            <span className="text-xs text-muted-foreground/70">
-              {statusWord(selectedAgent.status)}
-            </span>
+            <span className="shrink-0 text-xs text-muted-foreground/70">{headerLabel}</span>
           </div>
 
-          {run?.goal ? (
-            <p className="mb-3 border-l-2 border-border/60 pl-3 text-[13px] leading-relaxed text-muted-foreground">
-              {run.goal}
-            </p>
-          ) : null}
-
           {(() => {
-            // Live handle todos (2s poll) are fresher than the persisted run
-            // row (10s poll); prefer whichever has content.
             const agentTodos = (selectedAgent as { todos?: WorkbenchTodo[] }).todos;
             const list = agentTodos?.length ? agentTodos : run?.todos;
-            return list?.length ? <TodoProgress todos={list} /> : null;
+            return list?.length ? <ProgressPopover todos={list} /> : null;
           })()}
 
           {selectedBlock ? (
@@ -378,8 +610,24 @@ export function RightDrawerSubagentsSection({
                   </div>
                 )}
             </>
+          ) : replayBlocks && replayBlocks.length > 0 ? (
+            /* A5: settled + reloaded — replay the persisted work transcript. */
+            <SubagentTimeline
+              state={{
+                id: `replay_${selectedTaskId}`,
+                jobId: selectedTaskId,
+                parentToolId: '',
+                agentId: selectedAgent.agentId,
+                task: selectedAgent.goal,
+                status: selectedAgent.status === 'failed' ? 'failed' : 'completed',
+                startedAt: 0,
+                blocks: replayBlocks,
+                error: run?.error,
+              }}
+              hideTaskPrompt
+            />
           ) : run?.resultText ? (
-            /* Settled run: the result IS the conversation — same markdown as chat. */
+            /* Settled run with no transcript on disk: the result IS the chat. */
             <div className="chat-message-text max-w-none text-sm" data-slot="subagent-final-output">
               <Markdown content={run.resultText} />
             </div>
@@ -444,7 +692,7 @@ export function RightDrawerSubagentsSection({
               >
                 <StatusGlyph status={agent.status} />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/90">
-                  {agent.goal || roleLabels.get(key) || getAgentRoleLabel(agent.agentId) || 'Agent'}
+                  {displayLabels.get(key) || getAgentRoleLabel(agent.agentId) || 'Agent'}
                 </span>
                 <span className="shrink-0 text-xs text-muted-foreground/55">
                   {agent.status === 'queued' && agent.queuePosition
