@@ -13,6 +13,7 @@ const listBots = vi.fn();
 const sendToRoom = vi.fn();
 const createRoom = vi.fn();
 const deleteRoom = vi.fn();
+const updateRoom = vi.fn();
 
 vi.mock('@/api/api-client', () => ({
   listRooms: () => listRooms(),
@@ -21,6 +22,7 @@ vi.mock('@/api/api-client', () => ({
   sendToRoom: (id: number, m: string, t?: number) => sendToRoom(id, m, t),
   createRoom: (n: string, mem: string[]) => createRoom(n, mem),
   deleteRoom: (id: number) => deleteRoom(id),
+  updateRoom: (id: number, u: { name?: string; members?: string[] }) => updateRoom(id, u),
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -91,5 +93,29 @@ describe('RoomView', () => {
     fireEvent.change(reply, { target: { value: 'ping' } });
     fireEvent.click(screen.getByRole('button', { name: 'Reply' }));
     await waitFor(() => expect(sendToRoom).toHaveBeenCalledWith(1, 'ping', 1));
+  });
+
+  it('opens room settings and saves updates', async () => {
+    updateRoom.mockResolvedValue({ status: 'ok', room: { id: 1, name: 'Design V2', members: ['a1', 'b2'] } });
+    renderView();
+    fireEvent.click(await screen.findByText('Design'));
+    await screen.findByText('ship it?');
+
+    const settingsBtn = screen.getByRole('button', { name: 'Room settings' });
+    fireEvent.click(settingsBtn);
+
+    const nameInput = await screen.findByTestId('room-settings-name-input');
+    expect(nameInput).toHaveValue('Design');
+    fireEvent.change(nameInput, { target: { value: 'Design V2' } });
+
+    const saveBtn = screen.getByTestId('room-settings-save');
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(updateRoom).toHaveBeenCalledWith(1, {
+        name: 'Design V2',
+        members: ['a1', 'b2'],
+      });
+    });
   });
 });

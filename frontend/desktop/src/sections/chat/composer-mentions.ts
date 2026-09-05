@@ -53,11 +53,11 @@ export async function fetchMcpMentions(): Promise<MentionItem[]> {
 /** Part 27 G1: workspace files that are never useful as @-mentions — OS
  *  registry artifacts, git internals, temp dirs. Home-anchored Task sessions
  *  surfaced @ntuser.dat.LOG2 / @post-checkout / @NTUSER.DAT{…} in the picker. */
-const FILE_MENTION_JUNK = /(^|[/\\])(ntuser\.(dat|log)|usrclass\.dat|thumbs\.db|desktop\.ini)$/i;
-const FILE_MENTION_JUNK_PREFIX = /^(appdata[/\\]local[/\\]temp[/\\]|[/\\]\.git[/\\]|[/\\]node_modules[/\\])/i;
+const FILE_MENTION_JUNK = /(^|[/\\])(ntuser\.(dat|log).*|usrclass\.dat.*|thumbs\.db|desktop\.ini)$/i;
+const FILE_MENTION_JUNK_PREFIX = /^([/\\])?(appdata[/\\]local[/\\]temp[/\\]|\.git[/\\]|node_modules[/\\])/i;
 const GIT_HOOK_NAMES = /^(pre|post|commit-msg|applypatch|update)-(commit|checkout|merge|rebase|push|applypatch|pre-merge)\b/i;
 
-function isJunkFileMention(rel: string): boolean {
+export function isJunkFileMention(rel: string): boolean {
   const norm = rel.replace(/\\/g, '/');
   const base = norm.split('/').pop() || norm;
   return (

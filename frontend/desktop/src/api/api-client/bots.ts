@@ -134,3 +134,10 @@ export function sendToRoom(
 export function deleteRoom(id: number): Promise<{ status: string; deleted: number }> {
   return api.delete<{ status: string; deleted: number }>(`/api/agents/rooms/${id}`);
 }
+
+export function updateRoom(
+  id: number,
+  updates: { name?: string; members?: string[] },
+): Promise<{ status: string; room: Room }> {
+  return api.patch<{ status: string; room: Room }>(`/api/agents/rooms/${id}`, updates);
+}

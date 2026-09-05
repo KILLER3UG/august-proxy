@@ -190,7 +190,11 @@ async def browserClick(ref: str | None = None, selector: str | None = None, text
         await locator.click(timeout=_NAVTimeoutMs)
         elements = await _elementsSnapshot(page)
         screenshot = await _captureScreenshot(page)
-        return _ok(elements=elements, target=target, screenshot=screenshot)
+        loginWall = await _detectLoginWall(page)
+        extra: dict[str, object] = {}
+        if loginWall:
+            extra['actionNeeded'] = {'instruction': loginWall, 'screenshot': screenshot}
+        return _ok(elements=elements, target=target, screenshot=screenshot, **extra)
     except Exception as exc:
         return _err(f'Click failed: {exc}')
 
@@ -208,7 +212,11 @@ async def browserType(text: str = '', ref: str | None = None, selector: str | No
             await locator.press('Enter')
         elements = await _elementsSnapshot(page)
         screenshot = await _captureScreenshot(page)
-        return _ok(typed=text, elements=elements, target=target, screenshot=screenshot)
+        loginWall = await _detectLoginWall(page)
+        extra: dict[str, object] = {}
+        if loginWall:
+            extra['actionNeeded'] = {'instruction': loginWall, 'screenshot': screenshot}
+        return _ok(typed=text, elements=elements, target=target, screenshot=screenshot, **extra)
     except Exception as exc:
         return _err(f'Type failed: {exc}')
 

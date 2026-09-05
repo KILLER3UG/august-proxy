@@ -604,9 +604,18 @@ async def workspaceFiles(sessionId: str = '', path: str = '', q: str = '', limit
             if depth > 3:
                 dirnames[:] = []
                 continue
-            dirnames[:] = [d for d in dirnames if d not in ('.git', 'node_modules', 'dist', 'build', '.venv', '__pycache__')]
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if d.lower() not in ('.git', 'node_modules', 'dist', 'build', '.venv', '__pycache__')
+            ]
+            _JUNK_PREFIXES = ('ntuser.dat', 'ntuser.log', 'usrclass.dat')
+            _JUNK_EXACT = ('thumbs.db', 'desktop.ini')
             for name in filenames:
                 if name.startswith('.'):
+                    continue
+                lname = name.lower()
+                if lname in _JUNK_EXACT or any(lname.startswith(p) for p in _JUNK_PREFIXES):
                     continue
                 rel = os.path.relpath(os.path.join(dirpath, name), root).replace('\\', '/')
                 if query and query not in rel.lower():

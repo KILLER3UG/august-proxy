@@ -126,6 +126,37 @@ def delete_room(room_id: int) -> bool:
         return False
 
 
+def update_room(
+    room_id: int,
+    name: str | None = None,
+    members: list[str] | None = None,
+) -> dict[str, object] | None:
+    """Update a room's name and/or member list."""
+    room = get_room(room_id)
+    if room is None:
+        return None
+    new_name = name.strip()[:120] if name is not None and name.strip() else str(room.get('name') or 'Room')
+    if members is not None:
+        clean = [m for m in dict.fromkeys(members) if m]
+        if len(clean) < MIN_MEMBERS or len(clean) > MAX_MEMBERS:
+            raise ValueError(f'a room needs {MIN_MEMBERS}-{MAX_MEMBERS} distinct members')
+        members_json = json.dumps(clean)
+    else:
+        clean = list(cast(list[str], room.get('members') or []))
+        members_json = json.dumps(clean)
+    try:
+        c = _conn()
+        c.execute(
+            'UPDATE bot_room SET name = ?, members = ? WHERE id = ?',
+            (new_name, members_json, room_id),
+        )
+        c.commit()
+        return get_room(room_id)
+    except Exception:
+        logger.debug('update_room failed', exc_info=True)
+        return None
+
+
 def set_needs_you(room_id: int, value: bool) -> None:
     try:
         c = _conn()

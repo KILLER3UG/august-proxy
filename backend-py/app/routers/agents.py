@@ -83,6 +83,11 @@ class RoomSend(CamelModel):
     thread_id: int | None = None
 
 
+class RoomUpdate(CamelModel):
+    name: str | None = None
+    members: list[str] | None = None
+
+
 class AgentJob(CamelModel):
     agent_id: str
     goal: str
@@ -301,6 +306,21 @@ async def deleteRoom(room_id: int):
     if not rooms.delete_room(room_id):
         raise HTTPException(status_code=404, detail='no such room')
     return {'status': 'ok', 'deleted': room_id}
+
+
+@router.patch('/rooms/{room_id}')
+async def updateRoom(room_id: int, body: RoomUpdate):
+    from app.services.bot_mode import rooms
+
+    if rooms.get_room(room_id) is None:
+        raise HTTPException(status_code=404, detail='no such room')
+    try:
+        updated = rooms.update_room(room_id, name=body.name, members=body.members)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=500, detail='could not update room')
+    return {'status': 'ok', 'room': updated}
 
 
 @router.delete('/bots/{agentId}')

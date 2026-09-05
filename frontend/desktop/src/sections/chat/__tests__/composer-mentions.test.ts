@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   annotateBotMentions,
   botMentionNote,
+  isJunkFileMention,
   resolveBotMentions,
   type ResolvedBotMention,
 } from '../composer-mentions';
@@ -57,5 +58,34 @@ describe('annotateBotMentions', () => {
   it('empty roster → no note', () => {
     expect(botMentionNote([] as ResolvedBotMention[])).toBe('');
     expect(annotateBotMentions('@researcher hi', [])).toBe('@researcher hi');
+  });
+});
+
+describe('isJunkFileMention', () => {
+  it('identifies Windows registry logs and dat files as junk', () => {
+    expect(isJunkFileMention('ntuser.dat')).toBe(true);
+    expect(isJunkFileMention('NTUSER.DAT')).toBe(true);
+    expect(isJunkFileMention('ntuser.dat.LOG1')).toBe(true);
+    expect(isJunkFileMention('ntuser.dat.LOG2')).toBe(true);
+    expect(isJunkFileMention('NTUSER.DAT{30a3b25e-1234-5678}.TM.blf')).toBe(true);
+    expect(isJunkFileMention('UsrClass.dat')).toBe(true);
+    expect(isJunkFileMention('usrclass.dat.LOG1')).toBe(true);
+    expect(isJunkFileMention('AppData/Local/Microsoft/Windows/UsrClass.dat')).toBe(true);
+  });
+
+  it('identifies OS desktop files and git hooks as junk', () => {
+    expect(isJunkFileMention('desktop.ini')).toBe(true);
+    expect(isJunkFileMention('thumbs.db')).toBe(true);
+    expect(isJunkFileMention('.git/hooks/post-checkout')).toBe(true);
+    expect(isJunkFileMention('.git/config')).toBe(true);
+    expect(isJunkFileMention('node_modules/pkg/index.js')).toBe(true);
+    expect(isJunkFileMention('.env')).toBe(true);
+  });
+
+  it('allows normal source and project files', () => {
+    expect(isJunkFileMention('src/index.ts')).toBe(false);
+    expect(isJunkFileMention('package.json')).toBe(false);
+    expect(isJunkFileMention('README.md')).toBe(false);
+    expect(isJunkFileMention('notes/data.txt')).toBe(false);
   });
 });

@@ -20,9 +20,11 @@ import {
   Settings2,
   Trash2,
   TriangleAlert,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { Backdrop } from '@/components/overlays/Backdrop';
 import {
   createRoom,
   deleteRoom,
@@ -30,6 +32,7 @@ import {
   listBots,
   listRooms,
   sendToRoom,
+  updateRoom,
   type Room,
   type RoomMessage,
 } from '@/api/api-client';
@@ -186,6 +189,28 @@ export function RoomView() {
     },
   });
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsName, setSettingsName] = useState('');
+  const [settingsMembers, setSettingsMembers] = useState<string[]>([]);
+
+  const openSettings = () => {
+    if (!room) return;
+    setSettingsName(room.name || '');
+    setSettingsMembers([...room.members]);
+    setSettingsOpen(true);
+  };
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, name, members }: { id: number; name: string; members: string[] }) =>
+      updateRoom(id, { name, members }),
+    onSuccess: () => {
+      toast.success('Room settings saved');
+      setSettingsOpen(false);
+      invalidate();
+    },
+    onError: (e: unknown) => toast.error(`Update failed: ${String(e)}`),
+  });
+
   // Group the log into threads by thread_id (root = first row of each thread).
   const threads = useMemo(() => {
     const log = logQ.data?.log ?? [];
@@ -309,6 +334,7 @@ export function RoomView() {
               <span className="shrink-0 text-[11px] text-muted-foreground">{room.members.length} bots</span>
               <button
                 type="button"
+                onClick={openSettings}
                 className="rounded p-1 text-muted-foreground hover:bg-accent"
                 aria-label="Room settings"
                 title="Room settings"
@@ -375,6 +401,101 @@ export function RoomView() {
           </>
         )}
       </div>
+
+      {settingsOpen && room && (
+        <Backdrop onClose={() => setSettingsOpen(false)} className="z-[70]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Room settings"
+            data-testid="room-settings-modal"
+            className="relative w-[min(92vw,420px)] rounded-2xl border border-border/70 bg-card p-5 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground">Room settings</h3>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(false)}
+                className="rounded p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Room name</label>
+              <input
+                value={settingsName}
+                onChange={(e) => setSettingsName(e.target.value)}
+                placeholder="Room name"
+                data-testid="room-settings-name-input"
+                className="w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Members (2–6 bots)</label>
+              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-auto">
+                {botsLite.map((b) => {
+                  const active = settingsMembers.includes(b.id);
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() =>
+                        setSettingsMembers((prev) =>
+                          active ? prev.filter((m) => m !== b.id) : [...prev, b.id],
+                        )
+                      }
+                      className={cn(
+                        'rounded-full border px-2.5 py-0.5 text-xs transition',
+                        active
+                          ? 'border-primary/60 bg-primary/10 text-primary'
+                          : 'border-border text-muted-foreground hover:bg-accent',
+                      )}
+                    >
+                      {b.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(false)}
+                className="rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="room-settings-save"
+                disabled={
+                  !settingsName.trim() ||
+                  settingsMembers.length < 2 ||
+                  settingsMembers.length > 6 ||
+                  updateMut.isPending
+                }
+                onClick={() => {
+                  if (selected != null) {
+                    updateMut.mutate({
+                      id: selected,
+                      name: settingsName.trim(),
+                      members: settingsMembers,
+                    });
+                  }
+                }}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
+              >
+                Save changes
+              </button>
+            </div>
+          </div>
+        </Backdrop>
+      )}
     </div>
   );
 }

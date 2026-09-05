@@ -186,8 +186,8 @@ Start with [`AGENTS.md`](AGENTS.md) and [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOP
 
 Composer sits at the bottom of [`ChatThread.tsx`](frontend/desktop/src/sections/chat/ChatThread.tsx).
 Above it, in order: memory-save chips, curator / sub-agent proposal bars,
-then the composer island. Worker lanes:
-[`SubagentLaunchList.tsx`](frontend/desktop/src/components/chat/SubagentLaunchList.tsx)
+then the composer island. Worker lanes: inline sub-agent rows
+([`SubagentTimeline.tsx`](frontend/desktop/src/components/chat/SubagentTimeline.tsx))
 → right drawer `subagents`.
 
 

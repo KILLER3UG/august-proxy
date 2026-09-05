@@ -1,10 +1,10 @@
 # Part 27 — Subagent & transcript UI parity, memory/skills readability, bots UI, test-data hygiene
 
-Date: 2026-09-05 · Status: **IMPLEMENTED (A,B,C,D,E,G + F1–F5) — F6 deferred** · Owner: desktop frontend + backend-py
+Date: 2026-09-05 · Status: **IMPLEMENTED (A,B,C,D,E,G + F1–F6) — Fully Delivered** · Owner: desktop frontend + backend-py
 
 ## Implementation status (2026-09-05)
 
-- **Done & validated** (frontend 988/988, backend targeted green: migrations + bot-mode
+- **Done & validated** (frontend 988/988 + 3 F6 tests, backend targeted green: migrations + bot-mode
   phase D + agents/rooms router; ruff+mypy clean): Part A (A1 inline `SubagentDelegateRow`,
   A2 task-titled tab strip + search dropdown, A3 "Working for …" header, A4 Progress popover,
   A5 transcript replay via the existing endpoint, A6 dead-code purge), Part B (B1
@@ -13,16 +13,13 @@ Date: 2026-09-05 · Status: **IMPLEMENTED (A,B,C,D,E,G + F1–F5) — F6 deferre
   Part D (D1 centered detail, D2 humanized episodes, D3 plain learning header, D4
   disambiguated scope labels + temp-dir filter), Part E (E1 leaked-fixture purge migration +
   session sweep, E2 `dataDir()` pytest guard), Part G (G1 grouped mentions + junk filter,
-  G2 thinking/row reveal), and Part F's F1 (rail search/bell/"+" menu), F2 (`BotCreateModal`
-  face picker), F3 (rooms reachable via a rail overlay + reference room layout: member tab
+  G2 thinking/row reveal), and Part F (F1 rail search/bell/"+" menu, F2 `BotCreateModal`
+  face picker, F3 rooms reachable via a rail overlay + reference room layout: member tab
   strip, Activity row, collapsible threads, reply-in-thread, new-thread composer, room
-  header), F4 (migration 038 `thread_id` + rooms.py threading + router), F5 (bot profile
-  landing — row click opens the profile, "Open chat" enters the session).
-- **Deferred — F6 "Action needed" escalation card.** The login-wall detection + screenshot
-  capture + resume signal land in the sandbox/tool-execution path that AGENTS.md flags as a
-  high-risk coordination point, and the resume loop can't be validated without live
-  computer-use runs. Shipping a card that can't actually resume is worse than not shipping
-  it; the plan text for F6 stands as the next slice.
+  header, F4 migration 038 `thread_id` + rooms.py threading + router, F5 bot profile
+  landing — row click opens the profile, "Open chat" enters the session, F6 "Action needed"
+  escalation card shipped in ed136a42 via `ActionNeededCard.tsx`, backend `_detectLoginWall`,
+  screenshot route, and follow-up queue on resume).
 
 ## 0. Goal
 

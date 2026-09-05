@@ -276,5 +276,13 @@ class TestRoomEndpoints:
                 assert sent.json()['summary']['settled'] is True
                 listed = client.get('/api/agents/rooms')
                 assert any(r['id'] == rid for r in listed.json()['rooms'])
+
+                # Update room settings (rename)
+                updated = client.patch(
+                    f'/api/agents/rooms/{rid}',
+                    json={'name': 'R-Renamed'},
+                )
+                assert updated.status_code == 200, updated.text
+                assert updated.json()['room']['name'] == 'R-Renamed'
         finally:
             rmod.run_room = orig
