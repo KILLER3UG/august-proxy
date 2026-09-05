@@ -310,6 +310,63 @@ async def _updateTodosFallback(todos: list | None = None, title: str = '') -> st
     return await _submitTodosFallback(todos, title)
 
 
+_CLARIFY_SCHEMA: dict[str, object] = {
+    'type': 'object',
+    'properties': {
+        'questions': {
+            'type': 'array',
+            'description': 'One or more clarifying questions to ask the user at once.',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'question': {
+                        'type': 'string',
+                        'description': 'The question, 1-2 sentences.',
+                    },
+                    'choices': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'Up to 5 short options the user can pick from.',
+                    },
+                    'multiSelect': {
+                        'type': 'boolean',
+                        'description': 'True when the user may pick several choices.',
+                    },
+                },
+                'required': ['question'],
+            },
+        },
+        'contextSummary': {
+            'type': 'string',
+            'description': 'Optional short context shown above the questions.',
+        },
+    },
+    'required': ['questions'],
+}
+
+
+async def _submitClarifyFallback(
+    questions: list | None = None, contextSummary: str = ''
+) -> str:
+    """Fallback for dispatch paths outside the workbench turn loop (proxy
+    adapter, text-tool protocol). The native loop intercepts submit_clarify
+    before dispatch; this keeps the tool callable + schema-valid everywhere."""
+    from app.services.workbench.workbench import get_session, submitClarify
+
+    session = get_session()
+    if session is None:
+        return 'Error: no active workbench session.'
+    payload: dict[str, object] = {}
+    if isinstance(questions, list) and questions:
+        payload['questions'] = questions
+    if contextSummary:
+        payload['contextSummary'] = contextSummary
+    if not payload:
+        return 'Error: questions must be a non-empty array of {question, choices?}.'
+    submitClarify(session, payload)
+    return 'Clarifying questions presented to the user — stop and wait for the answer.'
+
+
 def register() -> None:
     """Register system and workbench-state tools."""
     tool_registry.register(
@@ -337,7 +394,18 @@ def register() -> None:
                     'enum': ['research', 'plan', 'implement', 'review', 'complete'],
                 },
                 'step': {'type': 'integer', 'description': 'Step number within the current phase.'},
-                'note': {'type': 'string', 'description': 'Short free-form note about progress.'},
+                # Part 27 T2: the handler already accepts + renders these, but
+                # the schema never advertised them, so the model couldn't
+                # populate them. `note` was advertised but silently discarded —
+                # dropped.
+                'completed': {
+                    'type': 'string',
+                    'description': 'Newline-separated list of things finished this phase.',
+                },
+                'blockers': {
+                    'type': 'string',
+                    'description': 'Newline-separated list of open blockers / unresolved issues.',
+                },
             },
             'required': ['phase'],
         },
@@ -363,6 +431,18 @@ def register() -> None:
         'replaces the list). Mark a step completed the moment it is verified done, never in advance.',
         _updateTodosFallback,
         _TODOS_SCHEMA,
+    )
+    # Part 27 T3 + clarify: submit_clarify was intercepted by the turn loop but
+    # never registered, so native tool-calling models never saw it (only
+    # text-protocol models discovered it). Registering it makes it visible and
+    # enforces the `questions` array-of-objects shape the user requires.
+    tool_registry.register(
+        'submit_clarify',
+        'Ask the user one or more clarifying questions before proceeding. Pass a `questions` '
+        'array; each item is {question, choices? (up to 5), multiSelect?}. Use when intent or a '
+        'decision would change your approach — never guess requirements.',
+        _submitClarifyFallback,
+        _CLARIFY_SCHEMA,
     )
     tool_registry.register(
         'write_scratchpad',

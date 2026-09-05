@@ -73,6 +73,8 @@ _ORACLE_WRITE = frozenset({
     'submit_plan', 'update_alias', 'update_state',
     # Todo-list doors — mirror of the tool_policy._PROMPT_WRITE addition.
     'submit_todos', 'update_todos',
+    # Clarify door — mirror of the tool_policy._PROMPT_WRITE addition.
+    'submit_clarify',
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad',
     # Post-consolidation addition: model-driven memory write.
     'remember',

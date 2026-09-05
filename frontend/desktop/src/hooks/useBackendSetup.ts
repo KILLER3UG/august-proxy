@@ -52,15 +52,23 @@ export function useBackendSetup() {
       void refresh();
     }, 750);
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     void listen<BackendSetupPhase>('backend-setup', (event) => {
       setStatus({
         phase: asPhase(event.payload.phase),
         detail: event.payload.detail ?? null,
       });
     }).then((fn) => {
+      // Part 27 T3: if the effect cleaned up before the listen promise
+      // resolved, release the listener now instead of leaking it.
+      if (disposed) {
+        fn();
+        return;
+      }
       unlisten = fn;
     });
     return () => {
+      disposed = true;
       window.clearInterval(interval);
       unlisten?.();
     };

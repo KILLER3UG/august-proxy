@@ -41,7 +41,7 @@ import {
   stopChatStream,
   syncActiveStreams,
 } from './chat-stream-manager';
-import { ensureSessionSubscriber } from './stream/session-subscriber';
+import { ensureSessionSubscriber, detachSessionSubscriber } from './stream/session-subscriber';
 import {
   useQueuedMessagesStore,
   setQueuedMessages,
@@ -1094,6 +1094,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     if (!sessionId || streaming) return;
     ensureSessionSubscriber(sessionId);
+    // Part 27 T2: detach on unmount / when a turn takes over. ChatThread
+    // remounts per session (key={location.pathname}), so without this every
+    // idle chat browsed left an infinitely-reconnecting subscriber behind,
+    // each re-hydrating its LRU-evicted transcript and thrashing the cap.
+    return () => {
+      detachSessionSubscriber(sessionId);
+    };
   }, [sessionId, streaming]);
 
   const maxContext = modelForRequest?.contextWindow && modelForRequest.contextWindow > 0

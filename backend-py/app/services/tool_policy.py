@@ -79,6 +79,9 @@ _PROMPT_WRITE = frozenset({
     # Todo-list doors (session-state writes, like update_state; the workbench
     # turn loop intercepts both, the registry fallback stores on the session).
     'submit_todos', 'update_todos',
+    # Clarify door — same pattern: intercepted by the turn loop, stores the
+    # pending questions on the session for the user to answer.
+    'submit_clarify',
     'write_blackboard', 'write_file', 'write_files', 'write_scratchpad', 'edit_lines',
     'pptx_comment',
     # Memory write door — saves a durable fact (gated by modelMemoryWrites).

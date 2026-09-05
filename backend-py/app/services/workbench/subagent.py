@@ -204,7 +204,6 @@ async def executeSubAgent(
     from app.providers.model_resolver import resolve_or_fallback
     from app.providers.route_resolver import resolve_for_model
     from app.services.fallback_service import getFallback
-    from app.services.tool_registry import dispatch as dispatchTool
     from app.services.workbench.validator import validationErrorText
     from app.services.workbench.workbench import (
         WorkbenchSession,
@@ -1004,7 +1003,11 @@ async def executeSubAgent(
                     else:
                         try:
                             from app.services.harness_mode import is_mutating_tool
-                            from app.services.workbench.workbench import _checkToolGuard
+                            from app.services.workbench.workbench import (
+                                _checkToolGuard,
+                                _executeTool,
+                                _readBeforeEditGate,
+                            )
 
                             # Guard parity with the parent loop: the worker
                             # shares the parent session, so plan-mode /
@@ -1019,13 +1022,35 @@ async def executeSubAgent(
                                 result = f'[Blocked] {guardReason}'
                                 status = 'blocked'
                             else:
-                                if is_mutating_tool(tName, tInput):
-                                    mutated = True
-                                result = await dispatchTool(tName, tInput)
-                                status = 'done'
+                                # Part 27 T1: route through _executeTool, not the
+                                # bare registry. The parent loop gets MCP routing,
+                                # the fail-closed PRE_TOOL_USE security hooks
+                                # (secret_guard / sensitive_code), the hash-anchor
+                                # stale-write guard, and the pre-mutation baseline
+                                # join there; dispatching through dispatchTool
+                                # skipped ALL of them and could not reach MCP tools
+                                # at all. Add the T17 read-before-edit gate too.
+                                rbError = _readBeforeEditGate(
+                                    cast('WorkbenchSession', session), tName, tInput
+                                )
+                                if rbError:
+                                    result = rbError
+                                    status = 'error'
+                                else:
+                                    if is_mutating_tool(tName, tInput):
+                                        mutated = True
+                                    result = await _executeTool(
+                                        tName, tInput, cast('WorkbenchSession', session), tId
+                                    )
+                                    _r = str(result)
+                                    status = (
+                                        'error'
+                                        if _r.startswith('Error') or _r.startswith('[BLOCKED')
+                                        else 'done'
+                                    )
                         except Exception as exc:
                             result = f'Error executing {tName}: {exc}'
-                            status = 'done'
+                            status = 'error'
                 resultStr = str(result)
                 # Parity with the parent loop: cap what enters the worker's
                 # message history (per-model profile cap, default 64 KiB).

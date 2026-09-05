@@ -55,6 +55,10 @@ function pickVideoMimeType(): string {
 export function useCameraCapture(): UseCameraCaptureResult {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // Part 27 T3: guard against the popover closing while getUserMedia is still
+  // pending — without it the resolved stream is assigned after unmount and
+  // never stopped (camera stays on) and setStatus fires on a dead component.
+  const mountedRef = useRef(true);
   const [status, setStatus] = useState<CameraStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -98,6 +102,12 @@ export function useCameraCapture(): UseCameraCaptureResult {
         },
         audio: false,
       });
+      // Part 27 T3: the popover may have closed while the permission prompt
+      // was up — release the just-granted stream instead of leaking it.
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -178,7 +188,9 @@ export function useCameraCapture(): UseCameraCaptureResult {
   // Always release the camera on unmount — the user expects the green
   // "camera active" indicator to disappear when they close the popover.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       stop();
     };
   }, [stop]);

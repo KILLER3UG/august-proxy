@@ -38,9 +38,13 @@ _PROTECTED_WRITE_PATTERN = re.compile(
 
 # Credential files that must never be read into the conversation (.env is
 # intentionally absent — debugging reads are allowed).
+# Part 27 T1: `id_rsa|id_ed25519` missed every other OpenSSH key type
+# (id_ecdsa, id_dsa, …) and the git/netrc/aws-config credential stores, so
+# those read straight into the transcript even under Full Access. `id_\w+`
+# covers all key types; the added alternatives cover the common stores.
 _CREDENTIAL_READ_PATTERN = re.compile(
-    r'(providers\.json|id_rsa|id_ed25519|\.aws/credentials|'
-    r'(?:^|/)credentials$|\.(?:pem|key)$|'
+    r'(providers\.json|id_\w+|\.aws/credentials|\.aws/config$|'
+    r'(?:^|/)credentials$|\.git-credentials$|\.netrc$|\.(?:pem|key)$|'
     r'\.aws/[^\s]*\*|\.ssh/[^\s]*\*|'
     r'-----BEGIN [A-Z ]*PRIVATE KEY-----)',
     re.IGNORECASE,

@@ -417,9 +417,6 @@ class SubagentOrchestrator:
             # Runtime recursion depth: children of a sub-agent run at
             # parent_depth + 1; root spawns default to 0. Hermes max_spawn_depth caps this.
             raw_depth = as_int(getattr(request.session, 'subagent_depth', 0), 0) + 1
-            depth = min(raw_depth, max_depth)
-            if raw_depth > max_depth:
-                logger.info("[Harness] depth %d exceeds maxDepth=%d, capping to %d (leaf)", raw_depth, max_depth, depth)
             taskId = f'task_{uuid.uuid4().hex[:12]}'
             sid = ''
             if hasattr(request.session, 'id'):
@@ -427,6 +424,21 @@ class SubagentOrchestrator:
             elif isinstance(request.session, dict):
                 sid = str(request.session.get('id', ''))
             handle = SubagentHandle(taskId, agentId, goal, sessionId=sid)
+            if raw_depth > max_depth:
+                # Part 27 T2: REJECT over-depth spawns instead of clamping.
+                # Clamping ran every nested spawn that slipped the tool filter
+                # at max_depth, so recursion never terminated — unbounded.
+                handle.status = 'failed'
+                handle.error = f'max spawn depth ({max_depth}) exceeded — not dispatched'
+                self._handles[taskId] = handle
+                _record_run(handle)
+                handles.append(handle)
+                logger.info(
+                    '[Harness] depth %d exceeds maxDepth=%d — rejecting spawn (leaf)',
+                    raw_depth, max_depth,
+                )
+                continue
+            depth = raw_depth
             handle.workstream = as_str(item.get('workstream') or item.get('name'), '')
             handle.skills = [str(s).strip() for s in (item.get('skills') or []) if str(s).strip()]
             # Hermes: queued when semaphore saturated; visible in drawer queue position

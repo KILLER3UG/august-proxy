@@ -408,6 +408,10 @@ export function removeSessionLocally(id: string): boolean {
     } catch {
       /* ignore */
     }
+    // Part 27 T3: drop the per-session status record too — otherwise repeated
+    // deletes grow the sessionStates map and inflate the per-render
+    // mergedSessionStates spread in the sidebar.
+    clearSessionStatus(lid);
     // Drop the in-memory transcript too — the stream store would otherwise
     // keep the session's blocks/tool previews alive forever. Dynamic import
     // avoids a store → chat-section import cycle.

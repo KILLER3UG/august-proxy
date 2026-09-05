@@ -165,7 +165,25 @@ def _introspect_memory(out: dict[str, Any]) -> None:
     try:
         from app.services.memory_store.rest import get_stats
 
-        out['memory_stores'] = get_stats()
+        stats = get_stats()
+        # Part 27 T3: get_stats counts ALL facts rows, but the model's own
+        # list_facts / boot index only see active, unexpired, global-scope
+        # facts — so introspect advertised "6 facts" while list_facts returned
+        # 3. Report the count the model can actually read (raw kept as
+        # facts_total for the human door).
+        try:
+            from app.services.memory_store import _conn
+
+            row = _conn().execute(
+                "SELECT COUNT(*) FROM facts WHERE (status IS NULL OR status='active') "
+                "AND (expires_at IS NULL OR expires_at='' OR julianday(expires_at) > julianday('now')) "
+                "AND (scope IS NULL OR scope='global')"
+            ).fetchone()
+            stats['facts_total'] = stats.get('facts')
+            stats['facts'] = int(row[0]) if row else 0
+        except Exception:
+            pass
+        out['memory_stores'] = stats
     except Exception as exc:
         out['memory_stores'] = {'error': str(exc)}
 

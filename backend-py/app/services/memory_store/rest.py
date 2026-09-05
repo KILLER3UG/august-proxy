@@ -582,16 +582,20 @@ def get_stats() -> dict[str, object]:
     return stats
 
 
-def write_timeline_event(sessionId: str | None, eventSummary: str, category: str = 'general') -> int:
+def write_timeline_event(
+    sessionId: str | None, eventSummary: str, category: str = 'general', scope: str = 'global'
+) -> int:
     """v2: Append an entry to episodic_timeline. Returns the new row's id.
 
     ``sessionId`` is optional — system events (e.g. memory lifecycle) have
-    no owning session.
+    no owning session. ``scope`` (Part 27 T1) fences the entry so a Bot's
+    private timeline never rides into a global session's boot index.
     """
     conn = _conn()
     cur = conn.execute(
-        "INSERT INTO episodic_timeline (timestamp, session_id, event_summary, category) VALUES (datetime('now'), ?, ?, ?)",
-        (sessionId, eventSummary, category),
+        "INSERT INTO episodic_timeline (timestamp, session_id, event_summary, category, scope) "
+        "VALUES (datetime('now'), ?, ?, ?, ?)",
+        (sessionId, eventSummary, category, scope or 'global'),
     )
     conn.commit()
     return as_int(cur.lastrowid)

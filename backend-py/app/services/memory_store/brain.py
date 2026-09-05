@@ -494,7 +494,19 @@ def brain_store_summary() -> list[dict[str, object]]:
             ).fetchone()
             if exists is None:
                 continue
-            row = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()
+            # Part 27 T3: the `memory` (KV) count must match what
+            # brain_browse('memory') returns — both exclude machine-state keys
+            # (agent_registry, diff_learn:*, …). Otherwise /api/brain/stores
+            # shows a count the per-store browse can never page to.
+            if name == 'memory':
+                where = (
+                    'WHERE key NOT IN (' + ','.join('?' * len(_KV_MACHINE_KEYS)) + ') AND '
+                    + ' AND '.join("key NOT LIKE ?" for _ in _KV_MACHINE_PREFIXES)
+                )
+                params = list(_KV_MACHINE_KEYS) + [f'{p}%' for p in _KV_MACHINE_PREFIXES]
+                row = conn.execute(f'SELECT COUNT(*) FROM {table} {where}', params).fetchone()
+            else:
+                row = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()
             count = int(row[0]) if row else 0
         except Exception:
             count = 0  # table not created yet on this install
@@ -658,8 +670,13 @@ def brain_index_snippet(scope: str = 'global') -> str:
     except Exception:
         pass
     try:
+        # Part 27 T1 (privacy): fence the timeline by the same global∪scope
+        # clause the facts half uses, so a Bot's private last-user-message
+        # never rides into an unrelated session's boot index.
         tlRows = conn.execute(
-            'SELECT event_summary FROM episodic_timeline ORDER BY timestamp DESC LIMIT 5'
+            f'SELECT event_summary FROM episodic_timeline WHERE 1=1 {scopeClause} '
+            'ORDER BY timestamp DESC LIMIT 5',
+            scopeParams,
         ).fetchall()
         if tlRows:
             lines.append('Recent events:')

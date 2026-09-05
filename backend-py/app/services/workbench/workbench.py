@@ -526,12 +526,15 @@ def _spillToolResult(session: WorkbenchSession, toolName: str, result: str) -> s
         return None
     try:
         seq = int(getattr(session, '_spillSeq', 0) or 0) + 1
+        # Part 27 T3: claim the sequence number BEFORE writing, so two oversized
+        # results in one batch can't compute the same seq and overwrite each
+        # other's file (the preview's "stored at …" then pointed at wrong bytes).
+        session._spillSeq = seq  # type: ignore[attr-defined]
         relPath = spill_file_relpath(as_str(getattr(session, 'id', '') or ''), seq, toolName)
         absPath = os.path.normpath(os.path.join(workspace, *relPath.split('/')))
         os.makedirs(os.path.dirname(absPath), exist_ok=True)
         with open(absPath, 'w', encoding='utf-8', errors='replace', newline='') as f:
             f.write(result)
-        session._spillSeq = seq  # type: ignore[attr-defined]
     except OSError:
         logger.debug('tool-result spill failed session=%s tool=%s', getattr(session, 'id', ''), toolName, exc_info=True)
         return None
@@ -1192,9 +1195,12 @@ def buildSystemPrompt(
         '<session_state> block appended to your latest message.',
     ]
     if memoryTools:
+        # Part 27 T3: dropped the `heuristics` hint — the table is deleted once
+        # empty (no live writer), so advertising it made brain_query(heuristics)
+        # answer "table not yet created" for a store the prompt named.
         storeHint = (
             'stores: facts=durable memory (titled entries), memory=kv notes, timeline=episodic, '
-            'sessions=past chats, heuristics=legacy rules (deletable, no writer).'
+            'sessions=past chats.'
         )
         try:
             from app.services import brain_config_service as _bc
@@ -1322,8 +1328,13 @@ def buildSystemPrompt(
     # stay here (guardMode, agentMode, the circuit-mode hint).
     agentMode = as_str(getattr(session, 'agent_mode', '') or '')
     sessionBlock = ['<session>']
+    # Part 27 T3: guardMode (the approval policy for mutations: ask/full) is
+    # orthogonal to the sandbox containment level reported on command denials
+    # ([sandbox:soft]); the old bare "guardMode: full" read as if it contradicted
+    # a sandbox:soft denial. Label the axis explicitly.
     sessionBlock.append(
-        'guardMode: ' + normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+        'guardMode (approval policy): '
+        + normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
     )
     if agentMode:
         sessionBlock.append(f'agentMode: {agentMode}')
@@ -4818,7 +4829,7 @@ async def _sendWorkbenchMessageStreamImpl(
                                     await _hb_task
                                 except (asyncio.CancelledError, Exception):
                                     pass
-                    if isinstance(result, str) and result.startswith('Error:'):
+                    if isinstance(result, str) and result.startswith('Error'):
                         tracker.record_failure(toolName, toolInput)
                     else:
                         # 1.3 (Part 25): a clean result advanced the task, so
@@ -4850,7 +4861,7 @@ async def _sendWorkbenchMessageStreamImpl(
             if isinstance(result, str):
                 if toolName == 'read_file':
                     _observeReadFile(session, toolName, toolInput, result)
-                elif toolName in _GATED_EDIT_TOOLS and not result.startswith('Error:'):
+                elif toolName in _GATED_EDIT_TOOLS and not result.startswith('Error'):
                     _observeMutatedFile(session, toolName, toolInput)
                     # Mutation log: the regular loop executes mutations
                     # directly (the approval path records its own), so the
@@ -4867,7 +4878,7 @@ async def _sendWorkbenchMessageStreamImpl(
             if (
                 toolName in _EDIT_VERIFY_TOOLS
                 and isinstance(result, str)
-                and not result.startswith('Error:')
+                and not result.startswith('Error')
             ):
                 try:
                     verifyBlock = await _verifyAfterEdit(session, toolName, toolInput)
@@ -4934,7 +4945,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         'summary': str(result)[:2000],
                         # Authoritative status: failures begin with "Error:" —
                         # the UI maps this to the red/error tool card.
-                        'status': 'error' if str(result).startswith('Error:') else 'done',
+                        'status': 'error' if str(result).startswith('Error') else 'done',
                         'durationMs': tool_duration_ms,
                         'startedAtMs': tool_started_at,
                         'providerSetup': providerSetup,
@@ -5100,13 +5111,19 @@ async def _sendWorkbenchMessageStreamImpl(
                     if not (isinstance(b, dict) and b.get('type') == 'tool_use')
                 ]
             assistantMsg.pop('tool_calls', None)
-            # Part 26 2.4: if stripping left NOTHING (the round was pure tool
-            # calls), skip the append entirely — an empty assistant bubble
-            # between two user turns breaks Anthropic's alternation and
-            # renders as a blank message in the transcript.
-            if not as_str(assistantMsg.get('content')) and isinstance(
-                assistantMsg.get('content'), list
-            ):
+            # Part 26 2.4 / Part 27 T3: if stripping left NOTHING (the round was
+            # pure tool calls), skip the append — an empty assistant bubble
+            # breaks alternation and renders blank. The old guard only caught an
+            # empty LIST (Anthropic), so a cancelled OpenAI round (empty string
+            # content) slipped through. Shape-precise: empty list / empty string
+            # / None skip; a list carrying tool_use blocks is kept.
+            _ac = assistantMsg.get('content')
+            _emptyContent = (
+                _ac is None
+                or (isinstance(_ac, list) and len(_ac) == 0)
+                or (isinstance(_ac, str) and not _ac.strip())
+            )
+            if _emptyContent:
                 skipEmptyAssistantAppend = True
         if not skipEmptyAssistantAppend:
             currentMessages.append(assistantMsg)
@@ -5211,7 +5228,12 @@ async def _sendWorkbenchMessageStreamImpl(
             queue_memory_habit_nudge(
                 session,
                 rounds=toolRound,
-                rememberOffered=any(_toolDefName(t) == 'remember' for t in (tools or [])),
+                # Part 27 T2: on the OpenAI/Responses wire `tools` stays []
+                # (only `openaiTools` is built), so the remember-offered check
+                # was always False and the nudge never fired there.
+                rememberOffered=any(
+                    _toolDefName(t) == 'remember' for t in (tools or openaiTools or [])
+                ),
                 memWritesOn=_nudgeWritesOn,
             )
         except Exception:
@@ -5325,7 +5347,12 @@ async def _sendWorkbenchMessageStreamImpl(
 
                 lastAsk = _lastUserMessageText(session)[:240]
                 if lastAsk:
-                    write_timeline_event(session.id, lastAsk, category='workbench')
+                    from app.services.session_scope import resolve_scope
+
+                    write_timeline_event(
+                        session.id, lastAsk, category='workbench',
+                        scope=resolve_scope(session=session),
+                    )
             except Exception:
                 logger.debug('workbench timeline write failed', exc_info=True)
             # Session summary (D5): once per session, distill a free local
@@ -5462,14 +5489,15 @@ async def _executeTool(
         # sha256 of the file as read (the read tool reports it). A mismatch
         # means the file changed and the patch would corrupt it — reject and
         # tell the model to re-read instead of applying stale edits.
-        # Whole-token matching: substring matching flagged read-style tools
-        # (`read_creations` matched 'create', `find_and_replace` matched
-        # 'replace') as mutating.
-        name_l = (toolName or '').lower()
-        if re.search(
-            r'\b(?:write|edit|patch|str_replace|replace|create|delete|remove|move|rename|append)\b',
-            name_l,
-        ):
+        # Part 27 T1: the old `\b(?:write|edit|…)\b` regex was DEAD for every
+        # real tool — `_` is a word char, so `\bwrite\b` never matched
+        # `write_file`/`edit_lines`/`apply_patch` (the only registered
+        # fileHash-carrying tools). That silently disabled both the stale-write
+        # hash gate AND the pre-mutation baseline join below. Use the canonical
+        # args-aware predicate instead (same authority the worker + tracker use).
+        from app.services.harness_mode import is_mutating_tool
+
+        if is_mutating_tool(toolName, args):
             # Latency fix (2026-09-02): the turn-start shadow-git baseline runs
             # OFF the event loop; the FIRST mutating tool joins it here so the
             # snapshot still captures strictly-pre-mutation state. Read-only
@@ -6747,7 +6775,10 @@ def listProxyCapabilities() -> dict[str, object]:
     allTools = regListTools()
     grouped: dict[str, list[dict[str, object]]] = {}
     for tool in allTools:
-        name = tool.get('name', '') if isinstance(tool, dict) else str(tool)
+        # Part 27 T2: regListTools() returns {type, function:{name}} entries
+        # with no top-level `name`, so the old `tool.get('name','')` was always
+        # '' and every tool was skipped (tools_by_group={}, mutating_tools=0).
+        name = _toolDefName(tool) if isinstance(tool, dict) else str(tool)
         if not name:
             continue
         if name in (
@@ -6772,7 +6803,7 @@ def listProxyCapabilities() -> dict[str, object]:
             group = 'agent'
         elif name in ('spawn_daemon', 'list_daemons', 'kill_daemon'):
             group = 'daemon'
-        elif name in ('tool_search', 'tool_describe', 'toolCall'):
+        elif name in ('tool_search', 'tool_describe', 'tool_call'):
             group = 'bridge'
         elif as_str(name).startswith('mcp__'):
             group = 'mcp'

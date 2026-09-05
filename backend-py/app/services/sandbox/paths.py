@@ -129,25 +129,34 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
     return resolved, None
 
 
-def path_looks_outside_workspace(token: str, workspace: str | None) -> bool:
-    """Heuristic: does a shell token point outside the workspace?"""
-    root = resolve_workspace_root(workspace)
-    if root is None or not token:
-        return False
+def _candidate_paths(token: str) -> list[str]:
+    """Path candidates a shell token may hide: the whole token, the value
+    after `=` (`if=/etc/passwd`, `--output=/etc/x`), and an attached `-o`
+    target (`-o/etc/x`). Part 27 T1 (B5): the old scan only checked the whole
+    token, so `dd if=/etc/passwd of=ok.txt` slipped its outside input past."""
     cleaned = token.strip().strip('"').strip("'")
+    out = [cleaned]
+    if '=' in cleaned:
+        out.append(cleaned.partition('=')[2])
+    m = re.match(r'^--?[a-zA-Z]+=(.*)$', cleaned)
+    if m:
+        out.append(m.group(1))
+    m2 = re.match(r'^-o(/.*)$', cleaned)
+    if m2:
+        out.append(m2.group(1))
+    return [c for c in out if c]
+
+
+def _one_points_outside(cleaned: str, root: Path) -> bool:
     if not cleaned or cleaned.startswith('-'):
         return False
     # Windows-style single-letter flags (`find /c`, `/s`, `/q`) are slash +
-    # one letter with no further separator — the naive scan used to read `/c`
-    # as an absolute path outside the workspace and block legitimate commands.
-    # Real outside paths have more structure (`/etc/passwd`, `/usr`).
-    if re.fullmatch(r'/[A-Za-z]', cleaned):
+    # one letter — the naive scan read `/c` as an outside path and blocked
+    # legitimate commands. Gated to Windows (B8): on POSIX `/c` IS a real
+    # absolute dir, so the exemption must not apply there.
+    if os.name == 'nt' and re.fullmatch(r'/[A-Za-z]', cleaned):
         return False
-    # Expand env vars FIRST — `$HOME/x` and `%USERPROFILE%\x` are literal
-    # tokens to the naive scan and previously resolved *under* the workspace
-    # root, then the shell expanded them to real outside paths (audit finding).
     cleaned = _expand_safe_env(cleaned)
-    # Home / absolute roots that are clearly outside
     if cleaned in ('~', '/', '\\') or cleaned.startswith('~/') or cleaned.startswith('~\\'):
         home = Path.home().resolve(strict=False)
         if not is_within_root(home, root):
@@ -155,11 +164,15 @@ def path_looks_outside_workspace(token: str, workspace: str | None) -> bool:
     try:
         p = Path(cleaned).expanduser()
         if not p.is_absolute():
-            # Resolve relative tokens against the workspace cwd — a bare
-            # relative token is not "inside" just because it is relative;
-            # `cat ../../etc/passwd` or `echo x > ../../evil.txt` must be
-            # caught here (the soft sandbox runs with cwd=workspace).
             p = root / p
         return not is_within_root(p, root)
     except OSError:
         return False
+
+
+def path_looks_outside_workspace(token: str, workspace: str | None) -> bool:
+    """Heuristic: does a shell token point outside the workspace?"""
+    root = resolve_workspace_root(workspace)
+    if root is None or not token:
+        return False
+    return any(_one_points_outside(c, root) for c in _candidate_paths(token))

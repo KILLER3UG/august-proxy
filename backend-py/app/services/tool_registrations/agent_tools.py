@@ -292,7 +292,7 @@ def register() -> None:
     )
     tool_registry.register(
         'list_daemons',
-        'List active daemons and their status (running, triggered, completed, errored). Limited to 3 per session. Omits session_id to use the current session.',
+        'List active daemons and their status (running, triggered, completed, errored). Limited to 10 per session. Omits session_id to use the current session.',
         _listDaemons,
         {
             'type': 'object',

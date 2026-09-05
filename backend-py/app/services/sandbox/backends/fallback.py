@@ -22,8 +22,15 @@ from app.services.sandbox.policy import (
     SandboxResult,
 )
 
+# Part 27 T1: invocation wrappers that hide the real command from `_first_word`.
+_INVOCATION_WRAPPERS = frozenset({'sudo', 'env', 'command', 'nohup', 'xargs', 'time', 'exec'})
+
+# Part 27 T1: match redirects WITHOUT requiring a leading space (the old
+# `(?:^|[\s;|&])` anchor let `echo x>/etc/passwd` through) and cover `2>`/`&>`/
+# `&>>`/`2>>`. A negative lookbehind keeps code arrows (`->`, `=>`) from
+# matching as redirects.
 _REDIRECT_RE = re.compile(
-    r'(?:^|[\s;|&])(?:>>?|tee\s+)\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s;|&]+))'
+    r'(?<![=!<>-])(?:[0-9]*&?>{1,2}|tee\s+)\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s;|&]+))'
 )
 
 # Interpreters can mutate anything regardless of the first word (`python -c
@@ -173,6 +180,12 @@ def _first_word(command: str) -> str:
         base = Path(part).name.lower()
         if base.endswith('.exe'):
             base = base[:-4]
+        # Part 27 T1: skip invocation wrappers so `env rm x` / `sudo curl …` /
+        # `command rm …` resolve to the REAL command. The hardline layer already
+        # stripped these; the soft layer keyed on the literal wrapper word, so
+        # read-only "no writes" and network=False were bypassed by one word.
+        if base in _INVOCATION_WRAPPERS:
+            continue
         return base
     return parts[0].lower() if parts else ''
 
@@ -191,10 +204,16 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
                 f'read-only sandbox blocks interpreters ({first}) — they can mutate files '
                 'regardless of the command; use the file tools or Full access instead.'
             )
-        if re.search(r'(?:^|[\s;|&])(?:>>?|tee\b)', command):
+        if _REDIRECT_RE.search(command):
             return 'read-only sandbox blocks shell redirects / tee'
-    if not policy.network and first in NETWORK_COMMAND_PREFIXES:
-        return f'network disabled in sandbox (blocked: {first})'
+    if not policy.network:
+        # Part 27 T1: scan EVERY chained segment's first word, not just the
+        # command head — `true && curl …` / `foo; wget …` reached the network
+        # while the UI reported network=False. _first_word strips wrappers.
+        for segment in re.split(r'[;&|]{1,2}', command):
+            seg_first = _first_word(segment)
+            if seg_first in NETWORK_COMMAND_PREFIXES:
+                return f'network disabled in sandbox (blocked: {seg_first})'
     # Absolute path tokens / redirects outside workspace
     root = resolve_workspace_root(policy.workspace_root)
     if root is not None:
