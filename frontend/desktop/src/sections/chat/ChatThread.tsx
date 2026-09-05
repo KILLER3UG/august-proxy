@@ -33,7 +33,8 @@ import { ArenaLaunchModal } from './composer/ArenaLaunchModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { useSessionStatus } from '@/hooks/useSessionStatus';
 import { ExamHost } from '@/sections/exam/ExamHost';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { listWorkbenchSessionAgents } from '@/api/workbench';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
 import {
@@ -265,6 +266,37 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Command / mutation pre-apply — replaces the composer until Accept/Reject.
   const workbenchSessionId = workbenchSession?.id ?? null;
   const { data: sessionStatus } = useSessionStatus(workbenchSessionId, 5_000);
+
+  // Part 27 A1 keystone — settle-after-reload: fetch persisted + active
+  // sub-agents for this session so the transcript can still render one
+  // inline row per spawn even when the live SSE block has been evicted.
+  // Roster + live blocks unioned at render (see MessageBubble → AssistantBlockTimeline).
+  const agentsQuery = useQuery({
+    queryKey: ['session-agents-roster', workbenchSessionId],
+    queryFn: () => listWorkbenchSessionAgents(workbenchSessionId!),
+    enabled: !!workbenchSessionId,
+    // Refresh every 10s; live SSE blocks are still the source of truth while
+    // a stream is open — the roster fills the post-reload/evicted gap.
+    refetchInterval: 10_000,
+  });
+  const subagentRoster = useMemo(
+    () =>
+      (agentsQuery.data?.agents ?? []).map((a) => ({
+        jobId: a.taskId,
+        agentId: a.agentId,
+        task: a.goal || '',
+        status: a.status as
+          | 'running'
+          | 'pending'
+          | 'completed'
+          | 'failed'
+          | 'cancelled'
+          | 'partial'
+          | 'done'
+          | 'error',
+      })),
+    [agentsQuery.data],
+  );
   // Keep the approval banner up whenever tokens remain — do not require
   // status === awaiting_approval alone (multi-approve used to clear status
   // after the first Accept and hide the rest of the stack).
@@ -1551,6 +1583,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 toolProgress={toolProgress}
                 subagentPrompts={subagentPrompts}
                 subagentBlocks={subagentBlocks}
+                subagentRoster={subagentRoster}
                 revertingIndex={revertingIndex}
                 modelPickerActive={modelPickerActive}
                 onDismissModelPicker={() => setModelPickerActive(false)}

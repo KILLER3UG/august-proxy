@@ -44,6 +44,9 @@ interface SubagentTimelineProps {
   subBlocks?: Map<string, SubagentBlockState>;
   subPrompts?: Map<string, SubagentPromptEntry>;
   modelLabel?: string;
+  /** Owning session id — threaded into tool cards so the F6 escalation
+   *  card's "I'm done" handler can resume the run. */
+  sessionId?: string;
   /** Open a nested subagent in the parent detail modal. */
   onOpenAgent?: (jobId: string) => void;
   /** When true, skip rendering the task/prompt (modal already shows it). */
@@ -55,6 +58,7 @@ export function SubagentTimeline({
   subBlocks,
   subPrompts,
   modelLabel,
+  sessionId,
   onOpenAgent,
   hideTaskPrompt = false,
 }: SubagentTimelineProps) {
@@ -100,6 +104,7 @@ export function SubagentTimeline({
       subBlocks={subBlocks}
       subPrompts={subPrompts}
       modelLabel={modelLabel}
+      sessionId={sessionId}
       onOpenAgent={onOpenAgent}
     />
   );
@@ -229,12 +234,14 @@ function SubagentInnerBlock({
   subBlocks,
   subPrompts,
   modelLabel,
+  sessionId,
   onOpenAgent,
 }: {
   block: MessageBlock;
   subBlocks?: Map<string, SubagentBlockState>;
   subPrompts?: Map<string, SubagentPromptEntry>;
   modelLabel?: string;
+  sessionId?: string;
   onOpenAgent?: (jobId: string) => void;
 }): ReactNode {
   if (block.type === 'thinking') {
@@ -281,6 +288,7 @@ function SubagentInnerBlock({
             duration: block.tool.duration,
             startedAt: block.tool.startedAt,
           }}
+          sessionId={sessionId}
         />
         {promptEntries.length > 0 && (
           <div className="ml-3 flex flex-col gap-1">

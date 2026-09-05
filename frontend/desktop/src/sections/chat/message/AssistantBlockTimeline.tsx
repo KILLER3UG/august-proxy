@@ -204,6 +204,19 @@ export type ToolProgressMap = Map<
   ReadonlyArray<{ path: string; status: 'reading' | 'read' }>
 >;
 
+/** A settled or active sub-agent whose live block was evicted (reloaded
+ *  transcript, SSE close, drawer reset). Renders inline as a one-row stub
+ *  so the user can still see "what ran" at the spawn call's position. */
+export interface InlineSubagentRosterEntry {
+  jobId: string;
+  agentId: string;
+  task: string;
+  status: 'running' | 'pending' | 'completed' | 'failed' | 'cancelled' | 'partial' | 'done' | 'error';
+  startedAt?: number;
+  finishedAt?: number;
+  workstream?: string;
+}
+
 /** Interleaved process timeline (thinking/tools) + final answer. */
 export function AssistantBlockTimeline({
   displayBlocks,
@@ -214,6 +227,7 @@ export function AssistantBlockTimeline({
   toolProgress,
   subagentPrompts,
   subagentBlocks,
+  subagentRoster,
   modelId,
   sessionId,
   onRetryTurn,
@@ -229,6 +243,10 @@ export function AssistantBlockTimeline({
   /** Keyed by sub-agent jobId; rendered inline via SubagentDelegateRow
    *  (and in the persistent right-drawer roster). */
   subagentBlocks?: Map<string, SubagentBlockState>;
+  /** Settled/active runs whose live SSE block is gone (the keystone of
+   *  delegation visibility after reload). Merged with subagentBlocks so
+   *  a spawn call always renders at least one row. */
+  subagentRoster?: ReadonlyArray<InlineSubagentRosterEntry>;
   /** Parent session model id — shown as muted tag on subagent launch rows. */
   modelId?: string | null;
   /** Chat session id — keys the per-session /verbose flag (plan §4.2). */
@@ -561,13 +579,20 @@ export function AssistantBlockTimeline({
         // call whose workers already streamed out (reloaded transcript)
         // still renders one settled row from the tool block itself.
         if (isSubagentCall) {
-          const containers = subagentBlocks
+          // A1 keystone: live SSE containers first, then the persisted roster
+          // (settled runs whose SSE block was evicted — the reload case the
+          // drawer was the only place that ever showed), then a stub from
+          // the spawn tool's own context as the last-resort fallback.
+          const liveContainers = subagentBlocks
             ? Array.from(subagentBlocks.values())
                 .filter((s) => s.parentToolId === tool.id)
                 .sort((a, b) => a.startedAt - b.startedAt)
             : [];
-          if (containers.length > 0) {
-            for (const c of containers) {
+          const rosterForTool = (subagentRoster ?? []).filter(
+            (r) => r.jobId && !liveContainers.some((c) => c.jobId === r.jobId),
+          );
+          if (liveContainers.length > 0) {
+            for (const c of liveContainers) {
               tagged.push({
                 kind: 'block',
                 node: (
@@ -580,6 +605,24 @@ export function AssistantBlockTimeline({
                     startedAt={c.startedAt}
                     finishedAt={c.finishedAt}
                     workstream={c.workstream}
+                  />
+                ),
+              });
+            }
+          } else if (rosterForTool.length > 0) {
+            for (const r of rosterForTool) {
+              tagged.push({
+                kind: 'block',
+                node: (
+                  <SubagentDelegateRow
+                    key={`roster_${r.jobId}`}
+                    jobId={r.jobId}
+                    agentId={r.agentId}
+                    task={r.task}
+                    status={r.status}
+                    startedAt={r.startedAt}
+                    finishedAt={r.finishedAt}
+                    workstream={r.workstream}
                   />
                 ),
               });

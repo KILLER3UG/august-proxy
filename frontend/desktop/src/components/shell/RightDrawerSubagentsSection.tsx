@@ -150,48 +150,6 @@ function transcriptToBlocks(events: Array<Record<string, unknown>>): MessageBloc
   return blocks;
 }
 
-/** Compact per-agent todo progress (drawer parity: workers own their lists). */
-function TodoProgress({ todos }: { todos: WorkbenchTodo[] }) {
-  const done = todos.filter((t) => t.status === 'completed').length;
-  return (
-    <div
-      className="mb-3 rounded-md border border-border/40 bg-card/40 px-2.5 py-2"
-      data-testid="subagent-todo-progress"
-    >
-      <div className="mb-1.5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-        <ListTodo className="size-3" />
-        Worker plan
-        <span className="ml-auto font-mono tabular-nums normal-case tracking-normal">
-          {done}/{todos.length}
-        </span>
-      </div>
-      <ul className="space-y-1" role="list">
-        {todos.map((t, i) => (
-          <li key={t.id || i} className="flex min-w-0 items-start gap-1.5 text-[12.5px] leading-5">
-            {t.status === 'completed' ? (
-              <Check className="mt-0.5 size-3 shrink-0 text-emerald-400/80" />
-            ) : t.status === 'in_progress' ? (
-              <ArrowRight className="mt-0.5 size-3 shrink-0 text-primary/80" />
-            ) : (
-              <Circle className="mt-0.5 size-3 shrink-0 text-muted-foreground/40" />
-            )}
-            <span
-              className={cn(
-                'min-w-0',
-                t.status === 'completed' && 'text-muted-foreground/60 line-through',
-                t.status === 'in_progress' && 'text-foreground',
-                t.status === 'pending' && 'text-muted-foreground/80',
-              )}
-            >
-              {t.content}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 /** Part 27 A4: "Progress n/m" header chip opening a completed/current/pending
  *  popover — replaces the always-inline Worker plan card with one affordance. */
 function ProgressPopover({ todos }: { todos: WorkbenchTodo[] }) {
@@ -504,6 +462,65 @@ export function RightDrawerSubagentsSection({
   // Stop-all lives on the roster footer when several workers are active; the
   // confirmation dialog is shared with the per-row stop above.
 
+  // A2: tabs/search strip is rendered whenever ≥1 entry exists, regardless of
+  // selection state (was hidden until the user clicked a row — first-open
+  // with multiple workers only showed a vertical list).
+  const tabs = entries.map((e) => ({
+    taskId: e.key,
+    label: displayLabels.get(e.key) || getAgentRoleLabel(e.agent.agentId),
+    elapsed: typeof e.agent.elapsed === 'number' ? e.agent.elapsed : undefined,
+  }));
+
+  const tabsStrip =
+    entries.length > 0 ? (
+      <div
+        className="flex shrink-0 items-center gap-0.5 border-b border-border/40 px-2 py-1"
+        data-testid="right-drawer-subagent-tabstrip"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+          {tabs.map((t) => {
+            const agent = entries.find((e) => e.key === t.taskId)?.agent;
+            if (!agent) return null;
+            const active = t.taskId === selectedTaskId;
+            return (
+              <div
+                key={t.taskId}
+                className={cn(
+                  'group flex max-w-[12rem] shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs',
+                  active ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-white/[0.05]',
+                )}
+              >
+                <StatusGlyph status={agent.status} />
+                <button
+                  type="button"
+                  onClick={() => setSelectedTaskId(t.taskId)}
+                  className="min-w-0 truncate text-left"
+                  title={t.label}
+                >
+                  {t.label}
+                </button>
+                {typeof t.elapsed === 'number' && (
+                  <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/50">
+                    {fmtElapsed(t.elapsed)}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedTaskId((cur) => (cur === t.taskId ? null : cur))}
+                  className="shrink-0 rounded p-0.5 text-muted-foreground/60 hover:bg-white/[0.08] hover:text-foreground"
+                  aria-label="Remove subagent view"
+                  title="Remove view"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <TabSearchDropdown tabs={tabs} onSelect={(id) => setSelectedTaskId(id)} />
+      </div>
+    ) : null;
+
   if (selectedTaskId && selectedAgent) {
     const run = runByTask.get(selectedTaskId);
     const running = ACTIVE_STATUSES.has(selectedAgent.status);
@@ -524,58 +541,9 @@ export function RightDrawerSubagentsSection({
         ? `Worked for ${fmtElapsed(elapsedSec)}`
         : statusWord(selectedAgent.status);
 
-    const tabs = entries.map((e) => ({
-      taskId: e.key,
-      label: displayLabels.get(e.key) || getAgentRoleLabel(e.agent.agentId),
-      elapsed: typeof e.agent.elapsed === 'number' ? e.agent.elapsed : undefined,
-    }));
-
     return (
       <div className="flex h-full min-h-0 flex-col drawer-section-text">
-        {/* Open views — task-titled tabs + search dropdown (A2) */}
-        <div className="flex shrink-0 items-center gap-0.5 border-b border-border/40 px-2 py-1">
-          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-            {tabs.map((t) => {
-              const agent = entries.find((e) => e.key === t.taskId)?.agent;
-              if (!agent) return null;
-              const active = t.taskId === selectedTaskId;
-              return (
-                <div
-                  key={t.taskId}
-                  className={cn(
-                    'group flex max-w-[12rem] shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs',
-                    active ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-white/[0.05]',
-                  )}
-                >
-                  <StatusGlyph status={agent.status} />
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTaskId(t.taskId)}
-                    className="min-w-0 truncate text-left"
-                    title={t.label}
-                  >
-                    {t.label}
-                  </button>
-                  {typeof t.elapsed === 'number' && (
-                    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/50">
-                      {fmtElapsed(t.elapsed)}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTaskId((cur) => (cur === t.taskId ? null : cur))}
-                    className="shrink-0 rounded p-0.5 text-muted-foreground/60 hover:bg-white/[0.08] hover:text-foreground"
-                    aria-label="Remove subagent view"
-                    title="Remove view"
-                  >
-                    ×
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          <TabSearchDropdown tabs={tabs} onSelect={(id) => setSelectedTaskId(id)} />
-        </div>
+        {tabsStrip}
 
         <div
           className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
@@ -602,6 +570,7 @@ export function RightDrawerSubagentsSection({
                 state={selectedBlock}
                 subBlocks={subagentBlocks}
                 hideTaskPrompt
+                sessionId={workbenchSessionId ?? sessionId ?? undefined}
               />
               {!selectedBlock.blocks.some((b) => b.type === 'finalOutput' && (b.content || '').trim()) &&
                 run?.resultText && (
@@ -625,6 +594,7 @@ export function RightDrawerSubagentsSection({
                 error: run?.error,
               }}
               hideTaskPrompt
+              sessionId={workbenchSessionId ?? sessionId ?? undefined}
             />
           ) : run?.resultText ? (
             /* Settled run with no transcript on disk: the result IS the chat. */
@@ -674,7 +644,9 @@ export function RightDrawerSubagentsSection({
   }
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto drawer-section-text" data-testid="right-drawer-subagents-list">
+    <div className="flex h-full min-h-0 flex-col drawer-section-text" data-testid="right-drawer-subagents-list">
+      {tabsStrip}
+      <div className="min-h-0 flex-1 overflow-y-auto">
       {entries.length === 0 ? (
         <p className="px-4 py-6 text-center text-[13px] text-muted-foreground/60">
           No subagents yet. Delegate a task and it will show up here like a second conversation.
@@ -752,6 +724,7 @@ export function RightDrawerSubagentsSection({
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
+      </div>
     </div>
   );
 }

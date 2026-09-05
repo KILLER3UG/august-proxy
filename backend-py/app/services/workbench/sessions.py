@@ -775,6 +775,9 @@ def save_sessions(*, immediate: bool = False, dirty: 'str | Iterable[str] | None
     ``auxiliary.session_json_export.enabled`` or env ``AUGUST_SESSION_JSON_EXPORT=1``.
     JSON is never the SoT.
     """
+    # Part 27 E2: surface tests that bypass the autouse isolatedData fixture.
+    from app.lib.paths import assertPytestDataDirIsolated
+    assertPytestDataDirIsolated('workbench.sessions.save_sessions')
     if immediate:
         save_sessions_now()
         return

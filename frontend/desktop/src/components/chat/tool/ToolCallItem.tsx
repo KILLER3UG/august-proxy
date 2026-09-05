@@ -42,11 +42,15 @@ function isLongLabel(label: string): boolean {
 export const ToolCallItem = memo(function ToolCallItem({
   tool,
   progress,
+  sessionId,
   agentIdOverride,
 }: {
   tool: ToolEntry;
   /** Optional live "Reading… / Read" sub-list emitted by the workbench. */
   progress?: ReadonlyArray<ProgressEntry>;
+  /** Owning session id — threaded into the F6 escalation card so the
+   *  "I'm done" handler can resume the run on the right session. */
+  sessionId?: string;
   agentIdOverride?: string;
 }) {
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
@@ -145,7 +149,10 @@ export const ToolCallItem = memo(function ToolCallItem({
       : tool.context ?? null);
 
   return (
-    <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">
+    <div
+      className="row-enter text-xs text-muted-foreground w-full py-0.5"
+      data-slot="tool-block"
+    >
       <DisclosureRow
         onToggle={hasBody ? () => setUserOverride(!open) : undefined}
         open={open && hasBody}
@@ -239,7 +246,7 @@ export const ToolCallItem = memo(function ToolCallItem({
       )}
 
       {open && hasBody && (
-        <ToolCallItemBody tool={tool} progress={progress} />
+        <ToolCallItemBody tool={tool} progress={progress} sessionId={sessionId} />
       )}
     </div>
   );

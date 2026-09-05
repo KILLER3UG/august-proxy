@@ -170,7 +170,14 @@ describe('RightDrawerSubagentsSection', () => {
     });
     renderSection();
     await screen.findByTestId('right-drawer-subagent-g-1');
-    const rows = await screen.findAllByText(/^General [12]$/);
+    // Plan A2: the tab strip renders whenever ≥1 entry exists (not only
+    // after selection), so the same disambiguated label appears in both the
+    // strip (2) and the unselected roster (2). Scope the assertion to the
+    // roster list to keep this test focused on disambiguation.
+    const roster = await screen.findByTestId('right-drawer-subagents-list');
+    const rows = Array.from(roster.querySelectorAll('button')).filter((b) =>
+      /^General [12]$/.test(b.textContent || ''),
+    );
     expect(rows.length).toBe(2);
   });
 

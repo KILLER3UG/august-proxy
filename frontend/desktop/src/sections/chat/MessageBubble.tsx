@@ -36,6 +36,7 @@ function MessageBubbleInner({
   toolProgress,
   subagentPrompts,
   subagentBlocks,
+  subagentRoster,
   models,
   onReanswerWithModel,
   onCompare,
@@ -76,6 +77,18 @@ function MessageBubbleInner({
    *  Independent of `subagentPrompts` so it survives tab switches and
    *  backend reconnects. */
   subagentBlocks?: Map<string, import('./chat-stream-manager').SubagentBlockState>;
+  /** Settled/active sub-agent runs whose live SSE block is gone (reload).
+   *  Threaded through to AssistantBlockTimeline so the inline row persists
+   *  across reloads — part of the A1 keystone (delegation visibility). */
+  subagentRoster?: ReadonlyArray<{
+    jobId: string;
+    agentId: string;
+    task: string;
+    status: 'running' | 'pending' | 'completed' | 'failed' | 'cancelled' | 'partial' | 'done' | 'error';
+    startedAt?: number;
+    finishedAt?: number;
+    workstream?: string;
+  }>;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -327,6 +340,7 @@ function MessageBubbleInner({
           toolProgress={toolProgress}
           subagentPrompts={subagentPrompts}
           subagentBlocks={subagentBlocks}
+          subagentRoster={subagentRoster}
           onSpeak={handleSpeak}
           onCopy={() => { void handleCopy(); }}
           onRegen={() => { void handleRegenClick(); }}

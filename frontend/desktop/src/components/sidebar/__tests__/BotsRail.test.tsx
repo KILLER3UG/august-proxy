@@ -158,7 +158,15 @@ describe('BotsRail', () => {
     fireEvent.click(screen.getAllByLabelText('Bot actions')[0]);
     fireEvent.click(screen.getByTitle('New deterministic face for this Bot'));
     await waitFor(() =>
-      expect(updateBotUiMeta).toHaveBeenCalledWith('agent_aaa1', expect.objectContaining({ avatar: expect.any(String) })),
+      // Part 27 F2: uiMeta.avatar may now be {salt, locked, source} or a
+      // bare salt string (legacy). Accept either; the new shape is an
+      // object with a salt string.
+      expect(updateBotUiMeta).toHaveBeenCalledWith(
+        'agent_aaa1',
+        expect.objectContaining({
+          avatar: expect.objectContaining({ salt: expect.any(String) }),
+        }),
+      ),
     );
   });
 

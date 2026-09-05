@@ -31,6 +31,7 @@ export function AssistantMessageContent({
   toolProgress,
   subagentPrompts,
   subagentBlocks,
+  subagentRoster,
   onSpeak,
   onCopy,
   onRegen,
@@ -56,6 +57,15 @@ export function AssistantMessageContent({
   toolProgress?: ToolProgressMap;
   subagentPrompts?: Map<string, SubagentPromptEntry>;
   subagentBlocks?: Map<string, SubagentBlockState>;
+  subagentRoster?: ReadonlyArray<{
+    jobId: string;
+    agentId: string;
+    task: string;
+    status: 'running' | 'pending' | 'completed' | 'failed' | 'cancelled' | 'partial' | 'done' | 'error';
+    startedAt?: number;
+    finishedAt?: number;
+    workstream?: string;
+  }>;
   onSpeak: () => void;
   onCopy: () => void;
   onRegen: () => void;
@@ -106,6 +116,7 @@ export function AssistantMessageContent({
             toolProgress={toolProgress}
             subagentPrompts={subagentPrompts}
             subagentBlocks={subagentBlocks}
+            subagentRoster={subagentRoster}
             modelId={modelId}
             sessionId={sessionId}
             onRetryTurn={onRegen}

@@ -28,6 +28,7 @@ export function ChatThreadMessagePane({
   toolProgress,
   subagentPrompts,
   subagentBlocks,
+  subagentRoster,
   revertingIndex,
   modelPickerActive,
   onDismissModelPicker,
@@ -55,6 +56,15 @@ export function ChatThreadMessagePane({
   toolProgress?: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
   subagentPrompts?: SubagentPromptMap;
   subagentBlocks?: Map<string, SubagentBlockState>;
+  subagentRoster?: ReadonlyArray<{
+    jobId: string;
+    agentId: string;
+    task: string;
+    status: 'running' | 'pending' | 'completed' | 'failed' | 'cancelled' | 'partial' | 'done' | 'error';
+    startedAt?: number;
+    finishedAt?: number;
+    workstream?: string;
+  }>;
   revertingIndex: number | null;
   modelPickerActive: boolean;
   onDismissModelPicker: () => void;
@@ -208,6 +218,7 @@ export function ChatThreadMessagePane({
                   toolProgress={toolProgress}
                   subagentPrompts={subagentPrompts}
                   subagentBlocks={subagentBlocks}
+                  subagentRoster={subagentRoster}
                   models={models}
                   onReanswerWithModel={
                     onReanswerWithModel

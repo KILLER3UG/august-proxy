@@ -111,6 +111,7 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
 export function ToolCallItemBody({
   tool,
   progress,
+  sessionId,
   hideProgress = false,
   hideDiff = false,
   hideContext = false,
@@ -118,6 +119,10 @@ export function ToolCallItemBody({
 }: {
   tool: ToolEntry;
   progress?: ReadonlyArray<ProgressEntry>;
+  /** Owning session id — used to resume the run from "I'm done" on the
+   *  action-needed card. Without this the card's "I'm done" handler
+   *  has no session to queue the follow-up into (was previously a no-op). */
+  sessionId?: string;
   /** Progress entries are rendered as Task rows by the timeline chrome. */
   hideProgress?: boolean;
   /** Suppress the diff + streaming-preview sections (the edit rail renders its
@@ -133,6 +138,21 @@ export function ToolCallItemBody({
   agentIdOverride?: string;
 }) {
   const [approvalStatus, setApprovalStatus] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
+
+  /** Best-effort JSON parse of a tool's context — used to feed the original
+   *  tool args into the F6 "I'm done" resume so the agent can retry with the
+   *  same inputs. Returns undefined when the context isn't valid JSON. */
+  function safeParseJson(s: string | undefined): Record<string, unknown> | undefined {
+    if (!s) return undefined;
+    try {
+      const parsed = JSON.parse(s);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
   const isSubagent = isSubagentToolName(tool.name);
   const bucket = classifyTool(tool.name);
   const isView = bucket === 'view';
@@ -149,7 +169,15 @@ export function ToolCallItemBody({
   if (/(^|@)browser_/.test(tool.name)) {
     const actionNeeded = parseActionNeeded(tool.summary || tool.preview || tool.error);
     if (actionNeeded) {
-      parts.push(<ActionNeededCard key="action-needed" payload={actionNeeded} />);
+      parts.push(
+        <ActionNeededCard
+          key="action-needed"
+          payload={actionNeeded}
+          sessionId={sessionId}
+          toolName={tool.name}
+          toolArgs={tool.context ? safeParseJson(tool.context) : undefined}
+        />,
+      );
     }
   }
 

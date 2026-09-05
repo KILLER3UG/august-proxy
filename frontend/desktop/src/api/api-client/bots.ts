@@ -2,9 +2,15 @@
 
 import { api } from '../client';
 
+/** Part 27 F2: the avatar field on uiMeta is the lock-aware face descriptor.
+ *  Backwards-compat: a bare string is read as a salt with locked=true. */
+export type BotAvatar =
+  | string
+  | { salt: string; locked: boolean; source: 'shape' | 'shuffle' | 'upload' | 'auto' };
+
 export interface BotUiMeta {
   title: string;
-  avatar: string;
+  avatar: BotAvatar;
   hidden: boolean;
   groups: string[];
 }
@@ -22,7 +28,7 @@ export interface Bot {
 
 export interface BotUiMetaUpdate {
   title?: string;
-  avatar?: string;
+  avatar?: BotAvatar;
   hidden?: boolean;
   groups?: string[];
 }
@@ -35,6 +41,12 @@ export interface BotCreateInput {
   model?: string;
   provider?: string;
   cloneFrom?: string;
+  /** Part 27 F2: skills the bot can use (the existing Bot skills field). */
+  skills?: string[];
+  /** Part 27 F2: memory scope — 'global' (default), 'project' (workspacePath), or 'none'. */
+  memoryScope?: 'global' | 'project' | 'none';
+  /** Optional workspace path when memoryScope === 'project'. */
+  workspacePath?: string;
 }
 
 export function listBots(): Promise<{ bots: Bot[] }> {
@@ -124,10 +136,16 @@ export function sendToRoom(
   id: number,
   message: string,
   threadId?: number,
+  caps?: { maxRounds?: number; maxMessages?: number },
 ): Promise<{ summary: Record<string, unknown>; log: RoomMessage[] }> {
   return api.post<{ summary: Record<string, unknown>; log: RoomMessage[] }>(
     `/api/agents/rooms/${id}/send`,
-    { message, thread_id: threadId ?? null },
+    {
+      message,
+      thread_id: threadId ?? null,
+      ...(caps?.maxRounds != null ? { max_rounds: caps.maxRounds } : {}),
+      ...(caps?.maxMessages != null ? { max_messages: caps.maxMessages } : {}),
+    },
   );
 }
 

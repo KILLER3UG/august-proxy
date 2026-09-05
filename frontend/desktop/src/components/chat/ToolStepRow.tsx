@@ -211,7 +211,9 @@ export function ToolStepRow({
   return (
     <div
       className={cn(
-        'process-step process-step--tool',
+        // Plan G2: per-row rise on mount (0.15s, opacity + 2px translate-y)
+        // so individual tool rows fade in instead of popping raw.
+        'row-enter process-step process-step--tool',
         running && 'process-step--running',
         errored && 'process-step--error',
       )}

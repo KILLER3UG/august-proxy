@@ -13,6 +13,7 @@ export function ComposerMentionsDropdown({
   mentionQuery,
   mentionItems,
   skillMentions,
+  conversationMentions,
   skillsLoading,
   highlightedMentionIndex,
   onPick,
@@ -23,6 +24,7 @@ export function ComposerMentionsDropdown({
   mentionQuery: string | null;
   mentionItems: MentionItem[];
   skillMentions: MentionItem[];
+  conversationMentions?: MentionItem[];
   skillsLoading: boolean;
   highlightedMentionIndex: number;
   onPick: (item: MentionItem) => void;
@@ -30,11 +32,15 @@ export function ComposerMentionsDropdown({
 }) {
   if (!open || !pos) return null;
 
+  // Part 27 G1: at empty query, recent chats surface alongside skills + tools
+  // so the entities the user wants to @-mention (a chat they just had) are
+  // discoverable in one glance. Files remain path-prefix-gated.
   const list: MentionItem[] =
     mentionQuery !== null
       ? mentionItems
       : [
           ...skillMentions.slice(0, 12),
+          ...(conversationMentions ?? []).slice(0, 6),
           ...TOOLS.map((t) => ({
             kind: 'tool' as const,
             name: t.name,

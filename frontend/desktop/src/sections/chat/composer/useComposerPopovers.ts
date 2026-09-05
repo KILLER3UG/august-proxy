@@ -561,6 +561,7 @@ export function useComposerPopovers({
     setMentionQuery,
     skillMentions,
     skillsLoading,
+    conversationMentions,
     mentionItems,
     highlightedMentionIndex,
     highlightedCommandIndex,

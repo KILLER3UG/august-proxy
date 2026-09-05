@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 
+from app.lib.paths import assertPytestDataDirIsolated
 from app.services.deferred_writes import defer_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_schema import ensure_schema
@@ -23,6 +24,8 @@ def save_internal(key: str, value: JsonValue) -> None:
     state / registry data, not user-visible memory. Durable memory goes
     through the facts store (``save_fact``); this name makes misuse obvious.
     """
+    # Part 27 E2: surface tests that bypass the autouse isolatedData fixture.
+    assertPytestDataDirIsolated('memory_store.save_internal')
     conn = _conn()
     conn.execute(
         "INSERT OR REPLACE INTO memory_store (key, value, updated_at) VALUES (?, ?, datetime('now'))",

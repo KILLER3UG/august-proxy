@@ -105,6 +105,17 @@ function Thread({
           {replies.map((m) => (
             <ThreadRow key={m.id} msg={m} bots={bots} />
           ))}
+          {/* Plan F4: per-thread italic "<bot> is thinking…" row while a
+              round runs in this thread (sendMut.isPending + this thread is
+              the active root — the backend may be slow, show it). */}
+          {replying && (
+            <div
+              className="px-3 py-1.5 text-[12px] italic text-muted-foreground/70"
+              data-testid={`room-thread-thinking-${root.id}`}
+            >
+              <span className="animate-pulse">… thinking</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 px-3 pb-2">
             <input
               value={draft}
@@ -171,9 +182,17 @@ export function RoomView() {
     onError: (e: unknown) => toast.error(`Could not create room: ${String(e)}`),
   });
 
+  // Plan F3 round caps: settings modal stores the user's preferred max
+  // rounds + max messages for the current room. Threaded into every send so
+  // the cap travels with the room, not per-keystroke.
+  const [roomCaps, setRoomCaps] = useState<{ maxRounds: number; maxMessages: number }>({
+    maxRounds: 0,
+    maxMessages: 0,
+  });
+
   const sendMut = useMutation({
     mutationFn: ({ text, threadId }: { text: string; threadId?: number }) =>
-      sendToRoom(selected as number, text, threadId),
+      sendToRoom(selected as number, text, threadId, roomCaps),
     onSuccess: () => {
       setDraft('');
       invalidate();
@@ -460,6 +479,52 @@ export function RoomView() {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Plan F3 round caps — limits on rounds / member messages per send. */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Round caps</label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-0.5">
+                  <span className="text-[10px] text-muted-foreground/70">Max rounds</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={roomCaps.maxRounds || ''}
+                    placeholder="default"
+                    onChange={(e) =>
+                      setRoomCaps((c) => ({
+                        ...c,
+                        maxRounds: e.target.value ? Number(e.target.value) : 0,
+                      }))
+                    }
+                    data-testid="room-settings-max-rounds"
+                    className="w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs text-foreground outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="space-y-0.5">
+                  <span className="text-[10px] text-muted-foreground/70">Max messages</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={roomCaps.maxMessages || ''}
+                    placeholder="default"
+                    onChange={(e) =>
+                      setRoomCaps((c) => ({
+                        ...c,
+                        maxMessages: e.target.value ? Number(e.target.value) : 0,
+                      }))
+                    }
+                    data-testid="room-settings-max-messages"
+                    className="w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs text-foreground outline-none focus:border-primary"
+                  />
+                </label>
+              </div>
+              <p className="text-[10px] text-muted-foreground/60">
+                0 = use room default. Caps bound every send until you change them.
+              </p>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">

@@ -21,8 +21,10 @@ import {
   ensureBotChat,
   getBot,
   listBots,
+  listRooms,
   updateBotUiMeta,
   type Bot,
+  type Room,
 } from '@/api/api-client';
 import { getWorkbenchSessions } from '@/api/workbench';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
@@ -44,9 +46,12 @@ function isRecent(iso?: string | null): boolean {
   return Date.now() - new Date(iso).getTime() < ACTIVE_WINDOW_MS;
 }
 function BotAvatar({ bot, size = 22 }: { bot: Bot; size?: number }) {
-  // Identicon per name; uiMeta.avatar holds the randomize SALT (deterministic
-  // per salt, so Lock = stop randomizing = keep the salt).
-  const html = botAvatarSvg(bot.name, bot.uiMeta?.avatar || '').replace(/width="64" height="64"/, '');
+  // Identicon per name; uiMeta.avatar may be a bare salt string (legacy) or
+  // a {salt, locked, source} descriptor (Part 27 F2). Accept both so reloads
+  // of pre-F2 bots keep their face.
+  const avatar = bot.uiMeta?.avatar;
+  const salt = typeof avatar === 'string' ? avatar : avatar?.salt || '';
+  const html = botAvatarSvg(bot.name, salt).replace(/width="64" height="64"/, '');
   return (
     <span
       className="shrink-0 rounded-full overflow-hidden ring-1 ring-white/10"
@@ -75,7 +80,14 @@ function BotRowMenu({ bot, onDeleted }: BotRowMenuProps) {
   // Randomize = new salt (deterministic per salt → same face until randomized
   // again). The roster never reorders; only the face changes.
   const randomize = useMutation({
-    mutationFn: () => updateBotUiMeta(bot.id, { avatar: Math.random().toString(36).slice(2, 8) }),
+    mutationFn: () =>
+      updateBotUiMeta(bot.id, {
+        avatar: {
+          salt: Math.random().toString(36).slice(2, 8),
+          locked: true,
+          source: 'shuffle',
+        },
+      }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['bots'] }),
     onError: () => toast.error('Could not randomize avatar'),
   });
@@ -377,6 +389,17 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
   });
   const summaries = summariesQ.data ?? {};
 
+  // Part 27 F3: rooms render as rail rows mixed with Bots. The "open rooms
+  // modal" button (Users icon) stays as a secondary entry, but the canonical
+  // way to see a room is now its rail row.
+  const roomsQuery = useQuery({
+    queryKey: ['bot-rooms'],
+    queryFn: () => listRooms().then((r) => r.rooms),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+  const rooms = (roomsQuery.data ?? []) as Room[];
+
   // "Active now": Bots that wrote within the window, in roster order —
   // the strip never reorders the roster itself (plan §Phase A).
   const activeNow = bots.filter(
@@ -528,6 +551,48 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
         )}
       </div>
 
+      {/* F3: rooms as rail rows, mixed with Bots. Clicking opens the existing
+          room view (kept as a Backdrop with full RoomView — the "two-pane
+          page" the plan says goes away is the standalone page, not the room
+          detail; the rail row is now the canonical entry point). */}
+      {rooms.length > 0 && (
+        <div className="mt-1.5 space-y-0.5" data-testid="bots-rooms-in-rail">
+          <div className="flex items-center justify-between px-2 pt-1">
+            <h3 className="text-[11px] text-sidebar-foreground/40 font-normal">Rooms</h3>
+            <span className="text-[10px] text-sidebar-foreground/25 tabular-nums">
+              {rooms.length}
+            </span>
+          </div>
+          <AnimatePresence initial={false} mode="popLayout">
+            {rooms.map((room) => (
+              <button
+                key={room.id}
+                type="button"
+                onClick={() => setShowRooms(true)}
+                className="group flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-white/[0.03]"
+                data-testid={`bots-room-row-${room.id}`}
+                title={room.name}
+              >
+                <Users className="size-3.5 shrink-0 text-muted-foreground/60" />
+                <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground/85">
+                  {room.name}
+                </span>
+                <span className="shrink-0 text-[10px] text-sidebar-foreground/30 tabular-nums">
+                  {room.members.length}b
+                </span>
+                {room.needs_you && (
+                  <span
+                    className="ml-1 inline-block size-1.5 shrink-0 rounded-full bg-amber-500"
+                    title="needs you"
+                    aria-label="needs you"
+                  />
+                )}
+              </button>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+
       {showModal && <BotCreateModal onClose={() => setShowModal(false)} />}
 
       {profileBot && (
@@ -556,6 +621,10 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
             <p className="mt-0.5 text-[12px] text-muted-foreground">
               Bot · @{profileBot.name}
             </p>
+            {/* Plan F5 device line — confirms the bot is wired to *this* install. */}
+            <p className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground/60">
+              This device
+            </p>
             {profileBot.description && (
               <p className="mx-auto mt-3 max-w-xs text-[12.5px] leading-relaxed text-muted-foreground/90">
                 {profileBot.description}
@@ -577,6 +646,14 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
             >
               Open chat
             </button>
+            {/* Plan F5: the profile hosts the row-menu actions so the rail
+                row stays quiet. Same handlers as the rail-row menu. */}
+            <div className="mt-4 border-t border-border/40 pt-3">
+              <BotRowMenu
+                bot={profileBot}
+                onDeleted={() => setProfileBot(null)}
+              />
+            </div>
           </div>
         </Backdrop>
       )}

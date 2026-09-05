@@ -27,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 from app.json_narrowing import as_int
+from app.lib.paths import assertPytestDataDirIsolated
 from app.services.memory_conn import conn as _conn
 
 logger = logging.getLogger(__name__)
@@ -377,6 +378,8 @@ def paraphrase_dedupe(fp: str, text: str, existing: list[tuple[str, str]]) -> st
 
 def save_episode(episode: dict[str, Any]) -> int:
     """Persist one mined episode (deduped on session+window)."""
+    # Part 27 E2: surface tests that bypass the autouse isolatedData fixture.
+    assertPytestDataDirIsolated('episode_miner.save_episode')
     conn = _conn()
     row = conn.execute(
         'SELECT id FROM episodes WHERE session_id = ? AND start_message_id = ? AND kind = ?',
