@@ -959,9 +959,6 @@ async def run_job_async(
     return {'status': 'ok', 'id': job_id, 'job': get_job(job_id)}
 
 
-def run_job(job_id: str, approved: bool = False) -> dict[str, object]:
-    return _run_coro_sync(run_job_async(job_id, approved=approved))  # type: ignore[return-value]
-
 
 async def tick_automations(*, now: datetime | None = None) -> list[str]:
     """Recover stale runs and fire due jobs. Returns started job ids."""

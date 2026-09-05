@@ -27,3 +27,11 @@ currentToolUseId: ContextVar[str] = ContextVar('workbench_tool_use_id', default=
 # lists on the worker's orchestrator handle instead of clobbering the parent
 # session's list.
 currentSubagentTaskId: ContextVar[str] = ContextVar('workbench_subagent_task_id', default='')
+
+# Runtime recursion depth of the current sub-agent loop (Part 27 T2). Set by
+# ``workbench.subagent.executeSubAgent`` to its own depth so a nested spawn
+# inherits depth+1. asyncio tasks copy the context at creation, so concurrent
+# workers each carry their OWN depth — unlike the old ``session.subagent_depth``
+# mutation, which raced across workers sharing one parent session and leaked
+# the value to later root spawns. The orchestrator reads this (default 0 = root).
+currentSubagentDepth: ContextVar[int] = ContextVar('workbench_subagent_depth', default=0)

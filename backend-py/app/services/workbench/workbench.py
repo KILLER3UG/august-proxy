@@ -1328,13 +1328,14 @@ def buildSystemPrompt(
     # stay here (guardMode, agentMode, the circuit-mode hint).
     agentMode = as_str(getattr(session, 'agent_mode', '') or '')
     sessionBlock = ['<session>']
-    # Part 27 T3: guardMode (the approval policy for mutations: ask/full) is
-    # orthogonal to the sandbox containment level reported on command denials
-    # ([sandbox:soft]); the old bare "guardMode: full" read as if it contradicted
-    # a sandbox:soft denial. Label the axis explicitly.
+    # Part 27 T3: guardMode (the approval policy for mutations) is orthogonal to
+    # the sandbox containment level reported on command denials ([sandbox:soft]);
+    # the bare "guardMode: full" read as if it contradicted a sandbox:soft denial.
+    # Keep the `guardMode:` token (prompt-cache stability test) and annotate it.
     sessionBlock.append(
-        'guardMode (approval policy): '
+        'guardMode: '
         + normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+        + ' (approval policy; sandbox containment is separate)'
     )
     if agentMode:
         sessionBlock.append(f'agentMode: {agentMode}')

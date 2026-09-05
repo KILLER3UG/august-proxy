@@ -32,8 +32,6 @@ from app.adapters.openai_sse import (
 from app.adapters.proxy_tools import (
     appendMissingOpenaiTools,
     execute_managed_openai_tool_calls,
-    execute_managed_proxy_tool,
-    format_managed_tool_result,
     get_proxy_openai_tool_definitions,
     get_tool_definition_name,
     is_proxy_managed_local_tool_name,
@@ -182,57 +180,6 @@ def isOpenaiToolResultError(toolMessage: ChatMessage | dict[str, object]) -> boo
         )
     return False
 
-
-async def fallbackClientFailedToolsOpenai(
-    messages: list[dict[str, object]], managedLocalToolNames: set[str]
-) -> list[dict[str, object]]:
-    """Detect and retry client-failed managed tools.
-
-    Scans trailing tool messages for error patterns and re-executes
-    any managed tools that appear to have failed on the client side.
-    """
-    if not messages:
-        return messages
-    updated = list(messages)
-    changed = False
-    for i in range(len(updated) - 1, -1, -1):
-        msg = updated[i]
-        if msg.get('role') != 'tool':
-            break
-        if not isOpenaiToolResultError(msg):
-            continue
-        toolCallId = msg.get('tool_call_id', '')
-        for j in range(i - 1, -1, -1):
-            prev = updated[j]
-            if prev.get('role') != 'assistant':
-                break
-            for tc in cast('list[dict[str, object]]', as_list(prev.get('tool_calls'), [])):
-                fn = as_dict(tc.get('function', {}))
-                if tc.get('id') == toolCallId and fn.get('name'):
-                    name = as_str(fn.get('name'), '')
-                    if name in managedLocalToolNames:
-                        try:
-                            args = json.loads(as_str(fn.get('arguments'), '{}'))
-                        except (json.JSONDecodeError, TypeError):
-                            args = {}
-                        try:
-                            result = await execute_managed_proxy_tool(name, args)
-                            updated[i] = {
-                                'tool_call_id': toolCallId,
-                                'role': 'tool',
-                                'content': format_managed_tool_result(name, result),
-                            }
-                            changed = True
-                        except Exception as exc:
-                            updated[i] = {
-                                'tool_call_id': toolCallId,
-                                'role': 'tool',
-                                'content': f'Fallback error: {exc}',
-                            }
-                            changed = True
-                    break
-            break
-    return updated if changed else messages
 
 
 async def resolveManagedOpenaiToolCalls(

@@ -41,7 +41,7 @@ import time
 import uuid
 from typing import Any, Callable
 
-from app.json_narrowing import as_int, as_str
+from app.json_narrowing import as_float, as_int, as_str
 from app.services.agent_message_bus import AgentMessageBus, Handler, Subscription
 
 logger = logging.getLogger(__name__)
@@ -389,10 +389,18 @@ class SubagentOrchestrator:
                 if jid and jid in self._handles:
                     h = self._handles[jid]
                     h.touch()
-                    try:
-                        _record_run(h)
-                    except Exception:
-                        pass
+                    # Part 27 T5: _record_run is a SELECT+UPDATE+commit; a chatty
+                    # worker emits hundreds of subagentText deltas per run.
+                    # Time-throttle the liveness row to ~1/s — terminal status is
+                    # recorded by the run loop's own _record_run calls, so the
+                    # final state is never lost to the throttle.
+                    _now = time.time()
+                    if _now - as_float(getattr(h, '_lastRecordedAt', 0.0), 0.0) >= 1.0:
+                        h._lastRecordedAt = _now  # type: ignore[attr-defined]
+                        try:
+                            _record_run(h)
+                        except Exception:
+                            pass
                     _append_transcript(jid, ev)
                 elif jid:
                     _append_transcript(jid, ev)
@@ -416,7 +424,15 @@ class SubagentOrchestrator:
             model = as_str(item.get('model'), '')
             # Runtime recursion depth: children of a sub-agent run at
             # parent_depth + 1; root spawns default to 0. Hermes max_spawn_depth caps this.
-            raw_depth = as_int(getattr(request.session, 'subagent_depth', 0), 0) + 1
+            # Part 27 T2: read the per-task depth ContextVar (race-free across
+            # concurrent workers); fall back to the session attr for callers that
+            # spawn outside a worker context.
+            from app.services.workbench.context import currentSubagentDepth
+
+            parent_depth = currentSubagentDepth.get() or as_int(
+                getattr(request.session, 'subagent_depth', 0), 0
+            )
+            raw_depth = parent_depth + 1
             taskId = f'task_{uuid.uuid4().hex[:12]}'
             sid = ''
             if hasattr(request.session, 'id'):

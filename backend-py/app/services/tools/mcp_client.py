@@ -1153,78 +1153,6 @@ async def refreshMcpTools() -> None:
                 srv['error'] = str(exc)
 
 
-async def load_and_start_from_config() -> dict[str, object]:
-    """Load mcp-servers.json, register, auto-start enabled servers, discover tools.
-
-    Idempotent for already-registered ids. Returns a status summary for boot.
-    """
-    raw = _loadConfig()
-    servers_raw = raw.get('servers', raw)
-    loaded = 0
-    started = 0
-    errors: list[str] = []
-    if isinstance(servers_raw, dict):
-        items = list(servers_raw.items())
-    elif isinstance(servers_raw, list):
-        items = [(as_str(s.get('id'), f'mcp_{i}'), s) for i, s in enumerate(servers_raw) if isinstance(s, dict)]
-    else:
-        items = []
-
-    for sid, entry in items:
-        if not isinstance(entry, dict):
-            continue
-        name = as_str(entry.get('name'), sid)
-        command = as_str(entry.get('command'), '')
-        enabled = bool(entry.get('enabled', True))
-        transport = as_str(entry.get('transport'), 'stdio')
-        url = as_str(entry.get('url'), '')
-        args = [as_str(a) for a in as_list(entry.get('args'))]
-        env_raw = entry.get('env') if isinstance(entry.get('env'), dict) else {}
-        env = {str(k): str(v) for k, v in env_raw.items()} if isinstance(env_raw, dict) else {}
-        headers_raw = entry.get('headers') if isinstance(entry.get('headers'), dict) else {}
-        headers = {str(k): str(v) for k, v in headers_raw.items()} if isinstance(headers_raw, dict) else {}
-        if sid in _servers:
-            continue
-        if not command and transport == 'stdio':
-            continue
-        reg = registerServer(
-            name,
-            command,
-            args=args,
-            env=env,
-            enabled=enabled,
-            transport=transport,
-            url=url,
-            server_id=str(sid),
-            persist=False,
-            headers=headers or None,
-        )
-        if entry.get('catalogId'):
-            reg['catalogId'] = entry.get('catalogId')
-        loaded += 1
-        if enabled:
-            try:
-                await _startServerProcess(str(sid))
-                await discoverTools(str(sid))
-                started += 1
-            except Exception as exc:
-                errors.append(f'{sid}: {exc}')
-    return {'ok': True, 'loaded': loaded, 'started': started, 'errors': errors, 'registered': len(_servers)}
-
-
-async def stop_all_servers() -> None:
-    """Stop every running MCP subprocess (shutdown path).
-
-    Also awaits outstanding unregister-triggered cleanup tasks so a server
-    deleted just before exit cannot leave a child process running.
-    """
-    for sid in list(_processes.keys()):
-        await _stopServerProcess(sid)
-    for sid in list(_sse_streams.keys()):
-        await _close_remote_stream(sid)
-    if _mcpCleanupTasks:
-        await asyncio.gather(*_mcpCleanupTasks, return_exceptions=True)
-        _mcpCleanupTasks.clear()
 
 
 def isMcpToolName(name: str) -> bool:
@@ -1334,12 +1262,3 @@ def find_server_for_tool(tool_name: str) -> str | None:
                 return sid
     return None
 
-
-def sanitize_tool_schema(schema: object) -> dict[str, object]:
-    """Sanitize a JSON Schema to ensure it has expected structure."""
-    if not isinstance(schema, dict):
-        return {'type': 'object', 'properties': {}}
-    result = dict(schema)
-    result.setdefault('type', 'object')
-    result.setdefault('properties', {})
-    return result

@@ -505,56 +505,6 @@ def venv_python(workspace_path: str) -> str | None:
     return None
 
 
-async def ensure_code_venv(
-    workspace_path: str,
-    packages: tuple[str, ...] | None = None,
-    timeout: float = 600.0,
-) -> dict[str, object]:
-    """Provision ``<workspace>/.aug/kernel/venv`` and seed common packages.
-
-    Best-effort and idempotent: an existing healthy venv is reused. Network
-    failures during ``pip install`` do not fail the venv itself — the
-    interpreter is still usable and the missing packages are reported.
-    """
-    from app.services.sandbox import policy_from_session, run_sandboxed
-
-    if not (workspace_path or '').strip():
-        return {'ok': False, 'error': 'no workspace configured'}
-    pkgs = tuple(packages or DEFAULT_VENV_PACKAGES)
-    existing = venv_python(workspace_path)
-    venv_root = os.path.join(workspace_path, _KERNEL_SUBDIR, 'venv')
-    policy = policy_from_session(
-        sandbox_mode='workspace-write',
-        workspace_path=workspace_path,
-        allow_unsandboxed=True,  # provisioning needs real fs/network access
-    )
-    if existing is None:
-        create = await run_sandboxed(
-            f'python -m venv "{venv_root}"', policy, timeout=timeout
-        )
-        if not create.ok:
-            return {
-                'ok': False,
-                'error': f'venv creation failed: {(create.stderr or create.stdout or "").strip()[:500]}',
-            }
-        existing = venv_python(workspace_path)
-        if existing is None:
-            return {'ok': False, 'error': 'venv created but interpreter not found'}
-    # Upgrade pip quietly (non-fatal), then seed packages.
-    pip_base = f'"{existing}" -m pip'
-    await run_sandboxed(f'{pip_base} install --quiet --upgrade pip', policy, timeout=timeout)
-    installed: list[str] = []
-    failed: list[str] = []
-    for pkg in pkgs:
-        res = await run_sandboxed(f'{pip_base} install --quiet {pkg}', policy, timeout=timeout)
-        (installed if res.ok else failed).append(pkg)
-    return {
-        'ok': True,
-        'python': existing,
-        'installed': installed,
-        'failed': failed,
-    }
-
 
 # ---------------------------------------------------------------------------
 # Gated bridge dispatch (parent side of the tool bridge)

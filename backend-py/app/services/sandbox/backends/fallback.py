@@ -214,24 +214,27 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
             seg_first = _first_word(segment)
             if seg_first in NETWORK_COMMAND_PREFIXES:
                 return f'network disabled in sandbox (blocked: {seg_first})'
-    # Absolute path tokens / redirects outside workspace
-    root = resolve_workspace_root(policy.workspace_root)
-    if root is not None:
-        for match in _REDIRECT_RE.finditer(command):
-            target = match.group(1) or match.group(2) or match.group(3)
-            if path_looks_outside_workspace(target, policy.workspace_root):
-                return f'write redirect outside workspace blocked: {target}'
-        for tok in _shell_tokens_for_scan(command):
-            if path_looks_outside_workspace(tok, policy.workspace_root):
-                return f'path outside workspace blocked: {tok}'
-        # String literals inside interpreter payloads (`python -c "..."`,
-        # `node -e "..."`, `powershell -Command "..."`) can name paths the
-        # token scan never sees — scan them against the same containment rule.
-        for m in _INTERPRETER_FLAG_PAYLOAD_RE.finditer(command):
-            payload = m.group(2)
-            for lit in re.findall(r"['\"]([^'\"]+)['\"]", payload):
-                if path_looks_outside_workspace(lit, policy.workspace_root):
-                    return f'path inside interpreter payload blocked: {lit}'
+    # Absolute path tokens / redirects outside workspace. Part 27 T2 (B6):
+    # when no workspace_root is configured (scheduler/automation jobs with an
+    # empty cwd), fall back to the process cwd — the directory the subprocess
+    # actually runs in — instead of skipping every containment check (fail-open).
+    effective_root = resolve_workspace_root(policy.workspace_root) or Path.cwd()
+    rootStr = str(effective_root)
+    for match in _REDIRECT_RE.finditer(command):
+        target = match.group(1) or match.group(2) or match.group(3)
+        if path_looks_outside_workspace(target, rootStr):
+            return f'write redirect outside workspace blocked: {target}'
+    for tok in _shell_tokens_for_scan(command):
+        if path_looks_outside_workspace(tok, rootStr):
+            return f'path outside workspace blocked: {tok}'
+    # String literals inside interpreter payloads (`python -c "..."`,
+    # `node -e "..."`, `powershell -Command "..."`) can name paths the
+    # token scan never sees — scan them against the same containment rule.
+    for m in _INTERPRETER_FLAG_PAYLOAD_RE.finditer(command):
+        payload = m.group(2)
+        for lit in re.findall(r"['\"]([^'\"]+)['\"]", payload):
+            if path_looks_outside_workspace(lit, rootStr):
+                return f'path inside interpreter payload blocked: {lit}'
     return None
 
 

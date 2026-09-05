@@ -237,11 +237,15 @@ async def executeSubAgent(
             updateJob(job_id, {'status': 'failed', 'error': blocked_msg})
         return {'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg}
 
-    # Carry the runtime depth on the session so any nested spawn (even one
-    # that slips past the tool filter) inherits depth+1 instead of resetting
-    # to 0 and re-entering the recursion.
+    # Part 27 T2: carry the runtime depth on a per-task ContextVar, not the
+    # shared parent session. asyncio copies the context at task creation, so
+    # concurrent workers each see their own depth and a nested spawn inherits
+    # depth+1 — the old ``setattr(session, 'subagent_depth', …)`` raced across
+    # workers and leaked to later root spawns.
     try:
-        setattr(session, 'subagent_depth', runtimeDepth)
+        from app.services.workbench.context import currentSubagentDepth
+
+        currentSubagentDepth.set(runtimeDepth)
     except Exception:
         pass
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.json_narrowing import as_bool, as_dict, as_str
+from app.json_narrowing import as_bool, as_str
 
 _VALID_EFFORTS = frozenset({'low', 'medium', 'high', 'max'})
 
@@ -52,31 +52,6 @@ def resolve_effective_effort(
         return as_str(session.metadata.get('effort'))
     return 'medium'
 
-
-def lookup_model_profile(
-    provider: dict[str, object] | None,
-    model: str,
-) -> dict[str, object]:
-    """Resolve the best matching modelProfiles entry for ``model``."""
-    if not provider:
-        return {}
-    profiles = as_dict(provider.get('modelProfiles') or provider.get('model_profiles'), {})
-    if not profiles:
-        return {}
-    if model in profiles:
-        return as_dict(profiles.get(model))
-    model_l = (model or '').lower()
-    best_key = ''
-    best: dict[str, object] = {}
-    for key, val in profiles.items():
-        if key == '*' or not isinstance(key, str):
-            continue
-        if model_l.startswith(str(key).lower()) and len(str(key)) > len(best_key):
-            best_key = str(key)
-            best = as_dict(val)
-    if best_key:
-        return best
-    return as_dict(profiles.get('*'))
 
 
 def model_max_output_tokens(

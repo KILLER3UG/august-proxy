@@ -131,39 +131,6 @@ async def _clearBlackboard(agent: str = '') -> str:
         return f'Error clearing blackboard: {exc}'
 
 
-async def _updateState(
-    phase: str = '', step: int = 1, completed: str = '', blockers: str = '', verificationCommand: str = ''
-) -> str:
-    """Track execution state across a multi-step task.
-
-    Gives the model phase awareness so it doesn't loop or repeat steps.
-    State is stored in the session and injected as <execution_state> in
-    Tier 3 on every turn. Call this when you start, progress through, or
-    complete a phase of work.
-    """
-    from app.services.workbench.workbench import get_session, updateSessionState
-
-    try:
-        session = get_session()
-        if not session:
-            return 'Error: no active workbench session.'
-        completedList = [c.strip() for c in completed.split('\n') if c.strip()] if completed else []
-        blockersList = [b.strip() for b in blockers.split('\n') if b.strip()] if blockers else []
-        state: dict[str, object] = {
-            'phase': phase or getattr(session, '_execution_phase', 'research'),
-            'step': step,
-            'completed': completedList,
-            'blockers': blockersList,
-        }
-        if verificationCommand:
-            state['verification_command'] = verificationCommand
-        ok = await updateSessionState(session, executionState=state)
-        if not ok:
-            return 'Error: state update timed out under concurrent writes — retry the call.'
-        return f'State updated: phase={state["phase"]}, step={state["step"]}, completed={len(completedList)}, blockers={len(blockersList)}'
-    except Exception as exc:
-        return f'Error updating state: {exc}'
-
 
 async def _spawnSubagents(
     workItems: list | None = None,

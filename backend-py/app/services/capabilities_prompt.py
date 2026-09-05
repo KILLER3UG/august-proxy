@@ -45,125 +45,9 @@ BUCKET_BLURBS: dict[str, str] = {
     ),
 }
 
-# Explicit primary classification. New tools must be added here (or they land in
-# tool_other with fail-closed caution). The registry invariant test enforces this.
-_TOOL_READ: frozenset[str] = frozenset(
-    {
-        'brain_query',
-        'browser_get_content',
-        'browser_open',
-        'browser_screenshot',
-        'browser_wait',
-        'camera_list_devices',
-        'camera_snapshot',
-        'describe_environment',
-        'desktop_list_windows',
-        'desktop_mouse_position',
-        'desktop_screen_size',
-        'desktop_screenshot',
-        'diagnose_proxy',
-        'get_fallback',
-        'list_aliases',
-        'list_directory',
-        'list_integrations',
-        'list_mcp_servers',
-        'pptx_list_elements',
-        'read_blackboard',
-        'read_file',
-        'read_files',
-        'search_files',
-        'web_fetch',
-        'web_fetch_many',
-        'web_search',
-    }
-)
-
-_TOOL_WRITE: frozenset[str] = frozenset(
-    {
-        'browser_click',
-        'browser_evaluate',
-        'browser_scroll',
-        'browser_select',
-        'browser_type',
-        'bulk',  # nested operation decides caution; see bulk-tag note in prompt
-        'configure_fallback',
-        'create_alias',
-        'desktop_click',
-        'desktop_open_url',
-        'desktop_press_key',
-        'desktop_type',
-        'rename_session',
-        'rename_sessions',
-        'setup_provider',
-        'connect_github',
-        'connect_google',
-        'connect_slack',
-        'install_mcp_server',
-        'customize_ui',
-        'enter_plan_mode',
-        'submit_plan',
-        'update_alias',
-        'update_state',
-        # Todo-list doors (session-state writes; mirrors tool_policy._PROMPT_WRITE).
-        'submit_todos',
-        'update_todos',
-        'write_blackboard',
-        'write_file',
-        'write_files',
-        'write_scratchpad',
-        'edit_lines',
-        'job_notes',  # M-11 notepad door — persists per-job machine state
-        'pptx_comment',
-        # Memory write door — saves a durable fact (gated by modelMemoryWrites).
-        'remember',
-    }
-)
-
-_TOOL_DESTRUCTIVE: frozenset[str] = frozenset(
-    {
-        'clear_blackboard',
-        'delete_agent',
-        'delete_alias',
-        'delete_routine',
-        'disconnect_integration',
-        'delete_folder',
-        'delete_session',
-        'delete_sessions',
-        'kill_daemon',
-        'kill_daemons',
-    }
-)
-
-_TOOL_SHELL: frozenset[str] = frozenset({'run_command'})
-
-_TOOL_AGENT: frozenset[str] = frozenset(
-    {
-        'create_agent',
-        'create_routine',
-        'list_agents',
-        'list_daemons',
-        'list_routines',
-        'spawn_daemon',
-        'spawn_subagents',
-        'update_agent',
-    }
-)
-
-_TOOL_SKILL: frozenset[str] = frozenset(
-    {
-        'list_skills',
-        'load_skill',
-        'load_skills',
-    }
-)
-
-_TOOL_BRIDGE: frozenset[str] = frozenset(
-    {
-        'tool_call',
-        'tool_describe',
-        'tool_search',
-    }
-)
+# Primary tool classification lives in tool_policy.prompt_bucket (single source
+# of truth). The old per-bucket frozensets here duplicated it and drifted;
+# classify_tool below now delegates. Part 27 T4 removed ~120 dead lines.
 
 # Cross-cutting tag — NOT a primary bucket (locked decision #5).
 _BULK_TAGGED: frozenset[str] = frozenset(
@@ -178,16 +62,6 @@ _BULK_TAGGED: frozenset[str] = frozenset(
         'write_files',
     }
 )
-
-_BUCKET_SETS: dict[str, frozenset[str]] = {
-    'tool_read': _TOOL_READ,
-    'tool_write': _TOOL_WRITE,
-    'tool_destructive': _TOOL_DESTRUCTIVE,
-    'tool_shell': _TOOL_SHELL,
-    'tool_agent': _TOOL_AGENT,
-    'tool_skill': _TOOL_SKILL,
-    'tool_bridge': _TOOL_BRIDGE,
-}
 
 _EVOLVING_CREATED_BY: frozenset[str] = frozenset({'agent', 'auto-gen'})
 
