@@ -12,6 +12,7 @@ import { IntegrationSetupWidget } from '@/components/chat/IntegrationSetupWidget
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { getAgentRoleLabel, pathBasename } from '@/lib/tool-labels';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
+import { ActionNeededCard, parseActionNeeded } from '@/components/chat/ActionNeededCard';
 import { extractDiffData, extractFilename, extractAgentId } from './extractors';
 import type { ToolEntry } from './types';
 import {
@@ -141,6 +142,16 @@ export function ToolCallItemBody({
     tool.name === 'bash' ||
     tool.name.endsWith('__bash');
   const parts: ReactNode[] = [];
+
+  // Part 27 F6: a browser run that hit a login wall carries an actionNeeded
+  // payload in its result — render the escalation card (screenshot + Take over
+  // / I'm done) instead of a plain result row.
+  if (/(^|@)browser_/.test(tool.name)) {
+    const actionNeeded = parseActionNeeded(tool.summary || tool.preview || tool.error);
+    if (actionNeeded) {
+      parts.push(<ActionNeededCard key="action-needed" payload={actionNeeded} />);
+    }
+  }
 
   if (isSubagent) {
     parts.push(<SubagentToolBody key="subagent" tool={tool} />);

@@ -376,12 +376,24 @@ function MessageBubbleInner({
 }
 
 /**
- * Memoized export (Part 26 7.4): the pane re-renders on every ~32ms stream
- * flush; a memo on the message identity keeps completed rows from re-running
- * their full block pipeline. Note the render site still passes fresh inline
- * callbacks each render, so memo compares them by reference and will
- * re-render when the PANE's props change — this specifically short-circuits
- * re-renders triggered by ANOTHER row's content updates flowing through the
- * same parent state.
+ * Memoized export (Part 26 7.4 + Part 27 T5): the pane re-renders on every
+ * ~32ms stream flush. The render site passes FRESH inline callbacks and new
+ * Map instances (toolProgress/subagentBlocks) each render, so the default
+ * shallow memo never bailed — every visible row re-ran its full block pipeline
+ * ~30×/s. This comparator keys on what actually drives a COMPLETED row's
+ * output: its `message` identity, `isLast`, `streaming`, and `models`. The
+ * volatile per-render callbacks/Maps don't affect a finished row (search
+ * highlight + revert live in the parent's motion.div wrapper, not here), so
+ * completed non-last rows now bail out; the last/streaming row still re-renders
+ * fully so live content updates.
  */
-export const MessageBubble = memo(MessageBubbleInner);
+export const MessageBubble = memo(
+  MessageBubbleInner,
+  (a, b) => {
+    if (a.message !== b.message) return false;
+    if (a.isLast !== b.isLast || a.streaming !== b.streaming) return false;
+    if (a.isLast || a.streaming) return false; // live row: always re-render
+    if (a.models !== b.models) return false;
+    return true; // completed row, same message: skip despite fresh callbacks
+  },
+);

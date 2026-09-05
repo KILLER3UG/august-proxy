@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, cast
+from typing import TYPE_CHECKING, Callable, Iterable, cast
 
 from app.atomic_write import write_json_atomic
 from app.json_narrowing import as_bool, as_dict, as_float, as_int, as_list, as_str
@@ -757,13 +757,19 @@ def flush_pending_saves() -> None:
             logger.exception('flush_pending_saves failed')
 
 
-def save_sessions(*, immediate: bool = False) -> None:
+def save_sessions(*, immediate: bool = False, dirty: 'str | Iterable[str] | None' = None) -> None:
     """Persist sessions to SQLite (full blob + messages). Keeps last 50.
 
     Default path is **debounced** and runs the snapshot write on a daemon
     thread so concurrent chat turns do not block the asyncio event loop.
     Pass ``immediate=True`` (or call ``save_sessions_now``) when the caller
     must observe the write before returning.
+
+    ``dirty`` (Part 27 T5): the id (or iterable of ids) of the session(s) the
+    caller actually mutated. When provided, only those are marked for the
+    debounced write — instead of re-serializing the whole recency window on
+    every save. When omitted, falls back to marking all in-memory sessions
+    (safe default for callers that mutate several rows or can't name one).
 
     JSON export is **off by default**. Enable via admin config
     ``auxiliary.session_json_export.enabled`` or env ``AUGUST_SESSION_JSON_EXPORT=1``.
@@ -788,11 +794,15 @@ def save_sessions(*, immediate: bool = False) -> None:
             logger.exception('debounced save_sessions failed')
 
     with _save_thread_lock:
-        # Mark everything currently in memory dirty — the caller mutated
-        # session state without telling us which ids; the writer intersects
-        # with the recency window anyway.
+        # Part 27 T5: when the caller names the mutated session(s), mark only
+        # those dirty; otherwise mark everything (legacy safe default).
         with _sessions_lock:
-            _dirty_sids.update(_sessions.keys())
+            if dirty is None:
+                _dirty_sids.update(_sessions.keys())
+            elif isinstance(dirty, str):
+                _dirty_sids.add(dirty)
+            else:
+                _dirty_sids.update(str(d) for d in dirty)
         _save_pending = True
         if _save_timer is not None:
             return

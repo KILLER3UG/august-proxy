@@ -2816,7 +2816,7 @@ async def _sendWorkbenchMessageStreamImpl(
             )
             emit({'type': 'done', 'sessionId': sessionId})
         session.status = 'idle'
-        saveSessions()
+        saveSessions(dirty=session.id)
         return
     session.messages.append({'role': 'user', 'content': message})
     session.messageCount += 1
@@ -5331,7 +5331,7 @@ async def _sendWorkbenchMessageStreamImpl(
         with _trace.span('persist'):
             # Persist session to SQLite (primary); JSON export is best-effort.
             try:
-                saveSessions()
+                saveSessions(dirty=session.id)
             except Exception as exc:
                 logger.exception('workbench session persist failed; still emitting done')
                 if emit:

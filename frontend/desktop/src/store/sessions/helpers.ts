@@ -110,6 +110,11 @@ export function dedupeSessions(sessions: Session[]): Session[] {
 
   const byKey = new Map<string, Session>();
   const order: string[] = [];
+  // Part 27 T5: index existing rows by their id and workbenchSessionId so the
+  // cross-link is O(1) per session instead of an O(n) scan of every prior row
+  // (this ran on every realtime session event + the 60s reconcile).
+  const byId = new Map<string, string>(); // session.id -> byKey key
+  const byWb = new Map<string, string>(); // session.workbenchSessionId -> byKey key
 
   const keyFor = (s: Session): string => {
     if (s.workbenchSessionId) return `wb:${s.workbenchSessionId}`;
@@ -117,28 +122,37 @@ export function dedupeSessions(sessions: Session[]): Session[] {
     return `id:${s.id}`;
   };
 
+  const indexRow = (key: string, s: Session) => {
+    if (s.id) byId.set(s.id, key);
+    if (s.workbenchSessionId) byWb.set(s.workbenchSessionId, key);
+  };
+
   for (const s of sessions) {
     const key = keyFor(s);
     const existing = byKey.get(key);
     if (existing) {
-      byKey.set(key, preferSessionRow(existing, s));
+      const merged = preferSessionRow(existing, s);
+      byKey.set(key, merged);
+      indexRow(key, merged);
       continue;
     }
 
-    // Cross-link: e.g. existing id:sess_* later gains same workbench as wb:X row
+    // Cross-link: an existing row may share this session's id or workbench id
+    // under a different key (e.g. id:sess_* later gains the same workbench as
+    // a wb:X row). The four lookups cover every equality the old scan tested.
+    const candidates = [
+      s.id ? byId.get(s.id) : undefined,
+      s.workbenchSessionId ? byId.get(s.workbenchSessionId) : undefined,
+      s.id ? byWb.get(s.id) : undefined,
+      s.workbenchSessionId ? byWb.get(s.workbenchSessionId) : undefined,
+    ];
     let mergedInto: string | null = null;
-    for (const [ek, es] of byKey) {
-      const same =
-        es.id === s.id ||
-        es.workbenchSessionId === s.id ||
-        s.workbenchSessionId === es.id ||
-        (!!es.workbenchSessionId &&
-          !!s.workbenchSessionId &&
-          es.workbenchSessionId === s.workbenchSessionId) ||
-        (es.id.startsWith('wb_') && s.workbenchSessionId === es.id) ||
-        (s.id.startsWith('wb_') && es.workbenchSessionId === s.id);
-      if (same) {
-        byKey.set(ek, preferSessionRow(es, s));
+    for (const ek of candidates) {
+      if (ek && byKey.has(ek)) {
+        const es = byKey.get(ek)!;
+        const merged = preferSessionRow(es, s);
+        byKey.set(ek, merged);
+        indexRow(ek, merged);
         mergedInto = ek;
         break;
       }
@@ -146,6 +160,7 @@ export function dedupeSessions(sessions: Session[]): Session[] {
     if (mergedInto) continue;
 
     byKey.set(key, s);
+    indexRow(key, s);
     order.push(key);
   }
 

@@ -140,6 +140,20 @@ def _checkUrlAllowlist(url: str) -> str | None:
     return None
 
 
+async def _detectLoginWall(page: Page) -> str | None:
+    """Part 27 F6: conservative login-wall check. A password input on the page
+    means the agent cannot proceed without the user authenticating. Returns a
+    short instruction naming the site, or None. Deliberately narrow (password
+    field only) to avoid false positives on ordinary forms."""
+    try:
+        if await page.query_selector('input[type=password]') is None:
+            return None
+        host = urlparse(page.url).netloc or 'this site'
+        return f'Sign in to {host} so I can continue.'
+    except Exception:
+        return None
+
+
 async def browserOpen(url: str, waitUntil: str = 'load') -> str:
     """Open a URL and return the page title + interactive-element snapshot."""
     if not url:
@@ -156,7 +170,11 @@ async def browserOpen(url: str, waitUntil: str = 'load') -> str:
         title = await page.title()
         elements = await _elementsSnapshot(page)
         screenshot = await _captureScreenshot(page)
-        return _ok(url=page.url, title=title, elements=elements, screenshot=screenshot)
+        loginWall = await _detectLoginWall(page)
+        extra: dict[str, object] = {}
+        if loginWall:
+            extra['actionNeeded'] = {'instruction': loginWall, 'screenshot': screenshot}
+        return _ok(url=page.url, title=title, elements=elements, screenshot=screenshot, **extra)
     except Exception as exc:
         return _err(f'Navigation failed: {exc}', url=url)
 
