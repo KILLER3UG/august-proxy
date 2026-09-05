@@ -350,7 +350,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     streaming,
     sessionId,
     loadedSessionId,
-    messagesVersion: messages,
+    messagesVersion: messages.length,
     onPinnedChange: (pinned) => {
       setScrolledFromBottom(!pinned);
       if (pinned) setHasNewContentWhileUnpinned(false);

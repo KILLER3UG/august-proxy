@@ -7,7 +7,7 @@
 /* with shadowing, C-1), scope + overrides badges (C-2), and the write  */
 /* paths (create/edit/delete/toggle) route through the selected scope.  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -64,6 +64,18 @@ export function SkillsSection() {
   const [mode, setMode] = useState<Mode>('list');
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  // Debounced mirror of `search` — the React Query key changes only on
+  // the trailing edge, so each keystroke doesn't fan out to /api/skills
+  // and re-render the entire card grid (audit finding).
+  const [searchDebounced, setSearchDebounced] = useState('');
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => setSearchDebounced(search), 200);
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [search]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -77,10 +89,10 @@ export function SkillsSection() {
   });
 
   const listQuery = useQuery({
-    queryKey: ['skills-list', search, wsScope],
+    queryKey: ['skills-list', searchDebounced, wsScope],
     queryFn: () => {
       const params = new URLSearchParams();
-      if (search) params.set('q', search);
+      if (searchDebounced) params.set('q', searchDebounced);
       if (wsScope) params.set('workspace', wsScope);
       const qs = params.toString();
       return api.get<{ skills: SkillSummary[]; total: number }>(`/api/skills${qs ? `?${qs}` : ''}`);

@@ -3,7 +3,7 @@
 /* Middle: Pinned + Projects (folders / sessions)                           */
 /* Bottom: Settings                                                        */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { ChevronUp, Search, X } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -67,6 +67,16 @@ const settingsRowMotion = {
   hover: { x: 3, transition: t.fast },
   tap: { scale: 0.98, transition: t.fast },
 };
+
+/** Stable shape of the callbacks passed into every <SessionRow>. */
+interface SessionRowHandlers {
+  onClick: () => void;
+  onTogglePin: () => void;
+  onRename: (title: string) => void;
+  onArchive: () => void;
+  onMoveToFolder: (folderId: string | null) => void;
+  onDelete: () => void;
+}
 
 interface Props {
   activeId?: string;
@@ -189,8 +199,15 @@ export function SessionList({
   const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
     useConfirmDialog();
 
+  // Latest render values for the cached per-session row handlers. The handler
+  // objects are memoized per session id (so React.memo on SessionRow can bail
+  // out on unrelated re-renders), but their bodies must still act on the
+  // current onSelect/activeId/pinnedIds — hence the indirection.
+  const latest = useRef({ onSelect, onNavigate, activeId, sessions, pinnedIds });
+  latest.current = { onSelect, onNavigate, activeId, sessions, pinnedIds };
+
   /** Confirm + delete with exit animation (store remove drives AnimatePresence). */
-  const confirmDeleteSession = async (s: Session) => {
+  const confirmDeleteSession = useCallback(async (s: Session) => {
     const ok = await confirmStyled({
       title: "Delete chat?",
       message: "This permanently deletes the chat. This cannot be undone.",
@@ -200,6 +217,7 @@ export function SessionList({
     if (!ok) {
       return;
     }
+    const { pinnedIds, activeId, onSelect, onNavigate } = latest.current;
     // Drop pin entry so localStorage does not accumulate dead ids
     if (pinnedIds.has(s.id)) {
       const next = new Set(pinnedIds);
@@ -217,7 +235,7 @@ export function SessionList({
       // empty pane renders (white screen otherwise).
       else onNavigate('/');
     }
-  };
+  }, [confirmStyled]);
 
   // Merge the local per-session status with the live poller output so a
   // session that has a backend generation in progress shows the pulse
@@ -226,13 +244,13 @@ export function SessionList({
   // The live poller is authoritative: a stale local 'idle'/'done' must
   // never hide a background generation (rows showed Working only after
   // being clicked while the local status was refreshed).
-  const mergedSessionStates: Record<string, SessionStatus> = (() => {
+  const mergedSessionStates = useMemo(() => {
     const next: Record<string, SessionStatus> = { ...sessionStates };
     for (const [id, status] of Object.entries(activeChatSessions)) {
       next[id] = status;
     }
     return next;
-  })();
+  }, [sessionStates, activeChatSessions]);
 
   /** Status for a session row: live maps are keyed by WORKBENCH id
    *  (realtime bridge writes wb_*); look up both id forms so the pulse
@@ -330,19 +348,19 @@ export function SessionList({
     e.target.value = '';
   };
 
-  const visible = sessions.filter((s) => !s.isArchived);
+  const visible = useMemo(() => sessions.filter((s) => !s.isArchived), [sessions]);
 
   // Multi-repo sidebar groups by folderId — do not hide other folders' sessions
   // when the global current workspace changes (that made folders look empty).
-  const pinned = visible.filter((s) => pinnedIds.has(s.id));
-  const others = visible.filter((s) => !pinnedIds.has(s.id));
+  const pinned = useMemo(() => visible.filter((s) => pinnedIds.has(s.id)), [visible, pinnedIds]);
+  const others = useMemo(() => visible.filter((s) => !pinnedIds.has(s.id)), [visible, pinnedIds]);
 
-  const togglePin = (id: string) => {
-    const next = new Set(pinnedIds);
+  const togglePin = useCallback((id: string) => {
+    const next = new Set(latest.current.pinnedIds);
     void (next.has(id) ? next.delete(id) : next.add(id));
     setPinnedIds(next);
     localStorage.setItem(SESSIONS_KEY, JSON.stringify([...next]));
-  };
+  }, []);
 
   const handleCreateFolder = () => {
     const name = prompt("Enter folder name:");
@@ -406,32 +424,73 @@ export function SessionList({
     }
   };
 
-  const sessionRowHandlers = (s: Session) => ({
-    onClick: () => onSelect(s),
-    onTogglePin: () => togglePin(s.id),
-    onRename: (newTitle: string) => renameSession(s.id, newTitle),
-    onArchive: () => {
-      archiveSession(s.id);
-      if (activeId === s.id) {
-        const fallback = sessions.find(
-          (x) => x.id !== s.id && !x.isArchived,
-        );
-        if (fallback) onSelect(fallback);
-      }
-    },
-    onMoveToFolder: (fId: string | null) => moveSessionToFolder(s.id, fId),
-    onDelete: () => confirmDeleteSession(s),
-  });
+  const sessionRowHandlers = useMemo(() => {
+    const map = new Map<string, SessionRowHandlers>();
+    for (const s of visible) {
+      map.set(s.id, {
+        onClick: () => latest.current.onSelect(s),
+        onTogglePin: () => togglePin(s.id),
+        onRename: (newTitle: string) => renameSession(s.id, newTitle),
+        onArchive: () => {
+          archiveSession(s.id);
+          const { activeId, onSelect, sessions } = latest.current;
+          if (activeId === s.id) {
+            const fallback = sessions.find(
+              (x) => x.id !== s.id && !x.isArchived,
+            );
+            if (fallback) onSelect(fallback);
+          }
+        },
+        onMoveToFolder: (fId: string | null) => moveSessionToFolder(s.id, fId),
+        onDelete: () => confirmDeleteSession(s),
+      });
+    }
+    return map;
+    // Re-create the map when the visible set changes (sessions added/removed/
+    // archived). The captured callbacks read `latest.current` for fresh
+    // onSelect/activeId so we don't have to rebuild on every keystroke.
+  }, [visible, togglePin, confirmDeleteSession]);
 
   // ── Session search — client-side title filter across every section ──
   const searchTrim = searchQuery.trim().toLowerCase();
   const searching = searchTrim.length > 0;
-  const matchesSearch = (s: Session) =>
-    !searching || (s.title || "").toLowerCase().includes(searchTrim);
-  const visiblePinned = pinned.filter(matchesSearch);
-  const searchMatchCount = searching
-    ? sessions.filter((s) => !s.isArchived && matchesSearch(s)).length
-    : 0;
+  const matchesSearch = useCallback(
+    (s: Session) => !searching || (s.title || "").toLowerCase().includes(searchTrim),
+    [searching, searchTrim],
+  );
+  // Bucketed views memoized on the search term so each keystroke costs one
+  // O(n) pass instead of three (Pinned + Projects + uncategorized all filter
+  // `others`/`pinned` independently). Without this, a typing-heavy search
+  // re-rendered every SessionRow on every keypress (audit finding).
+  const visiblePinned = useMemo(
+    () => (searching ? pinned.filter(matchesSearch) : pinned),
+    [searching, pinned, matchesSearch],
+  );
+  const searchMatchCount = useMemo(
+    () =>
+      searching
+        ? sessions.filter((s) => !s.isArchived && matchesSearch(s)).length
+        : 0,
+    [searching, sessions, matchesSearch],
+  );
+  // Single pass to bucket `others` by folderId (and unfiled) for the JSX
+  // below — the previous code called `others.filter(...)` per folder in the
+  // render body, which was O(n×folders) on every render.
+  const { othersByFolder, unfiledSessions } = useMemo(() => {
+    const byFolder = new Map<string, Session[]>();
+    let unfiled: Session[] = [];
+    for (const s of others) {
+      if (searching && !matchesSearch(s)) continue;
+      if (s.folderId) {
+        const list = byFolder.get(s.folderId);
+        if (list) list.push(s);
+        else byFolder.set(s.folderId, [s]);
+      } else {
+        unfiled.push(s);
+      }
+    }
+    return { othersByFolder: byFolder, unfiledSessions: unfiled };
+  }, [others, searching, matchesSearch]);
 
   return (
     <div ref={rootRef} className="august-session-list flex h-full text-sm relative select-none bg-sidebar">
@@ -501,7 +560,7 @@ export function SessionList({
                     pinned
                     status={statusFor(s)}
                     folders={folders}
-                    {...sessionRowHandlers(s)}
+                    {...sessionRowHandlers.get(s.id)!}
                   />
                 ))}
               </AnimatePresence>
@@ -526,16 +585,14 @@ export function SessionList({
 
           <Section
             title="Projects"
-            count={searching ? others.filter(matchesSearch).length : others.length}
+            count={searching ? searchMatchCount - visiblePinned.length : others.length}
             onNewFolder={handleCreateFolder}
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
           >
             <div className="space-y-1.5">
               {/* Collapsible folders and their sessions */}
               {folders.map((folder) => {
-                const folderSessions = others.filter(
-                  (s) => s.folderId === folder.id && matchesSearch(s),
-                );
+                const folderSessions = othersByFolder.get(folder.id) ?? [];
                 // While searching, hide folders without matches and force-expand the rest.
                 if (searching && folderSessions.length === 0) return null;
                 const isCollapsed = folder.isCollapsed ?? false;
@@ -567,7 +624,7 @@ export function SessionList({
                               pinned={false}
                               status={statusFor(s)}
                               folders={folders}
-                              {...sessionRowHandlers(s)}
+                              {...sessionRowHandlers.get(s.id)!}
                             />
                           ))}
                         </AnimatePresence>
@@ -584,13 +641,12 @@ export function SessionList({
 
               {/* Sessions with no folder assignment */}
               {(() => {
-                const uncategorizedSessions = others.filter((s) => !s.folderId && matchesSearch(s));
-                if (searching && uncategorizedSessions.length === 0) return null;
+                if (searching && unfiledSessions.length === 0) return null;
 
                 return (
                   <div className="space-y-0.5">
                     <UncategorizedHeader
-                      count={uncategorizedSessions.length}
+                      count={unfiledSessions.length}
                       isCollapsed={uncategorizedCollapsed}
                       onToggleCollapse={toggleUncategorizedCollapse}
                       onNewSession={() => onNewInFolder?.(null)}
@@ -602,10 +658,10 @@ export function SessionList({
                       <div className="pl-1 ml-4 space-y-px">
                         <AnimatePresence initial={false} mode="popLayout">
                           {(searching
-                            ? uncategorizedSessions
+                            ? unfiledSessions
                             : uncategorizedCollapsed
-                              ? uncategorizedSessions.slice(0, 5)
-                              : uncategorizedSessions
+                              ? unfiledSessions.slice(0, 5)
+                              : unfiledSessions
                           ).map((s) => (
                             <SessionRow
                               key={s.id}
@@ -614,20 +670,20 @@ export function SessionList({
                               pinned={false}
                               status={statusFor(s)}
                               folders={folders}
-                              {...sessionRowHandlers(s)}
+                              {...sessionRowHandlers.get(s.id)!}
                             />
                           ))}
                         </AnimatePresence>
-                        {!searching && uncategorizedSessions.length > 5 && (
+                        {!searching && unfiledSessions.length > 5 && (
                           <button
                             type="button"
                             onClick={() => setUncategorizedCollapsed((v) => !v)}
                             className="pl-1.5 py-1 text-[11px] text-muted-foreground/60 hover:text-foreground"
                           >
-                            {uncategorizedCollapsed ? `Show ${uncategorizedSessions.length - 5} more` : 'Show less'}
+                            {uncategorizedCollapsed ? `Show ${unfiledSessions.length - 5} more` : 'Show less'}
                           </button>
                         )}
-                        {uncategorizedSessions.length === 0 && !searching && (
+                        {unfiledSessions.length === 0 && !searching && (
                           <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
                             No tasks yet
                           </p>

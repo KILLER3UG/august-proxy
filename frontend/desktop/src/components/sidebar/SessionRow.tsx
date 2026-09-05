@@ -1,6 +1,6 @@
 /* ── Session row — title, status pulse, pin, and kebab actions ─────── */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, memo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -43,7 +43,7 @@ export interface SessionRowProps {
 }
 
 /** One chat in the sidebar list: status, title, pin control, and actions menu. */
-export function SessionRow({
+function SessionRowInner({
   session,
   active,
   pinned,
@@ -433,3 +433,11 @@ export function SessionRow({
     </motion.div>
   );
 }
+
+/**
+ * memoized wrapper — SessionList now passes a stable handler map (keyed by
+ * session id) so the only re-render triggers are actual session/status/folder
+ * changes. The shallow comparator is enough; the callback references in
+ * `handlers` are stable per-session-id from SessionList's cached map.
+ */
+export const SessionRow = memo(SessionRowInner);
