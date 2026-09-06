@@ -31,6 +31,9 @@ export function BranchMenuBody({
   const [newBranch, setNewBranch] = useState('');
   const [switching, setSwitching] = useState<string | null>(null);
   const [graphOpen, setGraphOpen] = useState(false);
+  // A blocked switch (uncommitted changes) parks here so the menu can offer
+  // the GitHub-style choice: bring the changes across or leave them stashed.
+  const [pendingSwitch, setPendingSwitch] = useState<{ name: string; files: string[] } | null>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
 
   const enabled = Boolean(sessionId || repoPath);
@@ -69,6 +72,24 @@ export function BranchMenuBody({
     if (creating) createInputRef.current?.focus();
   }, [creating]);
 
+  const finishSwitch = async (name: string, strategy?: 'leave' | 'transfer') => {
+    setSwitching(name);
+    try {
+      const res = await gitApi.checkout(sessionId, name, repoPath, false, strategy);
+      await qc.invalidateQueries({ queryKey: ['git'] });
+      if (res?.warning) toast.warning(res.warning);
+      else if (strategy === 'transfer') toast.success(`Switched to ${name} — changes brought over`);
+      else if (strategy === 'leave') toast.success(`Switched to ${name} — changes left in the stash`);
+      else toast.success(`Switched to ${name}`);
+      onDone?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to switch branch');
+    } finally {
+      setSwitching(null);
+      setPendingSwitch(null);
+    }
+  };
+
   const handleCheckout = async (name: string) => {
     if (name === current) {
       onDone?.();
@@ -77,7 +98,13 @@ export function BranchMenuBody({
     if (!sessionId && !repoPath) return;
     setSwitching(name);
     try {
-      await gitApi.checkout(sessionId, name, repoPath);
+      const res = await gitApi.checkout(sessionId, name, repoPath);
+      if (res?.dirty) {
+        // Blocked by uncommitted changes — ask leave vs transfer instead of
+        // failing the switch outright.
+        setPendingSwitch({ name, files: res.files ?? [] });
+        return;
+      }
       await qc.invalidateQueries({ queryKey: ['git'] });
       toast.success(`Switched to ${name}`);
       onDone?.();
@@ -127,6 +154,54 @@ export function BranchMenuBody({
       <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
         Branches
       </div>
+      {pendingSwitch && (
+        <div
+          className="mx-1.5 mb-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5 text-[11px]"
+          data-testid="branch-dirty-prompt"
+        >
+          <div className="font-medium text-foreground/90">
+            Uncommitted changes block the switch to {pendingSwitch.name}.
+          </div>
+          {pendingSwitch.files.length > 0 && (
+            <div className="mt-1 max-h-16 overflow-y-auto font-mono text-[10px] text-muted-foreground chat-scroll">
+              {pendingSwitch.files.slice(0, 20).map((f) => (
+                <div key={f} className="truncate" title={f}>{f}</div>
+              ))}
+              {pendingSwitch.files.length > 20 && (
+                <div>… +{pendingSwitch.files.length - 20} more</div>
+              )}
+            </div>
+          )}
+          <div className="mt-2 flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={switching !== null}
+              onClick={() => void finishSwitch(pendingSwitch.name, 'transfer')}
+              className="flex-1 rounded-md bg-primary px-2 py-1 font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+              data-testid="branch-transfer"
+            >
+              Bring changes
+            </button>
+            <button
+              type="button"
+              disabled={switching !== null}
+              onClick={() => void finishSwitch(pendingSwitch.name, 'leave')}
+              className="flex-1 rounded-md border border-border/60 px-2 py-1 text-foreground transition hover:bg-muted disabled:opacity-50"
+              data-testid="branch-leave"
+            >
+              Leave here
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingSwitch(null)}
+              className="rounded-md px-2 py-1 text-muted-foreground transition hover:text-foreground"
+              data-testid="branch-dirty-cancel"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       <div className="max-h-56 overflow-y-auto chat-scroll">
         {branches.isLoading && (
           <div className="flex items-center gap-2 px-2.5 py-3 text-[11px] text-muted-foreground">

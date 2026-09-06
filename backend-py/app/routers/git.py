@@ -31,6 +31,10 @@ class CheckoutBody(CamelModel):
     repo_path: str = ''
     branch: str = ''
     create: bool = False
+    # 'default' = plain checkout (returns dirty:true if blocked);
+    # 'leave' = stash uncommitted changes on the current branch, then switch;
+    # 'transfer' = stash, switch, pop — bring the changes to the target branch.
+    strategy: str = 'default'
 
 
 class CommitBody(CamelModel):
@@ -384,8 +388,20 @@ async def git_diff(sessionId: str = '', repoPath: str = '', target: str = 'HEAD'
     }
 
 
+# git's "you have uncommitted changes that block the switch" stderr shapes.
+_DIRTY_CHECKOUT_RE = re.compile(
+    r'would be overwritten by checkout|local changes to the following files'
+    r'|would lose|Please commit your changes or stash them',
+    re.IGNORECASE,
+)
+
+
 @router.post('/checkout')
 async def git_checkout(body: CheckoutBody):
+    """Switch branches. When uncommitted changes would block the switch, the
+    default call returns ``dirty: true`` (HTTP 200) so the UI can offer the
+    GitHub-style choice: leave the changes behind (stash) or bring them along
+    (stash → checkout → pop). ``create`` / unknown-branch stay hard errors."""
     if not body.branch.strip():
         raise HTTPException(status_code=400, detail='branch is required')
     path, err = _resolve_workspace(body.session_id, body.repo_path)
@@ -394,16 +410,64 @@ async def git_checkout(body: CheckoutBody):
     repo_err = await _ensure_repo(path)
     if repo_err:
         raise HTTPException(status_code=400, detail=repo_err)
+    branch = body.branch.strip()
+
     if body.create:
-        _, output, _ = await _run_git(path, 'checkout', '-b', body.branch.strip())
-    else:
-        _, output, _ = await _run_git(path, 'checkout', body.branch.strip())
-    return {
-        'workspace': path,
-        'sha': '',
-        'output': output,
-        'branch': body.branch.strip(),
-    }
+        code, output, stderr = await _run_git(path, 'checkout', '-b', branch, check=False)
+        if code != 0:
+            raise HTTPException(
+                status_code=400,
+                detail=stderr.strip() or output.strip() or f'git checkout -b {branch} failed',
+            )
+        return {'workspace': path, 'sha': '', 'output': output.strip(), 'branch': branch, 'ok': True}
+
+    strategy = (body.strategy or 'default').strip().lower()
+
+    if strategy in ('leave', 'transfer'):
+        _, cur_out, _ = await _run_git(path, 'rev-parse', '--abbrev-ref', 'HEAD', check=False)
+        current = cur_out.strip() or 'HEAD'
+        note = f'August: {"left on " + current if strategy == "leave" else "carried to " + branch}'
+        sc, sout, serr = await _run_git(path, 'stash', 'push', '-u', '-m', note, check=False)
+        stash_out = sout + serr
+        if sc != 0 and 'No local changes' not in stash_out:
+            raise HTTPException(status_code=400, detail=serr.strip() or 'git stash failed')
+        stashed = 'No local changes' not in stash_out
+        cc, cout, cerr = await _run_git(path, 'checkout', branch, check=False)
+        if cc != 0:
+            # Don't strand the user's work in a stash if the switch itself failed.
+            if stashed:
+                await _run_git(path, 'stash', 'pop', check=False)
+            raise HTTPException(
+                status_code=400,
+                detail=cerr.strip() or cout.strip() or f'git checkout {branch} failed',
+            )
+        carried = False
+        if strategy == 'transfer' and stashed:
+            pc, _pout, perr = await _run_git(path, 'stash', 'pop', check=False)
+            carried = pc == 0
+            if pc != 0:
+                return {
+                    'workspace': path, 'sha': '', 'branch': branch, 'ok': True,
+                    'stashed': True, 'carried': False,
+                    'warning': (perr.strip() or 'stash pop conflicted')
+                    + ' — your changes are still in the stash (git stash list).',
+                }
+        return {
+            'workspace': path, 'sha': '', 'output': cout.strip(), 'branch': branch,
+            'ok': True, 'stashed': stashed, 'carried': carried,
+        }
+
+    code, output, stderr = await _run_git(path, 'checkout', branch, check=False)
+    if code == 0:
+        return {'workspace': path, 'sha': '', 'output': output.strip(), 'branch': branch, 'ok': True}
+    if _DIRTY_CHECKOUT_RE.search(stderr):
+        _, porcelain, _ = await _run_git(path, 'status', '--porcelain', check=False)
+        files = [str(f.get('path', '')) for f in _parse_porcelain(porcelain) if f.get('path')]
+        return {
+            'workspace': path, 'branch': branch, 'ok': False, 'dirty': True,
+            'files': files, 'error': stderr.strip(),
+        }
+    raise HTTPException(status_code=400, detail=stderr.strip() or f'git checkout {branch} failed')
 
 
 @router.post('/push')

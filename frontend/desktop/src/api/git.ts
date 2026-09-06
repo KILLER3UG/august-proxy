@@ -64,6 +64,22 @@ export interface GitCommitResult {
   output: string;
 }
 
+export interface GitCheckoutResult {
+  workspace: string | null;
+  sha?: string;
+  output?: string;
+  branch: string;
+  ok: boolean;
+  /** The switch was blocked by uncommitted changes — offer leave/transfer. */
+  dirty?: boolean;
+  files?: string[];
+  error?: string;
+  /** leave/transfer outcome: changes were stashed / brought across. */
+  stashed?: boolean;
+  carried?: boolean;
+  warning?: string;
+}
+
 export interface GitLogResult {
   workspace: string | null;
   /** `git log --oneline` output (one commit per line). */
@@ -99,12 +115,19 @@ export const gitApi = {
       ...(repoPath ? { repoPath } : {}),
       all,
     }),
-  checkout: (sessionId: string | undefined, branch: string, repoPath?: string, create = false) =>
-    api.post<GitCommitResult>('/api/git/checkout', {
+  checkout: (
+    sessionId: string | undefined,
+    branch: string,
+    repoPath?: string,
+    create = false,
+    strategy?: 'leave' | 'transfer',
+  ) =>
+    api.post<GitCheckoutResult>('/api/git/checkout', {
       sessionId: sessionId || '',
       branch,
       create,
       ...(repoPath ? { repoPath } : {}),
+      ...(strategy ? { strategy } : {}),
     }),
   push: (sessionId?: string, repoPath?: string) => {
     const qs = gitQuery(sessionId, repoPath);
