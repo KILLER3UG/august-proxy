@@ -105,10 +105,14 @@ function formatSequenceDuration(ms: number): string {
   return `${m}m ${String(s).padStart(2, '0')}s`;
 }
 
-/** Split blocks into process (thinking/tools) vs final answer. */
+/** Split blocks into process (thinking/tools) vs final answer. Error blocks
+ *  are pulled out entirely — they render as a standalone message bubble below
+ *  the timeline, never buried inside the collapsible activity pack (a failed
+ *  turn left the only visible trace behind a collapsed "Task completed" row). */
 function splitProcessAndFinal(blocks: DisplayBlock[]): {
   processBlocks: DisplayBlock[];
   finalBlocks: DisplayBlock[];
+  errorBlocks: DisplayBlock[];
   hasFinalOutput: boolean;
 } {
   let lastFinalIdx = -1;
@@ -117,9 +121,12 @@ function splitProcessAndFinal(blocks: DisplayBlock[]): {
   }
   const processBlocks: DisplayBlock[] = [];
   const finalBlocks: DisplayBlock[] = [];
+  const errorBlocks: DisplayBlock[] = [];
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
-    if (isFinalOutput(block)) {
+    if (block.type === 'error') {
+      errorBlocks.push(block);
+    } else if (isFinalOutput(block)) {
       if (i === lastFinalIdx) finalBlocks.push(block);
       else processBlocks.push({ ...block, type: 'thinking' });
     } else {
@@ -129,6 +136,7 @@ function splitProcessAndFinal(blocks: DisplayBlock[]): {
   return {
     processBlocks,
     finalBlocks,
+    errorBlocks,
     hasFinalOutput: finalBlocks.length > 0,
   };
 }
@@ -232,6 +240,7 @@ export function AssistantBlockTimeline({
   sessionId,
   onRetryTurn,
   onSwitchModel,
+  onDismissError,
 }: {
   displayBlocks: DisplayBlock[];
   message: ChatMessage;
@@ -255,6 +264,8 @@ export function AssistantBlockTimeline({
   onRetryTurn?: () => void;
   /** Rendered on error blocks: open the "answer with another model" picker. */
   onSwitchModel?: () => void;
+  /** Rendered on error blocks: dismiss the error bubble (removes the block). */
+  onDismissError?: () => void;
 }) {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const liveSessionKey = resolveUiSessionId(routeSessionId || message.id);
@@ -265,7 +276,7 @@ export function AssistantBlockTimeline({
   // progress no longer renders an inline model label.
   void modelId;
 
-  const { processBlocks, finalBlocks, hasFinalOutput } =
+  const { processBlocks, finalBlocks, errorBlocks, hasFinalOutput } =
     splitProcessAndFinal(displayBlocks);
 
   // Id-keyed expand overrides; missing key → default from status.
@@ -971,66 +982,6 @@ export function AssistantBlockTimeline({
         continue;
       }
 
-      if (block.type === 'error') {
-        // Real generation/tool failure — red banner, never collapsed away.
-        // Friendly copy up front; the raw upstream text sits in an
-        // expandable details so power users can still see the provider's
-        // exact words (the message-level Retry button re-runs the turn).
-        const raw = block.rawContent;
-        tagged.push({
-          kind: 'block',
-          node: (
-            <div
-              key={block.id || `error_${ti}`}
-              role="alert"
-              data-testid="chat-error-block"
-              className="mx-3 my-1.5 flex items-start gap-2 rounded border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-[11px] leading-relaxed text-rose-300"
-            >
-              <span className="shrink-0" aria-hidden="true">
-                ⚠
-              </span>
-              <span className="min-w-0 flex-1 break-words">
-                {block.content || 'Generation failed.'}
-                {raw ? (
-                  <details className="mt-1 opacity-80">
-                    <summary className="cursor-pointer select-none">
-                      Show provider details
-                    </summary>
-                    <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-rose-950/40 p-2 font-mono text-[10px]">
-                      {raw}
-                    </pre>
-                  </details>
-                ) : null}
-                {(onRetryTurn || onSwitchModel) && (
-                  <div className="mt-1.5 flex items-center gap-2">
-                    {onRetryTurn ? (
-                      <button
-                        type="button"
-                        onClick={onRetryTurn}
-                        className="rounded border border-rose-500/30 px-2 py-0.5 text-[10px] font-medium text-rose-200 hover:bg-rose-500/10 transition"
-                      >
-                        ↻ Retry
-                      </button>
-                    ) : null}
-                    {onSwitchModel ? (
-                      <button
-                        type="button"
-                        onClick={onSwitchModel}
-                        className="rounded border border-rose-500/30 px-2 py-0.5 text-[10px] font-medium text-rose-200 hover:bg-rose-500/10 transition"
-                      >
-                        Switch model
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </span>
-            </div>
-          ),
-        });
-        ti++;
-        continue;
-      }
-
       // Non-process leftovers inside process list (ignore)
       ti++;
     }
@@ -1161,6 +1112,81 @@ export function AssistantBlockTimeline({
       );
     });
 
+  const renderErrorBubble = (blocks: DisplayBlock[]) =>
+    blocks.map((block, index) => {
+      // A provider/turn failure rendered as its OWN message bubble — left
+      // aligned like the model's replies, with the friendly copy up front,
+      // the raw upstream text behind an expandable details, a Try again
+      // action, and a corner ✕ to dismiss. Never collapsed into the activity
+      // pack: a failed turn must be impossible to miss.
+      const raw = block.rawContent;
+      const key = block.id || `error_${index}`;
+      return (
+        <div
+          key={key}
+          role="alert"
+          data-testid="chat-error-bubble"
+          className="mt-1.5 flex w-full max-w-3xl items-start gap-2.5"
+        >
+          <span
+            aria-hidden="true"
+            className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/15 text-[13px] text-rose-400"
+          >
+            !
+          </span>
+          <div className="relative min-w-0 flex-1 rounded-2xl border border-rose-500/30 bg-rose-500/[0.07] px-4 py-3">
+            {onDismissError ? (
+              <button
+                type="button"
+                onClick={onDismissError}
+                aria-label="Dismiss error"
+                data-testid="chat-error-dismiss"
+                className="absolute right-2 top-2 flex size-5 items-center justify-center rounded text-rose-300/70 transition hover:bg-rose-500/15 hover:text-rose-200"
+              >
+                ✕
+              </button>
+            ) : null}
+            <div className="pr-5 text-[13px] leading-relaxed text-rose-200">
+              {block.content || 'Generation failed.'}
+            </div>
+            {raw ? (
+              <details className="mt-1.5 text-[12px] text-rose-300/80">
+                <summary className="cursor-pointer select-none">
+                  Show provider details
+                </summary>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-rose-950/40 p-2 font-mono text-[10px]">
+                  {raw}
+                </pre>
+              </details>
+            ) : null}
+            {(onRetryTurn || onSwitchModel) && (
+              <div className="mt-2.5 flex items-center gap-2">
+                {onRetryTurn ? (
+                  <button
+                    type="button"
+                    onClick={onRetryTurn}
+                    data-testid="chat-error-retry"
+                    className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-[11px] font-medium text-rose-100 transition hover:bg-rose-500/25"
+                  >
+                    ↻ Try again
+                  </button>
+                ) : null}
+                {onSwitchModel ? (
+                  <button
+                    type="button"
+                    onClick={onSwitchModel}
+                    className="rounded-lg border border-rose-500/30 px-2.5 py-1 text-[11px] font-medium text-rose-200 transition hover:bg-rose-500/10"
+                  >
+                    Switch model
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    });
+
   return (
     <div className="process-timeline" data-slot="process-timeline">
       {(processBlocks.length > 0 || showPendingThinking) && (
@@ -1207,6 +1233,7 @@ export function AssistantBlockTimeline({
         </ActivitySummary>
       )}
       {hasFinalOutput && renderFinal(finalBlocks)}
+      {errorBlocks.length > 0 && renderErrorBubble(errorBlocks)}
     </div>
   );
 }

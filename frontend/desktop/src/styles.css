@@ -1377,7 +1377,7 @@ input::placeholder {
 .process-timeline {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
 }
 .process-step {
@@ -1555,6 +1555,15 @@ input::placeholder {
 .process-tool-toggle:focus-visible {
   outline: 2px solid var(--dt-ring);
   outline-offset: 1px;
+}
+/* Command rows: a single airy flex line — gutter, fixed "Terminal"/"Running"
+   label, the shell line as muted truncated text, status pill, chevron. */
+.process-tool-toggle--command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 3px 4px 3px 0;
 }
 .process-tool-label {
   min-width: 0;

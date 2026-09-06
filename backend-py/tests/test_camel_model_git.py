@@ -219,3 +219,90 @@ async def test_git_push_to_upstream_and_honest_failure(client, isolatedData, tmp
     resp = await client.post('/api/git/push', json={'sessionId': '', 'repoPath': str(repo)})
     assert resp.status_code == 200, resp.text
     assert 'output' in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_git_branches_sorts_current_first(client, isolatedData, tmp_path):
+    """The switcher lists local branches with the current one flagged and on
+    top, so "which branch am I in" is unambiguous."""
+    import subprocess
+
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-b', 'aaa-base'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'init'], cwd=repo, check=True, capture_output=True, env=_git_env()
+    )
+    subprocess.run(['git', 'branch', 'zzz-later'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(['git', 'checkout', '-b', 'mid-work'], cwd=repo, check=True, capture_output=True, env=_git_env())
+
+    resp = await client.get('/api/git/branches', params={'repoPath': str(repo)})
+    assert resp.status_code == 200, resp.text
+    branches = resp.json()['branches']
+    names = [b['name'] for b in branches]
+    assert set(names) == {'aaa-base', 'zzz-later', 'mid-work'}
+    assert branches[0]['name'] == 'mid-work' and branches[0]['current'] is True
+    assert sum(1 for b in branches if b['current']) == 1
+
+
+@pytest.mark.asyncio
+async def test_git_branches_detached_head(client, isolatedData, tmp_path):
+    """A detached HEAD (checked-out commit) still reports where the user is:
+    /branch returns the short SHA + detached flag; /branches carries it too."""
+    import subprocess
+
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-b', 'main'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'one'], cwd=repo, check=True, capture_output=True, env=_git_env()
+    )
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'two'], cwd=repo, check=True, capture_output=True, env=_git_env()
+    )
+    sha = subprocess.run(
+        ['git', 'rev-parse', '--short', 'HEAD~1'], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(['git', 'checkout', sha], cwd=repo, check=True, capture_output=True, env=_git_env())
+
+    branch = await client.get('/api/git/branch', params={'repoPath': str(repo)})
+    assert branch.status_code == 200, branch.text
+    bdata = branch.json()
+    assert bdata.get('detached') is True
+    assert bdata.get('current') == sha
+
+    branches = await client.get('/api/git/branches', params={'repoPath': str(repo)})
+    assert branches.status_code == 200, branches.text
+    jdata = branches.json()
+    assert jdata.get('detached') is True
+    assert jdata.get('head') == sha
+    # No branch is flagged current while detached.
+    assert all(not b['current'] for b in jdata['branches'])
+
+
+@pytest.mark.asyncio
+async def test_git_branches_reports_upstream_tracking(client, isolatedData, tmp_path):
+    """A tracked branch surfaces its upstream + ahead/behind so the menu
+    reflects real sync state, not just names."""
+    import subprocess
+
+    remote = tmp_path / 'remote.git'
+    subprocess.run(['git', 'init', '--bare', '-b', 'main', str(remote)], check=True, capture_output=True)
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-b', 'main'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'init'], cwd=repo, check=True, capture_output=True, env=_git_env()
+    )
+    subprocess.run(['git', 'remote', 'add', 'origin', str(remote)], cwd=repo, check=True, capture_output=True)
+    subprocess.run(['git', 'push', '-u', 'origin', 'main'], cwd=repo, check=True, capture_output=True, env=_git_env())
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'ahead'], cwd=repo, check=True, capture_output=True, env=_git_env()
+    )
+
+    resp = await client.get('/api/git/branches', params={'repoPath': str(repo)})
+    assert resp.status_code == 200, resp.text
+    main = next(b for b in resp.json()['branches'] if b['name'] == 'main')
+    assert main['upstream'] == 'origin/main'
+    assert main['ahead'] == 1
+    assert main['behind'] == 0

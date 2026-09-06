@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/task';
 import { ToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { extractDiffData, extractFilename } from '@/components/chat/tool/extractors';
+import { extractCommand, extractDiffData, extractFilename } from '@/components/chat/tool/extractors';
 import { classifyTool } from '@/lib/tool-classify';
 import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { formatToolContext } from '@/lib/tool-context-format';
@@ -157,6 +157,10 @@ export function ToolStepRow({
   const running = tool.status === 'running';
   const errored = tool.status === 'error';
   const filename = !isCommand ? extractFilename(tool.context) : null;
+  // Command rows carry the shell line as secondary muted text on the row
+  // (the primary label is the fixed "Terminal"/"Running" word), matching the
+  // reference transcript.
+  const commandText = isCommand ? extractCommand(tool.context) : null;
   const bucket = classifyTool(tool.name);
   const isView = bucket === 'view';
   const isEdit = bucket === 'edit';
@@ -188,12 +192,12 @@ export function ToolStepRow({
     tool.pendingApproval ||
     (hasChildren && (!isView || verbose))
   );
-  // Minimal-output policy: settled read rows and successful
-  // command rows are header-only — no chevron, nothing to expand into.
-  // Failures always stay inspectable (full output behind the click).
-  // /verbose lifts the lock so raw output is reachable inline.
-  const minimalLocked =
-    !verbose && !running && ((isView && !errored) || (isCommand && !errored));
+  // Minimal-output policy: settled read rows are header-only — no chevron,
+  // nothing to expand into. Command rows are expandable into their output
+  // box (collapsed by default, auto-open while running) so the transcript
+  // stays minimal but the result is one click away. Failures always stay
+  // inspectable. /verbose lifts the read lock too.
+  const minimalLocked = !verbose && !running && isView && !errored;
   // View tools stay header-only while empty (no blank "Running…" panel).
   const canExpand =
     !minimalLocked && (hasExpandableContent || (running && !isView));
@@ -231,7 +235,10 @@ export function ToolStepRow({
         <TaskTrigger title={label} aria-controls={canExpand ? panelId : undefined}>
           <button
             type="button"
-            className="process-tool-toggle text-muted-foreground hover:text-foreground"
+            className={cn(
+              'process-tool-toggle text-muted-foreground hover:text-foreground',
+              isCommand && 'process-tool-toggle--command',
+            )}
             disabled={!canExpand}
           >
             <span className="process-step-gutter" aria-hidden>
@@ -250,17 +257,37 @@ export function ToolStepRow({
                 />
               )}
             </span>
-            <span
-              className={cn(
-                'process-tool-label',
-                running && 'shimmer process-tool-label--live',
-                // Plan 15.1: command rows carry the command in monospace.
-                isCommand && 'font-mono text-[11.5px]',
-              )}
-              title={filename ?? undefined}
-            >
-              {label}
-            </span>
+            {isCommand ? (
+              <>
+                <span
+                  className={cn(
+                    'process-tool-label shrink-0',
+                    running && 'shimmer process-tool-label--live',
+                  )}
+                >
+                  {running ? 'Running' : 'Terminal'}
+                </span>
+                {commandText ? (
+                  <span
+                    className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground/65"
+                    title={commandText}
+                    data-testid="command-inline-cmd"
+                  >
+                    {commandText}
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <span
+                className={cn(
+                  'process-tool-label',
+                  running && 'shimmer process-tool-label--live',
+                )}
+                title={filename ?? undefined}
+              >
+                {label}
+              </span>
+            )}
             {isCommand && !running && (
               <span
                 className={cn(

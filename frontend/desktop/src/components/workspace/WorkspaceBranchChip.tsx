@@ -56,6 +56,8 @@ export function BranchMenuBody({
   });
 
   const list = branches.data?.branches ?? [];
+  const detached = Boolean(branches.data?.detached);
+  const headSha = branches.data?.head ?? '';
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return list;
@@ -132,7 +134,22 @@ export function BranchMenuBody({
             Loading…
           </div>
         )}
-        {!branches.isLoading && filtered.length === 0 && (
+        {/* Detached HEAD — no branch is checked out; show where we are. */}
+        {!branches.isLoading && detached && (
+          <div
+            className="flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1.5 text-xs"
+            data-testid="branch-detached"
+          >
+            <GitBranch className="mt-0.5 size-3 shrink-0 opacity-70" />
+            <span className="min-w-0 flex-1 truncate font-mono text-foreground">
+              detached HEAD
+            </span>
+            {headSha && (
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{headSha}</span>
+            )}
+          </div>
+        )}
+        {!branches.isLoading && !detached && filtered.length === 0 && (
           <div className="px-2.5 py-3 text-center text-[11px] text-muted-foreground">
             {list.length === 0 ? 'No local branches found' : 'No matching branches'}
           </div>
@@ -158,6 +175,14 @@ export function BranchMenuBody({
               {b.current && changedFiles > 0 && (
                 <span className="mt-0.5 block text-[11px] text-muted-foreground" data-testid="branch-uncommitted">
                   Uncommitted changes: {changedFiles} {changedFiles === 1 ? 'file' : 'files'}
+                </span>
+              )}
+              {/* Upstream sync state (↑ahead ↓behind) for the tracked branch. */}
+              {b.upstream && ((b.ahead ?? 0) > 0 || (b.behind ?? 0) > 0) && (
+                <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground/80" data-testid="branch-track">
+                  {b.upstream}
+                  {(b.ahead ?? 0) > 0 && <span className="text-emerald-400/80"> ↑{b.ahead}</span>}
+                  {(b.behind ?? 0) > 0 && <span className="text-amber-400/80"> ↓{b.behind}</span>}
                 </span>
               )}
             </span>

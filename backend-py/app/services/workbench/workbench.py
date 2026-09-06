@@ -620,14 +620,13 @@ def _setAssistantText(
 def _modelRetryPolicy() -> dict[str, int]:
     """Retry policy with optional config.json overrides (workbench.retry).
 
-    Default maxRetries 3 (was 10 — 2026-08-31 speed audit): the loop-level
-    budget stacks on top of the client's own 3 retries with ≤30 s
-    Retry-After waits each, so 10 loop retries could keep a rate-limited
-    "hello" waiting for many minutes before surfacing anything. 3 loop
-    retries × visible `retrying` pills keeps the worst case ~1-2 min and
-    still rides out transient 429/503 bursts. Override per config.json
-    workbench.retry.maxRetries when a provider genuinely needs more."""
-    policy = {'maxRetries': 3, 'baseDelayMs': 1000, 'maxDelayMs': 30000, 'toolsFallback': 1}
+    Default maxRetries 10: a provider hiccup (429/503/network) should ride
+    out a real outage window instead of surfacing a failure after a few
+    attempts. Each attempt is visible as a `retrying` pill, and the
+    client's own ≤3 pre-first-token backoffs stack underneath. Override
+    per config.json workbench.retry.maxRetries when a provider needs a
+    tighter or looser budget."""
+    policy = {'maxRetries': 10, 'baseDelayMs': 1000, 'maxDelayMs': 30000, 'toolsFallback': 1}
     try:
         from app.services import config_service
 

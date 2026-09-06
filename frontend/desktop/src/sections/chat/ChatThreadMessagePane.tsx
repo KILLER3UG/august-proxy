@@ -46,6 +46,7 @@ export function ChatThreadMessagePane({
   models,
   onReanswerWithModel,
   onCompare,
+  onDismissError,
   onBeforeJump,
   virtRef,
 }: {
@@ -86,6 +87,8 @@ export function ChatThreadMessagePane({
   onReanswerWithModel?: (model: ModelItem, index: number) => void;
   /** "Compare" — re-run the message's prompt on 2–3 models side by side. */
   onCompare?: (index: number) => void;
+  /** Dismiss the provider-error bubble on a message (removes the block). */
+  onDismissError?: (msgId: string) => void;
   /** Fired before an in-thread search jump (unpins stick-to-bottom). */
   onBeforeJump?: () => void;
   /** Virtualizer handle for jumping to virtualized rows. */
@@ -216,6 +219,9 @@ export function ChatThreadMessagePane({
                       : undefined
                   }
                   onCompare={onCompare ? () => onCompare(realIndex) : undefined}
+                  onDismissError={
+                    onDismissError ? () => onDismissError(m.id) : undefined
+                  }
                 />
               </motion.div>
             );

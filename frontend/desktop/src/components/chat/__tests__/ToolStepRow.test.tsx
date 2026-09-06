@@ -143,7 +143,7 @@ describe('ToolStepRow — minimal-output policy', () => {
     expect(screen.queryByText('should never render')).toBeNull();
   });
 
-  it('successful command rows are header-only', () => {
+  it('successful command rows are collapsed but expandable into their output', () => {
     const tool = makeTool({
       name: 'run_command',
       status: 'done',
@@ -161,8 +161,13 @@ describe('ToolStepRow — minimal-output policy', () => {
         <div>output body</div>
       </ToolStepRow>,
     );
-    expect(screen.getByRole('button')).toBeDisabled();
+    // The row reads "Terminal" + the command, collapsed by default; the
+    // output box is one click away (not locked away as before).
+    const toggle = screen.getByRole('button');
+    expect(toggle).not.toBeDisabled();
     expect(screen.queryByText('output body')).toBeNull();
+    fireEvent.click(toggle);
+    expect(screen.getByText('output body')).toBeInTheDocument();
   });
 
   it('failed command rows show one inline error line and stay expandable', () => {
@@ -290,23 +295,27 @@ describe('ToolStepRow — command status pill (plan 15.1)', () => {
     expect(screen.queryByTestId('tool-status-pill')).toBeNull();
   });
 
-  it('command labels render in monospace', () => {
+  it('command rows show a fixed "Terminal" label + the command in monospace', () => {
     const tool = makeTool({
       name: 'run_command',
       status: 'done',
-      context: JSON.stringify({ command: 'ls' }),
+      context: JSON.stringify({ command: 'ls -la' }),
     });
     const { container } = render(
       <ToolStepRow
         tool={tool}
-        label="Ran: ls"
+        label="Ran: ls -la"
         isCommand
         expanded={false}
         onToggle={() => {}}
       />,
     );
+    // Primary label is the fixed word; the shell line is secondary mono text.
     const label = container.querySelector('.process-tool-label');
-    expect(label?.className).toContain('font-mono');
+    expect(label?.textContent).toBe('Terminal');
+    const cmd = screen.getByTestId('command-inline-cmd');
+    expect(cmd.textContent).toContain('ls -la');
+    expect(cmd.className).toContain('font-mono');
   });
 });
 

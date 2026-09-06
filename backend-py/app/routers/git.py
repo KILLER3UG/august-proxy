@@ -8,6 +8,7 @@ structured JSON matching the desktop gitApi client:
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -249,7 +250,11 @@ async def git_log(sessionId: str = '', repoPath: str = '', count: int = 10):
 
 @router.get('/branch')
 async def git_branch(sessionId: str = '', repoPath: str = ''):
-    """Current branch for the session workspace."""
+    """Current branch for the session workspace.
+
+    Detached HEAD (checked-out commit/tag) has no branch name — surface the
+    short SHA with a `detached` flag so the chip shows *something* truthful
+    instead of a blank '—'."""
     path, err = _resolve_workspace(sessionId, repoPath)
     if err or not path:
         return {'workspace': None, 'current': None, 'error': err or 'No path'}
@@ -257,13 +262,38 @@ async def git_branch(sessionId: str = '', repoPath: str = ''):
     if repo_err:
         return {'workspace': path, 'current': None, 'error': repo_err}
     _, current, _ = await _run_git(path, 'branch', '--show-current', check=False)
-    name = current.strip() or None
-    return {'workspace': path, 'current': name}
+    name = current.strip()
+    if name:
+        return {'workspace': path, 'current': name, 'detached': False}
+    # Detached — fall back to the short commit SHA.
+    _, sha, _ = await _run_git(path, 'rev-parse', '--short', 'HEAD', check=False)
+    sha = sha.strip()
+    if sha:
+        return {'workspace': path, 'current': sha, 'detached': True}
+    return {'workspace': path, 'current': None, 'detached': False}
+
+
+_TRACK_RE = re.compile(r'\b(ahead|behind)\s+(\d+)')
+
+
+def _parse_upstream_track(track: str) -> tuple[int, int]:
+    """`%(upstream:track)` → (ahead, behind). '[ahead 1, behind 2]' → (1, 2);
+    '[gone]' or empty → (0, 0)."""
+    ahead = behind = 0
+    for m in _TRACK_RE.finditer(track or ''):
+        if m.group(1) == 'ahead':
+            ahead = int(m.group(2))
+        else:
+            behind = int(m.group(2))
+    return ahead, behind
 
 
 @router.get('/branches')
 async def git_branches(sessionId: str = '', repoPath: str = ''):
-    """Local branch list with current flag — used by the branch switcher."""
+    """Local branch list with current flag + upstream sync state — used by
+    the branch switcher. The current branch sorts to the top; a detached
+    HEAD is reported via `detached` + `head` (short SHA) so the menu still
+    tells the user where they are."""
     path, err = _resolve_workspace(sessionId, repoPath)
     if err or not path:
         return {'workspace': None, 'branches': [], 'error': err or 'No path'}
@@ -273,13 +303,48 @@ async def git_branches(sessionId: str = '', repoPath: str = ''):
 
     _, current_raw, _ = await _run_git(path, 'branch', '--show-current', check=False)
     current = current_raw.strip()
-    _, listed, _ = await _run_git(path, 'branch', '--format=%(refname:short)', check=False)
-    branches = [
-        {'name': name, 'current': name == current}
-        for name in (line.strip() for line in listed.splitlines())
-        if name
-    ]
-    return {'workspace': path, 'branches': branches}
+    detached = False
+    head_sha = ''
+    if not current:
+        detached = True
+        _, sha, _ = await _run_git(path, 'rev-parse', '--short', 'HEAD', check=False)
+        head_sha = sha.strip()
+
+    _, listed, _ = await _run_git(
+        path,
+        'for-each-ref',
+        '--format=%(refname:short)%09%(upstream:short)%09%(upstream:track)',
+        'refs/heads',
+        check=False,
+    )
+    branches: list[dict[str, object]] = []
+    for line in listed.splitlines():
+        line = line.rstrip()
+        if not line.strip():
+            continue
+        parts = line.split('\t')
+        name = parts[0].strip()
+        if not name:
+            continue
+        upstream = parts[1].strip() if len(parts) > 1 else ''
+        track = parts[2] if len(parts) > 2 else ''
+        ahead, behind = _parse_upstream_track(track)
+        branches.append(
+            {
+                'name': name,
+                'current': name == current,
+                'upstream': upstream or None,
+                'ahead': ahead,
+                'behind': behind,
+            }
+        )
+    # Current branch first, then alphabetical (case-insensitive).
+    branches.sort(key=lambda b: (not b['current'], str(b['name']).lower()))
+    result: dict[str, object] = {'workspace': path, 'branches': branches}
+    if detached:
+        result['detached'] = True
+        result['head'] = head_sha
+    return result
 
 
 @router.get('/diff')

@@ -9,7 +9,7 @@ import { CircleX, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { isTauri } from '@/lib/tauri-detect';
 import { useBackendSetup, type BackendSetupPhase } from '@/hooks/useBackendSetup';
-import { BackendSetupPlan } from '@/components/ui/backend-setup-plan';
+import { LaunchConversation } from '@/components/overlays/LaunchConversation';
 import { Button } from '@/components/ui/button';
 import { $gateway } from '@/store/gateway';
 
@@ -40,7 +40,10 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
   const [proxyUp, setProxyUp] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
-  const [readyFlash, setReadyFlash] = useState(false);
+  // Set once the launch conversation has finished its closing beat. The app
+  // reveals on `proxyUp && convDone` — so a fast backend isn't held hostage
+  // by the animation, and a slow one keeps the conversation honest.
+  const [convDone, setConvDone] = useState(false);
   // Graceful degradation: track how long we've been waiting (Phase 5.1)
   const [waitPhase, setWaitPhase] = useState<'normal' | 'slow' | 'critical'>('normal');
   // Once the backend has been healthy this session, never re-show the first-launch
@@ -106,20 +109,13 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
       writeUnlocked(false);
       return;
     }
-    if (proxyUp && setup.phase !== 'error') {
+    // Unlock (and persist for remounts) only once the backend is healthy AND
+    // the launch conversation has wrapped — so the reveal is never premature.
+    if (proxyUp && convDone && setup.phase !== 'error') {
       setUnlocked(true);
       writeUnlocked(true);
     }
-  }, [proxyUp, setup.phase]);
-
-  useEffect(() => {
-    // Brief "ready" flash only the first time we become healthy in this mount
-    // (not when sessionStorage already marks us unlocked from a prior remount).
-    if (!proxyUp || setup.phase === 'error' || readUnlocked()) return;
-    setReadyFlash(true);
-    const t = window.setTimeout(() => setReadyFlash(false), 900);
-    return () => window.clearTimeout(t);
-  }, [proxyUp, setup.phase]);
+  }, [proxyUp, convDone, setup.phase]);
 
   // Graceful degradation timers (Phase 5.1): escalate wait phase when backend is slow.
   useEffect(() => {
@@ -150,8 +146,10 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
 
   const failed = setup.phase === 'error';
   const materializing = MATERIALIZING.has(setup.phase);
-  // After unlock: stay in the app. Only re-gate for real deps install / hard error.
-  const gated = failed || materializing || (!unlocked && (!proxyUp || readyFlash));
+  // After unlock: stay in the app. Only re-gate for real deps install / hard
+  // error. Reveal requires BOTH the backend being up AND the launch
+  // conversation having finished its closing beat.
+  const gated = failed || materializing || (!unlocked && !(proxyUp && convDone));
 
   if (!gated) return <>{children}</>;
 
@@ -221,12 +219,7 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
         </motion.div>
       ) : (
         <div className="relative">
-          <BackendSetupPlan setup={displaySetup} headline={headline} detail={detail} />
-          {!proxyUp && (
-            <p className="mt-4 text-center text-[11px] text-muted-foreground">
-              The app will open automatically when the backend is ready.
-            </p>
-          )}
+          <LaunchConversation setup={displaySetup} proxyUp={proxyUp} onDone={() => setConvDone(true)} />
         </div>
       )}
     </div>

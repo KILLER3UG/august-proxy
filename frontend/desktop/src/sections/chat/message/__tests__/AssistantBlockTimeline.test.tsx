@@ -502,7 +502,8 @@ describe('minimal-output transcript', () => {
     expect(inlineErr.textContent).toContain('1 failed, 1 passed');
     // Full output stays behind the click until the row is expanded.
     expect(document.querySelector('[data-testid="command-output-pane"]')).toBeNull();
-    const toggle = screen.getByRole('button', { name: /Ran/i });
+    const toggle = document.querySelector('button.process-tool-toggle--command')!;
+    expect(toggle).toBeTruthy();
     fireEvent.click(toggle);
     const pane = document.querySelector('[data-testid="command-output-pane"]');
     expect(pane).toBeTruthy();
@@ -513,7 +514,7 @@ describe('minimal-output transcript', () => {
     ).toContain('AssertionError');
   });
 
-  it('successful command rows are header-only (no chevron, no pane)', () => {
+  it('successful command rows expand into their output box', () => {
     renderTimeline([
       {
         id: 'block_cmd_ok',
@@ -529,11 +530,17 @@ describe('minimal-output transcript', () => {
     ]);
 
     expandActivitySummary();
-    const toggle = screen.getByRole('button', { name: /Ran: ls -la/i });
-    expect(toggle).toBeDisabled();
+    const toggle = document.querySelector('button.process-tool-toggle--command')!;
+    expect(toggle).toBeTruthy();
+    expect(toggle).not.toBeDisabled();
+    // Collapsed by default — the transcript stays minimal until expanded.
     expect(document.querySelector('[data-testid="command-output-pane"]')).toBeNull();
-    // Raw output never streams into the transcript on success.
-    expect(screen.queryByText(/drwxr-xr-x/)).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    const pane = document.querySelector('[data-testid="command-output-pane"]');
+    expect(pane).toBeTruthy();
+    expect(
+      pane!.querySelector('[data-testid="command-full-output"]')!.textContent,
+    ).toContain('drwxr-xr-x');
   });
 
   it('consecutive reads of the same file collapse into one ×N row', () => {
@@ -763,5 +770,67 @@ describe('recalledMemories renderer', () => {
     const chip = document.querySelector('[data-testid="recalled-memories-block"]');
     expect(chip).toBeTruthy();
     expect(chip!.textContent).toContain('Recalled: build-cmd');
+  });
+});
+
+describe('provider-error bubble', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  function renderWithError(
+    errorBlock: MessageBlock,
+    opts?: { onRetryTurn?: () => void; onDismissError?: () => void; onSwitchModel?: () => void },
+  ) {
+    return render(
+      <MemoryRouter initialEntries={['/session/sess_test']}>
+        <AssistantBlockTimeline
+          displayBlocks={[errorBlock]}
+          message={makeMessage()}
+          isLast
+          streaming={false}
+          showPendingThinking={false}
+          onRetryTurn={opts?.onRetryTurn}
+          onSwitchModel={opts?.onSwitchModel}
+          onDismissError={opts?.onDismissError}
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  it('renders the error as a standalone bubble, not buried in the activity pack', () => {
+    renderWithError({
+      id: 'b_err',
+      type: 'error',
+      content: 'Rate limited — The provider is throttling requests — wait a moment and retry.',
+      rawContent: '[429] upstream busy',
+    });
+    const bubble = document.querySelector('[data-testid="chat-error-bubble"]');
+    expect(bubble).toBeTruthy();
+    expect(bubble!.textContent).toContain('Rate limited');
+    // The friendly copy is visible WITHOUT expanding anything, and the raw
+    // provider text is behind a details element.
+    expect(bubble!.querySelector('details')).toBeTruthy();
+    // No collapsible activity pack hides it — a lone error turn has no pack.
+    expect(document.querySelector('[data-slot="activity-summary"]')).toBeNull();
+  });
+
+  it('Try again re-runs the turn; ✕ dismisses the bubble', () => {
+    const onRetryTurn = vi.fn();
+    const onDismissError = vi.fn();
+    renderWithError(
+      { id: 'b_err', type: 'error', content: 'Request failed', rawContent: 'boom' },
+      { onRetryTurn, onDismissError },
+    );
+    fireEvent.click(screen.getByTestId('chat-error-retry'));
+    expect(onRetryTurn).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('chat-error-dismiss'));
+    expect(onDismissError).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the dismiss control when no handler is provided', () => {
+    renderWithError({ id: 'b_err', type: 'error', content: 'Request failed' });
+    expect(screen.getByTestId('chat-error-bubble')).toBeTruthy();
+    expect(screen.queryByTestId('chat-error-dismiss')).toBeNull();
   });
 });

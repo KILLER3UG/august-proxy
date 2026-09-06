@@ -39,6 +39,7 @@ export function AssistantMessageContent({
   onReanswer,
   reanswerOpen,
   onCompare,
+  onDismissError,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -75,6 +76,8 @@ export function AssistantMessageContent({
   reanswerOpen?: boolean;
   /** "Compare" — re-run this prompt on 2–3 models side by side. */
   onCompare?: () => void;
+  /** Dismiss the provider-error bubble (removes the error block). */
+  onDismissError?: () => void;
 }) {
   // Live generation-rate estimate while the last message streams: output
   // tokens ≈ chars/4 over elapsed time (same heuristic ChatThread blends).
@@ -121,6 +124,7 @@ export function AssistantMessageContent({
             sessionId={sessionId}
             onRetryTurn={onRegen}
             onSwitchModel={onReanswer}
+            onDismissError={onDismissError}
           />
         )}
         {/* Unified ZCode-style changes card (plan §4.5): aggregate

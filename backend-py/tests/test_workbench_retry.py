@@ -74,13 +74,14 @@ def test_delay_exponential_backoff_with_jitter():
 def test_policy_defaults_and_overrides(monkeypatch):
     from app.services import config_service
 
-    # Speed audit 2026-08-31: default 10 → 3. The loop budget stacks on the
-    # client's own 3 retries × ≤30 s Retry-After waits; 10 loop retries
-    # kept a rate-limited "hello" waiting for many silent minutes.
+    # Default 10 loop retries: a provider hiccup should ride out a real
+    # outage window rather than surface a failure after a few attempts.
+    # Each attempt is visible as a `retrying` pill; the client's own
+    # pre-first-token backoffs stack underneath.
     # ToolsFallback defaults ON (the stripped retry that rescues
     # gateways that 500 on the tool surface).
     assert wb._modelRetryPolicy() == {
-        'maxRetries': 3,
+        'maxRetries': 10,
         'baseDelayMs': 1000,
         'maxDelayMs': 30000,
         'toolsFallback': 1,

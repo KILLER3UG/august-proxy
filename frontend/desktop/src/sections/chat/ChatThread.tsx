@@ -773,6 +773,32 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     ],
   );
 
+  /** Dismiss a provider-error bubble: strip the `error` block from the
+   *  message. If nothing else remains (a pure-failure turn), drop the
+   *  message so no empty assistant bubble is left behind. Persisted so the
+   *  dismissal survives reload. */
+  const handleDismissError = useCallback(
+    (msgId: string) => {
+      const next = messages
+        .map((m) => {
+          if (m.id !== msgId || !m.blocks) return m;
+          const blocks = m.blocks.filter((b) => b.type !== 'error');
+          return { ...m, blocks: blocks.length > 0 ? blocks : undefined };
+        })
+        .filter((m) => {
+          if (m.id !== msgId) return true;
+          const hasContent = Boolean(m.content && m.content.trim());
+          const hasBlocks = Boolean(m.blocks && m.blocks.length > 0);
+          const hasTools = Boolean(m.tools && m.tools.length > 0);
+          const hasThinking = Boolean(m.thinking && m.thinking.trim());
+          return hasContent || hasBlocks || hasTools || hasThinking;
+        });
+      setMessages(next);
+      if (sessionId) persistMessages(sessionId, next);
+    },
+    [messages, sessionId],
+  );
+
   // Session switch / first load: always land at bottom once messages are ready.
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
@@ -1592,6 +1618,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onRevert={handleRevert}
                 onEdit={handleEdit}
                 onRegenerate={handleRegenerate}
+                onDismissError={handleDismissError}
                 onFork={handleFork}
                 onClarifyAnswer={handleClarifyAnswer}
                 models={visibleModels}

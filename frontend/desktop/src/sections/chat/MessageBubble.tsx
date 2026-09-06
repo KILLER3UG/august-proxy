@@ -40,6 +40,7 @@ function MessageBubbleInner({
   models,
   onReanswerWithModel,
   onCompare,
+  onDismissError,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -59,6 +60,8 @@ function MessageBubbleInner({
   onReanswerWithModel?: (model: ModelItem) => void;
   /** "Compare" — re-run this prompt on 2–3 models side by side. */
   onCompare?: () => void;
+  /** Dismiss the provider-error bubble on this message (removes the block). */
+  onDismissError?: () => void;
   /** Sub-agent prompt disclosures keyed by the parent toolUse id. Only
    *  present for blocks whose tool name is august__spawn_subagent or
    *  august__run_team (and the team-run agents they spawn). The bubble
@@ -345,6 +348,7 @@ function MessageBubbleInner({
           onCopy={() => { void handleCopy(); }}
           onRegen={() => { void handleRegenClick(); }}
           onFork={onFork}
+          onDismissError={onDismissError}
           onReanswer={
             models && onReanswerWithModel
               ? () => setReanswerOpen((v) => !v)

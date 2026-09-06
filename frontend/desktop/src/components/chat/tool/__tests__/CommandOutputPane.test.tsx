@@ -40,7 +40,7 @@ describe('CommandOutputPane — minimal output', () => {
     'Exit code: 1',
   ].join('\n');
 
-  it('success renders command + green pill only — no output body', () => {
+  it('success pane shows the $ command line and its output body', () => {
     const { container } = render(
       <CommandOutputPane
         toolName="run_command"
@@ -51,8 +51,10 @@ describe('CommandOutputPane — minimal output', () => {
     );
     expect(screen.getByTestId('command-status-pill').textContent).toBe('Done');
     expect(container.textContent).toContain('ls -la');
-    // Raw stdout never streams into the transcript on success.
-    expect(container.textContent).not.toContain('file.txt');
+    // The pane only mounts when its row is expanded, so the output is shown
+    // here; transcript minimality comes from the row's default-collapsed
+    // state (see ToolStepRow), not from hiding the body.
+    expect(screen.getByTestId('command-full-output').textContent).toContain('file.txt');
     expect(screen.queryByTestId('command-error-line')).toBeNull();
     expect(screen.queryByTestId('command-output-toggle')).toBeNull();
   });
@@ -84,8 +86,8 @@ describe('CommandOutputPane — minimal output', () => {
     expect(screen.queryByTestId('command-full-output')).toBeNull();
   });
 
-  it('running shows the running pill without streaming raw output', () => {
-    const { container } = render(
+  it('running pane streams the live preview into the output box', () => {
+    render(
       <CommandOutputPane
         toolName="run_command"
         context={JSON.stringify({ command: 'npm test' })}
@@ -94,7 +96,8 @@ describe('CommandOutputPane — minimal output', () => {
       />,
     );
     expect(screen.getByTestId('command-status-pill').textContent).toBe('Running');
-    expect(container.textContent).not.toContain('partial output');
+    // Running rows auto-expand, so the live preview is visible in the box.
+    expect(screen.getByTestId('command-full-output').textContent).toContain('partial output');
     expect(screen.queryByTestId('command-error-line')).toBeNull();
   });
 });

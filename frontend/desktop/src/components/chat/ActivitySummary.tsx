@@ -330,19 +330,9 @@ export function ActivitySummary({
           <span className="truncate">{liveLine}</span>
         </div>
       ) : null}
-      {/* Pending state: keep the live line visible while collapsed too, so
-          the transcript reads as active the instant the assistant placeholder
-          appears (no expansion required). The line is hidden once any real
-          prose / segment has landed — the activity summary already shows it. */}
-      {showLiveOnly && !open ? (
-        <div
-          className="activity-summary-live activity-summary-live--inline"
-          aria-live="polite"
-        >
-          <span className="activity-summary-live-dot" aria-hidden />
-          <span className="truncate">{liveLine}</span>
-        </div>
-      ) : null}
+      {/* Collapsed pending state is carried by the bold header label above
+          (activity-summary-live-label) — rendering an inline live line here
+          too duplicated "Working…" as two stacked rows. */}
 
       <AnimatePresence initial={false}>
         {open && (

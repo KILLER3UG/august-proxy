@@ -32,12 +32,29 @@ export interface GitDiffResult {
 export interface GitBranchInfo {
   workspace: string | null;
   current: string | null;
+  /** True when HEAD is detached (a commit/tag, not a branch) — `current`
+   *  then holds the short SHA. */
+  detached?: boolean;
   error?: string;
+}
+
+export interface GitBranchEntry {
+  name: string;
+  current: boolean;
+  /** Upstream tracking ref (e.g. 'origin/main'), null when untracked. */
+  upstream?: string | null;
+  /** Commits ahead of / behind the upstream (0 when untracked). */
+  ahead?: number;
+  behind?: number;
 }
 
 export interface GitBranchList {
   workspace: string | null;
-  branches: Array<{ name: string; current: boolean }>;
+  /** Local branches, current first, then alphabetical. */
+  branches: GitBranchEntry[];
+  detached?: boolean;
+  /** Short SHA of HEAD when detached. */
+  head?: string;
   error?: string;
 }
 

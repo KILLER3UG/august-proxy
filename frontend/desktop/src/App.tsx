@@ -8,6 +8,7 @@ import { ConversationSearchModal } from '@/components/overlays/ConversationSearc
 import { OnboardingTour } from '@/components/overlays/OnboardingTour';
 import { ProviderOnboardingModal } from '@/components/overlays/ProviderOnboardingModal';
 import { BackendBootstrapGate } from '@/components/overlays/BackendBootstrapGate';
+import { UpdateConversation } from '@/components/overlays/UpdateConversation';
 import { QuitConfirmModal } from '@/components/overlays/QuitConfirmModal';
 import { UpdateRelaunchOverlay } from '@/components/overlays/UpdateRelaunchOverlay';
 import { useStartupProviderRefresh } from '@/hooks/useStartupProviderRefresh';
@@ -93,6 +94,8 @@ export default function App() {
         <OnboardingTour />
         <ProviderOnboardingModal />
         <QuitConfirmModal />
+        {/* First launch after a version bump: animated "what's new" chat. */}
+        <UpdateConversation />
       </BackendBootstrapGate>
       {/* Outside the gate so a stopped backend during update can't hide it. */}
       <UpdateRelaunchOverlay />

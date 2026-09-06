@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Loader2, TerminalSquare } from 'lucide-react';
+import { ChevronDown, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { extractCommand } from './extractors';
@@ -94,7 +94,10 @@ export function CommandOutputPane({
   const isError = !running && (failed || status === 'error');
   const errorLine = isError ? commandErrorOneLiner(body) : null;
   const hasOutput = body.length > 0;
-  const showFull = hasOutput && (verbose || (isError && showOutput));
+  // The pane only mounts when its row is expanded (running auto-expands), so
+  // success + running show their output directly; failures keep the one-line
+  // digest with an explicit "output" toggle so the transcript stays minimal.
+  const showFull = hasOutput && (!isError || showOutput || verbose);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -114,17 +117,18 @@ export function CommandOutputPane({
 
   return (
     <div
-      className="mt-1.5 w-full max-w-2xl overflow-hidden rounded-md border border-[hsl(var(--border)/0.55)] bg-[hsl(var(--foreground)/0.035)]"
+      className="mt-1 w-full max-w-2xl overflow-hidden rounded-lg border border-[hsl(var(--border)/0.5)] bg-[hsl(var(--foreground)/0.03)]"
       data-testid="command-output-pane"
       data-status={running ? 'running' : isError ? 'error' : 'done'}
     >
-      <div className="flex items-center gap-2 border-b border-[hsl(var(--border)/0.4)] px-3 py-1.5">
-        <TerminalSquare className="size-3 shrink-0 text-muted-foreground" />
+      {/* Command line — `$ <cmd>` like a real terminal prompt, status chip right. */}
+      <div className="flex items-center gap-2 px-3.5 py-2">
         <span
-          className="min-w-0 flex-1 truncate font-mono text-[11px] text-[hsl(var(--foreground)/0.8)]"
+          className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-[hsl(var(--foreground)/0.82)]"
           title={command}
         >
-          {shortenCommand(command)}
+          <span className="select-none text-muted-foreground/50">$ </span>
+          {shortenCommand(command, 160)}
         </span>
         <span
           className={cn(
@@ -154,7 +158,7 @@ export function CommandOutputPane({
       </div>
       {isError && errorLine && (
         <div
-          className="truncate border-b border-[hsl(var(--border)/0.4)] px-3 py-1 font-mono text-[11px] text-rose-400"
+          className="truncate border-t border-[hsl(var(--border)/0.4)] px-3.5 py-1.5 font-mono text-[11px] text-rose-400"
           title={errorLine}
           data-testid="command-error-line"
         >
@@ -164,7 +168,7 @@ export function CommandOutputPane({
       {showFull && (
         <pre
           ref={scrollRef}
-          className="tool-result-scroll bg-code-block text-code-block m-0 max-h-56 overflow-y-auto overscroll-contain px-3 py-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words"
+          className="tool-result-scroll bg-code-block text-code-block m-0 max-h-60 overflow-y-auto overscroll-contain border-t border-[hsl(var(--border)/0.4)] px-3.5 py-2.5 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words"
           data-testid="command-full-output"
           onWheel={(e) => {
             if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();

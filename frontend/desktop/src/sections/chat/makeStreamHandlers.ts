@@ -916,12 +916,10 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         }
       })();
     },
-    onRetrying: ({ attempt, maxRetries, delayMs, reason }) => {
-      // Self-updating notice (single field, replaced on each attempt) so the
-      // user sees the backoff instead of a dead stream. Kept short — the full
-      // upstream message is noise once the retry count is visible.
-      const shortReason = reason.length > 80 ? `${reason.slice(0, 77)}…` : reason;
-      retryNotice = `⏳ ${shortReason} — retrying ${attempt}/${maxRetries} in ${Math.max(1, Math.ceil(delayMs / 1000))}s…`;
+    onRetrying: ({ attempt, maxRetries }) => {
+      // Minimal, calm notice — the raw upstream text and the backoff seconds
+      // are noise; the attempt count is what the user cares about.
+      retryNotice = `Reconnecting… ${attempt}/${maxRetries}`;
       // Roll back ONLY the failed attempt's partial stream: truncate the
       // accumulators and the block list back to the snapshot taken when this
       // round's model call began (turn start or the last tool result). Earlier
@@ -939,17 +937,12 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       };
       scheduleUpdate();
     },
-    onUpstreamRetry: ({ attempt, maxRetries, delayMs, status }) => {
+    onUpstreamRetry: ({ attempt, maxRetries }) => {
       // The provider client itself is backing off
       // (429/503/connection refused, pre-first-token of this round).
       // Notice-only — no buffer rollback: nothing of this round streamed,
       // and earlier rounds' text blocks must stay on screen.
-      const reason = status === 429
-        ? 'Provider rate limit'
-        : status === 503
-          ? 'Provider overloaded'
-          : 'Provider connection issue';
-      retryNotice = `⏳ ${reason} — retrying ${attempt}/${maxRetries} in ${Math.max(1, Math.ceil(delayMs / 1000))}s…`;
+      retryNotice = `Reconnecting… ${attempt}/${maxRetries}`;
       scheduleUpdate();
     },
     onError: ({ message }) => {
