@@ -280,6 +280,15 @@ async def lifespan(app: FastAPI):
         await shutdownAll()
     except Exception:
         pass
+    # Flush the session debounce before exit: a quit landing inside the
+    # 150ms window would otherwise lose the last turn's messages, and the
+    # user's chat history must survive every restart.
+    try:
+        from app.services.workbench.sessions import save_sessions_now
+
+        save_sessions_now()
+    except Exception:
+        pass
 
 
 app = FastAPI(
