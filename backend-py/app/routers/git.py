@@ -29,6 +29,7 @@ class CheckoutBody(CamelModel):
     session_id: str = ''
     repo_path: str = ''
     branch: str = ''
+    create: bool = False
 
 
 class CommitBody(CamelModel):
@@ -36,6 +37,11 @@ class CommitBody(CamelModel):
     repo_path: str = ''
     message: str = ''
     all: bool = False
+
+
+class PushBody(CamelModel):
+    session_id: str = ''
+    repo_path: str = ''
 
 
 def _resolve_workspace(session_id: str = '', repo_path: str = '') -> tuple[str | None, str | None]:
@@ -323,13 +329,32 @@ async def git_checkout(body: CheckoutBody):
     repo_err = await _ensure_repo(path)
     if repo_err:
         raise HTTPException(status_code=400, detail=repo_err)
-    _, output, _ = await _run_git(path, 'checkout', body.branch.strip())
+    if body.create:
+        _, output, _ = await _run_git(path, 'checkout', '-b', body.branch.strip())
+    else:
+        _, output, _ = await _run_git(path, 'checkout', body.branch.strip())
     return {
         'workspace': path,
         'sha': '',
         'output': output,
         'branch': body.branch.strip(),
     }
+
+
+@router.post('/push')
+async def git_push(body: PushBody):
+    """Push the current branch to its upstream. Fails honestly (400 + stderr)
+    when no upstream is configured — the UI surfaces that as a toast."""
+    path, err = _resolve_workspace(body.session_id, body.repo_path)
+    if err or not path:
+        raise HTTPException(status_code=400, detail=err or 'No path')
+    repo_err = await _ensure_repo(path)
+    if repo_err:
+        raise HTTPException(status_code=400, detail=repo_err)
+    code, output, stderr = await _run_git(path, 'push', check=False)
+    if code != 0:
+        raise HTTPException(status_code=400, detail=stderr.strip() or output.strip() or 'git push failed')
+    return {'workspace': path, 'output': output.strip() or stderr.strip()}
 
 
 @router.post('/commit')

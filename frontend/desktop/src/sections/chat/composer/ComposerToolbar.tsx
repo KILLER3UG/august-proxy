@@ -3,9 +3,8 @@
 
 import { useState, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { Loader2, Mic, Send, Square } from 'lucide-react';
-import { toast } from 'sonner';
+import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchAgentMode } from '@/api/workbench';
 import { updateSessionModel } from '@/store/sessions';
-import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchAgentMode, compactWorkbenchSession } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage } from '@/types/chat';
 import {
@@ -54,7 +53,6 @@ export function ComposerToolbar({
   maxContext,
   contextBreakdown,
   sessionUsage,
-  modelForRequest,
   models,
   visibleModels,
   modelsLoading,
@@ -112,7 +110,6 @@ export function ComposerToolbar({
   maxContext: number;
   contextBreakdown: ContextBreakdown;
   sessionUsage: SessionUsageState;
-  modelForRequest: ModelItem | null;
   models: ModelItem[];
   visibleModels: ModelItem[];
   modelsLoading: boolean;
@@ -240,24 +237,6 @@ export function ComposerToolbar({
         .catch((error) => {
           console.warn('[ChatThread] Failed to persist sandbox mode:', error);
         });
-    }
-  };
-
-  // "Compact now" from the context-ring panel: force context compression and
-  // swap in the returned session so the chat + right drawer see the result.
-  const [compacting, setCompacting] = useState(false);
-  const handleCompact = async () => {
-    if (!sessionId || compacting) return;
-    setCompacting(true);
-    try {
-      const res = await compactWorkbenchSession(sessionId);
-      if (res.session) setWorkbenchSession(res.session);
-      toast.success(res.message || 'Context compacted');
-    } catch (error) {
-      console.warn('[ChatThread] Failed to compact context:', error);
-      toast.error('Could not compact context');
-    } finally {
-      setCompacting(false);
     }
   };
 
@@ -494,15 +473,13 @@ export function ComposerToolbar({
           }}
         />
         {/* Context ring sits right after the model/effort dropdown. */}
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center">
           <ContextRing
             pct={pct}
             estTokens={estTokens}
             maxContext={maxContext}
-            modelName={modelForRequest?.name}
-            size={16}
+            size={20}
             breakdown={contextBreakdown}
-            serverTokens={sessionUsage}
             promptCache={
               livePromptCache
                 ? {
@@ -518,11 +495,7 @@ export function ComposerToolbar({
                     }
                   : null
             }
-            onOpenCacheSettings={onEditModels}
-            onCompact={sessionId ? handleCompact : undefined}
-            compacting={compacting}
           />
-          <span className="text-[10px] tabular-nums text-muted-foreground/60">{pct}%</span>
         </span>
       </div>
       <SubagentSpawnModal

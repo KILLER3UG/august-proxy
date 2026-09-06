@@ -20,13 +20,6 @@ from httpx import ASGITransport, AsyncClient
 
 _ALLCamelKeys = {
     'enabled',
-    'adaptivePolicy',
-    'failureLearning',
-    'graphMemory',
-    'hierarchicalAgents',
-    'adapterParallelTools',
-    'parallelReadTools',
-    'reviewLearnedGuidelines',
     # Per-turn skill relevance gating (compact Tier-1 index + Tier-3 picks).
     'skillRelevanceMatch',
     'maxAgentDepth',
@@ -115,7 +108,7 @@ async def testPutMergesAndAudits(client, isolatedData):
     assert body['ok'] is True
     assert body['config']['enabled'] is False
     assert body['config']['maxAgentDepth'] == 3
-    assert body['config']['adaptivePolicy'] is True
+    assert body['config']['modelMemoryRead'] is True
     rows = list_config_audit(category='brain')
     assert any((r['action'] == 'update' for r in rows))
     update = next((r for r in rows if r['action'] == 'update'))

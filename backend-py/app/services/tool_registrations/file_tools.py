@@ -886,6 +886,7 @@ def register() -> None:
     tool_registry.register(
         'write_file',
         'Write content to a file, overwriting any existing content. Creates parent directories if needed. Sandboxed to the session workspace. '
+        'For CHANGES to an existing file prefer edit_lines — one targeted call, no full rewrite, and no re-read needed between successive edits. '
         'If you recently read this file, pass the sha256 from the read result as fileHash — '
         'the write is rejected (without executing) when the file changed since that read.',
         _writeFile,

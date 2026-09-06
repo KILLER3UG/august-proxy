@@ -422,6 +422,9 @@ def skills_tools_allowed(allowed_tool_names: Iterable[str]) -> bool:
 # Tier-3 per-turn skill relevance (M6 item 6): top-3 descriptions, ~150 tokens.
 _RELEVANT_SKILLS_TOP_K = 3
 _RELEVANT_SKILLS_CHAR_CAP = 600
+# BM25 index cache for the per-turn relevant-skills block (identity-keyed,
+# see build_relevant_skills_block).
+_skills_bm25_cache: dict[tuple[str, str], tuple[object, object, list[dict[str, object]]]] = {}
 _RELEVANT_SKILLS_MIN_QUERY = 8
 
 
@@ -473,19 +476,36 @@ def build_relevant_skills_block(
         queryTokens = _tokenize(q)
         if not queryTokens:
             return ''
-        corpus: list[list[str]] = []
-        entries: list[dict[str, object]] = []
-        for s in catalogue:
-            name = as_str(s.get('name'), '')
-            text = f"{name.replace('-', ' ').replace('.', ' ')} {as_str(s.get('description'), '')} {as_str(s.get('trigger'), '')}"
-            tokens = _tokenize(text)
-            if not tokens:
-                continue
-            corpus.append(tokens)
-            entries.append(s)
-        if not corpus:
-            return ''
-        bm25 = BM25(corpus)
+        # The tokenize+BM25-index build is cached per (workspace, agent_id)
+        # and keyed on the catalogue list's IDENTITY — skill_service's
+        # mtime memo returns the same list object between edits, so a new
+        # object is the precise invalidation signal. The cache holds a
+        # strong ref to the entries list, which also makes the id() check
+        # safe against address reuse.
+        cacheKey = (str(workspace) if workspace else '', str(agent_id) if agent_id else '')
+        cached = _skills_bm25_cache.get(cacheKey)
+
+        bm25: BM25
+        entries: list[dict[str, object]]
+        if cached is not None and cached[0] is catalogue:
+            bm25, entries = cached[1], cached[2]  # type: ignore[assignment]
+        else:
+            corpus: list[list[str]] = []
+            build_entries: list[dict[str, object]] = []
+            for s in catalogue:
+                name = as_str(s.get('name'), '')
+                text = f"{name.replace('-', ' ').replace('.', ' ')} {as_str(s.get('description'), '')} {as_str(s.get('trigger'), '')}"
+                tokens = _tokenize(text)
+                if not tokens:
+                    continue
+                corpus.append(tokens)
+                build_entries.append(s)
+            if not corpus:
+                _skills_bm25_cache.pop(cacheKey, None)
+                return ''
+            bm25 = BM25(corpus)
+            entries = build_entries
+            _skills_bm25_cache[cacheKey] = (catalogue, bm25, entries)
         scored: list[tuple[float, dict[str, object]]] = []
         for i, s in enumerate(entries):
             score = bm25.score(queryTokens, i)

@@ -22,7 +22,6 @@ describe('ContextRing tooltip regression', () => {
         pct={42}
         estTokens={1000}
         maxContext={4000}
-        modelName="test-model"
         breakdown={mockBreakdown}
       />
     );
@@ -44,7 +43,6 @@ describe('ContextRing tooltip regression', () => {
         pct={42}
         estTokens={1000}
         maxContext={4000}
-        modelName="test-model"
         breakdown={mockBreakdown}
       />
     );
@@ -58,11 +56,11 @@ describe('ContextRing tooltip regression', () => {
     // jsdom does not run a CSS layout engine, so getBoundingClientRect() returns
     // zeros for portaled elements. Derive a rect from the inline position the
     // component actually set (style.top/style.left, produced by the clamping
-    // logic under test) plus the fixed w-72 width (288px) so the bounds
+    // logic under test) plus the fixed w-[380px] width so the bounds
     // assertions exercise the real positioning rather than jsdom's no-op layout.
     const top = parseFloat((tooltip! as HTMLElement).style.top) || 0;
     const left = parseFloat((tooltip! as HTMLElement).style.left) || 0;
-    const width = 288; // w-72
+    const width = 380; // w-[380px]
     const height = 180;
     vi.spyOn(tooltip!, 'getBoundingClientRect').mockReturnValue({
       top, left, width, height, bottom: top + height, right: left + width, x: left, y: top,
@@ -75,7 +73,7 @@ describe('ContextRing tooltip regression', () => {
     expect(Number.isFinite(rect.width)).toBe(true);
     expect(Number.isFinite(rect.height)).toBe(true);
     expect(rect.width).toBeGreaterThan(0);
-    expect(rect.width).toBeLessThanOrEqual(288);
+    expect(rect.width).toBeLessThanOrEqual(380);
   });
 });
 
@@ -101,7 +99,6 @@ describe('ContextRing gauge percentage from server ground truth', () => {
         pct={pct}
         estTokens={contextTokens}
         maxContext={maxContext}
-        modelName="claude-sonnet"
         breakdown={breakdown}
       />
     );
@@ -166,49 +163,23 @@ describe('ContextRing prompt-cache display', () => {
     fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
     const tooltip = document.querySelector('[data-composer-popover]');
     expect(tooltip).toBeInTheDocument();
-    expect(tooltip?.textContent).toContain('Avg cache hit rate');
+    expect(tooltip?.textContent).toContain('Average cache hit rate');
     expect(tooltip?.textContent).toContain('80%');
-    expect(tooltip?.textContent).toContain('8.0K / 10.0K');
   });
 
   it('hides the cache row when there is no cache data', () => {
     render(<ContextRing pct={30} estTokens={500} maxContext={4000} />);
     fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
     const tooltip = document.querySelector('[data-composer-popover]');
-    expect(tooltip?.textContent).not.toContain('Avg cache hit rate');
+    expect(tooltip?.textContent).not.toContain('Average cache hit rate');
   });
 
-  it('shows the persistent-cache hint when below the 96% goal (Bug 9c)', () => {
-    const onOpenCacheSettings = vi.fn();
-    render(
-      <ContextRing
-        pct={30}
-        estTokens={500}
-        maxContext={4000}
-        promptCache={{ hitTokens: 8000, missTokens: 2000, hitRate: 0.8 }}
-        onOpenCacheSettings={onOpenCacheSettings}
-      />
-    );
+  it('renders the reference-style usage bar under the header', () => {
+    render(<ContextRing pct={30} estTokens={500} maxContext={4000} />);
     fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
-    const hint = document.querySelector('[data-testid="context-cache-hint"]');
-    expect(hint).toBeInTheDocument();
-    expect(hint?.textContent).toContain('prefix-pins');
-    expect(hint?.textContent).toContain('AUGUST_ANTHROPIC_PERSISTENT_CACHE=1');
-    // The hint action opens model settings.
-    fireEvent.click(document.querySelector('[data-testid="context-cache-hint-action"]')!);
-    expect(onOpenCacheSettings).toHaveBeenCalledTimes(1);
-  });
-
-  it('hides the hint once the cache hit rate meets the goal', () => {
-    render(
-      <ContextRing
-        pct={30}
-        estTokens={500}
-        maxContext={4000}
-        promptCache={{ hitTokens: 9700, missTokens: 300, hitRate: 0.97 }}
-      />
-    );
-    fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
-    expect(document.querySelector('[data-testid="context-cache-hint"]')).toBeNull();
+    const bar = document.querySelector('[data-testid="context-window-bar"]');
+    expect(bar).toBeInTheDocument();
+    const fill = bar?.firstElementChild as HTMLElement | null;
+    expect(fill?.style.width).toBe('30%');
   });
 });

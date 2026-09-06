@@ -136,3 +136,86 @@ async def test_git_checkout_accepts_repo_path_without_session(client, isolatedDa
 
     branch = await client.get('/api/git/branch', params={'repoPath': str(repo)})
     assert branch.json().get('current') == 'feature'
+
+
+def _git_env() -> dict[str, str]:
+    import os
+
+    return {
+        **dict(os.environ),
+        'GIT_AUTHOR_NAME': 'Test',
+        'GIT_AUTHOR_EMAIL': 'test@example.com',
+        'GIT_COMMITTER_NAME': 'Test',
+        'GIT_COMMITTER_EMAIL': 'test@example.com',
+    }
+
+
+@pytest.mark.asyncio
+async def test_git_checkout_create_branch(client, isolatedData, tmp_path):
+    """checkout with create:true runs `checkout -b` — the dropdown's
+    "Create and switch to new branch…" flow."""
+    import subprocess
+
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-b', 'main'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'init'],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env=_git_env(),
+    )
+
+    resp = await client.post(
+        '/api/git/checkout',
+        json={'sessionId': '', 'repoPath': str(repo), 'branch': 'fresh-work', 'create': True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json().get('branch') == 'fresh-work'
+
+    branch = await client.get('/api/git/branch', params={'repoPath': str(repo)})
+    assert branch.json().get('current') == 'fresh-work'
+
+
+@pytest.mark.asyncio
+async def test_git_push_to_upstream_and_honest_failure(client, isolatedData, tmp_path):
+    """Push succeeds against a local bare remote once upstream is set, and
+    fails with 400 + stderr when no upstream is configured."""
+    import subprocess
+
+    remote = tmp_path / 'remote.git'
+    subprocess.run(['git', 'init', '--bare', '-b', 'main', str(remote)], check=True, capture_output=True)
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-b', 'main'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'init'],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env=_git_env(),
+    )
+    subprocess.run(
+        ['git', 'remote', 'add', 'origin', str(remote)], cwd=repo, check=True, capture_output=True
+    )
+
+    # No upstream configured yet — the endpoint must fail honestly.
+    resp = await client.post('/api/git/push', json={'sessionId': '', 'repoPath': str(repo)})
+    assert resp.status_code == 400, resp.text
+    assert resp.json().get('detail')
+
+    # Configure upstream (offline, file transport), then a new commit pushes.
+    subprocess.run(
+        ['git', 'push', '-u', 'origin', 'main'], cwd=repo, check=True, capture_output=True, env=_git_env()
+    )
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'second'],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env=_git_env(),
+    )
+    resp = await client.post('/api/git/push', json={'sessionId': '', 'repoPath': str(repo)})
+    assert resp.status_code == 200, resp.text
+    assert 'output' in resp.json()

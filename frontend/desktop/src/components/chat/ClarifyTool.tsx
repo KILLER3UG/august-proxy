@@ -433,15 +433,3 @@ function BannerButton({
     </button>
   );
 }
-
-/**
- * Thin wrapper for inline use (kept for backward compatibility).
- * ClarifyTool is already an in-flow banner (not a fixed modal).
- */
-export function ClarifyToolInline(props: ClarifyToolProps) {
-  return (
-    <div className="my-2">
-      <ClarifyTool {...props} />
-    </div>
-  );
-}

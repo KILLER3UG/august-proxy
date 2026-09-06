@@ -11,7 +11,7 @@ import { ScrollToTopButton } from '@/components/chat/ScrollToTopButton';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { MessageBubble } from './MessageBubble';
 import { InThreadSearch } from './InThreadSearch';
-import { TimelineRail } from './TimelineRail';
+import { ChangesPill } from '@/components/chat/git/ChangesPill';
 import type { ModelItem } from './model-display';
 import { ModelPickerCard } from './ModelPickerCard';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
@@ -149,19 +149,9 @@ export function ChatThreadMessagePane({
         onNavigate={handleNavigate}
         onClear={handleClearSearch}
       />
-      <TimelineRail
-        messages={messages}
-        onJump={(index) => {
-          onBeforeJump?.();
-          const virt = virtRef?.current;
-          if (virt && typeof virt.scrollToIndex === 'function') {
-            virt.scrollToIndex(index, { align: 'center' });
-            return;
-          }
-          const el = document.querySelector(`[data-message-index="${index}"]`) ?? document.querySelector(`[data-artifact-source]`);
-          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }}
-      />
+      {sessionId && (
+        <ChangesPill sessionId={sessionId} roster={subagentRoster} />
+      )}
       <div
         ref={scrollRef}
         className="august-chat-scroll flex-1 overflow-y-auto overflow-x-hidden chat-scroll"

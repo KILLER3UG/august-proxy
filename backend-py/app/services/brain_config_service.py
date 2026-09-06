@@ -40,13 +40,6 @@ from app.type_aliases import BrainConfigDict
 
 boolKeys: tuple[str, ...] = (
     'enabled',
-    'adaptivePolicy',
-    'failureLearning',
-    'graphMemory',
-    'hierarchicalAgents',
-    'adapterParallelTools',
-    'parallelReadTools',
-    'reviewLearnedGuidelines',
     'skillRelevanceMatch',
     'modelMemoryRead',
     'modelMemoryWrites',
@@ -77,16 +70,9 @@ escalationBudgetRange = (0, 50)
 flagRateCapRange = (0.0, 0.5)
 fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'),
-    ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'),
-    ('failureLearning', 'failure_learning', DEFAULT_FEATURES.get('failure_learning', True), 'bool'),
-    ('graphMemory', 'graph_memory', DEFAULT_FEATURES.get('graph_memory', True), 'bool'),
     # The agent-jobs flag is gone: the registry job ledger is an in-memory
     # capped dict now; no feature flag ever gated it (and keeping the key in
     # allowedKeys without a field mapping made a PUT containing it KeyError).
-    ('hierarchicalAgents', 'hierarchical_agents', DEFAULT_FEATURES.get('hierarchical_agents', True), 'bool'),
-    ('adapterParallelTools', 'adapter_parallel_tools', DEFAULT_FEATURES.get('adapter_parallel_tools', True), 'bool'),
-    ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'),
-    ('reviewLearnedGuidelines', 'review_learned_guidelines', True, 'bool'),
     # Per-turn skill relevance gating (Tier-1 compact index + Tier-3
     # <relevant_skills>). Default on; AUGUST_SKILL_RELEVANCE=0 also forces off.
     ('skillRelevanceMatch', 'skill_relevance_match', True, 'bool'),

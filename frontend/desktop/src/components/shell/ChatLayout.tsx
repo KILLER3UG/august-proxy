@@ -36,7 +36,6 @@ import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { useDefaultWorkspace } from "@/hooks/useDefaultWorkspace";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
-const WORKBENCH_SIDEBAR_OPEN_KEY = "august-workbench-sidebar-open";
 
 export function ChatLayout() {
   const navigate = useNavigate();
@@ -68,12 +67,6 @@ export function ChatLayout() {
   const { path: defaultWorkspacePath } = useDefaultWorkspace();
   const defaultWorkspaceRef = useRef(defaultWorkspacePath);
   defaultWorkspaceRef.current = defaultWorkspacePath;
-
-  useEffect(() => {
-    const shouldPersist =
-      showRightSidebar && rightDrawer.open && rightDrawer.sections.length > 0;
-    localStorage.setItem(WORKBENCH_SIDEBAR_OPEN_KEY, shouldPersist ? "1" : "0");
-  }, [showRightSidebar, rightDrawer.open, rightDrawer.sections.length]);
 
   // Keep layout flag in sync with drawer store (both open and close).
   // Chooser-only state (zero tabs + chooserActive) still counts as visible,

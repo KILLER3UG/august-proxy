@@ -157,12 +157,12 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     expect(flyout!.className).toContain('overflow-y-auto');
   });
 
-  it('roomy reference rows: 13px text with generous padding', () => {
+  it('roomy reference rows: 15px text with generous padding', () => {
     setup();
     openModelsPane();
     const row = document.querySelector('[data-testid="provider-row-KiloCode"]') as HTMLElement;
-    expect(row.className).toContain('py-[7px]');
-    expect(row.className).toContain('text-[13px]');
+    expect(row.className).toContain('py-[10px]');
+    expect(row.className).toContain('text-[15px]');
   });
 
   it('effort chip opens the effort pane with the list + thinking switch', () => {
@@ -280,8 +280,8 @@ describe('ModelEffortMenu dropdown anchoring (bottom-edge-hugs-chip)', () => {
     // bottom: 8 gap between panel bottom edge (y=692) and chip top (700);
     // viewport is 768 tall → CSS bottom = 768 − 692 = 76.
     expect(panel.style.bottom).toBe('76px');
-    // Height caps at the ideal size while there is room (700 − 16 > 380).
-    expect(panel.style.maxHeight).toBe('380px');
+    // Height caps at the ideal size while there is room (700 − 16 > 420).
+    expect(panel.style.maxHeight).toBe('420px');
   });
 
   it('short viewport above the chip shrinks the panel instead of overflowing', () => {

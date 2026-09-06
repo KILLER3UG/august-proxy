@@ -222,7 +222,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [attachPaths]);
   const [input, setInput] = useState(() => loadComposerDraft(sessionId));
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
-  const [_runtimeVersion, _setRuntimeVersion] = useState(0);
   /** True while files are dragged over the pane — shows the drop overlay. */
   const [dragOver, setDragOver] = useState(false);
 
@@ -504,8 +503,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       cancelled = true;
     };
   }, [sessionId]);
-
-  useEffect(() => chatRuntime.subscribe(() => _setRuntimeVersion((value) => value + 1)), []);
 
   useEffect(() => {
     visibleSessionId = sessionId;
@@ -1374,7 +1371,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       maxContext={maxContext}
       contextBreakdown={contextBreakdown}
       sessionUsage={sessionUsage}
-      modelForRequest={modelForRequest}
       models={models}
       visibleModels={visibleModels}
       modelsLoading={modelsLoading}

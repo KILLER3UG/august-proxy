@@ -22,18 +22,8 @@ export const CardTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadi
     return <h3 ref={ref} className={cn('text-sm font-semibold leading-none', className)} {...props} />;
   },
 );
-export const CardDescription = forwardRef<HTMLParagraphElement, HTMLAttributes<HTMLParagraphElement>>(
-  function CardDescription({ className, ...props }, ref) {
-    return <p ref={ref} className={cn('text-xs text-muted-foreground', className)} {...props} />;
-  },
-);
 export const CardContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   function CardContent({ className, ...props }, ref) {
     return <div ref={ref} className={cn('px-5 py-4', className)} {...props} />;
-  },
-);
-export const CardFooter = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  function CardFooter({ className, ...props }, ref) {
-    return <div ref={ref} className={cn('flex items-center px-5 py-3 border-t border-border', className)} {...props} />;
   },
 );

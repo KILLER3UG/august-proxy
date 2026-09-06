@@ -111,7 +111,7 @@ def save_fact(
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
 
-        invalidate_fact_index()
+        invalidate_fact_index(scope)
     except Exception:
         pass
 

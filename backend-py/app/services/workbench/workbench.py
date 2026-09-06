@@ -1653,6 +1653,61 @@ def _planStateBlock(session: WorkbenchSession) -> str:
     return '<plan_state>\n' + '\n'.join(lines) + '\n</plan_state>'
 
 
+def _compactionNotice(session: WorkbenchSession) -> str:
+    """Tail notice when the transcript nears the auto-compact threshold.
+
+    The model could only discover compaction AFTER the transcript shrank —
+    by then the scratchpad was the only survival. This line gives it one
+    turn of warning to call summarize_session / write the scratchpad first.
+    Cheap heuristic estimate (chars/4, no SDK tokenizer) — the precise
+    budget is computed once per turn elsewhere and emitted to the UI only.
+    """
+    try:
+        from app.services.workbench.token_budget import estimateTokens
+
+        text = '\n'.join(
+            str(m.get('content', '')) if isinstance(m.get('content'), str) else ''
+            for m in session.messages[-80:]
+        )
+        window = _resolveModelContextWindow(
+            as_str(getattr(session, 'model', ''), ''), None
+        )
+        pct = estimateTokens(text, '', '', '') / max(1, window) * 100
+        if pct >= 70:
+            return (
+                'compaction: transcript is near the auto-compact threshold — '
+                'call summarize_session and update your scratchpad THIS turn, '
+                'or uncommitted reasoning will be lost.'
+            )
+    except Exception:
+        pass
+    return ''
+
+
+def _daemonCountLine(session: WorkbenchSession) -> str:
+    """Ambient daemon visibility — leaks otherwise need list_daemons to notice."""
+    try:
+        from app.services.daemon_manager import getManager
+
+        manager = getManager()
+        total = sum(
+            1
+            for d in manager._daemons.values()
+            if as_dict(d.get('result'), {}).get('status') == 'running'
+        )
+        mine = sum(
+            1
+            for d in manager._daemons.values()
+            if as_str(d.get('session_id'), '') == session.id
+            and as_dict(d.get('result'), {}).get('status') == 'running'
+        )
+        if total > 0:
+            return f'daemons running: {total} total, {mine} in this session — kill finished ones.'
+    except Exception:
+        pass
+    return ''
+
+
 def _sessionStateBlock(session: WorkbenchSession) -> str:
     """Per-turn <session_state> block.
 
@@ -1692,6 +1747,15 @@ def _sessionStateBlock(session: WorkbenchSession) -> str:
         lines.append(
             f'last_tool_failure: {failure if isinstance(failure, str) else json.dumps(failure, default=str, sort_keys=True)}'
         )
+    # Ambient awareness lines: compaction proximity (the model could only
+    # discover compaction after the transcript shrank) and live daemons
+    # (leaks otherwise need list_daemons to notice).
+    compaction = _compactionNotice(session)
+    if compaction:
+        lines.append(compaction)
+    daemonLine = _daemonCountLine(session)
+    if daemonLine:
+        lines.append(daemonLine)
     if not lines:
         return ''
     return '<session_state>\n' + '\n'.join(lines) + '\n</session_state>'

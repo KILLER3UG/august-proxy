@@ -79,7 +79,6 @@ export interface ChatThreadComposerProps {
   maxContext: number;
   contextBreakdown: ContextBreakdown;
   sessionUsage: SessionUsageState;
-  modelForRequest: ModelItem | null;
   models: ModelItem[];
   visibleModels: ModelItem[];
   modelsLoading: boolean;
@@ -144,7 +143,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     maxContext,
     contextBreakdown,
     sessionUsage,
-    modelForRequest,
     models,
     visibleModels,
     modelsLoading,
@@ -493,7 +491,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           maxContext={maxContext}
           contextBreakdown={contextBreakdown}
           sessionUsage={sessionUsage}
-          modelForRequest={modelForRequest}
           models={models}
           visibleModels={visibleModels}
           modelsLoading={modelsLoading}

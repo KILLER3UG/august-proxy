@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
 import time
 from dataclasses import dataclass
 from typing import cast
@@ -60,12 +61,49 @@ class DaemonResult:
 
 
 class DaemonManager:
-    """Manages daemon lifecycle for all sessions."""
+    """Manages daemon lifecycle for all sessions.
+
+    Every daemon carries a time-to-live (``AUGUST_DAEMON_TTL_S``, default
+    3600s) — a background reaper kills expired ones, so a daemon the model
+    spawned and forgot cannot leak forever. Kill it explicitly and restart
+    with a larger TTL env when something must outlive an hour.
+    """
 
     def __init__(self):
         self._daemons: dict[str, dict[str, object]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
+        self._reaper: asyncio.Task | None = None
+
+    @staticmethod
+    def _ttl_seconds() -> float:
+        try:
+            return max(60.0, float(os.environ.get('AUGUST_DAEMON_TTL_S', '3600')))
+        except (TypeError, ValueError):
+            return 3600.0
+
+    def _ensure_reaper(self) -> None:
+        if self._reaper is None or self._reaper.done():
+            self._reaper = asyncio.create_task(self._reap_loop())
+
+    async def _reap_loop(self) -> None:
+        while True:
+            await asyncio.sleep(60)
+            try:
+                now = time.monotonic()
+                async with self._lock:
+                    expired = [
+                        daemonId
+                        for daemonId, info in self._daemons.items()
+                        if now > float(str(info.get('expires_at', 'inf')))
+                    ]
+                for daemonId in expired:
+                    logger.info('Daemon TTL expired — reaping: %s', daemonId)
+                    await self.kill(daemonId)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug('daemon reap sweep failed', exc_info=True)
 
     async def spawn(self, spec: DaemonSpec, sessionId: str, context: dict[str, object] | None = None) -> str:
         """Spawn a daemon. Returns daemon_id string or error message."""
@@ -111,8 +149,10 @@ class DaemonManager:
                 'retries': 0,
                 'backoff_index': 0,
                 'backoff_until': 0.0,
+                'expires_at': time.monotonic() + self._ttl_seconds(),
             }
             self._daemons[daemonId] = info
+            self._ensure_reaper()
             task = asyncio.create_task(self._runLoop(daemonId))
             self._tasks[daemonId] = task
             logger.info('Daemon spawned: %s', daemonId)
@@ -265,6 +305,9 @@ class DaemonManager:
                 'last_check': r.lastCheck,
                 'turns_alive': r.turnsAlive,
                 'output': r.output,
+                'expires_in_s': max(
+                    0, int(float(str(info.get('expires_at', 0))) - time.monotonic())
+                ),
             }
             results.append(cast(DaemonStatusDict, entry))
         return results

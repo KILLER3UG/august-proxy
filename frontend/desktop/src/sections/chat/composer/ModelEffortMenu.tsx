@@ -1,8 +1,9 @@
 /* ── Combined model + effort menu ─────────────────────────────────────── */
-/* OpenCode-style picker matching the reference screenshot: the model chip */
-/* opens a narrow PROVIDER LIST ("Manage models" pinned at the bottom) and */
-/* hovering a provider slides a SEPARATE flyout card beside the panel with */
-/* that provider's models — plain rows, pin on hover, check on selected.  */
+/* Z.ai-style picker matching the reference screenshot: the model chip     */
+/* opens a narrow provider list whose header block shows the CURRENT       */
+/* provider + model ("Manage models" pinned at the bottom), and hovering   */
+/* a provider slides a SEPARATE flyout card beside the panel with that     */
+/* provider's models — plain rows, pin on hover, check on selected.        */
 /* The effort chip opens a small pane with a vertical effort list (✓ on   */
 /* the active row) + thinking toggle. No search, no filters — the calm    */
 /* three-part layout.                                                     */
@@ -18,7 +19,7 @@ import { chipTrigger, menuPanel, menuItem } from '@/lib/motion';
 import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import type { ModelItem } from '../model-display';
-import { compareModelsRanked } from '../model-display';
+import { compareModelsRanked, getModelDisplayName } from '../model-display';
 import type { EffortLevel } from '../hooks/useChatSend';
 
 const EFFORT_OPTIONS: {
@@ -48,12 +49,12 @@ type AnchorPos = { top: number; left: number };
  *  above it. */
 type PanelPos = { left: number; bottom: number; maxHeight: number };
 
-const MODELS_PANEL_W = 188;
+const MODELS_PANEL_W = 232;
 /** Ideal heights — panels render shorter than these when room is tight. */
-const MODELS_PANEL_H = 380;
+const MODELS_PANEL_H = 420;
 const EFFORT_PANEL_H = 150;
-const FLYOUT_W = 216;
-const FLYOUT_H = 320;
+const FLYOUT_W = 232;
+const FLYOUT_H = 340;
 const EFFORT_PANEL_W = 264;
 
 /** Gap between the panel's bottom edge and the trigger chip. */
@@ -355,7 +356,7 @@ export function ModelEffortMenu({
         role="button"
         tabIndex={0}
         data-testid="model-option"
-        className="group flex w-full cursor-pointer items-center gap-1 py-1 pl-2 pr-1.5 text-left text-xs hover:bg-muted/50"
+        className="group flex w-full cursor-pointer items-center gap-1.5 py-[8px] pl-3 pr-2 text-left text-[14px] hover:bg-muted/50"
         onClick={() => {
           onSelect(m);
           closeAll();
@@ -385,7 +386,7 @@ export function ModelEffortMenu({
               : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground',
           )}
         >
-          <Pin className="size-3" />
+          <Pin className="size-3.5" />
         </button>
         {isSel && <Check className="size-3.5 shrink-0 text-primary" />}
       </div>
@@ -405,7 +406,7 @@ export function ModelEffortMenu({
         {...chipTrigger}
         onClick={() => (pane === 'models' ? closeAll() : setPane('models'))}
         className={cn(
-          'relative inline-flex items-center gap-1 text-xs outline-none cursor-pointer h-8 max-w-[260px]',
+          'relative inline-flex items-center gap-1 text-[13px] outline-none cursor-pointer h-8 max-w-[260px]',
           'text-muted-foreground hover:text-foreground transition-colors duration-200',
           'bg-muted/40 hover:bg-muted/60 rounded-full px-2.5 py-1',
         )}
@@ -467,10 +468,17 @@ export function ModelEffortMenu({
                 }}
                 data-testid="model-effort-menu"
               >
-                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/40 px-2 py-1.5">
-                  <span className="pl-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-                    Provider
-                  </span>
+                {/* Current-selection header — provider over model, like the
+                    reference's "Z.ai / GLM-5.3-Flash" block. */}
+                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/40 py-2.5 pl-3 pr-1.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15px] font-semibold leading-5 text-foreground">
+                      {selected?.provider || 'Provider'}
+                    </div>
+                    <div className="truncate text-[13px] leading-5 text-foreground/80">
+                      {selected ? getModelDisplayName(selected.id) : 'No model selected'}
+                    </div>
+                  </div>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -483,12 +491,11 @@ export function ModelEffortMenu({
                     title="Re-fetch every provider's /models endpoint and update the list"
                     data-testid="refresh-all-providers"
                     aria-label="Refresh provider models"
-                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground transition disabled:opacity-50"
+                    className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted/40 hover:text-foreground transition disabled:opacity-50"
                   >
                     <RefreshCw
-                      className={cn('size-3', refreshAll.isPending && 'animate-spin')}
+                      className={cn('size-3.5', refreshAll.isPending && 'animate-spin')}
                     />
-                    {refreshAll.isPending ? 'Refreshing…' : 'Refresh'}
                   </button>
                 </div>
                 <div
@@ -496,7 +503,7 @@ export function ModelEffortMenu({
                   className="py-1 overflow-y-auto min-h-0 flex-1 chat-scroll"
                 >
                   {groups.length === 0 && (
-                    <div className="px-2 py-2 text-[11px] text-muted-foreground">
+                    <div className="px-3 py-2 text-[13px] text-muted-foreground">
                       {loading ? 'Loading…' : 'No providers.'}
                     </div>
                   )}
@@ -515,17 +522,17 @@ export function ModelEffortMenu({
                           updateFlyoutPos(e.currentTarget);
                         }}
                         className={cn(
-                          'flex w-full cursor-pointer items-center gap-1.5 px-3 py-[7px] text-left text-[13px] transition-colors',
+                          'mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2 rounded-md px-2.5 py-[10px] text-left text-[15px] transition-colors',
                           isActive
                             ? 'bg-muted/60 text-foreground'
                             : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
                         )}
                       >
-                        {isCur && <Check className="size-3 shrink-0 text-primary" />}
+                        {isCur && <Check className="size-3.5 shrink-0 text-primary" />}
                         <span className="min-w-0 flex-1 truncate">{g.provider}</span>
                         <ChevronRight
                           className={cn(
-                            'size-3 shrink-0 transition-opacity',
+                            'size-3.5 shrink-0 transition-opacity',
                             isActive ? 'opacity-90' : 'opacity-30',
                           )}
                         />
@@ -542,7 +549,7 @@ export function ModelEffortMenu({
                         closeAll();
                         onEditModels();
                       }}
-                      className="w-full cursor-pointer px-3 py-2 text-left text-[12px] text-foreground/90 hover:bg-muted/40"
+                      className="mx-1.5 mb-1.5 w-[calc(100%-12px)] cursor-pointer rounded-md px-2.5 py-[10px] text-left text-[15px] text-foreground/90 hover:bg-muted/40"
                       data-testid="manage-models"
                     >
                       Manage models

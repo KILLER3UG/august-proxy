@@ -152,7 +152,7 @@ export const SETTINGS_PAGE_ELEMENT: ReactNode = React.createElement(
 );
 
 /** Flat route descriptors for nav / labels (actual tree is nested in App). */
-export const SETTINGS_ROUTES: readonly SectionRoute[] = [
+const SETTINGS_ROUTES: readonly SectionRoute[] = [
   {
     path: '/settings',
     label: 'Settings',
@@ -192,19 +192,3 @@ export const SECTION_NAV_ITEMS: readonly NavItem[] = SECTION_ROUTES.filter((rout
   Icon: route.Icon,
 }));
 
-export const SETTINGS_NAV_ITEMS: readonly NavItem[] = SETTINGS_TABS.map((tab) => ({
-  to: tab.path,
-  label: tab.label,
-  Icon: tab.Icon,
-}));
-
-export const NAV_ITEMS: readonly NavItem[] = SECTION_NAV_ITEMS;
-
-export function resolveRouteLabel(pathname: string) {
-  return SECTION_ROUTES.find((route) => pathname === route.path)?.label
-    ?? SECTION_ROUTES.find((route) => route.path !== '/' && pathname.startsWith(route.path))?.label
-    ?? SETTINGS_ROUTES.find((route) => pathname === route.path || pathname.startsWith(route.path))?.label
-    ?? 'Assistant';
-}
-
-export const SECTION_PATH = (to: string) => to;

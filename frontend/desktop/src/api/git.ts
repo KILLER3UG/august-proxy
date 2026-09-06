@@ -75,18 +75,24 @@ export const gitApi = {
     api.get<GitBranchInfo>(`/api/git/branch${gitQuery(sessionId, repoPath)}`),
   branches: (sessionId?: string, repoPath?: string) =>
     api.get<GitBranchList>(`/api/git/branches${gitQuery(sessionId, repoPath)}`),
-  commit:   (sessionId: string, message: string, repoPath?: string) =>
+  commit: (sessionId: string, message: string, repoPath?: string, all = false) =>
     api.post<GitCommitResult>('/api/git/commit', {
       sessionId,
       message,
       ...(repoPath ? { repoPath } : {}),
+      all,
     }),
-  checkout: (sessionId: string | undefined, branch: string, repoPath?: string) =>
+  checkout: (sessionId: string | undefined, branch: string, repoPath?: string, create = false) =>
     api.post<GitCommitResult>('/api/git/checkout', {
       sessionId: sessionId || '',
       branch,
+      create,
       ...(repoPath ? { repoPath } : {}),
     }),
+  push: (sessionId?: string, repoPath?: string) => {
+    const qs = gitQuery(sessionId, repoPath);
+    return api.post<GitCommandResult>(`/api/git/push${qs}`, {});
+  },
   log:      (sessionId?: string, count = 10, repoPath?: string) => {
     const qs = new URLSearchParams();
     if (sessionId) qs.set('sessionId', sessionId);

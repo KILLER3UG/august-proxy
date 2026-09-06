@@ -43,10 +43,29 @@ _lock = threading.Lock()
 _caches: dict[str, dict[str, Any]] = {}
 
 
-def invalidate_fact_index() -> None:
-    """Drop every cached index (called on fact write/delete)."""
+def invalidate_fact_index(scope: str | None = None) -> None:
+    """Drop cached indexes on fact write/delete.
+
+    ``scope=None`` clears everything (bulk sweeps, store wipes). With a
+    scope: a 'global' write must clear ALL caches (every union corpus
+    contains global), while a scoped write only invalidates that scope's
+    own corpus — the other unions are untouched by it.
+    """
     with _lock:
-        _caches.clear()
+        if scope is None:
+            _caches.clear()
+            return
+        try:
+            from app.services.session_scope import normalize_scope
+
+            norm = normalize_scope(scope)
+        except Exception:
+            _caches.clear()
+            return
+        if norm == 'global':
+            _caches.clear()
+        else:
+            _caches.pop(norm, None)
 
 
 def _fact_body_text(value_raw: object) -> str:
