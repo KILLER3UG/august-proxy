@@ -39,7 +39,7 @@ describe('classifyTool', () => {
     expect(classifyTool('workbench_run_command')).toBe('run');
   });
 
-  it('classifies memory-write tools (plan §4.3)', () => {
+  it('classifies memory-write tools', () => {
     expect(classifyTool('remember')).toBe('memoryWrite');
     expect(classifyTool('august__remember')).toBe('memoryWrite');
     expect(classifyTool('save_fact')).toBe('memoryWrite');

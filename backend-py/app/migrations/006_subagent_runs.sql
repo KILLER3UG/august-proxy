@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS subagent_runs (
 CREATE INDEX IF NOT EXISTS idx_subagent_runs_session ON subagent_runs(session_id);
 CREATE INDEX IF NOT EXISTS idx_subagent_runs_created ON subagent_runs(created_at);
 
--- Provenance + feedback for learned heuristics (Phase A4):
+-- Provenance + feedback for learned heuristics:
 --  * source_session_id — which conversation produced the rule
 --  * suppressed       — user/agent marked the rule wrong; excluded from prompts
 ALTER TABLE learned_heuristics ADD COLUMN source_session_id TEXT;

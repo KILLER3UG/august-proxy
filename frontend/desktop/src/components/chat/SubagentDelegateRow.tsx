@@ -1,5 +1,5 @@
 /* ── SubagentDelegateRow — inline transcript row for a delegated worker ── */
-/* Part 27 A1: reverses the "drawer-only" decision — every launched agent
+/* Reverses the "drawer-only" decision — every launched agent
    gets one first-class row where the user is reading. Clicking it focuses
    that agent's tab in the right drawer. */
 

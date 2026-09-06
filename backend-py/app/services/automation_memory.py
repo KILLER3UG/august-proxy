@@ -1,4 +1,4 @@
-"""Part 21 M-11 — automation persistent memory + Part 19 Phase B routines.
+"""Automation persistent memory + Part 19 Phase B routines.
 
 Three brain-DB stores (migration 031) make automation jobs stateful:
 
@@ -47,7 +47,6 @@ def _now() -> str:
 
 
 def start_run(
-    *,
     job_id: str,
     trigger: str = 'cron',
     agent_id: str = '',
@@ -78,7 +77,6 @@ def error_signature(text: str) -> str:
 
 def finish_run(
     run_id: int,
-    *,
     status: str,
     result_excerpt: str = '',
     error_sig: str = '',
@@ -419,7 +417,6 @@ def sweep(days: int = 30, *, now: datetime | None = None) -> int:
 
 def deliver_to_bot_chat(
     job: dict[str, object],
-    *,
     result_text: str,
     trigger: str = 'cron',
     respond: bool = True,

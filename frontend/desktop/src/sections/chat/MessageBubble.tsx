@@ -104,7 +104,7 @@ function MessageBubbleInner({
   // Hooks must run on every render path, so compute these BEFORE the early
   // returns below (rules-of-hooks).
   const isUser = message.role === 'user';
-  // /verbose (plan §4.2): per-session raw-output toggle, read reactively.
+  // /verbose: per-session raw-output toggle, read reactively.
   const verbose = useVerboseMode(sessionId);
   const displayBlocks = useMemo(() => {
     if (isUser) return [];
@@ -390,16 +390,23 @@ function MessageBubbleInner({
 }
 
 /**
- * Memoized export (Part 26 7.4 + Part 27 T5): the pane re-renders on every
- * ~32ms stream flush. The render site passes FRESH inline callbacks and new
- * Map instances (toolProgress/subagentBlocks) each render, so the default
- * shallow memo never bailed — every visible row re-ran its full block pipeline
- * ~30×/s. This comparator keys on what actually drives a COMPLETED row's
- * output: its `message` identity, `isLast`, `streaming`, and `models`. The
- * volatile per-render callbacks/Maps don't affect a finished row (search
- * highlight + revert live in the parent's motion.div wrapper, not here), so
- * completed non-last rows now bail out; the last/streaming row still re-renders
- * fully so live content updates.
+ * Memoized export: the pane re-renders on every ~32ms stream flush. The
+ * render site passes FRESH inline callbacks and new Map instances
+ * (toolProgress/subagentBlocks) each render, so the default shallow memo
+ * never bailed — every visible row re-ran its full block pipeline ~30×/s.
+ * This comparator keys on what actually drives a COMPLETED row's output:
+ * its `message` identity, `isLast`, `streaming`, and `models`. The volatile
+ * per-render callbacks don't affect a finished row (search highlight +
+ * revert live in the parent's motion.div wrapper, not here), so completed
+ * non-last rows bail out; the last/streaming row still re-renders fully so
+ * live content updates.
+ *
+ * Completed rows that carry tool calls can still change WITHOUT their
+ * message identity moving: background sub-agent events and per-tool read
+ * progress land in store Maps that are replaced per event
+ * (apply-subagent-event builds a new Map each time), so Map identity is a
+ * precise change signal. Tool-free rows can never display either, so they
+ * keep bailing even while a sub-agent streams elsewhere in the thread.
  */
 export const MessageBubble = memo(
   MessageBubbleInner,
@@ -408,6 +415,17 @@ export const MessageBubble = memo(
     if (a.isLast !== b.isLast || a.streaming !== b.streaming) return false;
     if (a.isLast || a.streaming) return false; // live row: always re-render
     if (a.models !== b.models) return false;
-    return true; // completed row, same message: skip despite fresh callbacks
+    const aHasTools = Boolean(a.message.tool || (a.message.tools && a.message.tools.length > 0));
+    const bHasTools = Boolean(b.message.tool || (b.message.tools && b.message.tools.length > 0));
+    if (!aHasTools && !bHasTools) return true;
+    if (
+      a.toolProgress === b.toolProgress &&
+      a.subagentBlocks === b.subagentBlocks &&
+      a.subagentPrompts === b.subagentPrompts &&
+      a.subagentRoster === b.subagentRoster
+    ) {
+      return true; // completed row, same message, unchanged nested state
+    }
+    return false;
   },
 );

@@ -1,4 +1,4 @@
-"""P4.2 (Part 18) — debounced commit for high-frequency per-turn writes.
+"""P4.2 — debounced commit for high-frequency per-turn writes.
 
 Per-turn telemetry (``turn_outcomes`` rows, lifecycle events, internal_state
 upserts) each issued its own ``conn.commit()`` on the turn thread — three

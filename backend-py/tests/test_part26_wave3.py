@@ -1,4 +1,4 @@
-"""Part 26 Wave 3 — memory correctness regressions.
+"""Memory correctness regressions.
 
   * 6.1 brain_query hides superseded/expired facts (was reproduced live: the
     exact-key fast path and the LIKE fallback had no status/expiry clause)

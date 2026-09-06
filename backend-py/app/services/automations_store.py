@@ -335,7 +335,6 @@ async def rotate_trigger_token(job_id: str) -> dict[str, object] | None:
 
 def append_run_record(
     job: dict[str, object],
-    *,
     run_id: str,
     status: str,
     trigger: str,
@@ -361,7 +360,6 @@ def append_run_record(
 
 async def append_run(
     job_id: str,
-    *,
     status: str,
     trigger: str,
     started_at: str | None = None,
@@ -406,7 +404,6 @@ def _parse_iso(raw: object) -> datetime | None:
 
 
 async def recover_stuck_running(
-    *,
     boot: bool = False,
     now: datetime | None = None,
     stale_minutes: int = STALE_RUNNING_MINUTES,
@@ -741,7 +738,6 @@ async def _run_workbench_stream(job_id: str, job_snapshot: dict[str, object], *,
 
 async def _finish_run(
     job_id: str,
-    *,
     run_id: str,
     started_at: str,
     status: str,
@@ -829,7 +825,6 @@ async def _finish_run(
 async def run_job_async(
     job_id: str,
     approved: bool = False,
-    *,
     trigger: str = 'manual',
 ) -> dict[str, object]:
     """Start a job. Workbench runs continue in the background after status=running."""
@@ -945,7 +940,7 @@ async def run_job_async(
         error_sig='' if status == 'idle' else automation_memory.error_signature(out),
         duration_ms=int((time.monotonic() - started_monotonic) * 1000),
     )
-    # Phase B: non-workbench jobs can deliver into the Bot's chat too.
+    # Non-workbench jobs can deliver into the Bot's chat too.
     if as_str(snap.get('deliver')) == 'bot-chat' and out:
         try:
             automation_memory.deliver_to_bot_chat(

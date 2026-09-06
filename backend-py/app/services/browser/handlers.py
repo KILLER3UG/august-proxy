@@ -141,7 +141,7 @@ def _checkUrlAllowlist(url: str) -> str | None:
 
 
 async def _detectLoginWall(page: Page) -> str | None:
-    """Part 27 F6: conservative login-wall check. A password input on the page
+    """Conservative login-wall check. A password input on the page
     means the agent cannot proceed without the user authenticating. Returns a
     short instruction naming the site, or None. Deliberately narrow (password
     field only) to avoid false positives on ordinary forms."""

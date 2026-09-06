@@ -1,6 +1,6 @@
 /**
  * useRevertAllChanges — shared "undo this turn's file changes" flow
- * (plan §4.5). Extracted from RightDrawerDiffSection.handleRevertAll so the
+ * . Extracted from RightDrawerDiffSection.handleRevertAll so the
  * ChangesCard Undo button and the drawer's Revert-all share one code path:
  * restore the latest workbench save point when one exists, otherwise fall
  * back to `git restore -- .` for tracked files (untracked files are NOT

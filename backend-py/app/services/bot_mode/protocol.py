@@ -1,4 +1,4 @@
-"""Part 19 Phase C — the Bot-to-Bot messaging protocol text + roster lines.
+"""The Bot-to-Bot messaging protocol text + roster lines.
 
 Pure text/formatting helpers (no DB, no turns) so the prompt-injection gate,
 the ``message_agent`` tool description, and the ``POST /dm`` endpoint all

@@ -228,7 +228,7 @@ class TestBrainBrowse:
         out = ms.brain_browse('nope_store')
         assert 'error' in out and out['rows'] == []
 
-    # Part 17 Phase C — server-side sort + equality filters (gaps 3-4)
+    # Server-side sort + equality filters (gaps 3-4)
 
     def test_browse_sorts_oldest_first(self, brain):
         for i in range(3):
@@ -253,7 +253,7 @@ class TestBrainBrowse:
         assert 'f_src_c' not in [r['factKey'] for r in both['rows']]
 
     def test_browse_filter_confidence_buckets(self, brain):
-        # §9 F-6: confidence is a REAL column — the low/medium/high filter
+        # Confidence is a REAL column — the low/medium/high filter
         # must bucket ranges (low < 0.5, medium < 0.8, high >= 0.8), not
         # equality-match the word against the number.
         ms.save_fact('conf_low', 'a', category='conf', confidence=0.3)

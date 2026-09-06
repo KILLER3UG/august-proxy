@@ -159,7 +159,7 @@ export async function fetchHarnessMentions(
   }
 }
 
-/* ── Bot Mode @-mention middleware (Phase C, ruling OQ8) ──────────────── */
+/* ── Bot Mode @-mention middleware ──────────────── */
 /* Annotation ONLY — never a delivery. Typing `@bot` in ANY chat resolves the
  * handle against the live roster and appends an identification note to the
  * OUTGOING text; the current agent decides whether to call message_agent.

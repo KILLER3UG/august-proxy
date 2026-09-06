@@ -82,7 +82,7 @@ class TestInitAndSnapshot:
         assert 'node_modules' not in ls.stdout
 
     def testExcludesEdaDerivedBinaries(self, env: Path) -> None:
-        """§5.7: .sof/.pof/.glb/.hex are tool-regeneratable outputs whose
+        """.sof/.pof/.glb/.hex are tool-regeneratable outputs whose
         random bytes don't compress — each compile iteration would cost its
         full size in the object store. Text EDA artifacts (.cir/.vcd/.svg)
         stay tracked (revert-protectable, ChangesCard-diffable)."""

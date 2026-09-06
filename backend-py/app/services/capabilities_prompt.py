@@ -111,7 +111,6 @@ def group_tools_by_bucket(
 
 def format_tools_by_bucket(
     tool_names: Iterable[str] | None = None,
-    *,
     include_empty: bool = False,
 ) -> str:
     """Render the ``<tools>`` body (bucket index + bulk-tag note)."""
@@ -155,7 +154,7 @@ def format_tools_by_bucket(
     return '\n'.join(lines).rstrip()
 
 
-# Part 18 P2.1: descriptive catalogue byte budget (default 24 KiB).
+# Descriptive catalogue byte budget (default 24 KiB).
 # Deterministic stop-packing: pack alphabetically and stop BEFORE the first
 # entry that would overflow; entries are always rendered whole (a mid-entry
 # cut would render a partial description as if it were the full one).
@@ -381,7 +380,6 @@ def format_agents_block() -> str:
 def build_capabilities_block(
     tool_names: Iterable[str] | None = None,
     catalogue: list[dict[str, object]] | None = None,
-    *,
     include_skills: bool = True,
     compact_skills: bool = False,
 ) -> str:

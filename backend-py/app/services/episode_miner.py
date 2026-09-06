@@ -122,7 +122,7 @@ def _loadContent(raw: object) -> object:
         return s
 
 
-# §12 F-11: machine-injected user-role blocks (harness plumbing, not the
+# Machine-injected user-role blocks (harness plumbing, not the
 # human talking). Mining them as corrections/rescues/abandons is noise.
 _INJECTION_PREFIXES = (
     '[SUBAGENT RESULTS',
@@ -139,7 +139,7 @@ def _isMachineInjected(text: str) -> bool:
     return any(stripped.startswith(p) for p in _INJECTION_PREFIXES)
 
 
-# ── window extraction (Phase A) ─────────────────────────────────────────
+# ── window extraction ─────────────────────────────────────────
 
 
 def _extractEvents(role: str, text: str) -> list[dict[str, str]]:
@@ -161,7 +161,7 @@ def _extractEvents(role: str, text: str) -> list[dict[str, str]]:
             }
         )
     if role != 'user' or _isMachineInjected(stripped):
-        # §12 F-11: harness-injected user-role blocks are not human speech.
+        # Harness-injected user-role blocks are not human speech.
         return events
     if _CORRECTION_RE.search(stripped):
         events.append({'type': 'user_correction', 'excerpt': stripped[:_MAX_EXCERPT]})
@@ -201,7 +201,7 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
         'SELECT id, role, content FROM messages WHERE session_id = ? ORDER BY id',
         (sessionId,),
     ).fetchall()
-    # §12 F-2: content is parsed defensively — raw-text rows are real
+    # Content is parsed defensively — raw-text rows are real
     # (sessions.py stores str payloads verbatim) and must never abort mining.
     parsed = [_loadContent(r['content']) for r in rows]
     msgs: list[tuple[int, str, str]] = [
@@ -280,7 +280,7 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
     return episodes
 
 
-# ── fingerprints (Phase B) ───────────────────────────────────────────────
+# ── fingerprints ───────────────────────────────────────────────
 
 _SLUG_RE = re.compile('[a-z0-9]+')
 
@@ -378,7 +378,7 @@ def paraphrase_dedupe(fp: str, text: str, existing: list[tuple[str, str]]) -> st
 
 def save_episode(episode: dict[str, Any]) -> int:
     """Persist one mined episode (deduped on session+window)."""
-    # Part 27 E2: surface tests that bypass the autouse isolatedData fixture.
+    # Surface tests that bypass the autouse isolatedData fixture.
     assertPytestDataDirIsolated('episode_miner.save_episode')
     conn = _conn()
     row = conn.execute(
@@ -533,9 +533,9 @@ def set_judge_verdict(episodeId: int, verdict: str) -> None:
     conn.commit()
 
 
-# ── tier-1 rubric (Phase B, deterministic) ───────────────────────────────
+# ── tier-1 rubric ───────────────────────────────
 
-# Six fixed criteria (plan §3.2). Weights sum to 1.0; each subscore ∈ [0, 1].
+# Six fixed criteria. Weights sum to 1.0; each subscore ∈ [0, 1].
 _RUBRIC_WEIGHTS = {
     'completion': 0.25,
     'recurrence': 0.25,
@@ -551,7 +551,7 @@ _PROJECT_SPECIFIC_RE = re.compile(
 
 
 def score_episode(episode: dict[str, Any], fingerprintCount: int, sameCauseSessions: int) -> dict[str, Any]:
-    """The six fixed rubric criteria — no LLM (plan §3.2).
+    """The six fixed rubric criteria — no LLM.
 
     Returns per-criterion subscores plus the weighted total. Higher =
     more worth escalating: resolved windows with recurring stable causes
@@ -613,7 +613,7 @@ def flag_top_slice(
         ).fetchone()
         fpCount = int(fpRow['episode_count']) if fpRow else 1
         result = score_episode(ep, fpCount, _sameCauseSessions(fp))
-        # §12 F-3: the tier-1 rubric is NOT a judge verdict — writing it into
+        # The tier-1 rubric is NOT a judge verdict — writing it into
         # judge_verdict made the distiller's unjudged set always empty.
         conn.execute(
             "UPDATE episodes SET tier1_result = ? WHERE id = ?",
@@ -623,7 +623,7 @@ def flag_top_slice(
     conn.commit()
 
     scored.sort(key=lambda pair: (-pair[0], -int(pair[1].get('id', 0))))
-    # 2.14 (Part 25): floor at 1 when there are candidates — int(len*cap)
+    # 2.14: floor at 1 when there are candidates — int(len*cap)
     # rounded to 0 for any pass with <20 unscored episodes, so typical desktop
     # installs NEVER escalated anything to tier-2 review.
     capCount = int(len(scored) * max(0.0, min(1.0, flagRateCap)))
@@ -650,9 +650,9 @@ def flag_top_slice(
 
 
 def mine_sessions(sinceDays: int = 30) -> dict[str, int]:
-    """Extract episodes from recent sessions (the scheduled Phase A pass)."""
+    """Extract episodes from recent sessions."""
     since = (datetime.now(timezone.utc) - timedelta(days=sinceDays)).isoformat()
-    # 2.17 (Part 25): created_at is stored space-separated (datetime('now'))
+    # 2.17: created_at is stored space-separated (datetime('now'))
     # while `since` is ISO with a 'T'; a raw string compare sorts ' ' (0x20)
     # before 'T' and drops the whole cutoff day. julianday() parses both.
     rows = _conn().execute(
@@ -666,7 +666,7 @@ def mine_sessions(sinceDays: int = 30) -> dict[str, int]:
     existing = _existingFingerprintTexts(limit=1000)
     extracted = 0
     for r in rows:
-        # Part 26 6.4: stamp each episode with the source session's M-2 scope
+        # Stamp each episode with the source session's M-2 scope
         # ('' = global). A Bot's private home-chat episodes must not later
         # surface as globally injected <memory> lessons in every session —
         # the leak class the remember/forget doors closed, via the side door.
@@ -723,7 +723,7 @@ def learning_report() -> dict[str, Any]:
     return cast(dict[str, Any], counts)
 
 
-# ── Phase E: resolution check + demotion (suggestion-only, OQ 5) ─────────
+# ── Phase E: resolution check + demotion ─────────
 
 _RESOLUTION_WINDOW_DAYS = 30
 
@@ -766,7 +766,7 @@ def _skillLoadCount(skillName: str) -> int:
 
 
 def run_resolution_check(windowDays: int = _RESOLUTION_WINDOW_DAYS) -> dict[str, Any]:
-    """Phase E measurement (plan §3.5).
+    """Phase E measurement.
 
     A shipped skill's fingerprint is monitored: 0 recurrences for the
     window → ``resolved``; a RESOLVED fingerprint that recurs re-flags and
@@ -832,7 +832,7 @@ def run_resolution_check(windowDays: int = _RESOLUTION_WINDOW_DAYS) -> dict[str,
 
 
 def set_fingerprint_status(fp: str, status: str) -> None:
-    """§12 F-10: the advertised statuses (open | skill_drafted | resolved |
+    """The advertised statuses (open | skill_drafted | resolved |
     retired) must actually be written. ``skill_drafted`` is set when a
     distilled draft files; ``retired`` when the fingerprint's skill_delete
     applies (from ANY prior state — demotions flow from resolved). A draft

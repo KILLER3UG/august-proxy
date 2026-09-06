@@ -112,7 +112,7 @@ def exists(workspacePath: str | None) -> bool:
     return _resolveAugPath(workspacePath).exists()
 
 
-# ── T6 layered loading (plan §9.4) ───────────────────────────────────────
+# ── T6 layered loading ───────────────────────────────────────
 # global → git-root→cwd walk; AGENTS.override.md wins at each level; the
 # combined body is capped at 32 KiB, dropping the least-specific layers
 # first so the workspace's own instructions survive.
@@ -148,8 +148,72 @@ def _directive_file(directory: Path) -> Optional[Path]:
     return None
 
 
+# Cache for load_layered, keyed by workspace path. buildSystemPrompt calls
+# this on every model round, so re-reading unchanged AUG.md layers from disk
+# each round is pure IO overhead. The fingerprint covers the candidate
+# directories (create/delete of a layer file changes the dir's mtime) and
+# the layer files themselves (an edit changes the file's mtime), so any
+# layer change busts the key on the next call.
+_layered_cache: dict[str, tuple[tuple, Optional[dict[str, object]]]] = {}
+
+
+def _stat_sig(path: Path) -> tuple[int, int]:
+    """(mtime_ns, size) for fingerprinting; (-1, -1) when unreadable/gone."""
+    try:
+        st = path.stat()
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (-1, -1)
+
+
+def _layer_watch_paths(workspacePath: str | None) -> list[Path]:
+    """Every path whose change can alter the layered result.
+
+    The global data dir + file, and each directory in the git-root→workspace
+    chain (a layer file appearing/vanishing there flips the result). Missing
+    paths are included too so their creation is detected via the (-1, -1)
+    signature flip.
+    """
+    watch: list[Path] = []
+    try:
+        from app.lib.paths import dataPath
+
+        watch.append(dataPath(_AUG_FILENAME))
+    except Exception:
+        pass
+    if workspacePath:
+        ws = Path(workspacePath)
+        if ws.is_dir():
+            wsResolved = ws.resolve()
+            top = _find_git_root(wsResolved) or wsResolved
+            chain: list[Path] = []
+            cur = wsResolved
+            while True:
+                chain.append(cur)
+                if cur == top or cur.parent == cur:
+                    break
+                cur = cur.parent
+            watch.extend(chain)
+    return watch
+
+
+def _layers_fingerprint(workspacePath: str | None) -> tuple:
+    sig: list[tuple[str, int, int]] = []
+    for path in _layer_watch_paths(workspacePath):
+        s = _stat_sig(path)
+        sig.append((str(path), s[0], s[1]))
+    return tuple(sig)
+
+
+def _layers_unchanged(fingerprint: tuple) -> bool:
+    for pathStr, mtimeNs, size in fingerprint:
+        if _stat_sig(Path(pathStr)) != (mtimeNs, size):
+            return False
+    return True
+
+
 def load_layered(workspacePath: str | None) -> Optional[dict[str, object]]:
-    """Layered directive load: global → git-root→cwd walk (T6).
+    """Layered directive load: global → git-root→cwd walk.
 
     Layers, least-specific first:
       1. global — ``<dataDir>/AGENTS.md`` (user-wide directives)
@@ -161,7 +225,15 @@ def load_layered(workspacePath: str | None) -> Optional[dict[str, object]]:
     the total exceeds 32 KiB the least-specific layers are dropped first,
     then a hard cut with a marker. Returns ``{body, layers, truncated,
     exists}`` or ``None`` when no layer exists.
+
+    Results are cached per workspace against an (mtime, size) fingerprint of
+    the candidate layers; callers must treat the returned dict as read-only.
     """
+    cacheKey = str(workspacePath or '')
+    cached = _layered_cache.get(cacheKey)
+    if cached is not None and _layers_unchanged(cached[0]):
+        hit = cached[1]
+        return dict(hit) if hit is not None else None
     layers: list[dict[str, str]] = []
     seen: set[str] = set()
 
@@ -206,6 +278,7 @@ def load_layered(workspacePath: str | None) -> Optional[dict[str, object]]:
                     _addLayer(found, scope)
 
     if not layers:
+        _layered_cache[cacheKey] = (_layers_fingerprint(workspacePath), None)
         return None
 
     def _bytes(layer: dict[str, str]) -> int:
@@ -221,12 +294,14 @@ def load_layered(workspacePath: str | None) -> Optional[dict[str, object]]:
         combined = combined.encode('utf-8')[:_LAYERED_CAP_BYTES].decode('utf-8', errors='ignore')
         combined += '\n\n[... directive truncated at 32 KiB]'
         truncated = True
-    return {
+    result = {
         'body': combined,
         'layers': [{'path': layer['path'], 'scope': layer['scope']} for layer in layers],
         'truncated': truncated,
         'exists': True,
     }
+    _layered_cache[cacheKey] = (_layers_fingerprint(workspacePath), result)
+    return result
 
 
 

@@ -39,7 +39,7 @@ function scheduleFromPick(freq: Freq, detail: { time: string; day: string; every
   if (freq === 'daily') return `daily ${detail.time}`;
   if (freq === 'weekly') return `weekly ${detail.day} ${detail.time}`;
   if (freq === 'hourly') {
-    // Part 26 7.3: the picker value is a MINUTE (:00/:15/:30/:45) — the old
+    // The picker value is a MINUTE (:00/:15/:30/:45) — the old
     // template bound it into the HOUR field, so "hourly at :30" produced the
     // invalid cron `0 30 * * *` (creation 400) and ":00" produced daily-
     // at-midnight. Hourly form is `<minute> * * * *`.

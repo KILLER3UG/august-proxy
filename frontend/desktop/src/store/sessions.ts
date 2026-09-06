@@ -408,7 +408,7 @@ export function removeSessionLocally(id: string): boolean {
     } catch {
       /* ignore */
     }
-    // Part 27 T3: drop the per-session status record too — otherwise repeated
+    // Drop the per-session status record too — otherwise repeated
     // deletes grow the sessionStates map and inflate the per-render
     // mergedSessionStates spread in the sidebar.
     clearSessionStatus(lid);

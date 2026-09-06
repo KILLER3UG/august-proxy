@@ -358,7 +358,7 @@ def _matchBlock(
 def _resolveAnchor(
     lines: list[str], idx: int, oldText: str
 ) -> tuple[int, int, str] | None:
-    """T4 fuzzy edit ladder (plan §9.4): exact → leading-whitespace →
+    """T4 fuzzy edit ladder: exact → leading-whitespace →
     blank-line/elided block → nearby drift, before rejecting.
 
     The hash anchor already proved the file is exactly what the model read,

@@ -244,7 +244,7 @@ export function useComposerPopovers({
     }));
     const skills = skillMentions.filter(matches);
     const mcp = mcpMentions.filter(matches);
-    // Part 27 G1: files only surface once the user has typed a path prefix —
+    // Files only surface once the user has typed a path prefix —
     // at a bare "@" the home-anchored workspace listing used to flood the
     // picker with NTUSER.DAT / git-hook junk and bury skills/chats.
     const files = q ? fileMentions.filter(matches) : [];
@@ -252,8 +252,12 @@ export function useComposerPopovers({
     const harness = harnessMentions.filter(matches);
     const bots = botMentions.filter(matches);
     // Useful entities first; the list is grouped by kind so the dropdown can
-    // draw section headers where the kind changes.
-    return [...skills, ...tools, ...conversations, ...bots, ...harness, ...mcp, ...files];
+    // draw section headers where the kind changes. The merge is capped: each
+    // source is individually bounded, but their SUM is not — an uncapped
+    // merge floods the popover renderer (and the DOM) whenever several large
+    // sources match at once.
+    const merged = [...skills, ...tools, ...conversations, ...bots, ...harness, ...mcp, ...files];
+    return merged.slice(0, 60);
   }, [mentionQuery, skillMentions, mcpMentions, fileMentions, conversationMentions, harnessMentions, botMentions]);
 
   const closeAllPopovers = useCallback(() => {

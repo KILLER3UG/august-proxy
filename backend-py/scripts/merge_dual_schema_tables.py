@@ -66,7 +66,6 @@ def _payload(d: dict[str, Any], key_cols: tuple[str, ...]) -> dict[str, Any]:
 
 def analyze_and_merge(
     conn: sqlite3.Connection,
-    *,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Analyze conflicts and merge missing camel rows into snake tables.
@@ -278,7 +277,7 @@ def main() -> int:
     conn.execute("PRAGMA busy_timeout=10000")
     conn.execute("PRAGMA journal_mode=WAL")
     try:
-        # Phase A: dry analysis is always printed first when not dry-run
+        # Dry analysis is always printed first when not dry-run
         if not args.dry_run:
             print("--- dry-run analysis first ---")
             dry = analyze_and_merge(conn, dry_run=True)

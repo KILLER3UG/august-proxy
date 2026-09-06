@@ -120,7 +120,7 @@ class TestMutationGateDenial:
         assert wb._checkToolGuard(sess, 'read_file', {'path': 'x.txt'}) is None
 
 
-# ── command-approval axis (T5 policy) under headless ───────────────────────
+# ── command-approval axis under headless ───────────────────────
 
 
 class TestCommandApprovalAxisHeadless:

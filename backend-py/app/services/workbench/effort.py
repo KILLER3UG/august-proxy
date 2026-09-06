@@ -82,7 +82,6 @@ def effort_to_thinking_budget(
 
 def resolve_completion_limits(
     effort: str,
-    *,
     max_output_tokens: int,
 ) -> tuple[int, int]:
     """Return ``(thinking_budget, max_tokens)`` from the **model** ceiling.
@@ -195,7 +194,7 @@ def provider_accepts_reasoning_effort(
     api_mode = as_str(
         provider.get('apiMode') or provider.get('api_mode') or provider.get('apiFormat')
     )
-    # Part 26 1.3: normalize instead of a raw == against one spelling — the
+    # Normalize instead of a raw == against one spelling — the
     # old check missed the openai-responses / codex alias family entirely.
     from app.providers.api_format import normalize_api_format
 

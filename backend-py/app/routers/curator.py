@@ -1,4 +1,4 @@
-"""Curator API routes (Part 16 Phase E) — un-404s CuratorSuggestionBar.
+"""Curator API routes — un-404s CuratorSuggestionBar.
 
 ``POST /api/curator/run``   — one skill-learning pass (mine → score → flag
   → judge). ``dryRun=true`` reports what WOULD run without model calls or
@@ -41,7 +41,7 @@ async def runCurator(dryRun: bool = False):
         resolution = {} if dryRun else run_resolution_check()
         return mined, distiller, resolution
 
-    # §12 F-4: mining + judging are multi-second synchronous work — run
+    # Mining + judging are multi-second synchronous work — run
     # them off the event loop so the API stays responsive.
     mined, distiller, resolution = await asyncio.to_thread(syncPass)
     return {
@@ -67,7 +67,7 @@ def _skillStatusReport() -> dict[str, object]:
     archived: list[str] = []
     active = 0
     for s in skills:
-        # §12 F-9: _parseSkill nests unrecognized frontmatter (incl. the
+        # _parseSkill nests unrecognized frontmatter (incl. the
         # status: field) under 'meta' — a top-level read was always ''.
         metaRaw = s.get('meta')
         meta = metaRaw if isinstance(metaRaw, dict) else {}
@@ -92,7 +92,7 @@ async def flaggedEpisodes(limit: int = 20):
 
     out: list[dict[str, object]] = []
     for ep in flagged_episodes(limit=min(50, max(1, limit))):
-        # §12 F-3: the tier-1 rubric lives in tier1_result; judge_verdict
+        # The tier-1 rubric lives in tier1_result; judge_verdict
         # holds only the real tier-2 model verdict.
         rubricRaw = str(ep.get('tier1_result') or '')
         verdictRaw = str(ep.get('judge_verdict') or '')
@@ -133,10 +133,10 @@ async def curatorReport():
     from app.services.memory_store import get_internal_state
     from app.services.skill_distiller import precision_state
 
-    # P2.1 (Part 18): a skills-index budget overflow is a persisted issue —
+    # P2.1: a skills-index budget overflow is a persisted issue —
     # surfaced here so the Learning header can show it (None when never).
     overflow = get_internal_state('skillsIndexOverflow')
-    # D-3 (§3.5): the metric blob is multi-file IO (proposals dir) + a DB
+    # D-3: the metric blob is multi-file IO (proposals dir) + a DB
     # recurrence query — keep it off the event loop like /run does. The
     # resolution check must run INSIDE the offloaded function, not as a
     # to_thread argument (evaluating it on the loop was the Part 25 offload-gate
@@ -152,7 +152,7 @@ async def curatorReport():
 
 
 def _skillLearningBundle() -> dict[str, object]:
-    """Offloaded (Part 25): runs the resolution check + metric build together
+    """Offloaded: runs the resolution check + metric build together
     on a worker thread so neither touches the event loop."""
     from app.services.episode_miner import run_resolution_check
 

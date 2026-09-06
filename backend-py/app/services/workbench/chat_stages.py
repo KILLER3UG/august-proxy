@@ -24,7 +24,6 @@ RunRegular = Callable[[str, dict[str, object], str], Awaitable[dict[str, object]
 async def run_regular_tools_stage(
     pending: Sequence[ToolTriple],
     run_one: RunRegular,
-    *,
     is_cancelled: Callable[[], bool] | None = None,
 ) -> list[dict[str, object]]:
     """Run a batch of regular (non-managed) tools for one model round.

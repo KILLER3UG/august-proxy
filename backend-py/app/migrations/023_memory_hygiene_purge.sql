@@ -1,6 +1,5 @@
 -- 023_memory_hygiene_purge.sql
 -- One-time purge of memory-store noise (audit 2026-08-26):
---
 --   1. auto_memories written by the DELETED extraction writer
 --      (services/memory/auto_memory.py was removed in 4f1bfdb1): broken
 --      corrections ("User prefers: works/you/think"), duplicated "hi" episode
@@ -11,13 +10,12 @@
 --      many from deleted golden-eval runs).
 --   3. harness_eval:* / heuristic_trail:* / current_context — writers also
 --      deleted with the golden-eval suite.
---
 -- Machine state that is ALIVE stays: boot_maintenance_state,
 -- auto_memory_review_state, cognitive:*last_run (written by live code).
 -- Timeline 'user activity' heartbeat rows are deleted here too; the writer
 -- was a no-op'd function as of the same audit.
 
--- 2.8 (Part 25): the `DELETE FROM auto_memories;` that led this file is REMOVED.
+-- 2.8: the `DELETE FROM auto_memories;` that led this file is REMOVED.
 -- Part 21 OQ1 (migration 033) retired the table and create_core_schema no longer
 -- creates it, so on every FRESH DB this DELETE raised "no such table" and —
 -- because executescript aborts on the first error — silently skipped the three

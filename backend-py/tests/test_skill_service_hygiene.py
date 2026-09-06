@@ -145,7 +145,7 @@ def test_parse_frontmatter_strips_surrounding_quotes(freshSkillState):
 
 
 def test_bundled_skills_no_literal_quotes_in_descriptions(freshSkillState):
-    # Live-bug regression (Part 16 §9 confirmed by execution): the two
+    # Live-bug regression: the two
     # bundled quoted frontmatters must parse clean.
     quoted = [
         s['name']

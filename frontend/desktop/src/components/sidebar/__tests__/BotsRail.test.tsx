@@ -122,7 +122,7 @@ describe('BotsRail', () => {
     expect(screen.getByText('Red Team')).toBeTruthy();
   });
 
-  it('opens the Bot profile on row click, then the chat from the profile (Part 27 F5)', async () => {
+  it('opens the Bot profile on row click, then the chat from the profile', async () => {
     const onOpen = vi.fn();
     withProviders(<BotsRail onOpenSession={onOpen} />);
     await waitFor(() => expect(screen.getByText('Research Buddy')).toBeTruthy());
@@ -158,7 +158,7 @@ describe('BotsRail', () => {
     fireEvent.click(screen.getAllByLabelText('Bot actions')[0]);
     fireEvent.click(screen.getByTitle('New deterministic face for this Bot'));
     await waitFor(() =>
-      // Part 27 F2: uiMeta.avatar may now be {salt, locked, source} or a
+      // UiMeta.avatar may now be {salt, locked, source} or a
       // bare salt string (legacy). Accept either; the new shape is an
       // object with a salt string.
       expect(updateBotUiMeta).toHaveBeenCalledWith(

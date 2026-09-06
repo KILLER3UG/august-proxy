@@ -1,4 +1,4 @@
-"""Part 17 Phase E — cross-project review & promotion (gated).
+"""Cross-project review & promotion (gated).
 
 The promotion judge reads project memories + project skills across KNOWN
 workspaces (distinct non-empty, non-home ``sessions.workspace_path`` — never
@@ -53,7 +53,7 @@ _DEMOTE_AFTER_DAYS = 14
 
 
 def _skill_learning_mode() -> str:
-    """off | extract-only | full (default extract-only — Part 16 ship bar)."""
+    """off | extract-only | full."""
     try:
         from app.services.brain_config_service import getRuntimeConfig
 
@@ -274,7 +274,7 @@ def run_promotion_pass(*, force: bool = False) -> dict[str, Any]:
                     'Promote this recurring lesson into the GLOBAL facts store so every '
                     'project sees it (copy-on-write — the project files stay untouched).'
                 ),
-                # §9 F-7: `forget` can't delete promoted facts — its
+                # `forget` can't delete promoted facts — its
                 # source allowlist covers model/user/'' only, and promoted
                 # facts carry source='promoted-from:<ws>'. Point the human
                 # at the door that actually works.

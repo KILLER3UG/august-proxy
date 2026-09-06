@@ -58,7 +58,6 @@ def _log_emit(sessionId: str) -> Callable[[dict[str, object]], None]:
 
 def _startTurnTask(
     sessionId: str,
-    *,
     message: str,
     provider: str = '',
     agentId: str = '',
@@ -113,7 +112,7 @@ def _startTurnTask(
                     # The cancelled turn's persist block never ran, so the last
                     # barrier flush left turnOpen=True on disk — reset it here
                     # or the next load fabricates a phantom "[interrupted]"
-                    # user message (Part 26 2.2).
+                    # user message.
                     session.turnOpen = False
                     session.updatedAt = wb._now()
                     wb.saveSessions()
@@ -1039,7 +1038,6 @@ async def respondMutation(request: Request):
     # but only once the whole approval stack is cleared. Continuing mid-stack
     # hides remaining MutationDiffCards.
     # On reject, optionally notify so the model does not assume the change landed.
-    #
     # Ask-mode already returned a [Blocked] tool result to the model, so a still-
     # running original stream will never "pick up" the grant. Cancel any stale
     # active stream and always start the continuation turn.

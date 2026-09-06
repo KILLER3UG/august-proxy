@@ -28,6 +28,7 @@ Response shapes (match the frontend types):
 
 from __future__ import annotations
 
+import time
 from typing import cast
 
 from app.config import settings
@@ -42,7 +43,6 @@ boolKeys: tuple[str, ...] = (
     'adaptivePolicy',
     'failureLearning',
     'graphMemory',
-    'agentJobs',
     'hierarchicalAgents',
     'adapterParallelTools',
     'parallelReadTools',
@@ -80,8 +80,9 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'),
     ('failureLearning', 'failure_learning', DEFAULT_FEATURES.get('failure_learning', True), 'bool'),
     ('graphMemory', 'graph_memory', DEFAULT_FEATURES.get('graph_memory', True), 'bool'),
-    # agentJobs retired (Part 27 C4): the registry job ledger is an in-memory
-    # capped dict now; no feature flag ever gated it.
+    # The agent-jobs flag is gone: the registry job ledger is an in-memory
+    # capped dict now; no feature flag ever gated it (and keeping the key in
+    # allowedKeys without a field mapping made a PUT containing it KeyError).
     ('hierarchicalAgents', 'hierarchical_agents', DEFAULT_FEATURES.get('hierarchical_agents', True), 'bool'),
     ('adapterParallelTools', 'adapter_parallel_tools', DEFAULT_FEATURES.get('adapter_parallel_tools', True), 'bool'),
     ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'),
@@ -93,7 +94,7 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # The documented default is 25 tool rounds (MAX_MANAGED_TOOL_ROUNDS);
     # the stale 100 seed made that constant dead on every fresh install.
     ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 25), 'num'),
-    # Evidence-driven routing introspection (Part 26 7.2): `autoRoute` /
+    # Evidence-driven routing introspection: `autoRoute` /
     # `autoRouteMinWinRate` / `autoRouteWinGap` are REMOVED — no turn-loop
     # reader ever existed (the "auto-routing" claim was corrected in Part 25
     # Phase 4) and the frontend opt-in ghost is deleted with them.
@@ -114,12 +115,12 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # captured during a call are transient by default — never persisted to
     # disk beyond the call lifetime, and never written to memory stores.
     ('cameraAccess', 'camera_access', False, 'bool'),
-    # M4 consolidation v2 (plan §3.5): one scheduled job; cadence in hours,
+    # M4 consolidation v2: one scheduled job; cadence in hours,
     # and the Q5 model-assisted merge summarization flag (default off — each
     # merge costs one cheap-model call).
     ('consolidationIntervalHours', 'consolidation_interval_hours', 24, 'num'),
     ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),
-    # M-4 (Part 21): episodic_timeline retention window in days — the sweep
+    # M-4: episodic_timeline retention window in days — the sweep
     # in consolidation._sweep_episodic prunes rows older than this.
     ('episodicRetentionDays', 'episodic_retention_days', 90, 'num'),
     # OQ5 (Part 21, 2026-09-04): preference-retire propose-only pass. A
@@ -136,7 +137,7 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # (ship default) = mining + promote proposals; full = also draft skill
     # bodies. Governs harness_promote.run_promotion_pass.
     ('skillLearning', 'skill_learning', 'extract-only', 'str'),
-    # Part 16 Phase C: dedicated judge model for the episode distiller
+    # Dedicated judge model for the episode distiller
     # (empty = fall back to the background-review memory model, then the
     # titler resolver order — keyless gateways keep working).
     ('skillLearningJudgeModel', 'skill_learning_judge_model', '', 'str'),
@@ -144,11 +145,11 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # scored episodes flagged to tier 2 (episode_miner.flag_top_slice).
     ('escalationBudgetPerDay', 'escalation_budget_per_day', 2, 'num'),
     ('flagRateCap', 'flag_rate_cap', 0.05, 'float'),
-    # Part 17: per-project memory md files + auto-project write door.
+    # Per-project memory md files + auto-project write door.
     # Off = session_tools' remember/forget stay global-only and workbench
     # stops injecting the <project_memory> block.
     ('projectMemory', 'project_memory', True, 'bool'),
-    # Part 17 Phase B: workspace-scoped skills root (.aug/skills shadowing
+    # Workspace-scoped skills root (.aug/skills shadowing
     # bundled + agent skills). Off = catalogue falls back to agent+bundled.
     ('projectSkills', 'project_skills', True, 'bool'),
 )
@@ -170,13 +171,27 @@ def getDefaults() -> BrainConfigDict:
     return _defaultsCamel()
 
 
+_RUNTIME_TTL_S = 2.0
+_runtime_cache: tuple[float, BrainConfigDict] | None = None
+
+
 def getRuntimeConfig() -> BrainConfigDict:
     """Merged camelCase config for runtime readers (the routing consult).
 
     No session/source wrappers — just the effective values, defaults
-    filled in. Cheap (fresh read of the cognitive tree per call).
+    filled in. Memoized on a 2s TTL: this is called 5–7× per turn from the
+    tool-surface and prompt paths, and each uncached call walked the whole
+    cognitive tree (ensure_defaults + dict copies). Writes clear the cache,
+    so a PUT is reflected immediately.
     """
-    return _snakeToCamel(_loadPersisted())
+    global _runtime_cache
+    now = time.monotonic()
+    cached = _runtime_cache
+    if cached is not None and now - cached[0] < _RUNTIME_TTL_S:
+        return cached[1]
+    merged = _snakeToCamel(_loadPersisted())
+    _runtime_cache = (now, merged)
+    return merged
 
 
 def _loadPersisted() -> dict[str, object]:
@@ -191,6 +206,8 @@ def _loadPersisted() -> dict[str, object]:
 
 def _savePersisted(snakeCfg: dict[str, object]) -> None:
     """Replace ``auxiliary.cognitive.orchestrator``; drop legacy top-level key."""
+    global _runtime_cache
+    _runtime_cache = None
     from app.services.cognitive_config import ensure_defaults
 
     ensure_defaults()

@@ -1,4 +1,4 @@
-"""B0 — headless ``august-bench`` entry package (benchmark gate, plan §9.5).
+"""B0 — headless ``august-bench`` entry package.
 
 Modules:
   * ``protocol``   — T9 conventions: JSONL envelopes, exit codes, schema gate

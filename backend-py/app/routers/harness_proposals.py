@@ -56,7 +56,7 @@ async def decideProposal(pid: str, body: ProposalDecision):
 
 @router.post('/promotion/run')
 async def runPromotionPass(force: bool = False):
-    """Part 17 Phase E: run the cross-project promotion judge now.
+    """Run the cross-project promotion judge now.
 
     Files ``promote`` proposals into this same review queue (≥2-project
     recurrence bar, sensitive denylist, never mutates project files). Runs

@@ -1,4 +1,4 @@
-/* ── session title helpers (plan §5.2) ─────────────────────────────── */
+/* ── session title helpers ─────────────────────────────── */
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -7,7 +7,7 @@ import {
   deriveSnippetTitle,
 } from '../sessions/helpers';
 
-describe('defaultSessionTitle / isPlaceholderTitle (plan §5.2)', () => {
+describe('defaultSessionTitle / isPlaceholderTitle', () => {
   it('never uses timestamps as names', () => {
     expect(defaultSessionTitle()).toBe('New chat');
     expect(defaultSessionTitle()).not.toMatch(/\d{4}/);
@@ -24,7 +24,7 @@ describe('defaultSessionTitle / isPlaceholderTitle (plan §5.2)', () => {
   });
 });
 
-describe('deriveSnippetTitle (plan §5.2 — immediate title from first message)', () => {
+describe('deriveSnippetTitle', () => {
   it('takes the first line, collapsed to single spaces', () => {
     expect(deriveSnippetTitle('Fix   memory\nconsolidation bug')).toBe('Fix memory');
   });

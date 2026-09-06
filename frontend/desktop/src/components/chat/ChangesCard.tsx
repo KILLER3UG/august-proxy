@@ -1,4 +1,4 @@
-/* ── ChangesCard ─ unified ZCode-style turn changes card (plan §4.5) ─ */
+/* ── ChangesCard ─ unified ZCode-style turn changes card ─ */
 /* Replaces ChangedFilesCard + ProducedFilesRow with one aggregate card:    */
 /* `X files changed +N −M [Undo]` header expanding to type-aware rows —     */
 /* code rows (FileIcon + ±chips + Review + Open, collapsible inline diff)   */

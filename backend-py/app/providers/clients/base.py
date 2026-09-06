@@ -315,7 +315,6 @@ class BaseProviderClient:
     def __init__(
         self,
         providerConfig: dict[str, object],
-        *,
         timeout: float = 300.0,
         maxRetries: int = 3,
         connectTimeout: float | None = None,
@@ -562,7 +561,7 @@ class BaseProviderClient:
                         rateGate.recordRateLimit(host, parseRetryAfterMs(resp.headers.get('retry-after')))
                     if isRetryableStatus(resp.status_code) and attempt < self.maxRetries:
                         delay = getRetryDelayMs(resp, attempt + 1) / 1000
-                        # Phase L (Part 17): retries were silent — a capped
+                        # Retries were silent — a capped
                         # Retry-After wait could stall the stream ~30 s with
                         # zero events, reading to the user as "the model is
                         # slow". Yield a marker event so consumers (workbench

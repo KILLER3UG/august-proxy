@@ -1,4 +1,4 @@
-"""§9.3 #6: per-model-family prompt variants (plan Part 9, Set A).
+"""Per-model-family prompt variants.
 
 One short guidance block per model family, appended to the workbench system
 prompt. Families respond measurably differently to instruction style; the

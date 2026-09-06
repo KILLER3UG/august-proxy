@@ -1,4 +1,4 @@
-"""Part 16 Phase C — tier-2 judge + distiller (2026-08-30).
+"""Tier-2 judge + distiller (2026-08-30).
 
 One model call per flagged cluster (batches of ≤5 episodes), piggybacking
 the consolidation cadence — no new scheduler. The judge sees ONLY the
@@ -64,7 +64,7 @@ _JUDGE_SYSTEM = (
 )
 
 
-# ── model resolution (§4: explicit → background-review → titler) ────────
+# ── model resolution ────────
 
 
 def resolve_judge_model() -> str:
@@ -226,7 +226,7 @@ def _draftExists(fp: str, action: str, target: str) -> bool:
     return False
 
 
-# ── precision ship bar (OQ 2: amend_body is NOT trusted at birth) ───────
+# ── precision ship bar ───────
 
 
 def precision_state() -> dict[str, Any]:
@@ -423,7 +423,7 @@ def apply_verdict(
         except ValueError as exc:
             logger.info('distiller draft proposal refused: %s', exc)
             return 'refused'
-        # §12 F-10: the fingerprint's status clock starts at ship time, not
+        # The fingerprint's status clock starts at ship time, not
         # at the last mined occurrence.
         try:
             from app.services.episode_miner import set_fingerprint_status
@@ -434,7 +434,7 @@ def apply_verdict(
         return 'proposal-filed'
 
     if action == 'amend_body':
-        # OQ 2: human-authored bodies are off-limits until the precision
+        # Human-authored bodies are off-limits until the precision
         # ship bar is met. §12 F-5: the downgrade MUST NOT file an
         # approvable skill_patch — its payload has no body, and approving
         # that used to overwrite the target SKILL.md with placeholder
@@ -469,7 +469,7 @@ def apply_verdict(
                     },
                 )
             return 'downgraded-proposal'
-        # Ship bar MET (plan §3.3): file a REAL skill_patch — still
+        # Ship bar MET: file a REAL skill_patch — still
         # human-approved, never auto-applied. The judge never sees skill
         # bodies, so ``patch_markdown`` is an amendment to APPEND, not a
         # replacement: the parent merges it onto the current body
@@ -594,7 +594,7 @@ def run_distiller_pass(dryRun: bool = False) -> dict[str, Any]:
                 'SELECT fingerprint_id, scope FROM episodes WHERE id = ?', (epId,)
             ).fetchone()
             fp = str(fpRow['fingerprint_id']) if fpRow and fpRow['fingerprint_id'] else 'unknown'
-            # Part 26 6.4: the distilled fact lands in the episode's scope —
+            # The distilled fact lands in the episode's scope —
             # bot-private episodes must not leak lessons into global memory.
             epScope = str(fpRow['scope'] or '') if fpRow and 'scope' in fpRow.keys() else ''
             label = apply_verdict(v, fp, mode, scope=epScope)
@@ -614,7 +614,7 @@ def _run_batch(batch: list[dict[str, Any]]) -> dict[str, Any] | None:
     except RuntimeError:
         pass
     else:
-        # §12 F-4: a live loop (e.g. the runCurator API handler) must NOT
+        # A live loop (e.g. the runCurator API handler) must NOT
         # block on the judge — but it must not silently skip either. Offload
         # to a worker thread that owns a fresh event loop.
         return _run_batch_off_loop(prompt)
@@ -626,7 +626,7 @@ def _run_batch(batch: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 def _run_batch_off_loop(prompt: str) -> dict[str, Any] | None:
-    """Run one judge call on a worker thread (§12 F-4). None = judge failed
+    """Run one judge call on a worker thread. None = judge failed
     or timed out past the grace window."""
     import asyncio
     import threading

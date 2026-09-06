@@ -1,4 +1,4 @@
-"""T13 — REPL-first tool surface: kernel state, tool bridge, sequential cells.
+"""REPL-first tool surface: kernel state, tool bridge, sequential cells.
 
 Covers the parent-side kernel module (tokens, persistence paths/caps, lock,
 venv discovery, gated bridge dispatch) and the child-side code the runner
@@ -19,9 +19,7 @@ import pytest
 from app.services.workbench import kernel
 from app.services.workbench.code_runner import build_runner_source, runner_command
 
-# ---------------------------------------------------------------------------
 # Bridge tokens
-# ---------------------------------------------------------------------------
 
 
 class TestBridgeTokens:
@@ -58,9 +56,7 @@ class TestBridgeTokens:
         assert len(tokens) == 50
 
 
-# ---------------------------------------------------------------------------
 # Kernel dir + persisted-var bookkeeping
-# ---------------------------------------------------------------------------
 
 
 class TestKernelDir:
@@ -103,9 +99,7 @@ class TestKernelDir:
         assert report['saved'] == ['x']
 
 
-# ---------------------------------------------------------------------------
 # Sequential execution lock
-# ---------------------------------------------------------------------------
 
 
 class TestKernelLock:
@@ -134,9 +128,7 @@ class TestKernelLock:
         )
 
 
-# ---------------------------------------------------------------------------
 # Venv discovery + runner command
-# ---------------------------------------------------------------------------
 
 
 class TestVenvAndRunnerCommand:
@@ -174,9 +166,7 @@ class TestVenvAndRunnerCommand:
         assert 'requests' in kernel.DEFAULT_VENV_PACKAGES
 
 
-# ---------------------------------------------------------------------------
 # build_runner_source: compiles + wires T13 sections
-# ---------------------------------------------------------------------------
 
 
 class TestBuildRunnerSource:
@@ -205,9 +195,7 @@ class TestBuildRunnerSource:
         assert '_SANDBOX_READ_ONLY = True' in src
 
 
-# ---------------------------------------------------------------------------
 # Child-side persistence (run real generated scripts in a subprocess)
-# ---------------------------------------------------------------------------
 
 
 def _run_script(ws: str, block: str, kdir: str) -> subprocess.CompletedProcess:
@@ -274,9 +262,7 @@ class TestChildPersistence:
         assert 'raised: tool bridge not available' in r.stdout
 
 
-# ---------------------------------------------------------------------------
 # call_tool bridge client against a real local HTTP server
-# ---------------------------------------------------------------------------
 
 
 class TestCallToolBridgeClient:
@@ -327,9 +313,7 @@ class TestCallToolBridgeClient:
             server.server_close()
 
 
-# ---------------------------------------------------------------------------
 # Parent-side gated bridge dispatch
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -399,9 +383,7 @@ class TestBridgeCall:
             tool_registry.unregister('t13_big')
 
 
-# ---------------------------------------------------------------------------
 # code-bridge HTTP endpoint
-# ---------------------------------------------------------------------------
 
 
 class TestCodeBridgeEndpoint:

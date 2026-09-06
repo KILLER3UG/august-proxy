@@ -36,6 +36,7 @@ export function useStickToBottomScroll({
   sessionId,
   loadedSessionId,
   messagesVersion,
+  hasContent,
   onPinnedChange,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -45,6 +46,10 @@ export function useStickToBottomScroll({
   loadedSessionId: string | null;
   /** Any value that changes when transcript content grows (e.g. messages). */
   messagesVersion: unknown;
+  /** True once the transcript holds at least one message. The scroller
+   *  element only exists after the empty state is replaced by the list, so
+   *  the release listeners must rebind exactly on this 0 → >0 flip. */
+  hasContent: boolean;
   /** Fired when pin state changes (for jump-to-bottom chrome). */
   onPinnedChange?: (pinned: boolean) => void;
 }) {
@@ -146,10 +151,11 @@ export function useStickToBottomScroll({
   }, [getScrollTarget, pinnedToBottomRef, setPinned]);
 
   // User intent to read earlier content: release pin immediately. The
-  // listener only needs to rebind when the scroll element changes (sessionId)
-  // or when messages go from 0 → >0 (the empty-state div is replaced by the
-  // populated list — a new scroll target with no listeners yet). Binding on
-  // every content change used to thrash the listener on every stream flush.
+  // listener only needs to rebind when the scroll element changes (sessionId
+  // or a session load) or when content first appears (hasContent 0 → >0:
+  // the empty-state div is replaced by the populated list — a new scroll
+  // target with no listeners yet). Binding on every content change used to
+  // thrash the listener on every stream flush.
   useEffect(() => {
     const el = getScrollTarget();
     if (!el) return;
@@ -197,7 +203,7 @@ export function useStickToBottomScroll({
       window.removeEventListener('keydown', onKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setPinned, sessionId, loadedSessionId]);
+  }, [setPinned, sessionId, loadedSessionId, hasContent]);
 
   // Smooth follow while streaming + pinned. Adaptive lerp: small gaps ease,
   // large chunks catch up quickly so the viewport never falls behind tokens.

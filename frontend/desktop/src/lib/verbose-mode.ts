@@ -1,5 +1,5 @@
 /**
- * Per-session verbose mode (plan §4.2 item 4): `/verbose` toggles inline raw
+ * Per-session verbose mode: `/verbose` toggles inline raw
  * tool output for the current session — the debug-depth escape hatch from
  * the minimal-output transcript. Rendering policy only: the data layer
  * always keeps the full output (drawer/trajectory are unaffected).

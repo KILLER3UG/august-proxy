@@ -1,4 +1,4 @@
-"""Environment bootstrapping (§9.3 #4 + T10 step 1) — the orphaned
+"""Environment bootstrapping — the orphaned
 code_map.py is re-wired into the workspace prompt block: workdir file
 listing + signatures so the first tool hop lands without exploration."""
 

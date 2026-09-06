@@ -1,4 +1,4 @@
-"""Part 19 Phase B — routine fields on the automations API + RoutinesPane data.
+"""Routine fields on the automations API + RoutinesPane data.
 
 The runner path already honors ``deliver`` / ``respond`` / ``continuity``
 (``automations_store._run_workbench_stream`` + ``automation_memory``), but the

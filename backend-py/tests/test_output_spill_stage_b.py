@@ -1,4 +1,4 @@
-"""Output-cap discipline, stage B: spill (plan §9.3 #3).
+"""Output-cap discipline, stage B: spill.
 
 A fresh tool result larger than 50 KB is stored verbatim in a session-scoped
 file (``.aug/spill/<sessionId>/NNNN-<tool>.txt``) and replaced inline by a

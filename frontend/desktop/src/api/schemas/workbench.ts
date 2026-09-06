@@ -292,9 +292,9 @@ export const WorkbenchUserMessageQueueEventSchema = WorkbenchBaseSchema.extend({
 
 /** Lifecycle events without dedicated UI handling yet (todo-list updates,
  *  filesystem checkpoints) — accepted so they don't trip the schema-mismatch
- *  warning in the stream dispatcher. `upstreamRetry` (Phase L) and
- *  `recalledMemories` (Part 17 A.4) route to handlers in streamEvents.ts.
- *  `turnTelemetry` (Phase L) is accepted here so the frame is not flagged as a
+ *  warning in the stream dispatcher. `upstreamRetry` and
+ *  `recalledMemories` route to handlers in streamEvents.ts.
+ *  `turnTelemetry` is accepted here so the frame is not flagged as a
  *  mismatch, but streamEvents.ts has no `turnTelemetry` case yet — the event
  *  is currently dropped (no cache-hit/latency chip is wired). */
 export const WorkbenchMiscLifecycleEventSchema = WorkbenchBaseSchema.extend({

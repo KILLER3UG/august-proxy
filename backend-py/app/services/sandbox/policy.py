@@ -7,6 +7,7 @@ from typing import Final, Literal
 
 SandboxMode = Literal['read-only', 'workspace-write', 'danger-full-access']
 EnforcementBackend = Literal[
+    'container',
     'windows-appcontainer',
     'seatbelt',
     'landlock',

@@ -1,4 +1,4 @@
-"""B0 — benchmark-integrity guardrails (non-negotiable, plan §9.5).
+"""B0 — benchmark-integrity guardrails.
 
 A PRE_TOOL_USE hook registered for bench runs only:
   * never read ``solution/`` (any path with a ``solution`` directory part);

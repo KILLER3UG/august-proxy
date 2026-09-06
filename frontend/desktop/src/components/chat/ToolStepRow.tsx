@@ -142,7 +142,7 @@ export function ToolStepRow({
   expanded: boolean;
   onToggle: (next: boolean) => void;
   isCommand?: boolean;
-  /** /verbose (plan §4.2): minimal locking is lifted — settled read and
+  /** /verbose: minimal locking is lifted — settled read and
    *  successful command rows become expandable into their raw output. */
   verbose?: boolean;
   /** Live per-file progress entries for this tool call. */
@@ -188,10 +188,10 @@ export function ToolStepRow({
     tool.pendingApproval ||
     (hasChildren && (!isView || verbose))
   );
-  // Minimal-output policy (plan §4.1): settled read rows and successful
+  // Minimal-output policy: settled read rows and successful
   // command rows are header-only — no chevron, nothing to expand into.
   // Failures always stay inspectable (full output behind the click).
-  // /verbose lifts the lock so raw output is reachable inline (plan §4.2).
+  // /verbose lifts the lock so raw output is reachable inline.
   const minimalLocked =
     !verbose && !running && ((isView && !errored) || (isCommand && !errored));
   // View tools stay header-only while empty (no blank "Running…" panel).

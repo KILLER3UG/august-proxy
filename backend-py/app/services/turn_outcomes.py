@@ -74,7 +74,6 @@ def classify_error(errorText: str) -> str:
 
 
 def record_turn_outcome(
-    *,
     model: str,
     provider: str,
     task_type: str,
@@ -118,7 +117,7 @@ def record_turn_outcome(
                 int(tool_args_ready_to_stream_end_ms or 0),
             ),
         )
-        # P4.2 (Part 18): telemetry rows are never read back within the turn —
+        # P4.2: telemetry rows are never read back within the turn —
         # the commit is debounced (≤2s) instead of syncing per turn.
         defer_commit(conn)
     except Exception:
@@ -236,7 +235,6 @@ async def _review_lesson(lessonText: str, sampleError: str, modelHint: str) -> b
 
 
 async def maybe_promote_failure_lesson(
-    *,
     model: str,
     provider: str,
     error_class: str,

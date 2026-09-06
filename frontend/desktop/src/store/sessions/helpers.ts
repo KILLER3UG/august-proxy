@@ -35,7 +35,7 @@ export function isPlaceholderTitle(title: string | null | undefined): boolean {
 }
 
 /**
- * Immediate sidebar title from the first real user message (plan §5.2).
+ * Immediate sidebar title from the first real user message.
  * Client mirror of the backend's `derive_title_from_message` — the snippet
  * title shows at send time; the backend LLM titler treats it as a soft
  * fallback and refines it after the first reply when the provider allows.
@@ -110,7 +110,7 @@ export function dedupeSessions(sessions: Session[]): Session[] {
 
   const byKey = new Map<string, Session>();
   const order: string[] = [];
-  // Part 27 T5: index existing rows by their id and workbenchSessionId so the
+  // Index existing rows by their id and workbenchSessionId so the
   // cross-link is O(1) per session instead of an O(n) scan of every prior row
   // (this ran on every realtime session event + the 60s reconcile).
   const byId = new Map<string, string>(); // session.id -> byKey key

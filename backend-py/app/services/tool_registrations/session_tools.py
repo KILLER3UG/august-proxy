@@ -158,7 +158,7 @@ def _currentWorkspacePath() -> str:
             return ''
         ws = as_str(getattr(session, 'workspacePath', '') or '')
         if ws and Path(ws).resolve() == Path.home().resolve():
-            # §9 F-5: the home dir is NOT a project root (matches the
+            # The home dir is NOT a project root (matches the
             # docstring and every other Part 17 door) — auto-project must
             # not create <home>/.aug/memory/ for home-anchored sessions.
             return ''
@@ -323,7 +323,7 @@ async def _remember(
     cat = (category or 'general').strip().lower()
     if cat not in ('user', 'feedback', 'project', 'reference', 'general'):
         cat = 'general'
-    # M-2 (Part 21): the facts-store scope is stamped server-side from the
+    # M-2: the facts-store scope is stamped server-side from the
     # current session — a Bot's home chat writes 'bot:<agentId>' rows, every
     # other session writes 'global'. (The tool's own ``scope`` argument is
     # the Part 17 project/global md-file axis — a different concept.)
@@ -337,7 +337,7 @@ async def _remember(
     value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
     exp = (expires_at or '').strip() or None
     before = memory_store.get_fact(factKey)  # type: ignore[assignment]
-    # Part 26 6.2: ONE scope rule for remember/forget (mirrors the forget
+    # ONE scope rule for remember/forget (mirrors the forget
     # door below). Rows inside the session's visible union (global ∪ own
     # scope) are updatable — a Bot can edit or re-affirm a global fact, which
     # the <memory> block explicitly invites it to do — but a row belonging to
@@ -496,7 +496,7 @@ async def _forget(key: str) -> str:
                 'only model/user/imported facts can be forgotten.',
             }
         )
-    # M-2 (Part 21): a session may only forget facts inside its visible union
+    # M-2: a session may only forget facts inside its visible union
     # (global ∪ own scope) — a bot cannot delete another bot's private notes,
     # and a regular chat cannot reach into a bot's home memory.
     from app.services import session_scope as _ss
@@ -556,7 +556,7 @@ async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> s
     lim = max(1, min(as_int(limit, 50), 50))
     cat = (category or '').strip().lower()
     q = (query or '').strip()
-    # 2.2 (Part 25): scope-filter the read so a Bot sees global ∪ its own
+    # 2.2: scope-filter the read so a Bot sees global ∪ its own
     # notes, never another Bot's private keys/titles.
     from app.services import session_scope as _ss
 
@@ -570,7 +570,7 @@ async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> s
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'list_facts failed: {exc}'})
     facts: list[dict[str, object]] = []
-    # Part 17 Phase A: inside a workspace, project-memory entries list first
+    # Inside a workspace, project-memory entries list first
     # (they are the remember-default scope there) with key `project:<title>`.
     ws = _currentWorkspacePath()
     if ws:

@@ -117,7 +117,7 @@ export function RightDrawer({
     return () => document.removeEventListener('keydown', onKey);
   }, [chooserActive]);
 
-  // Overlay drawer (Part 15.4): Escape dismisses the whole panel. The
+  // Overlay drawer: Escape dismisses the whole panel. The
   // chooser handles its own Escape above, and editable fields keep Escape
   // for themselves (terminal, inputs, textareas).
   useEffect(() => {

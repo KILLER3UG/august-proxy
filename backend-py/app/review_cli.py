@@ -1,4 +1,4 @@
-"""Part 10 R-C — CI exit-code mode for August code review.
+"""CI exit-code mode for August code review.
 
 Headless review of a git changeset for users who wire August review into
 pipelines (plan §10.5 R-C; R5: in-app review stays advisory — this CLI is

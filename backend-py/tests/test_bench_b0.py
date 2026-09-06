@@ -28,9 +28,7 @@ from app.bench.runner import BenchOptions, _is_turn_limit_message, run_bench
 from app.bench.trajectory import TrajectoryBuilder
 from app.services.hooks.types import HookContext, HookEvent
 
-# ---------------------------------------------------------------------------
 # Protocol: envelopes, mapping, exit codes
-# ---------------------------------------------------------------------------
 
 
 class TestProtocol:
@@ -79,9 +77,7 @@ class TestProtocol:
             assert map_workbench_event({'type': dropped}) is None
 
 
-# ---------------------------------------------------------------------------
 # Output-schema validation (dependency-free subset)
-# ---------------------------------------------------------------------------
 
 
 class TestSchemaValidation:
@@ -162,9 +158,7 @@ class TestParseFinalAnswer:
         assert not ok and 'empty' in reason
 
 
-# ---------------------------------------------------------------------------
 # Trajectory builder (ATIF conventions)
-# ---------------------------------------------------------------------------
 
 
 def _ev(event_type: str, **payload):
@@ -238,9 +232,7 @@ class TestTrajectory:
         assert doc['integrity_violations'] == []
 
 
-# ---------------------------------------------------------------------------
 # Integrity guardrails
-# ---------------------------------------------------------------------------
 
 
 class TestIntegrityPaths:
@@ -330,9 +322,7 @@ class TestIntegrityHandler:
         assert result.action == 'deny'
 
 
-# ---------------------------------------------------------------------------
 # Runner: budgets + full headless run against a stubbed workbench
-# ---------------------------------------------------------------------------
 
 
 class TestTurnLimitDetection:
@@ -542,9 +532,7 @@ class TestRunBench:
             assert json.load(f)['task'] == 'fix the bug'
 
 
-# ---------------------------------------------------------------------------
 # CLI argument handling
-# ---------------------------------------------------------------------------
 
 
 class TestCli:

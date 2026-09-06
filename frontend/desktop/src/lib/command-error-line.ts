@@ -1,5 +1,5 @@
 /**
- * Minimal-output transcript (plan §4.1/§4.2): a failed command shows exactly
+ * Minimal-output transcript: a failed command shows exactly
  * ONE red line inline — the structured digest when the output carries one
  * (pytest-style `3 failed, 2 passed in 12.34s`), else the first error-looking
  * line, else the last non-empty line. Full output stays behind the click.

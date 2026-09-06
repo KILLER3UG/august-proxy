@@ -1,4 +1,4 @@
-"""T18 fail-closed session durability barriers (plan §9.4).
+"""T18 fail-closed session durability barriers.
 
 The durable session log is flushed at exactly three barriers:
 
@@ -29,7 +29,7 @@ BARRIER_MODEL_DISPATCH = 'model-dispatch'
 BARRIER_TOOL_SIDE_EFFECT = 'tool-side-effect'
 BARRIER_STEP_BOUNDARY = 'step-boundary'
 
-# Part 26 6.3: the per-turn tail blocks (<memory>, <relevant_skills>,
+# The per-turn tail blocks (<memory>, <relevant_skills>,
 # <session_state>, <memory_nudge>) are patched onto the last user message for
 # THIS request only — they must not ride in persisted history (bloat, stale
 # state the model may later trust, phantom mining episodes: the miner's

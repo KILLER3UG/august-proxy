@@ -69,7 +69,7 @@ async function dispatchDebateTurn(
     ensureWorkbenchSession,
   });
   // The debate may have been closed while the turn ran — never resurrect a
-  // run object by spreading a null (the old `{...run!}` crash, Part 26 7.1).
+  // run object by spreading a null.
   const after = useDebateStore.getState().run;
   if (!after) return;
   if (result === 'error') {
@@ -124,7 +124,7 @@ export function DebateView({
         const current = useDebateStore.getState().run;
         if (!current || current.phase !== 'running') return;
         // Consume the in-flight flag FIRST — a duplicate done event for the
-        // same turn must not advance twice (Part 26 7.1 re-entry guard).
+        // same turn must not advance twice.
         useDebateStore.setState({
           run: { ...current, awaitingTurn: false },
         });

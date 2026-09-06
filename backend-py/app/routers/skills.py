@@ -18,7 +18,7 @@ class SkillCreate(CamelModel):
     body: str = Field(..., description='SKILL.md body markdown.')
     trigger: str = ''
     category: str = 'uncategorized'
-    # Part 17 Phase B: a non-home workspace routes the create to the
+    # A non-home workspace routes the create to the
     # project root <ws>/.aug/skills/ (project scope by choice).
     workspace: str | None = None
 

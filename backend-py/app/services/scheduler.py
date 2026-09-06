@@ -277,7 +277,6 @@ class Scheduler:
         name: str,
         fn: Callable[[], Awaitable[None]],
         intervalSeconds: float | None = None,
-        *,
         interval_seconds: float | None = None,
     ) -> None:
         """Register a task to run every interval seconds."""
@@ -291,7 +290,6 @@ class Scheduler:
         name: str,
         fn: Callable[[], Awaitable[None]],
         idleThresholdSeconds: float | None = None,
-        *,
         idle_threshold_seconds: float | None = None,
     ) -> None:
         """Register a task to run when no activity for the idle threshold."""

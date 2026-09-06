@@ -14,7 +14,7 @@ function result(partial: Partial<CodeReviewResult> = {}): CodeReviewResult {
   };
 }
 
-describe('ReviewFindingsPanel (Part 10 R-A, advisory only)', () => {
+describe('ReviewFindingsPanel', () => {
   it('renders severity counts and findings', () => {
     render(
       <ReviewFindingsPanel

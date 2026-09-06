@@ -1,4 +1,4 @@
-"""Part 21 P1 — M-1 usage decoupling + M-10 ttl_days wiring.
+"""M-1 usage decoupling + M-10 ttl_days wiring.
 
 M-1 (usage-decoupling half): the cached BM25 corpus carries tokens + text
 only. ``touch_fact_usage`` no longer invalidates the index — usage is
@@ -80,7 +80,7 @@ def test_manage_endpoint_ttl_wiring(isolatedData):
         assert fact is not None and not str(fact.get('expiresAt') or '').strip()
 
 
-def test_m4_episodic_retention_sweep(isolatedData):
+def test_episodic_retention_sweep(isolatedData):
     """M-4: episodic_timeline was unbounded; consolidation now prunes rows
     older than episodicRetentionDays (default 90)."""
     from app.services.memory_store import _conn

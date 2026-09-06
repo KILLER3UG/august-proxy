@@ -1,4 +1,4 @@
-"""T1 post-edit verification loop + T14 worktree-dedup gate (plan §9.4).
+"""T1 post-edit verification loop + T14 worktree-dedup gate.
 
 After a successful ``edit_lines`` / ``write_file`` (and the other mutation
 tools) the harness runs the workspace's configured lint + optional test
@@ -165,7 +165,7 @@ def load_verify_config(workspace: Path) -> dict[str, object]:
 
 
 async def worktree_hash(workspace: Path) -> str | None:
-    """One-hash snapshot of the git worktree state (T14).
+    """One-hash snapshot of the git worktree state.
 
     Hashes ``git diff HEAD`` (tracked content changes) plus ``git status
     --porcelain`` (untracked/renamed names). Returns None when git is
@@ -368,7 +368,7 @@ async def verify_after_edit(
     tool_name: str,
     tool_input: dict[str, object],
 ) -> str:
-    """Post-mutation hook (T1): run the lint/test gate after a successful edit.
+    """Post-mutation hook: run the lint/test gate after a successful edit.
 
     Returns the receipt block to append to the tool result, or '' when the
     gate does not apply (no workspace, disabled, no commands, not an edit).
@@ -402,7 +402,7 @@ async def verify_after_edit(
             'when ready, or rethink the approach before editing again.'
         )
 
-    # T14: unchanged worktree since the last failed gate → skip the re-run.
+    # Unchanged worktree since the last failed gate → skip the re-run.
     treeHash = await worktree_hash(workspace)
     lastFailHash = state.get('lastFailHash')
     if treeHash is not None and lastFailHash is not None and treeHash == lastFailHash:

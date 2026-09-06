@@ -2,7 +2,6 @@
 Sub-agent management API routes.
 
 Endpoints
----------
 - ``POST /api/subagents/spawn`` — spawn one or more sub-agents
 - ``GET /api/subagents/active?sessionId=X`` — list active sub-agents
 - ``POST /api/subagents/{taskId}/terminate`` — terminate a sub-agent

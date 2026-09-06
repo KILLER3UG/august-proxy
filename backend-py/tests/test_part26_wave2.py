@@ -1,4 +1,4 @@
-"""Part 26 Wave 2 — the 500-class fixes.
+"""The 500-class fixes.
 
 End-to-end through the real turn loop (canonical isolation from
 tests/test_workbench_tool_loop.py / test_early_dispatch_telemetry.py):

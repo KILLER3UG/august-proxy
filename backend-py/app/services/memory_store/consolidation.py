@@ -23,11 +23,11 @@ from app.services.memory_conn import db_path as _db_path
 
 logger = logging.getLogger('august.consolidation')
 
-# BM25 self-similarity above this = near-duplicate → merge (plan §3.5-b).
+# BM25 self-similarity above this = near-duplicate → merge.
 _MERGE_SIMILARITY = 0.85
 # Pair pass is O(n) index queries; huge stores skip it rather than stall.
 _PAIR_SCAN_CAP = 500
-# VACUUM only when the DB file grows past this (plan §3.5-d).
+# VACUUM only when the DB file grows past this.
 _VACUUM_THRESHOLD_BYTES = 10 * 1024 * 1024
 _STATE_KEY_LAST_RUN = 'consolidation:last_run'
 
@@ -101,7 +101,7 @@ def _expire_facts() -> int:
         "AND julianday(expires_at) <= julianday('now')"
     )
     conn.commit()
-    # 2.6 (Part 25): a TTL delete must drop the cached BM25 corpus, or expired
+    # 2.6: a TTL delete must drop the cached BM25 corpus, or expired
     # facts keep being injected until an unrelated write clears it.
     if cur.rowcount:
         try:
@@ -114,7 +114,7 @@ def _expire_facts() -> int:
 
 
 def _sweep_episodic() -> int:
-    """M-4 (Part 21): episodic_timeline retention sweep.
+    """M-4: episodic_timeline retention sweep.
 
     The table was unbounded — every session event appended forever. The
     retention window comes from brain-config ``episodicRetentionDays``
@@ -200,7 +200,7 @@ def _retire_stale_preferences() -> tuple[int, list[str]]:
         if not rows:
             return 0, []
         # Open OR decided proposals for this type → skip keys already proposed.
-        # 2.19 (Part 25): dedupe across ALL statuses, not just pending — a
+        # 2.19: dedupe across ALL statuses, not just pending — a
         # human-rejected retire must not re-file on every pass (the §12 F-8
         # pattern the distiller already fixed).
         openKeys: set[str] = set()
@@ -245,7 +245,7 @@ def _retire_stale_preferences() -> tuple[int, list[str]]:
 
 
 def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'user') -> dict[str, Any]:
-    """Act on a ``retire-preference`` proposal decision (OQ5).
+    """Act on a ``retire-preference`` proposal decision.
 
     The scan is propose-only; THIS is the decide half that makes a proposal
     actionable. Approve → the fact's ``status`` flips to ``'retired'`` (the
@@ -303,7 +303,7 @@ def _load_active_facts() -> list[dict[str, Any]]:
             'value': r['fact_value'],
             'title': str(r['title'] or ''),
             'kind': str(r['kind'] or 'fact'),
-            # 2.5 (Part 25): consolidation must never fold a global fact into
+            # 2.5: consolidation must never fold a global fact into
             # a bot-scoped row (or across two bots) — the merge/supersede
             # passes partition by this so a scope's memory stays its own.
             'scope': str(r['scope'] or 'global'),
@@ -438,7 +438,7 @@ def _maybe_vacuum() -> bool:
 
 
 def _skill_learning_pass() -> dict[str, object]:
-    """Part 16: mining + scoring + distiller piggyback the consolidation
+    """Mining + scoring + distiller piggyback the consolidation
     cadence — no new scheduler. Gated on ``skillLearning`` (off skips).
     The distiller's model call happens on the consolidation cadence, so a
     slow judge never touches a live turn."""
@@ -510,7 +510,7 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
         superseded, superNotes = _supersede_contradictions()
         summary['superseded'] = superseded
         notes.extend(superNotes)
-        # OQ5 (Part 21): propose-only preference retire (non-destructive).
+        # Propose-only preference retire (non-destructive).
         try:
             retiredProposed, retireNotes = _retire_stale_preferences()
             summary['preferencesProposed'] = retiredProposed
@@ -518,7 +518,7 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
         except Exception:
             logger.debug('preference retire pass failed', exc_info=True)
         summary['outcomesSwept'] = sweep_old_outcomes()
-        # M-4 (Part 21): episodic_timeline retention sweep (table was unbounded).
+        # M-4: episodic_timeline retention sweep (table was unbounded).
         try:
             summary['episodicSwept'] = _sweep_episodic()
         except Exception:
@@ -555,7 +555,7 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
 
 
 async def consolidation_loop() -> None:
-    """The one scheduled job (plan §3.5). Cadence comes from brain-config
+    """The one scheduled job. Cadence comes from brain-config
     ``consolidationIntervalHours`` (default 24h), re-read every cycle."""
     while True:
         intervalH = 24.0

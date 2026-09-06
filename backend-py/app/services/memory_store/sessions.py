@@ -128,6 +128,7 @@ def save_workbench_session_sot(
             ),
         )
         conn.execute('DELETE FROM messages WHERE session_id = ?', (sid,))
+        rows: list[tuple[str, str, str]] = []
         for msg in msgs:
             if not isinstance(msg, dict):
                 continue
@@ -142,9 +143,14 @@ def save_workbench_session_sot(
             else:
                 payload = content
             content_str = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
-            conn.execute(
+            rows.append((sid, role, content_str))
+        # One executemany instead of a per-row execute: the active session's
+        # full transcript is re-written on every debounced save, so O(N)
+        # round-trips were the dominant write cost on long sessions.
+        if rows:
+            conn.executemany(
                 'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
-                (sid, role, content_str),
+                rows,
             )
         conn.commit()
     except Exception:
@@ -251,7 +257,7 @@ _SESSION_CHILD_TABLES: tuple[str, ...] = (
     'scratchpad',
     'tool_guardrail_log',
     'blackboard',
-    # Part 26 6.7: learning rows carry raw user-message excerpts keyed by
+    # Learning rows carry raw user-message excerpts keyed by
     # session_id — deleting a session used to orphan them (still queryable in
     # the Curator UI after "delete this chat").
     'episodes',
@@ -346,7 +352,7 @@ def delete_session_cascade(
             except sqlite3.DatabaseError:
                 # Non-fatal: continue so parent + other children still clean up.
                 pass
-        # auto_memories cascade removed (Part 21 OQ1 retire, migration 033):
+        # auto_memories cascade removed:
         # the store no longer exists, so a session delete has nothing to
         # clean up there.
         # Pending skill drafts attributed to this session.

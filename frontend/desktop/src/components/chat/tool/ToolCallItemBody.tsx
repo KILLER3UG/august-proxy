@@ -131,7 +131,7 @@ export function ToolCallItemBody({
   /** Suppress the formatted "context" section (the row header already names the
    *  file, so the args summary would be redundant). */
   hideContext?: boolean;
-  /** /verbose (plan §4.2): raw tool output renders inline for every bucket,
+  /** /verbose: raw tool output renders inline for every bucket,
    *  not just memory writes. */
   verbose?: boolean;
   /** Reserved for callers that need subagent labeling in nested chrome. */
@@ -163,11 +163,15 @@ export function ToolCallItemBody({
     tool.name.endsWith('__bash');
   const parts: ReactNode[] = [];
 
-  // Part 27 F6: a browser run that hit a login wall carries an actionNeeded
-  // payload in its result — render the escalation card (screenshot + Take over
-  // / I'm done) instead of a plain result row.
+  // A browser run that hit a login wall carries an actionNeeded payload in
+  // its result — render the escalation card (screenshot + Take over / I'm
+  // done) instead of a plain result row. Prefer the structurally extracted
+  // payload from the result JSON: actionNeeded serializes LAST in the
+  // result (after the elements snapshot + screenshot path), past the
+  // 240-char summary truncation, so the string-scan fallback only catches
+  // short/replayed results.
   if (/(^|@)browser_/.test(tool.name)) {
-    const actionNeeded = parseActionNeeded(tool.summary || tool.preview || tool.error);
+    const actionNeeded = tool.actionNeeded ?? parseActionNeeded(tool.summary || tool.preview || tool.error);
     if (actionNeeded) {
       parts.push(
         <ActionNeededCard
@@ -292,10 +296,10 @@ export function ToolCallItemBody({
     parts.push(<SearchResultsList key="search" hits={tool.searchHits} />);
   }
 
-  // Minimal-output rule (plan §4.1): raw tool output never streams into the
+  // Minimal-output rule: raw tool output never streams into the
   // transcript. The one exception is memory writes — the saved entry text is
   // the point of the row, so it stays expanded (edit-class exception).
-  // /verbose (plan §4.2) lifts the rule for every bucket: raw results render
+  // /verbose lifts the rule for every bucket: raw results render
   // inline until the session's verbose flag is turned off.
   // View/read: path is on the row label. Commands: CommandOutputPane. Edits: DiffView.
   if (

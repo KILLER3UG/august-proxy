@@ -93,7 +93,7 @@ function renderCard(props: React.ComponentProps<typeof ChangesCard>) {
 
 const PY_DIFF = '@@ -1,1 +1,2 @@\n keep me\n+added line\n';
 
-describe('ChangesCard (plan §4.5)', () => {
+describe('ChangesCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

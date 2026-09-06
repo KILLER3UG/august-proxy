@@ -1,4 +1,4 @@
-"""R-C part 2 (plan §10.5): CI exit-code mode for code review."""
+"""R-C part 2: CI exit-code mode for code review."""
 
 from __future__ import annotations
 

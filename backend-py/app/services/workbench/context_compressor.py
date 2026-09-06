@@ -20,7 +20,7 @@ DEFAULT_SUMMARY_MARKER = '<<compressed_summary'
 DEFAULT_MAX_SUMMARY_CHARS = 2000
 FEATURE_FLAG = 'AUGUST_SUMMARIZING_COMPACTOR'
 
-# ── Prune-then-compact (plan §9.3 #2) ──
+# ── Prune-then-compact ──
 # Tier (a) projection prune: protect the newest PROTECTED_TOOL_TOKENS of tool
 # outputs; older tool results are rewritten in the model-facing projection
 # only (history itself untouched). Stage A shape (companion to #3): old
@@ -41,7 +41,7 @@ SUMMARY_CAP_TOKENS = 8192
 # Compaction lock TTL: a mid-compaction crash must not block compaction
 # forever — an orphaned lock older than the TTL is treated as released.
 LOCK_TTL_S = 300.0
-# Part 18 P2.2: verbatim replay budget for the newest USER messages after a
+# Verbatim replay budget for the newest USER messages after a
 # summary (whole messages only, never a mid-message cut). The summary
 # inevitably loses nuance the user already paid for; replaying the most
 # recent user turns under this byte budget (12 KiB, within the plan's
@@ -120,7 +120,7 @@ def localSummarize(messages: list[dict[str, object]], maxSummaryChars: int = DEF
     return summary
 
 
-# ── Tier (a): projection prune of old tool outputs (§9.3 #2 + #3 stage A) ──
+# ── Tier (a): projection prune of old tool outputs ──
 
 
 def _approxTokens(text: str) -> int:
@@ -290,7 +290,7 @@ def _splitUnits(messages: list[dict[str, object]]) -> list[list[dict[str, object
     return units
 
 
-# ── Fixed markdown summary schema (§9.3 #2) ──
+# ── Fixed markdown summary schema ──
 
 _READ_TOOLS = {'read_file', 'list_files', 'search_files', 'grep_files', 'glob', 'grep'}
 _MODIFY_TOOLS = {
@@ -509,7 +509,7 @@ def schemaSummarize(
     return out
 
 
-# ── Compaction lock events (§9.3 #2: start/summary/end, TTL-guarded) ──
+# ── Compaction lock events ──
 
 
 def acquireCompactionLock(session: object, ttl: float = LOCK_TTL_S) -> bool:
@@ -635,7 +635,7 @@ async def compressMessages(
     Preserves head messages and a verbatim tail, summarizing everything in
     between. Two tail modes:
 
-    * token-budgeted (prune-then-compact §9.3 #2): when ``contextWindow`` is
+    * token-budgeted: when ``contextWindow`` is
       given, the tail keeps the newest ``retainRatio × contextWindow`` tokens
       word-for-word instead of a fixed message count;
     * count-budgeted (legacy): ``tail_count`` messages.
@@ -749,7 +749,7 @@ async def compressMessages(
             return list(messages)
         return compressed
 
-    # Part 18 P2.2: verbatim replay of the newest USER messages from the
+    # Verbatim replay of the newest USER messages from the
     # summarized middle (whole messages only — never a mid-message cut; a
     # tool result is never replayed, and tool-pair-safe unit splitting
     # already keeps every result with its call).

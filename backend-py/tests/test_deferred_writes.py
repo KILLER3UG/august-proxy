@@ -1,4 +1,4 @@
-"""P4.2 (Part 18) — debounced persistence for high-frequency per-turn writes.
+"""P4.2 — debounced persistence for high-frequency per-turn writes.
 
 Covers the ``defer_commit`` contract and its wiring into the three
 per-turn writers (turn_outcomes, lifecycle, internal_state):

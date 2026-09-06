@@ -1,8 +1,8 @@
 /**
- * liveClient — REST/SSE client for /api/live/* (v4 §14).
+ * liveClient — REST/SSE client for /api/live/*.
  *
  * v4 frontend-only cut: hits the existing stub endpoints. When the real
- * backend (§14 backend) ships, this module is the only place that needs
+ * backend ships, this module is the only place that needs
  * to change — the UI contracts stay stable.
  */
 

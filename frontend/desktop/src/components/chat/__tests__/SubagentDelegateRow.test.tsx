@@ -11,7 +11,7 @@ vi.mock('@/components/chat/focused-subagent', () => ({
   useFocusedSubagent: () => null,
 }));
 
-describe('SubagentDelegateRow (Part 27 A1)', () => {
+describe('SubagentDelegateRow', () => {
   it('renders role + task + Failed status and is clickable', () => {
     render(
       <SubagentDelegateRow
@@ -46,7 +46,7 @@ describe('SubagentDelegateRow (Part 27 A1)', () => {
   });
 });
 
-describe('ExploreGroup (Part 27 B1)', () => {
+describe('ExploreGroup', () => {
   it('labels counts and collapses children by default', () => {
     render(
       <ExploreGroup searches={1} files={2} running={false} groupKey="g1">

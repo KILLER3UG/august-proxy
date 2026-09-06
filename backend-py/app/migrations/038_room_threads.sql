@@ -1,4 +1,4 @@
--- Part 27 F4: room threads. A room holds multiple threads; each top-level
+-- Room threads. A room holds multiple threads; each top-level
 -- user post is a thread root and every member turn / reply inherits its
 -- thread_id, so "Reply in thread" scopes the next round to that thread's
 -- history instead of dragging in unrelated threads. NULL is back-filled to

@@ -440,7 +440,6 @@ export interface BrainConfig {
   adaptivePolicy: boolean;
   failureLearning: boolean;
   graphMemory: boolean;
-  agentJobs: boolean;
   hierarchicalAgents: boolean;
   adapterParallelTools: boolean;
   parallelReadTools: boolean;

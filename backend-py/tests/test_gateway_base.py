@@ -51,7 +51,6 @@ class StubRunner:
         self,
         sessionId,
         message,
-        *,
         provider='',
         agentId='',
         model='',

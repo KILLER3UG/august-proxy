@@ -1,4 +1,4 @@
-/* ── MemorySection test (plan §5.1 flat list + §5.5 raw state lookup) ── */
+/* ── MemorySection test ── */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
@@ -199,7 +199,7 @@ beforeEach(() => {
   };
 });
 
-describe('MemorySection — unified flat list (§5.1)', () => {
+describe('MemorySection — unified flat list', () => {
   it('merges both scope stores into one flat list sorted newest first', () => {
     renderSection('memory-facts');
     const rows = screen.getAllByTestId('memory-flat-row');
@@ -280,7 +280,7 @@ describe('MemorySection — unified flat list (§5.1)', () => {
     });
   });
 
-  it('dropped the Timeline + Sessions sub-tabs (Part 15.2)', () => {
+  it('dropped the Timeline + Sessions sub-tabs', () => {
     renderSection('memory-knowledge');
     // The Memories scope renders the KV memory store (autoMemories retired
     // 2026-09-04); rows from the deleted timeline/sessions scopes must not
@@ -291,7 +291,7 @@ describe('MemorySection — unified flat list (§5.1)', () => {
   });
 });
 
-describe('MemorySection — raw state lookup (§5.5)', () => {
+describe('MemorySection — raw state lookup', () => {
   it('renders the raw row for a found key with source and JSON value', async () => {
     renderSection('memory-facts');
     fireEvent.change(screen.getByTestId('raw-state-key-input'), {
@@ -335,7 +335,7 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
   });
 
   // C-3: category/source/confidence filters and C-4: sort control exist and feed the query URL.
-  it('sends category/source/confidence/sort as query params (C-3/C-4, §9 F-6)', async () => {
+  it('sends category/source/confidence/sort as query params', async () => {
     renderSection('memory-facts');
     fireEvent.change(screen.getByTestId('memory-category-filter'), { target: { value: 'user' } });
     fireEvent.change(screen.getByTestId('memory-source-filter'), { target: { value: 'remember' } });
@@ -377,7 +377,7 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     });
   });
 
-  // M-10 (Part 21): the add-box TTL selection rides the manage call.
+  // M-10: the add-box TTL selection rides the manage call.
   it('add-box posts ttl_days when an expiry is chosen (M-10)', async () => {
     renderSection('memory-facts');
     fireEvent.change(screen.getByTestId('memory-add-ttl'), { target: { value: '30' } });

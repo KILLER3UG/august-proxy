@@ -352,7 +352,7 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
           break;
         }
         case 'verbose': {
-          // /verbose — client-side per-session toggle (plan §4.2 item 4):
+          // /verbose — client-side per-session toggle:
           // raw tool output renders inline until turned off. Keyed on the
           // chat session id the transcript renderers are keyed on.
           const sid = sessionId || event.sessionId || workbenchSessionId || '';

@@ -1,4 +1,4 @@
-"""T16 guardrail pack (plan §9.4) — unit tests.
+"""T16 guardrail pack — unit tests.
 
 Covers:
   (a) ToolCallTracker rework: advisory identical-call reminders at 3/5/8
@@ -56,7 +56,7 @@ class TestIdenticalCallAdvisories:
         t = ToolCallTracker()
         for _ in range(3):
             t.check('read_file', {'path': 'a.py'})
-        # 1.3 (Part 25): only a call that ENDED IN FAILURE carries across the
+        # 1.3: only a call that ENDED IN FAILURE carries across the
         # boundary for cross-turn strike counting.
         t.record_failure('read_file', {'path': 'a.py'})
         t.record_user_message()
@@ -87,7 +87,7 @@ class TestCrossTurnLoop:
         assert 'across' in msg
 
     def testSuccessfulCallNeverStrikesAcrossTurns(self):
-        # 1.3 (Part 25): a stable command that keeps SUCCEEDING (pytest -q,
+        # 1.3: a stable command that keeps SUCCEEDING (pytest -q,
         # git status) re-issued once per user turn must never be blocked — the
         # old code struck it on turn 3 despite every run succeeding.
         t = ToolCallTracker()
@@ -121,7 +121,7 @@ class TestRetainedBlocks:
         assert 'block' in statuses
 
     def testSameNameDifferentArgsPingPongBlocks(self):
-        # 1.2 (Part 25): read_file(a)/read_file(b)/read_file(a)… — same tool
+        # 1.2: read_file(a)/read_file(b)/read_file(a)… — same tool
         # name, alternating args — is the motivating stuck loop the old
         # name-only comparison could NEVER catch.
         t = ToolCallTracker()

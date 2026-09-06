@@ -1,4 +1,4 @@
-"""Part 18 P2.2 — compaction handoff format + verbatim user replay.
+"""Compaction handoff format + verbatim user replay.
 
 Two upgrades from the Zed pattern:
 (a) the compaction summary renders a fixed handoff shape — Goal / State /

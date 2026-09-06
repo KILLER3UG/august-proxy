@@ -348,7 +348,7 @@ export function RightDrawerSubagentsSection({
   );
   const runByTask = new Map((runsQuery.data ?? []).map((r) => [r.taskId, r]));
 
-  // Part 27 A3: live elapsed ticker for the "Working for …" header. Kept at
+  // Live elapsed ticker for the "Working for …" header. Kept at
   // the top level (hooks must not sit behind the selected-view branch).
   const [nowMs, setNowMs] = useState(() => Date.now());
   const anyRunning = activeAgents.length > 0;
@@ -427,7 +427,7 @@ export function RightDrawerSubagentsSection({
     return out;
   }, [entries]);
 
-  // Part 27 A5: settled agent with no live blocks → replay the persisted
+  // Settled agent with no live blocks → replay the persisted
   // work transcript so the tab keeps its full Thought/Terminal/Read log.
   const settledNoLive =
     !!selectedTaskId && !selectedBlock && !!selectedAgent && !ACTIVE_STATUSES.has(selectedAgent.status);

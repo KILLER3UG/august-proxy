@@ -1,4 +1,4 @@
-"""T13 — REPL-first tool surface: kernel state, tool bridge, sequential cells.
+"""REPL-first tool surface: kernel state, tool bridge, sequential cells.
 
 Extends the ``code``-mode sandbox (``code_runner.py``) beyond its four
 workspace-bound functions with:
@@ -35,7 +35,7 @@ from app.json_narrowing import as_str
 
 logger = logging.getLogger(__name__)
 
-# Snapshot caps (plan §9.4 T13): per-variable ~16 MB, total ~256 MB.
+# Snapshot caps: per-variable ~16 MB, total ~256 MB.
 PER_VARIABLE_CAP_BYTES: int = 16 * 1024 * 1024
 TOTAL_CAP_BYTES: int = 256 * 1024 * 1024
 
@@ -48,18 +48,15 @@ BRIDGE_TOKEN_TTL_S: float = 300.0
 
 _KERNEL_SUBDIR = os.path.join('.aug', 'kernel')
 
-# ---------------------------------------------------------------------------
 
 
-# P3.2 (Part 18) — warm interpreter for code mode.
-#
+# P3.2 — warm interpreter for code mode.
 # Today every code-mode cell cold-spawns ``python -I``; interpreter boot is
 # paid per cell. A WARM kernel keeps one isolated child alive per
 # (workspace, session) and EXECUTES THE SAME PER-CELL RUNNER SOURCE that the
 # cold path writes to disk (``code_runner.build_runner_source``: hardline
 # guard, workspace-bound tool API, sandbox-mode flags, bridge, restore/
 # snapshot pickle tails) — inside the warm process, in a fresh namespace.
-#
 # Security parity is by construction, not by re-implementation:
 #   * the child is booted with ``python -I`` + the same credential-scrubbed
 #     noninteractive env as any agent subprocess;
@@ -168,7 +165,7 @@ class WarmKernel:
             import time as _t
 
             if _t.monotonic() - self.last_used >= WARM_KERNEL_IDLE_S:
-                # kill() reaps + closes pipes (Part 26 4.3) — the old bare
+                # kill() reaps + closes pipes — the old bare
                 # proc.kill() left the child unwaited and pipes leaked.
                 self.kill()
 
@@ -179,7 +176,7 @@ class WarmKernel:
         return not self._shutdown and (self.proc is None or self.proc.returncode is None)
 
     def kill(self) -> None:
-        """Kill the child and drain its pipes (Part 26 4.3).
+        """Kill the child and drain its pipes.
 
         ``proc.kill()`` alone leaks: on Windows the child becomes a zombie
         until someone reaps it, and the stdin/stdout pipes stay open (each
@@ -328,9 +325,7 @@ async def _reap_process(proc: asyncio.subprocess.Process) -> None:
         pass
 
 
-# ---------------------------------------------------------------------------
 # Bridge token registry (in-memory; tokens are ephemeral per code run)
-# ---------------------------------------------------------------------------
 
 _bridge_tokens: dict[str, tuple[str, float]] = {}  # token -> (sessionId, issuedAt)
 
@@ -371,9 +366,7 @@ def clear_bridge_tokens() -> None:
     _bridge_tokens.clear()
 
 
-# ---------------------------------------------------------------------------
 # Kernel variable persistence (parent-side view)
-# ---------------------------------------------------------------------------
 
 
 def _safe_session_id(session_id: str) -> str:
@@ -453,9 +446,7 @@ def clear_kernel_state(workspace_path: str, session_id: str) -> int:
     return removed
 
 
-# ---------------------------------------------------------------------------
 # Sequential execution (cells never interleave)
-# ---------------------------------------------------------------------------
 
 _kernel_locks: dict[str, asyncio.Lock] = {}
 
@@ -470,11 +461,9 @@ def session_kernel_lock(session_id: str) -> asyncio.Lock:
     return lock
 
 
-# ---------------------------------------------------------------------------
 # Pre-seeded venv discovery / provisioning
-# ---------------------------------------------------------------------------
 
-# ~12 common packages the kernel venv pre-seeds (plan §9.4 T13).
+# ~12 common packages the kernel venv pre-seeds.
 DEFAULT_VENV_PACKAGES: tuple[str, ...] = (
     'requests',
     'httpx',
@@ -506,9 +495,7 @@ def venv_python(workspace_path: str) -> str | None:
 
 
 
-# ---------------------------------------------------------------------------
 # Gated bridge dispatch (parent side of the tool bridge)
-# ---------------------------------------------------------------------------
 
 
 async def bridge_call(session: object, tool_name: str, args: dict[str, object]) -> str:
@@ -528,12 +515,31 @@ async def bridge_call(session: object, tool_name: str, args: dict[str, object]) 
     blocked = wb._checkToolGuard(session, name, args)  # type: ignore[arg-type]
     if blocked:
         return f'[Blocked] {blocked}'
-    # T5 approval axis (inert unless a policy is enabled).
+    # Approval axis (inert unless a policy is enabled).
     approval = wb._resolveCommandApproval(session, name, args)  # type: ignore[arg-type]
     if approval:
         return approval
+    # Read-before-edit gate parity: a bridge write on a file the session
+    # never observed (or that changed since) is refused with the same error
+    # code the typed loop uses, so the model re-reads before writing.
+    gate_error = wb._readBeforeEditGate(session, name, args)  # type: ignore[arg-type]
+    if gate_error:
+        return gate_error
     result = await wb._executeTool(name, args, session)  # type: ignore[arg-type]
     result_str = str(result)
+    # Ledger parity: pin versions the bridge's reads showed, forget versions
+    # its writes replaced — otherwise the next bridge edit is refused against
+    # a ledger that no longer matches disk. A bulk call is either a read op
+    # (pin per-file versions) or a write op (forget versions); each helper
+    # no-ops on the other kind.
+    if name in ('read_file', 'read_files'):
+        wb._observeReadFile(session, name, args, result_str)  # type: ignore[arg-type]
+    elif name == 'bulk':
+        wb._observeReadFile(session, name, args, result_str)  # type: ignore[arg-type]
+        if not result_str.startswith('Error'):
+            wb._observeMutatedFile(session, name, args)  # type: ignore[arg-type]
+    elif name in wb._GATED_EDIT_TOOLS and not result_str.startswith('Error'):
+        wb._observeMutatedFile(session, name, args)  # type: ignore[arg-type]
     # Large data stays on disk: spill oversized results, return a locator.
     if len(result_str) > BRIDGE_SPILL_CHARS:
         spilled = wb._spillToolResult(session, f'code_bridge_{name}', result_str)  # type: ignore[arg-type]

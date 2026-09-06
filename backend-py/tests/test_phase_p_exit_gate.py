@@ -23,8 +23,8 @@ def test_fts_hygiene_script_importable_and_known_tables():
     from scripts._check_fts_query_hygiene import KNOWN_FTS
 
     assert 'memory_store_fts' in KNOWN_FTS
-    # auto_memories_fts retired (Part 21 OQ1 / migration 033) — no longer a
-    # known FTS table (Part 25 Phase 7.4).
+    # auto_memories_fts retired — no longer a
+    # known FTS table.
     assert 'auto_memories_fts' not in KNOWN_FTS
 
 

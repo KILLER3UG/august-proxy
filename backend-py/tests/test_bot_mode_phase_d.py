@@ -175,7 +175,7 @@ class TestReviewRound:
         log = rooms.room_log(rid)
         verdicts = [m for m in log if m['kind'] == 'verdict']
         assert verdicts, 'the reviewer turn must be a verdict row'
-        # 2.10 (Part 25): the verdict must be the REVIEWER's turn in a dedicated
+        # 2.10: the verdict must be the REVIEWER's turn in a dedicated
         # review round (>= 2 rounds), not an incidental same-round message.
         members = [str(m) for m in (rooms.get_room(rid) or {}).get('members', [])]
         assert verdicts[0]['sender_agent'] == members[1]  # bob, the reviewer

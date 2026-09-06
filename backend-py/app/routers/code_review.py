@@ -1,4 +1,4 @@
-"""Part 10 R-A — code review routes (``/api/code-review``).
+"""Code review routes (``/api/code-review``).
 
 Advisory review of the session workspace changeset (working tree vs HEAD).
 R5: advisory only, NEVER a gate — every degenerate case returns HTTP 200

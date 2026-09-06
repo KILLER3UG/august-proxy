@@ -1,4 +1,4 @@
-"""Part 19 Phase C — teammate DMs: the single ``message_agent`` send path.
+"""Teammate DMs: the single ``message_agent`` send path.
 
 A DM is a durable ``bot_dm`` inbox row (migration 034). ``message_agent`` is
 the ONLY way one Bot talks to another: the @ sign is addressing sugar handled
@@ -358,7 +358,7 @@ async def deliver(dm_id: int, *, runner: object = None) -> str:
         reply = await _run_turn(to_session, body, to_agent, runner)
         mark_delivered(dm_id)
         # Sender wake: run ONE turn in the sender's chat carrying the reply, so
-        # the sender relays it to the user (OQ4). 2.9 (Part 25): do NOT append
+        # the sender relays it to the user. 2.9: do NOT append
         # the wake message manually — sendWorkbenchMessageStream appends the
         # user message itself (workbench.py:2560), so a manual append here
         # double-wrote it (mirrors automation_memory.deliver_to_bot_chat).

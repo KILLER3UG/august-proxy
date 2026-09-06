@@ -19,7 +19,6 @@ def _seedProviders(providers: list[dict]) -> None:
 
 def _provider(
     pid: str,
-    *,
     enabled: bool = True,
     apiKey: str = 'sk-test',
     models: list[dict] | None = None,

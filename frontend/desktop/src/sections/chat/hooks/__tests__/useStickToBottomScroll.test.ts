@@ -43,6 +43,7 @@ describe('useStickToBottomScroll', () => {
         sessionId: 's1',
         loadedSessionId: 's1',
         messagesVersion: 1,
+        hasContent: true,
       });
     });
 
@@ -71,6 +72,7 @@ describe('useStickToBottomScroll', () => {
         sessionId: 's1',
         loadedSessionId: 's1',
         messagesVersion: 1,
+        hasContent: true,
         onPinnedChange,
       });
     });
@@ -97,6 +99,7 @@ describe('useStickToBottomScroll', () => {
         sessionId: 's1',
         loadedSessionId: 's1',
         messagesVersion: 1,
+        hasContent: true,
       });
     });
 
@@ -125,6 +128,7 @@ describe('useStickToBottomScroll', () => {
         sessionId: 's1',
         loadedSessionId: 's1',
         messagesVersion: 1,
+        hasContent: true,
       });
     });
 
@@ -150,6 +154,7 @@ describe('useStickToBottomScroll', () => {
         sessionId: 's1',
         loadedSessionId: 's1',
         messagesVersion: 1,
+        hasContent: true,
       });
     });
 
@@ -179,6 +184,7 @@ describe('useStickToBottomScroll', () => {
         sessionId: 's1',
         loadedSessionId: 's1',
         messagesVersion: 1,
+        hasContent: true,
       });
     });
 

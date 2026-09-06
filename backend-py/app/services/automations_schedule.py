@@ -232,7 +232,6 @@ def matches_cron(expr: str, dt: datetime) -> bool:
 def compute_next_run_at(
     schedule: str,
     timezone_name: str | None,
-    *,
     after: datetime | None = None,
 ) -> str | None:
     """Return ISO UTC timestamp of the next run, or None if unscheduled."""
@@ -277,7 +276,6 @@ def is_due(
     schedule: str,
     timezone_name: str | None,
     next_run_at: str | None,
-    *,
     now: datetime | None = None,
 ) -> bool:
     """True when the job should fire on this tick."""

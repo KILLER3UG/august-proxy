@@ -29,7 +29,7 @@ import {
 import { getWorkbenchSessions } from '@/api/workbench';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
 
-/** A Bot is "active now" when its chat wrote within 90 s (plan §Phase A). */
+/** A Bot is "active now" when its chat wrote within 90 s. */
 const ACTIVE_WINDOW_MS = 90_000;
 
 function timeAgo(iso?: string | null): string {
@@ -47,7 +47,7 @@ function isRecent(iso?: string | null): boolean {
 }
 function BotAvatar({ bot, size = 22 }: { bot: Bot; size?: number }) {
   // Identicon per name; uiMeta.avatar may be a bare salt string (legacy) or
-  // a {salt, locked, source} descriptor (Part 27 F2). Accept both so reloads
+  // a {salt, locked, source} descriptor. Accept both so reloads
   // of pre-F2 bots keep their face.
   const avatar = bot.uiMeta?.avatar;
   const salt = typeof avatar === 'string' ? avatar : avatar?.salt || '';
@@ -292,7 +292,7 @@ export interface BotsRailProps {
 
 /** Vertical roster section: every Bot, hidden ones dimmed, presence dots live. */
 export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: BotsRailProps) {
-  // Part 27 F1: rail chrome — search, notification mute, "+" menu; F2: the
+  // Rail chrome — search, notification mute, "+" menu; F2: the
   // New Bot flow is a modal with an avatar picker (replaces the inline form).
   const [search, setSearch] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -389,7 +389,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
   });
   const summaries = summariesQ.data ?? {};
 
-  // Part 27 F3: rooms render as rail rows mixed with Bots. The "open rooms
+  // Rooms render as rail rows mixed with Bots. The "open rooms
   // modal" button (Users icon) stays as a secondary entry, but the canonical
   // way to see a room is now its rail row.
   const roomsQuery = useQuery({
@@ -401,7 +401,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
   const rooms = (roomsQuery.data ?? []) as Room[];
 
   // "Active now": Bots that wrote within the window, in roster order —
-  // the strip never reorders the roster itself (plan §Phase A).
+  // the strip never reorders the roster itself.
   const activeNow = bots.filter(
     (b) => !b.uiMeta?.hidden && isRecent(summaries[b.id]?.updatedAt),
   );

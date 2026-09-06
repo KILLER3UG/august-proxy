@@ -158,7 +158,7 @@ async def updateBrainStoreRow(name: str, row_id: str, body: dict[str, object]):
 
 @router.get('/consolidation/log')
 async def getConsolidationLog(limit: int = Query(50, ge=1, le=200)):
-    """M4 consolidation log (plan §3.5): one lifecycle row per pass plus the
+    """M4 consolidation log: one lifecycle row per pass plus the
     M5 lesson-promotion decisions. This is the analysis surface that replaced
     the deleted diagnostics endpoints."""
     import json as _json
@@ -195,7 +195,7 @@ async def postConsolidationRun():
 
 @router.get('/turn-outcomes')
 async def getTurnOutcomes(days: int = Query(7, ge=1, le=30)):
-    """M5 telemetry (plan §3.6): per-model/provider error rates for the
+    """M5 telemetry: per-model/provider error rates for the
     Observability hub. Diagnostics only — never injected into prompts and
     never shown in the Memory UI."""
     from app.services.turn_outcomes import error_rate_by_model
@@ -205,7 +205,7 @@ async def getTurnOutcomes(days: int = Query(7, ge=1, le=30)):
 
 @router.get('/memory/metrics')
 async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
-    """Phase D item 4 (Part 17): recall + latency instrument.
+    """Phase D item 4: recall + latency instrument.
 
     Two sections, both read-only diagnostics:
       * ``recall`` — per-turn counts from internal_state (global facts
@@ -270,7 +270,7 @@ async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
 
 @router.get('/state-lookup')
 async def getStateLookup(key: str = Query(..., min_length=1)):
-    """Raw state lookup (plan §5.5): type a key, get the raw
+    """Raw state lookup: type a key, get the raw
     ``internal_state`` or ``memory_store`` row verbatim. This is the only
     surface where ``cognitive:*``-style machine state is ever visible —
     never quarantined into Memory, never rendered by default. Read-only;
@@ -305,7 +305,7 @@ async def getStateLookup(key: str = Query(..., min_length=1)):
     return {'key': k, 'found': False, 'source': None, 'value': None, 'updatedAt': None}
 
 
-# ── Routing evidence: Arena / Debate verdicts (Part 25 Phase 4) ──────────────
+# ── Routing evidence: Arena / Debate verdicts ──────────────
 # The Arena + Debate UIs are live and POST a winner/losers verdict to
 # /api/brain/routing/arena and read history back; the endpoints never existed,
 # so every recorded verdict toasted "Could not record verdict". These thin

@@ -437,7 +437,7 @@ describe('AssistantBlockTimeline process UI', () => {
   });
 });
 
-describe('minimal-output transcript (plan §4.1/§4.3)', () => {
+describe('minimal-output transcript', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -692,7 +692,7 @@ describe('minimal-output transcript (plan §4.1/§4.3)', () => {
   });
 });
 
-describe('recalledMemories renderer (Part 17 A.4)', () => {
+describe('recalledMemories renderer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

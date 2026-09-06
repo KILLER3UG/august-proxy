@@ -28,7 +28,6 @@ def save_message(sessionId: str, role: str, content: JsonValue) -> int:
 
 def get_messages(
     sessionId: str,
-    *,
     limit: int | None = None,
     offset: int = 0,
     before_id: int | None = None,
@@ -79,7 +78,6 @@ def count_messages(sessionId: str) -> int:
 
 async def get_messages_async(
     sessionId: str,
-    *,
     limit: int | None = None,
     offset: int = 0,
     before_id: int | None = None,

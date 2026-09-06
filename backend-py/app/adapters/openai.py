@@ -367,7 +367,7 @@ async def streamUpstreamAndResolveToolsOpenai(
                 yield write_openai_sse_error(as_str(chunk.get('body'), as_str(chunk.get('error'), '')))
                 yield write_openai_sse_done()
                 return
-            # 1.5 (Part 25): drop August's internal retry signal — SDK clients
+            # 1.5: drop August's internal retry signal — SDK clients
             # on /v1 must not receive a non-standard chunk.
             if chunk.get('type') == 'upstreamRetry':
                 continue

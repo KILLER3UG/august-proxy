@@ -1,4 +1,4 @@
-"""T15 — Versioned harness-state refinement with rollback.
+"""Versioned harness-state refinement with rollback.
 
 Harness-tunable state lives here as **versioned entries of a few typed
 kinds** (``prompt_note`` / ``memory`` / ``skill`` / ``subagent``), each either
@@ -51,9 +51,7 @@ _MAX_EDITS_PER_PASS = 20
 RefineProducer = Callable[[list[dict[str, str]]], Awaitable[str]]
 
 
-# ---------------------------------------------------------------------------
 # Storage
-# ---------------------------------------------------------------------------
 
 
 def _store_dir() -> Path:
@@ -114,9 +112,7 @@ def new_entry_id(kind: str) -> str:
     return f'ref_{kind}_{uuid.uuid4().hex[:8]}'
 
 
-# ---------------------------------------------------------------------------
 # Content validation
-# ---------------------------------------------------------------------------
 
 
 def validate_content(kind: str, content: dict[str, Any]) -> tuple[bool, str]:
@@ -138,9 +134,7 @@ def validate_content(kind: str, content: dict[str, Any]) -> tuple[bool, str]:
     return True, ''
 
 
-# ---------------------------------------------------------------------------
 # Entry CRUD (each mutation appends a version — history is append-only)
-# ---------------------------------------------------------------------------
 
 
 def _make_version(
@@ -196,7 +190,6 @@ def is_active(entry: dict[str, Any]) -> bool:
 
 
 def create_entry(
-    *,
     kind: str,
     scope: str,
     content: dict[str, Any],
@@ -322,7 +315,6 @@ def rollback_entry(entry_id: str, actor: str = 'user', rationale: str = '') -> d
 
 
 def list_entries(
-    *,
     scope: str = '',
     session_id: str = '',
     kind: str = '',
@@ -369,9 +361,7 @@ def list_entries(
     return out
 
 
-# ---------------------------------------------------------------------------
 # Prompt injection (additive context — never the base system prompt)
-# ---------------------------------------------------------------------------
 
 
 def render_refinements_block(session_id: str = '') -> str:
@@ -429,9 +419,7 @@ def render_state_for_refine(session_id: str = '') -> str:
     return '\n'.join(lines)
 
 
-# ---------------------------------------------------------------------------
 # Edits: validation + application (the refine pass output contract)
-# ---------------------------------------------------------------------------
 
 
 def validate_edit(
@@ -483,7 +471,6 @@ def validate_edit(
 
 def apply_edits(
     edits: list[dict[str, Any]],
-    *,
     refine_id: str,
     refine_scope: str,
     session_id: str = '',
@@ -535,9 +522,7 @@ def apply_edits(
     return {'refineId': refine_id, 'applied': applied, 'rejected': rejected}
 
 
-# ---------------------------------------------------------------------------
 # The refine pass (one model call → JSON edits)
-# ---------------------------------------------------------------------------
 
 
 def parse_refine_response(text: str) -> list[dict[str, Any]]:
@@ -617,7 +602,6 @@ def new_refine_id() -> str:
 
 
 async def run_refine_pass(
-    *,
     session_id: str = '',
     evidence: str = '',
     producer: RefineProducer | None = None,
@@ -681,9 +665,7 @@ def _resolve_producer() -> RefineProducer | None:
         return None
 
 
-# ---------------------------------------------------------------------------
 # Auto-refine: gated by an independent cheap reviewer, discard-default
-# ---------------------------------------------------------------------------
 
 
 def get_refine_config() -> dict[str, Any]:
@@ -799,7 +781,6 @@ async def _review_refine_batch(
 
 
 async def auto_refine(
-    *,
     session_id: str = '',
     evidence: str = '',
     producer: RefineProducer | None = None,

@@ -81,7 +81,6 @@ class FeatureFlowBus:
 
     def emit(
         self,
-        *,
         feature: str,
         stage: str,
         summary: str,
@@ -175,7 +174,6 @@ feature_flow_bus = FeatureFlowBus()
 
 
 def emit_feature_flow(
-    *,
     feature: str,
     stage: str,
     summary: str,

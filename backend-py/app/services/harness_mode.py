@@ -82,7 +82,7 @@ def proxy_orchestrator_enabled() -> bool:
 
 
 def is_mutating_tool(name: str, args: dict[str, object] | None = None) -> bool:
-    """Checkpoint/observation "did this call mutate" authority (Part 26 4.2).
+    """Checkpoint/observation "did this call mutate" authority.
 
     Delegates to the args-aware ``tool_policy.is_mutating`` so both
     classification authorities agree: the old frozenset here missed

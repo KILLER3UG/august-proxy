@@ -378,6 +378,27 @@ process env.
 | `AUGUST_ARDUINO_CLI` | auto | Explicit arduino-cli path for `firmware_compile` |
 | `AUGUST_AVR_GCC` | auto | Explicit avr-gcc path for plain-C `firmware_compile` |
 | `AUGUST_NODE_EXE` | auto | Explicit Node runtime for the avr8js/wavedrom sidecar (defaults to the bundled Tauri node binary, then PATH) |
+| `AUGUST_CONTAINER_SANDBOX` | unset | `1` routes `run_command` through a Docker container (workspace bind-mounted at `/workspace`, `--network none` unless the session allows network, memory/CPU caps) instead of host-process policy. Opt-in: needs Docker Desktop running; silently falls back to the host backend when the daemon is unreachable or the session has no workspace to mount |
+| `AUGUST_SANDBOX_IMAGE` | `python:3.12-slim` | Container image for the container backend — must carry a POSIX shell |
+| `AUGUST_SANDBOX_MEMORY` | `2g` | Container memory cap (`--memory`) |
+| `AUGUST_SANDBOX_CPUS` | `2` | Container CPU cap (`--cpus`) |
+
+### Sandbox enforcement tiers and the egress filter
+
+Commands run through the strongest available backend: the container tier
+(when enabled + Docker reachable) → Seatbelt (macOS) → Landlock/bwrap
+(Linux) → AppContainer (Windows, when available) → the host policy layer
+(`soft`: path scans, redirect checks, command denylists). The active tier is
+reported by `active_backend()` and shown on the System health page.
+
+When a session has `network: false`, sandboxed processes additionally get a
+loopback egress filter env-injected (`HTTP(S)_PROXY` → a local proxy that
+refuses CONNECT with `403`), so HTTP clients (urllib, requests, npm, pip…)
+fail fast instead of reaching out. Honest scope: the filter constrains
+HTTP-client traffic; raw sockets to hard-coded IPs still bypass it on the
+host — that is what the container tier's `--network none` is for. Loopback
+targets are exempt (`NO_PROXY=localhost,127.0.0.1`), so the model can still
+talk to dev servers it spawned.
 
 ### Arena & Debate routing evidence
 

@@ -146,7 +146,7 @@ _SENSITIVE_KEY_RE = re.compile(
 
 
 def _redactSecrets(value: object) -> object:
-    """Deep-copy with secret-bearing values replaced by a marker (Part 26 5.2).
+    """Deep-copy with secret-bearing values replaced by a marker.
 
     ``GET /api/config/safe`` served the raw config.json to the renderer —
     including every stored provider API key. No UI consumer reads secrets

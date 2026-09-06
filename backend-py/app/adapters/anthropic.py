@@ -22,7 +22,6 @@ import json
 import uuid
 from typing import AsyncIterator, Callable, cast
 
-from app.adapters import anthropic_stream_translate as _anthropic_stream_translate
 from app.adapters.anthropic_sse import (
     send_simulated_anthropic_stream,
     write_anthropic_sse_data,
@@ -96,14 +95,6 @@ systemBlocksToText = system_blocks_to_text
 buildOpenaiSystemPrompt = build_openai_system_prompt
 buildAnthropicSystemBlocks = build_anthropic_system_blocks
 appendTextToSystemBlocks = append_text_to_system_blocks
-
-# Stream translate helpers (extracted); assignment keeps ruff from stripping.
-streamOpenaiDeltaAsAnthropic = _anthropic_stream_translate.streamOpenaiDeltaAsAnthropic
-createOpenaiToAnthropicStreamState = _anthropic_stream_translate.createOpenaiToAnthropicStreamState
-createAnthropicNativeStreamState = _anthropic_stream_translate.createAnthropicNativeStreamState
-buildOpenaiAggregatedForAnthropicFromStream = (
-    _anthropic_stream_translate.buildOpenaiAggregatedForAnthropicFromStream
-)
 
 
 def deriveSessionIdFromAnthropic(
@@ -918,7 +909,7 @@ async def _streamAnthropicNative(
                 )
                 return
             eventTypePayload = as_str(event.get('type'), '')
-            # 1.5 (Part 25): August-internal retry signal — never forward it to
+            # 1.5: August-internal retry signal — never forward it to
             # /v1 API clients (SDKs reject a non-standard event). The workbench
             # path surfaces it as a "provider busy" pill; the proxy must drop it.
             if eventTypePayload == 'upstreamRetry':

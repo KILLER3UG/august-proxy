@@ -141,7 +141,7 @@ def touch_fact_usage(factKeys: list[str]) -> int:
         touched += max(0, int(cur.rowcount))
     if touched:
         conn.commit()
-        # M-1 usage decoupling (Part 21): NO invalidate_fact_index here.
+        # M-1 usage decoupling: NO invalidate_fact_index here.
         # The cached corpus no longer carries use_count/last_used_at —
         # ranking fetches fresh usage per query for the candidate set — so
         # a touch no longer triggers the full-corpus rebuild cliff.
@@ -158,7 +158,7 @@ def get_fact(factKey: str) -> FactDict | None:
 
 
 def _visibility_where(scope: str) -> tuple[str, list[object]]:
-    """2.2 (Part 25): the shared read-visibility clause for the facts store —
+    """2.2: the shared read-visibility clause for the facts store —
     active + unexpired + the M-2 scope union (global ∪ this-scope). Every
     non-ranked facts read (list_facts / search_facts) must apply it, or a Bot
     sees every other Bot's private keys plus superseded/retired/expired rows.
@@ -289,7 +289,7 @@ def record_lifecycle(sessionId: str, eventType: str, detail: JsonValue = None) -
         'INSERT INTO lifecycle (session_id, event_type, detail) VALUES (?, ?, ?)',
         (sessionId, eventType, _json(detail) if detail else None),
     )
-    # P4.2 (Part 18): lifecycle rows are diagnostics, not read back
+    # P4.2: lifecycle rows are diagnostics, not read back
     # cross-thread within the turn — debounce the commit (≤2s).
     defer_commit(conn)
     return as_int(cursor.lastrowid)

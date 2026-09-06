@@ -55,7 +55,6 @@ def _json_list(raw: Any) -> list[str]:
 
 def should_ping(
     autonomy: str,
-    *,
     status: str,
     next_action: str = '',
     unmet: str = '',
@@ -75,7 +74,6 @@ def should_ping(
 
 def should_auto_continue(
     autonomy: str,
-    *,
     status: str,
     next_action: str = '',
     hops: int = 0,

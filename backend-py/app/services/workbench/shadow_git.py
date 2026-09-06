@@ -1,4 +1,4 @@
-"""§9.3 #7: shadow-git snapshots (plan Part 9, Set A).
+"""Shadow-git snapshots.
 
 A separate git directory per session commits the workspace at each step —
 the rollback substrate for long runs and the diff source for the
@@ -64,14 +64,14 @@ _EXCLUDES = (
     'build/',
     'target/',
     'web-dist/',
-    # Part 17: the whole .aug workspace state dir — spill (transient) AND
+    # The whole .aug workspace state dir — spill (transient) AND
     # memory (the user's own .gitignore decides whether project memory is
     # committed to THEIR repo; August's shadow repo never carries it).
     '.aug/',
     '.pytest_cache/',
     '.mypy_cache/',
     '.ruff_cache/',
-    # EDA derived binaries (plan §5.7): tool-regeneratable outputs, not
+    # EDA derived binaries: tool-regeneratable outputs, not
     # user-authored work. Random bitstream/model bytes don't zlib-compress,
     # so each compile iteration costs its full size in the object store.
     '*.sof',

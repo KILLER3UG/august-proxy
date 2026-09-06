@@ -45,7 +45,6 @@ def _persist(items: list[dict[str, object]]) -> None:
 
 
 def record_rollback(
-    *,
     type: str,
     target: str,
     before: object = None,
@@ -207,7 +206,7 @@ def undo_entry(entry_id: str) -> dict[str, object]:
                         )
                         message = f'Restored project memory {target}'
                     else:
-                        # §9 F-3: raise so undo reports ok=False — a silent
+                        # Raise so undo reports ok=False — a silent
                         # "message only" here returned ok=True with the
                         # entry still deleted.
                         raise ValueError(
@@ -226,7 +225,7 @@ def undo_entry(entry_id: str) -> dict[str, object]:
                 key = as_str(before.get('factKey') or before.get('key') or target)
                 value = before.get('factValue') if 'factValue' in before else before.get('value')
                 category = as_str(before.get('category') or 'general') or 'general'
-                # Part 26 6.5: restore the row to the home it was born in — a
+                # Restore the row to the home it was born in — a
                 # bot-scoped fact resurrected without its scope leaked into
                 # the global store. The snapshot IS the source of truth, so
                 # the restore is allowed across scopes.

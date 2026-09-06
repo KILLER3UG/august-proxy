@@ -1,4 +1,4 @@
-"""T5 — two-axis permissions: policy engine unit tests."""
+"""Two-axis permissions: policy engine unit tests."""
 
 from __future__ import annotations
 
@@ -21,9 +21,7 @@ from app.services.workbench.permissions import (
 WS = '/home/user/project'
 
 
-# ---------------------------------------------------------------------------
 # Tokenization + prefix rules
-# ---------------------------------------------------------------------------
 
 
 class TestTokenizeAndRules:
@@ -64,9 +62,7 @@ class TestTokenizeAndRules:
         assert rule_matches(rule, ['GIT', 'COMMIT'])
 
 
-# ---------------------------------------------------------------------------
 # Classification
-# ---------------------------------------------------------------------------
 
 
 class TestClassification:
@@ -140,9 +136,7 @@ class TestClassification:
         assert classify_command('mycustomtool --do-thing', WS) == frozenset()
 
 
-# ---------------------------------------------------------------------------
 # Decision precedence
-# ---------------------------------------------------------------------------
 
 
 def _policy(**kw: object) -> ApprovalPolicy:
@@ -222,9 +216,7 @@ class TestDecide:
         assert decide('curl https://example.com', WS, p).action == 'allow'
 
 
-# ---------------------------------------------------------------------------
 # Outcome enum + headless
-# ---------------------------------------------------------------------------
 
 
 class TestOutcomeAndHeadless:
@@ -249,9 +241,7 @@ class TestOutcomeAndHeadless:
         assert 'Do not retry' in text
 
 
-# ---------------------------------------------------------------------------
 # Policy serialization round-trip
-# ---------------------------------------------------------------------------
 
 
 class TestPolicyRoundTrip:

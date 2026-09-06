@@ -1,4 +1,4 @@
-"""Part 18 P3.2 — warm interpreter for ``code`` mode.
+"""Warm interpreter for ``code`` mode.
 
 Plan acceptance: "second ``code`` call in a session shows no interpreter boot
 in its duration breakdown." Today every cell cold-spawns ``python -I``; the
@@ -61,9 +61,7 @@ def _kdir(ws, session) -> str:
     return kernel.kernel_dir(str(ws), session)
 
 
-# ---------------------------------------------------------------------------
 # Registry / lifecycle
-# ---------------------------------------------------------------------------
 
 
 class TestWarmKernelLifecycle:
@@ -113,9 +111,7 @@ class TestWarmKernelLifecycle:
         k2.shutdown()
 
 
-# ---------------------------------------------------------------------------
 # Cell execution semantics (same runner source as the cold path)
-# ---------------------------------------------------------------------------
 
 
 class TestWarmCellExecution:
@@ -231,9 +227,7 @@ class TestWarmCellExecution:
             k.shutdown()
 
 
-# ---------------------------------------------------------------------------
 # Boot-cost acceptance (the plan's measurable)
-# ---------------------------------------------------------------------------
 
 
 class TestWarmBootCost:
@@ -273,9 +267,7 @@ class TestWarmBootCost:
             k.shutdown()
 
 
-# ---------------------------------------------------------------------------
 # Idle shutdown
-# ---------------------------------------------------------------------------
 
 
 class TestIdleShutdown:
@@ -298,9 +290,7 @@ class TestIdleShutdown:
         k2.shutdown()
 
 
-# ---------------------------------------------------------------------------
 # Parent-side gates
-# ---------------------------------------------------------------------------
 
 
 class TestParentGates:
@@ -330,9 +320,7 @@ class TestParentGates:
             k.shutdown()
 
 
-# ---------------------------------------------------------------------------
 # Integration: _runFencedCodeBlock prefers the warm kernel
-# ---------------------------------------------------------------------------
 
 
 class TestFencedBlockWarmRouting:
@@ -374,9 +362,7 @@ class TestFencedBlockWarmRouting:
         )
 
 
-# ---------------------------------------------------------------------------
 # Timeout recovery: a hung cell must not desync the line protocol
-# ---------------------------------------------------------------------------
 
 
 class TestTimeoutRecovery:

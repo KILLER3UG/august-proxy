@@ -215,7 +215,7 @@ def test_migration_032_adds_facts_scope(conn):
 
 
 def test_migration_033_drops_legacy_auto_memories(conn):
-    """OQ1: migration 033 removes the retired store from a legacy DB."""
+    """Migration 033 removes the retired store from a legacy DB."""
     from app.services.memory_schema import ensure_schema
 
     ensure_schema(conn)

@@ -81,7 +81,6 @@ async def run(command: str, policy: 'SandboxPolicy', *, timeout: float) -> 'Sand
 async def _try_appcontainer_spawn(
     command: str,
     policy: 'SandboxPolicy',
-    *,
     timeout: float,
 ) -> 'SandboxResult | None':
     """Best-effort AppContainer execution.

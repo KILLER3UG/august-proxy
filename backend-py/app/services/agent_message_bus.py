@@ -10,7 +10,6 @@ The bus is bounded: if a topic's pending queue exceeds 256 messages the
 oldest are dropped.  All operations are async-safe via ``asyncio.Condition``.
 
 Usage
------
     bus = AgentMessageBus()
 
     async def on_progress(msg):

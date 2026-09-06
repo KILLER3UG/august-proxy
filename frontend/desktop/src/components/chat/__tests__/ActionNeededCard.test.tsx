@@ -11,7 +11,7 @@ vi.mock('@/sections/chat/stream/session-id-map', () => ({
   resolveWorkbenchSessionId: () => 'wb_1',
 }));
 
-describe('parseActionNeeded (Part 27 F6)', () => {
+describe('parseActionNeeded', () => {
   it('extracts the payload from a browser result', () => {
     const json = JSON.stringify({
       status: 'ok',
@@ -28,7 +28,7 @@ describe('parseActionNeeded (Part 27 F6)', () => {
   });
 });
 
-describe('ActionNeededCard (Part 27 F6)', () => {
+describe('ActionNeededCard', () => {
   it('renders instruction + Take over / I\'m done and dismisses on done', () => {
     render(
       <ActionNeededCard

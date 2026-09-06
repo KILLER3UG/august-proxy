@@ -12,7 +12,7 @@ afterEach(() => {
   __resetVerboseModeForTests();
 });
 
-describe('verbose-mode store (plan §4.2)', () => {
+describe('verbose-mode store', () => {
   it('starts off for every session', () => {
     expect(isVerboseMode('sess-1')).toBe(false);
     expect(isVerboseMode(null)).toBe(false);

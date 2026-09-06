@@ -1,4 +1,4 @@
-"""Gateway trust gate (Part 20 Phase 0) — allowlist + pairing codes.
+"""Gateway trust gate — allowlist + pairing codes.
 
 Verified defect this closes: ``BasePlatformAdapter.dispatch`` ran ANY
 sender's text through the agent with ``guardMode`` from config (default

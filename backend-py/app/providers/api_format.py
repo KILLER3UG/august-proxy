@@ -162,7 +162,6 @@ def anthropic_v1_base(base_url: object | None) -> str:
 def provider_endpoint_url(
     base_url: object | None,
     api_format: object | None = None,
-    *,
     kind: str = 'chat',
 ) -> str:
     """Build the request URL from exactly ``baseUrl`` + API format leaf.

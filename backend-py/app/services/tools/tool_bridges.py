@@ -146,7 +146,7 @@ async def handleToolCall(name: str, arguments: str) -> str:
                 return '[Blocked] tool_call could not verify the session guard for a mutating tool.'
         except Exception:
             pass
-    # Part 26 4.1: dispatch through the turn loop's real executor (hooks,
+    # Dispatch through the turn loop's real executor (hooks,
     # read-before-edit observation gate, spill, mutation log) instead of a
     # raw registry dispatch — the bridge previously re-implemented a
     # diminished dispatch that skipped those invariants.

@@ -1,7 +1,6 @@
 """Permanent FTS5 query hygiene checks (app SQL + live schema probes).
 
 Why this exists
----------------
 ``_verify_fts_sync.py`` proves index *coverage* (base rows appear in FTS) using
 *correct* table-level MATCH. It never executes application search functions.
 That left a blind spot: app code could use ``WHERE content MATCH`` or

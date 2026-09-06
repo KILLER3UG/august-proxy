@@ -35,7 +35,6 @@ def is_git_repo(workspace: str) -> bool:
 
 def create_agent_worktree(
     workspace: str,
-    *,
     session_id: str = '',
     agent_label: str = 'agent',
 ) -> dict[str, Any]:

@@ -1,4 +1,4 @@
-"""Part 18 P3.1 — early-dispatch telemetry: ``toolArgsReadyToStreamEndMs``.
+"""Early-dispatch telemetry: ``toolArgsReadyToStreamEndMs``.
 
 The plan item is measure-then-decide: record when the last tool call's
 arguments finished arriving (``mark_tool_args_ready``, provider parse sites)

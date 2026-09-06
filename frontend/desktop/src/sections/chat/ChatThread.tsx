@@ -383,6 +383,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     sessionId,
     loadedSessionId,
     messagesVersion: messages.length,
+    hasContent: messages.length > 0,
     onPinnedChange: (pinned) => {
       setScrolledFromBottom(!pinned);
       if (pinned) setHasNewContentWhileUnpinned(false);
@@ -1126,7 +1127,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     if (!sessionId || streaming) return;
     ensureSessionSubscriber(sessionId);
-    // Part 27 T2: detach on unmount / when a turn takes over. ChatThread
+    // Detach on unmount / when a turn takes over. ChatThread
     // remounts per session (key={location.pathname}), so without this every
     // idle chat browsed left an infinitely-reconnecting subscriber behind,
     // each re-hydrating its LRU-evicted transcript and thrashing the cap.
@@ -1434,7 +1435,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       ? approvalBanner
       : composerSlot;
 
-  // Part 26 7.4: the Arena overlay is conditionally mounted — the store
+  // The Arena overlay is conditionally mounted — the store
   // subscription is 2 booleans (negligible) while ArenaView's own
   // useSyncExternalStore subscribes to ALL session streams + a poll.
   const arenaActive = useArenaStore((s) => !!s.run || !!s.archiveOpen);

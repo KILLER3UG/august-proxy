@@ -147,7 +147,6 @@ def _extract_anthropic_title(body_json: dict[str, object]) -> str:
 async def _llm_title(
     user_message: str,
     assistant_response: str,
-    *,
     provider: dict[str, object] | None,
     model: str,
 ) -> str:
@@ -265,7 +264,6 @@ def _resolve_title_target(
 async def generate_session_title(
     user_message: str,
     assistant_response: str,
-    *,
     provider: dict[str, object] | None = None,
     model: str = '',
 ) -> str:
@@ -286,7 +284,6 @@ async def generate_session_title(
 async def maybe_auto_title_after_turn(
     session_id: str,
     messages: list[dict[str, object]],
-    *,
     provider: dict[str, object] | None = None,
     model: str = '',
 ) -> str | None:
@@ -362,7 +359,6 @@ async def maybe_auto_title_after_turn(
 def schedule_auto_title_after_turn(
     session_id: str,
     messages: list[dict[str, object]],
-    *,
     provider: dict[str, object] | None = None,
     model: str = '',
 ) -> None:

@@ -111,7 +111,6 @@ class TrajectoryBuilder:
 
     def finish(
         self,
-        *,
         exit_code: int,
         exit_reason: str = '',
         final_answer: str = '',

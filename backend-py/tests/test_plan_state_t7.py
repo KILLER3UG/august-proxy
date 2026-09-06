@@ -1,4 +1,4 @@
-"""T7 (plan §9.4) — plan/todo state re-injection.
+"""Plan/todo state re-injection.
 
 State lives on the session, outside the transcript, so compaction cannot
 destroy it. Pre-turn it rides the system prompt's <session> block (pre-turn

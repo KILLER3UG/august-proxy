@@ -1,4 +1,4 @@
-"""T6 layered AGENTS.md (plan §9.4) — global → git-root→cwd walk,
+"""T6 layered AGENTS.md — global → git-root→cwd walk,
 AGENTS.override.md wins, 32 KiB cap dropping least-specific first."""
 
 from __future__ import annotations

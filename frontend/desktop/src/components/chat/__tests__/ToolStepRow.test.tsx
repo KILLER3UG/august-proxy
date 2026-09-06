@@ -124,7 +124,7 @@ describe('ToolStepRow — Task block', () => {
   });
 });
 
-describe('ToolStepRow — minimal-output policy (plan §4.1)', () => {
+describe('ToolStepRow — minimal-output policy', () => {
   it('settled read rows are header-only: no chevron, toggle disabled', () => {
     const tool = makeTool({
       name: 'read_file',
@@ -310,7 +310,7 @@ describe('ToolStepRow — command status pill (plan 15.1)', () => {
   });
 });
 
-describe('ToolStepRow — /verbose lifts the minimal lock (plan §4.2)', () => {
+describe('ToolStepRow — /verbose lifts the minimal lock', () => {
   it('verbose makes settled read rows expandable into their raw output', () => {
     const tool = makeTool({
       name: 'read_file',

@@ -1,4 +1,4 @@
-/* ── ReviewFindingsPanel — advisory code-review findings (Part 10 R-A) ──
+/* ── ReviewFindingsPanel — advisory code-review findings ──
  * Renders severity counts + grounded findings anchored to file:line.
  * Advisory only, never a gate: a skipped review shows its loud notice and
  * dropped (ungrounded) findings are reported as a count, never hidden. */

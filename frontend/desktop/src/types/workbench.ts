@@ -369,7 +369,7 @@ export interface WorkbenchEventHandlers {
     content?: string;
     key?: string;
   }) => void;
-  /** Recalled memory rows (Part 17 A.4): what the per-turn <memory> tail
+  /** Recalled memory rows: what the per-turn <memory> tail
    *  actually injected this turn — global facts + project md entries.
    *  Rendered as one collapsed recall chip per turn; never blocking. */
   onRecalledMemories?: (data: {

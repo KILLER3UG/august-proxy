@@ -1,4 +1,4 @@
-"""T17 read-before-edit gate (plan §9.4): unit tests for
+"""T17 read-before-edit gate: unit tests for
 app/services/workbench/read_before_edit.py. Loop-level wiring lives in
 test_workbench_tool_loop.py (TestReadBeforeEditInLoop)."""
 
@@ -72,28 +72,91 @@ class TestCheckReadBeforeEdit:
         assert rbe.check_read_before_edit(_session(tmp_path), 'write_file', {}) is None
 
 
+class TestBulkWrites:
+    def _report(self, label: str, paths: list[str], shas: list[str]) -> str:
+        blocks = [f'===== {p} =====\n[sha256 {h}]\nbody' for p, h in zip(paths, shas)]
+        return f'{label}: {len(paths)}/{len(paths)} succeeded.\n\n' + '\n\n'.join(blocks)
+
+    def testBulkWriteUnseenFileRefused(self, tmp_path: Path) -> None:
+        (tmp_path / 'a.txt').write_text('x')
+        (tmp_path / 'new.txt').write_text('y')
+        err = rbe.check_read_before_edit(
+            _session(tmp_path),
+            'write_files',
+            {'files': [{'path': 'a.txt', 'content': '1'}, {'path': 'new.txt', 'content': '2'}]},
+        )
+        assert err is not None and rbe.UNSEEN_CODE in err and 'a.txt' in err
+
+    def testBulkWriteCreationOnlyAllowed(self, tmp_path: Path) -> None:
+        assert (
+            rbe.check_read_before_edit(
+                _session(tmp_path),
+                'write_files',
+                {'files': [{'path': 'brand-new.txt', 'content': '1'}]},
+            )
+            is None
+        )
+
+    def testBulkMetaToolWriteOpGated(self, tmp_path: Path) -> None:
+        # The meta ``bulk`` tool with operation=write_files is gated the
+        # same as the named write_files tool — otherwise the gate is a
+        # one-word rename away from being bypassed.
+        (tmp_path / 'a.txt').write_text('x')
+        err = rbe.check_read_before_edit(
+            _session(tmp_path),
+            'bulk',
+            {'operation': 'write_files', 'files': [{'path': 'a.txt', 'content': '1'}]},
+        )
+        assert err is not None and rbe.UNSEEN_CODE in err
+        # A non-write bulk operation is not gated.
+        assert (
+            rbe.check_read_before_edit(_session(tmp_path), 'bulk', {'operation': 'fetch_urls', 'urls': ['x']})
+            is None
+        )
+
+    def testBulkReadReportPinsVersions(self, tmp_path: Path) -> None:
+        f = tmp_path / 'a.txt'
+        f.write_text('v1')
+        s = _session(tmp_path)
+        rbe.observe_from_read_result(
+            s, 'bulk', {'paths': ['a.txt']}, self._report('read_files', ['a.txt'], [_sha(f)])
+        )
+        assert rbe.check_read_before_edit(s, 'write_file', {'path': 'a.txt'}) is None
+
+    def testBulkMutationForgetsVersions(self, tmp_path: Path) -> None:
+        f = tmp_path / 'a.txt'
+        f.write_text('v1')
+        s = _session(tmp_path)
+        rbe.observe_from_read_result(
+            s, 'bulk', {'paths': ['a.txt']}, self._report('read_files', ['a.txt'], [_sha(f)])
+        )
+        rbe.observe_after_mutation(
+            s, 'bulk', {'operation': 'write_files', 'files': [{'path': 'a.txt', 'content': 'v2'}]}
+        )
+        err = rbe.check_read_before_edit(s, 'write_file', {'path': 'a.txt'})
+        assert err is not None and rbe.UNSEEN_CODE in err
+
+
 class TestObservation:
     def testErrorReadResultNotObserved(self, tmp_path: Path) -> None:
         s = _session(tmp_path)
         rbe.observe_from_read_result(s, 'read_file', {'path': 'a.txt'}, 'Error: file not found')
         assert getattr(s, rbe._ATTR, {}) == {}
 
-    def testMutationObservationUnblocksFollowUp(self, tmp_path: Path) -> None:
+    def testMutationForgetsObservation(self, tmp_path: Path) -> None:
         f = tmp_path / 'a.txt'
         f.write_text('v1')
         s = _session(tmp_path)
-        # Unseen → blocked.
-        assert rbe.check_read_before_edit(s, 'write_file', {'path': 'a.txt'}) is not None
-        # Simulate an out-of-band successful write (e.g. gate disabled once,
-        # or the tool itself created the file): recording the new version
-        # unblocks follow-up edits without another read.
+        # Observed via read → first edit passes.
+        rbe.observe_from_read_result(s, 'read_file', {'path': 'a.txt'}, f'[sha256 {_sha(f)}]\nv1')
+        assert rbe.check_read_before_edit(s, 'edit_lines', {'path': 'a.txt'}) is None
+        # A successful mutation FORGETS the version: the model must re-read
+        # after changing a file so its next edit is grounded in the bytes
+        # actually on disk — the follow-up edit is refused until it does.
         f.write_text('v2')
         rbe.observe_after_mutation(s, 'write_file', {'path': 'a.txt'})
-        assert rbe.check_read_before_edit(s, 'edit_lines', {'path': 'a.txt'}) is None
-        # External change after the mutation → stale again.
-        f.write_text('v3')
         err = rbe.check_read_before_edit(s, 'edit_lines', {'path': 'a.txt'})
-        assert err is not None and rbe.STALE_CODE in err
+        assert err is not None and rbe.UNSEEN_CODE in err
 
     def testMapIsSessionScoped(self, tmp_path: Path) -> None:
         f = tmp_path / 'a.txt'

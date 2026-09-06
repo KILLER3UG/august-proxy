@@ -30,7 +30,7 @@ from app.services.post_observation import count_observations
 router = APIRouter(prefix='/api/privacy')
 
 # Tables that hold *user-visible* data (used for counts + export).
-# auto_memories removed (Part 21 OQ1 retire, migration 033) — the table no
+# auto_memories removed — the table no
 # longer exists; the export shape drops the key along with the store.
 _COUNT_TABLES = [
     ('facts', 'facts'),
@@ -47,7 +47,7 @@ _COUNT_TABLES = [
 ]
 
 # Tables cleared by the "erase memory" action (the agent's knowledge of you).
-# Part 26 5.1: the learning corpus belongs here too — episodes carry raw
+# The learning corpus belongs here too — episodes carry raw
 # user-message excerpts mined from every session, and leaving them (plus the
 # fingerprints/outcomes derived from them) alive means the next 24h
 # consolidation pass re-mines the surviving transcripts and re-writes NEW
@@ -192,10 +192,10 @@ async def purgeMemories():
         conn.commit()
     except Exception:
         deleted['memoryStoreKv'] = 0
-    # auto_memories_fts rebuild removed (Part 21 OQ1 retire, migration 033):
+    # auto_memories_fts rebuild removed:
     # the store no longer exists. memory_store_fts is trigger-maintained and
     # repair_fts_sync() self-heals any desync at boot.
-    # 2.7 (Part 25): the facts DELETE must drop the cached BM25 corpus, or
+    # 2.7: the facts DELETE must drop the cached BM25 corpus, or
     # purged facts keep being injected until an unrelated write clears it —
     # a privacy hole ("erase my memory" that doesn't erase recall).
     try:

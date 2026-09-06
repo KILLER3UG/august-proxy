@@ -67,7 +67,6 @@ class SessionBridge:
 
     def __init__(
         self,
-        *,
         runner: WorkbenchRunner | None = None,
         sessionFactory: SessionFactory | None = None,
         deleteSession: DeleteSession | None = None,
@@ -180,7 +179,7 @@ class SessionBridge:
                     'gateway_invoke', force=False, sessionKey=sessionKey, channel='gateway'
                 )
                 owned = True
-            # 2.18 (Part 25): finish/clear the owned trace in a finally — if
+            # 2.18: finish/clear the owned trace in a finally — if
             # _runner raises, the old post-with code was skipped and a stale
             # current-trace leaked on the thread.
             try:

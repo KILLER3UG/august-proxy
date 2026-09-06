@@ -223,7 +223,7 @@ export function useChatSend(opts: UseChatSendOptions) {
         const gitContext = await buildGitContextBlock(sessionId);
         if (gitContext) requestText = `${latestText}\n\n${gitContext}`;
       }
-      // Bot Mode @-mention middleware (Phase C, OQ8): annotation ONLY. Resolve
+      // Bot Mode @-mention middleware: annotation ONLY. Resolve
       // @handles against the live roster and append an identification note to
       // the OUTGOING text (request-only; the bubble stays clean). The current
       // agent decides whether to call message_agent — user text is never
@@ -534,7 +534,7 @@ export function useChatSend(opts: UseChatSendOptions) {
         return;
       }
 
-      // §5.2: title immediately from the first real message — the snippet
+      // Title immediately from the first real message — the snippet
       // shows in the sidebar at send time; the backend LLM titler refines it
       // after the turn (maybe_auto_title_after_turn treats fallback titles as
       // soft and upgrades them when the provider allows). Slash commands and
@@ -580,7 +580,7 @@ export function useChatSend(opts: UseChatSendOptions) {
       setMessages(nextMessages);
       persistMessages(sessionId, nextMessages);
       playSendChime();
-      // Part 26 7.2: the dormant per-turn auto-route fetch is gone (AGENTS.md:
+      // The dormant per-turn auto-route fetch is gone (AGENTS.md:
       // there is NO automatic turn rerouting — the backend loop never existed
       // and the opt-in flag could only ever be written '0'). Arena/Debate
       // remain the model-comparison surfaces; routing_evidence is read by the

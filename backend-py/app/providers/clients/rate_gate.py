@@ -1,4 +1,4 @@
-"""Per-host upstream rate gate (plan §10.3 R-C: rate limiting).
+"""Per-host upstream rate gate.
 
 When an upstream provider answers 429, subsequent requests to the same
 host wait out the provider's Retry-After window instead of immediately

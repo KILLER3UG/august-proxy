@@ -241,7 +241,7 @@ def test_worker_full_mode_not_blocked(isolatedData, monkeypatch):
     assert seen == ['write_file']
 
 
-# ── 5. D-1 missed-steer preservation + D-2 stop→partial (Part 22) ───────
+# ── 5. D-1 missed-steer preservation + D-2 stop→partial ───────
 
 
 def test_missed_steer_attaches_to_result(isolatedData):

@@ -1,5 +1,5 @@
 /* ── LearningPanel ─────────────────────────────────────────────────────── */
-/* Part 16 Phase E: the Learning section inside the Skills hub. Metric
+/* The Learning section inside the Skills hub. Metric
  * header from the curator report, flagged episodes with fingerprint +
  * rubric score, distiller drafts inline with approve/reject (routed through
  * the existing human-gated proposals queue), and resolution counters.
@@ -155,7 +155,7 @@ export function LearningPanel() {
     ],
   ];
 
-  // Part 27 D3: one plain-language line in the collapsed header; the raw
+  // One plain-language line in the collapsed header; the raw
   // telemetry chips move behind the expand ("Details").
   const patterns = learning.fingerprints ?? 0;
   const promoted = learning.judged ?? 0;

@@ -15,6 +15,7 @@ import uuid
 from typing import Callable
 
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
+from app.lib.degenerate_output import DEGENERATE_OUTPUT_ERROR, is_degenerate_tail
 from app.models import AnthropicRequest, ChatCompletionRequest
 from app.services.workbench.effort import (
     cap_reasoning_effort,
@@ -279,7 +280,6 @@ def _provider_lists_model(provider: dict[str, object], model_hint: str) -> bool 
 
 
 def resolve_chat_llm(
-    *,
     model: str = '',
     model_provider: str = '',
     session_provider: str = '',
@@ -486,7 +486,7 @@ async def call_anthropic_workbench(
     apply_prompt_caching(body)
     if thinking_budget > 0:
         body['thinking'] = {'type': 'enabled', 'budget_tokens': thinking_budget}
-        # §9.3 #6: temperature=1 when effort/thinking is set — Anthropic
+        # Temperature=1 when effort/thinking is set — Anthropic
         # requires it with extended thinking, and it is the documented
         # pairing for reasoning effort across families.
         body['temperature'] = 1
@@ -500,7 +500,7 @@ async def call_anthropic_workbench(
         async for event in client.messages_stream(body):
             if _cancel_event is not None and _cancel_event.is_set():
                 break
-            # Phase L (Part 17): client-level retries (429/503/connection,
+            # Client-level retries (429/503/connection,
             # pre-first-token) yield type='upstreamRetry' — surface them so
             # the transcript can show "provider busy — retrying in Ns"
             # instead of a silent multi-second stall.
@@ -516,6 +516,17 @@ async def call_anthropic_workbench(
                 )
                 continue
             agg.on_event(event)
+            # Degenerate-output guard: a completion stuck chanting the same
+            # unit ("Write! GO! 3. 2. 1. Emit! …") burns the token budget and
+            # floods the transcript — abort the stream and fail the round
+            # honestly instead of letting it run to the provider cap.
+            if len(agg.accumulated_text) >= 300 and is_degenerate_tail(agg.accumulated_text):
+                return {
+                    'error': DEGENERATE_OUTPUT_ERROR,
+                    'text': agg.accumulated_text[-2000:],
+                    'usage': dict(agg.usage),
+                    'finish_reason': 'degenerate_repeat',
+                }
             # Stream rules: detect narration, but do NOT abort mid-stream —
             # the hit is cancelled if a real tool_use arrives later in this
             # turn (a strong model narrates AND then emits the call); only a
@@ -548,7 +559,6 @@ async def call_anthropic_workbench(
 # instead of emitting it (a code-fenced JSON tool call, "I'll use the X tool"),
 # abort the generation and let the turn loop inject a reminder + retry from
 # the same point — far cheaper than letting a wasted round complete.
-#
 # Detection is DEFERRED to end-of-turn (not a mid-stream abort): a strong
 # model routinely writes "I'll use the web_search tool to…" and THEN emits
 # the real tool call in the same turn — aborting on the narration discarded
@@ -679,7 +689,7 @@ async def call_openai_workbench(
             reasoning = cap_reasoning_effort(reasoning, as_str(_model_entry.get('maxReasoningEffort')) or None)
         if reasoning and provider_accepts_reasoning_effort(provider, model, model_entry=_model_entry):
             body['reasoning_effort'] = reasoning
-            # §9.3 #6: temperature=1 when effort is set — the documented
+            # Temperature=1 when effort is set — the documented
             # pairing for reasoning models.
             body['temperature'] = 1
 
@@ -711,7 +721,7 @@ async def call_openai_workbench(
             async for event in client.chat_completions_stream(body):
                 if _cancel_event is not None and _cancel_event.is_set():
                     break
-                # Phase L (Part 17): client-level retries (429/503/connection,
+                # Client-level retries (429/503/connection,
                 # pre-first-token) yield type='upstreamRetry' — surface them
                 # so the transcript can show the provider wait instead of a
                 # silent stall.
@@ -801,6 +811,15 @@ async def call_openai_workbench(
                     contentText += textDelta
                     if emit:
                         emit({'type': 'finalOutput', 'content': textDelta})
+                    # Degenerate-output guard: same contract as the Anthropic
+                    # path — abort a completion stuck repeating one unit.
+                    if len(contentText) >= 300 and is_degenerate_tail(contentText):
+                        return {
+                            'error': DEGENERATE_OUTPUT_ERROR,
+                            'text': contentText[-2000:],
+                            'usage': dict(usage),
+                            'finish_reason': 'degenerate_repeat',
+                        }
                     # Stream rules: detect narration but do NOT abort here —
                     # the hit is cancelled if a real tool_call arrives later in
                     # this turn (strong models narrate AND then emit the call);
@@ -841,7 +860,7 @@ async def call_openai_workbench(
 
                             mark_tool_args_ready()
                         if fn.get('name') and not as_str(existing.get('name')):
-                            # 1.4 (Part 25): set-once, mirroring the proxy
+                            # 1.4: set-once, mirroring the proxy
                             # accumulator (adapters/stream_state.py:50-54). The
                             # name arrives in the FIRST fragment; some gateways
                             # re-send it with every chunk, and appending yielded
@@ -1092,6 +1111,15 @@ async def call_responses_workbench(
                         contentText += textDelta
                         if emit:
                             emit({'type': 'finalOutput', 'content': textDelta})
+                        # Degenerate-output guard: same contract as the other
+                        # paths — abort a completion stuck repeating one unit.
+                        if len(contentText) >= 300 and is_degenerate_tail(contentText):
+                            return {
+                                'error': DEGENERATE_OUTPUT_ERROR,
+                                'text': contentText[-2000:],
+                                'usage': dict(usage),
+                                'finish_reason': 'degenerate_repeat',
+                            }
                         if tools and _stream_rule_hit is None:
                             _stream_rule_hit = _match_stream_rule(contentText)
                 elif eventType in (

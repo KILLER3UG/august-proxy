@@ -88,7 +88,6 @@ def _resolve_under_workspace(path_str: str, workspace: str) -> Path | None:
 
 def create_checkpoint(
     session_id: str,
-    *,
     workspace_path: str = '',
     paths: list[str] | None = None,
     tool_name: str = '',

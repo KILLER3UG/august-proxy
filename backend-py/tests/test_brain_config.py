@@ -31,7 +31,7 @@ _ALLCamelKeys = {
     'skillRelevanceMatch',
     'maxAgentDepth',
     'maxWorkbenchToolLoops',
-    # Routing introspection (Part 26 7.2): autoRoute/MinWinRate/WinGap are
+    # Routing introspection: autoRoute/MinWinRate/WinGap are
     # removed — no turn-loop reader ever existed; MinSamples stays for the
     # harness flow map.
     'autoRouteMinSamples',
@@ -41,22 +41,22 @@ _ALLCamelKeys = {
     'memorySensitiveTopics',
     # Camera capture access toggle (Workstream D).
     'cameraAccess',
-    # M4 consolidation v2 cadence + model-summarize toggle (plan §3.5).
+    # M4 consolidation v2 cadence + model-summarize toggle.
     'consolidationIntervalHours',
     'episodicRetentionDays',
     'consolidationModelSummarize',
-    # Part 21 OQ5: propose-only preference-retire pass (toggle + window).
+    # Propose-only preference-retire pass (toggle + window).
     'preferenceRetireEnabled',
     'preferenceRetireDays',
-    # M7 titling target override (plan §3.7).
+    # M7 titling target override.
     'titleModel',
     # Part 16/17 skill-learning judge mode (off | extract-only | full).
     'skillLearning',
-    # Part 16 Phase C: dedicated judge model + tier-2 cost gates.
+    # Dedicated judge model + tier-2 cost gates.
     'skillLearningJudgeModel',
     'escalationBudgetPerDay',
     'flagRateCap',
-    # Part 17: per-project memory + workspace skills toggles.
+    # Per-project memory + workspace skills toggles.
     'projectMemory',
     'projectSkills',
 }
@@ -126,7 +126,7 @@ async def testPutMergesAndAudits(client, isolatedData):
 
 @pytest.mark.asyncio
 async def testPutProjectMemoryAndSkillsKnobs(client, isolatedData):
-    """0.3 (Part 25): projectMemory/projectSkills are settable — they were in
+    """0.3: projectMemory/projectSkills are settable — they were in
     fieldTable but missing from boolKeys, so validatePatch rejected them."""
     resp = await client.put(
         '/api/brain/config', json={'projectMemory': False, 'projectSkills': False}
@@ -208,7 +208,7 @@ async def testFromSessionRequiresSessionId(client):
 
 @pytest.mark.asyncio
 async def testStateLookupReturnsInternalStateRow(client, isolatedData):
-    """§5.5: a key in internal_state comes back verbatim with its source."""
+    """A key in internal_state comes back verbatim with its source."""
     from app.services.memory_store.kv import set_internal_state
 
     set_internal_state('cognitive:boot', {'phase': 'done', 'step': 3})
@@ -223,7 +223,7 @@ async def testStateLookupReturnsInternalStateRow(client, isolatedData):
 
 @pytest.mark.asyncio
 async def testStateLookupFallsBackToMemoryStore(client, isolatedData):
-    """§5.5: keys absent from internal_state resolve against memory_store."""
+    """Keys absent from internal_state resolve against memory_store."""
     from app.services.memory_store.kv import save_internal
 
     save_internal('user:plant', 'My plant is named Gerald')
@@ -237,7 +237,7 @@ async def testStateLookupFallsBackToMemoryStore(client, isolatedData):
 
 @pytest.mark.asyncio
 async def testStateLookupPrefersInternalStateOnCollision(client, isolatedData):
-    """§5.5: machine state wins when the same key exists in both tables."""
+    """Machine state wins when the same key exists in both tables."""
     from app.services.memory_store.kv import save_internal, set_internal_state
 
     save_internal('dup:key', 'memory-store-value')
@@ -261,3 +261,19 @@ async def testStateLookupMissingKeyReportsNotFound(client, isolatedData):
 async def testStateLookupRejectsBlankKey(client):
     resp = await client.get('/api/brain/state-lookup', params={'key': '   '})
     assert resp.status_code == 400
+
+@pytest.mark.asyncio
+async def testRuntimeConfigCacheInvalidatesOnWrite(client, isolatedData):
+    """getRuntimeConfig is TTL-memoized (it runs 5-7x per turn); a config
+    write must be reflected immediately, not after the TTL lapses."""
+    from app.services import brain_config_service as bc
+
+    before = bc.getRuntimeConfig().get('maxAgentDepth')
+    patch = {'maxAgentDepth': (before or 4) + 1}
+    ok, err, merged = bc.saveBrainConfig(patch)
+    assert ok, err
+    assert bc.getRuntimeConfig().get('maxAgentDepth') == patch['maxAgentDepth']
+    # A PUT with a retired key is rejected cleanly (not a KeyError).
+    ok2, err2, _ = bc.saveBrainConfig({'agentJobs': True})
+    assert not ok2
+    assert 'unknown' in err2.lower()

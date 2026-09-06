@@ -41,7 +41,7 @@ PLAN_MODE_BLOCKED = {'enter_plan_mode', 'request_plan_mode'}
 # and covered positively by TestCircuitGateVisibility below. The gate owns
 # the circuit_* names PLUS the firmware/HDL/VCD/FPGA/KiCad families.
 CIRCUIT_MODE_PREFIX = 'circuit_'
-# Phase C: message_agent is visibility-gated per session (only present in a
+# Message_agent is visibility-gated per session (only present in a
 # Bot's canonical chat — see bot_mode.dm.filter_dm_tools), so the default
 # (non-bot) session correctly omits it. Covered positively by
 # tests/test_bot_mode_phase_c.py::TestGate.

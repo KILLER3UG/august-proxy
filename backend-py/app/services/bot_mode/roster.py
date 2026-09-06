@@ -163,7 +163,7 @@ def update_bot_by_name(name: str, ui_meta: dict[str, object], actor: str = 'ui')
 
 
 def delete_bot(agent_id: str, actor: str = 'ui') -> bool:
-    """Delete a Bot record + cascade its private data (2.13, Part 25). The
+    """Delete a Bot record + cascade its private data. The
     default assistant Bot is undeletable."""
     default = get_default_bot()
     if default and as_str(default.get('id')) == agent_id:

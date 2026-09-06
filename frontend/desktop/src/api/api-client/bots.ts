@@ -99,7 +99,7 @@ export function getBotAvatar(name: string, salt = ''): Promise<{ svg: string }> 
   );
 }
 
-/* ── Group rooms (Phase D) ─────────────────────────────────────────────── */
+/* ── Group rooms ─────────────────────────────────────────────── */
 
 export interface Room {
   id: number;

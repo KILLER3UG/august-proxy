@@ -57,7 +57,7 @@ class AgentUpdate(CamelModel):
 
 
 class UiMetaUpdate(CamelModel):
-    """Dedicated uiMeta payload for the Bots roster (Bot Mode Phase A)."""
+    """Dedicated uiMeta payload for the Bots roster."""
 
     title: str | None = None
     avatar: str | None = None
@@ -66,7 +66,7 @@ class UiMetaUpdate(CamelModel):
 
 
 class DmSend(CamelModel):
-    """A UI-initiated DM into a Bot's chat (Phase C). ``fromAgent`` is the
+    """A UI-initiated DM into a Bot's chat. ``fromAgent`` is the
     sending Bot (defaults to the roster's default assistant)."""
 
     message: str
@@ -216,7 +216,7 @@ async def ensureBotChat(agentId: str):
 
 @router.post('/bots/{agentId}/dm')
 async def sendBotDm(agentId: str, body: DmSend):
-    """Deliver one DM into a Bot's canonical chat (Phase C, UI-initiated).
+    """Deliver one DM into a Bot's canonical chat.
 
     Reuses the SAME inbox + delivery path as the message_agent tool (one send
     path, one audit trail); the UI is a trusted actor so it skips the

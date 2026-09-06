@@ -22,10 +22,10 @@ from app.services.sandbox.policy import (
     SandboxResult,
 )
 
-# Part 27 T1: invocation wrappers that hide the real command from `_first_word`.
+# Invocation wrappers that hide the real command from `_first_word`.
 _INVOCATION_WRAPPERS = frozenset({'sudo', 'env', 'command', 'nohup', 'xargs', 'time', 'exec'})
 
-# Part 27 T1: match redirects WITHOUT requiring a leading space (the old
+# Match redirects WITHOUT requiring a leading space (the old
 # `(?:^|[\s;|&])` anchor let `echo x>/etc/passwd` through) and cover `2>`/`&>`/
 # `&>>`/`2>>`. A negative lookbehind keeps code arrows (`->`, `=>`) from
 # matching as redirects.
@@ -180,7 +180,7 @@ def _first_word(command: str) -> str:
         base = Path(part).name.lower()
         if base.endswith('.exe'):
             base = base[:-4]
-        # Part 27 T1: skip invocation wrappers so `env rm x` / `sudo curl …` /
+        # Skip invocation wrappers so `env rm x` / `sudo curl …` /
         # `command rm …` resolve to the REAL command. The hardline layer already
         # stripped these; the soft layer keyed on the literal wrapper word, so
         # read-only "no writes" and network=False were bypassed by one word.
@@ -207,7 +207,7 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
         if _REDIRECT_RE.search(command):
             return 'read-only sandbox blocks shell redirects / tee'
     if not policy.network:
-        # Part 27 T1: scan EVERY chained segment's first word, not just the
+        # Scan EVERY chained segment's first word, not just the
         # command head — `true && curl …` / `foo; wget …` reached the network
         # while the UI reported network=False. _first_word strips wrappers.
         for segment in re.split(r'[;&|]{1,2}', command):
@@ -240,11 +240,11 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
 
 async def _spawn(
     command: str,
-    *,
     cwd: str | None,
     timeout: float,
     sandboxed: bool,
     enforcement: str,
+    extra_env: dict[str, str] | None = None,
 ) -> SandboxResult:
     started = time.monotonic()
     try:
@@ -257,7 +257,7 @@ async def _spawn(
 
         proc = await asyncio.create_subprocess_shell(
             prefix_line_buffering(command),
-            **agent_subprocess_kwargs(cwd=cwd),
+            **agent_subprocess_kwargs(cwd=cwd, extra_env=extra_env),
         )
         stdout_b, stderr_b = await communicate_or_kill(proc, timeout=timeout)
         stdout = stdout_b.decode('utf-8', errors='replace') if stdout_b else ''
@@ -312,12 +312,19 @@ async def run_soft(command: str, policy: SandboxPolicy, *, timeout: float) -> Sa
         )
     root = resolve_workspace_root(policy.workspace_root)
     cwd = str(root) if root is not None else os.getcwd()
+    # Enforced egress: when the policy disables network, HTTP clients get a
+    # loopback filter proxy env-injected (CONNECT refused with 403) instead
+    # of relying only on the shell denylist, which interpreters bypass.
+    from app.services.sandbox.egress import proxy_env_for_policy
+
+    extra_env = await proxy_env_for_policy(policy.network)
     return await _spawn(
         command,
         cwd=cwd,
         timeout=timeout,
         sandboxed=True,
         enforcement='soft',
+        extra_env=extra_env,
     )
 
 

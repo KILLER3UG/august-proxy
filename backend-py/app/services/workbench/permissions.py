@@ -1,4 +1,4 @@
-"""T5 — Two-axis permissions: sandbox capability tier × approval policy.
+"""Two-axis permissions: sandbox capability tier × approval policy.
 
 Axis 1 (capability) is the real sandbox in ``app/services/sandbox`` — it stays
 the ground truth for what a command *can* touch. Axis 2 (approval) is this
@@ -48,9 +48,7 @@ CATEGORIES: tuple[str, ...] = ('read', 'build', 'network', 'external', 'destruct
 # enforces capability either way.
 DEFAULT_AUTO_APPROVE: frozenset[str] = frozenset({'read', 'build', 'general'})
 
-# ---------------------------------------------------------------------------
 # Command tokenization
-# ---------------------------------------------------------------------------
 
 # Operators that chain or redirect — their presence invalidates simple
 # first-token classification for the benign categories (read/build), because
@@ -94,9 +92,7 @@ def _segments(command: str) -> list[list[str]]:
     return out or [tokenize_command(text)]
 
 
-# ---------------------------------------------------------------------------
 # Prefix rules (durable allow/deny, arity-aware)
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -135,9 +131,7 @@ def _rule_hits_any_segment(rule: PrefixRule, command: str) -> bool:
     return any(rule_matches(rule, seg) for seg in _segments(command))
 
 
-# ---------------------------------------------------------------------------
 # Classification
-# ---------------------------------------------------------------------------
 
 _READ_FIRST = frozenset(
     {
@@ -322,9 +316,7 @@ def classify_command(command: str, workspace_root: str) -> frozenset[str]:
     return frozenset(cats)
 
 
-# ---------------------------------------------------------------------------
 # Approval policy (axis 2 state) + decision
-# ---------------------------------------------------------------------------
 
 ApprovalOutcome = str  # closed enum: 'allow_once' | 'allow_always' | 'deny'
 OUTCOMES: tuple[str, ...] = ('allow_once', 'allow_always', 'deny')
@@ -415,7 +407,6 @@ def decide(
     command: str,
     workspace_root: str,
     policy: ApprovalPolicy,
-    *,
     requires_approval: bool = False,
 ) -> Decision:
     """Decide allow / ask / deny for one command under an approval policy.

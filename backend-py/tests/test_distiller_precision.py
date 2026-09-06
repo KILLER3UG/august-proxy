@@ -1,4 +1,4 @@
-"""Part 16 Phase C — the judge-precision ship bar as a test (§6).
+"""The judge-precision ship bar as a test.
 
 "Judge precision ≥ 0.8 on ≥ 30 hand-labeled episodes before any
 ``amend_body`` is enabled" — the ship bar is a test, not a vibe. The

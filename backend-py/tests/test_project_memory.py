@@ -1,4 +1,4 @@
-"""Part 17 Phase A — project memory (workspace md files, scoped retrieval).
+"""Project memory (workspace md files, scoped retrieval).
 
 Acceptance (plan docs/plans/2026-08-29-project-scoped-memory.md Phase A):
   * parse/write round-trip        → RoundTrip tests
@@ -118,7 +118,7 @@ class TestRoundTrip:
 
 
 class TestWriterSanitization:
-    """§9 F-4 — the writer must uphold the format contract (one `## <title>`
+    """The writer must uphold the format contract (one `## <title>`
     per entry) so hand-editable files can't be corrupted via the doors."""
 
     def test_body_heading_line_cannot_inject_entry(self, ws: Path) -> None:
@@ -269,7 +269,7 @@ class TestTailBlock:
         assert hits and hits[0].title == 'DB port'
 
     def test_build_memory_block_recalled_rows(self, ws: Path) -> None:
-        # Phase A.4: the recalled out-param collects the rows the tail
+        # The recalled out-param collects the rows the tail
         # actually injected — global + project, scope-tagged (the payload
         # of the recalledMemories SSE event).
         from app.services.memory_store.fact_retrieval import build_memory_block
@@ -342,7 +342,7 @@ class TestRememberProjectDoor:
 
 
     def test_home_workspace_never_auto_projects(self, tmp_path: Path, monkeypatch) -> None:
-        # §9 F-5: a session whose workspacePath IS the home dir must not get
+        # A session whose workspacePath IS the home dir must not get
         # auto-project scope — remember() with no scope writes a global fact,
         # and nothing lands in <home>/.aug/memory/.
         import asyncio
@@ -593,7 +593,7 @@ class TestMemoryManageProject:
         return undo_entry(str(entryId))
 
     def test_delete_rollback_restores_entry(self, ws: Path) -> None:
-        # §9 F-3: the UI delete door must snapshot the workspace so undo
+        # The UI delete door must snapshot the workspace so undo
         # can restore the md entry — before the fix the snapshot had no
         # workspace and undo failed with "no workspace in snapshot".
         from app.json_narrowing import as_str

@@ -75,7 +75,7 @@ describe('RoomView', () => {
     expect(screen.queryByText('(pass)')).not.toBeInTheDocument();
   });
 
-  it('new-thread composer runs the driver (Part 27 F3/F4)', async () => {
+  it('new-thread composer runs the driver', async () => {
     renderView();
     fireEvent.click(await screen.findByText('Design'));
     await screen.findByText('ship it?');
@@ -85,7 +85,7 @@ describe('RoomView', () => {
     await waitFor(() => expect(sendToRoom).toHaveBeenCalledWith(1, '@alice review this', undefined));
   });
 
-  it('reply-in-thread scopes the send to that thread (Part 27 F4)', async () => {
+  it('reply-in-thread scopes the send to that thread', async () => {
     renderView();
     fireEvent.click(await screen.findByText('Design'));
     // Root message id=1 → thread_id defaults to its own id (1).

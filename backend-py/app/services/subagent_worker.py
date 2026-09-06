@@ -3,7 +3,6 @@ Sub-agent worker — runs a single sub-agent task, publishing lifecycle
 events to the ``AgentMessageBus``.
 
 Pipeline
---------
 1. Inherit parent tools from the tool registry
 2. Filter by ``restrictedTools`` allowlist (if provided)
 3. Build agent context

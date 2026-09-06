@@ -76,7 +76,7 @@ MAX_MANAGED_TOOL_ROUNDS = 25
 # cannot spawn an arbitrary number of model calls at once.
 MAX_RECURRING_SUBAGENT_CONCURRENCY = 3
 _recurringSubagentSlots = asyncio.Semaphore(MAX_RECURRING_SUBAGENT_CONCURRENCY)
-# One-turn-per-session invariant, enforced at the service layer (Part 26 3.1):
+# One-turn-per-session invariant, enforced at the service layer:
 # the router gate only covers POST /chat, but Bot DMs, room member turns,
 # routine respond-turns, Live calls, and automations call
 # sendWorkbenchMessageStream directly — two overlapping turns on one session
@@ -115,7 +115,7 @@ def service_turn_in_flight(sessionId: str) -> bool:
 # this many consecutive rounds (and the turn is already deep), stop and ask
 # the model to reflect instead of letting it spin on repeated tool calls.
 MAX_STALLED_ROUNDS = 8
-# Part 26 2.3: 12 + 8 (nudge at 20, hard-stop 22) nearly consumed the default
+# 12 + 8 (nudge at 20, hard-stop 22) nearly consumed the default
 # 25-round cap before stall protection engaged. Fire the check from round 8:
 # nudge at 16, hard-stop at 18 — real self-correction room stays.
 MIN_ROUNDS_BEFORE_STALL_CHECK = 8
@@ -124,7 +124,7 @@ _CODE_RUN_TIMEOUT_S = 60
 # Tool dispatch cap: a hung MCP server or registry handler must not hold a
 # turn (and a sub-agent semaphore slot) forever. Env-overridable. Guarded so a
 # non-numeric AUGUST_TOOL_TIMEOUT_S falls back to the default instead of
-# raising at module import and taking down the whole workbench (Part 25 1.7).
+# raising at module import and taking down the whole workbench.
 def _envTimeoutSeconds(default: int = 300) -> int:
     try:
         return max(30, int(os.environ.get('AUGUST_TOOL_TIMEOUT_S', str(default))))
@@ -271,7 +271,7 @@ _MODEL_RETRY_MARKERS = (
     'empty response',
 )
 
-# T16(d) (plan §9.4): deterministic 400s — the request itself is malformed
+# T16(d): deterministic 400s — the request itself is malformed
 # (orphaned tool-use id, broken message structure). Retrying re-sends the
 # identical request forever (a documented field incident); these are
 # fatal-or-repair, never transient. Checked before the marker scan so a
@@ -286,7 +286,7 @@ _DETERMINISTIC_400_MARKERS = (
     'unexpected role',
     'invalid role',
     'unrecognized role',
-    # Part 26 2.5: these are request-shape rejections — the identical retry
+    # These are request-shape rejections — the identical retry
     # fails identically, so classifying them as deterministic stops the
     # useless retry storm (each one verified against real upstream text).
     'budget_tokens',
@@ -322,7 +322,7 @@ def _isRetryableModelError(response: dict[str, object]) -> bool:
 
 
 def _retryBlockedByPartialEmission(response: dict[str, object], emitted_content: bool) -> bool:
-    """R-C idempotency gate (plan §10.3): never replay a completion that
+    """R-C idempotency gate: never replay a completion that
     already streamed generated tokens. Once text/thinking deltas reached
     the user, the provider has generated — and may have been billed for —
     those tokens, so even a retryable failure surfaces instead of retrying
@@ -330,7 +330,7 @@ def _retryBlockedByPartialEmission(response: dict[str, object], emitted_content:
     return bool(emitted_content) and _isRetryableModelError(response)
 
 
-# ── Tools-fallback retry (Part 26 1.1) ────────────────────────────────────
+# ── Tools-fallback retry ────────────────────────────────────
 # A gateway that rejects the request WITH tools (deterministic 500s on
 # unknown/aggregator models — the reported "always 500 while other harnesses
 # work" class) will reject every identical retry too. One stripped retry
@@ -359,7 +359,7 @@ def _toolBlockText(content: object) -> str:
 
 
 def _stripToolsFromHistory(messages: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Flatten tool-call history for a tools-fallback retry (Part 26 1.1).
+    """Flatten tool-call history for a tools-fallback retry.
 
     Strict gateways reject tool-role messages / tool_use blocks when no
     ``tools`` array is declared, so the stripped request must carry a
@@ -430,7 +430,7 @@ def _stripToolsFromHistory(messages: list[dict[str, object]]) -> list[dict[str, 
 
 
 def _truncateToolOutput(text: str, cap: int) -> tuple[str, bool]:
-    """Bounded head+tail tool-output truncation (plan §10.3 R-C metering).
+    """Bounded head+tail tool-output truncation.
 
     Keeps a bounded HEAD and TAIL of the output with an explicit omission
     marker between them — the tail carries final results (test summaries,
@@ -470,7 +470,7 @@ def _truncateToolOutput(text: str, cap: int) -> tuple[str, bool]:
     return head + marker + tailSlice, True
 
 
-# ── Output-cap discipline, stage B: spill (plan §9.3 #3) ──
+# ── Output-cap discipline, stage B: spill ──
 # A fresh tool result larger than the threshold is stored verbatim in a
 # session-scoped file and replaced inline by a head/tail preview that fits
 # the 30 KB / 2000-line model-facing budget. Stage B runs on FRESH results
@@ -526,7 +526,7 @@ def _spillToolResult(session: WorkbenchSession, toolName: str, result: str) -> s
         return None
     try:
         seq = int(getattr(session, '_spillSeq', 0) or 0) + 1
-        # Part 27 T3: claim the sequence number BEFORE writing, so two oversized
+        # Claim the sequence number BEFORE writing, so two oversized
         # results in one batch can't compute the same seq and overwrite each
         # other's file (the preview's "stored at …" then pointed at wrong bytes).
         session._spillSeq = seq  # type: ignore[attr-defined]
@@ -664,7 +664,7 @@ def _isContextOverflowError(response: dict[str, object]) -> bool:
 async def _reactiveContextReduction(
     messages: list[dict[str, object]], contextWindow: int, session: WorkbenchSession
 ) -> list[dict[str, object]] | None:
-    """Reactive prune-then-compact (§9.3 #2) for a context-overflow error.
+    """Reactive prune-then-compact for a context-overflow error.
 
     Runs the same reduction as pre-turn (projection prune, then summarize
     with the token-budgeted verbatim tail) and returns the reduced list only
@@ -973,7 +973,6 @@ _MEMORY_NUDGE_MIN_ROUNDS = 3
 
 def queue_memory_habit_nudge(
     session: WorkbenchSession,
-    *,
     rounds: int,
     rememberOffered: bool,
     memWritesOn: bool,
@@ -1088,13 +1087,26 @@ def buildSystemPrompt(
     vcsInfo = ''
     whatsNew = ''
     if workspacePath:
-        vcsInfo, whatsNew = _probe_workspace_git(workspacePath)
+        # Frozen for the session's lifetime: the workspace block sits in the
+        # cached system-prompt prefix, and a fresh probe would re-render it
+        # after every commit or dirty flip (probe TTL 60s), invalidating the
+        # provider's prefix cache once per state change. Fresh vcs state is
+        # still visible to the user in the UI, which probes independently.
+        frozenVcs = getattr(session, '_frozen_vcs', None)
+        if frozenVcs is None:
+            vcsInfo, whatsNew = _probe_workspace_git(workspacePath)
+            try:
+                session._frozen_vcs = (vcsInfo, whatsNew)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        else:
+            vcsInfo, whatsNew = frozenVcs
     augMdBody = ''
     if workspacePath:
         try:
             from app.services import aug_directive_service
 
-            # T6: layered load — global → git-root→cwd walk, override wins,
+            # Layered load — global → git-root→cwd walk, override wins,
             # 32 KiB cap (least-specific layers dropped first).
             loaded = aug_directive_service.load_layered(workspacePath)
             if loaded and loaded.get('body'):
@@ -1117,7 +1129,7 @@ def buildSystemPrompt(
         '- Never invent file contents or command output.\n'
         '</core>'
     ]
-    # §9.3 #5: the model's OWN pre-completion checklist — a self-check
+    # The model's OWN pre-completion checklist — a self-check
     # against the original instruction, never a critic gate (verifier gate
     # removed 2026-08-24; nothing withholds the answer).
     if offeredTools:
@@ -1132,7 +1144,7 @@ def buildSystemPrompt(
             'This is your own checklist — no other gate stands between you and your answer.\n'
             '</completion_checklist>'
         )
-    # §9.3 #6: per-model-family prompt variant (short framing block keyed by
+    # Per-model-family prompt variant (short framing block keyed by
     # the model id family; unknown families get nothing).
     try:
         from app.services.workbench.prompt_variants import family_prompt_variant
@@ -1145,15 +1157,12 @@ def buildSystemPrompt(
     # Intake manifest: enumerate exactly what this context carries so the
     # model can answer "what did you receive at the start?" precisely —
     # the way strong assistants self-describe their intake.
-    from datetime import datetime as _dt
-
-    nowLabel = _dt.now().astimezone().strftime('%Y-%m-%d (%Z)')
     skillNames: list[str] = []
     try:
         from app.services import session_scope as _scope_svc
         from app.services import skill_service as _skill_service
 
-        # Part 26 6.7: thread the session's resolved scope — a Bot's private
+        # Thread the session's resolved scope — a Bot's private
         # skills belong in the intake list too (the <relevant_skills> tail and
         # load_skill already see them; the Tier-1 surfaces were half-wired).
         _tierScope = _scope_svc.resolve_scope(session)
@@ -1195,7 +1204,7 @@ def buildSystemPrompt(
         '<session_state> block appended to your latest message.',
     ]
     if memoryTools:
-        # Part 27 T3: dropped the `heuristics` hint — the table is deleted once
+        # Dropped the `heuristics` hint — the table is deleted once
         # empty (no live writer), so advertising it made brain_query(heuristics)
         # answer "table not yet created" for a store the prompt named.
         storeHint = (
@@ -1249,7 +1258,7 @@ def buildSystemPrompt(
                 '- Memory: auto-injection is OFF (modelMemoryRead); pull stored context '
                 'on demand via ' + ', '.join(memoryTools) + '. ' + storeHint
             ]
-        # Part 17 Phase A: frozen per-session project-memory index (titles
+        # Frozen per-session project-memory index (titles
         # only) — same freeze discipline as the global index above so hand
         # edits to the md files don't bust the cached prefix mid-session;
         # fresh entries still reach the model via the per-turn <memory> tail.
@@ -1280,7 +1289,6 @@ def buildSystemPrompt(
         intake.append('\n'.join(memParts))
     if skillsLine:
         intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
-    intake.append(f'- Date: {nowLabel} — treat as today.')
     if tool_names:
         intake.append(f'- Tools: {len(tool_names)} registered this turn (details in <capabilities>).')
     intake.append('</intake>')
@@ -1295,7 +1303,7 @@ def buildSystemPrompt(
             ws.append(f'vcs: {vcsInfo}')
         if whatsNew:
             ws.append(whatsNew)
-        # Environment bootstrapping (§9.3 #4 + T10 step 1): the workdir
+        # Environment bootstrapping: the workdir
         # file map rides in the first prompt so the model navigates by map
         # instead of spending 2–5 exploration turns guessing paths.
         try:
@@ -1328,7 +1336,7 @@ def buildSystemPrompt(
     # stay here (guardMode, agentMode, the circuit-mode hint).
     agentMode = as_str(getattr(session, 'agent_mode', '') or '')
     sessionBlock = ['<session>']
-    # Part 27 T3: guardMode (the approval policy for mutations) is orthogonal to
+    # GuardMode (the approval policy for mutations) is orthogonal to
     # the sandbox containment level reported on command denials ([sandbox:soft]);
     # the bare "guardMode: full" read as if it contradicted a sandbox:soft denial.
     # Keep the `guardMode:` token (prompt-cache stability test) and annotate it.
@@ -1361,7 +1369,7 @@ def buildSystemPrompt(
         except Exception:
             logger.debug('prompt: agent context failed', exc_info=True)
     if tool_names:
-        # Part 17 Phase B: the capabilities memo is keyed by workspace path
+        # The capabilities memo is keyed by workspace path
         # TOO — per-workspace catalogues (project skills shadowing) must not
         # cross-contaminate sessions; a mutation still busts every key via
         # clear_skill_prompt_caches().
@@ -1420,7 +1428,7 @@ def buildSystemPrompt(
             memWritesOn = True
         if memWritesOn:
             parts.append(_seg_cache.MEMORY_BLOCK)
-    # Phase C: the Bot roster + messaging protocol, offered ONLY where the
+    # The Bot roster + messaging protocol, offered ONLY where the
     # message_agent tool is (canonical Bot Chats — offeredTools already
     # reflects the filter_dm_tools gate, so bytes stay stable elsewhere).
     if 'message_agent' in offeredTools:
@@ -1551,7 +1559,7 @@ def _is_failing_receipt(msg: dict[str, object]) -> bool:
 
 
 def _planStateBlock(session: WorkbenchSession) -> str:
-    """Compact plan/todo state block for re-injection (T7, ~50–150 tokens).
+    """Compact plan/todo state block for re-injection.
 
     Plan/todo state lives on the session, outside the transcript, so it
     survives compaction by construction. Pre-turn it is carried by the
@@ -1646,17 +1654,24 @@ def _planStateBlock(session: WorkbenchSession) -> str:
 
 
 def _sessionStateBlock(session: WorkbenchSession) -> str:
-    """Per-turn <session_state> block (Part 17 Phase L, 2026-08-29).
+    """Per-turn <session_state> block.
 
-    Carries everything purged from the cached system prompt's <session>
-    block: id/title (per-session unique / mutable), goal, plan status,
-    execution phase, scratchpad, last tool failure, todos, and the compact
-    plan/todo state. Injected into the LAST USER MESSAGE each turn — the
-    same tail-injection point as <memory>/<relevant_skills>, outside the
-    provider prefix cache — so state changes never bust the cached system
-    block while staying fresh in the model's view every turn.
+    Carries everything that must NOT live in the cached system prompt:
+    the current date (changes at midnight/DST), per-session id/title
+    (unique / mutable), goal, plan status, execution phase, scratchpad,
+    last tool failure, todos, and the compact plan/todo state. Injected
+    into the LAST USER MESSAGE each turn — the same tail-injection point
+    as <memory>/<relevant_skills>, outside the provider prefix cache — so
+    state changes never bust the cached system block while staying fresh
+    in the model's view every turn.
     """
     lines: list[str] = []
+    # The date rides the volatile tail: rendering it in the system prompt
+    # would invalidate the provider's cached prefix at every midnight/DST
+    # boundary. Always present so the model knows "today" on every turn.
+    from datetime import datetime as _dt
+
+    lines.append(f'date: {_dt.now().astimezone().strftime("%Y-%m-%d (%Z)")}')
     title = as_str(getattr(session, 'title', '') or '').strip()
     # Placeholder titles carry no information — skip so a fresh chat gets
     # no junk block (the titler replaces the placeholder and it appears here
@@ -1685,7 +1700,7 @@ def _sessionStateBlock(session: WorkbenchSession) -> str:
 def _injectPlanState(
     messages: list[dict[str, object]], session: WorkbenchSession
 ) -> list[dict[str, object]]:
-    """Re-inject the plan-state block into a compacted transcript (T7).
+    """Re-inject the plan-state block into a compacted transcript.
 
     Mid-turn re-injection policy (Q15: always inject): the block is inserted
     right after the compressed-summary message — i.e. above the preserved
@@ -1716,13 +1731,6 @@ def _injectPlanState(
         insertAt = len(out)
     out.insert(insertAt, {'role': 'user', 'content': block})
     return out
-
-
-# ── Auto-applied capability profiles (A5, opt-in AUGUST_AUTO_PROFILE=1) ──
-# The suggestion loop is two-way (downgrades + upgrades); auto-apply closes
-# it into an experiment: the profile is written to the provider store, the
-# before-rates are recorded, and once enough new traces accumulate the
-# experiment is evaluated — worse rates → revert, held/improved → confirm.
 
 
 def _session_cost_usd(session: object) -> float:
@@ -1904,12 +1912,31 @@ def _toolDefName(t: dict[str, object]) -> str:
     return as_str(t.get('name') or fn.get('name'), '')
 
 
+_capability_profile_cache: dict[tuple[str, str], tuple[float, dict[str, object]]] = {}
+_CAPABILITY_PROFILE_TTL_S = 5.0
+
+
 def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
-    """Per-model tool profile from the provider config (never raises)."""
+    """Per-model tool profile from the provider config (never raises).
+
+    Memoized on a 5s TTL per (model, provider): the uncached body walked
+    getProvidersAsModels() — a full providers.json read + typed rebuild —
+    and the tool-surface path hits it 2–3× per turn for the same pair.
+    Provider edits apply within 5 seconds, which is fine for a tool
+    surface; the config UI reloads the page anyway.
+    """
+    import time as _time
+
     modelId = as_str(getattr(session, 'model', '') or '')
     providerName = as_str(getattr(session, 'provider', '') or '')
     if not modelId:
         return {}
+    cacheKey = (modelId, providerName)
+    cached = _capability_profile_cache.get(cacheKey)
+    now = _time.monotonic()
+    if cached is not None and now - cached[0] < _CAPABILITY_PROFILE_TTL_S:
+        return cached[1]
+    profile: dict[str, object] = {}
     try:
         from app.services import config_service
 
@@ -1918,14 +1945,18 @@ def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
                 continue
             for m in p.models:
                 if m.id == modelId:
-                    return {
+                    profile = {
                         'tool_surface': m.tool_surface or 'full',
                         'max_tools': int(m.max_tools or 0),
                         'max_tool_result_chars': int(m.max_tool_result_chars or 0),
                     }
+                    break
+            if profile:
+                break
     except Exception:
         pass
-    return {}
+    _capability_profile_cache[cacheKey] = (now, profile)
+    return profile
 
 
 def _finalize_session_tools(
@@ -2008,7 +2039,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         return tools
 
     tools = tool_defs_cache.get_or_build('openai', _build_base)
-    # Part 26 1.2: run the same BM25-budgeted progressive disclosure as the
+    # Run the same BM25-budgeted progressive disclosure as the
     # Anthropic builder. The OpenAI path previously shipped the full registry
     # (~80 KB JSON, ≈20k tokens) to every model without a capability profile —
     # the dominant trigger of deterministic gateway 500s while a few-KB chat
@@ -2209,7 +2240,6 @@ def enqueueUserMessage(
     sessionId: str,
     text: str,
     attachments: list[dict[str, object]] | None = None,
-    *,
     kind: str = 'queue',
 ) -> dict[str, object] | None:
     """Append a user message to the session's pending queue.
@@ -2225,7 +2255,7 @@ def enqueueUserMessage(
     """
     session = _sessions.get(sessionId)
     if not session:
-        # Part 26 3.10: _sessions is a 60-slot recency window — a background
+        # _sessions is a 60-slot recency window — a background
         # subagent's parent can legitimately fall out of it; reload from the
         # durable store instead of silently dropping the completion notice.
         session = getWorkbenchSession(sessionId)
@@ -2247,7 +2277,7 @@ def enqueueUserMessage(
     # group in the drain formatter (steer → subagent → queue), but within a
     # group the user's order must hold — front-inserting here made three
     # steers drain as 3,2,1 (both to the model and to the injected bubbles).
-    # Part 26 3.10: hard cap with drop-oldest — the queue is unbounded
+    # Hard cap with drop-oldest — the queue is unbounded
     # otherwise, and a model that keeps spawning subagents grows it every
     # completion (each _enqueue_completion lands here as kind='subagent').
     MAX_QUEUE_ENTRIES = 50
@@ -2557,7 +2587,7 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
                 body += f'{"" if not body else chr(10)}Exit code: {r.exit_code}'
             return format_result(body if body else '(no output)')
 
-        # P3.2 (Part 18): prefer the WARM kernel — one persistent isolated
+        # P3.2: prefer the WARM kernel — one persistent isolated
         # interpreter per session executing the SAME runner source the cold
         # path would spawn (guards inside the child; parent preflight runs
         # per cell so a mid-conversation sandbox change is honored). The cold
@@ -2777,7 +2807,7 @@ async def _sendWorkbenchMessageStreamImpl(
         session.guardMode = normalizeGuardMode(guardMode)
     session.status = 'streaming'
     session.updatedAt = _now()
-    # 1.1 (Part 25): the text-tool-protocol flag was set-true-only, so a session
+    # 1.1: the text-tool-protocol flag was set-true-only, so a session
     # that once ran a text-surface model (or hit the 2-refusal downgrade) kept
     # emitting the <tool_protocol> block + [TOOLCALL] parsing on later turns
     # even after switching to a native-tools model. Recompute per turn: the
@@ -3069,7 +3099,7 @@ async def _sendWorkbenchMessageStreamImpl(
         # (each a registry walk + BM25 assembly over the transcript).
         isAnthropic = _isAnthropicProvider(resolvedProvider)
         isOpenai = _isOpenaiProvider(resolvedProvider)
-        # Part 26 1.3: Responses-format models previously fell into the
+        # Responses-format models previously fell into the
         # openai branch and got a chat-completions body at /responses.
         isOpenaiResponses = not isAnthropic and _isResponsesProvider(resolvedProvider)
         tools: list[dict[str, object]] = []
@@ -3099,7 +3129,7 @@ async def _sendWorkbenchMessageStreamImpl(
     # Wall time spent inside model sub-calls only (tool execution excluded) —
     # the denominator for the per-turn tokens/sec shown in the chat chip.
     totalGenerationMs = 0.0
-    # P3.1 (Part 18): trailing stream tail after the last tool call's args
+    # P3.1: trailing stream tail after the last tool call's args
     # arrived, for the LAST tooled round — the time early dispatch could
     # save. Snapshot-per-round above; persisted in turn telemetry below.
     _toolArgsTailMs = 0
@@ -3145,7 +3175,7 @@ async def _sendWorkbenchMessageStreamImpl(
             # Compress toward ~55% of the real window so the next turn has headroom.
             threshold = max(4096, int(contextWindow * 0.55))
             currentMessages = list(session.messages)
-            # Tier (a) projection prune (§9.3 #2): old tool outputs are blanked
+            # Tier (a) projection prune: old tool outputs are blanked
             # in the model-facing projection only — session.messages stays
             # untouched unless compaction below persists the reduced list.
             currentMessages = pruneToolOutputs(currentMessages)
@@ -3180,13 +3210,13 @@ async def _sendWorkbenchMessageStreamImpl(
                         # summary verbatim — a summary can drop the only mention
                         # of a phase/step or an error string the model still needs.
                         pin_predicates=[_is_update_state_transition, _is_failing_receipt],
-                        # Prune-then-compact (§9.3 #2): token-budgeted verbatim
+                        # Prune-then-compact: token-budgeted verbatim
                         # tail (retain 0.16 × window) + fixed handoff schema
                         # carrying the file ledger across compactions.
                         contextWindow=contextWindow or None,
                         goalHint=as_str(getattr(session, 'goal', '') or ''),
                         schema=summarizer is None,
-                        # Part 18 P2.2: replay the newest verbatim user turns
+                        # Replay the newest verbatim user turns
                         # right after the summary (the summary loses nuance
                         # the user already paid for — fewer recovery rounds).
                         replayUserBytes=REPLAY_USER_BUDGET_BYTES,
@@ -3230,11 +3260,11 @@ async def _sendWorkbenchMessageStreamImpl(
             currentMessages = list(session.messages)
     except Exception:
         currentMessages = list(session.messages)
-    # M3 memory injection (plan §3.4) + Tier-3 <relevant_skills> (M6 item 6):
+    # M3 memory injection + Tier-3 <relevant_skills> (M6 item 6):
     # BM25-retrieve the facts and skill descriptions relevant to the current
     # user message and append them to it — the tail of the turn context. Never
     # in the SYSTEM prompt (the provider prefix cache stays stable, Q14).
-    # 5.4 (Part 25) honesty note: the tail-patched last-user message IS
+    # 5.4 honesty note: the tail-patched last-user message IS
     # persisted into history by the step-boundary barrier flush (it rides an
     # older message, so it stays cache-stable), but each turn re-injects a
     # FRESH tail on the current last-user message — the persisted copy of a
@@ -3263,7 +3293,7 @@ async def _sendWorkbenchMessageStreamImpl(
         if _lastUserIdx is not None:
             _userMsg = currentMessages[_lastUserIdx]
             _userText = as_str(_userMsg.get('content'), '')
-            # Phase D item 2 (Part 17): query expansion — the previous user
+            # Phase D item 2: query expansion — the previous user
             # turn joins the facts query at half weight so follow-ups
             # ("and the second one?") still recall their antecedent fact.
             _priorTurn = ''
@@ -3272,10 +3302,10 @@ async def _sendWorkbenchMessageStreamImpl(
                 if isinstance(_pm2, dict) and _pm2.get('role') == 'user':
                     _priorTurn = as_str(_pm2.get('content'), '')
                     break
-            # M-2 (Part 21): one scope resolution per turn feeds both the
+            # M-2: one scope resolution per turn feeds both the
             # facts corpus union and the skills catalogue (bot private root).
             _turnScope = _session_scope.resolve_scope(session)
-            # Phase A (Part 17): with a non-home workspace the memory tail
+            # With a non-home workspace the memory tail
             # also carries the project's md-file entries (tagged section).
             # Hoisted above the read gate so the skills block (which shares
             # the workspace scope) can't NameError when memory read is off.
@@ -3287,11 +3317,11 @@ async def _sendWorkbenchMessageStreamImpl(
                     workspace=_wsForTail,
                     recalled=_recalledRows,
                     prior_turn=_priorTurn,
-                    # M-2 (Part 21): Bot home chats recall global ∪ own notes;
+                    # M-2: Bot home chats recall global ∪ own notes;
                     # every other session stays on the plain global corpus.
                     scope=_turnScope,
                 )
-                # Phase D item 4 (Part 17): recall metrics — one internal_state
+                # Phase D item 4: recall metrics — one internal_state
                 # counter row per turn (before/after instrument for every
                 # retrieval change). Best-effort, never blocking.
                 try:
@@ -3331,7 +3361,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         pass
                 except Exception:
                     logger.debug('recall metrics write failed', exc_info=True)
-                # Phase A.4 (Part 17): the typed-but-unrendered recalledMemories
+                # The typed-but-unrendered recalledMemories
                 # event — what memory this turn actually recalled, for the
                 # transcript's recall chip. One event per turn, non-blocking.
                 if emit and _recalledRows:
@@ -3355,7 +3385,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 _userText, _wsForTail or None, _session_scope.bot_agent_id(_turnScope)
             )
             _nudgeBlock = memory_nudge_block(session, _memWritesOn)
-            # Phase L (Part 17): per-turn <session_state> carries the volatile
+            # Per-turn <session_state> carries the volatile
             # session fields purged from the (now byte-stable) system prompt.
             _stateBlock = _sessionStateBlock(session)
             _tailBlocks = '\n\n'.join(
@@ -3366,7 +3396,7 @@ async def _sendWorkbenchMessageStreamImpl(
             if _tailBlocks:
                 _patched = dict(_userMsg)
                 _patched['content'] = f'{_userText}\n\n{_tailBlocks}'
-                # Part 26 6.3: mark the patch so every persist path can strip
+                # Mark the patch so every persist path can strip
                 # the volatile tail before it rides in history forever
                 # (bloat + stale <session_state>/<memory_nudge> blocks the
                 # model may trust + phantom "user_correction" episodes in the
@@ -3427,7 +3457,7 @@ async def _sendWorkbenchMessageStreamImpl(
     # cripple the rest of the turn (web_search/browser may still be needed).
     surfaceDowngraded = False
     cleanRoundsSinceDowngrade = 0
-    # Part 26 2.3: self-heal retries (narration/refusal reminders) don't
+    # Self-heal retries (narration/refusal reminders) don't
     # consume the round budget — bounded so a hopeless model still hits the
     # loop cap instead of narrating forever.
     _SELFHEAL_EXEMPT_ROUNDS = 4
@@ -3464,7 +3494,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         session._tool_tracker.record_text_response()
                 except Exception:
                     pass
-                # Terminal-event protocol (1.6, Part 25): this early `return`
+                # Terminal-event protocol: this early `return`
                 # bypasses the post-loop persist block AND the `finally` that
                 # emits `done` belongs to a different `try` — so emit the
                 # terminal `done` here (matching the circuit/other early exits)
@@ -3478,14 +3508,14 @@ async def _sendWorkbenchMessageStreamImpl(
                 _emitSessionStatus(sessionId)
                 if emit:
                     emit({'type': 'done', 'sessionId': sessionId})
-                # Part 26 2.4: this return exits BEFORE the turn's try/finally —
+                # This return exits BEFORE the turn's try/finally —
                 # the ContextVar token must be reset here or the cancel signal
                 # leaks onto every later turn in this session.
                 current_subprocess_cancel.reset(_cancel_token)
                 return
         except Exception:
             logger.debug('cost ceiling check failed', exc_info=True)
-    # §9.3 #7: baseline shadow-git snapshot at turn start — revert targets
+    # Baseline shadow-git snapshot at turn start — revert targets
     # need the state from BEFORE the turn's first mutation. The snapshot is
     # 4+ blocking git subprocesses (measured 6.1 s on a large dirty repo on
     # the FIRST turn, ~0.3-1 s after) — it must never run on the event loop.
@@ -3504,7 +3534,7 @@ async def _sendWorkbenchMessageStreamImpl(
     # turns never pay the join — and the snapshot itself runs OFF the loop
     # while the model streams.
     session._pendingBaselineSnapshot = _baselineSnapshotFut  # type: ignore[attr-defined]
-    # 5.2 (Part 25): these are config/fleet walks — hoisted out of the round
+    # 5.2: these are config/fleet walks — hoisted out of the round
     # loop so they run once per turn, not once per round. `promotionUsed` moves
     # up too, so "promote to a larger-context model once" is genuinely once per
     # turn (it previously reset every round).
@@ -3515,7 +3545,7 @@ async def _sendWorkbenchMessageStreamImpl(
     while True:
         toolRound += 1
         mutationsBeforeRound = getattr(session, 'mutationCount', 0)
-        # Reactive prune-then-compact (§9.3 #2) may shrink the surface once
+        # Reactive prune-then-compact may shrink the surface once
         # per round on a context-overflow error; the flag keeps it from
         # ping-ponging against a surface that refuses to shrink.
         overflowReducedThisRound = False
@@ -3604,7 +3634,7 @@ async def _sendWorkbenchMessageStreamImpl(
             )
             logger.debug('workbench presenting %d tools to model: %s', len(toolNames), toolNames)
         # retryPolicy / chainModels / promotionModel / promotionUsed are hoisted
-        # above the round loop (5.2, Part 25) — computed once per turn.
+        # above the round loop — computed once per turn.
         # Fallback chain + context promotion (surpass #3): after retries are
         # exhausted on the primary model, the turn continues on the next
         # configured chain model (or a larger-context sibling on overflow).
@@ -3641,7 +3671,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         }
                     )
             response: dict[str, object] = {}
-            # Tools-fallback bookkeeping: once per chain model (Part 26 1.1).
+            # Tools-fallback bookkeeping: once per chain model.
             toolsFallbackUsed = False
             toolsFallbackMessages: list[dict[str, object]] | None = None
             # T18 barrier 1: durable flush before the model request is
@@ -3668,7 +3698,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 # a failed attempt cannot leave duplicate/garbled answers.
                 # Non-text events (toolResult, warnings) pass through live too.
 
-                # R-C idempotency (plan §10.3): track whether THIS attempt
+                # R-C idempotency: track whether THIS attempt
                 # emitted any generated content. A retryable failure after
                 # partial emission must not replay the completion — the
                 # provider already generated (and may have billed) tokens.
@@ -3697,7 +3727,7 @@ async def _sendWorkbenchMessageStreamImpl(
                             break
                     except Exception:
                         logger.debug('PRE_MODEL_CALL hook failed (non-fatal)', exc_info=True)
-                    # Part 26 1.4: chat/code mode never executes tools, so the
+                    # Chat/code mode never executes tools, so the
                     # full tool array rode upstream for zero benefit — the
                     # dominant 500-aggravator on weak gateways. Ship none.
                     _wireTools = tools
@@ -3707,7 +3737,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         _wireOpenaiTools = []
                     _attemptMessages = currentMessages
                     if toolsFallbackUsed:
-                        # Part 26 1.1: the stripped request — no tools array,
+                        # The stripped request — no tools array,
                         # tool-call history flattened to text.
                         _wireTools = []
                         _wireOpenaiTools = []
@@ -3724,7 +3754,7 @@ async def _sendWorkbenchMessageStreamImpl(
                             thinking_enabled=thinking_enabled,
                         )
                     elif isOpenaiResponses:
-                        # Part 26 1.3: native Responses wire format — the same
+                        # Native Responses wire format — the same
                         # flattened OpenAI function defs.
                         response = await _callResponsesWorkbench(
                             _attemptMessages,
@@ -3750,7 +3780,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     else:
                         response = {'error': f'Unknown provider format for {resolvedProvider}'}
                 totalGenerationMs += (time.monotonic() - _llmT0) * 1000
-                # P3.1 (Part 18): snapshot the trailing stream tail — the time
+                # P3.1: snapshot the trailing stream tail — the time
                 # between the last tool call's arguments finishing (in-stream
                 # mark) and the stream ending HERE. The perf mark PERSISTS
                 # across rounds, so only a round whose response actually
@@ -3777,7 +3807,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 # instead of killing the turn — up to maxRetries, then surface the
                 # error as before.
                 if not _isRetryableModelError(response):
-                    # Reactive prune-then-compact (§9.3 #2): a context
+                    # Reactive prune-then-compact: a context
                     # overflow is deterministic for THIS surface, but a
                     # reduced surface is a different request — shrink once
                     # per round and retry only if the token count actually
@@ -3828,7 +3858,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         as_str(response.get('error')),
                     )
                     break
-                # Part 26 1.1: tools-fallback — a gateway that rejects the
+                # Tools-fallback — a gateway that rejects the
                 # request WITH tools (deterministic 500s, or any >=500 that
                 # survives its own retries) will reject every identical
                 # retry too. Retry ONCE per chain model with tools stripped
@@ -3900,7 +3930,7 @@ async def _sendWorkbenchMessageStreamImpl(
             if not promotionUsed and promotionModel and _isContextOverflowError(response):
                 pProvider, pModel = _resolveChatLlm(model=promotionModel)
                 if pProvider and pModel:
-                    # Part 26 2.3: consume the one-shot promotion only on a
+                    # Consume the one-shot promotion only on a
                     # successful resolve — a failed resolve must not burn it
                     # (the fallback chain may still carry a promotable sibling).
                     promotionUsed = True
@@ -4164,7 +4194,7 @@ async def _sendWorkbenchMessageStreamImpl(
                                 ),
                             }
                         )
-                    # Part 26 2.3: the (bounded, ≤2) refusal reminder does not
+                    # The (bounded, ≤2) refusal reminder does not
                     # consume the round budget.
                     if _selfHealRetries < _SELFHEAL_EXEMPT_ROUNDS:
                         _selfHealRetries += 1
@@ -4191,7 +4221,7 @@ async def _sendWorkbenchMessageStreamImpl(
         clarifySubmittedThisRound = False
         pending_regular: list[tuple[str, dict[str, object], str]] = []
         invalidThisRound = 0
-        # T2 length-stop fail-all (plan §9.4): a generation that stopped on
+        # T2 length-stop fail-all: a generation that stopped on
         # the output token limit may carry half-parsed tool-call arguments —
         # executing them runs truncated commands/paths. Fail every call in
         # the batch unexecuted with a self-heal message; the model retries
@@ -4386,7 +4416,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
                     continue
                 submitPlan(session, planPayload)
-                # T7: re-inject the fresh state so this turn's later rounds see it.
+                # Re-inject the fresh state so this turn's later rounds see it.
                 receipt = 'Plan submitted. Awaiting user approval.'
                 stateBlock = _planStateBlock(session)
                 if stateBlock:
@@ -4435,7 +4465,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     todosPayload = [todosPayload] if todosPayload else []
                 title = as_str(toolInput.get('title'), '')
                 receipt = routeTodos(cast('list[dict[str, object]]', todosPayload), title=title, emit=emit)
-                # T7: re-inject the fresh state so this turn's later rounds see it.
+                # Re-inject the fresh state so this turn's later rounds see it.
                 stateBlock = _planStateBlock(session)
                 if stateBlock:
                     receipt = receipt + '\n\n' + stateBlock
@@ -4458,7 +4488,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     todosPayload = [todosPayload] if todosPayload else []
                 title = as_str(toolInput.get('title'), '')
                 receipt = routeTodos(cast('list[dict[str, object]]', todosPayload), title=title, emit=emit)
-                # T7: re-inject the fresh state so this turn's later rounds see it.
+                # Re-inject the fresh state so this turn's later rounds see it.
                 stateBlock = _planStateBlock(session)
                 if stateBlock:
                     receipt = receipt + '\n\n' + stateBlock
@@ -4520,7 +4550,7 @@ async def _sendWorkbenchMessageStreamImpl(
         # the assistant message must not be persisted with dangling calls
         # (strict gateways reject tool_use/tool_calls that lack results).
         cancelledMidRound = _isCancelled()
-        # Part 26 2.4: set when a mid-round cancel strips the assistant
+        # Set when a mid-round cancel strips the assistant
         # message to empty — the append is skipped below.
         skipEmptyAssistantAppend = False
         # Regular tools: chat_stages runs them in parallel when all are read-only.
@@ -4540,7 +4570,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         'startedAtMs': tool_started_at,
                     }
                 )
-            # T17 read-before-edit gate: an edit on a file this session never
+            # Read-before-edit gate: an edit on a file this session never
             # observed (or observed at a now-stale version) fails fast with a
             # distinct error code + remedy — before anything executes.
             gateError = _readBeforeEditGate(session, toolName, toolInput)
@@ -4833,7 +4863,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     if isinstance(result, str) and result.startswith('Error'):
                         tracker.record_failure(toolName, toolInput)
                     else:
-                        # 1.3 (Part 25): a clean result advanced the task, so
+                        # 1.3: a clean result advanced the task, so
                         # this call must not count as a cross-turn repeat.
                         tracker.record_success(toolName, toolInput)
                     if guardStatus == 'warn':
@@ -4848,7 +4878,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         result = await _executeTool(toolName, toolInput, session, toolUseId)
                 else:
                     logger.debug('tool %s raised after dispatch; not re-running', toolName, exc_info=True)
-            # T7: update_state changed plan/execution state mid-turn — the
+            # Update_state changed plan/execution state mid-turn — the
             # <session_state> tail was built at turn start, so re-inject the
             # compact state block on the receipt to keep later rounds of this
             # same turn oriented.
@@ -4856,12 +4886,22 @@ async def _sendWorkbenchMessageStreamImpl(
                 stateBlock = _planStateBlock(session)
                 if stateBlock:
                     result = result + '\n\n' + stateBlock
-            # T17: record what this session just observed — a successful read
-            # shows the model that file version; a successful mutation moves
-            # the file to its new version so follow-up edits pass the gate.
+            # Record what this session just observed: a successful read
+            # (single or bulk report) pins the file versions the model has
+            # seen; a successful mutation FORGETS the version so the
+            # follow-up edit is refused until the model re-reads what is
+            # actually on disk.
             if isinstance(result, str):
-                if toolName == 'read_file':
+                if toolName in ('read_file', 'read_files'):
                     _observeReadFile(session, toolName, toolInput, result)
+                elif toolName == 'bulk':
+                    # A bulk call is either a read op (pin the per-file
+                    # versions its report shows) or a write op (forget the
+                    # written files' versions); each helper no-ops on the
+                    # other kind.
+                    _observeReadFile(session, toolName, toolInput, result)
+                    if not result.startswith('Error'):
+                        _observeMutatedFile(session, toolName, toolInput)
                 elif toolName in _GATED_EDIT_TOOLS and not result.startswith('Error'):
                     _observeMutatedFile(session, toolName, toolInput)
                     # Mutation log: the regular loop executes mutations
@@ -4997,7 +5037,7 @@ async def _sendWorkbenchMessageStreamImpl(
             # Truncate what the model sees next turn — SSE already truncates for the UI.
             # The cap is per-model when the capability profile sets one.
             historyContent = result
-            # Stage B first (fixed order, §9.3 #3): an oversized FRESH result
+            # Stage B first: an oversized FRESH result
             # spills to a session file and is replaced by a head/tail preview
             # inside the 30 KB / 2000-line budget; the ordinary cap then
             # applies to whatever stage B left (or to smaller results).
@@ -5046,7 +5086,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     openaiTools = openaiToolDefinitions(session)
                     surfaceDowngraded = False
                     cleanRoundsSinceDowngrade = 0
-                    # Part 26 2.5: the system prompt enumerates the offered
+                    # The system prompt enumerates the offered
                     # tools — rebuild it so the restored surface is advertised
                     # (the old prompt listed the bare set only).
                     systemText = _buildSystemText(session, tools if isAnthropic else openaiTools)
@@ -5073,7 +5113,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 ]
                 surfaceDowngraded = True
                 cleanRoundsSinceDowngrade = 0
-                # Part 26 2.5: rebuild the system prompt — it still advertised
+                # Rebuild the system prompt — it still advertised
                 # the full tool list, dead the moment the surface shrank.
                 systemText = _buildSystemText(session, tools if isAnthropic else openaiTools)
                 if emit:
@@ -5128,7 +5168,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 skipEmptyAssistantAppend = True
         if not skipEmptyAssistantAppend:
             currentMessages.append(assistantMsg)
-        # 0.4 (Part 25): on a mid-round cancel every tool_use block was just
+        # 0.4: on a mid-round cancel every tool_use block was just
         # stripped from the assistant message, so this round's tool_results are
         # all dangling — appending them yields a tool_result with no matching
         # tool_use, which Anthropic rejects as a NON-retryable 400 and bricks
@@ -5149,7 +5189,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 emit({'type': 'error', 'message': msg, 'code': 'durability_flush_failed'})
             turnError = turnError or msg
             break
-        # §9.3 #7: per-step shadow-git snapshot — a round that ran mutating
+        # Per-step shadow-git snapshot — a round that ran mutating
         # tools commits the workspace state (rollback substrate + ChangesCard
         # diff source). Best-effort: a snapshot failure never breaks the turn.
         if getattr(session, 'mutationCount', 0) > mutationsBeforeRound and getattr(
@@ -5180,7 +5220,7 @@ async def _sendWorkbenchMessageStreamImpl(
         )
     except Exception:
         logger.debug('STOP hook failed (non-fatal)', exc_info=True)
-    # M3 usage feedback + M5 turn telemetry (plan §3.4/§3.6). Runs after the
+    # M3 usage feedback + M5 turn telemetry. Runs after the
     # loop on every completed turn (error turns included — turnError is final
     # here); best-effort, never breaks the persist path below.
     try:
@@ -5229,7 +5269,7 @@ async def _sendWorkbenchMessageStreamImpl(
             queue_memory_habit_nudge(
                 session,
                 rounds=toolRound,
-                # Part 27 T2: on the OpenAI/Responses wire `tools` stays []
+                # On the OpenAI/Responses wire `tools` stays []
                 # (only `openaiTools` is built), so the remember-offered check
                 # was always False and the nudge never fired there.
                 rememberOffered=any(
@@ -5259,7 +5299,7 @@ async def _sendWorkbenchMessageStreamImpl(
             cache_miss_tokens=int(totalCacheMissTokens or 0),
             tool_args_ready_to_stream_end_ms=int(_toolArgsTailMs or 0),
         )
-        # Phase L: surface the per-turn latency/cache numbers as one SSE event
+        # Surface the per-turn latency/cache numbers as one SSE event
         # (Observability; the transcript can show a cache-hit chip) — turns
         # the "feels slow" regression into visible numbers.
         if emit:
@@ -5295,10 +5335,10 @@ async def _sendWorkbenchMessageStreamImpl(
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
         from app.services.workbench.durability import strip_tail_patches as _stripTails
 
-        # Part 26 6.3: the tail-patched last-user message is request-scoped —
+        # The tail-patched last-user message is request-scoped —
         # persist the clean text (the barrier flushes already strip).
         session.messages = _stripTails(list(currentMessages))
-        # T18: close the turn — the persist below records turnOpen=False so a
+        # Close the turn — the persist below records turnOpen=False so a
         # later load does not mistake this session for an orphaned open turn.
         session.turnOpen = False
         # Persist per-turn usage on the last assistant message: the SSE done
@@ -5490,7 +5530,7 @@ async def _executeTool(
         # sha256 of the file as read (the read tool reports it). A mismatch
         # means the file changed and the patch would corrupt it — reject and
         # tell the model to re-read instead of applying stale edits.
-        # Part 27 T1: the old `\b(?:write|edit|…)\b` regex was DEAD for every
+        # The old `\b(?:write|edit|…)\b` regex was DEAD for every
         # real tool — `_` is a word char, so `\bwrite\b` never matched
         # `write_file`/`edit_lines`/`apply_patch` (the only registered
         # fileHash-carrying tools). That silently disabled both the stale-write
@@ -5681,7 +5721,7 @@ def _mutation_grant_key(toolName: str, args: dict[str, object] | None) -> str:
             return f'{toolName}:{unsandboxed_grant_key(as_str(args.get("command")))}'
         except Exception:
             return f'{toolName}:sandbox:unsandboxed:*'
-    # T5: command grants are keyed by the EXACT command text (fingerprinted)
+    # Command grants are keyed by the EXACT command text (fingerprinted)
     # so a one-shot approval covers exactly the asked action — the old
     # 'run_command:*' fallback would have approved every later command.
     if toolName in _COMMAND_TOOLS:
@@ -6445,7 +6485,6 @@ def submitTodos(session: WorkbenchSession, todosData: list[dict[str, object]], *
 
 def routeTodos(
     todosData: list[dict[str, object]],
-    *,
     title: str = '',
     emit: 'Callable[[dict[str, object]], None] | None' = None,
 ) -> str:
@@ -6483,7 +6522,7 @@ def routeTodos(
                     )
                 except Exception:
                     pass
-            # 1.8 (Part 25): match the renderers' done-check (workbench.py:1463)
+            # 1.8: match the renderers' done-check (workbench.py:1463)
             # — accept the `done` flag and done/complete statuses, not just
             # 'completed', so workers using `done` don't get "0/N done".
             def _isDone(t: object) -> bool:
@@ -6776,7 +6815,7 @@ def listProxyCapabilities() -> dict[str, object]:
     allTools = regListTools()
     grouped: dict[str, list[dict[str, object]]] = {}
     for tool in allTools:
-        # Part 27 T2: regListTools() returns {type, function:{name}} entries
+        # RegListTools() returns {type, function:{name}} entries
         # with no top-level `name`, so the old `tool.get('name','')` was always
         # '' and every tool was skipped (tools_by_group={}, mutating_tools=0).
         name = _toolDefName(tool) if isinstance(tool, dict) else str(tool)

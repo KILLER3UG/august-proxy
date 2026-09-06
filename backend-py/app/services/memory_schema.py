@@ -221,7 +221,7 @@ def create_core_schema(conn: sqlite3.Connection) -> None:
             )
     conn.commit()
     try:
-        # auto_memories column migration removed (Part 21 OQ1 retire, 033).
+        # auto_memories column migration removed.
         hcols = [r['name'] for r in conn.execute('PRAGMA table_info(learned_heuristics)').fetchall()]
         if 'confidence' not in hcols:
             conn.execute('ALTER TABLE learned_heuristics ADD COLUMN confidence REAL DEFAULT 0.5')
@@ -374,7 +374,7 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     conn.execute('CREATE INDEX IF NOT EXISTS idx_daemons_session ON daemons(session_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_daemons_workspace ON daemons(workspace_path)')
     conn.commit()
-    # auto_memories ensure-columns removed (Part 21 OQ1 retire, migration 033).
+    # auto_memories ensure-columns removed.
     # facts.expires_at backs the `remember` tool's optional TTL and the boot
     # sweep that purges expired model-written facts (memory-humanization batch).
     ensure_column(conn, 'facts', 'expires_at', 'TEXT')
@@ -481,7 +481,7 @@ def _run_migrations_safe(conn: sqlite3.Connection) -> None:
 
 
 def _drop_empty_legacy_heuristics(conn: sqlite3.Connection) -> None:
-    """Drop learned_heuristics once it holds no rows (plan §3.3 M2).
+    """Drop learned_heuristics once it holds no rows.
 
     025 purged the immutable turn-lessons; any remaining rows are deletable
     from the Memory UI. Once the store drains empty there is no writer and
@@ -559,7 +559,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'facts', 'use_count', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'facts', 'last_used_at', 'TEXT')
             ensure_column(conn, 'facts', 'status', "TEXT DEFAULT 'active'")
-            # M-2 (Part 21, 032): scope axis. The ensure_column runs before
+            # M-2: scope axis. The ensure_column runs before
             # migration 032 on the fast path, so the migration's ALTER fails
             # (recorded, swallowed) — the index is created here to stay
             # guaranteed on legacy DBs regardless of that failure.
@@ -570,11 +570,11 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
             ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
             ensure_column(conn, 'learned_heuristics', 'confidence', 'REAL DEFAULT 0.5')
-            # Phase L (Part 17, 027): per-turn TTFT + prompt-cache telemetry.
+            # Per-turn TTFT + prompt-cache telemetry.
             ensure_column(conn, 'turn_outcomes', 'ttft_ms', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'turn_outcomes', 'cache_hit_tokens', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'turn_outcomes', 'cache_miss_tokens', 'INTEGER DEFAULT 0')
-            # P3.1 (Part 18, 030): early-dispatch measurement — trailing
+            # P3.1: early-dispatch measurement — trailing
             # stream tail after the last tool call's arguments arrived.
             ensure_column(
                 conn, 'turn_outcomes', 'tool_args_ready_to_stream_end_ms', 'INTEGER DEFAULT 0'

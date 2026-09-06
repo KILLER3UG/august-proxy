@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 # ── Inventory completeness ────────────────────────────────────────────
 
 
-def test_phase7_inventory_catalog_covers_all_handoff_areas():
+def test_inventory_catalog_covers_all_handoff_areas():
     ids = {str(f['id']) for f in list_feature_inventory()}
     required = {
         'proxy',
@@ -57,7 +57,7 @@ def _enable_proxy(isolatedData, monkeypatch, key: str = 'e2e-key') -> None:
     settings.gatewayApiKey = key
 
 
-def test_phase7_proxy_chat_completions_http_e2e(isolatedData, monkeypatch):
+def test_proxy_chat_completions_http_e2e(isolatedData, monkeypatch):
     from app.adapters import openai as openai_adapter
 
     _enable_proxy(isolatedData, monkeypatch)
@@ -86,7 +86,7 @@ def test_phase7_proxy_chat_completions_http_e2e(isolatedData, monkeypatch):
     assert feats, 'expected proxy feature_flow events during /v1 hop'
 
 
-def test_phase7_proxy_messages_http_e2e(isolatedData, monkeypatch):
+def test_proxy_messages_http_e2e(isolatedData, monkeypatch):
     from app.adapters import anthropic as anthropic_adapter
 
     _enable_proxy(isolatedData, monkeypatch)
@@ -213,7 +213,7 @@ async def test_phase7_discord_normalize_and_connect_gate(monkeypatch):
     assert event.source.user_id == '99'
 
 
-def test_phase7_discord_adapter_module_import_gate():
+def test_discord_adapter_module_import_gate():
     """Without discord.py, importing the platform module must fail cleanly."""
     try:
         import discord  # noqa: F401
@@ -239,7 +239,7 @@ async def test_phase7_ssrf_private_url_blocked():
     assert 'blocked' in out3.lower()
 
 
-def test_phase7_browser_allowlist_blocks_unknown_host(isolatedData, monkeypatch):
+def test_browser_allowlist_blocks_unknown_host(isolatedData, monkeypatch):
     from app.config import settings
     from app.services.browser import handlers as browser_handlers
 
@@ -254,7 +254,7 @@ def test_phase7_browser_allowlist_blocks_unknown_host(isolatedData, monkeypatch)
     assert ok is None
 
 
-def test_phase7_cors_middleware_registered():
+def test_cors_middleware_registered():
     from app.main import app
 
     names = [type(m).__name__ for m in app.user_middleware]
@@ -270,7 +270,7 @@ def test_phase7_cors_middleware_registered():
     assert cors_ok, f'CORSMiddleware not found in {app.user_middleware!r}'
 
 
-def test_phase7_log_stream_redacts_secrets():
+def test_log_stream_redacts_secrets():
     from app.services.log_stream import buildEvent
 
     ev = buildEvent(
@@ -286,7 +286,7 @@ def test_phase7_log_stream_redacts_secrets():
 # ── 6. Skills feature_flow ────────────────────────────────────────────
 
 
-def test_phase7_skills_feature_flow_emit():
+def test_skills_feature_flow_emit():
     feature_flow_bus._events.clear()
     emit_feature_flow(
         feature='skills',
@@ -302,7 +302,7 @@ def test_phase7_skills_feature_flow_emit():
 # ── 7. Monitor API (inventory + events) used by Feature Flow UI ───────
 
 
-def test_phase7_monitor_api_for_feature_flow_ui():
+def test_monitor_api_for_feature_flow_ui():
     app = FastAPI()
     app.include_router(monitor_feature_flow.router)
     client = TestClient(app)
@@ -316,7 +316,7 @@ def test_phase7_monitor_api_for_feature_flow_ui():
     assert any(e.get('summary') == 'e2e prompt' for e in ev.json())
 
 
-def test_phase7_inject_aug_config_endpoint(isolatedData):
+def test_inject_aug_config_endpoint(isolatedData):
     app = FastAPI()
     app.include_router(config_router.router)
     client = TestClient(app)

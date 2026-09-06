@@ -5,7 +5,6 @@ Enables an agent to spawn multiple sub-agents in parallel via the
 ``SubagentOrchestrator``.
 
 Schema
-------
     {
       "workItems": [
         {
@@ -21,7 +20,6 @@ Schema
     }
 
 Modes
------
 - ``auto``: spawn immediately.
 - ``proposed``: emit a ``subagentProposed`` event for user approval before
   spawning. The frontend shows an approval card; the user must approve via
@@ -30,7 +28,6 @@ Modes
   items before spawning.
 
 Background (default)
---------------------
 When ``background`` is true (the default for multi-spawn), the tool returns
 as soon as every worker is dispatched. Each subagent's completion is emitted
 as an SSE event *and* enqueued for the parent model so the parent sees

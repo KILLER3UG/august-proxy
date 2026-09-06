@@ -10,7 +10,6 @@ BULK_MAX_ITEMS = 40
 
 def coerce_str_list(
     value: object = None,
-    *,
     single: str = '',
     max_items: int = BULK_MAX_ITEMS,
 ) -> list[str]:
@@ -65,7 +64,6 @@ def coerce_object_list(value: object = None, *, max_items: int = BULK_MAX_ITEMS)
 
 
 def format_bulk_report(
-    *,
     label: str,
     total: int,
     ok_ids: list[str],

@@ -17,7 +17,7 @@ from app.type_aliases import JsonValue
 _AGENTSKey = 'agent_registry'
 _MAXAgentDepth = 4
 
-# Part 27 C4: the job ledger used to live in the KV memory_store as ONE JSON
+# The job ledger used to live in the KV memory_store as ONE JSON
 # blob (every createJob re-serialized the whole history — it grew to 44 KB and
 # leaked pytest fixtures into the user's Memory tab). Jobs are ephemeral API
 # bookkeeping now: a capped in-memory dict. The durable run history is

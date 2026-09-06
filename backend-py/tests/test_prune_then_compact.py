@@ -1,4 +1,4 @@
-"""Prune-then-compact (plan §9.3 #2).
+"""Prune-then-compact.
 
 Tier (a) projection prune protects the newest 40k tokens of tool outputs and
 rewrites older ones in a model-facing COPY (stage A shape: >8192 chars keep
@@ -116,7 +116,7 @@ class TestSchemaSummarize:
     def testAllSectionsPresent(self):
         msgs = [_userMsg('fix the login bug'), _assistantText('looking')]
         out = cc.schemaSummarize(msgs, goalHint='Fix login')
-        # Part 18 P2.2: fixed handoff shape — Goal / State / Context / Next /
+        # Fixed handoff shape — Goal / State / Context / Next /
         # Pitfalls (Zed pattern) replaces the old Progress/Key Decisions/
         # Next Steps/Critical Context set.
         for section in (

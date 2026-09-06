@@ -1,4 +1,4 @@
-"""Part 16 Phase A — episode extraction (window mining, deterministic).
+"""Episode extraction (window mining, deterministic).
 
 Plan acceptance (docs/plans/2026-08-29-self-improvement-loops.md §3.1/§6):
   * window extraction from synthetic transcripts — failure→recovery,

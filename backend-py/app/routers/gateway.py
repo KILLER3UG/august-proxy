@@ -116,7 +116,7 @@ async def gatewayStatus(request: Request) -> dict[str, object]:
     }
 
 
-# ── Pairing / allowlist (Part 20 Phase 0 trust gate) ────────────────────
+# ── Pairing / allowlist ────────────────────
 
 
 @router.get('/pairing')

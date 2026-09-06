@@ -133,7 +133,7 @@ class ActionBody(CamelModel):
     app: str | None = None
     policy: str | None = None
     source: str | None = None
-    # Part 17 Phase A: project-memory write door for the Memory UI. scope
+    # Project-memory write door for the Memory UI. scope
     # 'project' + workspace routes set/delete to <ws>/.aug/memory md entries;
     # key doubles as the entry title there.
     scope: str | None = None
@@ -379,7 +379,7 @@ async def list_memory_workspaces():
             p = Path(ws).resolve()
         except Exception:
             continue
-        # Part 27 D4: a temp dir is never a real project — pytest workspaces
+        # A temp dir is never a real project — pytest workspaces
         # under %TEMP% produced the seven identical "proj" scope entries.
         if p == home or p == tmpRoot or tmpRoot in p.parents or not p.is_dir():
             continue
@@ -406,7 +406,7 @@ async def manage_memory(body: ActionBody):
 
     action = (body.action or '').lower()
     key = body.key or ''
-    # Part 17 Phase A: project scope — the UI's add/edit/delete writes
+    # Project scope — the UI's add/edit/delete writes
     # through the same md-file door as remember(scope='project'). key IS
     # the entry title; details rides below the one-line fact.
     if (body.scope or '').strip().lower() == 'project':
@@ -484,7 +484,7 @@ async def manage_memory(body: ActionBody):
     # Provenance for the facts store: the Memory UI add-box sends source='user';
     # default to 'user' since this endpoint is the human-facing write door.
     source = (body.source or 'user').strip() or 'user'
-    # Part 26 7.3: the Memories tab lists the KV `memory` store, but its
+    # The Memories tab lists the KV `memory` store, but its
     # add-box posted to the facts door — entries "saved" from that tab landed
     # in Facts & Rules and never appeared. Route by the requested store.
     if (body.store or '').strip() == 'memory' and key:
@@ -503,7 +503,7 @@ async def manage_memory(body: ActionBody):
         before = copy.deepcopy(before_fact) if before_fact else None
         value_text = body.value if isinstance(body.value, str) else ''
         fact_title = (body.title or '').strip() or memory_store.derive_fact_title(value_text)
-        # M-10 (Part 21): the UI's ttl_days was accepted but silently ignored —
+        # M-10: the UI's ttl_days was accepted but silently ignored —
         # a TTL selection now reaches the facts store as expires_at.
         expires_param: str | None = None
         ttl = body.ttl_days
@@ -520,7 +520,7 @@ async def manage_memory(body: ActionBody):
                 expires_at=expires_param,
             )
         except ValueError as exc:
-            # Part 26 6.5: the row belongs to a non-global scope this write
+            # The row belongs to a non-global scope this write
             # does not carry — refuse loudly instead of silently rewriting
             # another scope's private value under its original scope.
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -562,7 +562,7 @@ class MemoryImportBody(CamelModel):
     items: list[object] = []
     defaultCategory: str | None = None
     defaultSource: str | None = None
-    # Part 17 Phase A: project imports land as `## <title>` entries in the
+    # Project imports land as `## <title>` entries in the
     # workspace's memory.md instead of the global facts store.
     scope: str | None = None
     workspace: str | None = None

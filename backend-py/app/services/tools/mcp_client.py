@@ -102,7 +102,6 @@ def registerServer(
     command: str,
     args: list[str] | None = None,
     env: dict[str, str] | None = None,
-    *,
     enabled: bool = True,
     transport: str = 'stdio',
     url: str = '',
@@ -197,7 +196,6 @@ def _start_stderr_drain(server_id: str, proc: asyncio.subprocess.Process) -> Non
 async def _stdio_write(
     proc: asyncio.subprocess.Process,
     message: dict[str, object],
-    *,
     framing: str = 'ndjson',
 ) -> None:
     """Write one MCP JSON-RPC message on stdio.
@@ -286,7 +284,6 @@ async def _stdio_rpc(
     proc: asyncio.subprocess.Process,
     method: str,
     params: dict[str, object] | None = None,
-    *,
     msg_id: object = 1,
     timeout: float = 30.0,
     notification: bool = False,
@@ -692,7 +689,6 @@ async def _open_sse_stream(serverId: str, base_url: str) -> tuple[str, dict[str,
 async def _sse_post(
     serverId: str,
     request: dict[str, object],
-    *,
     headers: dict[str, str] | None = None,
     timeout: float = 30.0,
 ) -> Any:
@@ -717,7 +713,6 @@ async def _sse_post(
 async def _sse_rpc(
     serverId: str,
     request: dict[str, object],
-    *,
     headers: dict[str, str] | None = None,
     timeout: float = MCP_TIMEOUT_MS / 1000,
 ) -> dict[str, object]:
@@ -780,7 +775,6 @@ async def _http_jsonrpc(
     client: Any,
     post_url: str,
     request: dict[str, object],
-    *,
     headers: dict[str, str] | None = None,
     timeout: float = 30.0,
 ) -> dict[str, object]:

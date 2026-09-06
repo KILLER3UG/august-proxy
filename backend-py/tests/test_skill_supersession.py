@@ -1,4 +1,4 @@
-"""Part 16 Phase D — skill supersession + catalogue mtime staleness.
+"""Skill supersession + catalogue mtime staleness.
 
 Plan acceptance (§3.4/§6): v2 approval disables v1 in the same write and
 stamps ``supersedes:`` provenance; caches bust; in-place SKILL.md edits

@@ -31,13 +31,13 @@ _ENTRY_CHAR_CAP = 300
 # Queries shorter than this get no BM25 injection (the intake
 # brain_index_snippet fallback covers empty/short turns).
 _MIN_QUERY_CHARS = 8
-# Recency decay (Phase D): the usage boost halves per 30 days unused —
+# Recency decay: the usage boost halves per 30 days unused —
 # often-quoted stale facts stop crowding out fresh ones. '' last_used_at
 # (never used) gets NO decay; a fact earns its boost on first use.
 _DECAY_HALF_LIFE_DAYS = 30.0
 
 _lock = threading.Lock()
-# M-2 (Part 21): one cached corpus PER SCOPE. A bot-scope corpus is the
+# M-2: one cached corpus PER SCOPE. A bot-scope corpus is the
 # global ∪ bot union, so the union rule is baked into the index and queries
 # stay O(1) cache hits. Keyed by normalized scope ('global' = plain store).
 _caches: dict[str, dict[str, Any]] = {}
@@ -97,7 +97,7 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
         # — never use_count/last_used_at. Usage is fetched per query for the
         # candidate set (see _usage_for), so touch_fact_usage no longer
         # invalidates this cache and the per-turn full-corpus rebuild cliff
-        # is gone (Part 21 M-1).
+        # is gone.
         if scope == GLOBAL_SCOPE:
             scopeClause = "AND (scope IS NULL OR scope = 'global')"
             params: tuple[object, ...] = ()
@@ -128,7 +128,7 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
                     'body': body,
                     'kind': str(r['kind'] or 'fact'),
                     'category': str(r['category'] or 'general'),
-                    # Part 26 6.7: carry the row's true scope — recall metrics
+                    # Carry the row's true scope — recall metrics
                     # and the transcript chip mislabeled bot-private recalls
                     # as 'global' (the hardcoded label).
                     'scope': str(r['scope'] or 'global'),
@@ -233,7 +233,6 @@ def _usage_for(keys: list[str]) -> dict[str, tuple[int, str]]:
 def retrieve_relevant_facts(
     query: str,
     k: int = 5,
-    *,
     prior_turn: str = '',
     scope: str = 'global',
 ) -> list[dict[str, object]]:
@@ -292,7 +291,6 @@ def retrieve_relevant_facts(
 def build_memory_block(
     query: str,
     k: int = 5,
-    *,
     workspace: str = '',
     recalled: list[dict[str, object]] | None = None,
     prior_turn: str = '',
@@ -327,7 +325,7 @@ def build_memory_block(
         try:
             from app.services import project_memory as _pm
 
-            # Part 26 6.6: ONE search pass — the ranked entries feed both the
+            # ONE search pass — the ranked entries feed both the
             # tail section and the recalled rows (they used to re-run the
             # identical md-read + BM25 scan twice per turn).
             ranked = _pm.search_entries(workspace, query, k=3)

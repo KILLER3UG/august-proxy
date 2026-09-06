@@ -840,7 +840,6 @@ def _alias_op_measures(measures: dict[str, float], deck_text: str) -> None:
 
 
 # ── Waveform traces (oscilloscope data path) ─────────────────────────────
-#
 # ``wrdata <file> <expr>`` inside a .control block writes ASCII columns:
 # real expressions emit (x, y) pairs; complex .ac expressions emit
 # (x, re, im) triples (reduced to magnitude here). One file per
@@ -980,7 +979,6 @@ def _downsample(
 
 
 # ── Parametric sweeps (LTspice-.step semantics, ngspice mechanics) ───────
-#
 # ngspice has no `.step` card — the native mechanism is a .control loop:
 # foreach value / alterparam / reset / run. Circuit-section .measure
 # cards re-evaluate on every iteration, so per-step numbers come back as

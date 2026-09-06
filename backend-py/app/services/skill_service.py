@@ -85,7 +85,7 @@ _NAMEMax = 64
 _flat_migrate_done = False
 # Catalogue memoization (latency pass 0.16.8): keyed on skill-root dir mtimes
 # so create/patch/delete invalidates automatically without explicit busts.
-# Part 26 6.6: keyed dict instead of a single slot — a bot chat and a
+# Keyed dict instead of a single slot — a bot chat and a
 # workspace chat alternating turns thrashed the old single-entry memo and
 # forced a full ~84-file rebuild every turn. Bounded (sessions in play are
 # few); the mtime key still auto-invalidates on create/patch/delete.
@@ -458,7 +458,7 @@ def catalogue(
     # byName is the NON-project baseline (agent/bundled, plus the bot root when
     # agent_id is set) so a project entry's shadowing of a lower root stays
     # detectable below. Passing `workspace` here collapses the shadowed entry
-    # into the kept one and drops the `overrides` label (Part 25 regression).
+    # into the kept one and drops the `overrides` label.
     byName = {as_str(s['name'], ''): s for s in list_all(None, agent_id)}
     entries: list[dict[str, object]] = []
     for s in list_all(workspace, agent_id):
@@ -649,7 +649,6 @@ def _parse_body_sections(body: str) -> list[tuple[str, str]]:
 
 def _ensure_canonical_body(
     body: str,
-    *,
     name: str,
     description: str,
     is_learned: bool,
@@ -746,7 +745,7 @@ def _agentSkillDir(name: str) -> Path:
 
 
 def botRootFor(agent_id: str) -> Path:
-    """Phase E: the Bot's private skill root (created on demand). The write
+    """The Bot's private skill root (created on demand). The write
     target for a learned skill authored by a bot-scoped session — the mirror
     of the ``('bot', …)`` read root in ``_skillRoots``."""
     from app.services.session_scope import bot_skills_root
@@ -801,7 +800,6 @@ def createSkill(
     name: str,
     description: str,
     body: str,
-    *,
     trigger: str = '',
     category: str = 'uncategorized',
     created_by: str = 'agent',
@@ -849,7 +847,6 @@ def createSkill(
 
 def patchSkill(
     name: str,
-    *,
     body: Optional[str] = None,
     description: Optional[str] = None,
     trigger: Optional[str] = None,

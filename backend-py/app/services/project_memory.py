@@ -171,13 +171,13 @@ def read_entries(workspace: str | Path, *, title: str = '') -> list[ProjectEntry
 
 
 def _sanitizeTitle(title: str) -> str:
-    """§9 F-4: a newline in the title would render a second `## ` heading
+    """A newline in the title would render a second `## ` heading
     and re-parse as a separate entry — flatten to one line."""
     return ' '.join((title or '').split())
 
 
 def _sanitizeBody(body: str) -> str:
-    """§9 F-4: escape body lines that look like `## ` headings so a body can
+    """Escape body lines that look like `## ` headings so a body can
     never inject a new entry on re-parse (writer-side; parser stays simple).
 
     2.16 (Part 25): the old replacement `r'\\\1'` DELETED the two hashes
@@ -194,7 +194,6 @@ def upsert_entry(
     workspace: str | Path,
     title: str,
     body: str,
-    *,
     file: str = 'memory.md',
     touch_updated: bool = True,
 ) -> ProjectEntry:

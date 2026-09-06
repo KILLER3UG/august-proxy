@@ -1,4 +1,4 @@
-"""Part 16 Phase E — recurrence meter (usage sidecar + resolution math).
+"""Recurrence meter (usage sidecar + resolution math).
 
 Plan acceptance (§3.5/§6): load_skill/load_skills bump the per-skill usage
 sidecar; a shipped skill's fingerprint with 0 recurrences in 30 days

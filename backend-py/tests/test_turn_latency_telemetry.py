@@ -1,4 +1,4 @@
-"""Phase L (Part 17): per-turn latency + prompt-cache telemetry.
+"""Per-turn latency + prompt-cache telemetry.
 
 ``turn_outcomes`` gains ttft_ms / cache_hit_tokens / cache_miss_tokens
 (027 migration + ensure_column), so "chat feels slow" becomes a number:

@@ -1,4 +1,4 @@
-/* Phase L (Part 17): the `upstreamRetry` SSE event (client-loop retry,
+/* The `upstreamRetry` SSE event (client-loop retry,
  * pre-first-token) parses into onUpstreamRetry — notice-only, distinct from
  * `retrying`'s buffer-rollback semantics. */
 import { describe, it, expect, vi } from 'vitest';

@@ -69,7 +69,7 @@ export interface MessageBlock {
   /** For type === 'error': the raw upstream error text, kept for the
    *  expandable details — content holds the friendly copy. */
   rawContent?: string;
-  /** For type === 'phase' (update_state plan-tree marker, plan §4.1):
+  /** For type === 'phase':
    *  the phase label lives in `content`; `step` is the model's step counter. */
   step?: number;
   tool?: MessageBlockToolCall;
@@ -112,6 +112,9 @@ export interface MessageBlockToolCall {
   /** For integration tools: structured payload the UI renders as an inline
    *  token field / Google sign-in button / MCP status. */
   integrationSetup?: IntegrationSetupResult;
+  /** For browser tools: a login-wall/escalation payload extracted from the
+   *  result JSON. Mirrors `AppendBlockEvent.actionNeeded`. */
+  actionNeeded?: import('@/components/chat/ActionNeededCard').ActionNeededPayload;
   pendingApproval?: {
     message?: string;
     detail?: string;
@@ -210,6 +213,9 @@ export interface ChatMessage {
     providerSetup?: ProviderSetupResult;
     /** For integration tools: structured payload to render an inline setup widget. */
     integrationSetup?: IntegrationSetupResult;
+    /** For browser tools: a login-wall/escalation payload extracted from the
+     *  result JSON (see AppendBlockEvent.actionNeeded). */
+    actionNeeded?: import('@/components/chat/ActionNeededCard').ActionNeededPayload;
   }>;
   thinking?: string;
   thinkingDuration?: number;
@@ -304,8 +310,8 @@ export interface AppendBlockEvent {
   content?: string;
   /** For type === 'error': raw upstream text (friendly copy goes in content). */
   rawContent?: string;
-  /** For type === 'executionState': update_state phase label + step counter
-   *  (plan §4.1 plan-tree markers). */
+  /** For type === 'executionState': the update_state phase label, plus the
+   *  model's step counter. */
   phase?: string;
   step?: number;
   name?: string;
@@ -323,6 +329,10 @@ export interface AppendBlockEvent {
   providerSetup?: ProviderSetupResult;
   /** For integration tools: structured payload to render an inline setup widget. */
   integrationSetup?: IntegrationSetupResult;
+  /** For browser tools: a login-wall/escalation payload extracted from the
+   *  result JSON (actionNeeded serializes last in the result, past the
+   *  truncated summary — extraction is structural, not string-scanned). */
+  actionNeeded?: import('@/components/chat/ActionNeededCard').ActionNeededPayload;
   /** For type === 'recalledMemories': the recalled auto-memory rows. */
   memories?: RecalledMemoryItem[];
   /**

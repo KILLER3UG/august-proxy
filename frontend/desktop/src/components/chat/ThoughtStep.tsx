@@ -157,7 +157,7 @@ export function ThoughtStep({
                 id={panelId}
                 className={cn(
                   'process-thought-prose thought-content chat-thought-text',
-                  // Part 27 G2: the same one-shot fade the answer's live tail
+                  // The same one-shot fade the answer's live tail
                   // uses, so streamed reasoning inks in instead of hard-popping.
                   isGenerating && 'md-live-tail',
                 )}

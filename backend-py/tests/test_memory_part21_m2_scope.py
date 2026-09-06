@@ -128,7 +128,7 @@ class TestWriteDoor:
         from app.services.memory_conn import conn
 
         store.save_fact('k:one', {'fact': 'v1'}, title='One', scope='bot:alpha')
-        # Part 26 6.5: a cross-scope write from a DIFFERENT non-global scope
+        # A cross-scope write from a DIFFERENT non-global scope
         # is refused (ValueError) instead of silently rewriting the private
         # value under its original scope; an explicit override (consolidation,
         # rollback restore) updates in place and still never rewrites scope.

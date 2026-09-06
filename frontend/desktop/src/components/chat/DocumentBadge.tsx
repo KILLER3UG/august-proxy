@@ -1,7 +1,7 @@
 /* ── DocumentBadge ─ big square letter badge for document rows ────── */
 /* ZCode-reference deliverable glyph: a 56×56 rounded square with a short   */
 /* two/three-letter mark (`M↓`, `PDF`, `IMG`), tone keyed off the file kind */
-/* (plan §4.5). Used by ChangesCard document rows.                          */
+/* . Used by ChangesCard document rows.                          */
 
 import { cn } from '@/lib/utils';
 import type { FileKind } from '@/lib/file-kind';

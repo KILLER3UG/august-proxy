@@ -1,4 +1,4 @@
-"""R-C (plan §10.3): idempotency-safe upstream retry + per-host rate gate.
+"""R-C: idempotency-safe upstream retry + per-host rate gate.
 
 The billing-safety rule: only requests PROVABLY unprocessed are ever
 replayed. A refused connection retries; a timeout waiting on response data
@@ -254,7 +254,7 @@ class TestRateGate:
 
 
 class TestUpstreamRetryVisibility:
-    """Phase L (Part 17): silent retries became visible events.
+    """Silent retries became visible events.
 
     A capped Retry-After wait (up to 30 s) inside the client retry loop
     previously produced ZERO stream events — the transcript sat frozen and

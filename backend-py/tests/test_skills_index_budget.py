@@ -1,4 +1,4 @@
-"""Part 18 P2.1 — skills-index byte budget for descriptive catalogues.
+"""Skills-index byte budget for descriptive catalogues.
 
 The unbounded descriptive catalogue (subagent prompts) is a prompt-byte
 hazard: every entry is re-sent per subagent launch. Adopt a fixed byte

@@ -1,6 +1,5 @@
 -- Part 27 E1/C1 (2026-09-05): purge pytest fixtures that leaked into the live
 -- stores before conftest isolation was airtight.
---
 --  * agent_jobs: the legacy agent-registry job ledger stored as ONE KV JSON
 --    blob (44 KB in prod, 29 KB in dev). Its July rows carry
 --    "<MagicMock name='mock.model'>" errors — proof tests dispatched registry

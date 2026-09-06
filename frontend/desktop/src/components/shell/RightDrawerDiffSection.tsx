@@ -37,7 +37,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
   const added = diff?.added ?? files.reduce((sum, file) => sum + file.added, 0);
   const removed = diff?.removed ?? files.reduce((sum, file) => sum + file.removed, 0);
 
-  // Shared with the chat ChangesCard Undo button (plan §4.5): checkpoint
+  // Shared with the chat ChangesCard Undo button: checkpoint
   // restore with a `git restore -- .` fallback, confirm dialog included.
   const { revertAll, reverting, confirmDialog } = useRevertAllChanges(
     sessionId,
@@ -49,7 +49,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
     void qc.invalidateQueries({ queryKey: ['git', 'diff', sessionId] });
   };
 
-  /* Part 10 R-A — advisory code review of this changeset. The UI already
+  /* Advisory code review of this changeset. The UI already
      holds the diff, so it ships it along; grounding runs server-side
      against the workspace. Advisory only: failures surface as notices. */
   const [review, setReview] = useState<CodeReviewResult | null>(null);

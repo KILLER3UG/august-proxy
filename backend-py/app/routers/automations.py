@@ -77,7 +77,7 @@ class PatchBody(CamelModel):
     model_provider: str | None = None
     agent_id: str | None = None
     max_runs: int | None = None
-    # Part 19 Phase B: routine fields are patchable (pause the response turn,
+    # Routine fields are patchable (pause the response turn,
     # toggle the notepad continuity, repoint delivery).
     deliver: str | None = None
     respond: bool | None = None
@@ -208,7 +208,7 @@ async def patch_automation(job_id: str, body: PatchBody):
         updates['agentId'] = body.agent_id
     if body.max_runs is not None:
         updates['maxRuns'] = body.max_runs
-    # Part 19 Phase B: routine field patches.
+    # Routine field patches.
     if body.deliver is not None:
         updates['deliver'] = body.deliver
     if body.respond is not None:

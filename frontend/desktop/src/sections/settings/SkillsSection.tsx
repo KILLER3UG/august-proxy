@@ -3,7 +3,7 @@
 /* Detail view: name + attribution + enabled toggle + description with  */
 /* see-more + SKILL.md rendered as markdown. Authoring via create/edit  */
 /* forms and delete-with-confirm; bundled skills are copy-on-write.     */
-/* Part 17 Phase C: workspace scope selector (project skills merge in   */
+/* Workspace scope selector (project skills merge in   */
 /* with shadowing, C-1), scope + overrides badges (C-2), and the write  */
 /* paths (create/edit/delete/toggle) route through the selected scope.  */
 
@@ -134,7 +134,7 @@ export function SkillsSection() {
   const selected = detailQuery.data ?? null;
   const workspaces = workspacesQ.data?.workspaces ?? [];
 
-  // Part 27 D4: disambiguate same-basename workspaces with their parent dir
+  // Disambiguate same-basename workspaces with their parent dir
   // (seven leaked "proj" entries used to collapse into identical labels) and
   // carry the full path as the option title.
   const scopeOptions = useMemo(() => {

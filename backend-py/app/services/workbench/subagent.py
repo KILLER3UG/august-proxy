@@ -44,7 +44,7 @@ SUBAGENT_BLOCKED_TOOLS = frozenset(
     {'spawn_subagent', 'spawn_subagents', 'create_agent', 'set_agent_mode',
      'interrupt_subagent', 'send_subagent_message',
      # Sub-agents do not write durable memory — only the main model does.
-     # Part 17: the whole memory write/read-CRUD surface is blocked, not
+     # The whole memory write/read-CRUD surface is blocked, not
      # just `remember` — a sub-agent flipping facts or project-memory
      # entries bypasses the main model's stewardship (gap found in the
      # Part 17 review: only `remember` was listed).
@@ -237,7 +237,7 @@ async def executeSubAgent(
             updateJob(job_id, {'status': 'failed', 'error': blocked_msg})
         return {'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg}
 
-    # Part 27 T2: carry the runtime depth on a per-task ContextVar, not the
+    # Carry the runtime depth on a per-task ContextVar, not the
     # shared parent session. asyncio copies the context at task creation, so
     # concurrent workers each see their own depth and a nested spawn inherits
     # depth+1 — the old ``setattr(session, 'subagent_depth', …)`` raced across
@@ -503,7 +503,7 @@ async def executeSubAgent(
         allowedNames = raw_allowed
         tools = [t for t in fullTools if _toolName(t) in allowedNames]
         openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
-    # Part 17 Phase B: sub-agents inherit the parent session's workspace
+    # Sub-agents inherit the parent session's workspace
     # so project skills (and their shadowing) appear in their prompts —
     # tool dispatch already resolves paths against the same workspace.
     _ws = as_str(getattr(session, 'workspacePath', '') or '') or None
@@ -1008,8 +1008,11 @@ async def executeSubAgent(
                         try:
                             from app.services.harness_mode import is_mutating_tool
                             from app.services.workbench.workbench import (
+                                _GATED_EDIT_TOOLS,
                                 _checkToolGuard,
                                 _executeTool,
+                                _observeMutatedFile,
+                                _observeReadFile,
                                 _readBeforeEditGate,
                             )
 
@@ -1026,14 +1029,14 @@ async def executeSubAgent(
                                 result = f'[Blocked] {guardReason}'
                                 status = 'blocked'
                             else:
-                                # Part 27 T1: route through _executeTool, not the
-                                # bare registry. The parent loop gets MCP routing,
+                                # Route through _executeTool, not the bare
+                                # registry: the parent loop gets MCP routing,
                                 # the fail-closed PRE_TOOL_USE security hooks
                                 # (secret_guard / sensitive_code), the hash-anchor
                                 # stale-write guard, and the pre-mutation baseline
                                 # join there; dispatching through dispatchTool
                                 # skipped ALL of them and could not reach MCP tools
-                                # at all. Add the T17 read-before-edit gate too.
+                                # at all. The read-before-edit gate runs here too.
                                 rbError = _readBeforeEditGate(
                                     cast('WorkbenchSession', session), tName, tInput
                                 )
@@ -1052,6 +1055,40 @@ async def executeSubAgent(
                                         if _r.startswith('Error') or _r.startswith('[BLOCKED')
                                         else 'done'
                                     )
+                                    # Observation parity with the parent loop:
+                                    # the worker shares the parent session, so
+                                    # record the versions its reads pin and
+                                    # forget versions on its successful
+                                    # mutations. Without this, a subagent's
+                                    # own read never unblocks its follow-up
+                                    # edit, and its own write leaves the
+                                    # ledger pointing at pre-edit bytes.
+                                    if _r and status == 'done':
+                                        if tName in ('read_file', 'read_files'):
+                                            _observeReadFile(
+                                                cast('WorkbenchSession', session),
+                                                tName,
+                                                tInput,
+                                                _r,
+                                            )
+                                        elif tName == 'bulk':
+                                            # Either a read op (pin per-file
+                                            # versions) or a write op (forget
+                                            # versions); each helper no-ops on
+                                            # the other kind.
+                                            _observeReadFile(
+                                                cast('WorkbenchSession', session),
+                                                tName,
+                                                tInput,
+                                                _r,
+                                            )
+                                            _observeMutatedFile(
+                                                cast('WorkbenchSession', session), tName, tInput
+                                            )
+                                        elif tName in _GATED_EDIT_TOOLS:
+                                            _observeMutatedFile(
+                                                cast('WorkbenchSession', session), tName, tInput
+                                            )
                         except Exception as exc:
                             result = f'Error executing {tName}: {exc}'
                             status = 'error'
@@ -1202,7 +1239,7 @@ async def executeSubAgent(
     except asyncio.CancelledError:
         # CancelledError is a BaseException, so except Exception never saw it:
         # the job row stayed status='running' forever and the parent got no
-        # completion notice (Part 26 3.5). Mark, notify, re-raise.
+        # completion notice. Mark, notify, re-raise.
         try:
             updateJob(jobId, {'status': 'failed', 'error': 'cancelled'})
         except Exception:

@@ -7,7 +7,7 @@ function makeTool(partial: Partial<ToolEntry> & { name: string }): ToolEntry {
   return { id: 'tool_1', status: 'done', ...partial };
 }
 
-describe('ToolCallItemBody — minimal output vs /verbose (plan §4.1/§4.2)', () => {
+describe('ToolCallItemBody — minimal output vs /verbose', () => {
   it('minimal: read-tool summary never renders inline', () => {
     const { container } = render(
       <ToolCallItemBody

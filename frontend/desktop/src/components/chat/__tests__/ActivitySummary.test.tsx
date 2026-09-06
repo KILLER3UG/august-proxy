@@ -90,7 +90,7 @@ describe('buildCompletionSummary — §9 aggregate tally', () => {
   });
 });
 
-describe('ActivitySummary completion mode (§9 bar)', () => {
+describe('ActivitySummary completion mode', () => {
   it('renders a collapsed "Task completed" bar with tally and elapsed time', () => {
     render(
       <ActivitySummary

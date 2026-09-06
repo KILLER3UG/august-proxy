@@ -1,4 +1,4 @@
-"""Part 19 Phase B — routines: Bot-owned automation jobs + M-11 notepad door.
+"""Routines: Bot-owned automation jobs + M-11 notepad door.
 
 A **routine** is an automations_store job with three extra fields:
 

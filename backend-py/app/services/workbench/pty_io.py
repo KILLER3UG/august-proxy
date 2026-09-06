@@ -5,7 +5,6 @@ Wraps ``pty.openpty()`` (Unix) and ``pywinpty.PtyProcess`` (Windows)
 behind a single async interface.
 
 Usage
------
     io = PtyIO()
     await io.spawn("/bin/bash")
     data = await io.read(4096)

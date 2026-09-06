@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { classifyFileKind } from '../file-kind';
 
-describe('classifyFileKind (plan §4.5)', () => {
+describe('classifyFileKind', () => {
   it('classifies code files', () => {
     expect(classifyFileKind('app/main.py')).toMatchObject({ kind: 'code', label: 'PY' });
     expect(classifyFileKind('src/x.ts')).toMatchObject({ kind: 'code', label: 'TS' });

@@ -90,7 +90,7 @@ voiceCommandRegistry.register({
   category: 'core',
   description:
     'Toggle raw tool output inline for this session ("/verbose off" to restore the minimal transcript)',
-  // Pure client-side toggle (plan §4.2 item 4): flips the per-session flag
+  // Pure client-side toggle: flips the per-session flag
   // in lib/verbose-mode.ts; the transcript renderers read it directly.
   handler: ({ args, sessionId }) => {
     voiceCommandEvents.emit({ type: 'verbose', sessionId, args: args ?? '' });

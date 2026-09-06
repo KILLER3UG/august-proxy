@@ -1,4 +1,4 @@
-"""T1 post-edit verification loop + T14 worktree-dedup gate (plan §9.4).
+"""T1 post-edit verification loop + T14 worktree-dedup gate.
 
 Unit tests for app/services/workbench/edit_verification.py: auto-detect
 heuristics, config merge, worktree hashing, AST-context annotation, and the

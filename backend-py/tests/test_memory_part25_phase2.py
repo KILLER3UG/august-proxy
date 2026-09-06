@@ -87,7 +87,7 @@ class TestKeyNamespacing:
         assert a.startswith('model:bot-alpha:')  # scope-namespaced
 
     def test_explicit_cross_scope_collision_policy(self, store, monkeypatch):
-        """Part 26 6.2: ONE scope rule for remember/forget — rows inside the
+        """ONE scope rule for remember/forget — rows inside the
         session's visible union (global + own scope) are UPDATABLE (the
         <memory> block explicitly invites a bot to update a global fact by
         key), while a row from a DIFFERENT private scope is still refused."""

@@ -91,7 +91,7 @@ def test_skill_create_applier_is_visible_to_skill_service(hsi):
 
 
 def test_skill_proposals_reject_traversal_names_at_save_time(hsi):
-    # §9 F-2: the queue must never hold a live weapon — skill-kind proposals
+    # The queue must never hold a live weapon — skill-kind proposals
     # whose payload.name fails _validateName are rejected at file time.
     for kind in ('skill_create', 'skill_patch', 'skill_delete'):
         with pytest.raises(ValueError, match='name'):

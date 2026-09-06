@@ -114,7 +114,7 @@ class BasePlatformAdapter(ABC):
         await self.dispatch(event)
 
     async def dispatch(self, event: MessageEvent) -> None:
-        # Trust gate (Part 20 Phase 0): allowlist check BEFORE anything else —
+        # Trust gate: allowlist check BEFORE anything else —
         # including the /approve /deny bypass set. Unauthorized DMs may get a
         # pairing code (when gateway.pairing is on); unauthorized group
         # messages are silently ignored.

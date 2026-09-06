@@ -277,7 +277,7 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
   });
 });
 
-describe('RightDrawer overlay layout (Part 15.4 — content stays in the middle)', () => {
+describe('RightDrawer overlay layout', () => {
   beforeEach(() => {
     $rightDrawer.set({ open: false, sections: [] });
   });

@@ -86,7 +86,7 @@ export function ArenaView() {
 
   // Arena archive: recent verdicts (results used to vanish when the overlay
   // closed — the routing_evidence arena rows are the durable record).
-  // Part 26 7.4: poll only while the overlay is actually open — the
+  // Poll only while the overlay is actually open — the
   // always-on 30 s poll + subscribe-all-streams ran on every chat even when
   // no arena was ever opened.
   const historyQ = useQuery<{ results: ArenaHistoryRow[] }>({
@@ -263,7 +263,7 @@ export function ArenaView() {
     // message. Lanes are seeded with the source-session prefix, so the first
     // user message is the source conversation's opener, not ours: truncating
     // from it wiped the source context server-side while the UI kept showing
-    // it (Part 26 7.3). The local transcript is replaced with the truncated
+    // it. The local transcript is replaced with the truncated
     // list so the view matches the backend again.
     const msgs = getOrInitSessionStreamState(lane.uiSessionId).messages ?? [];
     const lastUserIdx = msgs.map((m) => m.role).lastIndexOf('user');

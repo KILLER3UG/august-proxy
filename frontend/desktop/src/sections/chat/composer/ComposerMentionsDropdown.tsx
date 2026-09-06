@@ -32,7 +32,7 @@ export function ComposerMentionsDropdown({
 }) {
   if (!open || !pos) return null;
 
-  // Part 27 G1: at empty query, recent chats surface alongside skills + tools
+  // At empty query, recent chats surface alongside skills + tools
   // so the entities the user wants to @-mention (a chat they just had) are
   // discoverable in one glance. Files remain path-prefix-gated.
   const list: MentionItem[] =
@@ -49,7 +49,7 @@ export function ComposerMentionsDropdown({
           })),
         ];
 
-  // Part 27 G1: section header per kind group (the merged list is sorted by
+  // Section header per kind group (the merged list is sorted by
   // kind), plus a compact kind chip on each row.
   const KIND_SECTION: Record<MentionItem['kind'], string> = {
     skill: 'Skills',

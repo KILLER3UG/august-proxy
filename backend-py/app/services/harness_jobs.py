@@ -21,7 +21,6 @@ def _conn():
 
 def create_job(
     session_id: str,
-    *,
     waves: list[list[dict[str, Any]]] | None = None,
     work_items: list[dict[str, Any]] | None = None,
 ) -> str:

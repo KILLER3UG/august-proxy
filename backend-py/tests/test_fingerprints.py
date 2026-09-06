@@ -1,4 +1,4 @@
-"""Part 16 Phase B — tier-1 scoring + fingerprints (no model calls).
+"""Tier-1 scoring + fingerprints (no model calls).
 
 Plan acceptance (§3.2/§6):
   * signature stability — same cause+tokens → same fingerprint
@@ -136,7 +136,7 @@ class TestFlagCap:
         assert len(em.flagged_episodes()) == 2
 
     def test_tiny_cap_still_escalates_one_scoring_episode(self, brain):
-        # 2.14 (Part 25): the old `int(len*cap)` floored to 0 for any small
+        # 2.14: the old `int(len*cap)` floored to 0 for any small
         # batch, so a 1-episode pass at cap 0.05 escalated NOTHING (the tier-2
         # review queue was permanently starved on typical installs). The cap is
         # now floored to 1 when there are candidates, so this scoring episode IS

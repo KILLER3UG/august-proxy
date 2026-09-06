@@ -249,7 +249,7 @@ export function AssistantBlockTimeline({
   subagentRoster?: ReadonlyArray<InlineSubagentRosterEntry>;
   /** Parent session model id — shown as muted tag on subagent launch rows. */
   modelId?: string | null;
-  /** Chat session id — keys the per-session /verbose flag (plan §4.2). */
+  /** Chat session id — keys the per-session /verbose flag. */
   sessionId?: string | null;
   /** Rendered on error blocks: re-run the turn from the last user prompt. */
   onRetryTurn?: () => void;
@@ -258,7 +258,7 @@ export function AssistantBlockTimeline({
 }) {
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const liveSessionKey = resolveUiSessionId(routeSessionId || message.id);
-  // /verbose (plan §4.2 item 4): raw tool output renders inline for this
+  // /verbose: raw tool output renders inline for this
   // session until turned off. Rendering policy only — data layer unchanged.
   const verbose = useVerboseMode(sessionId);
   // Kept in the public props for message-pane compatibility; subagent
@@ -573,7 +573,7 @@ export function AssistantBlockTimeline({
         const isSubagentCall = !isCommand && isSubagentToolName(tool.name);
         const toolId = tool.id || block.id || `tool_${ti}`;
 
-        // Part 27 A1: subagent launches render one inline row per agent —
+        // Subagent launches render one inline row per agent —
         // the keystone of delegation visibility (reverses the 265ba24a
         // "drawer-only" decision). Live containers drive rich rows; a spawn
         // call whose workers already streamed out (reloaded transcript)
@@ -653,7 +653,7 @@ export function AssistantBlockTimeline({
         }
 
         // update_state bookkeeping is represented by the phase marker
-        // itself (plan §4.1 plan tree) — a duplicate "Edited state" rail
+        // itself — a duplicate "Edited state" rail
         // row is exactly the noise the minimal transcript removes.
         // Failures still render so the user sees them.
         if (
@@ -665,7 +665,7 @@ export function AssistantBlockTimeline({
           continue;
         }
 
-        // Part 27 B1: a run of ≥2 consecutive read-only rows (file views +
+        // A run of ≥2 consecutive read-only rows (file views +
         // web searches, no errors) collapses into one Explore group. A lone
         // read falls through to the existing ×N / single-row logic.
         const isReadTool = (t: NonNullable<DisplayBlock['tool']>) =>
@@ -788,7 +788,7 @@ export function AssistantBlockTimeline({
         }
 
         // Memory writes render as rail rows (brain glyph · entry title),
-        // expanded by default to show the saved entry text (plan §4.1).
+        // expanded by default to show the saved entry text.
         if (!isCommand && classifyTool(tool.name) === 'memoryWrite') {
           tagged.push({
             kind: 'rail',
@@ -806,7 +806,7 @@ export function AssistantBlockTimeline({
         });
 
         // Consecutive reads of the same file collapse into one row:
-        // `read consolidation.py ×4` (plan §4.1). Errored reads stay
+        // `read consolidation.py ×4`. Errored reads stay
         // individual so the failure stays visible.
         if (
           !isCommand &&
@@ -1076,7 +1076,7 @@ export function AssistantBlockTimeline({
    * Plan §4.1 plan tree: `update_state` phase markers group the rows that
    * follow them — indent under the current step, highlight the active one,
    * auto-collapse finished subtrees. Flat fallback when the model emitted
-   * no phases; the tree is never required for correctness (§4.2.7).
+   * no phases; the tree is never required for correctness.
    */
   const renderProcessBlocks = (blocks: DisplayBlock[]) => {
     const phaseIdx: number[] = [];

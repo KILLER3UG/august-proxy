@@ -458,7 +458,7 @@ def _load_conventions(workspace: str, cap: int = 8000) -> str:
 
 
 # ── R-B — Layer-2 independent-model judge ────────────────────────────────────
-# Standing rule (Part 10 / Q2): any judge/critic model must be INDEPENDENT of
+# Standing rule: any judge/critic model must be INDEPENDENT of
 # the producer model — a same-model judge "agrees with itself" (inert while
 # still reporting success), so it is discarded without being called. Unclassi-
 # fied findings fail open (kept). An author claim of "intended/safe" is NOT
@@ -554,7 +554,6 @@ def parse_judge_response(text: str) -> dict[int, dict[str, Any]]:
 
 async def judge_findings(
     findings: list[Finding],
-    *,
     judge_client: Callable,
     reviewer_model: str = '',
     judge_model: str = '',
@@ -650,7 +649,6 @@ def _merge_pass_findings(
 
 
 async def run_code_review_async(
-    *,
     workspace: str,
     diff_text: str,
     file_count: int = 0,
@@ -786,7 +784,6 @@ async def run_code_review_async(
 
 
 def run_code_review(
-    *,
     workspace: str,
     diff_text: str,
     file_count: int = 0,

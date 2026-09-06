@@ -1,0 +1,1448 @@
+===== app\adapters\openai.py =====
+---- lines 663-667 ----
+  663|     """Translate a chat-completions body into a Responses-API body.
+  664| 
+  665|     Shared by the /v1 proxy path and the workbench Responses path (Part 26
+  666|     1.3 — the workbench previously had no Responses translation and misrouted
+  667|     chat-completions bodies at /responses endpoints).
+===== app\bench\runner.py =====
+---- lines 197-201 ----
+  197|         )
+  198|         try:
+  199|             session.agent_mode = 'agent'  # the real loop in agent mode (§9.3 #1)
+  200|         except Exception:
+  201|             pass
+===== app\lib\paths.py =====
+---- lines 16-20 ----
+   16|     if override:
+   17|         return Path(override)
+   18|     # Part 27 E2: pytest runs MUST be isolated (tests/conftest.py sets
+   19|     # AUGUST_DATA_DIR autouse). Reaching the live checkout data dir from a
+   20|     # test means the isolation fixture was bypassed — the July/August leaks
+---- lines 63-67 ----
+   63| 
+   64| def assertPytestDataDirIsolated(label: str) -> None:
+   65|     """Part 27 E2 writer guard: when running under pytest, the resolved data
+   66|     dir MUST live under a pytest tmp basetemp. Logs (not raises) so a test
+   67|     that intentionally touches the live path can still proceed; the goal is
+---- lines 79-83 ----
+   79|     if not _isUnderPytestBasetemp(Path(data_dir)):
+   80|         logger.warning(
+   81|             'Part 27 E2: writer %s invoked under pytest with AUGUST_DATA_DIR=%r '
+   82|             'that is not under the pytest basetemp — this risks writing to '
+   83|             'the user\'s live stores. (See tests/conftest.py isolatedData.)',
+===== app\main.py =====
+---- lines 177-181 ----
+  177|     except Exception:
+  178|         pass
+  179|     # Bot Mode Phase A boot backfill: the default assistant Bot (and its
+  180|     # canonical chat) always exists — no model call, registry + session only.
+  181|     try:
+===== app\providers\clients\__init__.py =====
+---- lines 79-87 ----
+   79|     """Return a FRESH client that is NOT stored in the pool.
+   80| 
+   81|     For one-shot, out-of-loop callers (the Part 16 judge pass runs on a
+   82|     throwaway event loop per batch): a pooled client's keep-alive
+   83|     connections bind to the loop that created them, so reusing the pool
+   84|     across ``asyncio.run`` passes alternates "Event loop is closed"
+   85|     failures (Part 16 §12 F-7). The caller closes it after use.
+   86|     """
+   87|     if not providerConfig:
+===== app\providers\clients\base.py =====
+---- lines 7-11 ----
+    7|   - backend/adapters/base.js (shared adapter utilities)
+    8| 
+    9| Retry discipline (plan §10.3 R-C — idempotency-safe retry): only requests
+   10| that are PROVABLY unprocessed are ever replayed. A refused or pooled
+   11| connection never reached the provider, so it may retry; a timeout waiting
+---- lines 449-453 ----
+  449|         """Make a non-streaming JSON request with idempotency-safe retry.
+  450| 
+  451|         Retry policy (plan §10.3 R-C):
+  452|         - 429/503 responses are rejections — nothing was generated upstream,
+  453|           so replaying is safe (with backoff + rate-gate cooldown).
+---- lines 540-544 ----
+  540|         or connection failures.
+  541| 
+  542|         Idempotency (plan §10.3 R-C): retries happen only BEFORE the first
+  543|         event is yielded. Once anything has been yielded the provider has
+  544|         generated — and may have been billed for — tokens, so a mid-stream
+---- lines 562-566 ----
+  562|                     if isRetryableStatus(resp.status_code) and attempt < self.maxRetries:
+  563|                         delay = getRetryDelayMs(resp, attempt + 1) / 1000
+  564|                         # Phase L: retries were silent — a capped
+  565|                         # Retry-After wait could stall the stream ~30 s with
+  566|                         # zero events, reading to the user as "the model is
+===== app\providers\clients\openai.py =====
+---- lines 31-35 ----
+   31|         events (``response.output_text.delta`` …) carry their event name in
+   32|         ``_event_type`` (the SSE parser's convention); the workbench
+   33|         Responses aggregator branches on those. Ground truth 0.B-2 (Part 26):
+   34|         the workbench previously had NO streaming Responses path — a model
+   35|         set to openaiResponses got a chat-completions call against the
+===== app\providers\clients\rate_gate.py =====
+---- lines 5-9 ----
+    5| re-hitting the limiter. The gate is advisory and fail-open: any gate
+    6| malfunction must never block a request (guardrail-failure pattern,
+    7| plan Part 10 — a guard glitch yields "proceed", never a silent outage).
+    8| """
+    9| 
+===== app\review_cli.py =====
+---- lines 1-6 ----
+    1| """Part 10 R-C — CI exit-code mode for August code review.
+    2| 
+    3| Headless review of a git changeset for users who wire August review into
+    4| pipelines (plan §10.5 R-C; R5: in-app review stays advisory — this CLI is
+    5| the ONLY place review exposes gate behavior, and only because the user
+    6| explicitly invokes it as a gate):
+---- lines 112-116 ----
+  112|     parser = argparse.ArgumentParser(
+  113|         prog='august-review',
+  114|         description='Advisory AI code review with CI exit codes (plan Part 10 R-C).',
+  115|     )
+  116|     parser.add_argument('--repo', default='.', help='git repository to review (default: cwd)')
+===== app\routers\agents.py =====
+---- lines 34-38 ----
+   34|     role: str = ''
+   35|     description: str = ''
+   36|     # Bot Mode Phase A: presentation fields stored as uiMeta on the record.
+   37|     title: str = ''
+   38|     clone_from: str = ''
+---- lines 106-110 ----
+  106|     """Register a new agent (persisted).
+  107| 
+  108|     Bot Mode Phase A: creating through this route also creates the Bot's
+  109|     canonical chat + intro turn (``title``/``clone_from`` map to uiMeta).
+  110|     """
+---- lines 145-149 ----
+  145| 
+  146| 
+  147| # ── Bot Mode Phase A: Bots roster endpoints ────────────────────────────────
+  148| 
+  149| 
+===== app\routers\august.py =====
+---- lines 354-358 ----
+  354|     """Known project workspaces for the Memory/Skills scope selector (C-1/C-9).
+  355| 
+  356|     Part 17 Phase E enumeration rule: never invent paths — a workspace is
+  357|     "known" when a workbench session was ever bound to it (distinct
+  358|     non-empty, non-home ``workspacePath`` across all sessions). Entries get
+---- lines 380-384 ----
+  380|         except Exception:
+  381|             continue
+  382|         # Part 27 D4: a temp dir is never a real project — pytest workspaces
+  383|         # under %TEMP% produced the seven identical "proj" scope entries.
+  384|         if p == home or p == tmpRoot or tmpRoot in p.parents or not p.is_dir():
+---- lines 578-582 ----
+  578|     the rollback store captures a snapshot before each overwrite.
+  579| 
+  580|     Part 17 Phase A: ``scope='project'`` + ``workspace`` writes each item
+  581|     as a project-memory md entry (title = item title/first line) instead
+  582|     of a facts row — the same store remember(scope='project') uses.
+---- lines 715-719 ----
+  715| @router.get('/memory/proposals')
+  716| async def list_memory_proposals(status: str = 'pending'):
+  717|     """Pending memory proposals (OQ5 preference-retire, and any future
+  718|     propose-only consolidation pass). Returns the raw proposal rows with the
+  719|     JSON ``content`` parsed for the UI."""
+===== app\routers\automations.py =====
+---- lines 56-60 ----
+   56|     body: str = ''
+   57|     max_runs: int = 0
+   58|     # Part 19 Phase B (routines): delivery + memory knobs. The runner path
+   59|     # already honors these (automations_store._run_workbench_stream +
+   60|     # automation_memory) — surfaced here so the RoutinesPane (and any API
+---- lines 123-127 ----
+  123|         'runs': job.get('runs') or [],
+  124|         'createdAt': job.get('createdAt'),
+  125|         # Part 19 Phase B routine fields (echo for the RoutinesPane).
+  126|         'deliver': job.get('deliver', ''),
+  127|         'respond': bool(job.get('respond', True)),
+---- lines 170-174 ----
+  170|         'body': body.body,
+  171|         'maxRuns': body.max_runs or 0,
+  172|         # Part 19 Phase B routine fields (pass through to the runner).
+  173|         'deliver': body.deliver,
+  174|         'respond': body.respond,
+===== app\routers\brain_config.py =====
+---- lines 15-19 ----
+   15|   POST /api/brain/consolidation/run     — trigger one consolidation pass now
+   16|   GET  /api/brain/turn-outcomes         — M5 per-model error-rate telemetry
+   17|   GET  /api/brain/state-lookup          — §5.5 raw internal_state/memory_store row by key
+   18| 
+   19| The shared service is :mod:`app.services.brain_config_service`. Mutation
+---- lines 94-98 ----
+   94|     offset: int = Query(0, ge=0),
+   95|     query: str = Query('', max_length=200),
+   96|     sort: str = Query('', description='newest|oldest|updated|confidence (Part 17 C-4)'),
+   97|     category: str = Query('', max_length=64, description='Server-side category filter (C-3)'),
+   98|     source: str = Query('', max_length=64, description='Server-side source filter (C-3)'),
+---- lines 101-105 ----
+  101|     """Read-only paginated browse of one brain store (Memory settings page).
+  102| 
+  103|     Part 17 Phase C: ``sort``/``category``/``source``/``confidence`` move
+  104|     filtering and ordering server-side so they hold past the fetch cap.
+  105|     """
+---- lines 206-210 ----
+  206| @router.get('/memory/metrics')
+  207| async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
+  208|     """Phase D item 4: recall + latency instrument.
+  209| 
+  210|     Two sections, both read-only diagnostics:
+---- lines 212-216 ----
+  212|         recalled, project entries recalled, block sizes): the before/after
+  213|         instrument for this plan and every later retrieval change.
+  214|       * ``latency`` — the Phase L section: TTFT / duration / prompt-cache
+  215|         hit split aggregated over ``days`` from turn_outcomes.
+  216|     """
+===== app\routers\code_review.py =====
+---- lines 1-3 ----
+    1| """Part 10 R-A — code review routes (``/api/code-review``).
+    2| 
+    3| Advisory review of the session workspace changeset (working tree vs HEAD).
+===== app\routers\config.py =====
+---- lines 178-182 ----
+  178|     Used by the frontend to read the active provider and its model settings.
+  179|     Returns the config dict from config.json with credential-shaped fields
+  180|     masked (Part 26 5.2: the old endpoint returned API keys verbatim).
+  181|     """
+  182|     import json
+---- lines 290-294 ----
+  290| @router.get('/model-fleet')
+  291| async def getModelFleet():
+  292|     """v4.1: Return the merged fleet (defaults + user overrides) — see §10."""
+  293|     from app.services import model_fleet_service
+  294| 
+---- lines 377-381 ----
+  377| @router.get('/live')
+  378| async def getLiveConfig():
+  379|     """v4.2: Return the Live config (defaults + user overrides) — see §14.
+  380| 
+  381|     An empty `sttProvider`/`ttsProvider` means "use the browser default"
+===== app\routers\curator.py =====
+---- lines 140-144 ----
+  140|     # recurrence query — keep it off the event loop like /run does. The
+  141|     # resolution check must run INSIDE the offloaded function, not as a
+  142|     # to_thread argument (evaluating it on the loop was the Part 25 offload-gate
+  143|     # violation).
+  144|     skill_learning = await asyncio.to_thread(_skillLearningBundle)
+---- lines 161-165 ----
+  161| 
+  162| def _skillLearningMetrics(resolution: dict[str, object]) -> dict[str, object]:
+  163|     """§3.5 skillLearningReport blob: proposal pipeline + resolution counters.
+  164| 
+  165|     draft = every distiller-filed proposal (origin 'distilled'); approval
+===== app\routers\exam.py =====
+---- lines 1-4 ----
+    1| """
+    2| Exam router — generate, fetch, answer, and help preparation exams (v3, §13).
+    3| 
+    4| The defining rule: the model authors every question. No endpoint accepts a
+===== app\routers\harness_proposals.py =====
+---- lines 21-25 ----
+   21|     """List harness proposals, newest first (optionally filtered by status).
+   22| 
+   23|     Part 16 Phase D step 3: ``origin`` groups self-improvement drafts
+   24|     (payload.origin: human | distilled | amended) so reviewable drafts are
+   25|     recognizable at a glance."""
+---- lines 61-65 ----
+   61|     Files ``promote`` proposals into this same review queue (≥2-project
+   62|     recurrence bar, sensitive denylist, never mutates project files). Runs
+   63|     under Part 16's ``skillLearning`` config — ``off`` skips unless
+   64|     ``force``.
+   65|     """
+---- lines 74-78 ----
+   74| @router.post('/promotion/demote-scan')
+   75| async def runDemoteScan():
+   76|     """Part 17 Phase E measurement: demote suggestions for promoted items
+   77|     that never triggered outside their origin project — observation-kind
+   78|     proposals in this same queue, never deletions."""
+===== app\routers\privacy.py =====
+---- lines 64-68 ----
+   64| 
+   65| # memory_store KV keys that survive the memory purge — the Bot roster is the
+   66| # only key with a live writer. agent_jobs is gone (Part 27 C4: the registry
+   67| # ledger is in-memory now; migration 037 purged the legacy blob).
+   68| _KV_KEEP_KEYS = ('agent_registry',)
+===== app\routers\skills.py =====
+---- lines 98-102 ----
+   98|     content fields are applied in a single ``patchSkill`` call.
+   99| 
+  100|     Part 17 Phase B: with a workspace, a project entry patches in place;
+  101|     a global/bundled name copy-on-writes into the project root as an
+  102|     override.
+---- lines 121-125 ----
+  121|     """Delete a skill. Refuses bundled skills.
+  122| 
+  123|     Part 17 Phase B: with a workspace, only the project override is
+  124|     deleted — the shadowed global skill stays intact.
+  125|     """
+===== app\routers\workbench.py =====
+---- lines 1794-1798 ----
+ 1794|     The turn loop keeps its own ``currentMessages`` copy and re-flushes it at
+ 1795|     every barrier — a concurrent undo/truncate/checkpoint-restore is silently
+ 1796|     resurrected by the next flush (Part 26 3.3).
+ 1797|     """
+ 1798|     if _session_turn_in_flight(sessionId):
+===== app\services\automation_memory.py =====
+---- lines 1-3 ----
+    1| """Automation persistent memory + Part 19 Phase B routines.
+    2| 
+    3| Three brain-DB stores (migration 031) make automation jobs stateful:
+---- lines 10-14 ----
+   10|   ``(job_id, error_signature)``; a succeeding run auto-closes the open row.
+   11| 
+   12| Part 19 Phase B rides on this: a routine (automation job with
+   13| ``deliver='bot-chat'``) gets a wake-up context block (last run + notepad) and
+   14| its result is delivered into the Bot's canonical Bot Chat, optionally as a
+---- lines 413-417 ----
+  413| 
+  414| 
+  415| # ── Part 19 Phase B: routine delivery into the canonical Bot Chat ──────────
+  416| 
+  417| 
+---- lines 426-430 ----
+  426|     ``respond=False`` (or no deliverable bot) appends the text as a plain
+  427|     user-role message — visible history, no turn. ``respond=True`` runs one
+  428|     workbench turn so the Bot reacts to its own routine output (the §1c
+  429|     delta: "cron output lands in a chat where the bot actually responds").
+  430| 
+===== app\services\automations_schedule.py =====
+---- lines 128-132 ----
+  128|     Returns ``{kind: 'cron'|'interval'|'empty', ...}``.
+  129| 
+  130|     Accepted forms (Bot Mode Phase B — the RoutinesPane picker and the
+  131|     ``create_routine`` tool both advertise these):
+  132|       * ``every Nm|Nh|Nd`` — interval
+===== app\services\automations_store.py =====
+---- lines 704-708 ----
+  704|             duration_ms=int((time.monotonic() - started_monotonic) * 1000),
+  705|         )
+  706|         # Phase B delivery: routines (deliver='bot-chat') land their result in
+  707|         # the Bot's canonical chat — passively, or as a responding turn.
+  708|         if as_str(job_snapshot.get('deliver')) == 'bot-chat':
+===== app\services\bot_mode\dm.py =====
+---- lines 7-11 ----
+    7| server-side attribution, runs ONE headless turn in the recipient's canonical
+    8| Bot Chat, and acks immediately (fire-and-forget). When the recipient's reply
+    9| lands, the SENDER is woken (OQ4): the reply is appended to the sender's chat
+   10| as a ``Message from 🤖 …`` user-role turn and one turn runs there so the
+   11| sender relays it — capped at one wake per DM, with an in-flight guard so two
+===== app\services\bot_mode\rooms.py =====
+---- lines 8-12 ----
+    8| session fed only the new room messages; ``(pass)``/empty/failure is silence;
+    9| an all-pass round settles the room. Caps (3 rounds / 10 messages per send)
+   10| are enforced server-side (ruling OQ3), with a single ``max_rounds`` /
+   11| ``max_messages`` seam so a later build can make them configurable without
+   12| touching the driver.
+---- lines 40-44 ----
+   40| _MENTION_RE = re.compile(r'@([\w.-]+)')
+   41| 
+   42| # OQ3 ruling: fixed caps, one seam each. A later build may read these from
+   43| # brain-config; the driver only ever consults the resolved value.
+   44| MAX_ROUNDS = 3
+===== app\services\bot_mode\roster.py =====
+---- lines 50-54 ----
+   50| 
+   51| def _is_bot(agent: dict[str, object]) -> bool:
+   52|     # Every registry record is a Bot (one agent concept, OQ1/OQ2 ruling:
+   53|     # extend the registry; the old read-only Agents view is superseded).
+   54|     return True
+---- lines 102-106 ----
+  102| 
+  103|     ``clone_from`` copies an existing Bot's role/description/model/provider/
+  104|     toolsets — a fork of the record, not a link (Phase A roster context).
+  105|     With ``intro=True`` the Bot introduces itself in its new chat via one
+  106|     headless turn.
+===== app\services\bot_mode\routines.py =====
+---- lines 19-23 ----
+   19| * ``job_notes`` — M-11 notepad get/set/delete, callable only from sessions
+   20|   marked as automation runs (metadata double-check, same pattern as the
+   21|   Phase C injection gate).
+   22| """
+   23| 
+---- lines 157-161 ----
+  157|     """Delete a routine by job id or by ``[bot:<name>] <title>`` / bare title.
+  158| 
+  159|     2.11 (Part 25): a BARE title only resolves within the CALLING Bot's own
+  160|     ``[bot:<name>]`` namespace — Bot A cannot delete Bot B's same-titled
+  161|     routine. An explicit job id or a full ``[bot:x] title`` string still works.
+---- lines 194-198 ----
+  194| 
+  195|     Callable only from a session whose metadata marks it as an automation
+  196|     run (the same double-check pattern as the Phase C injection gate): a
+  197|     forged call from a regular chat gets a structured error, not a write.
+  198|     An explicit ``jobId`` may only narrow the target WITHIN an automation
+===== app\services\brain_config_service.py =====
+---- lines 96-100 ----
+   96|     # Evidence-driven routing introspection: `autoRoute` /
+   97|     # `autoRouteMinWinRate` / `autoRouteWinGap` are REMOVED — no turn-loop
+   98|     # reader ever existed (the "auto-routing" claim was corrected in Part 25
+   99|     # Phase 4) and the frontend opt-in ghost is deleted with them.
+  100|     # `autoRouteMinSamples` stays: harness_self_improve prints it in the
+---- lines 123-127 ----
+  123|     # in consolidation._sweep_episodic prunes rows older than this.
+  124|     ('episodicRetentionDays', 'episodic_retention_days', 90, 'num'),
+  125|     # OQ5 (Part 21, 2026-09-04): preference-retire propose-only pass. A
+  126|     # preference fact untouched for this many days AND never quoted
+  127|     # (use_count 0) is proposed for retirement (non-destructive — a human
+---- lines 133-137 ----
+  133|     # fall back to the turn's own model (existing behavior).
+  134|     ('titleModel', 'title_model', '', 'str'),
+  135|     # Part 16/17 skillLearning: off = no promotion judge; extract-only
+  136|     # (ship default) = mining + promote proposals; full = also draft skill
+  137|     # bodies. Governs harness_promote.run_promotion_pass.
+---- lines 141-145 ----
+  141|     # titler resolver order — keyless gateways keep working).
+  142|     ('skillLearningJudgeModel', 'skill_learning_judge_model', '', 'str'),
+  143|     # Part 16 cost gates: tier-2 escalations per day and the max fraction of
+  144|     # scored episodes flagged to tier 2 (episode_miner.flag_top_slice).
+  145|     ('escalationBudgetPerDay', 'escalation_budget_per_day', 2, 'num'),
+===== app\services\capabilities_prompt.py =====
+---- lines 48-52 ----
+   48| # Primary tool classification lives in tool_policy.prompt_bucket (single source
+   49| # of truth). The old per-bucket frozensets here duplicated it and drifted;
+   50| # classify_tool below now delegates. Part 27 T4 removed ~120 dead lines.
+   51| 
+   52| # Cross-cutting tag — NOT a primary bucket (locked decision #5).
+---- lines 455-462 ----
+  455|     is too short, or nothing scores above zero.
+  456| 
+  457|     Part 17 Phase B: ``workspace`` scopes the catalogue — project skills
+  458|     (and their shadowing of global names) join the ranking.
+  459| 
+  460|     M-2 (Part 21): ``agent_id`` adds the Bot's private skill root for bot
+  461|     home sessions (empty = global catalogue, the pre-M-2 behavior).
+  462|     """
+===== app\services\code_review.py =====
+---- lines 1-6 ----
+    1| """Part 10 R-A + R-B — first-party code review (``code_review``).
+    2| 
+    3| Advisory review of August's own changesets (working-tree diff), per plan
+    4| §10.2: severity rubric + deterministic parser (R2), Layer-1 deterministic
+    5| grounding of quoted code (R3), single-model review (R-A), Layer-2
+    6| independent-model judge + exhaustive-merge dedupe (R-B). **Advisory only,
+---- lines 9-13 ----
+    9| with a loud notice instead of silently disabling the review.
+   10| 
+   11| R-C (fact-proxy retry/metering, CI exit-code mode) is optional per §10.5
+   12| and not part of this module.
+   13| """
+===== app\services\daemon_manager.py =====
+---- lines 8-12 ----
+    8| tool set. For tool-using background tasks, use spawn_subagent instead.
+    9| 
+   10| Design: docs/design/cognitive-architecture-v1.md §5.4
+   11| """
+   12| 
+===== app\services\episode_miner.py =====
+---- lines 1-3 ----
+    1| """Part 16 Phases A+B — episode extraction + tier-1 scoring (2026-08-30).
+    2| 
+    3| The self-improvement loop's deterministic half. Units are EPISODES, not
+---- lines 7-11 ----
+    7| to the chat loop; the whole pass is asynchronous and post-hoc.
+    8| 
+    9| Phase B layers tier-1 on top: a fingerprint per episode (turn_outcomes'
+   10| signature discipline generalized to ``cause-class:token`` shape), a fixed
+   11| six-criterion rubric scored with no model calls, and a cost gate — only the
+---- lines 16-20 ----
+   16| are brain_query-searchable via the shared store helpers below — the earlier
+   17| draft's "add a memory section to the search tool" is CUT (2026-08-30).
+   18| Retention: 90-day prune, called from the consolidation sweep (OQ 6 default).
+   19| """
+   20| 
+---- lines 33-37 ----
+   33| logger = logging.getLogger(__name__)
+   34| 
+   35| # OQ 6 recommended default: 90-day episode retention (turn_outcomes keeps 30).
+   36| EPISODE_RETENTION_DAYS = 90
+   37| # Cost gate: at most this fraction of scored episodes is flagged to tier 2.
+---- lines 77-81 ----
+   77|     """Flatten a stored message content to text.
+   78| 
+   79|     §12 F-1: the workbench persistence path stores assistant/tool messages
+   80|     as JSON DICTS (``{"content": ..., "tool_calls": [...]}`` —
+   81|     memory_store/sessions.py) and tool results as role='tool' dicts. The
+---- lines 112-116 ----
+  112| 
+  113| def _loadContent(raw: object) -> object:
+  114|     """Parse a stored content column; raw text passes through (§12 F-2 —
+  115|     the app itself writes non-JSON rows, e.g. [Proxy Self-Heal] nudges)."""
+  116|     s = str(raw if raw is not None else '')
+---- lines 146-150 ----
+  146|     """Typed events observable in one stored message.
+  147| 
+  148|     §12 F-1: tool-role messages are where error receipts actually live in
+  149|     real transcripts (assistant-role hits are rare — the model narrates,
+  150|     the tool result carries the failure). Both roles are scanned now.
+---- lines 191-195 ----
+  191|     """Mine one session's stored transcript into episode windows.
+  192| 
+  193|     Three window shapes (plan §3.1):
+  194|       * failure_recovery  — tool/assistant error → later clean continuation
+  195|         (resolved), user rescue (rescued), or session end (unresolved)
+---- lines 379-383 ----
+  379| def save_episode(episode: dict[str, Any]) -> int:
+  380|     """Persist one mined episode (deduped on session+window)."""
+  381|     # Part 27 E2: surface tests that bypass the autouse isolatedData fixture.
+  382|     assertPytestDataDirIsolated('episode_miner.save_episode')
+  383|     conn = _conn()
+---- lines 417-421 ----
+  417| def _episodeExists(episode: dict[str, Any]) -> bool:
+  418|     """True when the (session, window, kind) episode is already stored —
+  419|     §12 F-6: re-mining the same window must not re-upsert its fingerprint
+  420|     (every 24h pass was inflating episode_count and bumping last_seen,
+  421|     faking recurrence and churning resolution state)."""
+---- lines 437-441 ----
+  437| def _existingFingerprintTexts(limit: int = 25) -> list[tuple[str, str]]:
+  438|     """(fingerprint, excerpt-text) pairs for paraphrase dedupe, rebuilt from
+  439|     the episodes table. §12 F-6 (related): record_episode used to read a
+  440|     nonexistent ``last_excerpt`` column, so only the token-containment
+  441|     dedupe lane ever ran."""
+---- lines 497-501 ----
+  497|     """Tier-1 episodes that have not been scored yet (no tier-1 result).
+  498| 
+  499|     §12 F-3: the rubric result lives in ``tier1_result`` — the tier-2
+  500|     ``judge_verdict`` column must stay empty until the distiller judges, or
+  501|     the distiller's unjudged selector is empty by construction."""
+---- lines 598-602 ----
+  598|     """Score unscored tier-1 episodes, then flag the top slice to tier 2.
+  599| 
+  600|     Cost gate (plan §3.2): at most ``flagRateCap`` of scored episodes and
+  601|     at most ``budgetPerDay`` per pass, recurrence-ranked. Flagged
+  602|     fingerprints flip ``flagged = 1`` so the distiller can find them.
+---- lines 692-696 ----
+  692| 
+  693| def prune_old_episodes(days: int = EPISODE_RETENTION_DAYS) -> int:
+  694|     """OQ 6 default: 90-day prune, called from the consolidation sweep."""
+  695|     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+  696|     conn = _conn()
+---- lines 701-705 ----
+  701| 
+  702| def learning_report() -> dict[str, Any]:
+  703|     """Counters for the Phase E skillLearningReport blob."""
+  704|     conn = _conn()
+  705|     counts = {
+---- lines 724-728 ----
+  724| 
+  725| 
+  726| # ── Phase E: resolution check + demotion ─────────
+  727| 
+  728| _RESOLUTION_WINDOW_DAYS = 30
+---- lines 767-771 ----
+  767| 
+  768| def run_resolution_check(windowDays: int = _RESOLUTION_WINDOW_DAYS) -> dict[str, Any]:
+  769|     """Phase E measurement.
+  770| 
+  771|     A shipped skill's fingerprint is monitored: 0 recurrences for the
+---- lines 773-777 ----
+  773|     drafts a revision-or-retire suggestion; a shipped skill with ZERO loads
+  774|     and no recurrence drafts a demotion (skill_delete) proposal — all
+  775|     suggestion-only, human-approved, never auto-deleted (OQ 5 default)."""
+  776|     from datetime import datetime, timedelta, timezone
+  777| 
+---- lines 857-861 ----
+  857|     """File a suggestion proposal, deduped on (fingerprint, action, target).
+  858|     Returns True only when a proposal was actually filed — dedupe (including
+  859|     §12 F-8 rejected-draft suppression) reports False so callers must not
+  860|     count a skipped suggestion."""
+  861|     try:
+===== app\services\gateway\pairing.py =====
+---- lines 7-11 ----
+    7| on the user's machine.
+    8| 
+    9| Rules (spec: docs/plans/2026-09-01-messaging-gateway.md §Phase 0):
+   10| 
+   11| * **Allowlist, default-deny.** ``gateway.allowedUsers: {platform: [user_id…]}``
+===== app\services\harness_promote.py =====
+---- lines 7-11 ----
+    7| project skill has cross-project shape.
+    8| 
+    9| Authority boundaries (plan §Phase E):
+   10|   * The judge NEVER applies anything — approvals go through the existing
+   11|     human gate (``decide_proposal``, POST /api/harness/proposals/{id}/decide).
+---- lines 13-24 ----
+   13|     project file is never mutated.
+   14|   * Provenance = ``promoted-from:<workspace>`` + source file.
+   15|   * Rejected drafts are recorded and never read as evidence again (Part 16
+   16|     anti-drift rule).
+   17|   * Runs under Part 16's ``skillLearning`` config: off | extract-only | full.
+   18|     ``off`` = nothing runs; ``extract-only`` (ship default) = mining +
+   19|     proposals; ``full`` = also drafts skill *bodies* for promotion (otherwise
+   20|     only entry titles + metadata ship).
+   21|   * Demote suggestion: a promoted item that never triggers outside its
+   22|     origin project gets a demote proposal in the same queue (Part 16
+   23|     fingerprint/trigger measurement).
+   24| """
+---- lines 67-71 ----
+   67| def _known_workspaces() -> list[str]:
+   68|     """Known projects = DISTINCT sessions.workspace_path (non-empty,
+   69|     non-home). The judge never invents paths (Phase E enumeration rule)."""
+   70|     from app.services.memory_conn import conn as _conn
+   71| 
+---- lines 223-227 ----
+  223| 
+  224| def _rejected_drafts() -> set[str]:
+  225|     """Part 16 anti-drift: rejected proposals are never evidence again."""
+  226|     from app.services.harness_self_improve import list_proposals
+  227| 
+---- lines 268-272 ----
+  268|                 ),
+  269|                 evidence=(
+  270|                     'Recurrence across distinct workspaces (≥2-project bar, Part 17 Phase E):\n'
+  271|                     + '\n'.join(f"- {f}" for f in lesson['files'])
+  272|                 ),
+---- lines 449-453 ----
+  449|                 evidence=(
+  450|                     f'Promotion approved at {decidedAt}; no recall/use outside the origin project '
+  451|                     f'for {int(ageDays)} days (Part 16 fingerprint measurement).'
+  452|                 ),
+  453|                 proposal=(
+---- lines 457-461 ----
+  457|                 rollback='none — suggestion only; deleting is reversible via rollback store.',
+  458|                 kind='observation',
+  459|                 expected_metric='approval rate + post-promotion trigger counts (Phase E measurement)',
+  460|                 payload={'demoteSuggestion': target, 'origin': origin, 'proposalId': p.get('id')},
+  461|             )
+===== app\services\harness_self_improve.py =====
+---- lines 453-457 ----
+  453|     supersedes: str = '',
+  454| ) -> str:
+  455|     """Learned-skill frontmatter with Part 16 Phase D provenance:
+  456|     origin (human|distilled|amended), learned_from (episode ids), version,
+  457|     status, and the supersedes lineage stamp."""
+---- lines 543-547 ----
+  543|                 is_learned=True,
+  544|             )
+  545|             # Part 16 Phase D step 2: learned-skill provenance. version bumps
+  546|             # per approved patch; status starts active (stale/retired via
+  547|             # later proposals); supersedes stamps the lineage.
+---- lines 563-567 ----
+  563|             )
+  564|             md.write_text(frontmatter + normalized, encoding='utf-8')
+  565|             # Part 16 Phase D step 2 supersession: an approved v2 disables
+  566|             # the v1 it supersedes in the SAME write — no double injection.
+  567|             supersededResult = ''
+---- lines 601-605 ----
+  601|             from app.services.skill_service import _agentSkillsDir, _validateName
+  602| 
+  603|             _validateName(name)  # §9 F-2: same guard as create/patch — no traversal past the agent root
+  604|             skill_dir = _agentSkillsDir() / name
+  605|             if not skill_dir.is_dir():
+===== app\services\memory_conn.py =====
+---- lines 76-80 ----
+   76| 
+   77| def _warn_dual_data_roots(path: Path) -> None:
+   78|     """Phase D hygiene: warn ONCE when a second brain DB exists.
+   79| 
+   80|     The dev checkout's ``backend-py/data/august_brain.sqlite`` (the 0.16-era
+===== app\services\memory_schema.py =====
+---- lines 123-127 ----
+  123|         );
+  124| 
+  125|         -- auto_memories RETIRED (Part 21 OQ1 ruling, 2026-09-04): the table
+  126|         -- + its FTS + triggers are no longer created. Migration 033 drops
+  127|         -- them from legacy DBs. No live writer existed; the privacy export is
+---- lines 379-383 ----
+  379|     # sweep that purges expired model-written facts (memory-humanization batch).
+  380|     ensure_column(conn, 'facts', 'expires_at', 'TEXT')
+  381|     # Knowledge-base redesign (plan 2026-08-27 §3.3): facts is the one durable
+  382|     # memory store — titled, typed, usage-tracked, supersede-aware.
+  383|     ensure_column(conn, 'facts', 'title', "TEXT DEFAULT ''")
+---- lines 571-575 ----
+  571|             ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
+  572|             ensure_column(conn, 'learned_heuristics', 'confidence', 'REAL DEFAULT 0.5')
+  573|             # Phase L: per-turn TTFT + prompt-cache telemetry.
+  574|             ensure_column(conn, 'turn_outcomes', 'ttft_ms', 'INTEGER DEFAULT 0')
+  575|             ensure_column(conn, 'turn_outcomes', 'cache_hit_tokens', 'INTEGER DEFAULT 0')
+===== app\services\memory_store\brain.py =====
+---- lines 98-102 ----
+   98| )
+   99| 
+  100| # Part 27 C2: KV keys that are app plumbing, not user-visible memory. The
+  101| # Memories browse filters these out (Raw state lookup still sees them).
+  102| # agent_jobs itself was purged by migration 037; the entry stays as a guard
+---- lines 351-355 ----
+  351|         )
+  352|     info = _BRAINStores[store]
+  353|     # Phase D: facts queries rank through the BM25 index shared
+  354|     # with the tail block — relevance instead of LIKE-in-rowid-order. An
+  355|     # exact fact_key match keeps the direct fast path (a key lookup is a
+---- lines 370-374 ----
+  370|         whereClauses: list[str] = []
+  371|         if store == 'facts':
+  372|             # M-2 union + Part 26 6.1: the LIKE fallback honors the SAME
+  373|             # visibility policy as the ranked path and list/search — active,
+  374|             # unexpired, scope union. A bot never sees another bot's notes
+---- lines 532-539 ----
+  532|     August stores. Read-only; unknown stores return an error dict.
+  533| 
+  534|     Part 17 Phase C: ``sort`` (newest|oldest|updated|confidence) picks the
+  535|     ORDER BY; ``category``/``source``/``confidence`` are server-side
+  536|     equality filters (gap 3-4) so filtering works past the fetch cap.
+  537|     Part 26 6.7: optional ``scope`` equality filter (the UI lists all
+  538|     scopes by design — the human door — but a per-scope view was
+  539|     impossible).
+---- lines 558-562 ----
+  558|         colInfo = conn.execute(f'PRAGMA table_info({table})').fetchall()
+  559|         colNames = {c['name'] for c in colInfo}
+  560|         # Part 27 C2: machine-state KV keys never render in the human-facing
+  561|         # Memories browse — the registry roster and diff-learn cursors are
+  562|         # app plumbing, not notes about the user. They stay reachable via
+---- lines 638-642 ----
+  638|     raw tables. Returns '' when there is nothing worth injecting.
+  639| 
+  640|     2.1 (Part 25): the facts selection is scope-filtered (global ∪ this-scope)
+  641|     — otherwise a Bot's private fact names ride into every other session's
+  642|     frozen boot index and vice versa.
+---- lines 670-674 ----
+  670|         pass
+  671|     try:
+  672|         # Part 27 T1 (privacy): fence the timeline by the same global∪scope
+  673|         # clause the facts half uses, so a Bot's private last-user-message
+  674|         # never rides into an unrelated session's boot index.
+---- lines 747-751 ----
+  747|         if cursor.rowcount > 0:
+  748|             _record_row_rollback(resolved, str(row_id), beforeWire, None)
+  749|             _invalidate_fact_cache_if_facts(resolved)  # 2.6 (Part 25)
+  750|         return {'ok': cursor.rowcount > 0, 'store': resolved}
+  751|     except Exception as exc:
+---- lines 805-809 ----
+  805|         afterWire = _row_as_wire(after) if after is not None else None
+  806|         _record_row_rollback(resolved, str(row_id), beforeWire, afterWire)
+  807|         _invalidate_fact_cache_if_facts(resolved)  # 2.6 (Part 25)
+  808|         return {'ok': True, 'store': resolved, 'row': afterWire}
+  809|     except Exception as exc:
+===== app\services\memory_store\consolidation.py =====
+---- lines 1-3 ----
+    1| """M4 — Consolidation v2 (plan 2026-08-27 §3.5): one scheduled job.
+    2| 
+    3| The deleted consolidation daemon was a stateful multi-job machine. This is
+---- lines 119-123 ----
+  119|     The table was unbounded — every session event appended forever. The
+  120|     retention window comes from brain-config ``episodicRetentionDays``
+  121|     (default 90). OQ2 (ruled 2026-09-04): the table stays (``brain_index_snippet``
+  122|     reads it) but M-4's FTS/index half is CLOSED AS WON'T-BUILD — LIKE over
+  123|     ≤hundreds of rows is instant and the two readers never rank, so an FTS5
+---- lines 150-154 ----
+  150| 
+  151| def _retire_stale_preferences() -> tuple[int, list[str]]:
+  152|     """OQ5 (Part 21, 2026-09-04): propose-only preference retire.
+  153| 
+  154|     A ``preference`` fact that has been untouched for ``preferenceRetireDays``
+---- lines 202-206 ----
+  202|         # Open OR decided proposals for this type → skip keys already proposed.
+  203|         # 2.19: dedupe across ALL statuses, not just pending — a
+  204|         # human-rejected retire must not re-file on every pass (the §12 F-8
+  205|         # pattern the distiller already fixed).
+  206|         openKeys: set[str] = set()
+---- lines 390-394 ----
+  390| def _supersede_contradictions() -> tuple[int, list[str]]:
+  391|     """(c) same-title entries with different bodies: keep the newest, mark
+  392|     older rows ``superseded`` (kept, not deleted — plan §3.5-c)."""
+  393|     facts = _load_active_facts()
+  394|     # 2.5: partition by (scope, normalized-title) — a global fact and a bot
+---- lines 470-474 ----
+  470|         out['flagged'] = flag_top_slice(flagRateCap=flagRateCap, budgetPerDay=budgetPerDay)['flagged']
+  471|         out['episodesPruned'] = prune_old_episodes()
+  472|         # §3.5 Phase E monitoring rides the same cadence (D-4): resolution /
+  473|         # recurrence / demotion suggestions must not wait for a manual
+  474|         # /api/curator/run — a resolved fingerprint that recurs between
+---- lines 511-515 ----
+  511|         summary['superseded'] = superseded
+  512|         notes.extend(superNotes)
+  513|         # OQ5: propose-only preference retire (non-destructive).
+  514|         try:
+  515|             retiredProposed, retireNotes = _retire_stale_preferences()
+===== app\services\memory_store\fact_retrieval.py =====
+---- lines 1-3 ----
+    1| """M3: BM25 fact retrieval that actually injects (plan 2026-08-27 §3.4).
+    2| 
+    3| The old intake snippet listed ~250 tokens of fact *names*, keyword-blind.
+---- lines 6-13 ----
+    6| user message, rendered as a `<memory>` block that is appended to the user
+    7| message at the tail of the turn context — never into the system prompt, so
+    8| the provider prefix cache stays stable (cache-stability rule, §8 Q14).
+    9| 
+   10| No embeddings/vector store: BM25 over a few hundred facts is exact enough.
+   11| OQ4 (ruled 2026-09-04): August commits to NO vectors and reserves no schema
+   12| for them — the decisive precedent is the orphaned ``vector_entries`` table
+   13| (12 rows, zero code references) that a reserved schema outlived its feature
+---- lines 186-190 ----
+  186|     ``1.0`` when unused ('' / unparseable: a fact with no usage history has
+  187|     no staleness signal yet, so its boost stays at face value), decaying
+  188|     toward 0 as time since last use grows. Phase D (Part 17) item 3.
+  189|     """
+  190|     raw = (last_used_at or '').strip()
+---- lines 240-246 ----
+  240| 
+  241|     BM25 score plus a small ``use_count`` boost — the cheapest real
+  242|     "learns what's useful" signal without embeddings (plan §3.4).
+  243| 
+  244|     Phase D (Part 17): ``prior_turn`` (the previous *user* message) joins
+  245|     the query tokens — a follow-up like "and the second one?" stops being
+  246|     single-message myopic. Cheap: no extra calls, no history payload; the
+---- lines 248-252 ----
+  248|     separately and summed.
+  249| 
+  250|     M-2 (Part 21): ``scope`` selects the corpus union — 'global' (default,
+  251|     the pre-M-2 behavior) or 'bot:<id>' = global ∪ that bot's notes.
+  252|     """
+---- lines 276-280 ----
+  276|         scored.append((s, row))
+  277|     scored.sort(key=lambda pair: pair[0], reverse=True)
+  278|     # Phase D item 3 + M-1 decoupling: the usage boost decays with idle
+  279|     # time (halved at 30 days unused); usage values are fetched fresh for
+  280|     # the candidate set — not from the (usage-free) cached corpus.
+---- lines 304-308 ----
+  304|     relevant exists or the query is too short.
+  305| 
+  306|     Part 17 Phase A: with a ``workspace`` the block also carries the
+  307|     project's md-file entries as a tagged `project:` section (one tail,
+  308|     several tagged sections). Project entries do NOT join ``injected``
+---- lines 310-319 ----
+  310|     is a list, the rows actually injected (global + project) are appended
+  311|     to it as ``{key, category, snippet, scope}`` dicts — the chat UI's
+  312|     recalledMemories event payload (Phase A.4/C-13).
+  313| 
+  314|     Phase D item 2: ``prior_turn`` (the previous user message) expands the
+  315|     facts query — see :func:`retrieve_relevant_facts`.
+  316| 
+  317|     M-2 (Part 21): ``scope`` selects the facts corpus union for this turn —
+  318|     a Bot Chat passes ``'bot:<agentId>'`` so its `<memory>` block carries
+  319|     global ∪ own notes; regular sessions keep 'global'.
+===== app\services\memory_store\kv.py =====
+---- lines 21-29 ----
+   21|     """Save a key-value pair to the internal KV store.
+   22| 
+   23|     Renamed from ``save_memory`` (plan §3.3 M2): the KV store is machine
+   24|     state / registry data, not user-visible memory. Durable memory goes
+   25|     through the facts store (``save_fact``); this name makes misuse obvious.
+   26|     """
+   27|     # Part 27 E2: surface tests that bypass the autouse isolatedData fixture.
+   28|     assertPytestDataDirIsolated('memory_store.save_internal')
+   29|     conn = _conn()
+===== app\services\memory_store\rest.py =====
+---- lines 45-58 ----
+   45|     Upsert over the unique ``fact_key``: an update keeps the row id,
+   46|     ``created_at`` and usage counters, and only overwrites ``title``/``kind``
+   47|     when the caller actually supplies them (plan §3.3 — facts are titled,
+   48|     typed entries).
+   49| 
+   50|     M-2 (Part 21): ``scope`` ('global' | 'bot:<agentId>' | 'project:<path>')
+   51|     stamps the row's memory home on INSERT. An update never rewrites scope —
+   52|     a fact keeps the home it was born in (Part 26 6.2: a bot may update a
+   53|     GLOBAL fact through the model doors — the <memory> block invites it —
+   54|     while a row from a DIFFERENT private scope is refused).
+   55| 
+   56|     Part 26 6.5: a write whose caller scope differs from the existing row's
+   57|     NON-GLOBAL scope is refused (raises ``ValueError``) instead of silently
+   58|     overwriting another bot's private value under its original scope —
+---- lines 61-65 ----
+   61|     (consolidation) pass ``allow_scope_override=True``.
+   62| 
+   63|     2.4 (Part 25): an upsert resets ``status`` to 'active' — re-remembering a
+   64|     key that consolidation had superseded/retired must revive it, or the model
+   65|     believes it saved while retrieval keeps filtering the stale row out.
+---- lines 204-208 ----
+  204| def list_facts(category: str = '', scope: str = 'global', limit: int = 500) -> list[FactDict]:
+  205|     """List facts visible to ``scope`` (active + unexpired — 2.2), optionally
+  206|     filtered by category. 5.3 (Part 25): the bound is pushed into SQL (was an
+  207|     unbounded fetch capped only in Python)."""
+  208|     conn = _conn()
+---- lines 589-593 ----
+  589| 
+  590|     ``sessionId`` is optional — system events (e.g. memory lifecycle) have
+  591|     no owning session. ``scope`` (Part 27 T1) fences the entry so a Bot's
+  592|     private timeline never rides into a global session's boot index.
+  593|     """
+===== app\services\project_memory.py =====
+---- lines 1-5 ----
+    1| """Project memory — per-workspace markdown files as the source of truth.
+    2| 
+    3| Part 17 Phase A (2026-08-29). The global ``facts`` store mixes every
+    4| project's constraints into one pool injected into every chat. Project
+    5| memory scopes memory to a workspace via hand-editable markdown files at
+---- lines 181-185 ----
+  181|     never inject a new entry on re-parse (writer-side; parser stays simple).
+  182| 
+  183|     2.16 (Part 25): the old replacement `r'\\\1'` DELETED the two hashes
+  184|     (`## x` → `\\ x`) — silent content loss. Prefix a backslash instead
+  185|     (`## x` → `\\## x`); the parser un-escapes on read."""
+---- lines 202-206 ----
+  202|     old body. An `*updated: …*` stamp is refreshed when ``touch_updated``.
+  203| 
+  204|     §9 F-4 format-contract guards: titles are flattened to one line and
+  205|     heading-looking body lines are escaped, so the entries written here
+  206|     always re-parse 1:1; a title that already exists in ANOTHER md file is
+---- lines 252-256 ----
+  252|     convention). Returns True when an entry was removed.
+  253| 
+  254|     §9 F-4: with ``file`` empty and the title matching more than one file,
+  255|     only the FIRST match (sorted file order) is deleted and the rest are
+  256|     logged — pass ``file=`` to target a specific file."""
+---- lines 355-359 ----
+  355|     the project section's share of the tail budget.
+  356| 
+  357|     Part 26 6.6: pass ``ranked_entries`` (the entries you already have from
+  358|     search_entries) to skip a second full md-read + BM25 pass — the
+  359|     per-turn <memory> builder used to run the identical search twice."""
+===== app\services\refine_store.py =====
+---- lines 8-12 ----
+    8| *additional* ``<refinements>`` context block (see ``render_refinements_block``).
+    9| 
+   10| Invariants (plan §9.4 T15):
+   11|   * every edit records a rationale AND an expected outcome;
+   12|   * rollback by entry id undoes the newest version (append-only history —
+---- lines 16-20 ----
+   16|   * auto-refine is gated by a cheap reviewer call with a discard-default,
+   17|     and the reviewer must be a DIFFERENT model than the producer
+   18|     (Part 10 standing rule: same-model judging is inert).
+   19| """
+   20| 
+---- lines 729-733 ----
+  729| 
+  730|     Returns (keep, reason). Any failure — no reviewer, same model as the
+  731|     producer (Part 10 standing rule), unreachable, unparseable answer —
+  732|     discards the batch.
+  733|     """
+---- lines 737-741 ----
+  737|         return False, (
+  738|             f'reviewer model {review_model!r} is the same as the producer — '
+  739|             'same-model judging is inert (Part 10 rule); batch discarded'
+  740|         )
+  741|     try:
+===== app\services\rollback_store.py =====
+---- lines 193-197 ----
+  193|             before = entry.get('before')
+  194|             if target.startswith('project:'):
+  195|                 # Part 17 Phase A project delete: restore the md entry into
+  196|                 # its workspace exactly as snapshotted (no global copy).
+  197|                 try:
+---- lines 220-224 ----
+  220|             elif isinstance(before, dict):
+  221|                 # Wire shape from get_fact: factKey/factValue/category (or
+  222|                 # key/value). Phase D hygiene: source/title/kind/expiresAt/
+  223|                 # confidence ride along — a rollback must not silently
+  224|                 # degrade the fact into an untitled default entry.
+===== app\services\sandbox\backends\fallback.py =====
+---- lines 215-219 ----
+  215|             if seg_first in NETWORK_COMMAND_PREFIXES:
+  216|                 return f'network disabled in sandbox (blocked: {seg_first})'
+  217|     # Absolute path tokens / redirects outside workspace. Part 27 T2 (B6):
+  218|     # when no workspace_root is configured (scheduler/automation jobs with an
+  219|     # empty cwd), fall back to the process cwd — the directory the subprocess
+===== app\services\sandbox\paths.py =====
+---- lines 133-137 ----
+  133|     """Path candidates a shell token may hide: the whole token, the value
+  134|     after `=` (`if=/etc/passwd`, `--output=/etc/x`), and an attached `-o`
+  135|     target (`-o/etc/x`). Part 27 T1 (B5): the old scan only checked the whole
+  136|     token, so `dd if=/etc/passwd of=ok.txt` slipped its outside input past."""
+  137|     cleaned = token.strip().strip('"').strip("'")
+===== app\services\skill_distiller.py =====
+---- lines 20-24 ----
+   20|   * ``amend_body``      → gated on the precision ship bar (≥0.8 on ≥30
+   21|     hand-labeled episodes, test_distiller_precision.py); until met the
+   22|     verdict downgrades to a proposal-with-note (OQ 2 recommended default:
+   23|     the judge is not trusted to rewrite human-authored bodies at birth).
+   24| Every drafted summary/body passes the shared sensitive-topic denylist.
+---- lines 169-173 ----
+  169|     """One judge model call. Returns parsed JSON or None (judge failed).
+  170| 
+  171|     §12 F-7: uses an UNPOOLED client, closed after the call — judge batches
+  172|     run on throwaway event loops (one ``asyncio.run`` per pass), and a
+  173|     pooled client's keep-alive connections bind to the loop that made them,
+---- lines 204-210 ----
+  204|     """One draft per (fingerprint, action, target) — across ALL statuses.
+  205| 
+  206|     §12 F-8: matching only ``open`` meant a human-REJECTED suggestion
+  207|     re-filed on every pass (the queue refilled with rejected noise), and an
+  208|     APPLIED draft could be filed again. Anti-drift (plan §3.4): once the
+  209|     judge has produced a draft for a fingerprint/action/target, the loop
+  210|     never re-files it."""
+---- lines 313-317 ----
+  313|     ``mode``: extract-only (ship default) applies memory verdicts only —
+  314|     skill drafting requires ``full``; ``off`` never reaches here.
+  315|     ``scope``: the M-2 scope of the source episode (Part 26 6.4) — a Bot's
+  316|     distilled lessons land in the Bot's own memory home instead of global.
+  317|     """
+---- lines 352-356 ----
+  352| 
+  353|     if action in ('create_skill', 'amend_trigger', 'amend_body'):
+  354|         # §3.3 denylist: applies to EVERY drafted text before persist —
+  355|         # description/body/trigger of skill drafts and amend patches, not just
+  356|         # memory verdicts. A health/ID/belief detail must not survive inside a
+---- lines 436-440 ----
+  436|     if action == 'amend_body':
+  437|         # Human-authored bodies are off-limits until the precision
+  438|         # ship bar is met. §12 F-5: the downgrade MUST NOT file an
+  439|         # approvable skill_patch — its payload has no body, and approving
+  440|         # that used to overwrite the target SKILL.md with placeholder
+===== app\services\skill_service.py =====
+---- lines 38-42 ----
+   38|     """Search roots in precedence order — earlier roots win on name clash.
+   39| 
+   40|     Part 17 Phase B: with a non-home ``workspace`` the project root
+   41|     ``<workspace>/.aug/skills/`` is prepended — project skills shadow
+   42|     same-named global/bundled ones (the workspace's own way of working
+---- lines 44-48 ----
+   44|     the Tasks home anchors folderless chats, not authored skills.
+   45| 
+   46|     M-2 (Part 21, ruling OQ5): with a bot ``agent_id`` the Bot's private
+   47|     root ``<dataDir>/bots/<agentId>/skills`` is FIRST — a Bot's own skills
+   48|     shadow project/agent/bundled ones for that Bot's sessions only. The
+---- lines 67-71 ----
+   67|             wsPath = Path(ws).resolve()
+   68|             if wsPath != Path.home().resolve():
+   69|                 # Part 17 §2 projectSkills toggle: off = the workspace root
+   70|                 # drops out of the search order entirely (catalogue falls
+   71|                 # back to agent+bundled). Default on.
+---- lines 102-106 ----
+  102| 
+  103| def _skillMdMarks(pairs: list[tuple[str, Path]]) -> tuple:
+  104|     """Per-skill SKILL.md mtimes for the catalogue memo key (Part 16 Phase D
+  105|     step 1). Root-dir mtime misses IN-PLACE SKILL.md edits — a hand edit or
+  106|     external writer never bumped the memo until an unrelated mutation.
+---- lines 263-267 ----
+  263|     """Parse ``key: value`` frontmatter lines, preserving insertion order.
+  264| 
+  265|     Part 16 Phase C quote-strip: ``_skill_frontmatter`` and the bundled
+  266|     august-harness/august-tools SKILL.md files write quoted values — a
+  267|     matching surrounding quote pair is stripped so literal quotes never
+---- lines 296-300 ----
+  296|     approval staging dirs) never reach any catalogue, prompt, or UI list.
+  297| 
+  298|     Part 17 Phase B: each entry carries ``scope`` (project | agent | bundled)
+  299|     and ``overrides`` = the shadowed root's name when this entry shadows one.
+  300|     """
+---- lines 441-445 ----
+  441|     delete bumps the roots' mtime → next call rebuilds automatically.
+  442| 
+  443|     Part 17 Phase B: the memo is keyed by (workspace, roots, mtimes) so
+  444|     per-workspace catalogues never cross-contaminate sessions; project
+  445|     entries carry ``scope: 'project'`` and an ``overrides`` label when they
+---- lines 758-762 ----
+  758| def _currentWriteRoot() -> Path:
+  759|     """Where an agent-authored/learned skill lands for the CURRENT session:
+  760|     the Bot's own folder when the session is bot-scoped (Phase E), else the
+  761|     shared agent root. One resolution point so the write door matches the
+  762|     read door (``_skillRoots``) and the rule can't drift."""
+---- lines 774-778 ----
+  774| def _ensureAgentRoot() -> Path:
+  775|     """The writable skill root for the current session (agent root, or the
+  776|     Bot's own root when the authoring session is bot-scoped — Phase E)."""
+  777|     root = _currentWriteRoot()
+  778|     root.mkdir(parents=True, exist_ok=True)
+---- lines 808-812 ----
+  808|     """Create a new agent-authored skill.
+  809| 
+  810|     Part 17 Phase B: with a non-home ``workspace`` the skill lands in the
+  811|     project root ``<ws>/.aug/skills/`` (created on demand) — project scope
+  812|     by choice, global otherwise.
+---- lines 861-865 ----
+  861|     write (the router previously called setEnabled + patchSkill = 2 writes).
+  862| 
+  863|     Part 17 Phase B: with a ``workspace``, a project entry patches in
+  864|     place (project root); a bundled/global name copy-on-writes INTO the
+  865|     project root as a project override — the workspace's customized copy.
+---- lines 931-935 ----
+  931|     """Delete a skill. Refuses bundled skills.
+  932| 
+  933|     Part 17 Phase B override safety: with a ``workspace``, deleting a name
+  934|     that exists as a PROJECT entry removes only the project override — the
+  935|     shadowed global/bundled skill stays intact. Deleting a name that has
+---- lines 939-943 ----
+  939|     import shutil as _shutil
+  940| 
+  941|     _validateName(name)  # §9 F-1: traversal names ('..', separators) must not reach the project-root join
+  942|     wsStr = str(workspace or '').strip()
+  943|     project_root = (
+---- lines 976-980 ----
+  976|     """Bump the per-skill usage sidecar (``<skillDir>/.usage.json``).
+  977| 
+  978|     Part 16 Phase E: without trigger-hit counts, "zero loads and no
+  979|     recurrence" is unknowable — which is why honest demotion suggestions
+  980|     and the curator report could not exist before. Best-effort: a failed
+===== app\services\subagent_orchestrator.py =====
+---- lines 678-682 ----
+  678|         """Terminate a running or queued sub-agent by taskId. Returns True if found.
+  679| 
+  680|         D-2 (Part 22): a stopped worker's work is not wasted — its partial
+  681|         transcript is collected into ``handle.result`` (persisted with the
+  682|         run row, rendered by the drawer) and the completion notice the parent
+===== app\services\text_similarity.py =====
+---- lines 4-8 ----
+    4| ``memory_store.fact_retrieval.find_similar_facts`` so callers outside the
+    5| facts index (episode fingerprint paraphrase dedupe) share one
+    6| implementation. Lexical BM25 only — no embeddings, per the Part 16
+    7| non-goals. ``ratio = BM25(A→B) / BM25(B→B)`` ∈ [0, 1]; callers compare
+    8| against the consolidation merge threshold (0.85) for near-duplicates.
+===== app\services\tool_policy.py =====
+---- lines 133-137 ----
+  133|             # Bot Mode routines: Bot-owned scheduled jobs.
+  134|             'create_routine', 'list_routines',
+  135|             # Bot Mode Phase C: the single agent-to-agent DM send path.
+  136|             'message_agent',
+  137| })
+===== app\services\tool_registrations\__init__.py =====
+---- lines 47-51 ----
+   47|     # Bot Mode routines: Bot-owned scheduled jobs + the M-11 notepad door.
+   48|     routines.register()
+   49|     # Bot Mode Phase C: the message_agent DM tool (offered only in canonical
+   50|     # Bot Chats — the per-session gate lives in workbench toolDefinitions).
+   51|     dm.register()
+===== app\services\tool_registrations\session_tools.py =====
+---- lines 76-80 ----
+   76| 
+   77| # Sensitive-topic denylist for the `remember` write door — the scanner now
+   78| # lives in services.sensitive_topics (shared with the Part 16 distiller's
+   79| # drafted summaries/bodies); this alias keeps the remember door unchanged.
+   80| 
+---- lines 85-89 ----
+   85|     explicitly when updating a known fact.
+   86| 
+   87|     2.3 (Part 21 M-2 follow-up): for a non-global scope the derived key is
+   88|     namespaced with the scope, so two Bots saving the SAME text get distinct
+   89|     keys instead of the second silently overwriting the first's private row
+---- lines 142-146 ----
+  142|     """The current workbench session's workspacePath ('' when none/home).
+  143| 
+  144|     Part 17 Phase A: resolves the session bound to the current tool
+  145|     dispatch via the ContextVar so the project-memory write door can route
+  146|     remember/forget to the right workspace without changing the tool
+---- lines 160-164 ----
+  160|         if ws and Path(ws).resolve() == Path.home().resolve():
+  161|             # The home dir is NOT a project root (matches the
+  162|             # docstring and every other Part 17 door) — auto-project must
+  163|             # not create <home>/.aug/memory/ for home-anchored sessions.
+  164|             return ''
+---- lines 188-192 ----
+  188|     ``kind`` (fact | lesson | preference | skill-note).
+  189| 
+  190|     Part 17 Phase A: ``scope='project'`` writes to the workspace's md-file
+  191|     project memory (``<ws>/.aug/memory/memory.md``) instead of the global
+  192|     facts store — same gates, same rollback snapshot, same per-turn budget.
+---- lines 258-262 ----
+  258|             }
+  259|         )
+  260|     # ── Part 17 Phase A: project scope (md-file workspace memory) ──────────
+  261|     ws = _currentWorkspacePath()
+  262|     scopeNorm = (scope or '').strip().lower()
+---- lines 327-331 ----
+  327|     # current session — a Bot's home chat writes 'bot:<agentId>' rows, every
+  328|     # other session writes 'global'. (The tool's own ``scope`` argument is
+  329|     # the Part 17 project/global md-file axis — a different concept.)
+  330|     from app.services import session_scope as _ss
+  331| 
+---- lines 394-398 ----
+  394|     delete is undoable, matching the Memory UI's delete path.
+  395| 
+  396|     Part 17 Phase A: ``project:<title>`` deletes a project-memory entry
+  397|     (the remember scope='project' write door's counterpart — deletes from
+  398|     ``<ws>/.aug/memory/``, moves nothing into the global store).
+===== app\services\tool_registrations\skill_tools.py =====
+---- lines 10-14 ----
+   10|     """The current workbench session's workspacePath ('' when none/home).
+   11| 
+   12|     Part 17 Phase B: skill tools resolve through the session's workspace
+   13|     so project skills (``<ws>/.aug/skills/``) load/list with shadowing.
+   14|     """
+---- lines 31-35 ----
+   31|     """The current session's Bot agent id when it is bot-scoped, else '' — so
+   32|     load_skill/list_skills resolve through the Bot's private skill root too
+   33|     (2.15, Part 25: the per-turn <relevant_skills> block advertises bot skills,
+   34|     so the load door must see the same root or it returns 'not found')."""
+   35|     try:
+===== app\services\tool_registrations\system_tools.py =====
+---- lines 384-388 ----
+  384|     tool_registry.register(
+  385|         'update_state',
+  386|         "Track execution state across a multi-step task. Call this when you start, progress through, or complete a phase. The state is re-injected each turn in the <session_state> block on the latest user message (Phase L moved it out of the system prompt) so you know where you left off.",
+  387|         _updateState,
+  388|         {
+---- lines 433-437 ----
+  433|         _TODOS_SCHEMA,
+  434|     )
+  435|     # Part 27 T3 + clarify: submit_clarify was intercepted by the turn loop but
+  436|     # never registered, so native tool-calling models never saw it (only
+  437|     # text-protocol models discovered it). Registering it makes it visible and
+===== app\services\tools\agent_registry.py =====
+---- lines 18-22 ----
+   18| _MAXAgentDepth = 4
+   19| 
+   20| # Part 27 C4: the job ledger used to live in the KV memory_store as ONE JSON
+   21| # blob (every createJob re-serialized the whole history — it grew to 44 KB and
+   22| # leaked pytest fixtures into the user's Memory tab). Jobs are ephemeral API
+---- lines 282-286 ----
+  282|     if model_alias:
+  283|         parts.append(f'Model alias: {model_alias}')
+  284|     # Bot Mode Phase B: one-line routines hint (only when the Bot actually has
+  285|     # routines — stable bytes otherwise, keeps the prefix cache intact).
+  286|     try:
+===== app\services\tools\mcp_client.py =====
+---- lines 349-353 ----
+  349|     """Start an MCP server subprocess (stdio) with initialize handshake.
+  350| 
+  351|     Part 26 4.4: serialized per server id — two concurrent discover/call
+  352|     passes both passed the ``serverId in _processes`` check and each spawned
+  353|     a child; the second ``_processes[serverId] = proc`` orphaned the first
+===== app\services\turn_outcomes.py =====
+---- lines 1-3 ----
+    1| """M5 — turn outcomes as telemetry, not memory (plan 2026-08-27 §3.6).
+    2| 
+    3| The deleted turn-lessons failed because free-text failure rules are not
+---- lines 89-96 ----
+   89|     """Append one telemetry row. Best-effort: never raises into the turn.
+   90| 
+   91|     Phase L (Part 17): ``ttft_ms`` + the prompt-cache token split make
+   92|     latency regressions measurable per turn — "chat feels slow" becomes
+   93|     "first token 42 s, cache hit 0 / miss 29k" instead of a vibe.
+   94|     P3.1 (Part 18): ``tool_args_ready_to_stream_end_ms`` measures the
+   95|     trailing stream tail AFTER the last tool call's arguments arrived —
+   96|     the time early tool dispatch could save. 0 = no tool call this turn.
+===== app\services\workbench\brain_sync.py =====
+---- lines 5-9 ----
+    5| (``sync_workbench_session_to_brain`` / ``backfill_workbench_json_to_brain``)
+    6| had no live callers and was removed with the memory-system cleanup
+    7| (plan §2.2). Only the operator health snapshot remains.
+    8| """
+    9| 
+===== app\services\workbench\context_compressor.py =====
+---- lines 396-400 ----
+  396|     """Fixed-handoff markdown summary (deterministic, no LLM).
+  397| 
+  398|     Part 18 P2.2: the shape is a handoff contract — Goal / State / Context /
+  399|     Next / Pitfalls — so a compacted session hands the next agent (or the
+  400|     next LLM call) enough to act without re-asking the user, with the file
+---- lines 650-654 ----
+  650|     summaries and merging when one alone would exceed it.
+  651| 
+  652|     Part 18 P2.2: ``replayUserBytes`` > 0 replays the newest whole USER
+  653|     messages from the summarized middle VERBATIM right after the summary
+  654|     (budget-bounded, never a mid-message cut). User messages that get
+===== app\services\workbench\permissions.py =====
+---- lines 6-10 ----
+    6| asking, needs user approval, or is denied outright by a durable user rule.
+    7| 
+    8| Design rules (plan §9.4 T5, merged with #10):
+    9| 
+   10| - Durable allow/deny rules are user-configured command prefixes. A rule is
+===== app\services\workbench\prompt_segments_cache.py =====
+---- lines 4-8 ----
+    4| constants the workbench prompt builder composes.
+    5| 
+    6| Part 17 Phase E cleanup: the skills-catalogue cache path
+    7| (``get_skills_segments`` / ``_build_skills_segments``) was dead code — zero
+    8| callers, superseded by the Tier-1/Tier-2 prompt caches (skill mutations bust
+---- lines 91-95 ----
+   91| def clear() -> None:
+   92|     """Compatibility bust door — kept for ``skill_service`` and the test
+   93|     fixtures. The skills-segment cache itself was dead code (Phase E
+   94|     cleanup); real prompt busting happens in
+   95|     ``workbench.clear_skill_prompt_caches`` (Tier-1/2 caches)."""
+---- lines 99-103 ----
+   99| 
+  100| def stats() -> dict[str, object]:
+  101|     """Cache stats (Phase E: the skills segment cache is gone — Tier-1/2
+  102|     ``prompt_cache.stats()`` is the live instrument now)."""
+  103|     with _lock:
+===== app\services\workbench\providers.py =====
+---- lines 347-351 ----
+  347|     """True when the provider speaks the OpenAI Responses wire format.
+  348| 
+  349|     Part 26 1.3: the workbench previously branched only anthropic/openai-chat
+  350|     and sent Responses-format models a chat-completions body against the
+  351|     /responses endpoint — deterministic 400/500s on OpenAI-proper.
+---- lines 500-504 ----
+  500|             if _cancel_event is not None and _cancel_event.is_set():
+  501|                 break
+  502|             # Phase L: client-level retries (429/503/connection,
+  503|             # pre-first-token) yield type='upstreamRetry' — surface them so
+  504|             # the transcript can show "provider busy — retrying in Ns"
+---- lines 710-714 ----
+  710|                 if _cancel_event is not None and _cancel_event.is_set():
+  711|                     break
+  712|                 # Phase L: client-level retries (429/503/connection,
+  713|                 # pre-first-token) yield type='upstreamRetry' — surface them
+  714|                 # so the transcript can show the provider wait instead of a
+---- lines 976-980 ----
+  976|     ``finalOutput`` deltas, returns the aggregated response dict the turn
+  977|     loop consumes (``choices``/``text``/``thinking``/``tool_uses``/``usage``).
+  978|     Part 26 1.3: before this existed, a model configured with
+  979|     ``openaiResponses`` was sent a chat-completions body against the
+  980|     /responses endpoint (ground truth 0.B-2).
+===== app\services\workbench\sessions.py =====
+---- lines 106-110 ----
+  106|     _working_memory: object | None = None
+  107|     _state_lock: asyncio.Lock | None = None
+  108|     # (Removed Part 25 Phase 4: `_auto_routed` was never set or read — the
+  109|     # evidence-driven auto-router it described was never wired into the turn
+  110|     # loop; routing_evidence is written by the Arena/Debate verdict endpoint.)
+---- lines 475-479 ----
+  475| 
+  476| 
+  477| # Part 27 E1: plan texts written by pytest fixtures that leaked into the live
+  478| # store before conftest isolation was airtight (tests/test_workbench*.py).
+  479| _FIXTURE_PLAN_TEXTS = frozenset({'test plan', 'my plan', 'test', '1. write the file'})
+---- lines 775-779 ----
+  775|     must observe the write before returning.
+  776| 
+  777|     ``dirty`` (Part 27 T5): the id (or iterable of ids) of the session(s) the
+  778|     caller actually mutated. When provided, only those are marked for the
+  779|     debounced write — instead of re-serializing the whole recency window on
+---- lines 785-789 ----
+  785|     JSON is never the SoT.
+  786|     """
+  787|     # Part 27 E2: surface tests that bypass the autouse isolatedData fixture.
+  788|     from app.lib.paths import assertPytestDataDirIsolated
+  789|     assertPytestDataDirIsolated('workbench.sessions.save_sessions')
+---- lines 1575-1579 ----
+ 1575| def _session_last_preview(session: WorkbenchSession, cap: int = 100) -> str:
+ 1576|     """Display-safe tail preview of the session's last message (Bot Mode
+ 1577|     Phase A roster rows: avatar + preview + timestamp). Dict payloads (the
+ 1578|     workbench persistence shape) are flattened; non-text tails fall back to
+ 1579|     the last message that HAS text so tool-result endings don't blank rows.
+---- lines 1624-1628 ----
+ 1624|             isinstance(session.metadata, dict) and session.metadata.get('canonicalBotChat')
+ 1625|         ),
+ 1626|         # Bot Mode Phase A roster rows: last-message preview (display-safe,
+ 1627|         # truncated) + the timestamp drives the "Active now" presence strip.
+ 1628|         'lastPreview': _session_last_preview(session),
+===== app\services\workbench\subagent.py =====
+---- lines 48-52 ----
+   48|      # just `remember` — a sub-agent flipping facts or project-memory
+   49|      # entries bypasses the main model's stewardship (gap found in the
+   50|      # Part 17 review: only `remember` was listed).
+   51|      'remember', 'forget', 'list_facts'}
+   52| )
+---- lines 470-474 ----
+  470|         except Exception:
+  471|             pass
+  472|     # Part 26 2.6/Phase 8: reuse the parent's already-assembled tool lists —
+  473|     # each builder here re-ran assembleToolDefs (a BM25 walk over the whole
+  474|     # transcript), so a 5-wave spawn copied the parent transcript through
+===== app\services\workbench\token_budget.py =====
+---- lines 82-86 ----
+   82|         }
+   83| 
+   84|     Design constraint (Part 18 P2.4): the budget counts LOCAL text
+   85|     estimation only (input + output + cacheWrite) and MUST never ingest
+   86|     provider usage — ``cacheRead`` tokens are a re-read of context the
+===== app\services\workbench\tool_guardrails.py =====
+---- lines 3-7 ----
+    3| 
+    4| Port of backend/services/security/tool-guardrails.js, reworked by T16(a)
+    5| (plan §9.4, audit 2026-08-27): the identical-call doom-loop rule is now
+    6| advisory within a run — reminders at cumulative counts 3/5/8 carrying a
+    7| preview of the repeated args, never blocking, reset on any new user
+---- lines 126-130 ----
+  126|         """Length of the trailing A,B,A,B… run, plus the two tone labels.
+  127| 
+  128|         1.2 (Part 25): tones are keyed by ``(toolName, argsHash)`` — the full
+  129|         call identity, not just the name. Comparing names alone made the
+  130|         motivating case (``read_file(a)/read_file(b)/read_file(a)`` — same name,
+===== app\services\workbench\workbench.py =====
+---- lines 1320-1324 ----
+ 1320|         if augMdBody:
+ 1321|             parts.append(f'<aug_directives>\n{augMdBody}\n</aug_directives>')
+ 1322|     # Phase L (Part 17, 2026-08-29): the <session> block stays BYTE-STABLE for
+ 1323|     # the whole session lifetime — id/title/goal/plan/plan-status/
+ 1324|     # execution_state/scratchpad/last_tool_failure/todos were moved OUT of the
+---- lines 1378-1382 ----
+ 1378|         if caps is None:
+ 1379|             try:
+ 1380|                 # Part 18 P1.2/P2.1: the main-agent Tier-1 index is NAME-ONLY
+ 1381|                 # (compact_skills) — descriptions ride in the per-turn
+ 1382|                 # <relevant_skills> tail instead, so name-only catalog grows
+---- lines 1441-1445 ----
+ 1441|         except Exception:
+ 1442|             logger.debug('prompt: agent-messaging block failed', exc_info=True)
+ 1443|     # Phase E guard (prompt layer 1): a bot-scoped session is told its memory
+ 1444|     # + skills are its own. Deterministic + stable per session (cache-safe).
+ 1445|     try:
+---- lines 1564-1568 ----
+ 1564|     Plan/todo state lives on the session, outside the transcript, so it
+ 1565|     survives compaction by construction. Pre-turn it is carried by the
+ 1566|     per-turn <session_state> tail block on the last user message (Phase L —
+ 1567|     the system prompt's <session> block is byte-stable and holds no state);
+ 1568|     mid-turn the tail was built at turn start and goes stale the moment
+---- lines 1710-1714 ----
+ 1710|     message breaks the Anthropic wire format. Pre-turn needs no transcript
+ 1711|     copy — the per-turn <session_state> tail block re-renders every build
+ 1712|     (Phase L; the system prompt's <session> block stays byte-stable).
+ 1713|     """
+ 1714|     from app.services.workbench.context_compressor import _isSummaryMessage
+---- lines 1871-1875 ----
+ 1871|     except Exception:
+ 1872|         pass
+ 1873|     # Phase C gate: message_agent only in a Bot's canonical chat (the tool
+ 1874|     # executor re-checks, so a forged call from elsewhere fails closed).
+ 1875|     try:
+---- lines 2099-2103 ----
+ 2099|     except Exception:
+ 2100|         pass
+ 2101|     # Phase C gate (OpenAI path): same visibility rule as toolDefinitions.
+ 2102|     try:
+ 2103|         from app.services.bot_mode.dm import filter_dm_tools
+---- lines 2651-2655 ----
+ 2651|     6. Emits events for the SSE stream
+ 2652| 
+ 2653|     Serialized per session (Part 26 3.1): with ``wait=True`` (default) a
+ 2654|     second caller queues behind the live turn; with ``wait=False`` it raises
+ 2655|     ``SessionBusyError`` instead of overlapping it.
+---- lines 3072-3076 ----
+ 3072|     with _trace.span('prompt_build'):
+ 3073|         # Build tool defs once and pass into system prompt (no double conversion).
+ 3074|         # Part 26 1.2/Phase 8: only the wire format the resolved provider
+ 3075|         # actually speaks is built — both builders previously ran every turn
+ 3076|         # (each a registry walk + BM25 assembly over the transcript).
+---- lines 3271-3275 ----
+ 3271|             _userMsg = currentMessages[_lastUserIdx]
+ 3272|             _userText = as_str(_userMsg.get('content'), '')
+ 3273|             # Phase D item 2: query expansion — the previous user
+ 3274|             # turn joins the facts query at half weight so follow-ups
+ 3275|             # ("and the second one?") still recall their antecedent fact.
+---- lines 3283-3287 ----
+ 3283|             # facts corpus union and the skills catalogue (bot private root).
+ 3284|             _turnScope = _session_scope.resolve_scope(session)
+ 3285|             # Phase A: with a non-home workspace the memory tail
+ 3286|             # also carries the project's md-file entries (tagged section).
+ 3287|             # Hoisted above the read gate so the skills block (which shares
+---- lines 3299-3303 ----
+ 3299|                     scope=_turnScope,
+ 3300|                 )
+ 3301|                 # Phase D item 4: recall metrics — one internal_state
+ 3302|                 # counter row per turn (before/after instrument for every
+ 3303|                 # retrieval change). Best-effort, never blocking.
+---- lines 3339-3343 ----
+ 3339|                 except Exception:
+ 3340|                     logger.debug('recall metrics write failed', exc_info=True)
+ 3341|                 # Phase A.4: the typed-but-unrendered recalledMemories
+ 3342|                 # event — what memory this turn actually recalled, for the
+ 3343|                 # transcript's recall chip. One event per turn, non-blocking.
+---- lines 3363-3367 ----
+ 3363|             )
+ 3364|             _nudgeBlock = memory_nudge_block(session, _memWritesOn)
+ 3365|             # Phase L: per-turn <session_state> carries the volatile
+ 3366|             # session fields purged from the (now byte-stable) system prompt.
+ 3367|             _stateBlock = _sessionStateBlock(session)
+---- lines 3960-3964 ----
+ 3960|             # Stream rule fired mid-generation (the model narrated a tool call
+ 3961|             # instead of emitting one) — inject a reminder and retry from this
+ 3962|             # point instead of wasting the round. Part 26 2.3: the self-heal
+ 3963|             # retry does NOT consume the round budget (bounded — after
+ 3964|             # _SELFHEAL_EXEMPT_ROUNDS retries the round counts normally, so a
+---- lines 4993-4997 ----
+ 4993|                             }
+ 4994|                         )
+ 4995|                 # Plan §4.3: activate the dormant memoryUpdated path — a
+ 4996|                 # successful `remember` renders as a subtle in-chat chip.
+ 4997|                 if toolName == 'remember':
+---- lines 5130-5134 ----
+ 5130|                 ]
+ 5131|             assistantMsg.pop('tool_calls', None)
+ 5132|             # Part 26 2.4 / Part 27 T3: if stripping left NOTHING (the round was
+ 5133|             # pure tool calls), skip the append — an empty assistant bubble
+ 5134|             # breaks alternation and renders blank. The old guard only caught an

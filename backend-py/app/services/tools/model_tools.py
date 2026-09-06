@@ -111,7 +111,6 @@ def assembleToolDefs(
     context_messages: list[dict] | None = None,
     coreToolNames: set[str] | None = None,
     contextLength: int = 200000,
-    *,
     thresholdPct: float = 10.0,
     preloadK: int = 10,
     skillIndex: list[dict] | None = None,

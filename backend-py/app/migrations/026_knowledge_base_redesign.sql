@@ -1,5 +1,4 @@
 -- 026: Knowledge-base redesign (plan 2026-08-27, Part 3).
---
 -- M1: machine state is not memory. Maintenance/cron/daemon bookkeeping goes
 -- into internal_state; the Memory UI (_BRAINStores) never exposes it.
 CREATE TABLE IF NOT EXISTS internal_state (

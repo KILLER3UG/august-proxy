@@ -1,4 +1,4 @@
-"""Part 19 Phase B — natural-language schedule forms for routines.
+"""Natural-language schedule forms for routines.
 
 ``create_routine``'s own error message advertises ``daily 09:00`` (and the
 RoutinesPane picker will emit ``weekly mon 09:00``-style picks), but

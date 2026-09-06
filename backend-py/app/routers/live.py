@@ -104,7 +104,7 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
     if session is None:
         raise HTTPException(status_code=404, detail='Session not found')
 
-    # Part 26 3.2: Live turns used to append to session.messages with no gate,
+    # Live turns used to append to session.messages with no gate,
     # racing a concurrent workbench turn's currentMessages copy (the next
     # barrier flush resurrected the chat turn's version). Serialize on the
     # same service-layer lock sendWorkbenchMessageStream holds for its turn —

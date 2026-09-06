@@ -75,10 +75,10 @@ _EXPECTED_SNAKE_TABLES = (
     'session_topics',
     'usage_events',
     'config_audit',
-    # learned_heuristics is created then dropped while empty (plan §3.3 M2)
+    # learned_heuristics is created then dropped while empty
     # — a fresh DB must NOT retain it; asserted below instead.
-    # auto_memories retired (Part 21 OQ1 / migration 033) — a fresh DB must
-    # NOT have it; removed from the expected-tables list (Part 25 Phase 7.4).
+    # auto_memories retired — a fresh DB must
+    # NOT have it; removed from the expected-tables list.
     'episodic_timeline',
     'exam_questions',
     'exam_attempts',
@@ -90,7 +90,7 @@ _EXPECTED_SNAKE_TABLES = (
 )
 
 
-def test_phase4_missing_indexes_exist(isolatedData):
+def test_missing_indexes_exist(isolatedData):
     """memory_store.init() creates the Phase 4 session/usage/query indexes (IF NOT EXISTS)."""
     # isolatedData already calls memory_store.init() against a temp brain.
     conn = memoryStore._conn()
@@ -126,7 +126,7 @@ def test_snake_case_tables_after_init(isolatedData):
     # Legacy camelCase tables must not remain
     for camel in ('memoryStore', 'sessionTopics', 'usageEvents', 'configAudit'):
         assert camel not in tables
-    # Empty legacy heuristics table is dropped at init (plan §3.3 M2).
+    # Empty legacy heuristics table is dropped at init.
     assert 'learned_heuristics' not in tables
 
 

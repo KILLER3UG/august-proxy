@@ -1,4 +1,4 @@
-"""M-2 (Part 21) — one shared scope-resolution rule for facts and skills.
+"""M-2 — one shared scope-resolution rule for facts and skills.
 
 The memory scope of a session is ``'global'`` except for a Bot's home chats,
 which resolve to ``'bot:<agentId>'``. Retrieval unions global ∪ this-scope

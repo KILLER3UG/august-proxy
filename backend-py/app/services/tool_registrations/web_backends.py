@@ -84,7 +84,6 @@ async def search_searxng(query: str, max_results: int, base_url: str) -> list[di
 async def run_search(
     query: str,
     max_results: int = 10,
-    *,
     backend: str | None = None,
 ) -> tuple[str, list[dict[str, object]]]:
     """Execute search. Returns ``(backend_id, results)``."""

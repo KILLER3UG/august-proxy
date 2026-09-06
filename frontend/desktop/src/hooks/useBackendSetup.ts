@@ -59,7 +59,7 @@ export function useBackendSetup() {
         detail: event.payload.detail ?? null,
       });
     }).then((fn) => {
-      // Part 27 T3: if the effect cleaned up before the listen promise
+      // If the effect cleaned up before the listen promise
       // resolved, release the listener now instead of leaking it.
       if (disposed) {
         fn();

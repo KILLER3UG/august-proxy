@@ -137,7 +137,7 @@ def test_is_fallback_title_matches_derived_snippet():
     assert not _is_fallback_title('Checkout flake investigation', user)
 
 
-# ── M7 (plan §3.8) ─────────────────────────────────────────────────────────
+# ── M7 ─────────────────────────────────────────────────────────
 
 
 def test_default_title_is_new_chat_not_timestamp():

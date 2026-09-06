@@ -1,4 +1,4 @@
-/* ── SkillsSection test (Part 17 Phase C gap C-12, from Phase B) ────── */
+/* ── SkillsSection test ────── */
 /* Covers the workspace scope selector (C-1), scope/overrides badges
  * (C-2), and workspace-threaded create/delete routing. */
 
@@ -106,7 +106,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('SkillsSection — scope selector + badges (Part 17 C-1/C-2)', () => {
+describe('SkillsSection — scope selector + badges', () => {
   it('shows the scope selector with Global + known workspaces (C-1)', () => {
     renderSection();
     const select = screen.getByTestId('skills-scope-select') as HTMLSelectElement;

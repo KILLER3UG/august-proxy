@@ -117,7 +117,7 @@ async def testApiAudit(client):
     assert resp.status_code == 200
 
 
-# testApiCron / testApiTerminal removed (Part 25 Phase 6): the cron + legacy
+# testApiCron / testApiTerminal removed: the cron + legacy
 # terminal REST routers had zero callers and were deleted; the live terminal
 # surface is terminal_routes.py (websocket/session), covered elsewhere.
 

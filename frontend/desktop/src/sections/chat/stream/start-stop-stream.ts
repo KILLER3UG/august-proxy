@@ -130,7 +130,7 @@ export async function startChatStream(
           )
           .filter(msg => !(msg.id === assistantMsgId && !msg.content)),
       }));
-      // Part 26 7.4: 'queued' — finalize for cleanup WITHOUT the
+      // 'queued' — finalize for cleanup WITHOUT the
       // response-complete chime/OS notification (the real reply hasn't
       // happened; the queued turn's own finalize will chime).
       finalize('queued');

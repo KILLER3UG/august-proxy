@@ -1,4 +1,4 @@
-"""T4 fuzzy edit fallback ladder (plan §9.4): exact → leading-whitespace →
+"""T4 fuzzy edit fallback ladder: exact → leading-whitespace →
 blank-line/elided block → nearby drift, before rejecting. Hash anchors stay
 the staleness gate; the ladder is about match tolerance."""
 

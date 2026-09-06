@@ -1,4 +1,4 @@
-"""Part 10 R-A — code review: severity parser, Layer-1 grounding, runner, routes.
+"""Code review: severity parser, Layer-1 grounding, runner, routes.
 
 Advisory-only contract under test everywhere: nothing raises, nothing blocks;
 degenerate paths fail OPEN with a loud notice.
@@ -20,9 +20,7 @@ from app.services.code_review import (
     run_code_review_async,
 )
 
-# ---------------------------------------------------------------------------
 # R2 — deterministic severity parser
-# ---------------------------------------------------------------------------
 
 
 class TestParseFindings:
@@ -110,9 +108,7 @@ class TestParseFindings:
         assert '```' in findings[0].body and 'x = 1' in findings[0].body
 
 
-# ---------------------------------------------------------------------------
 # R3 Layer 1 — deterministic grounding (keep / REHOME / DROP)
-# ---------------------------------------------------------------------------
 
 
 def _finding(quoted: str, file: str = '') -> Finding:
@@ -174,9 +170,7 @@ class TestGrounding:
         assert dropped == 0 and survivors[0].status == 'kept'
 
 
-# ---------------------------------------------------------------------------
 # Advisory runner — fail-open contract
-# ---------------------------------------------------------------------------
 
 
 DIFF = 'diff --git a/src/a.py b/src/a.py\n+def f():\n+    return 42\n'
@@ -280,9 +274,7 @@ class TestRunCodeReview:
         assert result['skipped'] is False and result['findings'] == []
 
 
-# ---------------------------------------------------------------------------
 # Routes (advisory: always 200)
-# ---------------------------------------------------------------------------
 
 
 class TestRoutes:
@@ -342,9 +334,7 @@ class TestRoutes:
         assert res.json()['skipped'] is True
 
 
-# ---------------------------------------------------------------------------
 # R-B — Layer-2 independent-model judge
-# ---------------------------------------------------------------------------
 
 
 def _mk_finding(severity: int, title: str, file: str = '', line: int = 0) -> Finding:

@@ -1,4 +1,4 @@
-"""Part 21 M-11 — automation persistent memory (ledger, notepad, incidents,
+"""Automation persistent memory (ledger, notepad, incidents,
 wake context, retention sweep) + Part 19 Phase B delivery/tools.
 
 The brain-DB stores live next to turn_outcomes (migration 031). Everything

@@ -151,12 +151,18 @@ class TestSystemPrompt:
         assert 'Context manifest' in prompt
         assert '- System prompt:' in prompt
         assert '- Session state:' in prompt
-        # Today's date appears (ISO yyyy-mm-dd).
+        # Today's date rides the per-turn <session_state> tail block (it can
+        # change at midnight/DST, so it must never sit in the cached system
+        # prefix); the system prompt itself stays date-free.
         today = datetime.now().strftime('%Y-%m-%d')
-        assert f'- Date: {today}' in prompt
+        assert f'- Date: {today}' not in prompt
+        assert 'date:' not in prompt.split('<intake>', 1)[1].split('</intake>', 1)[0]
+        from app.services.workbench.workbench import _sessionStateBlock
+
+        assert today in _sessionStateBlock(session)
 
     def testPromptWithGoal(self):
-        # Phase L: the goal left the (byte-stable) system prompt; it
+        # The goal left the (byte-stable) system prompt; it
         # rides the per-turn <session_state> tail block instead.
         session = createWorkbenchSession()
         setWorkbenchGoal(session, 'Build feature')
@@ -167,7 +173,7 @@ class TestSystemPrompt:
         assert 'Build feature' in _sessionStateBlock(session)
 
     def testPromptWithPlan(self):
-        # Phase L: plan status lives in the per-turn <session_state>
+        # Plan status lives in the per-turn <session_state>
         # block (markdown head + path), not the cached system prompt.
         session = createWorkbenchSession()
         submitPlan(session, {'markdown': 'My plan', 'planPath': 'plans/p.md'})

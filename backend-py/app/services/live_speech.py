@@ -71,7 +71,6 @@ def _api_base_and_key(provider: dict[str, object]) -> tuple[str, str]:
 
 async def transcribe_audio(
     audio_bytes: bytes,
-    *,
     filename: str = 'audio.webm',
     content_type: str = 'audio/webm',
 ) -> dict[str, object]:

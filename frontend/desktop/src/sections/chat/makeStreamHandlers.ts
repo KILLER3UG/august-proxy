@@ -27,6 +27,7 @@
  */
 
 import type { ChatMessage, MessageBlock, WorkbenchBtwState, AppendBlockEvent, ProviderSetupResult, IntegrationSetupResult } from '@/types/chat';
+import type { ActionNeededPayload } from '@/components/chat/ActionNeededCard';
 import type { ChatTurnRecord } from './chat-runtime';
 import type { WorkbenchEventHandlers, WorkbenchSession, WorkbenchTurnUsage } from '@/types/workbench';
 import type { GitDiffResult } from '@/api/git';
@@ -497,6 +498,22 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       if (isIntegrationTool && integrationSetup && typeof integrationSetup === 'object') {
         integrationSetupResult = integrationSetup as IntegrationSetupResult;
       }
+      // Browser escalation: the result JSON carries an actionNeeded payload
+      // when a run hits a login wall. Extract it structurally — the summary
+      // is truncated at 240 chars and actionNeeded serializes last in the
+      // result (after the elements snapshot + screenshot path), so
+      // string-scanning the summary virtually never sees it.
+      let actionNeededResult: ActionNeededPayload | undefined;
+      const parsedRecord = parsedResult as Record<string, unknown> | null | undefined;
+      if (
+        toolEntry &&
+        /(^|@)browser_/.test(toolEntry.name) &&
+        parsedRecord &&
+        parsedRecord.actionNeeded &&
+        typeof parsedRecord.actionNeeded === 'object'
+      ) {
+        actionNeededResult = parsedRecord.actionNeeded as ActionNeededPayload;
+      }
 
       toolResults = toolResults.map(t => t.id === id ? {
         ...t,
@@ -513,8 +530,9 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         searchHits: searchHits ?? t.searchHits,
         providerSetup: providerSetupResult ?? t.providerSetup,
         integrationSetup: integrationSetupResult ?? t.integrationSetup,
+        actionNeeded: actionNeededResult ?? t.actionNeeded,
       } : t);
-      // Minimal-output transcript (plan §4.2): a failed command's inline
+      // Minimal-output transcript: a failed command's inline
       // error is the structured digest (pytest-style last line) when the
       // output carries one, else the first error line — never a raw head
       // dump. Full output stays in `summary`/toolResults for the drawer.
@@ -535,6 +553,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         searchHits,
         providerSetup: providerSetupResult,
         integrationSetup: integrationSetupResult,
+        actionNeeded: actionNeededResult,
       });
       // 3.1: a successful edit-class tool result is a real mutation. Count it
       // so the post-turn git-diff fetch fires even though the `session` event
@@ -627,7 +646,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onExecutionState: ({ phase, step }) => {
       // update_state transition — the inline working strip shows the
       // phase/step chip while the turn streams, and the block stream keeps
-      // a persisted phase marker so the plan tree (plan §4.1) regroups
+      // a persisted phase marker so the plan tree regroups
       // identically on replay.
       publishExecutionState(resolveUiSessionId(sessionId), phase, step);
       streamBlocks = appendBlockEvent(streamBlocks, {
@@ -921,7 +940,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onUpstreamRetry: ({ attempt, maxRetries, delayMs, status }) => {
-      // Phase L (Part 17): the provider client itself is backing off
+      // The provider client itself is backing off
       // (429/503/connection refused, pre-first-token of this round).
       // Notice-only — no buffer rollback: nothing of this round streamed,
       // and earlier rounds' text blocks must stay on screen.

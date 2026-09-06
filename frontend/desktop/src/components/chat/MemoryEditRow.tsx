@@ -1,6 +1,6 @@
 /**
  * MemoryEditRow — a model memory write (`remember` / `save_fact` / `forget`)
- * rendered as one compact rail row (plan §4.1 "Memory write" class):
+ * rendered as one compact rail row:
  *
  *   collapsed:  🧠  Saved memory        [entry title]
  *   expanded:   🧠  Saved memory        [entry title]   ⌄

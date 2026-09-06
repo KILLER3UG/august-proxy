@@ -56,7 +56,7 @@ function renderCode(token: Tokens.Code): string {
   );
 }
 
-// ── KaTeX math extension (v4 §16.1) ───────────────────────────────────
+// ── KaTeX math extension ───────────────────────────────────
 
 const katexCache = new Map<string, string>();
 const MAX_KATEX_CACHE_SIZE = 500;

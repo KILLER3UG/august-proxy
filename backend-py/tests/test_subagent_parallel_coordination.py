@@ -277,9 +277,7 @@ class CoordinationStub:
             yield ev
 
 
-# ---------------------------------------------------------------------------
 # Fixture: isolate the workbench + wire the stub model + a fresh blackboard.
-# ---------------------------------------------------------------------------
 @pytest.fixture
 def coord_env(monkeypatch, tmp_path):
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
@@ -382,9 +380,7 @@ async def _spawn_and_wait(coord_env, goals, execution_log=None, busy_sleep=0.0):
     return handles, results, stub, bus_events
 
 
-# ---------------------------------------------------------------------------
 # Test 1 (Scenario A, positive): shared decision coordinated via blackboard.
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_shared_decision_coordinated_via_blackboard(coord_env):
     proposer_goal = 'ROLE:PROPOSER DECIDED=/api/v2-K3p Decide the shared API base path and record it on the blackboard.'
@@ -411,9 +407,7 @@ async def test_shared_decision_coordinated_via_blackboard(coord_env):
     assert str(notes[0]['value']) == '/api/v2-K3p'
 
 
-# ---------------------------------------------------------------------------
 # Test 2 (Scenario A, contrast): without coordination the outputs contradict.
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_shared_decision_contradicts_without_coordination(coord_env):
     proposer_goal = 'ROLE:PROPOSER DECIDED=/api/v2-K3p Decide the shared API base path and record it on the blackboard.'
@@ -434,9 +428,7 @@ async def test_shared_decision_contradicts_without_coordination(coord_env):
     assert '/api/v2-K3p' not in adopter_text
 
 
-# ---------------------------------------------------------------------------
 # Test 3 (Scenario B, positive): parallel port allocation with no contradiction.
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_parallel_resource_allocation_no_contradiction(coord_env):
     goals = [
@@ -472,9 +464,7 @@ async def test_parallel_resource_allocation_no_contradiction(coord_env):
     assert len(set(values)) == 3, f'port collision detected: {values}'
 
 
-# ---------------------------------------------------------------------------
 # Test 4 (concurrency): sub-agents run in parallel with results delivered.
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_subagents_run_concurrently(coord_env):
     execution_log: list[tuple[str, float, str]] = []

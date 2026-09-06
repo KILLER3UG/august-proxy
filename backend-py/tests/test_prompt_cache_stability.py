@@ -117,7 +117,7 @@ def test_frozen_index_not_persisted(isolatedData):
     assert '_frozen_mem_index' not in session.toDict()
 
 
-# ── Phase L (Part 17): volatile purge + cross-session identity ────────────
+# ── Phase L: volatile purge + cross-session identity ────────────
 
 
 def test_session_block_holds_no_volatile_or_unique_fields(isolatedData):
@@ -216,13 +216,62 @@ def test_two_sessions_same_workspace_identical_prompts(isolatedData, tmp_path):
     assert 'id:' not in p1.split('<session>', 1)[1].split('</session>', 1)[0]
 
 
+def test_vcs_state_frozen_across_commits(isolatedData, tmp_path):
+    """A commit or dirty flip mid-session must NOT change the system prompt:
+    the vcs/recent-commits strings are frozen at the session's first build.
+    The workspace block sits in the cached prefix, and the agent itself
+    commits constantly — an unfrozen probe would bust the provider prefix
+    cache after every commit (once the 60s probe TTL lapses)."""
+    import subprocess
+
+    from app.services.workbench import workbench as wb
+
+    ws = tmp_path / 'proj'
+    ws.mkdir()
+
+    def git(*args: str) -> None:
+        subprocess.run(['git', *args], cwd=ws, capture_output=True, text=True, timeout=15)
+
+    git('init')
+    (ws / 'a.txt').write_text('v1')
+    git('add', '-A')
+    git('-c', 'user.email=t@t.local', '-c', 'user.name=t', 'commit', '-m', 'init')
+
+    session = wb.createWorkbenchSession()
+    session.workspacePath = str(ws)
+    tools = [{'name': 'read_file'}]
+    p1 = _build(session, tools=tools)
+    assert 'vcs:' in p1
+
+    # Exactly what an agent turn does: edit files, commit.
+    (ws / 'b.txt').write_text('new')
+    git('add', '-A')
+    git('-c', 'user.email=t@t.local', '-c', 'user.name=t', 'commit', '-m', 'second')
+
+    p2 = _build(session, tools=tools)
+    assert p2 == p1, 'a mid-session commit changed the cached prompt bytes'
+
+    # A NEW session probes fresh and sees the new commit.
+    wb._git_probe_cache.clear()
+    s2 = wb.createWorkbenchSession()
+    s2.workspacePath = str(ws)
+    p3 = _build(s2, tools=tools)
+    assert p3 != p1
+    assert 'second' in p3
+
+
 def test_session_state_tail_block_shape(isolatedData):
-    """The tail block renders every purged field and stays empty when the
-    session has no state (no junk block on a fresh chat)."""
+    """The tail block renders every purged field plus the current date; a
+    stateless session renders a date-only block (no junk fields on a fresh
+    chat, but the model always knows "today")."""
     from app.services.workbench import workbench as wb
 
     fresh = wb.createWorkbenchSession()
-    assert wb._sessionStateBlock(fresh) == ''
+    freshBlock = wb._sessionStateBlock(fresh)
+    assert freshBlock.startswith('<session_state>')
+    assert 'date: ' in freshBlock
+    assert 'title:' not in freshBlock
+    assert freshBlock.rstrip().endswith('</session_state>')
 
     loaded = wb.createWorkbenchSession()
     loaded.title = ' Bug hunt '
@@ -233,6 +282,7 @@ def test_session_state_tail_block_shape(isolatedData):
     loaded._execution_state = {'phase': 'investigate'}
     block = wb._sessionStateBlock(loaded)
     assert block.startswith('<session_state>')
+    assert 'date: ' in block
     assert 'title: Bug hunt' in block  # collapsed whitespace
     assert 'goal: find the null deref' in block
     assert 'plan:' in block

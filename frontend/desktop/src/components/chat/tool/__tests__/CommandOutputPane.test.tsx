@@ -30,7 +30,7 @@ describe('formatCommandOutputForDisplay', () => {
   });
 });
 
-describe('CommandOutputPane — minimal output (plan §4.1)', () => {
+describe('CommandOutputPane — minimal output', () => {
   const PYTEST_FAIL = [
     'collected 2 items',
     'test_a.py::test_ok PASSED',
@@ -99,7 +99,7 @@ describe('CommandOutputPane — minimal output (plan §4.1)', () => {
   });
 });
 
-describe('CommandOutputPane — /verbose (plan §4.2)', () => {
+describe('CommandOutputPane — /verbose', () => {
   it('verbose renders full output inline on success — no toggle needed', () => {
     render(
       <CommandOutputPane

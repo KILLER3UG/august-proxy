@@ -191,7 +191,7 @@ def test_consolidation_supersedes_same_title_conflicts():
     byKey = {r['fact_key']: r['status'] for r in rows}
     assert byKey['cfg:new'] in (None, 'active')
     assert byKey['cfg:old'] == 'superseded'
-    # Superseded rows are kept, not deleted (plan §3.5-c).
+    # Superseded rows are kept, not deleted.
     assert len(rows) == 2
 
 

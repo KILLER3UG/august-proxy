@@ -33,9 +33,9 @@ export function ToolBlock({
 }
 
 /**
- * Legacy role:'tool' message card — minimal-output policy (plan §4.3):
+ * Legacy role:'tool' message card — minimal-output policy:
  * invocation row + status pill only; no verbatim args/result dump. The
- * full output lives in the drawer/trajectory. /verbose (plan §4.2) lifts
+ * full output lives in the drawer/trajectory. /verbose lifts
  * the rule and renders the raw result inline.
  */
 export function ToolCallCard({

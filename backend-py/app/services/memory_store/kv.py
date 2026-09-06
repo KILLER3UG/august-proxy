@@ -24,7 +24,7 @@ def save_internal(key: str, value: JsonValue) -> None:
     state / registry data, not user-visible memory. Durable memory goes
     through the facts store (``save_fact``); this name makes misuse obvious.
     """
-    # Part 27 E2: surface tests that bypass the autouse isolatedData fixture.
+    # Surface tests that bypass the autouse isolatedData fixture.
     assertPytestDataDirIsolated('memory_store.save_internal')
     conn = _conn()
     conn.execute(
@@ -47,7 +47,7 @@ def get_memory(key: str) -> JsonValue | None:
 
 
 def set_internal_state(key: str, value: JsonValue) -> None:
-    """Write machine state to ``internal_state`` (plan §3.2 M1).
+    """Write machine state to ``internal_state``.
 
     Maintenance/cron/daemon bookkeeping lives here — never in the
     user-visible ``memory_store`` KV and never in facts. Not exposed to
@@ -59,7 +59,7 @@ def set_internal_state(key: str, value: JsonValue) -> None:
         'ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
         (key, _json(value)),
     )
-    # P4.2 (Part 18): internal_state is machine bookkeeping, not read back
+    # P4.2: internal_state is machine bookkeeping, not read back
     # cross-thread within the turn — debounce the commit (≤2s).
     defer_commit(conn)
 

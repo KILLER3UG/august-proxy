@@ -3,14 +3,12 @@ Sub-agent orchestrator — manages parallel sub-agent execution with a capped
 worker pool.
 
 Design
-------
 - Singleton (one per app process), attached to ``app.state`` via lifespan.
 - Worker pool capped at 5 via ``asyncio.Semaphore``.
 - Each sub-agent task publishes lifecycle events to the shared
   ``AgentMessageBus`` under topics ``task:{taskId}:{progress|result|failure}``.
 
 Peer-help (measured — do not design as recovery)
-------------------------------------------------
 On **unhandled Exception** in the worker slot only, ``_handleFailure`` publishes
 ``task:{id}:failure`` and waits up to ``PEER_HELP_WINDOW_SECONDS`` for a
 ``task:{id}:peerHelp`` signal.  A claim ends the wait early but does **not**
@@ -24,7 +22,6 @@ wait (no recovery would run anyway).
 See docs/REFACTOR_PROGRESS.md decision table + Phase 6 **B27**.
 
 API
----
     orchestrator = SubagentOrchestrator(bus)
     handle = await orchestrator.spawn(request)
     await orchestrator.terminate(taskId)
@@ -325,7 +322,7 @@ class SubagentOrchestrator:
     def __init__(self, bus: AgentMessageBus, max_workers: int = MAX_CONCURRENT_WORKERS) -> None:
         self._bus = bus
         self._semaphore = asyncio.Semaphore(max_workers)
-        # 1.9 (Part 25): the global 5-slot semaphore ignored each session's
+        # 1.9: the global 5-slot semaphore ignored each session's
         # delegation.maxConcurrent (a session set to 2 still ran 5; one set to
         # 30 was capped at 5). A per-session semaphore, acquired alongside the
         # global one, makes the effective gate min(per-session, global).
@@ -389,7 +386,7 @@ class SubagentOrchestrator:
                 if jid and jid in self._handles:
                     h = self._handles[jid]
                     h.touch()
-                    # Part 27 T5: _record_run is a SELECT+UPDATE+commit; a chatty
+                    # _record_run is a SELECT+UPDATE+commit; a chatty
                     # worker emits hundreds of subagentText deltas per run.
                     # Time-throttle the liveness row to ~1/s — terminal status is
                     # recorded by the run loop's own _record_run calls, so the
@@ -424,7 +421,7 @@ class SubagentOrchestrator:
             model = as_str(item.get('model'), '')
             # Runtime recursion depth: children of a sub-agent run at
             # parent_depth + 1; root spawns default to 0. Hermes max_spawn_depth caps this.
-            # Part 27 T2: read the per-task depth ContextVar (race-free across
+            # Read the per-task depth ContextVar (race-free across
             # concurrent workers); fall back to the session attr for callers that
             # spawn outside a worker context.
             from app.services.workbench.context import currentSubagentDepth
@@ -441,7 +438,7 @@ class SubagentOrchestrator:
                 sid = str(request.session.get('id', ''))
             handle = SubagentHandle(taskId, agentId, goal, sessionId=sid)
             if raw_depth > max_depth:
-                # Part 27 T2: REJECT over-depth spawns instead of clamping.
+                # REJECT over-depth spawns instead of clamping.
                 # Clamping ran every nested spawn that slipped the tool filter
                 # at max_depth, so recursion never terminated — unbounded.
                 handle.status = 'failed'
@@ -644,7 +641,7 @@ class SubagentOrchestrator:
         return list(msgs)
 
     def _collectMissedSteer(self, taskId: str) -> str:
-        """D-1 (Part 22): steering that arrived after the worker's final
+        """D-1: steering that arrived after the worker's final
         mailbox drain must not vanish silently — surface it on the result so
         the parent sees what the worker never got to act on."""
         try:
@@ -657,7 +654,7 @@ class SubagentOrchestrator:
 
     @staticmethod
     def _partial_from_transcript(taskId: str, limit: int = 6000) -> str:
-        """D-2 (Part 22): reconstruct the worker's partial findings from its
+        """D-2: reconstruct the worker's partial findings from its
         live transcript (text deltas + tool-call names) for stop/cancel."""
         try:
             events = _read_transcript(taskId, limit=200)
@@ -795,7 +792,7 @@ class SubagentOrchestrator:
                 )
                 handle.result = result
                 handle.finishedAt = time.time()
-                # D-1 (Part 22): steering queued after the worker's final
+                # D-1: steering queued after the worker's final
                 # mailbox drain would otherwise vanish — attach it to the
                 # result so the parent sees what the worker never acted on.
                 missed = self._collectMissedSteer(handle.taskId)

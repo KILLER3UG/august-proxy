@@ -214,7 +214,7 @@ def test_delete_removes_only_project_override(isolated, tmp_path):
 
 
 def test_delete_rejects_path_traversal_names(isolated, tmp_path):
-    # §9 F-1: deleteSkill must validate `name` like create/patch do — a
+    # DeleteSkill must validate `name` like create/patch do — a
     # traversal name ('..' or containing separators) must raise BEFORE the
     # project-root join, and the sibling directory must survive.
     ws = tmp_path / 'ws-deltrav'

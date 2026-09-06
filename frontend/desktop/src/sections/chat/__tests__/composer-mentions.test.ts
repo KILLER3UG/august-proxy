@@ -1,4 +1,4 @@
-/* Bot Mode @-mention middleware (Phase C, OQ8) — annotation only, never a
+/* Bot Mode @-mention middleware — annotation only, never a
  * delivery. Pure-function tests: resolve against the roster, append the
  * identification note, and pass unknown handles / emails through untouched. */
 

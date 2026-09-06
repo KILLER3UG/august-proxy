@@ -36,7 +36,7 @@ from app.json_narrowing import as_dict, as_int, as_list, as_str
 APPROVABLE_KINDS = frozenset({'brain_config', 'skill_create', 'skill_patch', 'skill_delete'})
 # Analysis-only kinds — always safe to store, never auto-applied.
 OBSERVATION_KINDS = frozenset({'tool_bucket', 'tool_description', 'flow_map', 'observation'})
-# Part 17 Phase E: cross-project promotion. Filed by harness_promote's judge
+# Cross-project promotion. Filed by harness_promote's judge
 # pass (≥2-project bar); approved via the same human gate, applied
 # copy-on-write by harness_promote.apply_promotion with provenance.
 PROMOTION_KINDS = frozenset({'promote'})
@@ -166,7 +166,7 @@ def _introspect_memory(out: dict[str, Any]) -> None:
         from app.services.memory_store.rest import get_stats
 
         stats = get_stats()
-        # Part 27 T3: get_stats counts ALL facts rows, but the model's own
+        # Get_stats counts ALL facts rows, but the model's own
         # list_facts / boot index only see active, unexpired, global-scope
         # facts — so introspect advertised "6 facts" while list_facts returned
         # 3. Report the count the model can actually read (raw kept as
@@ -279,7 +279,6 @@ def format_introspection(data: dict[str, Any]) -> str:
 
 
 def save_proposal(
-    *,
     problem: str,
     evidence: str,
     proposal: str,
@@ -302,7 +301,7 @@ def save_proposal(
     if kind not in VALID_KINDS:
         raise ValueError(f'unknown kind {kind!r}; use one of {sorted(VALID_KINDS)}')
 
-    # §9 F-2: fail skill-kind proposals at file time so the queue never holds
+    # Fail skill-kind proposals at file time so the queue never holds
     # a live weapon — payload.name must pass the same validation the applier
     # (and skill CRUD) enforces.
     if kind in APPROVABLE_KINDS and kind != 'brain_config':
@@ -448,7 +447,6 @@ def _skill_frontmatter(
     name: str,
     description: str,
     trigger: str,
-    *,
     origin: str = 'human',
     learnedFrom: list[str] | None = None,
     version: int = 1,
@@ -519,7 +517,7 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
         if not name:
             return {'ok': False, 'error': 'skill proposals need payload.name'}
         if kind == 'skill_patch' and not body.strip():
-            # §12 F-5: a body-less patch would render _ensure_canonical_body's
+            # A body-less patch would render _ensure_canonical_body's
             # all-placeholder text over the real SKILL.md on approval. Refuse.
             return {'ok': False, 'error': 'skill_patch proposals need payload.body'}
         try:
@@ -613,7 +611,7 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
                 _bust_prompt_skills_cache()
             except Exception:
                 pass
-            # §12 F-10: a retired fingerprint's clock stops here — mark it so
+            # A retired fingerprint's clock stops here — mark it so
             # the resolution pass never re-suggests what a human retired.
             fp = as_str(payload.get('fingerprint'), '')
             if fp:
@@ -628,7 +626,7 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
             return {'ok': False, 'error': str(exc)}
 
     if kind == 'promote':
-        # Part 17 Phase E: copy-on-write promotion (global fact or global
+        # Copy-on-write promotion (global fact or global
         # skill with provenance) — the deterministic applier lives in
         # harness_promote so the enumeration/judge code stays separate.
         from app.services.harness_promote import apply_promotion
@@ -661,7 +659,7 @@ async def scheduled_introspection_loop() -> None:
                 logging.getLogger(__name__).info(
                     'harness introspection filed %d observation proposal(s)', filed
                 )
-            # Part 17 Phase E: the cross-project promotion judge rides the
+            # The cross-project promotion judge rides the
             # same cadence — files `promote` proposals only (never applies).
             import asyncio as _aio
 
@@ -728,7 +726,7 @@ def _run_scheduled_pass() -> int:
 
 
 def _run_scheduled_promotion_pass() -> int:
-    """Part 17 Phase E: promotion judge on the same scheduled cadence.
+    """Promotion judge on the same scheduled cadence.
 
     Returns the number of ``promote`` proposals filed (0 when skillLearning
     is off or nothing recurs across ≥2 projects). Never applies anything.

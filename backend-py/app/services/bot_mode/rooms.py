@@ -1,4 +1,4 @@
-"""Part 19 Phase D — group rooms: deterministic serial rounds (no LLM router).
+"""Group rooms: deterministic serial rounds (no LLM router).
 
 A room is 2-6 Bots deliberating over a shared, client-owned log. The driver
 here is pure control flow: a user send runs ≤ ``MAX_ROUNDS`` serial rounds;
@@ -378,7 +378,6 @@ def _room_name(room_id: int) -> str:
 async def run_room(
     room_id: int,
     user_text: str,
-    *,
     thread_id: int | None = None,
     runner: object = None,
     max_rounds: int = 0,
@@ -420,7 +419,7 @@ async def run_room(
     review: tuple[str, str] | None = None  # (reviewer_id, summary)
     review_requester = ''                  # member who asked for the review
     revision: str = ''                     # member owed a revision turn
-    # 2.10 (Part 25): the reviewer speaks in the NEXT round, so the verdict
+    # 2.10: the reviewer speaks in the NEXT round, so the verdict
     # marker must survive the round boundary — `review` is cleared when we
     # schedule the round, so track the pending reviewer separately.
     pending_verdict_for = ''

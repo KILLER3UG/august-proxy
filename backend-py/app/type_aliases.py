@@ -25,9 +25,7 @@ from typing import TypedDict
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, object]
 
 
-# ---------------------------------------------------------------------------
 # INTERNAL — snake_case fields (convert at JSON/HTTP boundary when needed)
-# ---------------------------------------------------------------------------
 
 
 class AliasDict(TypedDict, total=False):
@@ -106,10 +104,8 @@ class ProviderResponse(TypedDict, total=False):
     headers: dict[str, str]
 
 
-# ---------------------------------------------------------------------------
 # WIRE — camelCase keys (SQLite / JSON store / API response parity)
 # Wire-format keys (SQLite/JSON/API); not renamed in Phase 2.
-# ---------------------------------------------------------------------------
 
 
 class BrainConfigDict(TypedDict, total=False):

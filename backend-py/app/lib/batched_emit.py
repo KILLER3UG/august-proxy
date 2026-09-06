@@ -24,7 +24,6 @@ class BatchedEmit:
     def __init__(
         self,
         emit: EmitFn | None,
-        *,
         max_chars: int = 256,
         max_interval_ms: float = 12.0,
         on_first_content: Callable[[], None] | None = None,

@@ -1,5 +1,5 @@
 /**
- * File-kind classification for the unified ChangesCard (plan §4.5).
+ * File-kind classification for the unified ChangesCard.
  *
  * `classifyFileKind` lifts the old produced-files `kindLabel` mapping and
  * adds text/document kinds so `.md`/`.txt` read `Document · MD` instead of a

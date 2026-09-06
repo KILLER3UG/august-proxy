@@ -150,7 +150,7 @@ describe('RightDrawerSubagentsSection', () => {
     });
     renderSection();
     fireEvent.click(await screen.findByTestId('right-drawer-subagent-general-1'));
-    // Part 27 A4: the todo list is a header chip that opens a popover.
+    // The todo list is a header chip that opens a popover.
     const chip = await screen.findByTestId('subagent-progress-chip');
     expect(chip.textContent).toContain('1/3');
     fireEvent.click(chip);

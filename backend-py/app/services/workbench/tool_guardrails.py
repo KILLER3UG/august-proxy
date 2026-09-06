@@ -34,7 +34,7 @@ class ToolCallTracker:
         self._priorTurnCalls: set[tuple[str, str]] = set()
         self._crossTurnStrikes: dict[tuple[str, str], int] = defaultdict(int)
         self._failureCount: defaultdict[str, int] = defaultdict(int)
-        # 1.3 (Part 25): only calls that ENDED IN FAILURE carry across the turn
+        # 1.3: only calls that ENDED IN FAILURE carry across the turn
         # boundary. A stable command (pytest -q, git status) that keeps
         # succeeding must never accumulate cross-turn strikes and get blocked
         # on turn 3 — the rule targets re-issued calls that did NOT advance.
@@ -67,7 +67,7 @@ class ToolCallTracker:
         if len(self._callSequence) > 50:
             self._callSequence = self._callSequence[-50:]
 
-        # Cross-turn loop (T16a): the same (tool, args) re-issued after a
+        # Cross-turn loop: the same (tool, args) re-issued after a
         # user-message boundary already ran before it — the previous
         # attempt(s) did not advance the task. Nudge once, then break.
         if key in self._priorTurnCalls:
@@ -86,7 +86,7 @@ class ToolCallTracker:
                 'change the approach or the arguments.',
             )
 
-        # Within-run identical-call reminders (T16a): advisory at 3/5/8,
+        # Within-run identical-call reminders: advisory at 3/5/8,
         # never blocking; counters reset on any new user message.
         self._runTotals[key] += 1
         count = self._runTotals[key]
@@ -196,7 +196,7 @@ class ToolCallTracker:
         self._callSequence.clear()
 
     def record_user_message(self) -> None:
-        """A new user message arrived: within-run reminders reset (T16a),
+        """A new user message arrived: within-run reminders reset,
         but the turn's calls stay known so a loop repeating across the
         boundary gets nudged, then broken."""
         self._handOffTurnHistory()

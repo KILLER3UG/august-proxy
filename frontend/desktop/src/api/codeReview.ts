@@ -1,4 +1,4 @@
-/* ── code-review-api ─ typed client for /api/code-review/* (Part 10 R-A) ── */
+/* ── code-review-api ─ typed client for /api/code-review/* ── */
 
 import { api } from './client';
 

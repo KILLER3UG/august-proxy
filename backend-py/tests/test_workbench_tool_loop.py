@@ -86,7 +86,7 @@ class StubClient:
         elif self.mode == 'error':
             yield {'_event_type': 'error', 'error': {'type': 'upstream_error'}}
         elif self.mode == 'tool_truncated_once':
-            # T2: round 1 stops on the output token limit while carrying a
+            # Round 1 stops on the output token limit while carrying a
             # tool call; round 2 answers in text.
             if roundN == 1:
                 yield {
@@ -107,7 +107,7 @@ class StubClient:
                 yield {'_event_type': 'content_block_start', 'content_block': {'type': 'text', 'text': 'Done.'}}
                 yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 10, 'output_tokens': 5}}
         elif self.mode == 'todos_once':
-            # T7: round 1 submits a todo list; round 2 answers in text.
+            # Round 1 submits a todo list; round 2 answers in text.
             if roundN == 1:
                 yield {
                     '_event_type': 'content_block_start',
@@ -133,7 +133,7 @@ class StubClient:
                 yield {'_event_type': 'content_block_start', 'content_block': {'type': 'text', 'text': 'Planned.'}}
                 yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 10, 'output_tokens': 5}}
         elif self.mode == 'state_once':
-            # T7: round 1 updates execution state; round 2 answers in text.
+            # Round 1 updates execution state; round 2 answers in text.
             if roundN == 1:
                 yield {
                     '_event_type': 'content_block_start',
@@ -168,7 +168,7 @@ class StubClient:
                 yield {'_event_type': 'content_block_start', 'content_block': {'type': 'text', 'text': 'Done.'}}
                 yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 10, 'output_tokens': 5}}
         elif self.mode == 'read_then_write':
-            # T17: round 1 reads existing.txt, round 2 overwrites it,
+            # Round 1 reads existing.txt, round 2 overwrites it,
             # round 3 answers in text.
             if roundN == 1:
                 yield {
@@ -202,7 +202,7 @@ class StubClient:
                 yield {'_event_type': 'content_block_start', 'content_block': {'type': 'text', 'text': 'Updated.'}}
                 yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 10, 'output_tokens': 5}}
         elif self.mode == 'overflow_once':
-            # §9.3 #2: attempt 1 hits a context-overflow error; after the
+            # Attempt 1 hits a context-overflow error; after the
             # reactive reduction the retry (attempt 2) answers in text.
             if roundN == 1:
                 yield {
@@ -391,7 +391,7 @@ class TestMemoryUpdatedEmission:
 
 
 class TestLengthStopFailAll:
-    """T2 (plan §9.4): a generation that stopped on the output token limit
+    """A generation that stopped on the output token limit
     may carry half-parsed tool arguments — every tool call in the batch
     fails unexecuted with a self-heal message, and the loop continues."""
 
@@ -422,7 +422,7 @@ class TestLengthStopFailAll:
 
 
 class TestPlanStateReinjection:
-    """T7 (plan §9.4): plan/todo state changed mid-turn must be re-injected
+    """Plan/todo state changed mid-turn must be re-injected
     on the state tool's receipt — the <session> block in the system text was
     built at turn start and goes stale within the same turn."""
 
@@ -466,7 +466,7 @@ class TestPlanStateReinjection:
 
 
 class TestSpillInLoop:
-    """Stage B end-to-end (plan §9.3 #3): a >50 KB fresh result from a real
+    """Stage B end-to-end: a >50 KB fresh result from a real
     tool dispatch is spilled to a session file; the history copy the model
     sees next round is the bounded head/tail preview."""
 
@@ -507,7 +507,7 @@ class TestSpillInLoop:
 
 
 class TestPostEditVerificationInLoop:
-    """T1/T14 end-to-end (plan §9.4): a successful write_file dispatch runs
+    """T1/T14 end-to-end: a successful write_file dispatch runs
     the workspace verification gate and the receipt is appended to the tool
     result in BOTH the SSE copy and the model-facing history."""
 
@@ -596,7 +596,7 @@ class TestPostEditVerificationInLoop:
 
 
 class TestDurabilityBarriersInLoop:
-    """T18 end-to-end (plan §9.4): barrier flushes persist the session with
+    """T18 end-to-end: barrier flushes persist the session with
     turnOpen=True mid-turn, the turn closes with turnOpen=False, and a
     failed flush aborts the protected operation (fail-closed)."""
 
@@ -685,7 +685,7 @@ class TestShadowGitInLoop:
 
 
 class TestApprovalAxisInLoop:
-    """T5 end-to-end (plan §9.4): the approval axis is a second, independent
+    """T5 end-to-end: the approval axis is a second, independent
     axis over command tools. Inert when no policy is configured (default);
     when enabled it denies via durable rules with feedback, asks on
     destructive commands (queueing an ApprovalBanner pending mutation), and
@@ -879,7 +879,7 @@ class TestApprovalAxisInLoop:
 
 
 class TestReadBeforeEditInLoop:
-    """T17 end-to-end (plan §9.4): editing a file the session never read is
+    """T17 end-to-end: editing a file the session never read is
     refused pre-dispatch with the [edit-unseen] code — the tool never runs —
     and a successful read_file observation unblocks the follow-up edit."""
 
@@ -934,7 +934,7 @@ class TestReadBeforeEditInLoop:
 
 
 class TestReactiveOverflowReduction:
-    """§9.3 #2: on a provider context-overflow error run the same
+    """On a provider context-overflow error run the same
     prune-then-compact reduction reactively and retry only if the surface
     actually advanced (token count dropped)."""
 

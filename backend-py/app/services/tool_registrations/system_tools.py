@@ -394,7 +394,7 @@ def register() -> None:
                     'enum': ['research', 'plan', 'implement', 'review', 'complete'],
                 },
                 'step': {'type': 'integer', 'description': 'Step number within the current phase.'},
-                # Part 27 T2: the handler already accepts + renders these, but
+                # The handler already accepts + renders these, but
                 # the schema never advertised them, so the model couldn't
                 # populate them. `note` was advertised but silently discarded —
                 # dropped.
@@ -411,7 +411,7 @@ def register() -> None:
         },
     )
     # Todo-list doors. The workbench turn loop intercepts these names before
-    # dispatch (T7 re-injection); the registrations below exist so the tools
+    # dispatch; the registrations below exist so the tools
     # are VISIBLE to native tool-calling models and covered by the validator,
     # policy buckets, and the fallbacks above (previously the loop handled
     # names no schema ever advertised — only text-protocol models could find

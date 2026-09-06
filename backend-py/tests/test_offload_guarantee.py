@@ -1,4 +1,4 @@
-"""P4.1 (Part 18) — background work stays background: the off-load guarantee.
+"""P4.1 — background work stays background: the off-load guarantee.
 
 The learning loop's heavy stages (mining, tier-1 scoring, judging,
 consolidation) must NEVER run inside a live chat turn. Two structural

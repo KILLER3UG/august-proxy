@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { timeAgo, absoluteDate } from '../utils';
 
-describe('timeAgo (plan §5.2 list style)', () => {
+describe('timeAgo', () => {
   afterEach(() => {
     vi.useRealTimers();
   });

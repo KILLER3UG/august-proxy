@@ -1,4 +1,4 @@
-"""T15 — versioned harness-state refinement with rollback."""
+"""Versioned harness-state refinement with rollback."""
 
 from __future__ import annotations
 
@@ -26,9 +26,7 @@ def _mk(
     )
 
 
-# ---------------------------------------------------------------------------
 # Content validation
-# ---------------------------------------------------------------------------
 
 
 class TestValidateContent:
@@ -57,9 +55,7 @@ class TestValidateContent:
         assert not ok and 'JSON-serializable' in reason
 
 
-# ---------------------------------------------------------------------------
 # Entry CRUD + versioning
-# ---------------------------------------------------------------------------
 
 
 class TestEntryVersioning:
@@ -112,9 +108,7 @@ class TestEntryVersioning:
         assert 'create' in actions and 'update' in actions
 
 
-# ---------------------------------------------------------------------------
 # Rollback by entry id
-# ---------------------------------------------------------------------------
 
 
 class TestRollback:
@@ -156,9 +150,7 @@ class TestRollback:
         assert [v['op'] for v in rolled['versions']] == ['create', 'update', 'rollback']
 
 
-# ---------------------------------------------------------------------------
 # Listing
-# ---------------------------------------------------------------------------
 
 
 class TestListEntries:
@@ -187,9 +179,7 @@ class TestListEntries:
         assert len(rs.list_entries(include_deleted=True)) == 1
 
 
-# ---------------------------------------------------------------------------
 # Edit validation (the refine-pass contract)
-# ---------------------------------------------------------------------------
 
 
 class TestValidateEdit:
@@ -325,9 +315,7 @@ class TestValidateEdit:
         assert ok
 
 
-# ---------------------------------------------------------------------------
 # apply_edits: mixed batches, per-edit fail-closed
-# ---------------------------------------------------------------------------
 
 
 class TestApplyEdits:
@@ -385,9 +373,7 @@ class TestApplyEdits:
         assert len(result['applied']) == rs._MAX_EDITS_PER_PASS
 
 
-# ---------------------------------------------------------------------------
 # parse_refine_response
-# ---------------------------------------------------------------------------
 
 
 class TestParseRefineResponse:
@@ -419,9 +405,7 @@ class TestParseRefineResponse:
         assert edits == [{'op': 'create'}]
 
 
-# ---------------------------------------------------------------------------
 # Prompt rendering
-# ---------------------------------------------------------------------------
 
 
 class TestRendering:
@@ -456,9 +440,7 @@ class TestRendering:
         assert 'local one' not in state
 
 
-# ---------------------------------------------------------------------------
 # run_refine_pass (injectable producer)
-# ---------------------------------------------------------------------------
 
 
 def _producer(returning: str):
@@ -543,9 +525,7 @@ class TestRunRefinePass:
         assert result['applied'] == []
 
 
-# ---------------------------------------------------------------------------
 # Config
-# ---------------------------------------------------------------------------
 
 
 class TestRefineConfig:
@@ -564,9 +544,7 @@ class TestRefineConfig:
         assert cfg['reviewModel'] == 'cheap-model'
 
 
-# ---------------------------------------------------------------------------
 # auto_refine: gated by an independent cheap reviewer, discard-default
-# ---------------------------------------------------------------------------
 
 
 def _reviewer(answer: str):

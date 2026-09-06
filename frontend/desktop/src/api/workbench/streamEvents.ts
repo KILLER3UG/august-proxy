@@ -408,7 +408,7 @@ export function dispatchWorkbenchEvent(
       break;
     }
     case 'upstreamRetry': {
-      // Phase L (Part 17): a retry INSIDE the provider client loop (429/503/
+      // A retry INSIDE the provider client loop (429/503/
       // connection refused, before any token of this round streamed).
       // Notice-only — no buffer rollback (nothing was emitted to undo, and
       // earlier rounds' text must stay on screen).

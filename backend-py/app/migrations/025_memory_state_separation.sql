@@ -1,6 +1,5 @@
 -- 025_memory_state_separation.sql
 -- Memory / machine-state separation (plan §2.1, audit 2026-08-27).
---
 -- The 0.17.0 reorg (4f1bfdb1) deleted the cognitive writers (consolidation
 -- daemon, vector mirror, auto-review loop, heuristics writer, context
 -- builder) but left their persisted state behind. Migration 023's comment
@@ -9,7 +8,6 @@
 -- live writers in the working tree). This migration removes the orphaned
 -- state, the immutable legacy turn-lessons, and the tables with no live
 -- readers.
---
 -- Keep-list (NOT touched): agent_jobs / agents:* KV (live registry),
 -- routing_evidence, execution_state, scratchpad, exams (live readers).
 
@@ -26,7 +24,7 @@ DELETE FROM memory_store WHERE key IN (
 
 -- 2. Immutable legacy turn-lessons (writer deleted; nothing reads them into
 --    prompts; the UI is forbidden from deleting them — brain.py 403). The
---    failure mode they encode is not actionable memory (plan §3.6).
+--    failure mode they encode is not actionable memory.
 DELETE FROM learned_heuristics WHERE source = 'turn-lesson';
 
 -- 3. Dead tables (0 live readers verified by grep of backend-py/app, 2026-08-27).

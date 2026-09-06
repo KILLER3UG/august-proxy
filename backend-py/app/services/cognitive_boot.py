@@ -104,7 +104,7 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
         errors.append(f'facts_expiry_sweep: {exc3}')
         services['facts_expiry_sweep'] = {'ok': False, 'error': str(exc3)}
 
-    # M4 consolidation v2 (plan §3.5): the one scheduled memory-maintenance
+    # M4 consolidation v2: the one scheduled memory-maintenance
     # job. Cadence comes from brain-config consolidationIntervalHours; state
     # lives in internal_state. First pass runs when overdue (boot included).
     try:

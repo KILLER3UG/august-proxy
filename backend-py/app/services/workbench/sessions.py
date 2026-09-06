@@ -127,11 +127,16 @@ class WorkbenchSession:
     # the intake index stays byte-stable for the session's lifetime; new
     # sessions pick up fresh memory on their first turn.
     _frozen_mem_index: str | None = None
-    # Part 17 Phase A: frozen project-memory index (<project_memory> titles)
+    # Frozen project-memory index (<project_memory> titles)
     # from the session's first buildSystemPrompt() — same byte-stability
     # discipline as _frozen_mem_index; hand edits to <ws>/.aug/memory/*.md
     # apply on the next session. RAM-only — never serialized.
     _frozen_project_index: str | None = None
+    # Frozen (vcs, recent-commits) strings from the session's first
+    # buildSystemPrompt(): the <workspace> block embeds them in the cached
+    # prompt prefix, and re-probing would re-render the block after every
+    # commit or dirty flip. RAM-only — never serialized.
+    _frozen_vcs: tuple[str, str] | None = None
     # Memory-habit nudge (2026-08-29): set at turn end when a substantial turn
     # (>= _MEMORY_NUDGE_MIN_ROUNDS tool rounds) saved no memory. The next
     # build's tail injection carries a one-shot <memory_nudge> hint and clears
@@ -469,7 +474,7 @@ def _load_sessions() -> None:
     _purge_leaked_sessions()
 
 
-# Part 27 E1: plan texts written by pytest fixtures that leaked into the live
+# Plan texts written by pytest fixtures that leaked into the live
 # store before conftest isolation was airtight (tests/test_workbench*.py).
 _FIXTURE_PLAN_TEXTS = frozenset({'test plan', 'my plan', 'test', '1. write the file'})
 
@@ -487,7 +492,7 @@ def _under_temp(path: str) -> bool:
 
 
 def _purge_leaked_sessions() -> None:
-    """One-shot sweep of leaked pytest fixture sessions (Part 27 E1).
+    """One-shot sweep of leaked pytest fixture sessions.
 
     Two conservative signatures:
       * a fixture plan text on a session with <=1 message -> strip the plan
@@ -599,7 +604,7 @@ _save_pending = False
 _save_timer: threading.Timer | None = None
 _save_thread_lock = threading.Lock()
 _persist_io_lock = threading.Lock()
-# Part 26 3.10: sessions dirtied since the last successful snapshot — the
+# Sessions dirtied since the last successful snapshot — the
 # debounced writer used to re-serialize ALL kept sessions per pass
 # (O(60 × transcript) on one thread per enqueue/grant save).
 _dirty_sids: set[str] = set()
@@ -677,13 +682,13 @@ def _persist_sessions_snapshot() -> None:
                 except Exception:
                     pass
                 del _sessions[sid]
-            # Part 26 3.10: only sessions whose state changed since the last
+            # Only sessions whose state changed since the last
             # pass are serialized; the JSON export (admin one-shot surface)
             # keeps writing the full window.
+            dirty_ids = {s.id for s in sorted_sessions if s.id in _dirty_sids}
             dirty_snapshots = [
-                s.toDict() for s in sorted_sessions if s.id in _dirty_sids
+                s.toDict() for s in sorted_sessions if s.id in dirty_ids
             ]
-            _dirty_sids.clear()
             snapshots = [s.toDict() for s in sorted_sessions]
             export_json = is_session_json_export_enabled()
 
@@ -694,6 +699,10 @@ def _persist_sessions_snapshot() -> None:
             memory_store.init()
             for blob in dirty_snapshots:
                 save_workbench_session_sot(blob)
+            # Drop the dirty marks only after the SQLite write succeeded —
+            # clearing them first would silently lose those sessions' changes
+            # until their next mutation if the write raises.
+            _dirty_sids.difference_update(dirty_ids)
         except Exception:
             logger.exception('SQLite session write failed')
 
@@ -775,7 +784,7 @@ def save_sessions(*, immediate: bool = False, dirty: 'str | Iterable[str] | None
     ``auxiliary.session_json_export.enabled`` or env ``AUGUST_SESSION_JSON_EXPORT=1``.
     JSON is never the SoT.
     """
-    # Part 27 E2: surface tests that bypass the autouse isolatedData fixture.
+    # Surface tests that bypass the autouse isolatedData fixture.
     from app.lib.paths import assertPytestDataDirIsolated
     assertPytestDataDirIsolated('workbench.sessions.save_sessions')
     if immediate:
@@ -797,7 +806,7 @@ def save_sessions(*, immediate: bool = False, dirty: 'str | Iterable[str] | None
             logger.exception('debounced save_sessions failed')
 
     with _save_thread_lock:
-        # Part 27 T5: when the caller names the mutated session(s), mark only
+        # When the caller names the mutated session(s), mark only
         # those dirty; otherwise mark everything (legacy safe default).
         with _sessions_lock:
             if dirty is None:
@@ -1287,7 +1296,6 @@ def truncate_session(
 
 def branch_workbench_session(
     session_id: str,
-    *,
     up_to_index: int | None = None,
 ) -> WorkbenchSession | None:
     """Clone a session (optionally only messages through ``up_to_index`` inclusive)."""
@@ -1454,7 +1462,6 @@ def _handoff_plain_truncate(messages: list[dict[str, object]], max_chars: int = 
 
 def create_workbench_handoff(
     session_id: str,
-    *,
     from_model: str = '',
     to_model: str = '',
 ) -> dict[str, object] | None:
@@ -1695,9 +1702,7 @@ def subscribe_session_status(callback: Callable[[dict[str, object]], None]) -> C
     return unsubscribe
 
 
-# ---------------------------------------------------------------------------
 # camelCase aliases — public API stability for workbench re-exports / callers
-# ---------------------------------------------------------------------------
 _sessionsPath = _sessions_path
 _loadSessions = _load_sessions
 saveSessions = save_sessions

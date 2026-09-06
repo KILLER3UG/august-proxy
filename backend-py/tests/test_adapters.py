@@ -5,14 +5,12 @@ from app.adapters import proxy_tool_defs
 from app.adapters.anthropic import (
     buildAnthropicSystemBlocks,
     buildOpenaiRequest,
-    createOpenaiToAnthropicStreamState,
     handleCountTokens,
     isClaudeFamilyModel,
     normalizeSystemBlocks,
     resolveClaudeClientFacingModel,
     resolveClaudePublicModelAlias,
     sendSimulatedAnthropicStream,
-    streamOpenaiDeltaAsAnthropic,
     systemBlocksToText,
     translateMessages,
     translateMessagesToAnthropic,
@@ -347,14 +345,6 @@ class TestAnthropicAdapter:
             }
         )
         assert len(sim) >= 4
-
-    def testOpenaiToAnthropicConversion(self):
-        state = createOpenaiToAnthropicStreamState()
-        events = streamOpenaiDeltaAsAnthropic(
-            {'id': 'cmpl-1', 'model': 'gpt-4', 'choices': [{'delta': {'content': 'Hi'}, 'finish_reason': 'stop'}]},
-            state,
-        )
-        assert len(events) >= 2
 
     @pytest.mark.asyncio
     async def testCountTokens(self):

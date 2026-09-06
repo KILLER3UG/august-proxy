@@ -1,4 +1,4 @@
-"""Part 16 Phase C — tier-2 judge + distiller.
+"""Tier-2 judge + distiller.
 
 Plan acceptance (§3.3/§6): JSON contract, all five actions, denylist on
 drafts, one-draft-per-(fingerprint, action, target), propose-time
@@ -89,7 +89,7 @@ class TestMemoryAction:
 
 class TestSkillActions:
     def test_denylist_covers_skill_draft_text(self, brain, noProposals):
-        """§3.3: the denylist applies to EVERY drafted body — create_skill and
+        """The denylist applies to EVERY drafted body — create_skill and
         amend_body payloads used to persist unchecked (memory verdicts only)."""
         label = sd.apply_verdict(
             {

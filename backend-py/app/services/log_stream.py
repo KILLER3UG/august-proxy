@@ -55,7 +55,6 @@ def redactMetadata(metadata: Any) -> Any:
 
 
 def buildEvent(
-    *,
     category: str = 'info',
     level: str = 'info',
     message: str = '',

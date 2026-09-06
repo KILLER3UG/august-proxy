@@ -1,4 +1,4 @@
-"""T18 fail-closed session durability barriers (plan §9.4): unit tests for
+"""T18 fail-closed session durability barriers: unit tests for
 app/services/workbench/durability.py and the fromDict crash-recovery path.
 Loop-level barrier wiring lives in test_workbench_tool_loop.py."""
 

@@ -1,4 +1,4 @@
-"""Shared BM25 text-similarity ratio (Part 16 Phase B).
+"""Shared BM25 text-similarity ratio.
 
 Extracted from the scale-free ratio idiom in
 ``memory_store.fact_retrieval.find_similar_facts`` so callers outside the

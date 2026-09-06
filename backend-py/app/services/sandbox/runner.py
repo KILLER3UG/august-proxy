@@ -27,7 +27,6 @@ def unsandboxed_grant_key(command: str) -> str:
 
 
 def policy_from_session(
-    *,
     sandbox_mode: str | None,
     workspace_path: str | None,
     sandbox_network: bool | None = None,
@@ -57,7 +56,6 @@ def active_backend() -> 'EnforcementBackend':
 async def run_sandboxed(
     command: str,
     policy: SandboxPolicy,
-    *,
     timeout: float = 300.0,
 ) -> SandboxResult:
     return await run_with_best_backend(command, policy, timeout=timeout)

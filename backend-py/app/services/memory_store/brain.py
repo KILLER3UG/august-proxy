@@ -97,7 +97,7 @@ _STORE_ALIASES.update(
     }
 )
 
-# Part 27 C2: KV keys that are app plumbing, not user-visible memory. The
+# KV keys that are app plumbing, not user-visible memory. The
 # Memories browse filters these out (Raw state lookup still sees them).
 # agent_jobs itself was purged by migration 037; the entry stays as a guard
 # against a legacy DB re-seeding it before the migration runs.
@@ -169,7 +169,7 @@ def _brain_query_daemons(query: str, filters: dict | None, limit: int) -> str:
 
 
 def _brain_query_project_memory(query: str, filters: dict | None, limit: int) -> str:
-    """Part 17 Phase A: the project-memory store (virtual, md-file backed).
+    """The project-memory store (virtual, md-file backed).
 
     Rows = {file, title, body, updated} from the current session's
     workspace ``<ws>/.aug/memory/*.md``, BM25-ranked for a query (fallback:
@@ -218,7 +218,7 @@ def _brain_query_project_memory(query: str, filters: dict | None, limit: int) ->
 
 
 def _brain_query_fingerprints(query: str, filters: dict | None, limit: int) -> str:
-    """Part 16 Phase B: failure fingerprints as a virtual brain_query store.
+    """Failure fingerprints as a virtual brain_query store.
 
     Fingerprints are the workflow-grain recurrence evidence — querying them
     via ``brain_query store=failure-fingerprints`` makes them model-visible
@@ -253,7 +253,7 @@ def _brain_query_fingerprints(query: str, filters: dict | None, limit: int) -> s
 
 
 def _brain_query_facts_ranked(query: str, filters: dict | None, limit: int) -> str:
-    """Phase D: BM25-ranked facts retrieval for ``brain_query``.
+    """BM25-ranked facts retrieval for ``brain_query``.
 
     Mirrors the tail block's ranking (``fact_retrieval`` — one shared
     implementation) instead of LIKE-in-rowid-order. An exact ``fact_key``
@@ -265,7 +265,7 @@ def _brain_query_facts_ranked(query: str, filters: dict | None, limit: int) -> s
     from app.services import session_scope as _scope
 
     turnScope = _scope.resolve_scope()
-    # Part 26 6.1: the exact-key fast path honors the same visibility policy
+    # The exact-key fast path honors the same visibility policy
     # as list_facts/search_facts — a superseded or expired row must not come
     # back verbatim through the model's memory-search tool while every other
     # door hides it (reproduced live during the scan).
@@ -322,7 +322,7 @@ def _brain_query_facts_ranked(query: str, filters: dict | None, limit: int) -> s
 
 
 def brain_query(store: str, query: str = '', filters: dict | None = None, limit: int = 10) -> str:
-    """Read-only query across any brain store (§11 of the cognitive spec).
+    """Read-only query across any brain store.
 
     Returns compact JSON rows. Capped at ``limit`` and at a hard token
     ceiling (truncated with "N more rows; narrow your query" if exceeded).
@@ -350,7 +350,7 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
             {'error': f"store '{store}' not available in this build", 'available': available}
         )
     info = _BRAINStores[store]
-    # Phase D (Part 17): facts queries rank through the BM25 index shared
+    # Facts queries rank through the BM25 index shared
     # with the tail block — relevance instead of LIKE-in-rowid-order. An
     # exact fact_key match keeps the direct fast path (a key lookup is a
     # point query, not a search). '' = no BM25 hits → generic LIKE scan.
@@ -494,7 +494,7 @@ def brain_store_summary() -> list[dict[str, object]]:
             ).fetchone()
             if exists is None:
                 continue
-            # Part 27 T3: the `memory` (KV) count must match what
+            # The `memory` (KV) count must match what
             # brain_browse('memory') returns — both exclude machine-state keys
             # (agent_registry, diff_learn:*, …). Otherwise /api/brain/stores
             # shows a count the per-store browse can never page to.
@@ -519,7 +519,6 @@ def brain_browse(
     limit: int = 50,
     offset: int = 0,
     query: str = '',
-    *,
     sort: str = '',
     category: str = '',
     source: str = '',
@@ -558,7 +557,7 @@ def brain_browse(
         params: list[object] = []
         colInfo = conn.execute(f'PRAGMA table_info({table})').fetchall()
         colNames = {c['name'] for c in colInfo}
-        # Part 27 C2: machine-state KV keys never render in the human-facing
+        # Machine-state KV keys never render in the human-facing
         # Memories browse — the registry roster and diff-learn cursors are
         # app plumbing, not notes about the user. They stay reachable via
         # Raw state lookup (GET /api/brain/state-lookup).
@@ -588,7 +587,7 @@ def brain_browse(
             if not v:
                 continue
             if key == 'confidence':
-                # §9 F-6: confidence is a REAL column — low/medium/high are
+                # Confidence is a REAL column — low/medium/high are
                 # range buckets, not equality matches (equality against the
                 # word can never hit a number).
                 if v not in ('low', 'medium', 'high') or 'confidence' not in colNames:
@@ -695,7 +694,7 @@ def brain_index_snippet(scope: str = 'global') -> str:
 # Per-store writable field whitelists for brain_update_row (B5). Stores absent
 # here are not inline-editable from the settings UI; heuristics is a legacy
 # store with no live writer — rows are deletable (see _ROW_DELETABLE) but not
-# editable ("read-only legacy" means no writer, not undeletable; plan §3.3).
+# editable.
 _ROW_EDIT_FIELDS: dict[str, frozenset[str]] = {
     'facts': frozenset({'fact_value', 'title', 'kind', 'category', 'confidence', 'expires_at'}),
     'memory': frozenset({'value'}),
@@ -754,7 +753,7 @@ def brain_delete_row(store: str, row_id: object) -> dict[str, object]:
 
 
 def _invalidate_fact_cache_if_facts(resolved: str) -> None:
-    """2.6 (Part 25): a Settings-UI edit/delete of a fact must drop the cached
+    """2.6: a Settings-UI edit/delete of a fact must drop the cached
     BM25 corpus, or the stale row keeps being injected until an unrelated
     write clears it."""
     if resolved != 'facts':

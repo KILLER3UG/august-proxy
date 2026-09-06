@@ -84,14 +84,23 @@ def noninteractive_env(base: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
-def agent_subprocess_kwargs(*, cwd: str | None = None) -> dict[str, Any]:
-    """Kwargs for one-shot agent shell spawns (no TTY, no inherited stdin)."""
+def agent_subprocess_kwargs(
+    *, cwd: str | None = None, extra_env: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """Kwargs for one-shot agent shell spawns (no TTY, no inherited stdin).
+
+    ``extra_env`` merges AFTER credential scrubbing — it is for sandbox
+    policy plumbing (e.g. the egress-filter proxy vars), never secrets.
+    """
+    env = noninteractive_env()
+    if extra_env:
+        env.update(extra_env)
     kwargs: dict[str, Any] = {
         'stdout': asyncio.subprocess.PIPE,
         'stderr': asyncio.subprocess.PIPE,
         'stdin': asyncio.subprocess.DEVNULL,
         'cwd': cwd or None,
-        'env': noninteractive_env(),
+        'env': env,
     }
     if os.name == 'nt':
         # Avoid flashing console windows behind the desktop app.
@@ -143,7 +152,6 @@ def prefix_line_buffering(command: str) -> str:
 
 async def close_process(
     proc: asyncio.subprocess.Process | None,
-    *,
     grace: float = 5.0,
     kill_grace: float = 2.0,
 ) -> None:
@@ -187,7 +195,6 @@ async def close_process(
 
 async def communicate_or_kill(
     proc: asyncio.subprocess.Process,
-    *,
     timeout: float,
     cancel: asyncio.Event | None = None,
 ) -> tuple[bytes, bytes]:
@@ -271,7 +278,6 @@ async def _emit_output(on_output: Any, text: str) -> None:
 
 async def _communicate_streaming(
     proc: asyncio.subprocess.Process,
-    *,
     timeout: float,
     cancel: asyncio.Event | None,
     on_output: Any,

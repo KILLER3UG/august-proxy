@@ -1,4 +1,4 @@
-"""Part 18 P1.3 — serialization stability in the prompt path.
+"""Serialization stability in the prompt path.
 
 Prefix caching requires byte-identical serialization of every JSON blob
 embedded in the prompt: the same logical payload with a different dict

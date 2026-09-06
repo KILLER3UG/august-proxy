@@ -1,4 +1,4 @@
-"""Sensitive-topic denylist — the shared scanner (Part 16 Phase C).
+"""Sensitive-topic denylist — the shared scanner.
 
 Extracted from session_tools.py so every memory-write and draft path
 (``remember``, the distiller's judge-drafted summaries/bodies) enforces the

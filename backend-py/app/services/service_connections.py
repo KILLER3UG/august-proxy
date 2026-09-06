@@ -1071,7 +1071,6 @@ async def sync_google_tokens_to_workspace_mcp(preferred_email: str | None = None
 
 
 def _write_workspace_mcp_credentials(
-    *,
     email: str,
     access_token: str,
     refresh_token: str,
@@ -1107,7 +1106,6 @@ def _write_workspace_mcp_credentials(
 def _oauth_result_html(
     ok: bool,
     message: str,
-    *,
     email: str = '',
     display_name: str = '',
     picture: str = '',
@@ -1231,7 +1229,6 @@ def _value_is_masked_preview(incoming: str, stored: str) -> bool:
 
 def set_mcp_env(
     env: list[dict[str, Any]] | dict[str, str],
-    *,
     merge: bool = False,
 ) -> dict[str, Any]:
     """Save MCP global env. When merge=True, update keys without wiping the rest.

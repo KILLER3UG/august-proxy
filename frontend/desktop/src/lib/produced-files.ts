@@ -1,6 +1,6 @@
 /**
  * Derive the files a turn "touched" from its tool-call blocks — the
- * row source for the unified ChangesCard (plan §4.5). Pure so it is
+ * row source for the unified ChangesCard. Pure so it is
  * unit-testable.
  *
  * A file counts when an edit-classified tool call carries a file path in

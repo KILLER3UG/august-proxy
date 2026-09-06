@@ -1,6 +1,6 @@
 /* ── Memory — human-readable browse of what August stores ────────────── */
 /* Memories + Facts tabs render one flat chronological list across kinds
- * (plan §5.1): kind chip · title · relative date · ⋯, filter chips above
+ * : kind chip · title · relative date · ⋯, filter chips above
  * (not tabs), no cards/meters, and a one-line health footer fed by the
  * consolidation log.
  *
@@ -8,7 +8,7 @@
  * the Claude-style add-box, the two model-memory toggles, and per-entry /
  * per-store Markdown export are shared by both modes.
  *
- * Part 17 Phase C: scope selector (Global + one entry per known workspace,
+ * Scope selector (Global + one entry per known workspace,
  * C-1), source badges on rows (C-2), server-side category/source/confidence
  * filters + sort control (C-3/4), pagination past the 200-row fetch cap
  * (C-5), bulk select + bulk delete/export (C-6), add-box category + scope
@@ -107,7 +107,7 @@ const SCOPES: Record<string, { title: string; blurb: string; stores: string[] }>
   },
 };
 
-/** Tabs rendered as one flat chronological list across kinds (§5.1). */
+/** Tabs rendered as one flat chronological list across kinds. */
 const UNIFIED_TABS = new Set(['memory-knowledge', 'memory-facts']);
 
 const SORTS: Array<{ value: string; label: string }> = [
@@ -343,7 +343,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const [search, setSearch] = useState('');
   const [addText, setAddText] = useState('');
   const [addCategory, setAddCategory] = useState('general');
-  // M-10 (Part 21): the add-box TTL actually reaches the store again —
+  // M-10: the add-box TTL actually reaches the store again —
   // ttl_days rides the manage call and lands as expires_at on the fact.
   const [addTtlDays, setAddTtlDays] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
@@ -394,7 +394,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
     queryFn: () => api.get<{ workspaces: WorkspaceInfo[] }>('/api/august/memory/workspaces'),
   });
   // C-9: with a project scope selected, the section switches to the project
-  // view — the workspace's md files + entries (Phase A door) + the sessions
+  // view — the workspace's md files + entries + the sessions
   // bound to that workspace — instead of the global store rows.
   const projectQ = useQuery<ProjectList>({
     queryKey: ['project-memory', wsScope],
@@ -406,7 +406,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
       }),
     enabled: !!wsScope,
   });
-  // Unified tabs fetch both scope stores and merge client-side (§5.1).
+  // Unified tabs fetch both scope stores and merge client-side.
   // C-5: real pagination — the fetch uses UNIFIED_FETCH rows per page and a
   // movable offset, so page 2+ reaches rows past the old hard 200 cap.
   const unifiedStoreA = unified ? scope.stores[0] : '';
@@ -443,7 +443,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
   });
   const addMut = useMutation({
     // The manage route lives on the august router (/api/august prefix) —
-    // posting to /api/memory/manage 404s (plan §5.1 step zero).
+    // posting to /api/memory/manage 404s.
     mutationFn: (body: Record<string, unknown>) => api.post('/api/august/memory/manage', body),
     onSuccess: () => {
       invalidate();
@@ -497,7 +497,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
       .sort((a, b) => scope.stores.indexOf(a.name) - scope.stores.indexOf(b.name));
   }, [storesQ.data, scope]);
 
-  /* §5.1: merge both scope stores into one flat chronological list. */
+  /* Merge both scope stores into one flat chronological list. */
   const flatEntries = useMemo<FlatEntry[]>(() => {
     if (!unified || !scope) return [];
     const pages: Array<[string, StorePage | undefined]> = [
@@ -682,7 +682,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
       });
       return;
     }
-    // Part 26 7.3: the Memories tab lists the KV `memory` store — write to
+    // The Memories tab lists the KV `memory` store — write to
     // THAT store so the entry actually appears in the list (it previously
     // landed in Facts & Rules via the facts door and never showed up).
     if (active.id === 'memory-knowledge') {
@@ -1425,7 +1425,7 @@ function RowMenu({
   );
 }
 
-/* ── §5.1 health footer (the §3.5 audit surface) ───────────────────── */
+/* ── §5.1 health footer ───────────────────── */
 
 interface ConsolidationLogResponse {
   entries: Array<{ createdAt: string; eventType: string; detail: Record<string, unknown> }>;

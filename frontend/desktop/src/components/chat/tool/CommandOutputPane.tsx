@@ -1,5 +1,5 @@
 /**
- * Minimal-output command pane (plan §4.1/§4.2):
+ * Minimal-output command pane:
  *   success → command line + green pill, nothing else;
  *   failure → command line + red pill + ONE red error line (structured
  *             digest when the output carries one), full stdout/stderr
@@ -78,7 +78,7 @@ export function CommandOutputPane({
   preview?: string;
   summary?: string;
   status: string;
-  /** /verbose (plan §4.2): full output renders inline without the click,
+  /** /verbose: full output renders inline without the click,
    *  for successes and live runs too — debug depth for the session. */
   verbose?: boolean;
 }) {
