@@ -2,8 +2,10 @@
 
 import type { Session } from './types';
 
-/** Human-readable session id with local date/time, e.g. sess_20260715_143052_a1b2 */
-export function makeSessionId(prefix = 'sess'): string {
+/** Human-readable session id with local date/time, e.g.
+ *  session_20260715_143052_a1b2. Legacy sessions keep their `sess_*` ids —
+ *  prefix checks must accept BOTH (see isUiSessionId). */
+export function makeSessionId(prefix = 'session'): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const stamp =
@@ -11,6 +13,15 @@ export function makeSessionId(prefix = 'sess'): string {
     `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   const rand = Math.random().toString(36).slice(2, 6);
   return `${prefix}_${stamp}_${rand}`;
+}
+
+/** True for a locally-created chat-session id. Accepts the new `session_*`
+ *  scheme AND the legacy `sess_*` scheme (existing sessions keep their ids —
+ *  localStorage keys, persisted transcripts, and the id↔workbench map all
+ *  key off them). */
+export function isUiSessionId(id: string | null | undefined): boolean {
+  if (!id) return false;
+  return id.startsWith('session_') || id.startsWith('sess_');
 }
 
 /**
@@ -72,8 +83,8 @@ export function preferSessionTitle(
  */
 export function preferSessionRow(a: Session, b: Session): Session {
   // Prefer stable frontend id over raw workbench id as the row key.
-  const aIsLocal = a.id.startsWith('sess_');
-  const bIsLocal = b.id.startsWith('sess_');
+  const aIsLocal = isUiSessionId(a.id);
+  const bIsLocal = isUiSessionId(b.id);
   const primary = aIsLocal && !bIsLocal ? a : bIsLocal && !aIsLocal ? b : a;
   const secondary = primary === a ? b : a;
   const stableId = aIsLocal ? a.id : bIsLocal ? b.id : primary.id;

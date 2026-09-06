@@ -265,8 +265,8 @@ if (editing) {
                 className="h-9"
               />
             </label>
-            <ModalityPills label="Input types" value={inputTypes} onChange={setInputTypes} lockedFirst="Text" />
-            <ModalityPills label="Output types" value={outputTypes} onChange={setOutputTypes} lockedFirst="Text" />
+            <ModalityPills label="Input types" value={inputTypes} onChange={setInputTypes} />
+            <ModalityPills label="Output types" value={outputTypes} onChange={setOutputTypes} />
 
             {/* Advanced wire/harness controls — collapsed so the modal matches
                 the reference's simple field stack. */}

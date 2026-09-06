@@ -9,6 +9,7 @@ import {
   dedupeSessions,
   folderNameFromPath,
   isPlaceholderTitle,
+  isUiSessionId,
   makeSessionId,
   normalizePath,
   pathsMatch,
@@ -30,6 +31,7 @@ export {
   dedupeSessions,
   deriveSnippetTitle,
   isPlaceholderTitle,
+  isUiSessionId,
   preferSessionRow,
   preferSessionTitle,
   sessionIsEmpty,
@@ -99,7 +101,7 @@ export function createSession(
   workspacePath?: string | null,
 ): Session {
   const newSess: Session = {
-    id: makeSessionId('sess'),
+    id: makeSessionId('session'),
     title: title ?? defaultSessionTitle(),
     startedAt: new Date().toISOString(),
     messageCount: 0,
@@ -563,7 +565,7 @@ export function clearAllSessions(includeArchived: boolean = true) {
 
   // Keep or create a single fresh empty session
   const newSess: Session = {
-    id: makeSessionId('sess'),
+    id: makeSessionId('session'),
     title: defaultSessionTitle(),
     startedAt: new Date().toISOString(),
     messageCount: 0,

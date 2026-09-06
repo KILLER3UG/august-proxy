@@ -30,21 +30,18 @@ export function ModelModalField({
   );
 }
 
-/** Pill-style checkbox used for Input/Output types (reference layout). */
+/** Pill-style checkbox used for Input/Output types (reference layout).
+ *  Every modality — including Text — is toggleable. */
 export function ModalityPills({
   label,
   value,
   onChange,
-  lockedFirst,
 }: {
   label: string;
   value: string[];
   onChange: (next: string[]) => void;
-  /** The first entry is always-on + locked (e.g. Text for input). */
-  lockedFirst?: string;
 }) {
   const toggle = (m: string) => {
-    if (lockedFirst && m === lockedFirst) return;
     onChange(value.includes(m) ? value.filter((x) => x !== m) : [...value, m]);
   };
   return (
@@ -53,20 +50,17 @@ export function ModalityPills({
       <div className="flex flex-wrap items-center gap-2">
         {MODALITIES.map((m) => {
           const checked = value.includes(m);
-          const locked = lockedFirst === m;
           return (
             <button
               key={m}
               type="button"
               onClick={() => toggle(m)}
               aria-pressed={checked}
-              disabled={locked}
               className={
                 'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[13px] transition ' +
                 (checked
                   ? 'border-primary/50 bg-primary/10 text-foreground'
-                  : 'border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground') +
-                (locked ? ' cursor-default' : '')
+                  : 'border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground')
               }
             >
               <span
@@ -81,7 +75,6 @@ export function ModalityPills({
                 {checked ? '✓' : ''}
               </span>
               {m}
-              {locked && <span className="text-[10px] opacity-50">🔒</span>}
             </button>
           );
         })}
@@ -186,8 +179,8 @@ export function AddModelForm({
               className="h-9"
             />
           </ModelModalField>
-          <ModalityPills label="Input types" value={inputTypes} onChange={setInputTypes} lockedFirst="Text" />
-          <ModalityPills label="Output types" value={outputTypes} onChange={setOutputTypes} lockedFirst="Text" />
+          <ModalityPills label="Input types" value={inputTypes} onChange={setInputTypes} />
+          <ModalityPills label="Output types" value={outputTypes} onChange={setOutputTypes} />
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border/60 px-5 py-3.5">

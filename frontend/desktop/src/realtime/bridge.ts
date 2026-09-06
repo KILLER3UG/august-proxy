@@ -15,6 +15,7 @@ import {
   clearSessionStatus,
   preferSessionTitle,
   isPlaceholderTitle,
+  isUiSessionId,
   sessionIsEmpty,
   dedupeSessions,
   type Session,
@@ -70,7 +71,7 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
           !s.isArchived &&
           !s.workbenchSessionId &&
           sessionIsEmpty(s) &&
-          s.id.startsWith('sess_'),
+          isUiSessionId(s.id),
       );
     if (pendingIndexes.length === 1) {
       // Don't auto-link a draft whose folder differs from the incoming
