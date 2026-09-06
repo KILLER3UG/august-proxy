@@ -165,6 +165,59 @@ function dedupeByKey(entries: ParsedEntry[]): ParsedEntry[] {
   return [...seen.values()];
 }
 
+/** A line that is entirely a bold/italic span (`**Work context**`,
+ *  `__Top of mind__`, `*Recent months*`) — the section label style Claude's
+ *  prose memory dumps use instead of `#` headings. */
+const SECTION_LABEL_LINE = /^\s*(?:(?:\*\*|__)(.+?)(?:\*\*|__)|\*([^*]+)\*)\s*:?\s*$/;
+
+/**
+ * Prose-dump parser: paragraphs as entries, section labels as category
+ * hints. Claude's legacy memory export has NO bullets at all — just bold
+ * section labels and prose paragraphs — so the bullet parser sees nothing.
+ * Blank lines separate paragraphs; soft-wrapped lines inside a paragraph
+ * join with spaces. Same-key paragraphs get `-2`/`-3` suffixes instead of
+ * silently overwriting each other (distinct paragraphs are distinct facts;
+ * only byte-identical rows collapse).
+ */
+function parseProseEntries(text: string): ParsedEntry[] {
+  const out: ParsedEntry[] = [];
+  let headingHint = '';
+  let para: string[] = [];
+
+  const flush = () => {
+    const value = stripMd(para.join(' ').replace(/\s+/g, ' ').trim());
+    para = [];
+    if (!value) return;
+    const base = deriveKey(value);
+    if (!base) return;
+    const family = out.filter((e) => e.key === base || e.key.startsWith(`${base}-`));
+    // Byte-identical paragraph (same derived key, same content) collapses —
+    // re-importing the same dump stays idempotent. A same-key DIFFERENT
+    // paragraph gets `-2`/`-3` suffixes: distinct paragraphs are distinct
+    // facts, and save_fact's upsert would otherwise silently drop them.
+    if (family.some((e) => e.value === value)) return;
+    const key = family.length === 0 ? base : `${base}-${family.length + 1}`;
+    out.push({ uid: `prose-${out.length}`, key, value, category: normalizeCategory(headingHint) });
+  };
+
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    if (!line.trim() || NOISE_LINE.test(line)) {
+      flush();
+      continue;
+    }
+    const label = SECTION_LABEL_LINE.exec(line);
+    if (label) {
+      flush();
+      headingHint = stripMd((label[1] ?? label[2] ?? '').trim());
+      continue;
+    }
+    para.push(line.trim());
+  }
+  flush();
+  return out;
+}
+
 function parseMarkdownEntries(text: string): ParsedEntry[] {
   const out: ParsedEntry[] = [];
   // August's own export wraps each entry in a `---` frontmatter block and
@@ -244,10 +297,10 @@ function normalizeCategory(raw: string): Category {
   const s = slugifyKey(raw).toLowerCase();
   if ((CATEGORIES as readonly string[]).includes(s)) return s as Category;
   // Map common synonyms.
-  if (s.startsWith('user') || s.includes('profile') || s.includes('work-context')) return 'user';
+  if (s.startsWith('user') || s.includes('profile') || s.includes('personal') || s.includes('work-context')) return 'user';
   if (s.includes('feedback') || s.includes('preference') || s.includes('rule')) return 'feedback';
-  if (s.includes('project') || s.includes('task') || s.includes('trading')) return 'project';
-  if (s.includes('reference') || s.includes('book') || s.includes('doc')) return 'reference';
+  if (s.includes('project') || s.includes('task') || s.includes('trading') || s.includes('mind')) return 'project';
+  if (s.includes('reference') || s.includes('book') || s.includes('doc') || s.includes('history')) return 'reference';
   return 'general';
 }
 
@@ -290,7 +343,11 @@ export function parseMemoryImportEntries(text: string, source: string): ParsedEn
       return dedupeByKey(parsed);
     }
   }
-  return parseMarkdownEntries(text);
+  const md = parseMarkdownEntries(text);
+  if (md.length > 0) return md;
+  // Claude prose dumps: bold/italic section labels + paragraphs, no bullets
+  // anywhere — the bullet parser legitimately finds nothing to work with.
+  return parseProseEntries(text);
 }
 
 export function ImportMemoryDialog({
@@ -423,7 +480,9 @@ export function ImportMemoryDialog({
         <div className="space-y-4 px-5 py-4">
           <p className="text-xs text-muted-foreground">
             Drop a <code className="font-mono">.md</code> or <code className="font-mono">.json</code>{' '}
-            memory export. Supported: August's own export, Claude memory dumps, generic
+            memory export. Supported: August's own export, Claude memory dumps (bullet lists
+            <span className="mx-1 font-medium text-muted-foreground">or</span> bold-section prose
+            paragraphs), generic
             <code className="font-mono"> {'{ key, value }'} </code> JSON arrays, and
             <code className="font-mono"> - key: value </code> bullet lists.
           </p>

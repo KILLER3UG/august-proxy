@@ -172,3 +172,92 @@ describe('parseMemoryImportEntries — dedupe', () => {
     expect(parseMemoryImportEntries('---\n***\n\n', 'f.md')).toHaveLength(0);
   });
 });
+
+describe('parseMemoryImportEntries — Claude prose dumps (no bullets)', () => {
+  // Claude's legacy memory export: bold section labels + prose paragraphs,
+  // NO bullets anywhere. The bullet parser finds nothing; the prose parser
+  // must pick the paragraphs up with the section as category hint.
+  const proseDump = [
+    '**Work context**',
+    '',
+    'Sheesh is a Computer Engineering student at JRMSU, expected to graduate in 2029.',
+    'Sheesh works part-time and helps with a family business daily.',
+    '',
+    '**Personal context**',
+    '',
+    'Sheesh is based in the Philippines (UTC+8), currently in or near Dapitan City.',
+    'Hobbies include competitive gaming and basketball.',
+    '',
+    '**Top of mind**',
+    '',
+    'Sheesh is actively working on August Proxy, a Tauri + React + FastAPI desktop AI proxy system.',
+  ].join('\n');
+
+  it('parses prose paragraphs as entries with section labels as category hints', () => {
+    // One entry per PROSE PARAGRAPH: consecutive lines inside a section are
+    // one soft-wrapped paragraph and join with spaces.
+    const entries = parseMemoryImportEntries(proseDump, 'claude-legacy-memory.md');
+    expect(entries).toHaveLength(3);
+    expect(entries[0].value).toContain('Computer Engineering student at JRMSU');
+    expect(entries[0].value).toContain('family business daily'); // soft-wrapped join
+    expect(entries[0].category).toBe('user'); // "Work context"
+    expect(entries[1].value).toContain('Dapitan City');
+    expect(entries[1].category).toBe('user'); // "Personal context"
+    expect(entries[2].value).toContain('August Proxy');
+    expect(entries[2].category).toBe('project'); // "Top of mind"
+    // Keys are stable slugs derived from the paragraph's first words.
+    expect(entries[0].key).toMatch(/^[a-z0-9-]+$/);
+  });
+
+  it('joins soft-wrapped lines of one paragraph into a single entry', () => {
+    const wrapped = [
+      '**Work context**',
+      '',
+      'The trading agent uses a GRPO reinforcement learning pipeline',
+      'with a multi-component reward structure and walk-forward validation.',
+    ].join('\n');
+    const entries = parseMemoryImportEntries(wrapped, 'f.md');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].value).toBe(
+      'The trading agent uses a GRPO reinforcement learning pipeline with a multi-component reward structure and walk-forward validation.',
+    );
+  });
+
+  it('collapses byte-identical paragraphs (idempotent re-import) and suffixes same-key distinct ones', () => {
+    const dupes = [
+      '**Work context**',
+      '',
+      'Sheesh works part-time and helps with a family business daily.',
+      '',
+      'Sheesh works part-time and helps with a family business daily.',
+      '',
+      'Sheesh works part-time and helps with a family business on weekends too.',
+    ].join('\n');
+    const entries = parseMemoryImportEntries(dupes, 'f.md');
+    expect(entries).toHaveLength(2);
+    expect(entries[0].key).toBe(entries[1].key.replace(/-\d+$/, ''));
+    expect(entries[1].key).not.toBe(entries[0].key); // distinct paragraph survives
+  });
+
+  it('still prefers bullets when the file has them (prose parser is fallback only)', () => {
+    const mixed = [
+      '# Claude memory',
+      '',
+      '- Prefers concise answers without preamble',
+      '',
+      'A stray prose paragraph that should NOT become an entry.',
+    ].join('\n');
+    const entries = parseMemoryImportEntries(mixed, 'f.md');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].value).toBe('Prefers concise answers without preamble');
+  });
+
+  it('maps top-of-mind and brief-history section labels to sane categories', () => {
+    const entries = parseMemoryImportEntries(
+      '**Brief history**\n\nSheesh published as a Science & Technology writer for The State Collegian.',
+      'f.md',
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0].category).toBe('reference'); // "history"
+  });
+});
