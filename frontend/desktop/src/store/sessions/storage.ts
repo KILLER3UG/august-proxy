@@ -34,9 +34,35 @@ export const loadFolders = (): Folder[] => {
 };
 
 export const saveSessionsToStorage = (sessions: Session[]) => {
-  localStorage.setItem(LOCAL_SESSIONS_KEY, JSON.stringify(sessions));
+  try {
+    localStorage.setItem(LOCAL_SESSIONS_KEY, JSON.stringify(sessions));
+  } catch (err) {
+    // MUST NOT throw: this runs mid-send (updateSessionModel), and a
+    // QuotaExceeded here escaped send() and wedged the double-Enter latch —
+    // the desktop app then silently ignored every further Send click.
+    // Self-heal: evict old chat transcripts to free quota, retry once; if
+    // still failing, keep going — the in-memory store is already updated and
+    // the send must proceed.
+    try {
+      import('@/sections/chat/message-storage').then(({ evictOldestTranscripts }) => {
+        evictOldestTranscripts(null);
+        try {
+          localStorage.setItem(LOCAL_SESSIONS_KEY, JSON.stringify(sessions));
+        } catch {
+          /* give up quietly — session list stays memory-only this round */
+        }
+      }).catch(() => undefined);
+    } catch {
+      /* dynamic import unavailable — keep going */
+    }
+    console.warn('[sessions/storage] save failed (quota?) — continuing without persisting', err);
+  }
 };
 
 export const saveFoldersToStorage = (folders: Folder[]) => {
-  localStorage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(folders));
+  try {
+    localStorage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(folders));
+  } catch {
+    /* quota — folders stay memory-only this round */
+  }
 };

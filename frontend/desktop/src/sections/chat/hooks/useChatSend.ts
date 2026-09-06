@@ -550,12 +550,19 @@ export function useChatSend(opts: UseChatSendOptions) {
       }
 
       // Save the selected model on this session only; do not change global defaults.
+      // NON-FATAL: a localStorage quota throw here escaped send() and left the
+      // double-Enter latch stuck — the desktop app then silently ignored every
+      // further send. In-memory state is already updated; keep sending.
       if (sessionId && modelForRequest) {
-        updateSessionModel(
-          sessionId,
-          modelForRequest.id,
-          modelForRequest.provider,
-        );
+        try {
+          updateSessionModel(
+            sessionId,
+            modelForRequest.id,
+            modelForRequest.provider,
+          );
+        } catch (err) {
+          console.warn('[send] could not persist session model', err);
+        }
       }
 
       setInput('');
@@ -564,7 +571,11 @@ export function useChatSend(opts: UseChatSendOptions) {
         readyAttachments.length > 0
           ? readyAttachments.map(persistAttachment)
           : undefined;
-      clearAttachments();
+      try {
+        clearAttachments();
+      } catch (err) {
+        console.warn('[send] attachment cleanup failed — continuing', err);
+      }
       setShowToolsDropdown(false);
       setShowCommandsDropdown(false);
 
@@ -576,10 +587,22 @@ export function useChatSend(opts: UseChatSendOptions) {
         attachments: savedAttachments,
       };
 
-      const nextMessages = [...currentMessages, userMsg];
-      setMessages(nextMessages);
-      persistMessages(sessionId, nextMessages);
-      playSendChime();
+      let nextMessages: ChatMessage[];
+      try {
+        nextMessages = [...currentMessages, userMsg];
+        setMessages(nextMessages);
+        persistMessages(sessionId, nextMessages);
+        playSendChime();
+      } catch (err) {
+        // Local persistence failed (quota) — the turn can still stream over
+        // the network; keep the in-memory transcript and send.
+        console.warn('[send] transcript persistence failed — sending anyway', err);
+        toast.message('Local storage is full — replies may not be saved', {
+          description: 'Old chat transcripts were evicted to free space.',
+        });
+        nextMessages = [...currentMessages, userMsg];
+        setMessages(nextMessages);
+      }
       // The dormant per-turn auto-route fetch is gone (AGENTS.md:
       // there is NO automatic turn rerouting — the backend loop never existed
       // and the opt-in flag could only ever be written '0'). Arena/Debate
