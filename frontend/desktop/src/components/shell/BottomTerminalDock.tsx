@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { backendOriginSync } from '@/api/client';
 import { toast } from 'sonner';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -210,10 +211,15 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const connectSocket = () => {
       if (!activeId || disposed) return;
-      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const sock = new WebSocket(
-        `${proto}://${window.location.host}/api/terminal/${encodeURIComponent(activeId)}/ws`,
-      );
+      const termPath = `/api/terminal/${encodeURIComponent(activeId)}/ws`;
+      // WebSocket bypasses the window.fetch rewrite; in Tauri it must target
+      // the proxy origin (the only ws:// the desktop CSP allows), not the
+      // asset/dev origin that window.location.host points at.
+      const base = backendOriginSync();
+      const wsUrl = base
+        ? `${base.replace(/^http/, 'ws')}${termPath}`
+        : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${termPath}`;
+      const sock = new WebSocket(wsUrl);
       socketRef.current = sock;
       sock.onopen = () => {
         connectedRef.current = true;

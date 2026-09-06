@@ -82,6 +82,33 @@ export async function whenReady(): Promise<string | null> {
   return baseUrl;
 }
 
+/** Absolute backend URL for a non-fetch transport (EventSource) that bypasses
+ *  the window.fetch rewrite. In Tauri, relative `/api` hits the asset origin,
+ *  so resolve through the discovered proxy base; in web, keep it same-origin
+ *  (the Vite proxy forwards it). */
+export async function apiUrl(path: string): Promise<string> {
+  const base = await whenReady();
+  return base ? `${base}${path}` : path;
+}
+
+/** Synchronous backend base for transports that must build their URL without
+ *  awaiting (EventSource/WebSocket opened in a render effect). Returns the
+ *  discovered proxy base once ready, else null (web same-origin). Callers that
+ *  run after the bootstrap gate always see the resolved base in Tauri. */
+export function backendOriginSync(): string | null {
+  return baseUrl;
+}
+
+/** WebSocket URL for the backend. Mirrors `apiUrl` but swaps the scheme to
+ *  ws/wss — and in Tauri targets `ws://127.0.0.1:<port>`, which is the only
+ *  ws origin the desktop CSP (`connect-src … ws://127.0.0.1:*`) permits. */
+export async function wsUrl(path: string): Promise<string> {
+  const base = await whenReady();
+  if (base) return `${base.replace(/^http/, 'ws')}${path}`;
+  const proto = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}${path}`;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
     super(message);

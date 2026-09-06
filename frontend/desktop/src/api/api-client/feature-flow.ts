@@ -1,6 +1,6 @@
 /* Feature Flow pipeline visualization and proxy-path AUG.md injection toggle. */
 
-import { api } from '../client';
+import { api, backendOriginSync } from '../client';
 
 export interface FeatureFlowEvent {
   id: string;
@@ -38,7 +38,10 @@ export function getFeatureFlowEvents(
 }
 
 export function openFeatureFlowEventStream(): EventSource {
-  return new EventSource('/api/monitor/events/stream');
+  // EventSource bypasses the window.fetch rewrite, so resolve the backend
+  // base explicitly — relative /api would hit the Tauri asset origin.
+  const base = backendOriginSync() ?? '';
+  return new EventSource(`${base}/api/monitor/events/stream`);
 }
 
 export function getInjectAugOnProxy(): Promise<{ enabled: boolean }> {
